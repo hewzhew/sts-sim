@@ -159,7 +159,7 @@ this map and extend an existing boundary when one already exists.
     estimate-ordering buckets and signals.
   - `value/combat_eval/ordering.rs`: ordering contract for wins, losses, and
     unresolved estimates.
-- `rollout/`, `rollout_cache/`, `rollout_policy.rs`, `rollout_probe/`,
+- `rollout/`, `rollout_cache/`, `rollout_action_selector.rs`, `rollout_probe/`,
   `rollout_pending_choice.rs`, `rollout_scheduler.rs`, `rollout_value.rs`:
   estimate-only rollout behavior. Rollout output must remain labeled as
   estimate evidence unless replayed into an exact search node. The default

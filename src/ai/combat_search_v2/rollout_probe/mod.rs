@@ -69,7 +69,7 @@ pub(super) fn choose_by_one_step_probe(
     )> = None;
     for (ordered_index, choice) in ordered
         .iter()
-        .take(super::rollout_policy::CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT)
+        .take(super::rollout_action_selector::CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT)
         .skip(1)
         .enumerate()
     {
@@ -141,7 +141,7 @@ fn choose_by_terminal_one_step_probe(
     )> = None;
     for (ordered_index, choice) in ordered
         .iter()
-        .take(super::rollout_policy::CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT)
+        .take(super::rollout_action_selector::CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT)
         .skip(1)
         .enumerate()
     {
@@ -171,7 +171,8 @@ fn choose_by_terminal_one_step_probe(
     match best {
         Some((_, choice, step)) => OneStepProbeSelection::Upgrade {
             choice,
-            reason: super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE,
+            reason:
+                super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE,
             step,
         },
         None => OneStepProbeSelection::Fallback {

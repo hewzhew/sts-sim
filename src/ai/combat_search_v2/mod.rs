@@ -42,10 +42,10 @@ mod value_facts;
 
 // Rollout policies and bounded rollout execution.
 mod rollout;
+mod rollout_action_selector;
 mod rollout_cache;
 mod rollout_estimate;
 mod rollout_pending_choice;
-mod rollout_policy;
 mod rollout_profile;
 mod rollout_scheduler;
 
@@ -119,9 +119,9 @@ use pending_choice_profile::{
 };
 use phase_profile::{combat_search_phase_profile, combat_search_phase_profile_report};
 use pressure_value::visible_incoming_damage;
+use rollout_action_selector::{choose_rollout_action, filtered_rollout_legal_actions};
 use rollout_cache::RolloutCache;
 use rollout_estimate::{RolloutNodeEstimate, RolloutStopReason};
-use rollout_policy::{choose_rollout_action, filtered_rollout_legal_actions};
 use target_fanout::{
     summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
 };

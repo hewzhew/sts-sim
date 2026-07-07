@@ -92,7 +92,7 @@ fn one_step_probe_can_choose_nonterminal_special_phase_value_upgrade() {
     assert_eq!(selection.original_action_id, 1);
     assert_eq!(
         reason,
-        super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE
+        super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PHASE_VALUE
     );
 }
 
@@ -209,7 +209,7 @@ fn one_step_probe_can_choose_sustained_mitigation_from_action_facts() {
     assert_eq!(selection.original_action_id, 1);
     assert_eq!(
         reason,
-        super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
+        super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
     );
 }
 
@@ -221,7 +221,7 @@ fn probe_upgrade_reason_accepts_hp_gain_as_survival_value() {
     assert_eq!(
         probe_upgrade_reason(candidate, fallback, true),
         Some(
-            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
+            super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
         )
     );
 }
@@ -252,7 +252,7 @@ fn probe_upgrade_reason_accepts_reduced_visible_hp_loss() {
     assert_eq!(
         probe_upgrade_reason(candidate, fallback, true),
         Some(
-            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
+            super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
         )
     );
 }
@@ -266,7 +266,7 @@ fn probe_upgrade_reason_accepts_action_fact_setup_value() {
     assert_eq!(
         probe_upgrade_reason(candidate, fallback, true),
         Some(
-            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
+            super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_ACTION_FACTS_VALUE
         )
     );
 }
@@ -290,7 +290,7 @@ fn probe_upgrade_reason_allows_survival_gain_before_reactive_risk_gate() {
     assert_eq!(
         probe_upgrade_reason(candidate, fallback, true),
         Some(
-            super::super::rollout_policy::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
+            super::super::rollout_action_selector::ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_SURVIVAL_VALUE
         )
     );
 }
