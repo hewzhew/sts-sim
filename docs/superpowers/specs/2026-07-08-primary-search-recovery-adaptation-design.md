@@ -5,6 +5,12 @@
 Review draft. This document is a design proposal for making combat primary
 search a trustworthy mainline again. It does not change code by itself.
 
+This document is a roadmap, not the first implementation contract. The first
+implementation cut is defined by
+`2026-07-08-primary-search-recovery-contract-v0-design.md` and is intentionally
+narrower: make primary attempts readable and contract-safe before adding
+feature priors, NRPA-style adaptation, or ML export.
+
 ## Problem
 
 Recent primary-only runs exposed a structural issue:
