@@ -289,9 +289,19 @@ fn print_summary(label: &str, summary: &PanelSummary, path: &PathBuf) {
         path.display()
     );
     for row in &summary.rows {
+        let error = row
+            .tool_error
+            .as_deref()
+            .map(|error| format!(" error={error}"))
+            .unwrap_or_default();
         println!(
-            "seed={} action={:?} decision={:?} capsule={}",
-            row.seed, row.scheduler_action, row.reuse_decision, row.capsule_path
+            "seed={} status={:?} action={:?} decision={:?} capsule={}{}",
+            row.seed,
+            row.row_status,
+            row.scheduler_action,
+            row.reuse_decision,
+            row.capsule_path,
+            error
         );
     }
 }
