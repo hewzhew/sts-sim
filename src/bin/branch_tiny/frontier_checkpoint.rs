@@ -66,6 +66,7 @@ pub(super) fn load(path: &Path) -> Result<FrontierCheckpoint, String> {
 }
 
 impl FrontierCheckpoint {
+    #[allow(dead_code)]
     pub(super) fn run_contract(&self) -> RunContract {
         self.run_contract
             .unwrap_or_else(|| RunContract::from_args(self.args))
