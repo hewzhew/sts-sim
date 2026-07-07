@@ -13,10 +13,11 @@ impl TurnSequenceDiagnosticsCollector {
         &mut self,
         stepper: &impl CombatStepper,
         config: &CombatSearchV2Config,
+        plugins: &CombatSearchPluginStack,
     ) {
         let candidate_keys = self.discard_order_shadow_audit_candidate_keys();
         self.discard_order_shadow_audit
-            .run_one_step_exact_shadow_audit(stepper, config, &candidate_keys);
+            .run_one_step_exact_shadow_audit(stepper, config, plugins, &candidate_keys);
     }
 
     pub(super) fn discard_order_shadow_audit(

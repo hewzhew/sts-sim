@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::sim::combat::CombatStepper;
 
+use super::super::plugins::CombatSearchPluginStack;
 use super::super::types::CombatSearchV2Config;
 use super::DiscardOrderShadowAuditKey;
 
@@ -19,6 +20,7 @@ pub(super) fn run_one_step_exact_shadow_audit(
     groups: &BTreeMap<DiscardOrderShadowAuditKey, DiscardOrderShadowAuditGroup>,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     candidate_keys: &BTreeSet<DiscardOrderShadowAuditKey>,
 ) -> DiscardOrderShadowAuditExactSummary {
     let mut exact = DiscardOrderShadowAuditExactSummary::default();
@@ -27,7 +29,7 @@ pub(super) fn run_one_step_exact_shadow_audit(
         .filter(|(key, _)| candidate_keys.contains(*key))
         .take(EXACT_SHADOW_GROUP_SAMPLE_LIMIT)
     {
-        let Some(result) = audit_group_one_step(stepper, config, group) else {
+        let Some(result) = audit_group_one_step(stepper, config, plugins, group) else {
             continue;
         };
         exact.insert_result(key.clone(), result);

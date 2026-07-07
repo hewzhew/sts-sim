@@ -149,8 +149,9 @@ impl SearchDiagnosticsCollector {
         &mut self,
         stepper: &impl CombatStepper,
         config: &CombatSearchV2Config,
+        plugins: &CombatSearchPluginStack,
     ) {
         self.turn_sequence
-            .run_discard_order_exact_shadow_audit(stepper, config);
+            .run_discard_order_exact_shadow_audit(stepper, config, plugins);
     }
 }

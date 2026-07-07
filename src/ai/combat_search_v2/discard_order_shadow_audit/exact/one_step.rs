@@ -4,6 +4,7 @@ use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 use crate::sim::combat_action::CombatActionChoice;
 
 use super::super::super::frontier::SearchNode;
+use super::super::super::plugins::CombatSearchPluginStack;
 use super::super::super::state_abstraction::StateDivergenceKind;
 use super::super::super::transition::filtered_legal_actions;
 use super::super::super::turn_branching::classify_turn_branch_transition;
@@ -21,6 +22,7 @@ use super::types::{
 pub(super) fn audit_group_one_step(
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     group: &DiscardOrderShadowAuditGroup,
 ) -> Option<DiscardOrderShadowAuditExactGroupResult> {
     let [left, right] = group.representatives.as_slice() else {
@@ -38,8 +40,8 @@ pub(super) fn audit_group_one_step(
         return None;
     }
 
-    let left_actions = legal_action_map(stepper, config, &left.node);
-    let right_actions = legal_action_map(stepper, config, &right.node);
+    let left_actions = legal_action_map(stepper, plugins, &left.node);
+    let right_actions = legal_action_map(stepper, plugins, &right.node);
     let left_keys = left_actions.keys().cloned().collect::<BTreeSet<_>>();
     let right_keys = right_actions.keys().cloned().collect::<BTreeSet<_>>();
     if left_keys != right_keys {
@@ -73,8 +75,8 @@ pub(super) fn audit_group_one_step(
             .expect("matching key checked before action audit");
         result.checked_actions += 1;
 
-        let left_child = one_step_effect(stepper, config, &left.node, left_choice);
-        let right_child = one_step_effect(stepper, config, &right.node, right_choice);
+        let left_child = one_step_effect(stepper, config, plugins, &left.node, left_choice);
+        let right_child = one_step_effect(stepper, config, plugins, &right.node, right_choice);
         let action_status = match (left_child, right_child) {
             (Ok(left_fingerprint), Ok(right_fingerprint)) => {
                 let divergence = classify_pair(&left_fingerprint, &right_fingerprint);
@@ -122,13 +124,13 @@ pub(super) fn audit_group_one_step(
 
 fn legal_action_map(
     stepper: &impl CombatStepper,
-    config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     node: &SearchNode,
 ) -> BTreeMap<String, CombatActionChoice> {
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
     filtered_legal_actions(
         stepper.legal_action_choices(&position),
-        config.potion_policy,
+        plugins.potion.policy,
         &node.combat,
     )
     .into_iter()
@@ -139,6 +141,7 @@ fn legal_action_map(
 fn one_step_effect(
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     node: &SearchNode,
     choice: &CombatActionChoice,
 ) -> Result<TurnSequenceEffectFingerprint, ()> {
@@ -176,7 +179,7 @@ fn one_step_effect(
     let child_position = CombatPosition::new(child.engine.clone(), child.combat.clone());
     let child_legal_count = filtered_legal_actions(
         stepper.legal_action_choices(&child_position),
-        config.potion_policy,
+        plugins.potion.policy,
         &child.combat,
     )
     .len();

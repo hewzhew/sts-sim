@@ -75,9 +75,11 @@ impl DiscardOrderShadowAuditCollector {
         &mut self,
         stepper: &impl CombatStepper,
         config: &CombatSearchV2Config,
+        plugins: &super::plugins::CombatSearchPluginStack,
         candidate_keys: &BTreeSet<DiscardOrderShadowAuditKey>,
     ) {
-        self.exact = run_one_step_exact_shadow_audit(&self.groups, stepper, config, candidate_keys);
+        self.exact =
+            run_one_step_exact_shadow_audit(&self.groups, stepper, config, plugins, candidate_keys);
     }
 
     fn exact_result(

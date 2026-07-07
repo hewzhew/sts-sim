@@ -11,9 +11,11 @@ pub(super) fn finish_diagnostics_and_timing(
     config: &CombatSearchV2Config,
 ) {
     let shadow_audit_started = Instant::now();
-    loop_state
-        .diagnostics
-        .run_discard_order_exact_shadow_audit(stepper, config);
+    loop_state.diagnostics.run_discard_order_exact_shadow_audit(
+        stepper,
+        config,
+        &loop_state.plugins,
+    );
     loop_state.performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
 
     let root_turn_plan_diagnostics_started = Instant::now();
