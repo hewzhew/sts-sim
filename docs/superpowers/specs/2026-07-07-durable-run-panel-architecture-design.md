@@ -42,6 +42,9 @@ Current implementation has established the first durable panel path:
 - `RunSliceResult` now carries an `ArtifactWriteSummary` for core capsule
   writes observed by the slice path, so in-process callers no longer need to
   infer manifest/frontier/result/summary writes from the filesystem.
+- Capsule JSON/path persistence for owner-audit runs is now isolated in
+  `capsule_artifact_store.rs`; `run_capsule.rs` is a runtime handle that
+  delegates concrete filesystem writes to that adapter.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -52,9 +55,10 @@ Still open:
   wanted.
 - richer named policy/search config comparison beyond the current
   `baseline` / `double-search` V0.
-- completing the capsule artifact store boundary; core write facts now flow
-  through `RunSliceResult`, but write logic still lives mostly in
-  `owner_audit/run_capsule.rs`.
+- completing the capsule artifact store boundary with typed artifact refs and
+  a more public store facade; concrete owner-audit capsule writes have been
+  moved out of `run_capsule.rs`, but `ArtifactRef` and the full store interface
+  remain open.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.
 
@@ -1408,9 +1412,10 @@ The first cut should be deliberately modest:
 ```
 
 Current implementation has completed the first `ArtifactWriteSummary` plumbing
-for core capsule writes in `RunSliceResult`. `ArtifactRef` and the full
-`CapsuleArtifactStore` write adapter remain open; direct JSON write code is
-still concentrated in the current capsule adapter.
+for core capsule writes in `RunSliceResult`, and owner-audit JSON writes now
+live behind a `CapsuleArtifactStore` adapter. `ArtifactRef` and a fully public
+store facade remain open; the current adapter still preserves the legacy JSON
+schemas.
 
 It should not yet redesign every artifact schema. The goal is to put a wall
 around persistence semantics first.

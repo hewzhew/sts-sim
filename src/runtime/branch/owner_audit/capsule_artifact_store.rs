@@ -1,0 +1,283 @@
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde_json::{json, Value};
+
+use super::run_identity::{current_source_identity, SourceIdentity};
+use super::{
+    combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
+    BranchStatus,
+};
+use run_capsule_io::{ensure_dir, read_terminal_entries, remove_if_exists, write_json};
+
+pub(super) struct CapsuleArtifactStore {
+    root: PathBuf,
+    started_at_ms: u128,
+    git_commit: Option<String>,
+    source_identity: SourceIdentity,
+}
+
+impl CapsuleArtifactStore {
+    pub(super) fn new(root: PathBuf) -> Self {
+        let source_identity = current_source_identity();
+        Self {
+            root,
+            started_at_ms: now_ms(),
+            git_commit: source_identity.git_commit.clone(),
+            source_identity,
+        }
+    }
+
+    pub(super) fn combat_cases_dir(&self) -> PathBuf {
+        self.root.join("combat_cases")
+    }
+
+    pub(super) fn result_path(&self) -> PathBuf {
+        self.root.join("result.json")
+    }
+
+    pub(super) fn summary_path(&self) -> PathBuf {
+        self.root.join("summary.json")
+    }
+
+    pub(super) fn terminal_path(&self) -> PathBuf {
+        self.root.join("terminal.json")
+    }
+
+    pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
+        self.write_manifest(args, "running", None)
+    }
+
+    pub(super) fn write_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        self.write_branch_result(
+            args,
+            generation,
+            branch,
+            run_capsule_format::terminal_manifest_status(&branch.status),
+            None,
+        )
+    }
+
+    pub(super) fn write_completed_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+        reason: &'static str,
+    ) -> Result<(), String> {
+        self.write_branch_result(args, generation, branch, "completed", Some(reason))
+    }
+
+    pub(super) fn write_frontier(
+        &self,
+        args: Args,
+        generation: usize,
+        next_branch_id: usize,
+        frontier: &VecDeque<Branch>,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<Option<usize>, String> {
+        let running = frontier
+            .iter()
+            .filter(|branch| branch.status.is_resumable())
+            .count();
+        if running == 0 {
+            return Ok(None);
+        }
+        frontier_checkpoint::save(
+            &self.root.join("frontier.json"),
+            args,
+            generation,
+            next_branch_id,
+            frontier,
+        )?;
+        remove_if_exists(&self.root.join("result.json"))?;
+        remove_if_exists(&self.root.join("path.json"))?;
+        self.write_manifest(args, capsule_status, reason)?;
+        self.write_frontier_summary(args, generation, frontier, capsule_status, reason)?;
+        Ok(Some(running))
+    }
+
+    pub(super) fn append_terminal_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<bool, String> {
+        if !matches!(branch.status, BranchStatus::Terminal(_)) {
+            return Ok(false);
+        }
+        ensure_dir(&self.root)?;
+        let path = self.terminal_path();
+        let mut entries = read_terminal_entries(&path)?;
+        if entries
+            .iter()
+            .any(|entry| entry.get("branch_id").and_then(Value::as_u64) == Some(branch.id as u64))
+        {
+            return Ok(false);
+        }
+        let combat_case = self.combat_case_value(args, generation, branch);
+        entries.push(run_capsule_format::result_value(
+            generation,
+            branch,
+            combat_case,
+        ));
+        write_json(&path, run_capsule_format::terminal_results_value(entries))?;
+        Ok(true)
+    }
+
+    fn write_branch_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        ensure_dir(&self.root)?;
+        let combat_case = self.combat_case_value(args, generation, branch);
+        write_json(
+            &self.root.join("result.json"),
+            run_capsule_format::result_value(generation, branch, combat_case.clone()),
+        )?;
+        write_json(
+            &self.root.join("path.json"),
+            run_capsule_format::path_value(branch),
+        )?;
+        remove_if_exists(&self.root.join("frontier.json"))?;
+        self.write_manifest(args, capsule_status, reason)?;
+        self.write_branch_summary(
+            args,
+            generation,
+            branch,
+            &combat_case,
+            capsule_status,
+            reason,
+        )
+    }
+
+    fn write_branch_summary(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+        combat_case: &Value,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        write_json(
+            &self.summary_path(),
+            run_capsule_format::branch_summary_value(
+                &self.root,
+                args,
+                generation,
+                branch,
+                combat_case,
+                capsule_status,
+                reason,
+                None,
+            ),
+        )
+    }
+
+    fn write_frontier_summary(
+        &self,
+        args: Args,
+        generation: usize,
+        frontier: &VecDeque<Branch>,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        let running = frontier
+            .iter()
+            .filter(|branch| branch.status.is_resumable())
+            .count();
+        let frontier_info =
+            run_capsule_format::frontier_summary_info_value(frontier.len(), running);
+        if let Some(branch) = frontier
+            .iter()
+            .find(|branch| branch.status.is_resumable())
+            .or_else(|| frontier.front())
+        {
+            return write_json(
+                &self.summary_path(),
+                run_capsule_format::branch_summary_value(
+                    &self.root,
+                    args,
+                    generation,
+                    branch,
+                    &Value::Null,
+                    capsule_status,
+                    reason,
+                    Some(frontier_info),
+                ),
+            );
+        }
+        write_json(
+            &self.summary_path(),
+            run_capsule_format::empty_frontier_summary_value(
+                &self.root,
+                args,
+                generation,
+                capsule_status,
+                reason,
+                frontier_info,
+            ),
+        )
+    }
+
+    fn write_manifest(
+        &self,
+        args: Args,
+        status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        ensure_dir(&self.root)?;
+        write_json(
+            &self.root.join("manifest.json"),
+            run_capsule_format::manifest_value(
+                args,
+                status,
+                reason,
+                self.started_at_ms,
+                now_ms(),
+                &self.git_commit,
+                &self.source_identity,
+            ),
+        )
+    }
+
+    fn combat_case_value(&self, args: Args, generation: usize, branch: &Branch) -> Value {
+        if !matches!(
+            branch.status,
+            BranchStatus::CombatGap { .. }
+                | BranchStatus::OperationBudgetExhausted { .. }
+                | BranchStatus::BudgetGap { .. }
+        ) {
+            return Value::Null;
+        }
+        match combat_gap_case::save_combat_gap_case(
+            &self.combat_cases_dir(),
+            args,
+            generation,
+            branch,
+        ) {
+            Ok(Some(path)) => json!(path.display().to_string()),
+            Ok(None) => Value::Null,
+            Err(error) => json!({"error": error}),
+        }
+    }
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}

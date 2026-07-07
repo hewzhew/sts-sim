@@ -28,6 +28,8 @@ mod branch_status_view;
 mod campfire_owner;
 #[path = "owner_audit/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
+#[path = "owner_audit/capsule_artifact_store.rs"]
+mod capsule_artifact_store;
 #[path = "owner_audit/card_reward_owner.rs"]
 mod card_reward_owner;
 #[path = "owner_audit/cli_args.rs"]
