@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::{
     decide_manifest_reuse, Args, BranchArtifactStore, CapsuleReuseDecision, OwnerAuditRuntime,
-    OwnerAuditSliceRequest, RunContract, SourceIdentity,
+    OwnerAuditSliceRequest, PanelLedgerEvent, RunContract, SourceIdentity,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -241,28 +241,55 @@ impl PanelInspectConfig {
 impl PanelSmokeRunner {
     pub fn run_once(config: PanelInspectConfig) -> Result<PanelSummary, String> {
         for resolution in PanelScheduler::resolve_requests(config.requests()) {
-            match resolution.scheduler_action() {
+            let action = resolution.scheduler_action();
+            match action {
                 PanelSeedAction::StartNew => {
-                    OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+                    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
                         args: config.args_for_seed(resolution.seed),
                         capsule_path: resolution.capsule_path,
                         resume: false,
                         human_output: false,
-                    })?;
+                    }) {
+                        Ok(_) => append_panel_event(&config, resolution.seed, action, "executed")?,
+                        Err(error) => {
+                            append_panel_event(&config, resolution.seed, action, "failed")?;
+                            return Err(error);
+                        }
+                    }
                 }
                 PanelSeedAction::ContinueCapsule => {
-                    OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+                    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
                         args: config.args_for_seed(resolution.seed),
                         capsule_path: resolution.capsule_path,
                         resume: true,
                         human_output: false,
-                    })?;
+                    }) {
+                        Ok(_) => append_panel_event(&config, resolution.seed, action, "executed")?,
+                        Err(error) => {
+                            append_panel_event(&config, resolution.seed, action, "failed")?;
+                            return Err(error);
+                        }
+                    }
                 }
-                PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {}
+                PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
+                    append_panel_event(&config, resolution.seed, action, "skipped")?;
+                }
             }
         }
         Ok(config.summarize())
     }
+}
+
+fn append_panel_event(
+    config: &PanelInspectConfig,
+    seed: u64,
+    action: PanelSeedAction,
+    event: &'static str,
+) -> Result<(), String> {
+    config
+        .artifact_store
+        .append_panel_ledger_event(None, &PanelLedgerEvent::new(seed, action, event))
+        .map(|_| ())
 }
 
 impl PanelRow {
@@ -816,6 +843,8 @@ mod tests {
 
         assert_eq!(summary.total_rows, 1);
         assert!(root.join("123").join("manifest.json").exists());
+        let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
+        assert!(ledger.contains("\"event\":\"executed\""));
         assert!(summary.rows[0].manifest_exists);
 
         let _ = fs::remove_dir_all(root);

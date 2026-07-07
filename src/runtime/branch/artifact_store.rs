@@ -1,11 +1,34 @@
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::PanelSummary;
+use serde::{Deserialize, Serialize};
+
+use super::{PanelSeedAction, PanelSummary};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchArtifactStore {
     capsule_root: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PanelLedgerEvent {
+    pub schema: &'static str,
+    pub seed: u64,
+    pub scheduler_action: PanelSeedAction,
+    pub event: String,
+}
+
+impl PanelLedgerEvent {
+    pub fn new(seed: u64, scheduler_action: PanelSeedAction, event: impl Into<String>) -> Self {
+        Self {
+            schema: "branch_panel_ledger_event_v0",
+            seed,
+            scheduler_action,
+            event: event.into(),
+        }
+    }
 }
 
 impl BranchArtifactStore {
@@ -21,6 +44,10 @@ impl BranchArtifactStore {
 
     pub fn default_panel_summary_path(&self) -> PathBuf {
         self.capsule_root.join("panel_summary.json")
+    }
+
+    pub fn default_panel_ledger_path(&self) -> PathBuf {
+        self.capsule_root.join("panel_ledger.jsonl")
     }
 
     pub fn write_panel_summary(
@@ -41,6 +68,30 @@ impl BranchArtifactStore {
             .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
         Ok(path)
     }
+
+    pub fn append_panel_ledger_event(
+        &self,
+        path: Option<&Path>,
+        event: &PanelLedgerEvent,
+    ) -> Result<PathBuf, String> {
+        let path = path
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.default_panel_ledger_path());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        }
+        let text = serde_json::to_string(event)
+            .map_err(|err| format!("failed to serialize panel ledger event: {err}"))?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+        writeln!(file, "{text}")
+            .map_err(|err| format!("failed to append {}: {err}", path.display()))?;
+        Ok(path)
+    }
 }
 
 #[cfg(test)]
@@ -48,7 +99,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::runtime::branch::{PanelRow, PanelSummary};
+    use crate::runtime::branch::{PanelRow, PanelSeedAction, PanelSummary};
 
     #[test]
     fn store_owns_seed_capsule_paths() {
@@ -90,6 +141,35 @@ mod tests {
         assert_eq!(path, root.join("panel_summary.json"));
         assert_eq!(value["schema"], json!("branch_panel_summary_v0"));
         assert_eq!(value["total_rows"], 1);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn store_appends_panel_ledger_jsonl() {
+        let root = std::env::temp_dir().join("branch_artifact_store_panel_ledger");
+        let _ = std::fs::remove_dir_all(&root);
+        let store = BranchArtifactStore::new(&root);
+
+        let first = PanelLedgerEvent::new(1, PanelSeedAction::StartNew, "executed");
+        let second = PanelLedgerEvent::new(2, PanelSeedAction::ReuseRealStop, "skipped");
+        let path = store.append_panel_ledger_event(None, &first).unwrap();
+        let second_path = store.append_panel_ledger_event(None, &second).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines = text.lines().collect::<Vec<_>>();
+
+        assert_eq!(path, root.join("panel_ledger.jsonl"));
+        assert_eq!(second_path, path);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(lines[0]).unwrap()["event"],
+            "executed"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(lines[1]).unwrap()["scheduler_action"],
+            "reuse_real_stop"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }
