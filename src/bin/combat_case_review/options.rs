@@ -1,6 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchChildRolloutPluginId, CombatSearchV2ChildRolloutPolicy,
-};
+use sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId;
 
 use super::args::Args;
 
@@ -59,10 +57,6 @@ impl ReviewOptions {
             immediate_child_rollout: args.immediate_child_rollout,
             lazy_child_rollout: args.lazy_child_rollout,
         }
-    }
-
-    pub(super) fn child_rollout_policy(&self) -> CombatSearchV2ChildRolloutPolicy {
-        self.child_rollout_plugin().into()
     }
 
     pub(super) fn child_rollout_plugin(&self) -> CombatSearchChildRolloutPluginId {

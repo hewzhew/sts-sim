@@ -1,49 +1,23 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchActionPriorPluginId, CombatSearchRolloutPluginId, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchActionPriorPluginId, CombatSearchProfile, CombatSearchRolloutPluginId,
+    CombatSearchV2PotionPolicy,
 };
 
 use super::super::options::ReviewOptions;
-use super::types::{FrozenPanelLaneConfigSummary, FrozenPanelLaneSpec};
+use super::super::search_runner::review_search_profile;
+use super::types::FrozenPanelLaneSpec;
 
 impl FrozenPanelLaneSpec {
-    pub(super) fn config_summary(
+    pub(super) fn profile(
         self,
         options: &ReviewOptions,
         rollout_plugin: CombatSearchRolloutPluginId,
-    ) -> FrozenPanelLaneConfigSummary {
-        FrozenPanelLaneConfigSummary {
-            max_nodes: options.slow_nodes,
-            wall_ms: options.slow_ms,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly.label(),
-            potion_policy: "all",
-            max_potions_used: options.diagnostic_potion_max,
-            rollout_policy: CombatSearchV2RolloutPolicy::from(rollout_plugin).label(),
-            child_rollout_policy: options.child_rollout_policy().label(),
-            setup_bias_policy: CombatSearchV2SetupBiasPolicy::from(self.action_prior_plugin)
-                .label(),
-            phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default.label(),
-        }
-    }
-
-    #[cfg(test)]
-    fn config_summary_without_setup_bias(
-        self,
-    ) -> (
-        &'static str,
-        &'static str,
-        &'static str,
-        &'static str,
-        &'static str,
-    ) {
-        (
-            CombatSearchV2TurnPlanPolicy::DiagnosticOnly.label(),
-            "all",
-            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion.label(),
-            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::LazyOnPop
-                .label(),
-            CombatSearchV2PhaseGuardPolicy::Default.label(),
-        )
+    ) -> CombatSearchProfile {
+        review_search_profile(self.lane, options.slow_nodes, options.slow_ms, options)
+            .with_action_prior_plugin(self.action_prior_plugin)
+            .with_rollout_plugin(rollout_plugin)
+            .with_potion_policy(CombatSearchV2PotionPolicy::All)
+            .with_max_potions_used(options.diagnostic_potion_max)
     }
 }
 
@@ -80,10 +54,6 @@ mod tests {
         assert_eq!(
             specs[1].action_prior_plugin,
             CombatSearchActionPriorPluginId::KeyCardOnline
-        );
-        assert_eq!(
-            specs[0].config_summary_without_setup_bias(),
-            specs[1].config_summary_without_setup_bias()
         );
     }
 }
