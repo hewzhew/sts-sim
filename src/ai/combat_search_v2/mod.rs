@@ -100,8 +100,7 @@ use action_equivalence::{
 use action_facts::summarize_action_facts_from_step;
 use action_ordering::{
     order_indexed_action_choices, order_indexed_action_choices_with_plugins,
-    order_indexed_action_choices_with_prior, ActionOrderingDiagnosticsCollector,
-    ActionOrderingSummary, IndexedActionChoice,
+    ActionOrderingDiagnosticsCollector, ActionOrderingSummary, IndexedActionChoice,
 };
 use card_identity::{
     summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,
@@ -224,15 +223,27 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state_with_policy(
     phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     setup_bias_policy: CombatSearchV2SetupBiasPolicy,
 ) -> &'static str {
-    action_priority::priority_for_input(
+    combat_search_action_ordering_role_label_for_state_with_plugins(
         engine,
         combat,
         input,
-        phase_guard_policy,
-        setup_bias_policy,
+        CombatSearchActionOrderingPlugins {
+            root_action_prior: None,
+            phase_guard: phase_guard_policy.into(),
+            action_prior: setup_bias_policy.into(),
+        },
     )
-    .role
-    .label()
+}
+
+pub(crate) fn combat_search_action_ordering_role_label_for_state_with_plugins(
+    engine: &EngineState,
+    combat: &CombatState,
+    input: &ClientInput,
+    plugins: CombatSearchActionOrderingPlugins<'_>,
+) -> &'static str {
+    action_priority::priority_for_input_with_plugins(engine, combat, input, plugins)
+        .role
+        .label()
 }
 
 pub(crate) fn combat_search_phase_profile_report_for_state(

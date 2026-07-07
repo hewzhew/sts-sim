@@ -34,8 +34,11 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
     config: CombatSearchV2Config,
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2DecisionMicroscopeReport {
+    let plugin_stack = CombatSearchPluginStack::from_config(&config);
+    let action_ordering_plugins = CombatSearchActionOrderingPlugins::from_config(&config);
     let search_report = run_combat_search_v2_with_stepper(engine, combat, config.clone(), stepper);
-    let selected_first_action = selected_first_action(engine, combat, &config, &search_report);
+    let selected_first_action =
+        selected_first_action(engine, combat, action_ordering_plugins, &search_report);
     let selected_identity = selected_first_action
         .as_ref()
         .map(|action| (action.action_id, action.action_key.as_str()));
@@ -43,17 +46,15 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal = filtered_legal_actions(
         stepper.legal_action_choices(&position),
-        config.potion_policy,
+        plugin_stack.potion.policy,
         combat,
     );
     let equivalence = compress_equivalent_actions(engine, combat, legal);
-    let ordered = order_indexed_action_choices_with_prior(
+    let ordered = order_indexed_action_choices_with_plugins(
         engine,
         combat,
         equivalence.choices,
-        config.root_action_prior.as_ref(),
-        config.phase_guard_policy,
-        config.setup_bias_policy,
+        action_ordering_plugins,
     );
     let candidate_count = ordered.choices.len();
     let candidates = ordered
@@ -66,6 +67,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
                 &initial_node,
                 stepper,
                 &config,
+                action_ordering_plugins,
                 choice,
                 ordered_index,
                 selected_identity,

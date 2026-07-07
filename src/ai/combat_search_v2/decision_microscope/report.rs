@@ -7,7 +7,7 @@ use super::{
 pub(super) fn selected_first_action(
     engine: &EngineState,
     combat: &CombatState,
-    config: &CombatSearchV2Config,
+    plugins: CombatSearchActionOrderingPlugins<'_>,
     search_report: &CombatSearchV2Report,
 ) -> Option<CombatSearchV2DecisionSelectedAction> {
     let (selection_source, action) = if let Some(action) = search_report
@@ -30,12 +30,11 @@ pub(super) fn selected_first_action(
         action_id: action.action_id,
         action_key: action.action_key.clone(),
         action_debug: action.action_debug.clone(),
-        action_role: combat_search_action_ordering_role_label_for_state_with_policy(
+        action_role: combat_search_action_ordering_role_label_for_state_with_plugins(
             engine,
             combat,
             &action.input,
-            config.phase_guard_policy,
-            config.setup_bias_policy,
+            plugins,
         ),
         selection_source,
     })
@@ -60,19 +59,20 @@ pub(super) fn trajectory_summary(
 pub(super) fn config_report(
     config: &CombatSearchV2Config,
 ) -> CombatSearchV2DecisionMicroscopeConfigReport {
+    let plugins = CombatSearchPluginStack::from_config(config);
     CombatSearchV2DecisionMicroscopeConfigReport {
         max_nodes: config.max_nodes,
         max_actions_per_line: config.max_actions_per_line,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
-        potion_policy: config.potion_policy.label(),
-        max_potions_used: config.max_potions_used,
-        rollout_policy: config.rollout_policy.label(),
+        potion_policy: plugins.potion.policy.label(),
+        max_potions_used: plugins.potion.max_potions_used,
+        rollout_policy: CombatSearchV2RolloutPolicy::from(plugins.rollout).label(),
         rollout_max_evaluations: config.rollout_max_evaluations,
         rollout_max_actions: config.rollout_max_actions,
         rollout_beam_width: config.rollout_beam_width,
-        frontier_policy: config.frontier_policy.label(),
-        phase_guard_policy: config.phase_guard_policy.label(),
-        setup_bias_policy: config.setup_bias_policy.label(),
+        frontier_policy: CombatSearchV2FrontierPolicy::from(plugins.frontier).label(),
+        phase_guard_policy: CombatSearchV2PhaseGuardPolicy::from(plugins.phase_guard).label(),
+        setup_bias_policy: CombatSearchV2SetupBiasPolicy::from(plugins.action_prior).label(),
     }
 }

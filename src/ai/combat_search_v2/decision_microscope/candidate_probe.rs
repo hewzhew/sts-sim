@@ -11,17 +11,17 @@ pub(super) fn candidate_report(
     root: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    plugins: CombatSearchActionOrderingPlugins<'_>,
     choice: &IndexedActionChoice,
     ordered_index: usize,
     selected_identity: Option<(usize, &str)>,
 ) -> CombatSearchV2DecisionCandidateReport {
     let input = choice.choice.input.clone();
-    let role = combat_search_action_ordering_role_label_for_state_with_policy(
+    let role = combat_search_action_ordering_role_label_for_state_with_plugins(
         &root.engine,
         &root.combat,
         &input,
-        config.phase_guard_policy,
-        config.setup_bias_policy,
+        plugins,
     );
     let selected_by_best_complete = selected_identity
         .map(|(id, key)| id == choice.original_action_id && key == choice.choice.action_key)

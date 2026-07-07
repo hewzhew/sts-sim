@@ -8,25 +8,6 @@ use super::role::ActionOrderingRole;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 
-pub(in crate::ai::combat_search_v2) fn priority_for_input(
-    engine: &EngineState,
-    combat: &CombatState,
-    input: &ClientInput,
-    phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
-    setup_bias_policy: super::super::CombatSearchV2SetupBiasPolicy,
-) -> ActionOrderingPriority {
-    priority_for_input_with_plugins(
-        engine,
-        combat,
-        input,
-        super::super::CombatSearchActionOrderingPlugins {
-            root_action_prior: None,
-            action_prior: setup_bias_policy.into(),
-            phase_guard: phase_guard_policy.into(),
-        },
-    )
-}
-
 pub(in crate::ai::combat_search_v2) fn priority_for_input_with_plugins(
     engine: &EngineState,
     combat: &CombatState,

@@ -1,5 +1,8 @@
 use super::*;
-use crate::ai::combat_search_v2::{CombatSearchV2PhaseGuardPolicy, CombatSearchV2SetupBiasPolicy};
+use crate::ai::combat_search_v2::{
+    CombatSearchActionOrderingPlugins, CombatSearchV2PhaseGuardPolicy,
+    CombatSearchV2SetupBiasPolicy,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
@@ -9,6 +12,25 @@ use crate::test_support::{blank_test_combat, test_monster};
 
 fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
     ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
+}
+
+fn priority_for_input(
+    engine: &EngineState,
+    combat: &crate::runtime::combat::CombatState,
+    input: &ClientInput,
+    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    setup_bias_policy: CombatSearchV2SetupBiasPolicy,
+) -> ActionOrderingPriority {
+    priority_for_input_with_plugins(
+        engine,
+        combat,
+        input,
+        CombatSearchActionOrderingPlugins {
+            root_action_prior: None,
+            phase_guard: phase_guard_policy.into(),
+            action_prior: setup_bias_policy.into(),
+        },
+    )
 }
 
 #[test]
