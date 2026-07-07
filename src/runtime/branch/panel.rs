@@ -86,7 +86,8 @@ pub struct PanelScheduler;
 
 pub struct PanelSmokeRunner;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PanelRunMode {
     Smoke,
     Continue,
@@ -335,7 +336,7 @@ fn run_slices_with_executor(
     }
     let mut failures = BTreeMap::new();
     let mut status_overrides = BTreeMap::new();
-    for _ in 0..options.max_slices {
+    for slice_index in 0..options.max_slices {
         let mut ran_slice = false;
         for resolution in PanelScheduler::resolve_requests(config.requests()) {
             if failures.contains_key(&resolution.seed) {
@@ -345,7 +346,15 @@ fn run_slices_with_executor(
             match action {
                 PanelSeedAction::StartNew => {
                     if options.mode == PanelRunMode::Continue {
-                        append_panel_event(&config, resolution.seed, action, "skipped")?;
+                        append_panel_event(
+                            &config,
+                            resolution.seed,
+                            action,
+                            "skipped",
+                            options.mode,
+                            slice_index,
+                            None,
+                        )?;
                         status_overrides.insert(resolution.seed, PanelRowStatus::Skipped);
                         continue;
                     }
@@ -356,6 +365,8 @@ fn run_slices_with_executor(
                         resolution.capsule_path,
                         false,
                         &mut executor,
+                        options.mode,
+                        slice_index,
                     )? {
                         failures.insert(resolution.seed, error);
                     }
@@ -369,13 +380,23 @@ fn run_slices_with_executor(
                         resolution.capsule_path,
                         true,
                         &mut executor,
+                        options.mode,
+                        slice_index,
                     )? {
                         failures.insert(resolution.seed, error);
                     }
                     ran_slice = true;
                 }
                 PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
-                    append_panel_event(&config, resolution.seed, action, "skipped")?;
+                    append_panel_event(
+                        &config,
+                        resolution.seed,
+                        action,
+                        "skipped",
+                        options.mode,
+                        slice_index,
+                        None,
+                    )?;
                 }
             }
         }
@@ -393,6 +414,8 @@ fn run_panel_seed_slice(
     capsule_path: PathBuf,
     resume: bool,
     executor: &mut impl PanelSliceExecutor,
+    run_mode: PanelRunMode,
+    slice_index: usize,
 ) -> Result<Option<String>, String> {
     match executor.run_slice(OwnerAuditSliceRequest {
         args: config.args_for_seed(seed),
@@ -401,11 +424,27 @@ fn run_panel_seed_slice(
         human_output: false,
     }) {
         Ok(_) => {
-            append_panel_event(config, seed, action, "executed")?;
+            append_panel_event(
+                config,
+                seed,
+                action,
+                "executed",
+                run_mode,
+                slice_index,
+                None,
+            )?;
             Ok(None)
         }
         Err(error) => {
-            append_panel_event(config, seed, action, "failed")?;
+            append_panel_event(
+                config,
+                seed,
+                action,
+                "failed",
+                run_mode,
+                slice_index,
+                Some(error.clone()),
+            )?;
             Ok(Some(error))
         }
     }
@@ -416,10 +455,14 @@ fn append_panel_event(
     seed: u64,
     action: PanelSeedAction,
     event: &'static str,
+    run_mode: PanelRunMode,
+    slice_index: usize,
+    error: Option<String>,
 ) -> Result<(), String> {
+    let event = PanelLedgerEvent::for_slice(seed, action, event, run_mode, slice_index, error);
     config
         .artifact_store
-        .append_panel_ledger_event(None, &PanelLedgerEvent::new(seed, action, event))
+        .append_panel_ledger_event(None, &event)
         .map(|_| ())
 }
 
@@ -1050,9 +1093,17 @@ mod tests {
         let summary = PanelSmokeRunner::run_slices(config, PanelRunOptions::smoke(2)).unwrap();
 
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
+        let ledger_rows = ledger
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
 
         assert_eq!(summary.total_rows, 1);
-        assert_eq!(ledger.lines().count(), 2);
+        assert_eq!(ledger_rows.len(), 2);
+        assert_eq!(ledger_rows[0]["run_mode"], "smoke");
+        assert_eq!(ledger_rows[0]["slice_index"], 0);
+        assert_eq!(ledger_rows[1]["run_mode"], "smoke");
+        assert_eq!(ledger_rows[1]["slice_index"], 1);
 
         let _ = fs::remove_dir_all(root);
     }

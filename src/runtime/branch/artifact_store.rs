@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{PanelSeedAction, PanelSummary};
+use super::{PanelRunMode, PanelSeedAction, PanelSummary};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchArtifactStore {
@@ -18,6 +18,9 @@ pub struct PanelLedgerEvent {
     pub seed: u64,
     pub scheduler_action: PanelSeedAction,
     pub event: String,
+    pub run_mode: Option<PanelRunMode>,
+    pub slice_index: Option<usize>,
+    pub error: Option<String>,
 }
 
 impl PanelLedgerEvent {
@@ -27,6 +30,28 @@ impl PanelLedgerEvent {
             seed,
             scheduler_action,
             event: event.into(),
+            run_mode: None,
+            slice_index: None,
+            error: None,
+        }
+    }
+
+    pub fn for_slice(
+        seed: u64,
+        scheduler_action: PanelSeedAction,
+        event: impl Into<String>,
+        run_mode: PanelRunMode,
+        slice_index: usize,
+        error: Option<String>,
+    ) -> Self {
+        Self {
+            schema: "branch_panel_ledger_event_v0",
+            seed,
+            scheduler_action,
+            event: event.into(),
+            run_mode: Some(run_mode),
+            slice_index: Some(slice_index),
+            error,
         }
     }
 }
