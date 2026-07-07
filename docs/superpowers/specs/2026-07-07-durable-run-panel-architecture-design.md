@@ -43,6 +43,9 @@ Current implementation has established the first durable panel path:
 - `BranchArtifactStore` owns panel seed artifact presence reads; panel
   resolution consumes typed artifact facts instead of reading capsule files
   directly, including `capsule_ledger.jsonl` presence.
+- `panel.rs` no longer knows concrete capsule artifact file names in
+  production code; capsule file-layout reads are routed through
+  `BranchArtifactStore`.
 - `RunSliceResult` now carries an `ArtifactWriteSummary` for core capsule
   writes observed by the slice path, so in-process callers no longer need to
   infer manifest/frontier/result/summary writes from the filesystem.
@@ -71,7 +74,8 @@ Still open:
   `baseline` / `double-search` V0.
 - completing the capsule artifact store boundary with a more public store
   facade; concrete owner-audit capsule writes have been moved out of
-  `run_capsule.rs`, capsule ledgers are emitted by the store adapter, and panel
+  `run_capsule.rs`, capsule ledgers are emitted by the store adapter, panel
+  capsule reads are routed through `BranchArtifactStore`, and panel
   ledger/summary rows now consume runtime artifact refs.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.

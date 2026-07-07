@@ -51,3 +51,24 @@ fn run_persistence_only_handles_recovery_persistence() {
         "run_persistence should not format branch status labels"
     );
 }
+
+#[test]
+fn panel_scheduler_does_not_know_capsule_file_names() {
+    let panel =
+        std::fs::read_to_string("src/runtime/branch/panel.rs").expect("read panel scheduler");
+    let panel = panel.split("#[cfg(test)]").next().unwrap_or(&panel);
+
+    for forbidden in [
+        "manifest.json",
+        "frontier.json",
+        "result.json",
+        "terminal.json",
+        "summary.json",
+        "capsule_ledger.jsonl",
+    ] {
+        assert!(
+            !panel.contains(forbidden),
+            "panel scheduler should obtain `{forbidden}` facts from BranchArtifactStore"
+        );
+    }
+}

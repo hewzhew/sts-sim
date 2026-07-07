@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -74,6 +73,7 @@ pub struct PanelSeedRequest {
     pub seed: u64,
     pub capsule_path: PathBuf,
     pub artifacts: Result<PanelSeedArtifacts, String>,
+    pub artifact_facts: PanelArtifactFacts,
     pub contract: RunContract,
     pub source_identity: SourceIdentity,
 }
@@ -226,30 +226,26 @@ pub fn decide_seed_capsule(
 
 impl PanelSeedRequest {
     pub fn resolve(self) -> PanelSeedResolution {
-        let artifacts = match self.artifacts {
+        match self.artifacts {
             Ok(artifacts) => {
                 let decision = decide_seed_capsule(artifacts, self.contract, &self.source_identity);
-                return PanelSeedResolution {
+                PanelSeedResolution {
                     seed: self.seed,
                     capsule_path: self.capsule_path,
                     decision,
                     read_error: None,
-                };
+                }
             }
-            Err(error) => (
-                PanelArtifactFacts::from_capsule_path(&self.capsule_path),
-                error,
-            ),
-        };
-        PanelSeedResolution {
-            seed: self.seed,
-            capsule_path: self.capsule_path,
-            decision: PanelSeedDecision {
-                identity_status: PanelIdentityStatus::Unknown,
-                reuse_decision: PanelReuseDecision::RejectMalformedCapsule,
-                artifact_facts: artifacts.0,
+            Err(error) => PanelSeedResolution {
+                seed: self.seed,
+                capsule_path: self.capsule_path,
+                decision: PanelSeedDecision {
+                    identity_status: PanelIdentityStatus::Unknown,
+                    reuse_decision: PanelReuseDecision::RejectMalformedCapsule,
+                    artifact_facts: self.artifact_facts,
+                },
+                read_error: Some(error),
             },
-            read_error: Some(artifacts.1),
         }
     }
 }
@@ -302,6 +298,7 @@ impl PanelInspectConfig {
                     seed,
                     capsule_path: self.artifact_store.capsule_path(seed),
                     artifacts: self.artifact_store.read_seed_artifacts(seed),
+                    artifact_facts: self.artifact_store.read_seed_artifact_facts(seed),
                     contract: RunContract::from_args(args),
                     source_identity: self.source_identity.clone(),
                 }
@@ -717,28 +714,6 @@ fn exact_identity_decision(artifact_facts: PanelArtifactFacts) -> PanelSeedDecis
 }
 
 impl PanelSeedArtifacts {
-    pub fn from_capsule_path(path: &Path) -> Result<Self, String> {
-        let manifest_path = path.join("manifest.json");
-        let manifest = if manifest_path.exists() {
-            let text = fs::read_to_string(&manifest_path)
-                .map_err(|err| format!("failed to read {}: {err}", manifest_path.display()))?;
-            Some(
-                serde_json::from_str::<Value>(&text)
-                    .map_err(|err| format!("failed to parse {}: {err}", manifest_path.display()))?,
-            )
-        } else {
-            None
-        };
-        Ok(Self {
-            manifest,
-            result_exists: path.join("result.json").exists(),
-            frontier_exists: path.join("frontier.json").exists(),
-            terminal_exists: path.join("terminal.json").exists(),
-            summary_exists: path.join("summary.json").exists(),
-            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
-        })
-    }
-
     fn facts(&self) -> PanelArtifactFacts {
         PanelArtifactFacts::from_artifacts(self)
     }
@@ -753,17 +728,6 @@ impl PanelArtifactFacts {
             terminal_exists: artifacts.terminal_exists,
             summary_exists: artifacts.summary_exists,
             capsule_ledger_exists: artifacts.capsule_ledger_exists,
-        }
-    }
-
-    fn from_capsule_path(path: &Path) -> Self {
-        Self {
-            manifest_exists: path.join("manifest.json").exists(),
-            result_exists: path.join("result.json").exists(),
-            frontier_exists: path.join("frontier.json").exists(),
-            terminal_exists: path.join("terminal.json").exists(),
-            summary_exists: path.join("summary.json").exists(),
-            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
         }
     }
 }
@@ -832,9 +796,12 @@ mod tests {
     }
 
     fn request_for_path(seed: u64, capsule_path: PathBuf) -> PanelSeedRequest {
+        let store = BranchArtifactStore::new("unused");
+        let artifact_facts = store.read_capsule_artifact_facts(&capsule_path);
         PanelSeedRequest {
             seed,
             artifacts: PanelSeedArtifacts::from_capsule_path(&capsule_path),
+            artifact_facts,
             capsule_path,
             contract: RunContract::from_args(args(seed)),
             source_identity: source_identity(),
@@ -996,6 +963,7 @@ mod tests {
         let resolution = PanelSeedRequest {
             seed: 1,
             artifacts: PanelSeedArtifacts::from_capsule_path(&dir),
+            artifact_facts: BranchArtifactStore::new("unused").read_capsule_artifact_facts(&dir),
             capsule_path: dir.clone(),
             contract: RunContract::from_args(args(1)),
             source_identity: source_identity(),

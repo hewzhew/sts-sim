@@ -5,8 +5,12 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use super::{ArtifactRef, PanelRunMode, PanelSeedAction, PanelSeedArtifacts, PanelSummary};
+use super::{
+    ArtifactRef, PanelArtifactFacts, PanelRunMode, PanelSeedAction, PanelSeedArtifacts,
+    PanelSummary,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchArtifactStore {
@@ -84,6 +88,10 @@ impl BranchArtifactStore {
         self.read_capsule_artifacts(&self.capsule_path(seed))
     }
 
+    pub fn read_seed_artifact_facts(&self, seed: u64) -> PanelArtifactFacts {
+        self.read_capsule_artifact_facts(&self.capsule_path(seed))
+    }
+
     pub fn read_compare_seed_artifacts(
         &self,
         profile: &str,
@@ -94,6 +102,10 @@ impl BranchArtifactStore {
 
     pub fn read_capsule_artifacts(&self, path: &Path) -> Result<PanelSeedArtifacts, String> {
         PanelSeedArtifacts::from_capsule_path(path)
+    }
+
+    pub fn read_capsule_artifact_facts(&self, path: &Path) -> PanelArtifactFacts {
+        PanelArtifactFacts::from_capsule_path(path)
     }
 
     pub fn default_panel_summary_path(&self) -> PathBuf {
@@ -180,6 +192,43 @@ impl BranchArtifactStore {
         writeln!(file, "{text}")
             .map_err(|err| format!("failed to append {}: {err}", path.display()))?;
         Ok(path)
+    }
+}
+
+impl PanelSeedArtifacts {
+    pub fn from_capsule_path(path: &Path) -> Result<Self, String> {
+        let manifest_path = path.join("manifest.json");
+        let manifest = if manifest_path.exists() {
+            let text = fs::read_to_string(&manifest_path)
+                .map_err(|err| format!("failed to read {}: {err}", manifest_path.display()))?;
+            Some(
+                serde_json::from_str::<Value>(&text)
+                    .map_err(|err| format!("failed to parse {}: {err}", manifest_path.display()))?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
+            manifest,
+            result_exists: path.join("result.json").exists(),
+            frontier_exists: path.join("frontier.json").exists(),
+            terminal_exists: path.join("terminal.json").exists(),
+            summary_exists: path.join("summary.json").exists(),
+            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
+        })
+    }
+}
+
+impl PanelArtifactFacts {
+    pub fn from_capsule_path(path: &Path) -> Self {
+        Self {
+            manifest_exists: path.join("manifest.json").exists(),
+            result_exists: path.join("result.json").exists(),
+            frontier_exists: path.join("frontier.json").exists(),
+            terminal_exists: path.join("terminal.json").exists(),
+            summary_exists: path.join("summary.json").exists(),
+            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
+        }
     }
 }
 
