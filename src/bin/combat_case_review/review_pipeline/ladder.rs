@@ -1,10 +1,10 @@
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy,
-};
+use sts_simulator::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::super::options::ReviewOptions;
-use super::super::search_runner::run_search;
+use super::super::search_runner::{
+    review_all_potions_profile, review_no_potion_profile, run_profile_search,
+};
 use super::super::search_types::SearchReview;
 
 pub(super) struct ReviewLadderRun {
@@ -20,26 +20,22 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         };
     }
 
-    let (fast_review, _) = run_search(
+    let fast_profile = review_no_potion_profile(
         "fast_no_potion_diagnostic",
-        case,
         options.fast_nodes,
         options.fast_ms,
-        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2PotionPolicy::Never,
-        Some(0),
         options,
     );
-    let (slow_review, slow_report) = run_search(
+    let (fast_review, _) = run_profile_search(case, fast_profile, options.action_preview_limit);
+
+    let slow_profile = review_all_potions_profile(
         "slow_potion_diagnostic",
-        case,
         options.slow_nodes,
         options.slow_ms,
-        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2PotionPolicy::All,
-        Some(options.diagnostic_potion_max),
         options,
     );
+    let (slow_review, slow_report) =
+        run_profile_search(case, slow_profile, options.action_preview_limit);
 
     ReviewLadderRun {
         reviews: vec![fast_review, slow_review],

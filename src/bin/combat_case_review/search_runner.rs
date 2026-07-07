@@ -2,32 +2,13 @@ use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
     CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchPluginStack,
     CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 use super::search_review::search_review;
 use super::search_types::SearchReview;
-
-pub(crate) fn run_search(
-    label: &'static str,
-    case: &CombatCase,
-    nodes: usize,
-    wall_ms: u64,
-    turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    potion_policy: CombatSearchV2PotionPolicy,
-    max_potions_used: Option<u32>,
-    options: &ReviewOptions,
-) -> (SearchReview, CombatSearchV2Report) {
-    let mut profile = review_search_profile(label, nodes, wall_ms, options)
-        .with_turn_plan_plugin(turn_plan_policy.into())
-        .with_potion_policy(potion_policy);
-    if let Some(max_potions_used) = max_potions_used {
-        profile = profile.with_max_potions_used(max_potions_used);
-    }
-    run_profile_search(case, profile, options.action_preview_limit)
-}
 
 pub(crate) fn review_search_profile(
     label: &'static str,
@@ -49,6 +30,17 @@ pub(crate) fn review_search_profile(
         acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
         artifacts: CombatSearchArtifactPluginId::None,
     }
+}
+
+pub(crate) fn review_no_potion_profile(
+    label: &'static str,
+    nodes: usize,
+    wall_ms: u64,
+    options: &ReviewOptions,
+) -> CombatSearchProfile {
+    review_search_profile(label, nodes, wall_ms, options)
+        .with_potion_policy(CombatSearchV2PotionPolicy::Never)
+        .with_max_potions_used(0)
 }
 
 pub(crate) fn review_all_potions_profile(
