@@ -1,17 +1,17 @@
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
-    apply_owner_audit_auto_run, CombatAutomationTrajectorySource, CombatSearchTraceSummary,
-    RunControlAutoStopKind, RunControlCommandOutcome, RunControlSession,
-    RunControlTraceAnnotationV1,
+    apply_owner_audit_auto_run, CombatSearchTraceSummary, RunControlAutoStopKind,
+    RunControlCommandOutcome, RunControlSession,
 };
 
-use super::combat_search_lanes::{
-    CombatSearchLane, CombatSearchLaneCommitPolicy, CombatSearchRequest,
-};
+use super::combat_search_dirty_win::reject_dirty_win_status;
+use super::combat_search_lane_commit::lane_commits;
+use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest};
 use super::combat_search_report::{
     combat_portfolio_attempt_report, CombatSearchLaneReport, CombatSearchLaneReportInput,
 };
-use super::{boundary_router, BranchStatus, TerminalOutcome};
+use super::combat_search_trace_actions::complete_search_action_keys;
+use super::{boundary_router, BranchStatus};
 
 pub(super) struct CombatSearchLaneAttempt {
     pub(super) outcome: Option<RunControlCommandOutcome>,
@@ -58,27 +58,20 @@ pub(super) fn run_lane_attempt(
             });
         }
     };
-    let mut status = lane_status(&trial, &outcome);
-    if lane.rejects_new_curses()
-        && !matches!(status, BranchStatus::CombatGap { .. })
-        && master_deck_curse_count(&trial) > before_curses
-    {
-        let gained_curses = master_deck_curse_count(&trial).saturating_sub(before_curses);
-        status = BranchStatus::CombatGap {
-            boundary: "Combat".to_string(),
-            reason: format!(
-                "{} rejected dirty win: gained {gained_curses} curse card(s)",
-                lane.label()
-            ),
-        };
-    }
+    let status = reject_dirty_win_status(
+        lane.rejects_new_curses(),
+        lane.label(),
+        lane_status(&trial, &outcome),
+        before_curses,
+        master_deck_curse_count(&trial),
+    );
     let auto_stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
     let applied_operations = outcome
         .auto_stop
         .as_ref()
         .map(|stop| stop.applied_operations)
         .unwrap_or(0);
-    let action_keys = complete_search_action_keys(&outcome);
+    let action_keys = complete_search_action_keys(&outcome.trace_annotations);
     let committed = lane_commits(lane.commit_policy(), &status, auto_stop_kind);
     if committed {
         *session = trial;
@@ -117,38 +110,6 @@ pub(super) fn lane_attempt_report(attempt: &CombatSearchLaneAttempt) -> CombatSe
     })
 }
 
-pub(super) fn primary_operation_budget_exhausted(
-    status: &BranchStatus,
-    primary_stop_kind: Option<RunControlAutoStopKind>,
-) -> bool {
-    primary_stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
-        || matches!(status, BranchStatus::OperationBudgetExhausted { .. })
-}
-
-fn lane_commits(
-    policy: CombatSearchLaneCommitPolicy,
-    status: &BranchStatus,
-    stop_kind: Option<RunControlAutoStopKind>,
-) -> bool {
-    lane_accepted(status)
-        || matches!(
-            policy,
-            CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk
-        ) && primary_operation_budget_exhausted(status, stop_kind)
-}
-
-fn lane_accepted(status: &BranchStatus) -> bool {
-    !matches!(
-        status,
-        BranchStatus::CombatGap { .. }
-            | BranchStatus::OperationBudgetExhausted { .. }
-            | BranchStatus::BudgetGap { .. }
-            | BranchStatus::ApplyFailed(_)
-            | BranchStatus::AdvanceFailed(_)
-            | BranchStatus::Terminal(TerminalOutcome::Defeat)
-    )
-}
-
 fn lane_status(session: &RunControlSession, outcome: &RunControlCommandOutcome) -> BranchStatus {
     if let Some(outcome) = boundary_router::terminal_outcome(session) {
         BranchStatus::Terminal(outcome)
@@ -164,30 +125,4 @@ fn master_deck_curse_count(session: &RunControlSession) -> usize {
         .iter()
         .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
         .count()
-}
-
-fn complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<String> {
-    outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source, actions, ..
-            } if matches!(
-                source,
-                CombatAutomationTrajectorySource::SearchCombat
-                    | CombatAutomationTrajectorySource::CompleteLineSolver
-                    | CombatAutomationTrajectorySource::TurnPoolRescue
-            ) =>
-            {
-                Some(
-                    actions
-                        .iter()
-                        .map(|action| action.action_key.clone())
-                        .collect::<Vec<_>>(),
-                )
-            }
-            _ => None,
-        })
-        .unwrap_or_default()
 }

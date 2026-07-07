@@ -3,9 +3,9 @@ use sts_simulator::eval::run_control::{
     RunControlSession,
 };
 
+use super::combat_search_lane_commit::primary_operation_budget_exhausted;
 use super::combat_search_lane_runner::{
-    combat_search_summaries, lane_attempt_report, primary_operation_budget_exhausted,
-    run_lane_attempt, CombatSearchLaneAttempt,
+    combat_search_summaries, lane_attempt_report, run_lane_attempt, CombatSearchLaneAttempt,
 };
 use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest, CombatSearchStakes};
 use super::combat_search_report::{
@@ -104,7 +104,7 @@ pub(super) fn run_combat_portfolio_step(
             applied_operations,
         ));
     }
-    if request.stakes == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio {
+    if request.stakes() == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio {
         status = awaiting_auto_boundary(
             "Combat",
             "checkpoint before combat portfolio after primary search gap".to_string(),
@@ -120,7 +120,7 @@ pub(super) fn run_combat_portfolio_step(
         ));
     }
 
-    for lane in request.portfolio_after_primary(session) {
+    for lane in request.portfolio_after_primary() {
         let attempt = run_lane_attempt(session, &request, lane)
             .map_err(|err| format!("{} failed: {err}", lane.label()))?;
         collect_lane_output(
@@ -166,7 +166,7 @@ fn collect_lane_output(
 }
 
 fn combat_budget_capped_status(request: &CombatSearchRequest) -> BranchStatus {
-    if request.stakes == CombatSearchStakes::Boss {
+    if request.stakes() == CombatSearchStakes::Boss {
         awaiting_auto_boundary(
             "Combat",
             format!(

@@ -30,6 +30,10 @@ mod cli_args;
 mod combat_gap_case;
 #[path = "branch_tiny/combat_portfolio_json.rs"]
 mod combat_portfolio_json;
+#[path = "branch_tiny/combat_search_dirty_win.rs"]
+mod combat_search_dirty_win;
+#[path = "branch_tiny/combat_search_lane_commit.rs"]
+mod combat_search_lane_commit;
 #[path = "branch_tiny/combat_search_lane_options.rs"]
 mod combat_search_lane_options;
 #[path = "branch_tiny/combat_search_lane_runner.rs"]
@@ -38,8 +42,14 @@ mod combat_search_lane_runner;
 mod combat_search_lanes;
 #[path = "branch_tiny/combat_search_orchestrator.rs"]
 mod combat_search_orchestrator;
+#[path = "branch_tiny/combat_search_portfolio_plan.rs"]
+mod combat_search_portfolio_plan;
+#[path = "branch_tiny/combat_search_recipe.rs"]
+mod combat_search_recipe;
 #[path = "branch_tiny/combat_search_report.rs"]
 mod combat_search_report;
+#[path = "branch_tiny/combat_search_trace_actions.rs"]
+mod combat_search_trace_actions;
 #[path = "branch_tiny/decision_delta.rs"]
 mod decision_delta;
 #[path = "branch_tiny/event_owner_bridge.rs"]

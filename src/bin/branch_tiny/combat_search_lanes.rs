@@ -1,7 +1,9 @@
-use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
 use super::combat_search_lane_options;
+use super::combat_search_portfolio_plan::{
+    CombatSearchPortfolioContext, CombatSearchPortfolioPlan,
+};
 use super::Args;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -11,7 +13,7 @@ pub(super) enum CombatSearchStakes {
     Boss,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CombatSearchLaneKind {
     Primary,
     DiagnosticRescue,
@@ -37,77 +39,36 @@ pub(super) struct CombatSearchLane {
 
 pub(super) struct CombatSearchRequest {
     pub(super) args: Args,
-    pub(super) stakes: CombatSearchStakes,
+    context: CombatSearchPortfolioContext,
 }
 
 impl CombatSearchRequest {
     pub(super) fn from_session(session: &RunControlSession, args: Args) -> Self {
         Self {
             args,
-            stakes: combat_search_stakes(session),
+            context: CombatSearchPortfolioContext::from_session(session),
         }
     }
 
-    pub(super) fn portfolio_after_primary(
-        &self,
-        session: &RunControlSession,
-    ) -> Vec<CombatSearchLane> {
-        let mut lanes = Vec::new();
-        match self.stakes {
-            CombatSearchStakes::Boss => {
-                lanes.push(CombatSearchLane::new(CombatSearchLaneKind::BossNoPotion));
-                lanes.push(CombatSearchLane::new(
-                    CombatSearchLaneKind::BossPotionRescue,
-                ));
-                if is_time_eater_boss(session) {
-                    lanes.push(CombatSearchLane::new(
-                        CombatSearchLaneKind::BossTimeEaterClock,
-                    ));
-                }
-                lanes.push(CombatSearchLane::new(CombatSearchLaneKind::QualityRealHp));
-            }
-            CombatSearchStakes::Elite => {
-                lanes.push(CombatSearchLane::new(
-                    CombatSearchLaneKind::DiagnosticRescue,
-                ));
-                if should_try_nonboss_potion_rescue(session) {
-                    lanes.push(CombatSearchLane::new(
-                        CombatSearchLaneKind::NonBossPotionRescue,
-                    ));
-                }
-                lanes.push(CombatSearchLane::new(CombatSearchLaneKind::QualityRealHp));
-            }
-            CombatSearchStakes::Hallway => {
-                lanes.push(CombatSearchLane::new(
-                    CombatSearchLaneKind::DiagnosticRescue,
-                ));
-                lanes.push(CombatSearchLane::new(
-                    CombatSearchLaneKind::HallwayImmediateRescue,
-                ));
-                if should_try_nonboss_potion_rescue(session) {
-                    lanes.push(CombatSearchLane::new(
-                        CombatSearchLaneKind::NonBossPotionRescue,
-                    ));
-                    lanes.push(CombatSearchLane::new(
-                        CombatSearchLaneKind::HallwayQualityPotionRescue,
-                    ));
-                }
-            }
-        }
-        lanes
+    pub(super) fn portfolio_after_primary(&self) -> Vec<CombatSearchLane> {
+        CombatSearchPortfolioPlan::after_primary(self.context).into_lanes()
     }
 
     pub(super) fn should_report(&self) -> bool {
-        self.stakes == CombatSearchStakes::Boss
+        self.context.stakes == CombatSearchStakes::Boss
     }
 
     pub(super) fn combat_budget_capped(&self) -> bool {
-        match self.stakes {
+        match self.context.stakes {
             CombatSearchStakes::Boss => self.args.wall_capped_boss_budget,
             CombatSearchStakes::Elite | CombatSearchStakes::Hallway => {
                 self.args.wall_capped_search_budget
             }
         }
+    }
+
+    pub(super) fn stakes(&self) -> CombatSearchStakes {
+        self.context.stakes
     }
 }
 
@@ -116,7 +77,7 @@ impl CombatSearchLane {
         Self::new(CombatSearchLaneKind::Primary)
     }
 
-    fn new(kind: CombatSearchLaneKind) -> Self {
+    pub(super) fn new(kind: CombatSearchLaneKind) -> Self {
         Self { kind }
     }
 
@@ -162,53 +123,4 @@ impl CombatSearchLane {
     ) -> RunControlAutoStepOptions {
         combat_search_lane_options::lane_options(self, request, session)
     }
-}
-
-fn is_time_eater_boss(session: &RunControlSession) -> bool {
-    session.active_combat.as_ref().is_some_and(|active| {
-        active.combat_state.meta.is_boss_fight
-            && active
-                .combat_state
-                .entities
-                .monsters
-                .iter()
-                .filter(|monster| monster.is_alive_for_action())
-                .any(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::TimeEater))
-    })
-}
-
-fn should_try_nonboss_potion_rescue(session: &RunControlSession) -> bool {
-    let Some(active) = session.active_combat.as_ref() else {
-        return false;
-    };
-    let meta = &active.combat_state.meta;
-    let player = &active.combat_state.entities.player;
-    let has_usable_potion = active
-        .combat_state
-        .entities
-        .potions
-        .iter()
-        .flatten()
-        .any(|potion| potion.can_use);
-    !meta.is_boss_fight
-        && has_usable_potion
-        && (meta.is_elite_fight
-            || session.run_state.act_num >= 3
-            || player.current_hp * 2 <= player.max_hp)
-}
-
-fn combat_search_stakes(session: &RunControlSession) -> CombatSearchStakes {
-    session
-        .active_combat
-        .as_ref()
-        .map(|active| {
-            if active.combat_state.meta.is_boss_fight {
-                CombatSearchStakes::Boss
-            } else if active.combat_state.meta.is_elite_fight {
-                CombatSearchStakes::Elite
-            } else {
-                CombatSearchStakes::Hallway
-            }
-        })
-        .unwrap_or(CombatSearchStakes::Hallway)
 }
