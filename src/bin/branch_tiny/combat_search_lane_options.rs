@@ -172,3 +172,73 @@ impl LaneSearchBudget {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::run_contract::RunObjective;
+    use super::*;
+
+    fn test_args() -> Args {
+        Args {
+            seed: 1,
+            ascension: 0,
+            objective: RunObjective::FirstVictory,
+            generations: 1,
+            max_branches: 1,
+            auto_ops: 7,
+            search_nodes: 11,
+            search_ms: 101,
+            rescue_search_nodes: 22,
+            rescue_search_ms: 202,
+            boss_search_nodes: 999,
+            boss_search_ms: 9_999,
+            wall_ms: None,
+            checkpoint_before_combat_portfolio: false,
+            wall_capped_search_budget: false,
+            wall_capped_boss_budget: false,
+        }
+    }
+
+    #[test]
+    fn lane_budget_selects_expected_search_budget() {
+        let args = test_args();
+
+        assert_eq!(LaneSearchBudget::Primary.max_nodes(args), 11);
+        assert_eq!(LaneSearchBudget::Primary.wall_ms(args), 101);
+        assert_eq!(LaneSearchBudget::Rescue.max_nodes(args), 22);
+        assert_eq!(LaneSearchBudget::Rescue.wall_ms(args), 202);
+        assert_eq!(LaneSearchBudget::Boss.max_nodes(args), 999);
+        assert_eq!(LaneSearchBudget::Boss.wall_ms(args), 9_999);
+        assert_eq!(LaneSearchBudget::HallwayQuality.max_nodes(args), 999);
+        assert_eq!(LaneSearchBudget::HallwayQuality.wall_ms(args), 5_000);
+    }
+
+    #[test]
+    fn quality_recipe_sets_quality_search_modifiers() {
+        let options = quality_recipe(
+            test_args(),
+            LaneSearchBudget::Boss,
+            CombatSearchV2ChildRolloutPolicy::Immediate,
+            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard,
+        )
+        .into_auto_step_options();
+
+        assert_eq!(
+            options.search.rollout_policy,
+            Some(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
+        );
+        assert_eq!(
+            options.search.frontier_policy,
+            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+        );
+        assert_eq!(
+            options.search.potion_policy,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        );
+        assert_eq!(options.search.max_potions_used, Some(2));
+        assert_eq!(
+            options.search.phase_guard_policy,
+            Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+        );
+    }
+}
