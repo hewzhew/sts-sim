@@ -24,10 +24,14 @@ Current implementation has established the first durable panel path:
   mode and slice index.
 - `--slice-ms` is the preferred panel deadline option; legacy `--wall-ms`
   remains accepted for compatibility.
+- `--fresh` archives an existing seed capsule under `_archive/` before
+  starting a replacement run, and the summary records
+  `fresh_replaced_capsule` plus the archived capsule path.
 
 Still open:
 
-- `--fresh` archival/replacement policy.
+- `--fresh --discard-old` explicit destructive replacement, if it is still
+  wanted.
 - compare mode and named policy/search config comparison.
 - retiring or wrapping `tools/gap_panel.py`.
 - moving more capsule artifact writes behind `BranchArtifactStore`.
