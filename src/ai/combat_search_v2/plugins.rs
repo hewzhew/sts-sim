@@ -218,11 +218,14 @@ pub struct CombatSearchActionOrderingPlugins<'a> {
 }
 
 impl<'a> CombatSearchActionOrderingPlugins<'a> {
-    pub fn from_config(config: &'a CombatSearchV2Config) -> Self {
+    pub fn from_stack(
+        root_action_prior: Option<&'a super::CombatSearchV2RootActionPrior>,
+        stack: &CombatSearchPluginStack,
+    ) -> Self {
         Self {
-            root_action_prior: config.root_action_prior.as_ref(),
-            action_prior: config.setup_bias_policy.into(),
-            phase_guard: config.phase_guard_policy.into(),
+            root_action_prior,
+            action_prior: stack.action_prior,
+            phase_guard: stack.phase_guard,
         }
     }
 

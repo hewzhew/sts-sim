@@ -17,7 +17,10 @@ pub(super) fn order_node_actions(
     loop_state
         .diagnostics
         .observe_action_equivalence(&equivalence.summary);
-    let plugins = CombatSearchActionOrderingPlugins::from_config(config);
+    let plugins = CombatSearchActionOrderingPlugins::from_stack(
+        config.root_action_prior.as_ref(),
+        &loop_state.plugins,
+    );
     let action_prior_state_hash = plugins
         .root_action_prior
         .filter(|prior| !prior.is_empty())

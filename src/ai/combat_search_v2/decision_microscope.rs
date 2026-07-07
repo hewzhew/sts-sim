@@ -35,7 +35,10 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2DecisionMicroscopeReport {
     let plugin_stack = CombatSearchPluginStack::from_config(&config);
-    let action_ordering_plugins = CombatSearchActionOrderingPlugins::from_config(&config);
+    let action_ordering_plugins = CombatSearchActionOrderingPlugins::from_stack(
+        config.root_action_prior.as_ref(),
+        &plugin_stack,
+    );
     let search_report = run_combat_search_v2_with_stepper(engine, combat, config.clone(), stepper);
     let selected_first_action =
         selected_first_action(engine, combat, action_ordering_plugins, &search_report);
