@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use sts_simulator::state::events::EventId;
 
 use super::run_contract::RunObjective;
+use sts_simulator::runtime::branch::default_branch_args;
 pub(super) use sts_simulator::runtime::branch::Args;
 
 #[derive(Clone, Copy, Default)]
@@ -88,24 +89,7 @@ pub(super) fn parse_args() -> Result<
     ),
     String,
 > {
-    let mut args = Args {
-        seed: 1,
-        ascension: 0,
-        objective: RunObjective::FirstVictory,
-        generations: 2,
-        max_branches: 24,
-        auto_ops: 64,
-        search_nodes: 50_000,
-        search_ms: 500,
-        rescue_search_nodes: 200_000,
-        rescue_search_ms: 3_000,
-        boss_search_nodes: 800_000,
-        boss_search_ms: 8_000,
-        wall_ms: None,
-        checkpoint_before_combat_portfolio: false,
-        wall_capped_search_budget: false,
-        wall_capped_boss_budget: false,
-    };
+    let mut args = default_branch_args(1);
     let mut overrides = ArgsOverrides::default();
     let mut trace_jsonl = None;
     let mut combat_gap_case_dir = None;

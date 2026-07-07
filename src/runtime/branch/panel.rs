@@ -185,7 +185,9 @@ impl PanelScheduler {
             .collect()
     }
 
-    pub fn summarize_requests(requests: impl IntoIterator<Item = PanelSeedRequest>) -> PanelSummary {
+    pub fn summarize_requests(
+        requests: impl IntoIterator<Item = PanelSeedRequest>,
+    ) -> PanelSummary {
         PanelSummary::from_rows(
             Self::resolve_requests(requests)
                 .into_iter()
@@ -680,7 +682,10 @@ mod tests {
         }]);
 
         assert_eq!(summary.total_rows, 1);
-        assert_eq!(summary.rows[0].reuse_decision, PanelReuseDecision::ReuseRealStop);
+        assert_eq!(
+            summary.rows[0].reuse_decision,
+            PanelReuseDecision::ReuseRealStop
+        );
         assert_eq!(
             summary.rows[0].scheduler_action,
             PanelSeedAction::ReuseRealStop

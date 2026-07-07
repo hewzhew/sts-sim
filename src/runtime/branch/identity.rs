@@ -1,9 +1,41 @@
+use std::process::Command;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SourceIdentity {
     pub git_commit: Option<String>,
     pub git_dirty: Option<bool>,
+}
+
+pub fn current_source_identity() -> SourceIdentity {
+    SourceIdentity {
+        git_commit: current_git_commit(),
+        git_dirty: current_git_dirty(),
+    }
+}
+
+fn current_git_commit() -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|commit| !commit.is_empty())
+}
+
+fn current_git_dirty() -> Option<bool> {
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
 }
 
 #[cfg(test)]
@@ -21,5 +53,10 @@ mod tests {
 
         assert_eq!(value["git_commit"], "abc123");
         assert_eq!(value["git_dirty"], false);
+    }
+
+    #[test]
+    fn current_source_identity_is_available_from_runtime_library() {
+        let _ = current_source_identity();
     }
 }
