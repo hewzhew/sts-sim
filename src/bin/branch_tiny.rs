@@ -110,6 +110,8 @@ mod run_deadline;
 mod run_loop;
 #[path = "branch_tiny/run_persistence.rs"]
 mod run_persistence;
+#[path = "branch_tiny/run_slice_result.rs"]
+mod run_slice_result;
 #[path = "branch_tiny/run_startup.rs"]
 mod run_startup;
 #[path = "branch_tiny/run_state_json.rs"]
@@ -144,5 +146,5 @@ fn run() -> Result<(), String> {
         run_startup::RunStartup::Delegated => return Ok(()),
         run_startup::RunStartup::Ready(context) => context,
     };
-    run_loop::run(context)
+    run_loop::run(context).map(|_| ())
 }

@@ -6,7 +6,7 @@ use super::run_deadline::RunDeadline;
 use super::{branch_observer, owner_choice_expander, trace, Args, Branch};
 
 pub(super) enum BranchWorkAdvance {
-    ObjectiveCompleted,
+    ObjectiveCompleted(Branch),
     Deferred(Branch),
     GenerationResult(Branch),
     Children(Vec<Branch>),
@@ -37,7 +37,7 @@ pub(super) fn advance_branch_work(
     )?;
     if !expandable {
         if branch_observer::record_stopped_branch(args, generation, &branch, trace, capsule)? {
-            return Ok(BranchWorkAdvance::ObjectiveCompleted);
+            return Ok(BranchWorkAdvance::ObjectiveCompleted(branch));
         }
         return if branch.status.is_resumable() {
             Ok(BranchWorkAdvance::Deferred(branch))
@@ -59,7 +59,7 @@ pub(super) fn advance_branch_work(
         next_branch_id,
     ) {
         if branch_observer::record_child_branch(args, generation + 1, &child, capsule)? {
-            return Ok(BranchWorkAdvance::ObjectiveCompleted);
+            return Ok(BranchWorkAdvance::ObjectiveCompleted(child));
         }
         children.push(child);
     }

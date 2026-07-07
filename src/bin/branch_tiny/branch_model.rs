@@ -90,7 +90,7 @@ pub(super) enum Owner {
     RunChoice,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) enum BoundarySite {
     Event(EventId),
     Reward,

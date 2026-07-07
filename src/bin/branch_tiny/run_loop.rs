@@ -1,8 +1,12 @@
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::{
+    FrontierExhausted, FrontierSummary, RealStop, RunSliceRequestKind, RunSliceResult, RunStop,
+    SoftPause,
+};
 use super::run_startup::RunStartupContext;
 use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
-pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
+pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> {
     let RunStartupContext {
         args,
         trace_path,
@@ -15,6 +19,11 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         mut next_branch_id,
         started,
     } = context;
+    let request_kind = if resume_frontier.is_some() {
+        RunSliceRequestKind::ResumeFrontier
+    } else {
+        RunSliceRequestKind::Start
+    };
     let mut stop_recorder = run_stop_recorder::RunStopRecorder::new(
         &frontier_checkpoint_path,
         &resume_frontier,
@@ -32,10 +41,17 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         trace.record_run(args)?;
     }
     let mut last_generation = generation_start;
+    let mut stop = None;
+    let mut selected_branch = None;
     for generation in generation_start..=args.generations {
         last_generation = generation;
         if deadline.should_soft_stop(args) {
             stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
+            let summary = FrontierSummary::from_branches(frontier.iter());
+            stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
+                generation,
+                frontier_running_count: summary.running_count,
+            }));
             break;
         }
         let prepared = branch_generation::prepare_generation(
@@ -50,6 +66,13 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         {
             frontier = prepared.into_frontier();
             stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
+            let summary = FrontierSummary::from_branches(frontier.iter());
+            stop = Some(RunStop::SoftPause(
+                SoftPause::SearchBudgetCappedBeforeGeneration {
+                    generation,
+                    frontier_running_count: summary.running_count,
+                },
+            ));
             break;
         }
         let child_args = deadline.cap_args(args, prepared.total_expanded.max(1));
@@ -64,7 +87,24 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
             combat_gap_case_dir.as_ref(),
             run_capsule.as_ref(),
         )? {
-            branch_generation::GenerationAdvance::ObjectiveCompleted => return Ok(()),
+            branch_generation::GenerationAdvance::ObjectiveCompleted(branch) => {
+                let result = RunSliceResult::new(
+                    args,
+                    request_kind,
+                    generation_start,
+                    generation,
+                    next_branch_id,
+                    RunStop::Real(RealStop::ObjectiveSatisfied {
+                        generation,
+                        reason: "objective_satisfied".to_string(),
+                    }),
+                    FrontierSummary::from_statuses(std::iter::once(&branch.status)),
+                    deadline.remaining_ms(),
+                    elapsed_ms(started),
+                )
+                .with_selected_branch(&branch);
+                return Ok(result);
+            }
             branch_generation::GenerationAdvance::Advanced {
                 next,
                 generation_result,
@@ -78,6 +118,26 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
                 capsule.save_result(args, *result_generation, branch)?;
                 println!("run_capsule_result: {}", capsule.result_path().display());
             }
+            if let Some((result_generation, branch)) = generation_result {
+                stop = Some(
+                    RunStop::from_stopped_branch_status(
+                        result_generation,
+                        branch.id,
+                        &branch.status,
+                    )
+                    .unwrap_or_else(|| {
+                        RunStop::SoftPause(SoftPause::GenerationLimit {
+                            generation: result_generation,
+                            frontier_running_count: 1,
+                        })
+                    }),
+                );
+                selected_branch = Some(branch);
+            } else {
+                stop = Some(RunStop::FrontierExhausted(
+                    FrontierExhausted::NoRunningBranches { generation },
+                ));
+            }
             break;
         }
         if next
@@ -85,6 +145,11 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
             .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
         {
             frontier = next;
+            let summary = FrontierSummary::from_branches(frontier.iter());
+            stop = Some(RunStop::SoftPause(SoftPause::AwaitingAutoBoundary {
+                generation: generation + 1,
+                frontier_running_count: summary.running_count,
+            }));
             stop_recorder.save_soft_wall(
                 args,
                 generation + 1,
@@ -96,6 +161,11 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         }
         frontier = next;
         if deadline.should_soft_stop(args) {
+            let summary = FrontierSummary::from_branches(frontier.iter());
+            stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
+                generation: generation + 1,
+                frontier_running_count: summary.running_count,
+            }));
             stop_recorder.save_soft_wall(
                 args,
                 generation + 1,
@@ -110,7 +180,34 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     stop_recorder.save_recovery_if_needed(args, last_generation, next_branch_id, &frontier)?;
-    Ok(())
+    let summary = FrontierSummary::from_branches(frontier.iter());
+    let stop = stop.unwrap_or_else(|| {
+        if summary.running_count == 0 {
+            RunStop::FrontierExhausted(FrontierExhausted::NoRunningBranches {
+                generation: last_generation,
+            })
+        } else {
+            RunStop::SoftPause(SoftPause::GenerationLimit {
+                generation: last_generation,
+                frontier_running_count: summary.running_count,
+            })
+        }
+    });
+    let mut result = RunSliceResult::new(
+        args,
+        request_kind,
+        generation_start,
+        last_generation,
+        next_branch_id,
+        stop,
+        summary,
+        deadline.remaining_ms(),
+        elapsed_ms(started),
+    );
+    if let Some(branch) = selected_branch.as_ref() {
+        result = result.with_selected_branch(branch);
+    }
+    Ok(result)
 }
 
 fn print_header(args: super::Args, resume_frontier: bool) {
@@ -133,4 +230,8 @@ fn print_header(args: super::Args, resume_frontier: bool) {
         args.boss_search_nodes,
         args.boss_search_ms
     );
+}
+
+fn elapsed_ms(started: std::time::Instant) -> u64 {
+    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }

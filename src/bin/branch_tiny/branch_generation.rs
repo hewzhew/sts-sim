@@ -15,7 +15,7 @@ pub(super) struct PreparedGeneration {
 }
 
 pub(super) enum GenerationAdvance {
-    ObjectiveCompleted,
+    ObjectiveCompleted(Branch),
     Advanced {
         next: VecDeque<Branch>,
         generation_result: Option<(usize, Branch)>,
@@ -86,8 +86,8 @@ pub(super) fn advance_generation(
             combat_gap_case_dir,
             capsule,
         )? {
-            branch_generation_step::BranchWorkAdvance::ObjectiveCompleted => {
-                return Ok(GenerationAdvance::ObjectiveCompleted);
+            branch_generation_step::BranchWorkAdvance::ObjectiveCompleted(branch) => {
+                return Ok(GenerationAdvance::ObjectiveCompleted(branch));
             }
             branch_generation_step::BranchWorkAdvance::Deferred(branch) => {
                 deferred.push_back(branch);
