@@ -1,4 +1,4 @@
-use super::run_capsule::{RunCapsule, RunCapsuleSave};
+use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
@@ -116,14 +116,8 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         };
         branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
-            if let (Some(capsule), Some((result_generation, branch))) =
-                (run_capsule.as_ref(), generation_result.as_ref())
-            {
-                capsule.save_result(args, *result_generation, branch)?;
-                artifact_writes.merge(capsule.artifact_writes(RunCapsuleSave::Result));
-                if human_output {
-                    println!("run_capsule_result: {}", capsule.result_path().display());
-                }
+            if let Some((result_generation, branch)) = generation_result.as_ref() {
+                stop_recorder.save_generation_result(args, *result_generation, branch)?;
             }
             if let Some((result_generation, branch)) = generation_result {
                 stop = Some(

@@ -65,6 +65,9 @@ Current implementation has established the first durable panel path:
 - `run_loop.rs` now delegates `RunSliceResult` construction to
   `owner_audit/run_slice_result.rs`, keeping slice result assembly out of the
   main expansion loop.
+- `run_loop.rs` now delegates capsule result persistence to
+  `RunStopRecorder`, so the loop no longer directly writes result artifacts or
+  formats capsule result output.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.

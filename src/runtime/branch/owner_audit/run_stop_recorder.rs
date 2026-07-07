@@ -56,6 +56,26 @@ impl<'a> RunStopRecorder<'a> {
         Ok(())
     }
 
+    pub(super) fn save_generation_result(
+        &mut self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        if let Some(capsule) = self.capsule {
+            capsule.save_result(args, generation, branch)?;
+            self.artifact_writes
+                .merge(capsule.artifact_writes(super::run_capsule::RunCapsuleSave::Result));
+            run_persistence::print_capsule_save(
+                super::run_capsule::RunCapsuleSave::Result,
+                capsule,
+                self.human_output,
+            );
+            self.frontier_saved = true;
+        }
+        Ok(())
+    }
+
     pub(super) fn save_recovery_if_needed(
         mut self,
         args: Args,

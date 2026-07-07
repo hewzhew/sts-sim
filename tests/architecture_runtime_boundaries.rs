@@ -83,3 +83,18 @@ fn run_loop_delegates_slice_result_construction() {
         "run_loop should delegate RunSliceResult construction to run_slice_result helpers"
     );
 }
+
+#[test]
+fn run_loop_delegates_capsule_result_persistence() {
+    let run_loop = std::fs::read_to_string("src/runtime/branch/owner_audit/run_loop.rs")
+        .expect("read run_loop");
+
+    assert!(
+        !run_loop.contains("capsule.save_result"),
+        "run_loop should delegate capsule result persistence"
+    );
+    assert!(
+        !run_loop.contains("run_capsule_result:"),
+        "run_loop should not directly format capsule result output"
+    );
+}
