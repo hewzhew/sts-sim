@@ -24,7 +24,7 @@ pub(super) fn prepare_node_expansion(
     loop_state.record_node_expanded();
     let expansion_started = Instant::now();
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
-    let surface = collect_node_action_surface(loop_state, node, &position, stepper, config);
+    let surface = collect_node_action_surface(loop_state, node, &position, stepper);
     if surface.legal.is_empty() {
         loop_state.record_unresolved_leaf(node);
         record_expansion_elapsed(loop_state, expansion_started);

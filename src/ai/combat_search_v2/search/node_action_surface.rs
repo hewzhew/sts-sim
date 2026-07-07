@@ -11,11 +11,10 @@ pub(super) fn collect_node_action_surface(
     node: &SearchNode,
     position: &CombatPosition,
     stepper: &impl CombatStepper,
-    config: &CombatSearchV2Config,
 ) -> NodeActionSurface {
     let legal = filtered_legal_actions(
         stepper.legal_action_choices(position),
-        config.potion_policy,
+        loop_state.plugins.potion.policy,
         &node.combat,
     );
     let pending_choice = summarize_pending_choice(&node.engine);

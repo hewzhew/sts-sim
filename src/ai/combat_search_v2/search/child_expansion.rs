@@ -36,7 +36,6 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         loop_state,
         input.parent,
         &input.ordered_choice,
-        input.config,
         input.deadline,
     ) {
         ChildPreflightOutcome::Continue {

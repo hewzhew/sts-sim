@@ -26,6 +26,7 @@ pub(super) fn search_policy_report(config: &CombatSearchV2Config) -> CombatSearc
 }
 
 pub(super) fn budget_report(config: &CombatSearchV2Config) -> CombatSearchV2BudgetReport {
+    let plugins = CombatSearchPluginStack::from_config(config);
     CombatSearchV2BudgetReport {
         max_nodes: config.max_nodes,
         max_actions_per_line: config.max_actions_per_line,
@@ -33,7 +34,7 @@ pub(super) fn budget_report(config: &CombatSearchV2Config) -> CombatSearchV2Budg
         wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
         stop_on_win_hp_loss_at_most: config.stop_on_win_hp_loss_at_most,
         min_win_candidates_before_stop: config.min_win_candidates_before_stop,
-        max_potions_used: config.max_potions_used,
+        max_potions_used: plugins.potion.max_potions_used,
         rollout_max_evaluations: config.rollout_max_evaluations,
         rollout_max_actions: config.rollout_max_actions,
         rollout_beam_width: config.rollout_beam_width,
