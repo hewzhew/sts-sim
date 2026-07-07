@@ -38,6 +38,8 @@ mod combat_search_lane_commit;
 mod combat_search_lane_options;
 #[path = "branch_tiny/combat_search_lane_runner.rs"]
 mod combat_search_lane_runner;
+#[path = "branch_tiny/combat_search_lane_spec.rs"]
+mod combat_search_lane_spec;
 #[path = "branch_tiny/combat_search_lanes.rs"]
 mod combat_search_lanes;
 #[path = "branch_tiny/combat_search_orchestrator.rs"]

@@ -1,6 +1,7 @@
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
 use super::combat_search_lane_options;
+use super::combat_search_lane_spec::lane_spec;
 use super::combat_search_portfolio_context::CombatSearchPortfolioContext;
 use super::combat_search_portfolio_plan::CombatSearchPortfolioPlan;
 use super::Args;
@@ -85,34 +86,15 @@ impl CombatSearchLane {
     }
 
     pub(super) fn label(self) -> &'static str {
-        match self.kind {
-            CombatSearchLaneKind::Primary => "primary",
-            CombatSearchLaneKind::DiagnosticRescue => "diagnostic_rescue",
-            CombatSearchLaneKind::HallwayImmediateRescue => "hallway_immediate_rescue",
-            CombatSearchLaneKind::NonBossPotionRescue => "nonboss_potion_rescue",
-            CombatSearchLaneKind::HallwayQualityPotionRescue => "hallway_quality_potion_rescue",
-            CombatSearchLaneKind::BossNoPotion => "no_potion",
-            CombatSearchLaneKind::BossPotionRescue => "potion_rescue",
-            CombatSearchLaneKind::BossTimeEaterClock => "time_eater_clock",
-            CombatSearchLaneKind::QualityRealHp => "quality_real_hp",
-        }
+        lane_spec(self.kind).label
     }
 
     pub(super) fn commit_policy(self) -> CombatSearchLaneCommitPolicy {
-        match self.kind {
-            CombatSearchLaneKind::Primary => {
-                CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk
-            }
-            _ => CombatSearchLaneCommitPolicy::AcceptedLineOnly,
-        }
+        lane_spec(self.kind).commit_policy
     }
 
     pub(super) fn rejects_new_curses(self) -> bool {
-        matches!(
-            self.kind,
-            CombatSearchLaneKind::NonBossPotionRescue
-                | CombatSearchLaneKind::HallwayQualityPotionRescue
-        )
+        lane_spec(self.kind).rejects_new_curses
     }
 
     pub(super) fn options(
