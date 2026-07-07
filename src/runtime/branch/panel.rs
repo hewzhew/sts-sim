@@ -87,8 +87,31 @@ pub struct PanelScheduler;
 pub struct PanelSmokeRunner;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PanelRunMode {
+    Smoke,
+    Continue,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PanelRunOptions {
+    pub mode: PanelRunMode,
     pub max_slices: usize,
+}
+
+impl PanelRunOptions {
+    pub fn smoke(max_slices: usize) -> Self {
+        Self {
+            mode: PanelRunMode::Smoke,
+            max_slices,
+        }
+    }
+
+    pub fn continue_existing(max_slices: usize) -> Self {
+        Self {
+            mode: PanelRunMode::Continue,
+            max_slices,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -249,13 +272,22 @@ impl PanelInspectConfig {
         PanelScheduler::summarize_requests(self.requests())
     }
 
-    fn summarize_with_tool_failures(&self, failures: &BTreeMap<u64, String>) -> PanelSummary {
+    fn summarize_with_execution(
+        &self,
+        failures: &BTreeMap<u64, String>,
+        status_overrides: &BTreeMap<u64, PanelRowStatus>,
+    ) -> PanelSummary {
         PanelSummary::from_rows(
             PanelScheduler::resolve_requests(self.requests())
                 .into_iter()
                 .map(|resolution| {
                     let tool_error = failures.get(&resolution.seed).cloned();
-                    PanelRow::from_resolution_with_tool_error(resolution, tool_error)
+                    let status_override = status_overrides.get(&resolution.seed).copied();
+                    PanelRow::from_resolution_with_execution(
+                        resolution,
+                        status_override,
+                        tool_error,
+                    )
                 })
                 .collect(),
         )
@@ -270,7 +302,7 @@ impl PanelInspectConfig {
 
 impl PanelSmokeRunner {
     pub fn run_once(config: PanelInspectConfig) -> Result<PanelSummary, String> {
-        Self::run_slices(config, PanelRunOptions { max_slices: 1 })
+        Self::run_slices(config, PanelRunOptions::smoke(1))
     }
 
     pub fn run_slices(
@@ -302,6 +334,7 @@ fn run_slices_with_executor(
         return Err("max_slices must be greater than zero".to_string());
     }
     let mut failures = BTreeMap::new();
+    let mut status_overrides = BTreeMap::new();
     for _ in 0..options.max_slices {
         let mut ran_slice = false;
         for resolution in PanelScheduler::resolve_requests(config.requests()) {
@@ -311,6 +344,11 @@ fn run_slices_with_executor(
             let action = resolution.scheduler_action();
             match action {
                 PanelSeedAction::StartNew => {
+                    if options.mode == PanelRunMode::Continue {
+                        append_panel_event(&config, resolution.seed, action, "skipped")?;
+                        status_overrides.insert(resolution.seed, PanelRowStatus::Skipped);
+                        continue;
+                    }
                     if let Some(error) = run_panel_seed_slice(
                         &config,
                         resolution.seed,
@@ -345,7 +383,7 @@ fn run_slices_with_executor(
             break;
         }
     }
-    Ok(config.summarize_with_tool_failures(&failures))
+    Ok(config.summarize_with_execution(&failures, &status_overrides))
 }
 
 fn run_panel_seed_slice(
@@ -387,11 +425,12 @@ fn append_panel_event(
 
 impl PanelRow {
     pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
-        Self::from_resolution_with_tool_error(resolution, None)
+        Self::from_resolution_with_execution(resolution, None, None)
     }
 
-    fn from_resolution_with_tool_error(
+    fn from_resolution_with_execution(
         resolution: PanelSeedResolution,
+        status_override: Option<PanelRowStatus>,
         tool_error: Option<String>,
     ) -> Self {
         let artifacts = resolution.decision.artifact_facts;
@@ -399,7 +438,7 @@ impl PanelRow {
         let row_status = if tool_error.is_some() {
             PanelRowStatus::ToolFailed
         } else {
-            row_status_from_action(scheduler_action)
+            status_override.unwrap_or_else(|| row_status_from_action(scheduler_action))
         };
         Self {
             seed: resolution.seed,
@@ -1008,8 +1047,7 @@ mod tests {
             source_identity: source_identity(),
         };
 
-        let summary =
-            PanelSmokeRunner::run_slices(config, PanelRunOptions { max_slices: 2 }).unwrap();
+        let summary = PanelSmokeRunner::run_slices(config, PanelRunOptions::smoke(2)).unwrap();
 
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
 
@@ -1046,7 +1084,7 @@ mod tests {
 
         let summary = run_slices_with_executor(
             config,
-            PanelRunOptions { max_slices: 1 },
+            PanelRunOptions::smoke(1),
             FailingSeedExecutor { failed_seed: 2 },
         )
         .unwrap();
@@ -1064,6 +1102,41 @@ mod tests {
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
         assert!(ledger.contains("\"event\":\"executed\""));
         assert!(ledger.contains("\"event\":\"failed\""));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn continue_mode_skips_missing_capsules() {
+        struct PanicExecutor;
+
+        impl PanelSliceExecutor for PanicExecutor {
+            fn run_slice(&mut self, _request: OwnerAuditSliceRequest) -> Result<(), String> {
+                panic!("continue mode should not start missing capsules")
+            }
+        }
+
+        let root = std::env::temp_dir().join("runtime_branch_panel_continue_missing");
+        let _ = fs::remove_dir_all(&root);
+        let config = PanelInspectConfig {
+            seeds: vec![1],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: args(0),
+            source_identity: source_identity(),
+        };
+
+        let summary =
+            run_slices_with_executor(config, PanelRunOptions::continue_existing(1), PanicExecutor)
+                .unwrap();
+
+        assert_eq!(summary.total_rows, 1);
+        assert_eq!(summary.rows[0].scheduler_action, PanelSeedAction::StartNew);
+        assert_eq!(summary.rows[0].row_status, PanelRowStatus::Skipped);
+        assert_eq!(summary.counts_by_status["skipped"], 1);
+        assert!(!root.join("1").join("manifest.json").exists());
+
+        let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
+        assert!(ledger.contains("\"event\":\"skipped\""));
 
         let _ = fs::remove_dir_all(root);
     }

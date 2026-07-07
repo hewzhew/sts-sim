@@ -36,9 +36,7 @@ fn run_smoke(args: RunArgs) -> Result<(), String> {
     let store = args.common.artifact_store();
     let summary = PanelSmokeRunner::run_slices(
         args.common.inspect_config(current_source_identity())?,
-        PanelRunOptions {
-            max_slices: args.max_slices,
-        },
+        PanelRunOptions::smoke(args.max_slices),
     )?;
     let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("smoke", &summary, &summary_path);
@@ -49,9 +47,7 @@ fn run_continue(args: RunArgs) -> Result<(), String> {
     let store = args.common.artifact_store();
     let summary = PanelSmokeRunner::run_slices(
         args.common.inspect_config(current_source_identity())?,
-        PanelRunOptions {
-            max_slices: args.max_slices,
-        },
+        PanelRunOptions::continue_existing(args.max_slices),
     )?;
     let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("continue", &summary, &summary_path);
