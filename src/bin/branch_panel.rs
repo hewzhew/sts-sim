@@ -113,6 +113,8 @@ struct RawInspectArgs {
     #[arg(long)]
     boss_search_ms: Option<u64>,
     #[arg(long)]
+    slice_ms: Option<u64>,
+    #[arg(long)]
     wall_ms: Option<u64>,
     #[arg(long)]
     checkpoint_before_combat_portfolio: bool,
@@ -171,7 +173,7 @@ impl RawInspectArgs {
             rescue_search_ms: self.rescue_search_ms.unwrap_or(defaults.rescue_search_ms),
             boss_search_nodes: self.boss_search_nodes.unwrap_or(defaults.boss_search_nodes),
             boss_search_ms: self.boss_search_ms.unwrap_or(defaults.boss_search_ms),
-            wall_ms: self.wall_ms.or(defaults.wall_ms),
+            wall_ms: resolve_slice_ms(self.slice_ms, self.wall_ms)?.or(defaults.wall_ms),
             checkpoint_before_combat_portfolio: self.checkpoint_before_combat_portfolio
                 || defaults.checkpoint_before_combat_portfolio,
         })
@@ -223,6 +225,16 @@ impl InspectArgs {
         args.wall_ms = self.wall_ms;
         args.checkpoint_before_combat_portfolio = self.checkpoint_before_combat_portfolio;
         args
+    }
+}
+
+fn resolve_slice_ms(slice_ms: Option<u64>, wall_ms: Option<u64>) -> Result<Option<u64>, String> {
+    match (slice_ms, wall_ms) {
+        (Some(slice_ms), Some(wall_ms)) if slice_ms != wall_ms => Err(format!(
+            "--slice-ms ({slice_ms}) conflicts with legacy --wall-ms ({wall_ms})"
+        )),
+        (Some(slice_ms), _) => Ok(Some(slice_ms)),
+        (None, wall_ms) => Ok(wall_ms),
     }
 }
 
@@ -425,5 +437,60 @@ mod tests {
         };
 
         assert_eq!(args.max_slices, 2);
+    }
+
+    #[test]
+    fn parses_slice_ms_as_slice_contract() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "smoke",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--slice-ms",
+            "123",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Smoke(args) = panel.command else {
+            panic!("expected panel smoke command");
+        };
+
+        let args = args.into_run_args().unwrap();
+
+        assert_eq!(args.common.wall_ms, Some(123));
+    }
+
+    #[test]
+    fn rejects_conflicting_slice_and_wall_ms() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "smoke",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--slice-ms",
+            "123",
+            "--wall-ms",
+            "456",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Smoke(args) = panel.command else {
+            panic!("expected panel smoke command");
+        };
+
+        let err = match args.into_run_args() {
+            Ok(_) => panic!("expected conflicting slice/wall options to fail"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("conflicts"));
     }
 }
