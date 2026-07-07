@@ -9,6 +9,11 @@ notes are not kept searchable; use git history for archaeology.
 2. [RUNBOOK.md](RUNBOOK.md): maintained commands and local verification.
 3. [TESTING.md](TESTING.md): test ownership, cleanup, and review standards.
 
+## Review Drafts
+
+- [Durable Run Panel Architecture](superpowers/specs/2026-07-07-durable-run-panel-architecture-design.md):
+  proposed scheduler/capsule contract for replacing rerun-style gap panels.
+
 ## Rules
 
 - If docs and active code disagree, update the doc or fix the code in the same
