@@ -101,26 +101,28 @@ evidence, not runnable campaign actions.
 Combat search code should keep these phases separate:
 
 ```text
-setup -> search runner -> scoring -> line selection -> repair/improvement
-      -> execution -> trace/render/rejection
+portfolio context -> portfolio plan -> search profile -> search execution
+                  -> acceptance -> trace/render/rejection
 ```
 
-`combat_search.rs` is the command orchestrator. It should decide which phase to
-call next, not contain search loops, render prose, or apply individual combat
-actions.
+`branch_tiny` owns campaign-level portfolio orchestration. It should choose
+which search profiles to run, execute them, and commit or reject results. It
+must not reinterpret combat strategy hidden inside a lane name.
 
-Complete-line search is split by role:
+Combat search profiles are the boundary between orchestration and search
+policy. A profile is an explicit bundle of:
 
-- `combat_complete_line_search`: one bounded frontier search from one start
-  state.
-- `combat_complete_line_scoring`: lane classification and position scoring.
-- `combat_complete_line_repair`: local improvement of an already found line.
-- `combat_complete_line_solver`: base search plus optional repair, producing
-  the selected complete-line outcome.
+- a budget,
+- action-prior / phase-guard plugins,
+- rollout and frontier plugins,
+- potion policy,
+- acceptance policy,
+- artifact policy.
 
-Changing how positions are scored should usually touch scoring. Changing how a
-frontier expands should touch search. Changing how a found line is improved
-should touch repair. The solver should stay a thin phase coordinator.
+Changing action ordering should usually add or modify an action-prior plugin.
+Changing frontier scheduling should touch a frontier plugin. Changing what
+counts as an acceptable result should touch acceptance. Runner code should only
+run profiles and apply typed outcomes.
 
 ## Gap Semantics
 

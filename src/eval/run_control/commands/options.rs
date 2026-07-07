@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
     CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use crate::state::core::ClientInput;
 
@@ -67,6 +67,9 @@ pub(super) fn parse_search_combat_options(
             }
             "frontier" | "frontier_policy" | "frontier-policy" => {
                 options.frontier_policy = Some(parse_frontier_policy(value)?);
+            }
+            "setup_bias" | "setup_bias_policy" | "setup-bias-policy" => {
+                options.setup_bias_policy = Some(parse_setup_bias_policy(value)?);
             }
             "segment" | "segment_mode" | "partial" | "partial_mode" => {
                 options.segment_mode = parse_segment_mode(value)?;
@@ -168,6 +171,9 @@ fn validate_search_default_options(options: &RunControlSearchCombatOptions) -> R
     }
     if options.frontier_policy.is_some() {
         unsupported.push("frontier");
+    }
+    if options.setup_bias_policy.is_some() {
+        unsupported.push("setup_bias");
     }
     if options.segment_mode.is_some() {
         unsupported.push("segment");
@@ -341,6 +347,18 @@ fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, St
         | "eval-buckets" => Ok(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
         _ => Err(format!(
             "invalid frontier policy '{value}', expected single_queue|round_robin_eval_buckets"
+        )),
+    }
+}
+
+fn parse_setup_bias_policy(value: &str) -> Result<CombatSearchV2SetupBiasPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "default" | "off" | "none" => Ok(CombatSearchV2SetupBiasPolicy::Default),
+        "key_card_online" | "key-card-online" | "key_setup" | "key-setup" => {
+            Ok(CombatSearchV2SetupBiasPolicy::KeyCardOnline)
+        }
+        _ => Err(format!(
+            "invalid setup bias policy '{value}', expected default|key_card_online"
         )),
     }
 }

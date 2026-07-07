@@ -182,7 +182,9 @@ pub(super) fn search_config(
         phase_guard_policy: options
             .phase_guard_policy
             .unwrap_or(defaults.phase_guard_policy),
-        setup_bias_policy: defaults.setup_bias_policy,
+        setup_bias_policy: options
+            .setup_bias_policy
+            .unwrap_or(defaults.setup_bias_policy),
         turn_plan_probe_max_inner_nodes: defaults.turn_plan_probe_max_inner_nodes,
         turn_plan_probe_max_end_states: defaults.turn_plan_probe_max_end_states,
         turn_plan_probe_per_bucket_limit: defaults.turn_plan_probe_per_bucket_limit,

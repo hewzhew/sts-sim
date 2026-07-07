@@ -1,3 +1,4 @@
+use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
 use super::combat_search_lane_options;
@@ -26,7 +27,7 @@ pub(super) enum CombatSearchLaneKind {
     QualityRealHp,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CombatSearchLaneCommitPolicy {
     AcceptedLineOnly,
     AcceptedLineOrPrimaryChunk,
@@ -90,11 +91,26 @@ impl CombatSearchLane {
     }
 
     pub(super) fn commit_policy(self) -> CombatSearchLaneCommitPolicy {
-        lane_spec(self.kind).commit_policy
+        match self.acceptance_plugin() {
+            CombatSearchAcceptancePluginId::AcceptedLineOrPrimaryChunk => {
+                CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk
+            }
+            CombatSearchAcceptancePluginId::AcceptedLineOnly
+            | CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse => {
+                CombatSearchLaneCommitPolicy::AcceptedLineOnly
+            }
+        }
     }
 
     pub(super) fn rejects_new_curses(self) -> bool {
-        lane_spec(self.kind).rejects_new_curses
+        matches!(
+            self.acceptance_plugin(),
+            CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
+        )
+    }
+
+    pub(super) fn acceptance_plugin(self) -> CombatSearchAcceptancePluginId {
+        lane_spec(self.kind).acceptance
     }
 
     pub(super) fn options(
@@ -103,5 +119,26 @@ impl CombatSearchLane {
         session: &RunControlSession,
     ) -> RunControlAutoStepOptions {
         combat_search_lane_options::lane_options(self, request, session)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+
+    #[test]
+    fn dirty_rejecting_lane_exposes_clean_win_acceptance_plugin() {
+        let lane = CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue);
+
+        assert_eq!(
+            lane.acceptance_plugin(),
+            CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
+        );
+        assert!(lane.rejects_new_curses());
+        assert_eq!(
+            lane.commit_policy(),
+            CombatSearchLaneCommitPolicy::AcceptedLineOnly
+        );
     }
 }

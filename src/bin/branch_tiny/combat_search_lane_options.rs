@@ -1,6 +1,8 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
+    CombatSearchChildRolloutPluginId, CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId,
+    CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
+    CombatSearchTurnPlanPluginId, CombatSearchV2PotionPolicy,
 };
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
@@ -26,97 +28,119 @@ pub(super) fn lane_options(
     request: &CombatSearchRequest,
     session: &RunControlSession,
 ) -> RunControlAutoStepOptions {
-    lane_recipe(lane, request, session).into_auto_step_options()
+    CombatSearchRecipe::from_profile(
+        lane_profile(lane, request, session),
+        request.args.auto_ops,
+        request.args.wall_ms.is_some(),
+    )
+    .into_auto_step_options()
 }
 
-fn lane_recipe(
+fn lane_profile(
     lane: CombatSearchLane,
     request: &CombatSearchRequest,
     session: &RunControlSession,
-) -> CombatSearchRecipe {
-    match lane.kind() {
-        CombatSearchLaneKind::Primary => recipe_with_budget(
+) -> CombatSearchProfile {
+    let profile = match lane.kind() {
+        CombatSearchLaneKind::Primary => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Primary,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
         ),
-        CombatSearchLaneKind::DiagnosticRescue => recipe_with_budget(
+        CombatSearchLaneKind::DiagnosticRescue => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Rescue,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
         ),
-        CombatSearchLaneKind::HallwayImmediateRescue => recipe_with_budget(
+        CombatSearchLaneKind::HallwayImmediateRescue => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Rescue,
-            CombatSearchV2ChildRolloutPolicy::Immediate,
+            CombatSearchChildRolloutPluginId::Immediate,
         )
         .with_max_potions_used(0),
-        CombatSearchLaneKind::NonBossPotionRescue => recipe_with_budget(
+        CombatSearchLaneKind::NonBossPotionRescue => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
         )
         .with_potion_policy(CombatSearchV2PotionPolicy::All)
         .with_max_potions_used(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED),
-        CombatSearchLaneKind::HallwayQualityPotionRescue => quality_recipe(
+        CombatSearchLaneKind::HallwayQualityPotionRescue => quality_profile(
+            lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
-            CombatSearchV2ChildRolloutPolicy::Immediate,
-            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard,
+            CombatSearchChildRolloutPluginId::Immediate,
+            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         ),
-        CombatSearchLaneKind::BossNoPotion => recipe_with_budget(
+        CombatSearchLaneKind::BossNoPotion => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
         )
-        .with_rollout_policy(CombatSearchV2RolloutPolicy::Disabled)
+        .with_rollout_plugin(CombatSearchRolloutPluginId::Disabled)
         .with_potion_policy(CombatSearchV2PotionPolicy::Never)
         .with_max_potions_used(0),
-        CombatSearchLaneKind::BossPotionRescue => recipe_with_budget(
+        CombatSearchLaneKind::BossPotionRescue => profile_with_budget(
+            lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            boss_potion_rescue_child_rollout_policy(session),
+            boss_potion_rescue_child_rollout_plugin(session),
         )
-        .with_rollout_policy(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
+        .with_rollout_plugin(CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion)
         .with_potion_policy(CombatSearchV2PotionPolicy::All)
         .with_max_potions_used(boss_potion_budget(session)),
-        CombatSearchLaneKind::BossTimeEaterClock => quality_recipe(
+        CombatSearchLaneKind::BossTimeEaterClock => quality_profile(
+            lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
-            CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
+            CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
         ),
-        CombatSearchLaneKind::QualityRealHp => quality_recipe(
+        CombatSearchLaneKind::QualityRealHp => quality_profile(
+            lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            CombatSearchV2ChildRolloutPolicy::Immediate,
-            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard,
+            CombatSearchChildRolloutPluginId::Immediate,
+            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         ),
+    };
+    profile.with_acceptance(lane.acceptance_plugin())
+}
+
+fn profile_with_budget(
+    label: &'static str,
+    args: Args,
+    budget: LaneSearchBudget,
+    child_rollout_plugin: CombatSearchChildRolloutPluginId,
+) -> CombatSearchProfile {
+    CombatSearchProfile {
+        label,
+        budget: CombatSearchBudgetSpec {
+            max_nodes: budget.max_nodes(args),
+            wall_ms: budget.wall_ms(args),
+        },
+        plugins: CombatSearchPluginStack {
+            turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
+            child_rollout: child_rollout_plugin,
+            ..CombatSearchPluginStack::default()
+        },
+        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+        artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
     }
 }
 
-fn recipe_with_budget(
-    args: Args,
-    budget: LaneSearchBudget,
-    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
-) -> CombatSearchRecipe {
-    CombatSearchRecipe::new(
-        budget.max_nodes(args),
-        budget.wall_ms(args),
-        args.auto_ops,
-        args.wall_ms.is_some(),
-        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        child_rollout_policy,
-    )
-}
-
-fn boss_potion_rescue_child_rollout_policy(
+fn boss_potion_rescue_child_rollout_plugin(
     session: &RunControlSession,
-) -> CombatSearchV2ChildRolloutPolicy {
+) -> CombatSearchChildRolloutPluginId {
     if session.run_state.act_num >= 3 {
-        CombatSearchV2ChildRolloutPolicy::LazyOnPop
+        CombatSearchChildRolloutPluginId::LazyOnPop
     } else {
-        CombatSearchV2ChildRolloutPolicy::Immediate
+        CombatSearchChildRolloutPluginId::Immediate
     }
 }
 
@@ -133,18 +157,39 @@ fn boss_potion_budget(session: &RunControlSession) -> u32 {
         .max(BOSS_POTION_RESCUE_MAX_POTIONS_USED)
 }
 
+#[cfg(test)]
 fn quality_recipe(
     args: Args,
     budget: LaneSearchBudget,
-    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    child_rollout_plugin: CombatSearchChildRolloutPluginId,
+    phase_guard_plugin: CombatSearchPhaseGuardPluginId,
 ) -> CombatSearchRecipe {
-    recipe_with_budget(args, budget, child_rollout_policy)
-        .with_rollout_policy(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
-        .with_frontier_policy(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+    CombatSearchRecipe::from_profile(
+        quality_profile(
+            "test_quality",
+            args,
+            budget,
+            child_rollout_plugin,
+            phase_guard_plugin,
+        ),
+        args.auto_ops,
+        args.wall_ms.is_some(),
+    )
+}
+
+fn quality_profile(
+    label: &'static str,
+    args: Args,
+    budget: LaneSearchBudget,
+    child_rollout_plugin: CombatSearchChildRolloutPluginId,
+    phase_guard_plugin: CombatSearchPhaseGuardPluginId,
+) -> CombatSearchProfile {
+    profile_with_budget(label, args, budget, child_rollout_plugin)
+        .with_rollout_plugin(CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion)
+        .with_frontier_plugin(CombatSearchFrontierPluginId::RoundRobinEvalBuckets)
         .with_potion_policy(CombatSearchV2PotionPolicy::SemanticBudgeted)
         .with_max_potions_used(2)
-        .with_phase_guard_policy(phase_guard_policy)
+        .with_phase_guard_plugin(phase_guard_plugin)
 }
 
 impl LaneSearchBudget {
@@ -177,6 +222,9 @@ impl LaneSearchBudget {
 mod tests {
     use super::super::run_contract::RunObjective;
     use super::*;
+    use sts_simulator::ai::combat_search_v2::{
+        CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2RolloutPolicy,
+    };
 
     fn test_args() -> Args {
         Args {
@@ -218,8 +266,8 @@ mod tests {
         let options = quality_recipe(
             test_args(),
             LaneSearchBudget::Boss,
-            CombatSearchV2ChildRolloutPolicy::Immediate,
-            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard,
+            sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId::Immediate,
+            sts_simulator::ai::combat_search_v2::CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         )
         .into_auto_step_options();
 
@@ -239,6 +287,28 @@ mod tests {
         assert_eq!(
             options.search.phase_guard_policy,
             Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+        );
+    }
+
+    #[test]
+    fn profile_with_budget_records_budget_and_child_rollout_plugin() {
+        let profile = profile_with_budget(
+            "profile_test",
+            test_args(),
+            LaneSearchBudget::Rescue,
+            sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId::Immediate,
+        );
+
+        assert_eq!(profile.label, "profile_test");
+        assert_eq!(profile.budget.max_nodes, 22);
+        assert_eq!(profile.budget.wall_ms, 202);
+        assert_eq!(
+            profile.plugins.child_rollout,
+            sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId::Immediate
+        );
+        assert_eq!(
+            profile.acceptance,
+            sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly
         );
     }
 }

@@ -68,6 +68,7 @@ mod phase_profile;
 mod pending_choice_fanout;
 mod pending_choice_ordering;
 mod pending_choice_profile;
+mod plugins;
 mod potions;
 
 // State abstraction and exactness audits.
@@ -168,6 +169,16 @@ pub use deficit_evidence::{
 pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
+};
+pub use plugins::{
+    CombatSearchAcceptancePlugin, CombatSearchAcceptancePluginId, CombatSearchActionPriorPlugin,
+    CombatSearchActionPriorPluginId, CombatSearchArtifactPlugin, CombatSearchArtifactPluginId,
+    CombatSearchBudgetSpec, CombatSearchChildRolloutPlugin, CombatSearchChildRolloutPluginId,
+    CombatSearchFrontierPlugin, CombatSearchFrontierPluginId, CombatSearchNodeEvaluatorPlugin,
+    CombatSearchNodeEvaluatorPluginId, CombatSearchPhaseGuardPlugin,
+    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+    CombatSearchProfile, CombatSearchRolloutPlugin, CombatSearchRolloutPluginId,
+    CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};

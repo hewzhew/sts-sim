@@ -1,6 +1,7 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchProfile, CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy,
+    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::run_control::{
     RunControlAutoStepOptions, RunControlHpLossLimit, RunControlRouteAutomationMode,
@@ -20,58 +21,33 @@ pub(super) struct CombatSearchRecipe {
     potion_policy: Option<CombatSearchV2PotionPolicy>,
     max_potions_used: Option<u32>,
     phase_guard_policy: Option<CombatSearchV2PhaseGuardPolicy>,
+    setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
 }
 
 impl CombatSearchRecipe {
-    pub(super) fn new(
-        max_nodes: usize,
-        wall_ms: u64,
+    pub(super) fn from_profile(
+        profile: CombatSearchProfile,
         auto_ops: usize,
         wall_limited: bool,
-        turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-        child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
     ) -> Self {
+        let config = profile.to_config();
         Self {
-            max_nodes,
-            wall_ms,
+            max_nodes: config.max_nodes,
+            wall_ms: config
+                .wall_time
+                .map(|duration| duration.as_millis() as u64)
+                .unwrap_or_default(),
             auto_ops,
             wall_limited,
-            turn_plan_policy,
-            child_rollout_policy,
-            rollout_policy: None,
-            frontier_policy: None,
-            potion_policy: None,
-            max_potions_used: None,
-            phase_guard_policy: None,
+            turn_plan_policy: config.turn_plan_policy,
+            child_rollout_policy: config.child_rollout_policy,
+            rollout_policy: Some(config.rollout_policy),
+            frontier_policy: Some(config.frontier_policy),
+            potion_policy: Some(config.potion_policy),
+            max_potions_used: config.max_potions_used,
+            phase_guard_policy: Some(config.phase_guard_policy),
+            setup_bias_policy: Some(config.setup_bias_policy),
         }
-    }
-
-    pub(super) fn with_rollout_policy(mut self, policy: CombatSearchV2RolloutPolicy) -> Self {
-        self.rollout_policy = Some(policy);
-        self
-    }
-
-    pub(super) fn with_frontier_policy(mut self, policy: CombatSearchV2FrontierPolicy) -> Self {
-        self.frontier_policy = Some(policy);
-        self
-    }
-
-    pub(super) fn with_potion_policy(mut self, policy: CombatSearchV2PotionPolicy) -> Self {
-        self.potion_policy = Some(policy);
-        self
-    }
-
-    pub(super) fn with_max_potions_used(mut self, max_potions_used: u32) -> Self {
-        self.max_potions_used = Some(max_potions_used);
-        self
-    }
-
-    pub(super) fn with_phase_guard_policy(
-        mut self,
-        policy: CombatSearchV2PhaseGuardPolicy,
-    ) -> Self {
-        self.phase_guard_policy = Some(policy);
-        self
     }
 
     pub(super) fn into_auto_step_options(self) -> RunControlAutoStepOptions {
@@ -87,6 +63,7 @@ impl CombatSearchRecipe {
                 potion_policy: self.potion_policy,
                 max_potions_used: self.max_potions_used,
                 phase_guard_policy: self.phase_guard_policy,
+                setup_bias_policy: self.setup_bias_policy,
                 ..Default::default()
             },
             max_operations: Some(auto_run_chunk_ops(self.auto_ops, self.wall_limited)),
@@ -106,23 +83,40 @@ fn auto_run_chunk_ops(auto_ops: usize, wall_limited: bool) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::ai::combat_search_v2::{
+        CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
+        CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId,
+        CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
+        CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
+        CombatSearchTurnPlanPluginId,
+    };
+
+    fn profile_for_test(max_nodes: usize, wall_ms: u64) -> CombatSearchProfile {
+        CombatSearchProfile {
+            label: "test_profile",
+            budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
+            plugins: CombatSearchPluginStack::default(),
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+        }
+    }
 
     #[test]
     fn recipe_materializes_core_search_options() {
-        let options = CombatSearchRecipe::new(
-            123,
-            456,
-            7,
-            false,
-            CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop,
-        )
-        .with_rollout_policy(CombatSearchV2RolloutPolicy::Disabled)
-        .with_frontier_policy(CombatSearchV2FrontierPolicy::SingleQueue)
-        .with_potion_policy(CombatSearchV2PotionPolicy::Never)
-        .with_max_potions_used(0)
-        .with_phase_guard_policy(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
-        .into_auto_step_options();
+        let profile = CombatSearchProfile {
+            plugins: CombatSearchPluginStack {
+                rollout: CombatSearchRolloutPluginId::Disabled,
+                frontier: CombatSearchFrontierPluginId::SingleQueue,
+                potion: CombatSearchPotionPlugin {
+                    policy: CombatSearchV2PotionPolicy::Never,
+                    max_potions_used: Some(0),
+                },
+                phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+                ..CombatSearchPluginStack::default()
+            },
+            ..profile_for_test(123, 456)
+        };
+        let options = CombatSearchRecipe::from_profile(profile, 7, false).into_auto_step_options();
 
         assert_eq!(options.search.max_nodes, Some(123));
         assert_eq!(options.search.wall_ms, Some(456));
@@ -157,16 +151,68 @@ mod tests {
 
     #[test]
     fn wall_limited_recipe_uses_single_operation_chunk() {
-        let options = CombatSearchRecipe::new(
-            10,
-            20,
-            99,
-            true,
-            CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-            CombatSearchV2ChildRolloutPolicy::Immediate,
-        )
-        .into_auto_step_options();
+        let profile = CombatSearchProfile {
+            plugins: CombatSearchPluginStack {
+                child_rollout: CombatSearchChildRolloutPluginId::Immediate,
+                ..CombatSearchPluginStack::default()
+            },
+            ..profile_for_test(10, 20)
+        };
+        let options = CombatSearchRecipe::from_profile(profile, 99, true).into_auto_step_options();
 
         assert_eq!(options.max_operations, Some(1));
+    }
+
+    #[test]
+    fn recipe_materializes_explicit_combat_search_profile() {
+        let profile = CombatSearchProfile {
+            label: "test_profile",
+            budget: CombatSearchBudgetSpec {
+                max_nodes: 321,
+                wall_ms: 654,
+            },
+            plugins: CombatSearchPluginStack {
+                action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
+                turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
+                child_rollout: CombatSearchChildRolloutPluginId::Immediate,
+                rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
+                frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
+                potion: CombatSearchPotionPlugin {
+                    policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
+                    max_potions_used: Some(2),
+                },
+                phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+                ..CombatSearchPluginStack::default()
+            },
+            acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
+            artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+        };
+
+        let options = CombatSearchRecipe::from_profile(profile, 5, false).into_auto_step_options();
+
+        assert_eq!(options.search.max_nodes, Some(321));
+        assert_eq!(options.search.wall_ms, Some(654));
+        assert_eq!(options.max_operations, Some(5));
+        assert_eq!(
+            options.search.child_rollout_policy,
+            Some(CombatSearchV2ChildRolloutPolicy::Immediate)
+        );
+        assert_eq!(
+            options.search.frontier_policy,
+            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+        );
+        assert_eq!(
+            options.search.potion_policy,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        );
+        assert_eq!(options.search.max_potions_used, Some(2));
+        assert_eq!(
+            options.search.phase_guard_policy,
+            Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+        );
+        assert_eq!(
+            options.search.setup_bias_policy,
+            Some(CombatSearchV2SetupBiasPolicy::KeyCardOnline)
+        );
     }
 }

@@ -1,18 +1,18 @@
-use super::combat_search_lanes::{CombatSearchLaneCommitPolicy, CombatSearchLaneKind};
+use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+
+use super::combat_search_lanes::CombatSearchLaneKind;
 
 #[derive(Clone, Copy)]
 pub(super) struct CombatSearchLaneSpec {
     pub(super) label: &'static str,
-    pub(super) commit_policy: CombatSearchLaneCommitPolicy,
-    pub(super) rejects_new_curses: bool,
+    pub(super) acceptance: CombatSearchAcceptancePluginId,
 }
 
 pub(super) fn lane_spec(kind: CombatSearchLaneKind) -> CombatSearchLaneSpec {
     match kind {
         CombatSearchLaneKind::Primary => CombatSearchLaneSpec {
             label: "primary",
-            commit_policy: CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk,
-            rejects_new_curses: false,
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOrPrimaryChunk,
         },
         CombatSearchLaneKind::DiagnosticRescue => rescue_spec("diagnostic_rescue"),
         CombatSearchLaneKind::HallwayImmediateRescue => rescue_spec("hallway_immediate_rescue"),
@@ -30,14 +30,13 @@ pub(super) fn lane_spec(kind: CombatSearchLaneKind) -> CombatSearchLaneSpec {
 fn rescue_spec(label: &'static str) -> CombatSearchLaneSpec {
     CombatSearchLaneSpec {
         label,
-        commit_policy: CombatSearchLaneCommitPolicy::AcceptedLineOnly,
-        rejects_new_curses: false,
+        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
     }
 }
 
 fn dirty_rejecting_spec(label: &'static str) -> CombatSearchLaneSpec {
     CombatSearchLaneSpec {
-        rejects_new_curses: true,
-        ..rescue_spec(label)
+        label,
+        acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
     }
 }
