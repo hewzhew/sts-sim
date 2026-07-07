@@ -6,12 +6,15 @@ use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
 use super::branch_path::BranchPathStep;
+use super::run_contract::RunContract;
 use super::{Args, Branch, BranchStatus};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
     schema: String,
     pub(super) args: Args,
+    #[serde(default)]
+    run_contract: Option<RunContract>,
     pub(super) generation: usize,
     next_branch_id: usize,
     frontier: Vec<BranchCheckpoint>,
@@ -42,6 +45,7 @@ pub(super) fn save(
     let checkpoint = FrontierCheckpoint {
         schema: "branch_tiny_frontier_checkpoint".to_string(),
         args,
+        run_contract: Some(RunContract::from_args(args)),
         generation,
         next_branch_id,
         frontier: frontier
@@ -62,6 +66,11 @@ pub(super) fn load(path: &Path) -> Result<FrontierCheckpoint, String> {
 }
 
 impl FrontierCheckpoint {
+    pub(super) fn run_contract(&self) -> RunContract {
+        self.run_contract
+            .unwrap_or_else(|| RunContract::from_args(self.args))
+    }
+
     pub(super) fn into_frontier(self) -> Result<(VecDeque<Branch>, usize), String> {
         let mut frontier = VecDeque::new();
         for branch in self.frontier {
@@ -95,5 +104,85 @@ impl BranchCheckpoint {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn legacy_checkpoint_json() -> String {
+        serde_json::json!({
+            "schema": "branch_tiny_frontier_checkpoint",
+            "args": {
+                "seed": 44,
+                "ascension": 2,
+                "objective": "first_victory",
+                "generations": 6,
+                "max_branches": 4,
+                "auto_ops": 9,
+                "search_nodes": 10,
+                "search_ms": 20,
+                "rescue_search_nodes": 30,
+                "rescue_search_ms": 40,
+                "boss_search_nodes": 50,
+                "boss_search_ms": 60,
+                "wall_ms": 70
+            },
+            "generation": 1,
+            "next_branch_id": 2,
+            "frontier": []
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn legacy_checkpoint_without_run_contract_loads_contract_from_args() {
+        let path = std::env::temp_dir().join("branch_tiny_legacy_frontier_checkpoint.json");
+        fs::write(&path, legacy_checkpoint_json()).unwrap();
+
+        let checkpoint = load(&path).unwrap();
+        let contract = checkpoint.run_contract();
+
+        assert_eq!(contract.game.seed, 44);
+        assert_eq!(contract.game.ascension, 2);
+        assert_eq!(contract.branching.generations, 6);
+        assert_eq!(contract.slice.slice_ms, Some(70));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn checkpoint_writer_includes_run_contract() {
+        let args = Args {
+            seed: 45,
+            ascension: 1,
+            objective: super::super::run_contract::RunObjective::FirstVictory,
+            generations: 2,
+            max_branches: 1,
+            auto_ops: 3,
+            search_nodes: 4,
+            search_ms: 5,
+            rescue_search_nodes: 6,
+            rescue_search_ms: 7,
+            boss_search_nodes: 8,
+            boss_search_ms: 9,
+            wall_ms: Some(10),
+            checkpoint_before_combat_portfolio: false,
+            wall_capped_search_budget: false,
+            wall_capped_boss_budget: false,
+        };
+        let path = std::env::temp_dir().join("branch_tiny_frontier_checkpoint_contract.json");
+        let frontier = VecDeque::new();
+
+        save(&path, args, 0, 1, &frontier).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(value["run_contract"]["game"]["seed"], 45);
+        assert_eq!(value["run_contract"]["slice"]["slice_ms"], 10);
+        assert_eq!(value["args"]["wall_ms"], 10);
+
+        let _ = fs::remove_file(path);
     }
 }
