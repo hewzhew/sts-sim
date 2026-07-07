@@ -2,8 +2,8 @@
 
 ## Status
 
-Review draft. This document defines the intended architecture before
-implementation. It does not change runner behavior by itself.
+Review draft, iteration 2. This document defines the intended architecture
+before implementation. It does not change runner behavior by itself.
 
 ## Problem
 
@@ -41,6 +41,17 @@ seed/config/code identity
 `wall_ms` remains useful, but only as a slice-level soft deadline. It must not
 be the meaning of an experiment.
 
+The closest mature analogs are:
+
+- durable workflow engines: event history plus deterministic replay,
+- data/workflow systems: task identity plus work avoidance,
+- experiment trackers: runs with params, metrics, artifacts, and resume ids,
+- HPC schedulers: wall-time signal, checkpoint, requeue,
+- anytime/contract algorithms: bounded slices with meaningful partial results.
+
+The project should not copy any one of these systems. It should copy their
+separation of concerns.
+
 ## Non-Goals
 
 - No new reward, shop, event, or combat strategy.
@@ -51,6 +62,48 @@ be the meaning of an experiment.
 - No hidden reruns from Neow unless explicitly requested.
 
 ## Core Concepts
+
+### Panel Run
+
+A panel run is the experiment object. It is not just a folder containing seed
+subdirectories.
+
+It owns:
+
+- panel id,
+- panel mode,
+- requested run identities,
+- scheduler options,
+- slice ledger,
+- final panel summary.
+
+This mirrors experiment managers where a run/study is the stable object and
+individual artifacts are attached to it. Without this object, a "5-seed panel"
+is too vague to compare across days.
+
+### Panel Mode
+
+Every panel invocation must declare its intent. The scheduler should not infer
+intent from incidental flags.
+
+```text
+smoke:
+  Touch each seed briefly and classify immediate blockers. Low total budget.
+
+continue:
+  Reuse existing capsules and advance soft-paused seeds. No fresh rerun unless
+  explicitly requested.
+
+drain:
+  Keep slicing until every seed reaches a real stop or a panel budget ends.
+
+compare:
+  Run the same compatible capsule set under named policy/search configs and
+  write rows that can be compared.
+```
+
+The current manual panel is closest to `smoke`, but recent usage has drifted
+toward `continue` and `drain`. Naming the mode prevents accidental misuse.
 
 ### Run Capsule
 
@@ -66,6 +119,23 @@ It owns:
 
 It is not a strategy report. It is the state that lets tools continue or inspect
 the run without replaying from Neow.
+
+### Capsule Ledger
+
+The capsule needs an append-only ledger in addition to summary projections.
+
+The ledger records:
+
+- start and continue slice attempts,
+- command kind and process result,
+- identity checks,
+- compatibility decisions,
+- artifact writes,
+- stop-class transitions.
+
+`summary.json` is allowed to be overwritten because it is a projection.
+The ledger is not overwritten. This follows the durable-workflow lesson:
+history is the source of recovery truth; summaries are cheap views.
 
 ### Run Identity
 
@@ -139,6 +209,18 @@ It should not:
 - decide strategy from blocker distribution,
 - silently hide process failures.
 
+### Materialized Artifacts
+
+Panel artifacts should be treated like materialized assets:
+
+```text
+identity + command contract + source fingerprint -> capsule artifacts
+```
+
+If the identity is unchanged, work can be avoided. If any dependency changes,
+the artifact is stale. This is stricter than "path exists" and less wasteful
+than "always rerun".
+
 ## Stop Classes
 
 Panel rows should separate stop reason from artifact availability.
@@ -168,6 +250,29 @@ tool_failure:
 
 `frontier_saved` is not a stop kind. It is an artifact fact attached to a stop
 or pause.
+
+## Source And Identity Fingerprints
+
+Identity should be split into visible fields instead of one opaque hash:
+
+```text
+game_identity:
+  seed, class, ascension
+
+runner_contract:
+  objective, max_branches, generations, slice_ms, panel_mode
+
+policy_identity:
+  owner policy version, reward/shop/acquisition policy version,
+  combat portfolio/profile version
+
+source_identity:
+  git commit, dirty flag, optional dirty tree hash, branch_tiny binary mtime
+```
+
+The panel can start with a smaller implementation, but the design target is
+fielded identity. Opaque hashes are useful for equality checks; fielded identity
+is useful for review.
 
 ## Budget Model
 
@@ -210,6 +315,19 @@ Explicit rerun behavior should require:
 `--fresh` may archive or replace the old capsule, but that must be visible in
 the panel summary.
 
+Reuse must be an explicit scheduler decision:
+
+```text
+reuse_decision = reused_real_stop
+               | continued_soft_pause
+               | created_new_capsule
+               | rejected_stale_capsule
+               | fresh_replaced_capsule
+```
+
+This field matters because "not rerun" can be either a correct cache hit or a
+bug that hid stale data.
+
 ## Panel Output Contract
 
 `panel_summary.json` should be the stable interface for callers.
@@ -246,6 +364,19 @@ next_recommended_reason
 for example a `combat_case_review` command for a combat gap. It must not become
 a strategy recommendation system.
 
+The panel summary should include aggregate counts, but only over typed fields:
+
+```text
+counts_by_stop_class
+counts_by_blocker_kind
+counts_by_reuse_decision
+total_elapsed_ms
+total_slices
+```
+
+Do not add prose conclusions such as "reward is the problem" to the panel
+summary. A later analysis tool may interpret rows, but the scheduler should not.
+
 ## CLI Shape
 
 The future panel command should read like a scheduler:
@@ -254,6 +385,7 @@ The future panel command should read like a scheduler:
 python tools/gap_panel.py `
   --seeds 1552225671..1552225675 `
   --capsule-root tools/artifacts/gap_panels/current `
+  --mode continue `
   --slice-ms 15000 `
   --max-slices 8 `
   --max-active 1
@@ -264,6 +396,7 @@ Compatibility:
 - keep `--wall-ms` as an alias for `--slice-ms`,
 - keep `--continue-soft-wall` temporarily as an alias for `--max-slices`,
 - add `--fresh` for explicit reruns,
+- add `--mode smoke|continue|drain|compare`,
 - reject ambiguous aliases such as `--output-root` unless intentionally added
   as documented compatibility.
 
@@ -286,6 +419,9 @@ This gives each seed a chance to advance without one slow seed hiding all other
 results. `--max-active` can remain `1` until the runner and artifacts are
 stable enough for parallel runs.
 
+The scheduler should prefer fairness over depth by default. A panel that spends
+all time on one seed before touching the others is a campaign run, not a panel.
+
 ## Error Handling
 
 The scheduler must be strict about tool failures:
@@ -300,6 +436,37 @@ The scheduler must be strict about tool failures:
 This avoids the worst failure mode: confusing a broken tool with an interesting
 game blocker.
 
+## Maturity Scorecard
+
+This design should be judged against mature systems by concrete properties, not
+by whether it has many features.
+
+```text
+Durability:
+  Can the process die between slices without losing meaning?
+
+Reproducibility:
+  Can a row explain which config/source produced it?
+
+Work avoidance:
+  Does a second run skip compatible completed work?
+
+Fair scheduling:
+  Can one slow seed avoid starving the rest?
+
+Separation:
+  Does scheduler code avoid game strategy?
+
+Observability:
+  Can a caller tell real stop, soft pause, and tool failure apart?
+
+Reviewability:
+  Can a human inspect why work was reused or rejected?
+```
+
+The target for implementation is not feature parity with workflow engines. The
+target is passing this scorecard in a small local tool.
+
 ## Implementation Phases
 
 The design is complete, but implementation can be staged.
@@ -307,14 +474,19 @@ The design is complete, but implementation can be staged.
 ### Phase 1: Durable Panel Semantics
 
 - Add `--fresh`.
+- Add `--mode smoke|continue|drain` with `continue` as the default for an
+  existing capsule root and `smoke` as the default for a new root.
 - Stop deleting existing capsules by default.
 - Reuse real stops.
 - Continue compatible soft pauses.
-- Add `stop_class`, `slice_count`, and elapsed fields to rows.
+- Add `stop_class`, `reuse_decision`, `slice_count`, and elapsed fields to rows.
 - Preserve the current `panel_summary.json` shape where practical.
 
-### Phase 2: Identity And Compatibility
+### Phase 2: Ledger, Identity, And Compatibility
 
+- Add a panel-level ledger.
+- Add a capsule-level slice ledger if the existing capsule artifacts cannot
+  already express enough history.
 - Add a run identity payload to capsule summaries or manifests.
 - Detect stale/incompatible capsules.
 - Record binary/source fingerprint at the level available locally.
@@ -332,6 +504,14 @@ The design is complete, but implementation can be staged.
 - Rename panel wording from wall deadline to slice soft pause.
 - Remove or deprecate obsolete panel options after one migration window.
 
+### Phase 5: Compare Mode
+
+- Allow named policy/search profiles to be compared over the same compatible
+  capsule set.
+- Write comparison rows without mutating the base capsule unless the mode
+  explicitly materializes new capsules.
+- Keep this separate from normal smoke/continue/drain usage.
+
 ## Tests
 
 Tests should cover stable scheduler contracts, not prose:
@@ -342,6 +522,9 @@ Tests should cover stable scheduler contracts, not prose:
 - process failure keeps a row with `tool_failure`,
 - missing summary becomes `missing_summary`,
 - `--wall-ms` and `--slice-ms` produce the same slice budget.
+- incompatible identity is not silently reused,
+- panel summary includes one row per requested seed,
+- scheduler ledger records reuse decisions.
 
 Do not add tests for exact human table spacing.
 
@@ -356,6 +539,8 @@ The design is working when:
 - outer process timeout is no longer part of normal experiment control,
 - future search experiments can consume `panel_summary.json` without parsing
   logs or human summaries.
+- a second invocation of the same panel produces mostly reuse decisions, not
+  duplicate work.
 
 ## Open Decisions Before Implementation
 
@@ -367,3 +552,33 @@ These should be answered in the implementation plan, not by ad hoc code:
 - transition period for `--continue-soft-wall`,
 - whether `gap_panel.py` remains the long-term scheduler or becomes a thin
   launcher over a Rust scheduler.
+
+## External References Considered
+
+These references informed the architecture; they are not dependencies.
+
+- Temporal durable execution and event history:
+  https://learn.temporal.io/tutorials/go/background-check/durable-execution/
+  and https://docs.temporal.io/encyclopedia/event-history/event-history-java
+- Flink checkpointing:
+  https://nightlies.apache.org/flink/flink-docs-stable/docs/dev/datastream/fault-tolerance/checkpointing/
+- Nextflow resume/cache:
+  https://docs.seqera.io/nextflow/cache-and-resume
+- Bazel remote caching:
+  https://bazel.build/remote/caching
+- DVC pipelines and run cache:
+  https://doc.dvc.org/start/data-pipelines/data-pipelines
+- Argo Workflows work avoidance and memoization:
+  https://argo-workflows.readthedocs.io/en/latest/work-avoidance/
+  and https://argo-workflows.readthedocs.io/en/latest/memoization/
+- Ray Tune fault tolerance:
+  https://docs.ray.io/en/latest/tune/tutorials/tune-fault-tolerance.html
+- Optuna RDB-backed study resume:
+  https://optuna.readthedocs.io/en/stable/tutorial/20_recipes/001_rdb.html
+- MLflow run tracking:
+  https://mlflow.org/docs/latest/ml/tracking/
+- Hydra multirun and output directories:
+  https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/
+  and https://hydra.cc/docs/configure_hydra/workdir/
+- SLURM checkpoint/requeue patterns:
+  https://it.sci.utah.edu/slurm-job-re-queuing/
