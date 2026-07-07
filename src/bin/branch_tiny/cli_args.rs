@@ -2,31 +2,8 @@ use std::path::PathBuf;
 
 use sts_simulator::state::events::EventId;
 
-use super::run_contract::{default_run_objective, RunObjective};
-
-#[derive(Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub(super) struct Args {
-    pub(super) seed: u64,
-    pub(super) ascension: u8,
-    #[serde(default = "default_run_objective")]
-    pub(super) objective: RunObjective,
-    pub(super) generations: usize,
-    pub(super) max_branches: usize,
-    pub(super) auto_ops: usize,
-    pub(super) search_nodes: usize,
-    pub(super) search_ms: u64,
-    pub(super) rescue_search_nodes: usize,
-    pub(super) rescue_search_ms: u64,
-    pub(super) boss_search_nodes: usize,
-    pub(super) boss_search_ms: u64,
-    pub(super) wall_ms: Option<u64>,
-    #[serde(skip)]
-    pub(super) checkpoint_before_combat_portfolio: bool,
-    #[serde(skip)]
-    pub(super) wall_capped_search_budget: bool,
-    #[serde(skip)]
-    pub(super) wall_capped_boss_budget: bool,
-}
+use super::run_contract::RunObjective;
+pub(super) use sts_simulator::runtime::branch::Args;
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct ArgsOverrides {
