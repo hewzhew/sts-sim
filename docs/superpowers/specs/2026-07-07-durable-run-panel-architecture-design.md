@@ -702,6 +702,154 @@ target is passing this scorecard in a small local tool.
 
 The design is complete, but implementation can be staged.
 
+## Migration Shape From Current `branch_tiny`
+
+Current `branch_tiny` code mixes three concerns that must be separated before
+`branch_panel` can be healthy:
+
+```text
+CLI args:
+  human command-line parsing, aliases, probe flags, output paths.
+
+Run contract:
+  seed, ascension, objective, generations, max branches, auto/search budgets,
+  slice budget, runtime feature flags.
+
+Runtime state:
+  frontier, next branch id, run-control sessions, branch status, artifact
+  store, trace sinks.
+```
+
+The first migration must extract `RunContract` from the current `Args` shape.
+`Args` may remain in `branch_tiny` as a CLI adapter type, but checkpoints,
+capsules, and runtime APIs should carry `RunContract`.
+
+### Target Module Ownership
+
+The final module direction should be:
+
+```text
+src/runtime/branch/
+  contract.rs          RunContract, RunBudgets, RunObjective
+  model.rs             Branch, BranchStatus, Owner, BoundarySite
+  runtime.rs           BranchRuntime
+  slice.rs             RunSliceRequest, RunSliceResult, RunStop
+  deadline.rs          RunDeadline / SliceDeadline
+  frontier.rs          frontier retain/expand/checkpoint state
+  artifact_store.rs    capsule/frontier/result/summary persistence interface
+  capsule_json.rs      current JSON projection compatibility
+
+src/runtime/panel/
+  mode.rs              PanelMode
+  scheduler.rs         PanelScheduler
+  identity.rs          RunIdentity, IdentityMatch
+  ledger.rs            panel ledger events
+  summary.rs           panel summary projection
+
+src/bin/branch_tiny.rs
+  CLI parse -> RunContract / artifact options -> BranchRuntime
+
+src/bin/branch_panel.rs
+  CLI parse -> PanelRunRequest -> PanelScheduler
+```
+
+This does not require a physical move in one commit. It defines the ownership
+target so that each mechanical extraction moves code in the right direction.
+
+### Stay In Bin During Extraction
+
+To avoid a massive one-shot move, the first implementation can keep files under
+`src/bin/branch_tiny/` while making the boundaries real:
+
+```text
+Step A:
+  introduce runtime-shaped types beside existing code.
+
+Step B:
+  make branch_tiny CLI convert Args -> RunContract.
+
+Step C:
+  make run_loop return RunSliceResult.
+
+Step D:
+  make run_chain call runtime directly.
+
+Step E:
+  move stabilized modules from bin to src/runtime/branch.
+```
+
+The important part is the dependency direction, not the first file path.
+
+### Runtime API Contract
+
+The runtime should not return `Result<(), String>` as the primary success path.
+It should return typed slice information:
+
+```text
+RunSliceResult:
+  contract: RunContract
+  generation_start
+  generation_end
+  next_branch_id
+  stop: RunStop
+  frontier_summary
+  selected_branch_summary
+  artifacts_written
+  elapsed_ms
+```
+
+Errors are reserved for runtime/tool failures such as malformed checkpoints,
+artifact write failures, or invariant violations. A combat gap, owner gap,
+terminal result, or soft pause is a successful `RunSliceResult`.
+
+### Artifact Store Boundary
+
+The runtime should write artifacts through an interface, even if the first
+implementation has only a filesystem implementation:
+
+```text
+ArtifactStore:
+  load_frontier(capsule) -> FrontierCheckpoint
+  write_manifest(...)
+  write_frontier(...)
+  write_result(...)
+  write_terminal(...)
+  write_summary(...)
+  append_capsule_ledger(...)
+```
+
+This prevents future panel code from reading and writing capsule JSON directly.
+The filesystem remains the persistence backend, but not the semantic owner.
+
+### Trace And Human Output
+
+Trace writers and human printing are sinks, not runtime semantics.
+
+`BranchRuntime` may accept optional sinks:
+
+```text
+trace_sink
+human_log_sink
+```
+
+but typed `RunSliceResult` must be complete without reading either sink. This
+is the rule that prevents the new runtime from becoming another stdout parser.
+
+### Migration Cut Line
+
+Do not start with `branch_panel`.
+
+The first useful cut is:
+
+```text
+branch_tiny CLI still works
+but internally calls BranchRuntime for one slice
+and receives RunSliceResult
+```
+
+Only after that is true should `branch_tiny --continue-capsule` be rewritten.
+Only after continuation is in-process should `branch_panel` be added.
+
 ### Phase 1: Extract BranchRuntime
 
 - Introduce typed `RunSliceRequest`, `ContinueSliceRequest`, `RunSliceResult`,
