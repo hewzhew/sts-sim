@@ -1,15 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::Instant;
 
 use serde_json::{json, Value};
 
-use super::run_capsule::RunCapsule;
 use super::run_chain_state::{capsule_state, manifest_wall_ms, CapsuleState};
-use super::run_slice_request::RunSliceRequest;
-use super::run_slice_result::RunSliceRequestKind;
+use super::run_slice_request::ContinueSliceRequest;
 use super::run_slice_result::RunSliceResult;
-use super::{branch_runtime, frontier_checkpoint, Args, ArgsOverrides, ContinueCapsuleArgs};
+use super::{branch_runtime, Args, ArgsOverrides, ContinueCapsuleArgs};
 
 pub(super) fn run(
     mut args: Args,
@@ -60,44 +57,14 @@ fn run_slice(
     capsule_path: &PathBuf,
     resume: bool,
 ) -> Result<RunSliceResult, String> {
-    let started = Instant::now();
-    let run_capsule = RunCapsule::new(capsule_path.clone());
-    let mut effective_args = args;
-    let mut generation_start = 0usize;
-    let resume_frontier = resume.then(|| capsule_path.join("frontier.json"));
-    let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
-        let checkpoint = frontier_checkpoint::load(path)?;
-        effective_args = checkpoint.args;
-        overrides.apply_to(&mut effective_args);
-        if effective_args.wall_ms.is_none() {
-            effective_args.wall_ms = args.wall_ms;
-        }
-        generation_start = checkpoint.generation;
-        checkpoint.into_frontier()?
-    } else {
-        overrides.apply_to(&mut effective_args);
-        branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
-    };
-    run_capsule.write_running_manifest(effective_args)?;
-    let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
-    let request = RunSliceRequest {
-        args: effective_args,
-        request_kind: if resume {
-            RunSliceRequestKind::ResumeFrontier
-        } else {
-            RunSliceRequestKind::Start
-        },
+    let request = ContinueSliceRequest {
+        args,
+        overrides,
+        capsule_path: capsule_path.clone(),
+        resume,
         human_output: false,
-        trace_path: None,
-        combat_gap_case_dir,
-        frontier_checkpoint_path: None,
-        resume_frontier,
-        run_capsule: Some(run_capsule),
-        generation_start,
-        frontier,
-        next_branch_id,
-        started,
-    };
+    }
+    .prepare()?;
     branch_runtime::BranchRuntime::run_slice(request)
 }
 
