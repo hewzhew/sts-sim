@@ -1,8 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchProfile, CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
-};
+use sts_simulator::ai::combat_search_v2::CombatSearchProfile;
 use sts_simulator::eval::run_control::{
     RunControlAutoStepOptions, RunControlHpLossLimit, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions,
@@ -10,18 +6,9 @@ use sts_simulator::eval::run_control::{
 
 #[derive(Clone, Copy)]
 pub(super) struct CombatSearchRecipe {
-    max_nodes: usize,
-    wall_ms: u64,
+    profile: CombatSearchProfile,
     auto_ops: usize,
     wall_limited: bool,
-    turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
-    rollout_policy: Option<CombatSearchV2RolloutPolicy>,
-    frontier_policy: Option<CombatSearchV2FrontierPolicy>,
-    potion_policy: Option<CombatSearchV2PotionPolicy>,
-    max_potions_used: Option<u32>,
-    phase_guard_policy: Option<CombatSearchV2PhaseGuardPolicy>,
-    setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
 }
 
 impl CombatSearchRecipe {
@@ -30,40 +17,18 @@ impl CombatSearchRecipe {
         auto_ops: usize,
         wall_limited: bool,
     ) -> Self {
-        let config = profile.to_config();
         Self {
-            max_nodes: config.max_nodes,
-            wall_ms: config
-                .wall_time
-                .map(|duration| duration.as_millis() as u64)
-                .unwrap_or_default(),
+            profile,
             auto_ops,
             wall_limited,
-            turn_plan_policy: config.turn_plan_policy,
-            child_rollout_policy: config.child_rollout_policy,
-            rollout_policy: Some(config.rollout_policy),
-            frontier_policy: Some(config.frontier_policy),
-            potion_policy: Some(config.potion_policy),
-            max_potions_used: config.max_potions_used,
-            phase_guard_policy: Some(config.phase_guard_policy),
-            setup_bias_policy: Some(config.setup_bias_policy),
         }
     }
 
     pub(super) fn into_auto_step_options(self) -> RunControlAutoStepOptions {
         RunControlAutoStepOptions {
             search: RunControlSearchCombatOptions {
-                max_nodes: Some(self.max_nodes),
-                wall_ms: Some(self.wall_ms),
+                profile: Some(self.profile),
                 max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-                turn_plan_policy: Some(self.turn_plan_policy),
-                child_rollout_policy: Some(self.child_rollout_policy),
-                rollout_policy: self.rollout_policy,
-                frontier_policy: self.frontier_policy,
-                potion_policy: self.potion_policy,
-                max_potions_used: self.max_potions_used,
-                phase_guard_policy: self.phase_guard_policy,
-                setup_bias_policy: self.setup_bias_policy,
                 ..Default::default()
             },
             max_operations: Some(auto_run_chunk_ops(self.auto_ops, self.wall_limited)),
@@ -88,7 +53,9 @@ mod tests {
         CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId,
         CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
         CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
-        CombatSearchTurnPlanPluginId,
+        CombatSearchTurnPlanPluginId, CombatSearchV2ChildRolloutPolicy,
+        CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy,
+        CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
     };
 
     fn profile_for_test(max_nodes: usize, wall_ms: u64) -> CombatSearchProfile {
@@ -102,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn recipe_materializes_core_search_options() {
+    fn recipe_carries_core_search_profile() {
         let profile = CombatSearchProfile {
             plugins: CombatSearchPluginStack {
                 rollout: CombatSearchRolloutPluginId::Disabled,
@@ -117,35 +84,33 @@ mod tests {
             ..profile_for_test(123, 456)
         };
         let options = CombatSearchRecipe::from_profile(profile, 7, false).into_auto_step_options();
+        let config = options.search.profile.expect("profile").to_config();
 
-        assert_eq!(options.search.max_nodes, Some(123));
-        assert_eq!(options.search.wall_ms, Some(456));
+        assert_eq!(config.max_nodes, 123);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis()),
+            Some(456)
+        );
         assert_eq!(options.max_operations, Some(7));
         assert_eq!(options.route, RunControlRouteAutomationMode::Planner);
         assert_eq!(
-            options.search.turn_plan_policy,
-            Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
+            config.turn_plan_policy,
+            CombatSearchV2TurnPlanPolicy::DiagnosticOnly
         );
         assert_eq!(
-            options.search.child_rollout_policy,
-            Some(CombatSearchV2ChildRolloutPolicy::LazyOnPop)
+            config.child_rollout_policy,
+            CombatSearchV2ChildRolloutPolicy::LazyOnPop
         );
+        assert_eq!(config.rollout_policy, CombatSearchV2RolloutPolicy::Disabled);
         assert_eq!(
-            options.search.rollout_policy,
-            Some(CombatSearchV2RolloutPolicy::Disabled)
+            config.frontier_policy,
+            CombatSearchV2FrontierPolicy::SingleQueue
         );
+        assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
+        assert_eq!(config.max_potions_used, Some(0));
         assert_eq!(
-            options.search.frontier_policy,
-            Some(CombatSearchV2FrontierPolicy::SingleQueue)
-        );
-        assert_eq!(
-            options.search.potion_policy,
-            Some(CombatSearchV2PotionPolicy::Never)
-        );
-        assert_eq!(options.search.max_potions_used, Some(0));
-        assert_eq!(
-            options.search.phase_guard_policy,
-            Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+            config.phase_guard_policy,
+            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard
         );
     }
 
@@ -164,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn recipe_materializes_explicit_combat_search_profile() {
+    fn recipe_preserves_explicit_combat_search_profile() {
         let profile = CombatSearchProfile {
             label: "test_profile",
             budget: CombatSearchBudgetSpec {
@@ -189,30 +154,34 @@ mod tests {
         };
 
         let options = CombatSearchRecipe::from_profile(profile, 5, false).into_auto_step_options();
+        let config = options.search.profile.expect("profile").to_config();
 
-        assert_eq!(options.search.max_nodes, Some(321));
-        assert_eq!(options.search.wall_ms, Some(654));
+        assert_eq!(config.max_nodes, 321);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis()),
+            Some(654)
+        );
         assert_eq!(options.max_operations, Some(5));
         assert_eq!(
-            options.search.child_rollout_policy,
-            Some(CombatSearchV2ChildRolloutPolicy::Immediate)
+            config.child_rollout_policy,
+            CombatSearchV2ChildRolloutPolicy::Immediate
         );
         assert_eq!(
-            options.search.frontier_policy,
-            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+            config.frontier_policy,
+            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
         );
         assert_eq!(
-            options.search.potion_policy,
-            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
         );
-        assert_eq!(options.search.max_potions_used, Some(2));
+        assert_eq!(config.max_potions_used, Some(2));
         assert_eq!(
-            options.search.phase_guard_policy,
-            Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+            config.phase_guard_policy,
+            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard
         );
         assert_eq!(
-            options.search.setup_bias_policy,
-            Some(CombatSearchV2SetupBiasPolicy::KeyCardOnline)
+            config.setup_bias_policy,
+            CombatSearchV2SetupBiasPolicy::KeyCardOnline
         );
     }
 }

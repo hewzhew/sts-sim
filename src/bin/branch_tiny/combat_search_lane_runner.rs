@@ -36,10 +36,30 @@ pub(super) fn run_lane_attempt(
     let before_curses = master_deck_curse_count(session);
     let mut trial = session.clone();
     let options = lane.options(request, session);
-    let max_nodes = options.search.max_nodes.unwrap_or_default();
-    let wall_ms = options.search.wall_ms.unwrap_or_default();
-    let potion_policy = options.search.potion_policy;
-    let max_potions_used = options.search.max_potions_used;
+    let profile_config = options.search.profile.map(|profile| profile.to_config());
+    let max_nodes = options
+        .search
+        .max_nodes
+        .or_else(|| profile_config.as_ref().map(|config| config.max_nodes))
+        .unwrap_or_default();
+    let wall_ms = options
+        .search
+        .wall_ms
+        .or_else(|| {
+            profile_config
+                .as_ref()
+                .and_then(|config| config.wall_time.map(|duration| duration.as_millis() as u64))
+        })
+        .unwrap_or_default();
+    let potion_policy = options
+        .search
+        .potion_policy
+        .or_else(|| profile_config.as_ref().map(|config| config.potion_policy));
+    let max_potions_used = options.search.max_potions_used.or_else(|| {
+        profile_config
+            .as_ref()
+            .and_then(|config| config.max_potions_used)
+    });
     let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
         Ok(outcome) => outcome,
         Err(err) => {

@@ -154,7 +154,12 @@ mod tests {
         effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
         search_config,
     };
-    use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+    use crate::ai::combat_search_v2::{
+        CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
+        CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchPluginStack,
+        CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
+        CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
+    };
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
@@ -460,6 +465,51 @@ mod tests {
     }
 
     #[test]
+    fn search_config_uses_profile_as_default_config_source() {
+        let session = RunControlSession::new(RunControlConfig::default());
+        let profile = CombatSearchProfile {
+            label: "profile_default",
+            budget: CombatSearchBudgetSpec {
+                max_nodes: 222,
+                wall_ms: 333,
+            },
+            plugins: CombatSearchPluginStack {
+                action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
+                rollout: CombatSearchRolloutPluginId::Disabled,
+                ..CombatSearchPluginStack::default()
+            },
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::None,
+        };
+
+        let config = search_config(
+            &session,
+            RunControlSearchCombatOptions {
+                profile: Some(profile),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+
+        assert_eq!(config.max_nodes, 222);
+        assert_eq!(config.wall_time, Some(Duration::from_millis(333)));
+        assert_eq!(config.rollout_policy, CombatSearchV2RolloutPolicy::Disabled);
+        assert_eq!(
+            config.setup_bias_policy,
+            CombatSearchV2SetupBiasPolicy::KeyCardOnline
+        );
+
+        let config = search_config(
+            &session,
+            RunControlSearchCombatOptions {
+                profile: Some(profile),
+                max_nodes: Some(444),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+        assert_eq!(config.max_nodes, 444);
+    }
+
+    #[test]
     fn search_config_uses_session_potion_defaults_and_command_override() {
         let session = RunControlSession::new(RunControlConfig {
             search_potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
@@ -512,6 +562,41 @@ mod tests {
             Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
             Some(1),
         );
+    }
+
+    #[test]
+    fn high_stakes_search_options_does_not_override_profile_potion_plugin() {
+        let session = session_with_combat_flags(true, false);
+        let profile = CombatSearchProfile {
+            label: "no_potion_profile",
+            budget: CombatSearchBudgetSpec {
+                max_nodes: 10,
+                wall_ms: 20,
+            },
+            plugins: CombatSearchPluginStack {
+                potion: CombatSearchPotionPlugin {
+                    policy: CombatSearchV2PotionPolicy::Never,
+                    max_potions_used: Some(0),
+                },
+                ..CombatSearchPluginStack::default()
+            },
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::None,
+        };
+
+        let options = high_stakes_search_options(
+            &session,
+            RunControlSearchCombatOptions {
+                profile: Some(profile),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+
+        assert_eq!(options.potion_policy, None);
+        assert_eq!(options.max_potions_used, None);
+        let config = search_config(&session, options);
+        assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::Never);
+        assert_eq!(config.max_potions_used, Some(0));
     }
 
     #[test]

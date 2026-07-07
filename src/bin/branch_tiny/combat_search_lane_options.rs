@@ -270,23 +270,24 @@ mod tests {
             sts_simulator::ai::combat_search_v2::CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         )
         .into_auto_step_options();
+        let config = options.search.profile.expect("profile").to_config();
 
         assert_eq!(
-            options.search.rollout_policy,
-            Some(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
+            config.rollout_policy,
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
         );
         assert_eq!(
-            options.search.frontier_policy,
-            Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets)
+            config.frontier_policy,
+            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
         );
         assert_eq!(
-            options.search.potion_policy,
-            Some(CombatSearchV2PotionPolicy::SemanticBudgeted)
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
         );
-        assert_eq!(options.search.max_potions_used, Some(2));
+        assert_eq!(config.max_potions_used, Some(2));
         assert_eq!(
-            options.search.phase_guard_policy,
-            Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard)
+            config.phase_guard_policy,
+            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard
         );
     }
 

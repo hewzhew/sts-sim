@@ -85,6 +85,7 @@ fn run_control_parser_accepts_search_combat_options() {
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
+                profile: None,
                 max_nodes: Some(123),
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,
@@ -181,6 +182,7 @@ fn run_control_parser_accepts_auto_step_options() {
             .expect("auto-step should parse"),
         RunControlCommand::AutoStep(RunControlAutoStepOptions {
             search: RunControlSearchCombatOptions {
+                profile: None,
                 max_nodes: Some(123),
                 max_actions_per_line: None,
                 max_engine_steps_per_action: None,

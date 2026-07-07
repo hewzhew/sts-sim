@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
+    CombatSearchProfile, CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy,
+    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2SetupBiasPolicy,
 };
 use crate::state::core::ClientInput;
 
@@ -108,6 +109,7 @@ pub enum RunControlSearchDefaultsCommand {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RunControlSearchCombatOptions {
+    pub profile: Option<CombatSearchProfile>,
     pub max_nodes: Option<usize>,
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,

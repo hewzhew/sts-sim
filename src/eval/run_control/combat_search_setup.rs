@@ -1,4 +1,6 @@
-use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
+use crate::ai::combat_search_v2::{
+    CombatSearchProfile, CombatSearchV2Config, CombatSearchV2Report,
+};
 use crate::sim::combat::CombatPosition;
 
 use super::commands::{
@@ -88,10 +90,16 @@ pub(in crate::eval::run_control) fn high_stakes_search_options(
     mut options: RunControlSearchCombatOptions,
 ) -> RunControlSearchCombatOptions {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
-    if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
+    if options.profile.is_none()
+        && options.potion_policy.is_none()
+        && session.search_potion_policy.is_none()
+    {
         options.potion_policy = plan.primary_potion_policy;
     }
-    if options.max_potions_used.is_none() && session.search_max_potions_used.is_none() {
+    if options.profile.is_none()
+        && options.max_potions_used.is_none()
+        && session.search_max_potions_used.is_none()
+    {
         options.max_potions_used = plan.primary_max_potions_used;
     }
     options
@@ -131,7 +139,10 @@ pub(super) fn search_config(
     session: &RunControlSession,
     options: RunControlSearchCombatOptions,
 ) -> CombatSearchV2Config {
-    let defaults = CombatSearchV2Config::default();
+    let defaults = options
+        .profile
+        .map(CombatSearchProfile::to_config)
+        .unwrap_or_default();
     let stop_on_win_hp_loss_at_most = effective_hp_loss_limit(session, &options);
     CombatSearchV2Config {
         max_nodes: options
@@ -147,7 +158,8 @@ pub(super) fn search_config(
         wall_time: options
             .wall_ms
             .or(session.search_wall_ms)
-            .map(std::time::Duration::from_millis),
+            .map(std::time::Duration::from_millis)
+            .or(defaults.wall_time),
         stop_on_win_hp_loss_at_most,
         min_win_candidates_before_stop: defaults.min_win_candidates_before_stop,
         input_label: Some(format!(
