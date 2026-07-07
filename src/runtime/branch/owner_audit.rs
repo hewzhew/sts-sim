@@ -157,6 +157,14 @@ pub struct OwnerAuditSliceRequest {
 }
 
 impl OwnerAuditRuntime {
+    pub fn run_cli() -> Result<(), String> {
+        let context = match run_startup::prepare()? {
+            run_startup::RunStartup::Delegated => return Ok(()),
+            run_startup::RunStartup::Ready(context) => context,
+        };
+        branch_runtime::BranchRuntime::run_slice(context).map(|_| ())
+    }
+
     pub fn run_capsule_slice(request: OwnerAuditSliceRequest) -> Result<RunSliceResult, String> {
         let slice = ContinueSliceRequest {
             args: request.args,
@@ -174,6 +182,11 @@ impl OwnerAuditRuntime {
 mod tests {
     use super::*;
     use crate::runtime::branch::{default_branch_args, RunSliceRequestKind};
+
+    #[test]
+    fn owner_audit_runtime_exposes_cli_entrypoint() {
+        let _entrypoint: fn() -> Result<(), String> = OwnerAuditRuntime::run_cli;
+    }
 
     #[test]
     fn owner_audit_runtime_runs_one_capsule_slice_in_process() {

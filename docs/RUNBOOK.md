@@ -13,7 +13,7 @@ Run one seed:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --class ironclad --max-branches 1 --wall-ms 60000
+cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
 Run a small panel:
