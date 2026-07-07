@@ -49,6 +49,16 @@ pub enum PanelSeedAction {
     RejectCapsule,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelRowStatus {
+    Scheduled,
+    SoftPaused,
+    ReusedRealStop,
+    Skipped,
+    ToolFailed,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PanelSeedDecision {
     pub identity_status: PanelIdentityStatus,
@@ -102,6 +112,7 @@ pub struct PanelArtifactFacts {
 pub struct PanelRow {
     pub seed: u64,
     pub capsule_path: String,
+    pub row_status: PanelRowStatus,
     pub identity_status: PanelIdentityStatus,
     pub reuse_decision: PanelReuseDecision,
     pub scheduler_action: PanelSeedAction,
@@ -111,12 +122,14 @@ pub struct PanelRow {
     pub terminal_exists: bool,
     pub summary_exists: bool,
     pub read_error: Option<String>,
+    pub tool_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PanelSummary {
     pub schema: &'static str,
     pub total_rows: usize,
+    pub counts_by_status: BTreeMap<String, usize>,
     pub counts_by_reuse_decision: BTreeMap<String, usize>,
     pub rows: Vec<PanelRow>,
 }
@@ -236,6 +249,18 @@ impl PanelInspectConfig {
         PanelScheduler::summarize_requests(self.requests())
     }
 
+    fn summarize_with_tool_failures(&self, failures: &BTreeMap<u64, String>) -> PanelSummary {
+        PanelSummary::from_rows(
+            PanelScheduler::resolve_requests(self.requests())
+                .into_iter()
+                .map(|resolution| {
+                    let tool_error = failures.get(&resolution.seed).cloned();
+                    PanelRow::from_resolution_with_tool_error(resolution, tool_error)
+                })
+                .collect(),
+        )
+    }
+
     fn args_for_seed(&self, seed: u64) -> Args {
         let mut args = self.args_template;
         args.seed = seed;
@@ -252,45 +277,75 @@ impl PanelSmokeRunner {
         config: PanelInspectConfig,
         options: PanelRunOptions,
     ) -> Result<PanelSummary, String> {
-        if options.max_slices == 0 {
-            return Err("max_slices must be greater than zero".to_string());
-        }
-        for _ in 0..options.max_slices {
-            let mut ran_slice = false;
-            for resolution in PanelScheduler::resolve_requests(config.requests()) {
-                let action = resolution.scheduler_action();
-                match action {
-                    PanelSeedAction::StartNew => {
-                        run_panel_seed_slice(
-                            &config,
-                            resolution.seed,
-                            action,
-                            resolution.capsule_path,
-                            false,
-                        )?;
-                        ran_slice = true;
+        run_slices_with_executor(config, options, OwnerAuditSliceExecutor)
+    }
+}
+
+trait PanelSliceExecutor {
+    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String>;
+}
+
+struct OwnerAuditSliceExecutor;
+
+impl PanelSliceExecutor for OwnerAuditSliceExecutor {
+    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String> {
+        OwnerAuditRuntime::run_capsule_slice(request).map(|_| ())
+    }
+}
+
+fn run_slices_with_executor(
+    config: PanelInspectConfig,
+    options: PanelRunOptions,
+    mut executor: impl PanelSliceExecutor,
+) -> Result<PanelSummary, String> {
+    if options.max_slices == 0 {
+        return Err("max_slices must be greater than zero".to_string());
+    }
+    let mut failures = BTreeMap::new();
+    for _ in 0..options.max_slices {
+        let mut ran_slice = false;
+        for resolution in PanelScheduler::resolve_requests(config.requests()) {
+            if failures.contains_key(&resolution.seed) {
+                continue;
+            }
+            let action = resolution.scheduler_action();
+            match action {
+                PanelSeedAction::StartNew => {
+                    if let Some(error) = run_panel_seed_slice(
+                        &config,
+                        resolution.seed,
+                        action,
+                        resolution.capsule_path,
+                        false,
+                        &mut executor,
+                    )? {
+                        failures.insert(resolution.seed, error);
                     }
-                    PanelSeedAction::ContinueCapsule => {
-                        run_panel_seed_slice(
-                            &config,
-                            resolution.seed,
-                            action,
-                            resolution.capsule_path,
-                            true,
-                        )?;
-                        ran_slice = true;
+                    ran_slice = true;
+                }
+                PanelSeedAction::ContinueCapsule => {
+                    if let Some(error) = run_panel_seed_slice(
+                        &config,
+                        resolution.seed,
+                        action,
+                        resolution.capsule_path,
+                        true,
+                        &mut executor,
+                    )? {
+                        failures.insert(resolution.seed, error);
                     }
-                    PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
-                        append_panel_event(&config, resolution.seed, action, "skipped")?;
-                    }
+                    ran_slice = true;
+                }
+                PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
+                    append_panel_event(&config, resolution.seed, action, "skipped")?;
                 }
             }
-            if !ran_slice {
-                break;
-            }
         }
-        Ok(config.summarize())
+        if !ran_slice {
+            break;
+        }
     }
+    Ok(config.summarize_with_tool_failures(&failures))
 }
 
 fn run_panel_seed_slice(
@@ -299,17 +354,21 @@ fn run_panel_seed_slice(
     action: PanelSeedAction,
     capsule_path: PathBuf,
     resume: bool,
-) -> Result<(), String> {
-    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+    executor: &mut impl PanelSliceExecutor,
+) -> Result<Option<String>, String> {
+    match executor.run_slice(OwnerAuditSliceRequest {
         args: config.args_for_seed(seed),
         capsule_path,
         resume,
         human_output: false,
     }) {
-        Ok(_) => append_panel_event(config, seed, action, "executed"),
+        Ok(_) => {
+            append_panel_event(config, seed, action, "executed")?;
+            Ok(None)
+        }
         Err(error) => {
             append_panel_event(config, seed, action, "failed")?;
-            Err(error)
+            Ok(Some(error))
         }
     }
 }
@@ -328,27 +387,46 @@ fn append_panel_event(
 
 impl PanelRow {
     pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
+        Self::from_resolution_with_tool_error(resolution, None)
+    }
+
+    fn from_resolution_with_tool_error(
+        resolution: PanelSeedResolution,
+        tool_error: Option<String>,
+    ) -> Self {
         let artifacts = resolution.decision.artifact_facts;
+        let scheduler_action = resolution.scheduler_action();
+        let row_status = if tool_error.is_some() {
+            PanelRowStatus::ToolFailed
+        } else {
+            row_status_from_action(scheduler_action)
+        };
         Self {
             seed: resolution.seed,
             capsule_path: resolution.capsule_path.display().to_string(),
+            row_status,
             identity_status: resolution.decision.identity_status,
             reuse_decision: resolution.decision.reuse_decision,
-            scheduler_action: resolution.scheduler_action(),
+            scheduler_action,
             manifest_exists: artifacts.manifest_exists,
             result_exists: artifacts.result_exists,
             frontier_exists: artifacts.frontier_exists,
             terminal_exists: artifacts.terminal_exists,
             summary_exists: artifacts.summary_exists,
             read_error: resolution.read_error,
+            tool_error,
         }
     }
 }
 
 impl PanelSummary {
     pub fn from_rows(rows: Vec<PanelRow>) -> Self {
+        let mut counts_by_status = BTreeMap::new();
         let mut counts_by_reuse_decision = BTreeMap::new();
         for row in &rows {
+            *counts_by_status
+                .entry(row_status_key(row.row_status))
+                .or_insert(0) += 1;
             *counts_by_reuse_decision
                 .entry(reuse_decision_key(row.reuse_decision))
                 .or_insert(0) += 1;
@@ -356,10 +434,27 @@ impl PanelSummary {
         Self {
             schema: "branch_panel_summary_v0",
             total_rows: rows.len(),
+            counts_by_status,
             counts_by_reuse_decision,
             rows,
         }
     }
+}
+
+fn row_status_from_action(action: PanelSeedAction) -> PanelRowStatus {
+    match action {
+        PanelSeedAction::StartNew => PanelRowStatus::Scheduled,
+        PanelSeedAction::ContinueCapsule => PanelRowStatus::SoftPaused,
+        PanelSeedAction::ReuseRealStop => PanelRowStatus::ReusedRealStop,
+        PanelSeedAction::RejectCapsule => PanelRowStatus::Skipped,
+    }
+}
+
+fn row_status_key(status: PanelRowStatus) -> String {
+    serde_json::to_value(status)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn reuse_decision_key(decision: PanelReuseDecision) -> String {
@@ -721,9 +816,11 @@ mod tests {
         assert_eq!(value["identity_status"], "exact");
         assert_eq!(value["reuse_decision"], "continue_soft_pause");
         assert_eq!(value["scheduler_action"], "continue_capsule");
+        assert_eq!(value["row_status"], "soft_paused");
         assert_eq!(value["frontier_exists"], true);
         assert_eq!(value["result_exists"], false);
         assert_eq!(value["read_error"], serde_json::Value::Null);
+        assert_eq!(value["tool_error"], serde_json::Value::Null);
     }
 
     #[test]
@@ -732,6 +829,7 @@ mod tests {
             PanelRow {
                 seed: 1,
                 capsule_path: "one".to_string(),
+                row_status: PanelRowStatus::SoftPaused,
                 identity_status: PanelIdentityStatus::Exact,
                 reuse_decision: PanelReuseDecision::ContinueSoftPause,
                 scheduler_action: PanelSeedAction::ContinueCapsule,
@@ -741,10 +839,12 @@ mod tests {
                 terminal_exists: false,
                 summary_exists: true,
                 read_error: None,
+                tool_error: None,
             },
             PanelRow {
                 seed: 2,
                 capsule_path: "two".to_string(),
+                row_status: PanelRowStatus::Scheduled,
                 identity_status: PanelIdentityStatus::Missing,
                 reuse_decision: PanelReuseDecision::CreateNewCapsule,
                 scheduler_action: PanelSeedAction::StartNew,
@@ -754,12 +854,15 @@ mod tests {
                 terminal_exists: false,
                 summary_exists: false,
                 read_error: None,
+                tool_error: None,
             },
         ];
 
         let value = serde_json::to_value(PanelSummary::from_rows(rows)).unwrap();
 
         assert_eq!(value["total_rows"], 2);
+        assert_eq!(value["counts_by_status"]["soft_paused"], 1);
+        assert_eq!(value["counts_by_status"]["scheduled"], 1);
         assert_eq!(value["counts_by_reuse_decision"]["continue_soft_pause"], 1);
         assert_eq!(value["counts_by_reuse_decision"]["create_new_capsule"], 1);
     }
@@ -912,6 +1015,55 @@ mod tests {
 
         assert_eq!(summary.total_rows, 1);
         assert_eq!(ledger.lines().count(), 2);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn smoke_runner_keeps_tool_failed_rows() {
+        struct FailingSeedExecutor {
+            failed_seed: u64,
+        }
+
+        impl PanelSliceExecutor for FailingSeedExecutor {
+            fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String> {
+                if request.args.seed == self.failed_seed {
+                    Err("synthetic slice failure".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        let root = std::env::temp_dir().join("runtime_branch_panel_tool_failed");
+        let _ = fs::remove_dir_all(&root);
+        let config = PanelInspectConfig {
+            seeds: vec![1, 2],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: args(0),
+            source_identity: source_identity(),
+        };
+
+        let summary = run_slices_with_executor(
+            config,
+            PanelRunOptions { max_slices: 1 },
+            FailingSeedExecutor { failed_seed: 2 },
+        )
+        .unwrap();
+
+        assert_eq!(summary.total_rows, 2);
+        assert_eq!(summary.counts_by_status["scheduled"], 1);
+        assert_eq!(summary.counts_by_status["tool_failed"], 1);
+        assert_eq!(summary.rows[0].row_status, PanelRowStatus::Scheduled);
+        assert_eq!(summary.rows[1].row_status, PanelRowStatus::ToolFailed);
+        assert_eq!(
+            summary.rows[1].tool_error.as_deref(),
+            Some("synthetic slice failure")
+        );
+
+        let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
+        assert!(ledger.contains("\"event\":\"executed\""));
+        assert!(ledger.contains("\"event\":\"failed\""));
 
         let _ = fs::remove_dir_all(root);
     }

@@ -123,6 +123,7 @@ mod tests {
         let summary = PanelSummary::from_rows(vec![PanelRow {
             seed: 1,
             capsule_path: "capsule".to_string(),
+            row_status: crate::runtime::branch::PanelRowStatus::Scheduled,
             identity_status: crate::runtime::branch::PanelIdentityStatus::Missing,
             reuse_decision: crate::runtime::branch::PanelReuseDecision::CreateNewCapsule,
             scheduler_action: crate::runtime::branch::PanelSeedAction::StartNew,
@@ -132,6 +133,7 @@ mod tests {
             terminal_exists: false,
             summary_exists: false,
             read_error: None,
+            tool_error: None,
         }]);
 
         let path = store.write_panel_summary(None, &summary).unwrap();
