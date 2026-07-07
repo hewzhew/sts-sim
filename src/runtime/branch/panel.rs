@@ -152,6 +152,8 @@ pub struct PanelRow {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PanelSummary {
     pub schema: &'static str,
+    pub run_mode: Option<PanelRunMode>,
+    pub max_slices: Option<usize>,
     pub total_rows: usize,
     pub counts_by_status: BTreeMap<String, usize>,
     pub counts_by_reuse_decision: BTreeMap<String, usize>,
@@ -277,8 +279,9 @@ impl PanelInspectConfig {
         &self,
         failures: &BTreeMap<u64, String>,
         status_overrides: &BTreeMap<u64, PanelRowStatus>,
+        options: PanelRunOptions,
     ) -> PanelSummary {
-        PanelSummary::from_rows(
+        PanelSummary::from_rows_with_run_options(
             PanelScheduler::resolve_requests(self.requests())
                 .into_iter()
                 .map(|resolution| {
@@ -291,6 +294,7 @@ impl PanelInspectConfig {
                     )
                 })
                 .collect(),
+            options,
         )
     }
 
@@ -404,7 +408,7 @@ fn run_slices_with_executor(
             break;
         }
     }
-    Ok(config.summarize_with_execution(&failures, &status_overrides))
+    Ok(config.summarize_with_execution(&failures, &status_overrides, options))
 }
 
 fn run_panel_seed_slice(
@@ -503,6 +507,18 @@ impl PanelRow {
 
 impl PanelSummary {
     pub fn from_rows(rows: Vec<PanelRow>) -> Self {
+        Self::from_rows_with_context(rows, None, None)
+    }
+
+    pub fn from_rows_with_run_options(rows: Vec<PanelRow>, options: PanelRunOptions) -> Self {
+        Self::from_rows_with_context(rows, Some(options.mode), Some(options.max_slices))
+    }
+
+    fn from_rows_with_context(
+        rows: Vec<PanelRow>,
+        run_mode: Option<PanelRunMode>,
+        max_slices: Option<usize>,
+    ) -> Self {
         let mut counts_by_status = BTreeMap::new();
         let mut counts_by_reuse_decision = BTreeMap::new();
         for row in &rows {
@@ -515,6 +531,8 @@ impl PanelSummary {
         }
         Self {
             schema: "branch_panel_summary_v0",
+            run_mode,
+            max_slices,
             total_rows: rows.len(),
             counts_by_status,
             counts_by_reuse_decision,
@@ -942,6 +960,8 @@ mod tests {
 
         let value = serde_json::to_value(PanelSummary::from_rows(rows)).unwrap();
 
+        assert_eq!(value["run_mode"], serde_json::Value::Null);
+        assert_eq!(value["max_slices"], serde_json::Value::Null);
         assert_eq!(value["total_rows"], 2);
         assert_eq!(value["counts_by_status"]["soft_paused"], 1);
         assert_eq!(value["counts_by_status"]["scheduled"], 1);
@@ -1099,6 +1119,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(summary.total_rows, 1);
+        assert_eq!(summary.run_mode, Some(PanelRunMode::Smoke));
+        assert_eq!(summary.max_slices, Some(2));
         assert_eq!(ledger_rows.len(), 2);
         assert_eq!(ledger_rows[0]["run_mode"], "smoke");
         assert_eq!(ledger_rows[0]["slice_index"], 0);
