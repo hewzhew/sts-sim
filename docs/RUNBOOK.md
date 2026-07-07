@@ -3,7 +3,7 @@
 This file keeps current local commands in one place. It is command-oriented;
 architecture rules belong in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Branch Tiny And Gap Panels
+## Branch Tiny And Branch Panels
 
 `branch_tiny` is the lightweight owner-audit runner. It writes run capsules
 with `summary.json`, `path.json`, optional `frontier.json`, optional
@@ -19,10 +19,19 @@ cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --class ironclad 
 Run a small panel:
 
 ```powershell
-python tools/gap_panel.py --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --max-branches 1 --wall-ms 60000
+cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
+
+For bounded continuation, use `drain`:
+
+```powershell
+cargo run --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
+```
+
+`tools/gap_panel.py` is a deprecated compatibility wrapper over
+`branch_panel`; do not add new panel semantics there.
 
 ## Continue A Capsule
 

@@ -16,25 +16,15 @@ def load_gap_panel():
 
 
 class GapPanelTests(unittest.TestCase):
-    def test_default_run_builds_branch_tiny_before_using_target_exe(self):
+    def test_default_run_delegates_to_branch_panel_smoke(self):
         gap_panel = load_gap_panel()
         commands = []
 
         def fake_run_command(command, stdout_path, _stderr_path, append=False):
             self.assertFalse(append)
             commands.append(command)
-            if command == ["cargo", "build", "--bin", "branch_tiny"]:
-                return 0
-            summary = stdout_path.parent / "summary.json"
-            summary.write_text(
-                json.dumps(
-                    {
-                        "schema": "branch_tiny_capsule_summary",
-                        "blocker_kind": "terminal",
-                    }
-                ),
-                encoding="utf-8",
-            )
+            summary = stdout_path.parent / "panel_summary.json"
+            summary.write_text(json.dumps({"schema": "branch_panel_summary_v0"}), encoding="utf-8")
             return 0
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,9 +41,43 @@ class GapPanelTests(unittest.TestCase):
                 exit_code = gap_panel.main()
 
         self.assertEqual(exit_code, 0)
-        self.assertGreaterEqual(len(commands), 2)
-        self.assertEqual(commands[0], ["cargo", "build", "--bin", "branch_tiny"])
-        self.assertEqual(commands[1][0], str(gap_panel.default_branch_tiny()))
+        self.assertEqual(len(commands), 1)
+        command = commands[0]
+        self.assertEqual(command[:5], ["cargo", "run", "--bin", "branch_panel", "--"])
+        self.assertIn("smoke", command)
+        self.assertIn("--slice-ms", command)
+        self.assertNotIn("branch_tiny", command)
+
+    def test_continue_soft_wall_delegates_to_branch_panel_drain(self):
+        gap_panel = load_gap_panel()
+        commands = []
+
+        def fake_run_command(command, stdout_path, _stderr_path, append=False):
+            commands.append(command)
+            summary = stdout_path.parent / "panel_summary.json"
+            summary.write_text(json.dumps({"schema": "branch_panel_summary_v0"}), encoding="utf-8")
+            return 0
+
+        with tempfile.TemporaryDirectory() as tmp:
+            argv = [
+                "gap_panel.py",
+                "--seeds",
+                "1",
+                "--capsule-root",
+                str(Path(tmp) / "capsules"),
+                "--continue-soft-wall",
+                "2",
+            ]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                gap_panel, "run_command", fake_run_command
+            ):
+                exit_code = gap_panel.main()
+
+        self.assertEqual(exit_code, 0)
+        command = commands[0]
+        self.assertIn("drain", command)
+        self.assertIn("--max-slices", command)
+        self.assertIn("3", command)
 
 
 if __name__ == "__main__":

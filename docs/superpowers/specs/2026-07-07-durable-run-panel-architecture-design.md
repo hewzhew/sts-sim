@@ -27,13 +27,15 @@ Current implementation has established the first durable panel path:
 - `--fresh` archives an existing seed capsule under `_archive/` before
   starting a replacement run, and the summary records
   `fresh_replaced_capsule` plus the archived capsule path.
+- `tools/gap_panel.py` is now a deprecated compatibility wrapper over
+  `branch_panel`; it no longer owns seed deletion, continuation, or
+  `branch_tiny` process orchestration.
 
 Still open:
 
 - `--fresh --discard-old` explicit destructive replacement, if it is still
   wanted.
 - compare mode and named policy/search config comparison.
-- retiring or wrapping `tools/gap_panel.py`.
 - moving more capsule artifact writes behind `BranchArtifactStore`.
 - making `branch_tiny` itself a thinner adapter over the same runtime surface.
 
