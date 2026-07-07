@@ -287,6 +287,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["schema"], "branch_tiny_capsule_ledger_event_v0");
         assert_eq!(rows[0]["event"], "slice_started");
+        assert_eq!(rows[0]["request_kind"], "start");
         assert_eq!(rows[0]["seed"], 123);
         assert_eq!(rows[0]["generation_start"], 0);
         assert!(rows[0]["generation_end"].is_null());
