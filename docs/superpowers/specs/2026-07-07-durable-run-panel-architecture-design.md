@@ -2,7 +2,7 @@
 
 ## Status
 
-Review draft, iteration 3. This document defines the intended architecture
+Review draft, iteration 4. This document defines the intended architecture
 before implementation. It does not change runner behavior by itself.
 
 ## Problem
@@ -14,6 +14,12 @@ before implementation. It does not change runner behavior by itself.
 - run each seed from Neow,
 - optionally continue once after `wall_deadline`,
 - collect `summary.json`.
+
+`branch_tiny --continue-capsule` also uses a transitional shape: it starts
+another `branch_tiny` process for each continuation slice. That was acceptable
+while the runner was still being made resumable, but it is now the wrong core
+abstraction. Process boundaries force state and errors through files, stdout,
+stderr, and exit codes even when the caller is Rust code in the same crate.
 
 That was useful while owner coverage was the main problem, but it is now the
 wrong control surface. Five-seed panels take minutes, often redo already known
@@ -28,18 +34,38 @@ script happened to be called.
 
 ## Design Goal
 
-Turn the panel from a rerun script into a durable run scheduler.
+Turn the panel from a rerun script into a durable in-process run scheduler.
 
 ```text
 seed/config/code identity
   -> reusable run capsule
   -> short resumable slices
-  -> panel-level scheduler
+  -> Rust BranchRuntime
+  -> Rust PanelScheduler
   -> typed stop classification
 ```
 
 `wall_ms` remains useful, but only as a slice-level soft deadline. It must not
 be the meaning of an experiment.
+
+The final target is not:
+
+```text
+Python -> branch_tiny.exe -> files -> Python summary parsing
+```
+
+and not:
+
+```text
+Rust panel -> branch_tiny.exe child process -> files -> Rust summary parsing
+```
+
+The target is:
+
+```text
+Rust PanelScheduler -> Rust BranchRuntime -> typed RunSliceResult
+                                      \-> ArtifactStore persists capsule
+```
 
 The closest mature analogs are:
 
@@ -61,8 +87,67 @@ separation of concerns.
 - No large human report system.
 - No attempt to make five seeds statistically meaningful.
 - No hidden reruns from Neow unless explicitly requested.
+- No Python ownership of run compatibility, resume, reuse, or stop semantics.
+- No new child-process continuation path as the target architecture.
 
 ## Core Concepts
+
+### Ownership Rule
+
+Runtime semantics live in Rust.
+
+```text
+Rust owns:
+  run identity, compatibility, slice execution, resume, stop classes,
+  artifact persistence, panel scheduling, and ledger semantics.
+
+Python owns:
+  offline analysis, ML training, plotting, notebooks, batch post-processing,
+  and optional wrapper convenience.
+```
+
+Python tools may consume Rust artifacts. They must not decide whether a capsule
+is reusable, whether a frontier is resumable, or what stop class a slice
+produced.
+
+### Branch Runtime
+
+`BranchRuntime` is the reusable Rust API that replaces `branch_tiny` as the
+semantic owner of a run slice.
+
+It should expose typed operations like:
+
+```text
+start_slice(RunSliceRequest) -> RunSliceResult
+continue_slice(ContinueSliceRequest) -> RunSliceResult
+```
+
+It owns:
+
+- creating the initial run-control session,
+- loading a frontier from an artifact store,
+- advancing one bounded slice,
+- applying soft-stop and generation contracts,
+- returning a typed stop,
+- asking the artifact store to persist state.
+
+It must not parse CLI args, print human reports, or spawn `branch_tiny` child
+processes.
+
+### CLI Adapters
+
+CLI binaries are adapters over Rust runtime APIs:
+
+```text
+branch_tiny:
+  parse one-run CLI args -> BranchRuntime
+
+branch_panel:
+  parse panel CLI args -> PanelScheduler -> BranchRuntime
+```
+
+CLI output is for humans. It is not the control surface between scheduler and
+runner.
 
 ### Panel Run
 
@@ -128,7 +213,7 @@ The capsule needs an append-only ledger in addition to summary projections.
 The ledger records:
 
 - start and continue slice attempts,
-- command kind and process result,
+- request kind and runtime result,
 - identity checks,
 - compatibility decisions,
 - artifact writes,
@@ -161,7 +246,7 @@ contract. If identity is missing or mismatched, the scheduler must mark it
 
 ### Run Slice
 
-A run slice is one bounded invocation of `branch_tiny` against a capsule.
+A run slice is one bounded call into `BranchRuntime` against a capsule.
 
 It may:
 
@@ -178,8 +263,7 @@ slice_index
 started_at
 finished_at
 elapsed_ms
-command_kind = start | continue
-process_exit
+request_kind = start | continue
 before_state
 after_state
 ```
@@ -194,7 +278,6 @@ game policy.
 
 It should:
 
-- build once,
 - resolve or create one capsule per run identity,
 - skip capsules that already reached a real stop,
 - continue soft-paused capsules in short slices,
@@ -206,6 +289,8 @@ It should not:
 
 - delete capsules by default,
 - parse human prose,
+- parse `branch_tiny` stdout/stderr,
+- classify a run from process exit code when a typed `RunSliceResult` exists,
 - infer why a deck is bad,
 - decide strategy from blocker distribution,
 - silently hide process failures.
@@ -241,9 +326,9 @@ soft_pause:
   slice_budget_with_frontier
 
 tool_failure:
-  build_failed
-  run_failed
-  continue_failed
+  runtime_error
+  artifact_write_failed
+  artifact_read_failed
   missing_summary
   malformed_capsule
   stale_or_incompatible
@@ -523,10 +608,10 @@ edit summary by hand
 
 ## CLI Shape
 
-The future panel command should read like a scheduler:
+The future panel command should call a Rust scheduler, not a Python scheduler:
 
 ```powershell
-python tools/gap_panel.py `
+cargo run --bin branch_panel -- panel run `
   --seeds 1552225671..1552225675 `
   --capsule-root tools/artifacts/gap_panels/current `
   --mode continue `
@@ -537,8 +622,10 @@ python tools/gap_panel.py `
 
 Compatibility:
 
-- keep `--wall-ms` as an alias for `--slice-ms`,
-- keep `--continue-soft-wall` temporarily as an alias for `--max-slices`,
+- keep `branch_tiny --wall-ms` as an alias for `--slice-ms` during migration,
+- keep `branch_tiny --continue-capsule` temporarily, but implement it through
+  `BranchRuntime`, not by spawning a child process,
+- keep `tools/gap_panel.py` only as a temporary wrapper or retire it,
 - add `--fresh` for explicit reruns,
 - add `--mode smoke|continue|drain|compare`,
 - reject ambiguous aliases such as `--output-root` unless intentionally added
@@ -555,8 +642,9 @@ for slice_round in 0..max_slices:
       skip
     if seed has tool_failure:
       skip unless retry requested
-    run one slice or continue one frontier
-    refresh row from summary.json
+    call BranchRuntime for one slice
+    persist artifacts through ArtifactStore
+    refresh row from RunSliceResult and capsule projection
 ```
 
 This gives each seed a chance to advance without one slow seed hiding all other
@@ -570,8 +658,7 @@ all time on one seed before touching the others is a campaign run, not a panel.
 
 The scheduler must be strict about tool failures:
 
-- build failure writes panel summary and exits non-zero,
-- one seed failure produces a row and keeps the panel table complete,
+- one seed runtime failure produces a row and keeps the panel table complete,
 - missing `summary.json` becomes `missing_summary`,
 - malformed JSON becomes `malformed_capsule`,
 - incompatible identity becomes `stale_or_incompatible`,
@@ -615,18 +702,23 @@ target is passing this scorecard in a small local tool.
 
 The design is complete, but implementation can be staged.
 
-### Phase 1: Durable Panel Semantics
+### Phase 1: Extract BranchRuntime
 
-- Add `--fresh`.
-- Add `--mode smoke|continue|drain` with `continue` as the default for an
-  existing capsule root and `smoke` as the default for a new root.
-- Stop deleting existing capsules by default.
-- Reuse real stops.
-- Continue compatible soft pauses.
-- Add `stop_class`, `reuse_decision`, `slice_count`, and elapsed fields to rows.
-- Preserve the current `panel_summary.json` shape where practical.
+- Introduce typed `RunSliceRequest`, `ContinueSliceRequest`, `RunSliceResult`,
+  and `RunStop`.
+- Move initial frontier creation out of CLI startup into runtime construction.
+- Move `run_loop::run` behind a runtime API that returns a typed result.
+- Keep `branch_tiny` behavior stable by making it a CLI adapter over runtime.
+- Preserve current capsule artifacts where practical.
 
-### Phase 2: Ledger, Identity, And Compatibility
+### Phase 2: Remove Child-Process Continuation
+
+- Rewrite `branch_tiny --continue-capsule` to call `BranchRuntime` directly.
+- Delete or retire child-process continuation from `run_chain`.
+- Record slice results through typed runtime values, not subprocess status.
+- Keep the CLI command as a compatibility surface only.
+
+### Phase 3: Ledger, Identity, And Compatibility
 
 - Add a panel-level ledger.
 - Add a capsule-level slice ledger if the existing capsule artifacts cannot
@@ -638,19 +730,33 @@ The design is complete, but implementation can be staged.
 - Treat unknown identity as non-reusable by default.
 - Implement `--fresh` archival before destructive replacement.
 
-### Phase 3: Round-Robin Slice Scheduling
+### Phase 4: Rust Panel Scheduler
+
+- Add `PanelScheduler`, `PanelRun`, `PanelMode`, and `PanelRunResult`.
+- Add `branch_panel` as the CLI adapter over `PanelScheduler`.
+- Add `--fresh`.
+- Add `--mode smoke|continue|drain` with `continue` as the default for an
+  existing capsule root and `smoke` as the default for a new root.
+- Stop deleting existing capsules by default.
+- Reuse real stops.
+- Continue compatible soft pauses.
+- Add `stop_class`, `reuse_decision`, `slice_count`, and elapsed fields to rows.
+
+### Phase 5: Round-Robin Slice Scheduling
 
 - Replace per-seed start-then-continue loops with slice rounds.
 - Add `--slice-ms`, `--max-slices`, and `--max-active`.
 - Keep `--wall-ms` as an alias for one transition period.
 
-### Phase 4: Runbook And Cleanup
+### Phase 6: Runbook And Cleanup
 
 - Update `docs/RUNBOOK.md`.
 - Rename panel wording from wall deadline to slice soft pause.
+- Deprecate or delete `tools/gap_panel.py` after `branch_panel` covers the
+  workflow.
 - Remove or deprecate obsolete panel options after one migration window.
 
-### Phase 5: Compare Mode
+### Phase 7: Compare Mode
 
 - Allow named policy/search profiles to be compared over the same compatible
   capsule set.
@@ -665,7 +771,7 @@ Tests should cover stable scheduler contracts, not prose:
 - existing compatible real-stop capsule is not rerun,
 - existing compatible wall-deadline capsule is continued,
 - `--fresh` replaces or archives a capsule explicitly,
-- process failure keeps a row with `tool_failure`,
+- runtime failure keeps a row with `tool_failure`,
 - missing summary becomes `missing_summary`,
 - `--wall-ms` and `--slice-ms` produce the same slice budget.
 - incompatible identity is not silently reused,
@@ -691,6 +797,9 @@ The design is working when:
   duplicate work.
 - a fallback/partial identity match is visibly marked and never counted as an
   exact reuse.
+- `branch_tiny --continue-capsule` no longer spawns another `branch_tiny`
+  process.
+- panel scheduling can run multiple slices inside one Rust process.
 
 ## Open Decisions Before Implementation
 
@@ -700,9 +809,10 @@ These should be answered in the implementation plan, not by ad hoc code:
 - whether `--fresh` archives old capsules or deletes them,
 - initial source fingerprint: git commit only, dirty-tree hash, or binary mtime,
 - transition period for `--continue-soft-wall`,
-- whether `gap_panel.py` remains the long-term scheduler or becomes a thin
-  launcher over a Rust scheduler.
 - exact migration rule for old capsules without identity fields.
+- exact crate/module location for `BranchRuntime` and `PanelScheduler`,
+- how much of current `src/bin/branch_tiny/*` moves into library modules before
+  `branch_panel` is introduced.
 
 ## External References Considered
 
