@@ -55,6 +55,9 @@ Current implementation has established the first durable panel path:
 - Capsule JSON/path persistence for owner-audit runs is now isolated in
   `capsule_artifact_store.rs`; `run_capsule.rs` is a runtime handle that
   delegates concrete filesystem writes to that adapter.
+- `run_persistence.rs` is now limited to recovery/soft-wall persistence;
+  objective completion artifact handling lives with branch observation instead
+  of the recovery helper.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
