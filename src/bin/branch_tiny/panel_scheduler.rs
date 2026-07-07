@@ -41,6 +41,15 @@ pub(super) enum PanelReuseDecision {
     RejectMalformedCapsule,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum PanelSeedAction {
+    StartNew,
+    ContinueCapsule,
+    ReuseRealStop,
+    RejectCapsule,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct PanelSeedDecision {
     pub(super) identity_status: PanelIdentityStatus,
@@ -81,6 +90,7 @@ pub(super) struct PanelRow {
     pub(super) capsule_path: String,
     pub(super) identity_status: PanelIdentityStatus,
     pub(super) reuse_decision: PanelReuseDecision,
+    pub(super) scheduler_action: PanelSeedAction,
     pub(super) manifest_exists: bool,
     pub(super) result_exists: bool,
     pub(super) frontier_exists: bool,
@@ -155,6 +165,20 @@ impl PanelSeedRequest {
     }
 }
 
+impl PanelSeedResolution {
+    pub(super) fn scheduler_action(&self) -> PanelSeedAction {
+        match self.decision.reuse_decision {
+            PanelReuseDecision::CreateNewCapsule => PanelSeedAction::StartNew,
+            PanelReuseDecision::ReuseRealStop => PanelSeedAction::ReuseRealStop,
+            PanelReuseDecision::ContinueSoftPause => PanelSeedAction::ContinueCapsule,
+            PanelReuseDecision::RejectUnknownIdentity
+            | PanelReuseDecision::RejectIncompatibleIdentity
+            | PanelReuseDecision::RejectIncompleteCapsule
+            | PanelReuseDecision::RejectMalformedCapsule => PanelSeedAction::RejectCapsule,
+        }
+    }
+}
+
 impl PanelScheduler {
     pub(super) fn resolve_requests(
         requests: impl IntoIterator<Item = PanelSeedRequest>,
@@ -174,6 +198,7 @@ impl PanelRow {
             capsule_path: resolution.capsule_path.display().to_string(),
             identity_status: resolution.decision.identity_status,
             reuse_decision: resolution.decision.reuse_decision,
+            scheduler_action: resolution.scheduler_action(),
             manifest_exists: artifacts.manifest_exists,
             result_exists: artifacts.result_exists,
             frontier_exists: artifacts.frontier_exists,
@@ -561,6 +586,7 @@ mod tests {
         assert_eq!(value["capsule_path"], "target/example");
         assert_eq!(value["identity_status"], "exact");
         assert_eq!(value["reuse_decision"], "continue_soft_pause");
+        assert_eq!(value["scheduler_action"], "continue_capsule");
         assert_eq!(value["frontier_exists"], true);
         assert_eq!(value["result_exists"], false);
         assert_eq!(value["read_error"], serde_json::Value::Null);
@@ -574,6 +600,7 @@ mod tests {
                 capsule_path: "one".to_string(),
                 identity_status: PanelIdentityStatus::Exact,
                 reuse_decision: PanelReuseDecision::ContinueSoftPause,
+                scheduler_action: PanelSeedAction::ContinueCapsule,
                 manifest_exists: true,
                 result_exists: false,
                 frontier_exists: true,
@@ -586,6 +613,7 @@ mod tests {
                 capsule_path: "two".to_string(),
                 identity_status: PanelIdentityStatus::Missing,
                 reuse_decision: PanelReuseDecision::CreateNewCapsule,
+                scheduler_action: PanelSeedAction::StartNew,
                 manifest_exists: false,
                 result_exists: false,
                 frontier_exists: false,
@@ -600,5 +628,30 @@ mod tests {
         assert_eq!(value["total_rows"], 2);
         assert_eq!(value["counts_by_reuse_decision"]["continue_soft_pause"], 1);
         assert_eq!(value["counts_by_reuse_decision"]["create_new_capsule"], 1);
+    }
+
+    #[test]
+    fn resolution_maps_reuse_decision_to_scheduler_action() {
+        let resolution = PanelSeedResolution {
+            seed: 1,
+            capsule_path: std::path::PathBuf::from("target/example"),
+            decision: PanelSeedDecision {
+                identity_status: PanelIdentityStatus::Exact,
+                reuse_decision: PanelReuseDecision::ContinueSoftPause,
+                artifact_facts: PanelArtifactFacts {
+                    manifest_exists: true,
+                    result_exists: false,
+                    frontier_exists: true,
+                    terminal_exists: false,
+                    summary_exists: true,
+                },
+            },
+            read_error: None,
+        };
+
+        assert_eq!(
+            resolution.scheduler_action(),
+            PanelSeedAction::ContinueCapsule
+        );
     }
 }
