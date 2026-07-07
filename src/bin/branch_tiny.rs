@@ -24,8 +24,6 @@ mod branch_status_view;
 mod campfire_owner;
 #[path = "branch_tiny/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
-#[path = "branch_tiny/capsule_reuse.rs"]
-mod capsule_reuse;
 #[path = "branch_tiny/card_reward_owner.rs"]
 mod card_reward_owner;
 #[path = "branch_tiny/cli_args.rs"]
@@ -88,8 +86,6 @@ mod owner_orchestrator;
 mod owner_routines;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
-#[path = "branch_tiny/panel_scheduler.rs"]
-mod panel_scheduler;
 #[path = "branch_tiny/render.rs"]
 mod render;
 #[path = "branch_tiny/render_choice.rs"]

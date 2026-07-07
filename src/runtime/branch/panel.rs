@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,22 +5,20 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::capsule_reuse::{decide_manifest_reuse, CapsuleReuseDecision};
-use super::run_contract::RunContract;
-use super::run_identity::SourceIdentity;
+use super::{decide_manifest_reuse, CapsuleReuseDecision, RunContract, SourceIdentity};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub(super) struct PanelSeedArtifacts {
-    pub(super) manifest: Option<Value>,
-    pub(super) result_exists: bool,
-    pub(super) frontier_exists: bool,
-    pub(super) terminal_exists: bool,
-    pub(super) summary_exists: bool,
+pub struct PanelSeedArtifacts {
+    pub manifest: Option<Value>,
+    pub result_exists: bool,
+    pub frontier_exists: bool,
+    pub terminal_exists: bool,
+    pub summary_exists: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum PanelIdentityStatus {
+pub enum PanelIdentityStatus {
     Missing,
     Exact,
     Unknown,
@@ -31,7 +27,7 @@ pub(super) enum PanelIdentityStatus {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum PanelReuseDecision {
+pub enum PanelReuseDecision {
     CreateNewCapsule,
     ReuseRealStop,
     ContinueSoftPause,
@@ -43,7 +39,7 @@ pub(super) enum PanelReuseDecision {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum PanelSeedAction {
+pub enum PanelSeedAction {
     StartNew,
     ContinueCapsule,
     ReuseRealStop,
@@ -51,63 +47,63 @@ pub(super) enum PanelSeedAction {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct PanelSeedDecision {
-    pub(super) identity_status: PanelIdentityStatus,
-    pub(super) reuse_decision: PanelReuseDecision,
-    pub(super) artifact_facts: PanelArtifactFacts,
+pub struct PanelSeedDecision {
+    pub identity_status: PanelIdentityStatus,
+    pub reuse_decision: PanelReuseDecision,
+    pub artifact_facts: PanelArtifactFacts,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct PanelSeedRequest {
-    pub(super) seed: u64,
-    pub(super) capsule_path: PathBuf,
-    pub(super) contract: RunContract,
-    pub(super) source_identity: SourceIdentity,
+pub struct PanelSeedRequest {
+    pub seed: u64,
+    pub capsule_path: PathBuf,
+    pub contract: RunContract,
+    pub source_identity: SourceIdentity,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct PanelSeedResolution {
-    pub(super) seed: u64,
-    pub(super) capsule_path: PathBuf,
-    pub(super) decision: PanelSeedDecision,
-    pub(super) read_error: Option<String>,
+pub struct PanelSeedResolution {
+    pub seed: u64,
+    pub capsule_path: PathBuf,
+    pub decision: PanelSeedDecision,
+    pub read_error: Option<String>,
 }
 
-pub(super) struct PanelScheduler;
+pub struct PanelScheduler;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct PanelArtifactFacts {
-    pub(super) manifest_exists: bool,
-    pub(super) result_exists: bool,
-    pub(super) frontier_exists: bool,
-    pub(super) terminal_exists: bool,
-    pub(super) summary_exists: bool,
+pub struct PanelArtifactFacts {
+    pub manifest_exists: bool,
+    pub result_exists: bool,
+    pub frontier_exists: bool,
+    pub terminal_exists: bool,
+    pub summary_exists: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(super) struct PanelRow {
-    pub(super) seed: u64,
-    pub(super) capsule_path: String,
-    pub(super) identity_status: PanelIdentityStatus,
-    pub(super) reuse_decision: PanelReuseDecision,
-    pub(super) scheduler_action: PanelSeedAction,
-    pub(super) manifest_exists: bool,
-    pub(super) result_exists: bool,
-    pub(super) frontier_exists: bool,
-    pub(super) terminal_exists: bool,
-    pub(super) summary_exists: bool,
-    pub(super) read_error: Option<String>,
+pub struct PanelRow {
+    pub seed: u64,
+    pub capsule_path: String,
+    pub identity_status: PanelIdentityStatus,
+    pub reuse_decision: PanelReuseDecision,
+    pub scheduler_action: PanelSeedAction,
+    pub manifest_exists: bool,
+    pub result_exists: bool,
+    pub frontier_exists: bool,
+    pub terminal_exists: bool,
+    pub summary_exists: bool,
+    pub read_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub(super) struct PanelSummary {
-    pub(super) schema: &'static str,
-    pub(super) total_rows: usize,
-    pub(super) counts_by_reuse_decision: BTreeMap<String, usize>,
-    pub(super) rows: Vec<PanelRow>,
+pub struct PanelSummary {
+    pub schema: &'static str,
+    pub total_rows: usize,
+    pub counts_by_reuse_decision: BTreeMap<String, usize>,
+    pub rows: Vec<PanelRow>,
 }
 
-pub(super) fn decide_seed_capsule(
+pub fn decide_seed_capsule(
     artifacts: PanelSeedArtifacts,
     expected_contract: RunContract,
     expected_source: &SourceIdentity,
@@ -136,7 +132,7 @@ pub(super) fn decide_seed_capsule(
 }
 
 impl PanelSeedRequest {
-    pub(super) fn resolve(self) -> PanelSeedResolution {
+    pub fn resolve(self) -> PanelSeedResolution {
         let artifacts = match PanelSeedArtifacts::from_capsule_path(&self.capsule_path) {
             Ok(artifacts) => {
                 let decision = decide_seed_capsule(artifacts, self.contract, &self.source_identity);
@@ -166,7 +162,7 @@ impl PanelSeedRequest {
 }
 
 impl PanelSeedResolution {
-    pub(super) fn scheduler_action(&self) -> PanelSeedAction {
+    pub fn scheduler_action(&self) -> PanelSeedAction {
         match self.decision.reuse_decision {
             PanelReuseDecision::CreateNewCapsule => PanelSeedAction::StartNew,
             PanelReuseDecision::ReuseRealStop => PanelSeedAction::ReuseRealStop,
@@ -180,7 +176,7 @@ impl PanelSeedResolution {
 }
 
 impl PanelScheduler {
-    pub(super) fn resolve_requests(
+    pub fn resolve_requests(
         requests: impl IntoIterator<Item = PanelSeedRequest>,
     ) -> Vec<PanelSeedResolution> {
         requests
@@ -189,9 +185,7 @@ impl PanelScheduler {
             .collect()
     }
 
-    pub(super) fn summarize_requests(
-        requests: impl IntoIterator<Item = PanelSeedRequest>,
-    ) -> PanelSummary {
+    pub fn summarize_requests(requests: impl IntoIterator<Item = PanelSeedRequest>) -> PanelSummary {
         PanelSummary::from_rows(
             Self::resolve_requests(requests)
                 .into_iter()
@@ -202,7 +196,7 @@ impl PanelScheduler {
 }
 
 impl PanelRow {
-    pub(super) fn from_resolution(resolution: PanelSeedResolution) -> Self {
+    pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
         let artifacts = resolution.decision.artifact_facts;
         Self {
             seed: resolution.seed,
@@ -221,7 +215,7 @@ impl PanelRow {
 }
 
 impl PanelSummary {
-    pub(super) fn from_rows(rows: Vec<PanelRow>) -> Self {
+    pub fn from_rows(rows: Vec<PanelRow>) -> Self {
         let mut counts_by_reuse_decision = BTreeMap::new();
         for row in &rows {
             *counts_by_reuse_decision
@@ -260,7 +254,7 @@ fn exact_identity_decision(artifact_facts: PanelArtifactFacts) -> PanelSeedDecis
 }
 
 impl PanelSeedArtifacts {
-    pub(super) fn from_capsule_path(path: &Path) -> Result<Self, String> {
+    pub fn from_capsule_path(path: &Path) -> Result<Self, String> {
         let manifest_path = path.join("manifest.json");
         let manifest = if manifest_path.exists() {
             let text = fs::read_to_string(&manifest_path)
@@ -315,9 +309,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::run_contract::{RunContract, RunObjective};
-    use crate::run_identity::SourceIdentity;
-    use crate::Args;
+    use crate::runtime::branch::{Args, RunObjective};
 
     fn args(seed: u64) -> Args {
         Args {
@@ -457,7 +449,7 @@ mod tests {
 
     #[test]
     fn reads_capsule_artifact_presence_from_directory() {
-        let dir = std::env::temp_dir().join("branch_tiny_panel_scheduler_artifacts");
+        let dir = std::env::temp_dir().join("runtime_branch_panel_artifacts");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(
@@ -481,7 +473,7 @@ mod tests {
 
     #[test]
     fn malformed_manifest_is_a_capsule_read_error() {
-        let dir = std::env::temp_dir().join("branch_tiny_panel_scheduler_bad_manifest");
+        let dir = std::env::temp_dir().join("runtime_branch_panel_bad_manifest");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.json"), "{bad").unwrap();
@@ -494,7 +486,7 @@ mod tests {
 
     #[test]
     fn seed_resolution_preserves_malformed_capsule_as_a_row_decision() {
-        let dir = std::env::temp_dir().join("branch_tiny_panel_scheduler_bad_row");
+        let dir = std::env::temp_dir().join("runtime_branch_panel_bad_row");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("manifest.json"), "{bad").unwrap();
@@ -519,7 +511,7 @@ mod tests {
 
     #[test]
     fn scheduler_resolution_keeps_one_row_per_seed() {
-        let root = std::env::temp_dir().join("branch_tiny_panel_scheduler_rows");
+        let root = std::env::temp_dir().join("runtime_branch_panel_rows");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let good = root.join("good");
@@ -576,7 +568,7 @@ mod tests {
     fn panel_row_serializes_resolution_as_structured_fields() {
         let resolution = PanelSeedResolution {
             seed: 7,
-            capsule_path: std::path::PathBuf::from("target/example"),
+            capsule_path: PathBuf::from("target/example"),
             decision: PanelSeedDecision {
                 identity_status: PanelIdentityStatus::Exact,
                 reuse_decision: PanelReuseDecision::ContinueSoftPause,
@@ -645,7 +637,7 @@ mod tests {
     fn resolution_maps_reuse_decision_to_scheduler_action() {
         let resolution = PanelSeedResolution {
             seed: 1,
-            capsule_path: std::path::PathBuf::from("target/example"),
+            capsule_path: PathBuf::from("target/example"),
             decision: PanelSeedDecision {
                 identity_status: PanelIdentityStatus::Exact,
                 reuse_decision: PanelReuseDecision::ContinueSoftPause,
@@ -667,8 +659,8 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_summarizes_requests_into_panel_summary_rows() {
-        let root = std::env::temp_dir().join("branch_tiny_panel_scheduler_summary");
+    fn exact_result_capsule_summarizes_as_reuse_real_stop() {
+        let root = std::env::temp_dir().join("runtime_branch_panel_summary");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let capsule = root.join("seed1");
@@ -688,6 +680,7 @@ mod tests {
         }]);
 
         assert_eq!(summary.total_rows, 1);
+        assert_eq!(summary.rows[0].reuse_decision, PanelReuseDecision::ReuseRealStop);
         assert_eq!(
             summary.rows[0].scheduler_action,
             PanelSeedAction::ReuseRealStop

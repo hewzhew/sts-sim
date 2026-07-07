@@ -1,16 +1,15 @@
 use serde_json::Value;
 
-use super::run_contract::RunContract;
-use super::run_identity::SourceIdentity;
+use super::{RunContract, SourceIdentity};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CapsuleReuseDecision {
+pub enum CapsuleReuseDecision {
     Exact,
     UnknownLegacy,
     Incompatible,
 }
 
-pub(super) fn decide_manifest_reuse(
+pub fn decide_manifest_reuse(
     manifest: &Value,
     expected_contract: RunContract,
     expected_source: &SourceIdentity,
@@ -39,9 +38,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::run_contract::{RunContract, RunObjective};
-    use crate::run_identity::SourceIdentity;
-    use crate::Args;
+    use crate::runtime::branch::{Args, RunObjective};
 
     fn args(seed: u64) -> Args {
         Args {
