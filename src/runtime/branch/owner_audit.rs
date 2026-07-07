@@ -280,15 +280,26 @@ mod tests {
         .unwrap();
 
         let ledger = std::fs::read_to_string(root.join("capsule_ledger.jsonl")).unwrap();
-        let rows = ledger.lines().collect::<Vec<_>>();
-        assert_eq!(rows.len(), 1);
-        let row: serde_json::Value = serde_json::from_str(rows[0]).unwrap();
-        assert_eq!(row["schema"], "branch_tiny_capsule_ledger_event_v0");
-        assert_eq!(row["event"], "slice_finished");
-        assert_eq!(row["seed"], 123);
-        assert_eq!(row["generation_start"], 0);
-        assert_eq!(row["generation_end"], 0);
-        assert!(row["artifact_refs"]
+        let rows = ledger
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["schema"], "branch_tiny_capsule_ledger_event_v0");
+        assert_eq!(rows[0]["event"], "slice_started");
+        assert_eq!(rows[0]["seed"], 123);
+        assert_eq!(rows[0]["generation_start"], 0);
+        assert!(rows[0]["generation_end"].is_null());
+        assert!(rows[0]["artifact_refs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["kind"] == "manifest"));
+        assert_eq!(rows[1]["event"], "slice_finished");
+        assert_eq!(rows[1]["seed"], 123);
+        assert_eq!(rows[1]["generation_start"], 0);
+        assert_eq!(rows[1]["generation_end"], 0);
+        assert!(rows[1]["artifact_refs"]
             .as_array()
             .unwrap()
             .iter()

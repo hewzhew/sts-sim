@@ -52,14 +52,21 @@ impl ContinueSliceRequest {
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
         };
         let artifact_writes = run_capsule.write_running_manifest(effective_args)?;
+        let request_kind = if self.resume {
+            RunSliceRequestKind::ResumeFrontier
+        } else {
+            RunSliceRequestKind::Start
+        };
+        run_capsule.append_slice_started_ledger(
+            effective_args,
+            request_kind,
+            generation_start,
+            &artifact_writes,
+        )?;
         let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
         Ok(RunSliceRequest {
             args: effective_args,
-            request_kind: if self.resume {
-                RunSliceRequestKind::ResumeFrontier
-            } else {
-                RunSliceRequestKind::Start
-            },
+            request_kind,
             human_output: self.human_output,
             trace_path: None,
             combat_gap_case_dir,

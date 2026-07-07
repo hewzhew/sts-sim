@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::run_identity::{current_source_identity, SourceIdentity};
 use super::run_slice_result::{
-    ArtifactKind, ArtifactRef, ArtifactWriteSummary, RunSliceResult, RunStop,
+    ArtifactKind, ArtifactRef, ArtifactWriteSummary, RunSliceRequestKind, RunSliceResult, RunStop,
 };
 use super::{
     combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
@@ -200,8 +200,26 @@ impl CapsuleArtifactStore {
     }
 
     pub(super) fn append_slice_ledger(&self, result: &RunSliceResult) -> Result<(), String> {
+        self.append_ledger_event(&CapsuleLedgerEvent::from_result(result))
+    }
+
+    pub(super) fn append_slice_started_ledger(
+        &self,
+        args: Args,
+        request_kind: RunSliceRequestKind,
+        generation_start: usize,
+        artifacts: &ArtifactWriteSummary,
+    ) -> Result<(), String> {
+        self.append_ledger_event(&CapsuleLedgerEvent::from_slice_start(
+            args,
+            request_kind,
+            generation_start,
+            artifacts,
+        ))
+    }
+
+    fn append_ledger_event(&self, event: &CapsuleLedgerEvent) -> Result<(), String> {
         ensure_dir(&self.root)?;
-        let event = CapsuleLedgerEvent::from_result(result);
         let encoded = serde_json::to_string(&event)
             .map_err(|error| format!("serialize capsule ledger event: {error}"))?;
         let mut file = OpenOptions::new()
@@ -369,14 +387,32 @@ struct CapsuleLedgerEvent {
     schema: &'static str,
     event: &'static str,
     seed: u64,
-    request_kind: super::run_slice_result::RunSliceRequestKind,
+    request_kind: RunSliceRequestKind,
     generation_start: usize,
-    generation_end: usize,
-    stop_kind: &'static str,
+    generation_end: Option<usize>,
+    stop_kind: Option<&'static str>,
     artifact_refs: Vec<ArtifactRef>,
 }
 
 impl CapsuleLedgerEvent {
+    fn from_slice_start(
+        args: Args,
+        request_kind: RunSliceRequestKind,
+        generation_start: usize,
+        artifacts: &ArtifactWriteSummary,
+    ) -> Self {
+        Self {
+            schema: "branch_tiny_capsule_ledger_event_v0",
+            event: "slice_started",
+            seed: args.seed,
+            request_kind,
+            generation_start,
+            generation_end: None,
+            stop_kind: None,
+            artifact_refs: artifacts.refs(),
+        }
+    }
+
     fn from_result(result: &RunSliceResult) -> Self {
         Self {
             schema: "branch_tiny_capsule_ledger_event_v0",
@@ -384,8 +420,8 @@ impl CapsuleLedgerEvent {
             seed: result.contract.game.seed,
             request_kind: result.request_kind,
             generation_start: result.generation_start,
-            generation_end: result.generation_end,
-            stop_kind: stop_kind(&result.stop),
+            generation_end: Some(result.generation_end),
+            stop_kind: Some(stop_kind(&result.stop)),
             artifact_refs: result.artifacts.refs(),
         }
     }

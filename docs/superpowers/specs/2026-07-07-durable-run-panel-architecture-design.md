@@ -22,9 +22,9 @@ Current implementation has established the first durable panel path:
   decision, scheduler action, artifact facts, and tool errors.
 - `panel_ledger.jsonl` records each executed/skipped/failed slice with run
   mode and slice index.
-- `capsule_ledger.jsonl` records each completed capsule slice with stop kind
-  and typed `ArtifactRef` entries, so a capsule has its own execution history
-  separate from scheduler decisions.
+- `capsule_ledger.jsonl` records capsule `slice_started` and
+  `slice_finished` events with stop kind and typed `ArtifactRef` entries, so a
+  capsule has its own execution history separate from scheduler decisions.
 - `--slice-ms` is the preferred panel deadline option; legacy `--wall-ms`
   remains accepted for compatibility.
 - `--fresh` archives an existing seed capsule under `_archive/` before
@@ -1425,10 +1425,10 @@ Current implementation has completed the first `ArtifactWriteSummary` plumbing
 for core capsule writes in `RunSliceResult`; those summaries now carry typed
 `ArtifactRef` values. Owner-audit JSON writes live behind a
 `CapsuleArtifactStore` adapter. The adapter also appends
-`capsule_ledger.jsonl` slice events with typed artifact refs. Panel ledger
-events and summary rows consume those refs from executed `RunSliceResult`
-values. A fully public store facade remains open; the current adapter still
-preserves the legacy JSON schemas.
+`capsule_ledger.jsonl` `slice_started` / `slice_finished` events with typed
+artifact refs. Panel ledger events and summary rows consume those refs from
+executed `RunSliceResult` values. A fully public store facade remains open; the
+current adapter still preserves the legacy JSON schemas.
 
 It should not yet redesign every artifact schema. The goal is to put a wall
 around persistence semantics first.
