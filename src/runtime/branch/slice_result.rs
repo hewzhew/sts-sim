@@ -15,6 +15,8 @@ pub struct RunSliceResult {
     pub frontier: FrontierSummary,
     pub selected_branch: Option<BranchSummary>,
     pub budget: SliceBudgetSummary,
+    pub combat_search: CombatSearchTelemetrySummary,
+    pub primary_search: PrimarySearchOutcomeSummary,
     pub artifacts: ArtifactWriteSummary,
 }
 
@@ -148,6 +150,202 @@ pub struct SliceBudgetSummary {
     pub elapsed_ms: u64,
     pub search_budget_was_capped: bool,
     pub boss_budget_was_capped: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CombatSearchTelemetrySummary {
+    pub attempt_count: u64,
+    pub complete_win_count: u64,
+    pub terminal_win_count: u64,
+    pub nodes_expanded: u64,
+    pub total_us: u64,
+    pub timing: CombatSearchTimingSummary,
+    pub by_source: Vec<CombatSearchTelemetrySourceSummary>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CombatSearchTimingSummary {
+    pub rollout_us: u64,
+    pub expansion_us: u64,
+    pub engine_step_us: u64,
+    pub pre_expand_us: u64,
+    pub frontier_pop_us: u64,
+    pub child_bookkeeping_us: u64,
+    pub turn_plan_seed_us: u64,
+    pub shadow_audit_us: u64,
+    pub root_turn_plan_diag_us: u64,
+    pub unattributed_us: u64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CombatSearchTelemetrySourceSummary {
+    pub source: String,
+    pub attempt_count: u64,
+    pub complete_win_count: u64,
+    pub terminal_win_count: u64,
+    pub nodes_expanded: u64,
+    pub total_us: u64,
+    pub timing: CombatSearchTimingSummary,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrimarySearchOutcomeSummary {
+    pub status: String,
+    pub profile: PrimarySearchProfileSummary,
+    pub telemetry: PrimarySearchTelemetrySummary,
+    pub accepted_line: Option<PrimarySearchLineSummary>,
+    pub best_complete_line: Option<PrimarySearchLineSummary>,
+    pub best_partial_line: Option<PrimarySearchLineSummary>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrimarySearchProfileSummary {
+    pub profile_id: Option<String>,
+    pub stakes: Option<String>,
+    pub max_nodes: Option<usize>,
+    pub wall_ms: Option<u64>,
+    pub potion_policy: Option<String>,
+    pub max_potions_used: Option<u32>,
+    pub internal_no_win_rescue_enabled: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrimarySearchTelemetrySummary {
+    pub elapsed_ms: Option<u64>,
+    pub deadline_hit: Option<bool>,
+    pub expanded_nodes: Option<u64>,
+    pub terminal_wins: Option<u64>,
+    pub first_win_node: Option<u64>,
+    pub first_win_ms: Option<u64>,
+    pub first_accepted_node: Option<u64>,
+    pub first_accepted_ms: Option<u64>,
+    pub rollout_us: Option<u64>,
+    pub expansion_us: Option<u64>,
+    pub transition_us: Option<u64>,
+    pub selected_first_action: Option<String>,
+    pub top_root_actions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrimarySearchLineSummary {
+    pub terminal: String,
+    pub line_len: usize,
+    pub final_player_hp: i32,
+    pub hp_delta: i32,
+    pub potions_used: u32,
+    pub first_action_label: Option<String>,
+    pub first_action_kind: Option<String>,
+}
+
+impl CombatSearchTelemetrySummary {
+    pub fn record_attempt(
+        &mut self,
+        source: impl Into<String>,
+        complete_win: bool,
+        terminal_wins: u64,
+        nodes_expanded: u64,
+        total_us: u64,
+    ) {
+        self.record_attempt_with_timing(
+            source,
+            complete_win,
+            terminal_wins,
+            nodes_expanded,
+            total_us,
+            CombatSearchTimingSummary::default(),
+        );
+    }
+
+    pub fn record_attempt_with_timing(
+        &mut self,
+        source: impl Into<String>,
+        complete_win: bool,
+        terminal_wins: u64,
+        nodes_expanded: u64,
+        total_us: u64,
+        timing: CombatSearchTimingSummary,
+    ) {
+        self.attempt_count += 1;
+        self.complete_win_count += u64::from(complete_win);
+        self.terminal_win_count += terminal_wins;
+        self.nodes_expanded += nodes_expanded;
+        self.total_us += total_us;
+        self.timing.merge(&timing);
+        self.record_source_attempt(
+            source.into(),
+            complete_win,
+            terminal_wins,
+            nodes_expanded,
+            total_us,
+            timing,
+        );
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.attempt_count += other.attempt_count;
+        self.complete_win_count += other.complete_win_count;
+        self.terminal_win_count += other.terminal_win_count;
+        self.nodes_expanded += other.nodes_expanded;
+        self.total_us += other.total_us;
+        self.timing.merge(&other.timing);
+        for source in other.by_source {
+            self.record_source_summary(source);
+        }
+    }
+
+    fn record_source_attempt(
+        &mut self,
+        source: String,
+        complete_win: bool,
+        terminal_wins: u64,
+        nodes_expanded: u64,
+        total_us: u64,
+        timing: CombatSearchTimingSummary,
+    ) {
+        self.record_source_summary(CombatSearchTelemetrySourceSummary {
+            source,
+            attempt_count: 1,
+            complete_win_count: u64::from(complete_win),
+            terminal_win_count: terminal_wins,
+            nodes_expanded,
+            total_us,
+            timing,
+        });
+    }
+
+    fn record_source_summary(&mut self, source_summary: CombatSearchTelemetrySourceSummary) {
+        if let Some(existing) = self
+            .by_source
+            .iter_mut()
+            .find(|existing| existing.source == source_summary.source)
+        {
+            existing.attempt_count += source_summary.attempt_count;
+            existing.complete_win_count += source_summary.complete_win_count;
+            existing.terminal_win_count += source_summary.terminal_win_count;
+            existing.nodes_expanded += source_summary.nodes_expanded;
+            existing.total_us += source_summary.total_us;
+            existing.timing.merge(&source_summary.timing);
+        } else {
+            self.by_source.push(source_summary);
+            self.by_source
+                .sort_by(|left, right| left.source.cmp(&right.source));
+        }
+    }
+}
+
+impl CombatSearchTimingSummary {
+    pub fn merge(&mut self, other: &Self) {
+        self.rollout_us += other.rollout_us;
+        self.expansion_us += other.expansion_us;
+        self.engine_step_us += other.engine_step_us;
+        self.pre_expand_us += other.pre_expand_us;
+        self.frontier_pop_us += other.frontier_pop_us;
+        self.child_bookkeeping_us += other.child_bookkeeping_us;
+        self.turn_plan_seed_us += other.turn_plan_seed_us;
+        self.shadow_audit_us += other.shadow_audit_us;
+        self.root_turn_plan_diag_us += other.root_turn_plan_diag_us;
+        self.unattributed_us += other.unattributed_us;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -315,12 +513,30 @@ impl RunSliceResult {
                 search_budget_was_capped: args.wall_capped_search_budget,
                 boss_budget_was_capped: args.wall_capped_boss_budget,
             },
+            combat_search: CombatSearchTelemetrySummary::default(),
+            primary_search: PrimarySearchOutcomeSummary::default(),
             artifacts: ArtifactWriteSummary::default(),
         }
     }
 
     pub fn with_selected_branch_summary(mut self, branch: BranchSummary) -> Self {
         self.selected_branch = Some(branch);
+        self
+    }
+
+    pub fn with_combat_search_telemetry(
+        mut self,
+        combat_search: CombatSearchTelemetrySummary,
+    ) -> Self {
+        self.combat_search = combat_search;
+        self
+    }
+
+    pub fn with_primary_search_outcome(
+        mut self,
+        primary_search: PrimarySearchOutcomeSummary,
+    ) -> Self {
+        self.primary_search = primary_search;
         self
     }
 

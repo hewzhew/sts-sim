@@ -290,6 +290,8 @@ mod tests {
             summary_exists: false,
             capsule_ledger_exists: false,
             artifact_refs: Vec::new(),
+            combat_search: crate::runtime::branch::CombatSearchTelemetrySummary::default(),
+            primary_search: crate::runtime::branch::PrimarySearchOutcomeSummary::default(),
             read_error: None,
             tool_error: None,
             archived_capsule_path: None,

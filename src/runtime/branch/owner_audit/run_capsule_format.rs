@@ -96,6 +96,11 @@ pub(super) fn branch_summary_value(
         "enemies": enemies,
         "capsule_path": capsule_path.display().to_string(),
         "combat_case": combat_case,
+        "combat_search": combat_search_telemetry_value(branch),
+        "primary_search": super::primary_search_outcome::primary_search_outcome_value(
+            &branch.combat_search,
+            branch.combat_portfolio.as_ref()
+        ),
         "next_recommended_command": next_recommended_command,
         "next_recommended_reason": next_recommended_reason,
     });
@@ -103,6 +108,42 @@ pub(super) fn branch_summary_value(
         value["frontier"] = frontier;
     }
     value
+}
+
+fn combat_search_telemetry_value(branch: &Branch) -> Value {
+    let mut summary = sts_simulator::runtime::branch::CombatSearchTelemetrySummary::default();
+    for attempt in &branch.combat_search {
+        summary.record_attempt_with_timing(
+            combat_search_telemetry_source(attempt),
+            attempt.complete_win_found,
+            attempt.terminal_wins,
+            attempt.nodes_expanded,
+            attempt.total_us,
+            sts_simulator::runtime::branch::CombatSearchTimingSummary {
+                rollout_us: attempt.rollout_us,
+                expansion_us: attempt.expansion_us,
+                engine_step_us: attempt.engine_step_us,
+                pre_expand_us: attempt.pre_expand_us,
+                frontier_pop_us: attempt.frontier_pop_us,
+                child_bookkeeping_us: attempt.child_bookkeeping_us,
+                turn_plan_seed_us: attempt.turn_plan_seed_us,
+                shadow_audit_us: attempt.shadow_audit_us,
+                root_turn_plan_diag_us: attempt.root_turn_plan_diag_us,
+                unattributed_us: attempt.unattributed_us,
+            },
+        );
+    }
+    serde_json::to_value(summary).unwrap_or(Value::Null)
+}
+
+fn combat_search_telemetry_source(
+    attempt: &sts_simulator::eval::run_control::CombatSearchTraceSummary,
+) -> String {
+    match attempt.lane.as_ref() {
+        Some(lane) if lane != &attempt.source => format!("{lane}/{}", attempt.source),
+        Some(lane) => lane.clone(),
+        None => attempt.source.clone(),
+    }
 }
 
 pub(super) fn frontier_summary_info_value(frontier_count: usize, running: usize) -> Value {
@@ -201,6 +242,10 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
         "combat_case": combat_case,
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
+        "primary_search": super::primary_search_outcome::primary_search_outcome_value(
+            &branch.combat_search,
+            branch.combat_portfolio.as_ref()
+        ),
         "failed_search": branch.combat_search.last(),
     })
 }
@@ -356,5 +401,145 @@ mod tests {
         );
         assert!(!command.contains("target\\debug"));
         assert!(!command.contains("combat_case_review.exe"));
+    }
+
+    #[test]
+    fn primary_search_outcome_projects_profile_and_telemetry() {
+        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+            source: "search_combat".to_string(),
+            lane: Some("primary".to_string()),
+            profile_id: None,
+            profile_max_nodes: None,
+            profile_wall_ms: None,
+            profile_potion_policy: None,
+            profile_max_potions_used: None,
+            profile_internal_no_win_rescue_enabled: None,
+            act: 1,
+            floor: 14,
+            turn: 1,
+            combat_kind: "hallway".to_string(),
+            enemies: vec!["Spike Slime L".to_string()],
+            coverage_status: "DeadlineHit".to_string(),
+            complete_trajectory_found: false,
+            complete_win_found: false,
+            best_complete: None,
+            best_win: None,
+            best_hp_loss: None,
+            nodes_to_first_win: Some(17),
+            deadline_hit: true,
+            nodes_expanded: 42,
+            terminal_wins: 0,
+            total_us: 125_000,
+            unattributed_us: 7,
+            rollout_us: 11,
+            expansion_us: 13,
+            child_bookkeeping_us: 17,
+            engine_step_us: 19,
+            pre_expand_us: 23,
+            frontier_pop_us: 29,
+            turn_plan_seed_us: 31,
+            shadow_audit_us: 37,
+            root_turn_plan_diag_us: 41,
+        };
+        let report = super::super::combat_search_report::CombatSearchPortfolioReport {
+            status: super::super::combat_search_report::CombatSearchPortfolioStatus::Failed(
+                "no_complete_winning_candidate".to_string(),
+            ),
+            max_nodes: 1_000,
+            wall_ms: 500,
+            action_keys: vec!["combat/play:Strike:target0".to_string()],
+            attempts: vec![super::super::combat_search_report::CombatSearchLaneReport {
+                label: "primary",
+                status: super::super::combat_search_report::CombatSearchPortfolioStatus::Failed(
+                    "no_complete_winning_candidate".to_string(),
+                ),
+                max_nodes: 1_000,
+                wall_ms: 500,
+                potion_policy: "never",
+                max_potions_used: Some(0),
+                action_keys: vec!["combat/play:Strike:target0".to_string()],
+            }],
+        };
+
+        let value = super::super::primary_search_outcome::primary_search_outcome_value(
+            &[attempt],
+            Some(&report),
+        );
+
+        assert_eq!(value["status"], "no_accepted_line");
+        assert_eq!(value["profile"]["profile_id"], "primary");
+        assert_eq!(value["profile"]["stakes"], "hallway");
+        assert_eq!(value["profile"]["max_nodes"], 1_000);
+        assert_eq!(value["profile"]["wall_ms"], 500);
+        assert_eq!(value["profile"]["potion_policy"], "never");
+        assert_eq!(value["profile"]["max_potions_used"], 0);
+        assert_eq!(value["profile"]["internal_no_win_rescue_enabled"], false);
+        assert!(value["accepted_line"].is_null());
+        assert_eq!(value["telemetry"]["expanded_nodes"], 42);
+        assert_eq!(value["telemetry"]["terminal_wins"], 0);
+        assert_eq!(value["telemetry"]["deadline_hit"], true);
+        assert_eq!(value["telemetry"]["first_win_node"], 17);
+        assert_eq!(value["telemetry"]["elapsed_ms"], 125);
+        assert_eq!(value["telemetry"]["rollout_us"], 11);
+        assert_eq!(value["telemetry"]["expansion_us"], 13);
+        assert_eq!(value["telemetry"]["transition_us"], 19);
+        assert_eq!(
+            value["telemetry"]["selected_first_action"],
+            "combat/play:Strike:target0"
+        );
+    }
+
+    #[test]
+    fn primary_search_outcome_uses_trace_profile_when_portfolio_missing() {
+        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+            source: "search_combat".to_string(),
+            lane: Some("primary".to_string()),
+            profile_id: Some("primary".to_string()),
+            profile_max_nodes: Some(10_000),
+            profile_wall_ms: Some(100),
+            profile_potion_policy: Some("never".to_string()),
+            profile_max_potions_used: Some(0),
+            profile_internal_no_win_rescue_enabled: Some(false),
+            act: 1,
+            floor: 14,
+            turn: 1,
+            combat_kind: "hallway".to_string(),
+            enemies: vec!["Spike Slime L".to_string()],
+            coverage_status: "DeadlineHit".to_string(),
+            complete_trajectory_found: false,
+            complete_win_found: false,
+            best_complete: None,
+            best_win: None,
+            best_hp_loss: None,
+            nodes_to_first_win: None,
+            deadline_hit: true,
+            nodes_expanded: 55,
+            terminal_wins: 0,
+            total_us: 121_000,
+            unattributed_us: 0,
+            rollout_us: 38_563,
+            expansion_us: 27_720,
+            child_bookkeeping_us: 0,
+            engine_step_us: 6_477,
+            pre_expand_us: 0,
+            frontier_pop_us: 0,
+            turn_plan_seed_us: 0,
+            shadow_audit_us: 0,
+            root_turn_plan_diag_us: 0,
+        };
+
+        let value =
+            super::super::primary_search_outcome::primary_search_outcome_value(&[attempt], None);
+
+        assert_eq!(value["status"], "no_accepted_line");
+        assert_eq!(value["profile"]["profile_id"], "primary");
+        assert_eq!(value["profile"]["stakes"], "hallway");
+        assert_eq!(value["profile"]["max_nodes"], 10_000);
+        assert_eq!(value["profile"]["wall_ms"], 100);
+        assert_eq!(value["profile"]["potion_policy"], "never");
+        assert_eq!(value["profile"]["max_potions_used"], 0);
+        assert_eq!(value["profile"]["internal_no_win_rescue_enabled"], false);
+        assert_eq!(value["telemetry"]["expanded_nodes"], 55);
+        assert_eq!(value["telemetry"]["deadline_hit"], true);
     }
 }

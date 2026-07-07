@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use super::{
     decide_manifest_reuse, Args, ArtifactRef, BranchArtifactStore, CapsuleReuseDecision,
-    OwnerAuditRuntime, OwnerAuditSliceRequest, PanelLedgerEvent, RunContract, RunSliceResult,
-    SourceIdentity,
+    CombatSearchTelemetrySummary, OwnerAuditRuntime, OwnerAuditSliceRequest, PanelLedgerEvent,
+    PrimarySearchOutcomeSummary, RunContract, RunSliceResult, SourceIdentity,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -55,6 +55,7 @@ pub enum PanelSeedAction {
 #[serde(rename_all = "snake_case")]
 pub enum PanelRowStatus {
     Scheduled,
+    RealStopped,
     SoftPaused,
     ReusedRealStop,
     Skipped,
@@ -179,6 +180,8 @@ pub struct PanelRow {
     pub summary_exists: bool,
     pub capsule_ledger_exists: bool,
     pub artifact_refs: Vec<ArtifactRef>,
+    pub combat_search: CombatSearchTelemetrySummary,
+    pub primary_search: PrimarySearchOutcomeSummary,
     pub read_error: Option<String>,
     pub tool_error: Option<String>,
     pub archived_capsule_path: Option<String>,
@@ -315,7 +318,10 @@ impl PanelInspectConfig {
         failures: &BTreeMap<u64, String>,
         status_overrides: &BTreeMap<u64, PanelRowStatus>,
         reuse_overrides: &BTreeMap<u64, PanelReuseDecision>,
+        action_overrides: &BTreeMap<u64, PanelSeedAction>,
         artifact_refs: &BTreeMap<u64, Vec<ArtifactRef>>,
+        combat_search: &BTreeMap<u64, CombatSearchTelemetrySummary>,
+        primary_search: &BTreeMap<u64, PrimarySearchOutcomeSummary>,
         archive_paths: &BTreeMap<u64, PathBuf>,
         options: PanelRunOptions,
     ) -> PanelSummary {
@@ -326,6 +332,7 @@ impl PanelInspectConfig {
                     let tool_error = failures.get(&resolution.seed).cloned();
                     let status_override = status_overrides.get(&resolution.seed).copied();
                     let reuse_override = reuse_overrides.get(&resolution.seed).copied();
+                    let action_override = action_overrides.get(&resolution.seed).copied();
                     let row_artifact_refs = artifact_refs
                         .get(&resolution.seed)
                         .cloned()
@@ -333,11 +340,22 @@ impl PanelInspectConfig {
                     let archived_capsule_path = archive_paths
                         .get(&resolution.seed)
                         .map(|path| path.display().to_string());
+                    let row_combat_search = combat_search
+                        .get(&resolution.seed)
+                        .cloned()
+                        .unwrap_or_default();
+                    let row_primary_search = primary_search
+                        .get(&resolution.seed)
+                        .cloned()
+                        .unwrap_or_default();
                     PanelRow::from_resolution_with_execution(
                         resolution,
                         status_override,
                         reuse_override,
+                        action_override,
                         row_artifact_refs,
+                        row_combat_search,
+                        row_primary_search,
                         tool_error,
                         archived_capsule_path,
                     )
@@ -390,7 +408,10 @@ fn run_slices_with_executor(
     let mut failures = BTreeMap::new();
     let mut status_overrides = BTreeMap::new();
     let mut reuse_overrides = BTreeMap::new();
+    let mut action_overrides = BTreeMap::new();
     let mut artifact_refs = BTreeMap::new();
+    let mut combat_search = BTreeMap::<u64, CombatSearchTelemetrySummary>::new();
+    let mut primary_search = BTreeMap::<u64, PrimarySearchOutcomeSummary>::new();
     let mut archive_paths = BTreeMap::new();
     let mut fresh_prepared = BTreeSet::new();
     for slice_index in 0..options.max_slices {
@@ -441,7 +462,7 @@ fn run_slices_with_executor(
                         status_overrides.insert(resolution.seed, PanelRowStatus::Skipped);
                         continue;
                     }
-                    let (error, refs) = run_panel_seed_slice(
+                    let (error, refs, row_status, telemetry, primary) = run_panel_seed_slice(
                         &config,
                         resolution.seed,
                         action,
@@ -451,6 +472,16 @@ fn run_slices_with_executor(
                         options.mode,
                         slice_index,
                     )?;
+                    status_overrides.insert(resolution.seed, row_status);
+                    combat_search
+                        .entry(resolution.seed)
+                        .or_default()
+                        .merge(telemetry);
+                    primary_search.insert(resolution.seed, primary);
+                    action_overrides.insert(resolution.seed, action);
+                    reuse_overrides
+                        .entry(resolution.seed)
+                        .or_insert(resolution.decision.reuse_decision);
                     if !refs.is_empty() {
                         artifact_refs.insert(resolution.seed, refs);
                     }
@@ -460,7 +491,7 @@ fn run_slices_with_executor(
                     ran_slice = true;
                 }
                 PanelSeedAction::ContinueCapsule => {
-                    let (error, refs) = run_panel_seed_slice(
+                    let (error, refs, row_status, telemetry, primary) = run_panel_seed_slice(
                         &config,
                         resolution.seed,
                         action,
@@ -470,6 +501,16 @@ fn run_slices_with_executor(
                         options.mode,
                         slice_index,
                     )?;
+                    status_overrides.insert(resolution.seed, row_status);
+                    combat_search
+                        .entry(resolution.seed)
+                        .or_default()
+                        .merge(telemetry);
+                    primary_search.insert(resolution.seed, primary);
+                    action_overrides.insert(resolution.seed, action);
+                    reuse_overrides
+                        .entry(resolution.seed)
+                        .or_insert(resolution.decision.reuse_decision);
                     if !refs.is_empty() {
                         artifact_refs.insert(resolution.seed, refs);
                     }
@@ -500,7 +541,10 @@ fn run_slices_with_executor(
         &failures,
         &status_overrides,
         &reuse_overrides,
+        &action_overrides,
         &artifact_refs,
+        &combat_search,
+        &primary_search,
         &archive_paths,
         options,
     ))
@@ -515,7 +559,16 @@ fn run_panel_seed_slice(
     executor: &mut impl PanelSliceExecutor,
     run_mode: PanelRunMode,
     slice_index: usize,
-) -> Result<(Option<String>, Vec<ArtifactRef>), String> {
+) -> Result<
+    (
+        Option<String>,
+        Vec<ArtifactRef>,
+        PanelRowStatus,
+        CombatSearchTelemetrySummary,
+        PrimarySearchOutcomeSummary,
+    ),
+    String,
+> {
     match executor.run_slice(OwnerAuditSliceRequest {
         args: config.args_for_seed(seed),
         capsule_path,
@@ -523,7 +576,10 @@ fn run_panel_seed_slice(
         human_output: false,
     }) {
         Ok(result) => {
+            let row_status = row_status_from_stop(&result.stop);
             let refs = result.artifacts.refs();
+            let telemetry = result.combat_search;
+            let primary = result.primary_search;
             append_panel_event(
                 config,
                 seed,
@@ -534,7 +590,7 @@ fn run_panel_seed_slice(
                 None,
                 refs.clone(),
             )?;
-            Ok((None, refs))
+            Ok((None, refs, row_status, telemetry, primary))
         }
         Err(error) => {
             append_panel_event(
@@ -547,7 +603,13 @@ fn run_panel_seed_slice(
                 Some(error.clone()),
                 Vec::new(),
             )?;
-            Ok((Some(error), Vec::new()))
+            Ok((
+                Some(error),
+                Vec::new(),
+                PanelRowStatus::ToolFailed,
+                CombatSearchTelemetrySummary::default(),
+                PrimarySearchOutcomeSummary::default(),
+            ))
         }
     }
 }
@@ -579,19 +641,32 @@ fn append_panel_event(
 
 impl PanelRow {
     pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
-        Self::from_resolution_with_execution(resolution, None, None, Vec::new(), None, None)
+        Self::from_resolution_with_execution(
+            resolution,
+            None,
+            None,
+            None,
+            Vec::new(),
+            CombatSearchTelemetrySummary::default(),
+            PrimarySearchOutcomeSummary::default(),
+            None,
+            None,
+        )
     }
 
     fn from_resolution_with_execution(
         resolution: PanelSeedResolution,
         status_override: Option<PanelRowStatus>,
         reuse_override: Option<PanelReuseDecision>,
+        action_override: Option<PanelSeedAction>,
         artifact_refs: Vec<ArtifactRef>,
+        combat_search: CombatSearchTelemetrySummary,
+        primary_search: PrimarySearchOutcomeSummary,
         tool_error: Option<String>,
         archived_capsule_path: Option<String>,
     ) -> Self {
         let artifacts = resolution.decision.artifact_facts;
-        let scheduler_action = resolution.scheduler_action();
+        let scheduler_action = action_override.unwrap_or_else(|| resolution.scheduler_action());
         let row_status = if tool_error.is_some() {
             PanelRowStatus::ToolFailed
         } else {
@@ -612,6 +687,8 @@ impl PanelRow {
             summary_exists: artifacts.summary_exists,
             capsule_ledger_exists: artifacts.capsule_ledger_exists,
             artifact_refs,
+            combat_search,
+            primary_search,
             read_error: resolution.read_error,
             tool_error,
             archived_capsule_path,
@@ -684,6 +761,15 @@ fn row_status_from_action(action: PanelSeedAction) -> PanelRowStatus {
     }
 }
 
+fn row_status_from_stop(stop: &super::RunStop) -> PanelRowStatus {
+    match stop {
+        super::RunStop::Real(_) | super::RunStop::FrontierExhausted(_) => {
+            PanelRowStatus::RealStopped
+        }
+        super::RunStop::SoftPause(_) => PanelRowStatus::SoftPaused,
+    }
+}
+
 fn row_status_key(status: PanelRowStatus) -> String {
     serde_json::to_value(status)
         .ok()
@@ -740,8 +826,9 @@ mod tests {
 
     use super::*;
     use crate::runtime::branch::{
-        Args, ArtifactKind, FrontierSummary, RunObjective, RunSliceRequestKind, RunSliceResult,
-        RunStop, SoftPause,
+        Args, ArtifactKind, CombatSearchTimingSummary, FrontierSummary,
+        PrimarySearchProfileSummary, PrimarySearchTelemetrySummary, RealStop, RunObjective,
+        RunSliceRequestKind, RunSliceResult, RunStop, SoftPause,
     };
 
     fn args(seed: u64) -> Args {
@@ -791,6 +878,31 @@ mod tests {
                 gap_count: 0,
             },
             Some(0),
+            0,
+        )
+    }
+
+    fn combat_gap_slice_result(args: Args) -> RunSliceResult {
+        RunSliceResult::new(
+            args,
+            RunSliceRequestKind::Start,
+            0,
+            13,
+            21,
+            RunStop::Real(RealStop::CombatGap {
+                generation: 13,
+                branch_id: 7,
+                boundary: "Combat".to_string(),
+                reason: "combat search did not find an executable complete win".to_string(),
+            }),
+            FrontierSummary {
+                total_count: 1,
+                running_count: 0,
+                expandable_count: 0,
+                terminal_count: 0,
+                gap_count: 1,
+            },
+            Some(7),
             0,
         )
     }
@@ -1073,6 +1185,8 @@ mod tests {
                 summary_exists: true,
                 capsule_ledger_exists: true,
                 artifact_refs: Vec::new(),
+                combat_search: CombatSearchTelemetrySummary::default(),
+                primary_search: PrimarySearchOutcomeSummary::default(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1092,6 +1206,8 @@ mod tests {
                 summary_exists: false,
                 capsule_ledger_exists: false,
                 artifact_refs: Vec::new(),
+                combat_search: CombatSearchTelemetrySummary::default(),
+                primary_search: PrimarySearchOutcomeSummary::default(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1126,6 +1242,8 @@ mod tests {
             summary_exists: false,
             capsule_ledger_exists: false,
             artifact_refs: Vec::new(),
+            combat_search: CombatSearchTelemetrySummary::default(),
+            primary_search: PrimarySearchOutcomeSummary::default(),
             read_error: None,
             tool_error: None,
             archived_capsule_path: None,
@@ -1271,6 +1389,120 @@ mod tests {
             .path
             .ends_with("frontier.json"));
         assert!(summary.rows[0].manifest_exists);
+        assert_eq!(summary.rows[0].scheduler_action, PanelSeedAction::StartNew);
+        assert_eq!(
+            summary.rows[0].reuse_decision,
+            PanelReuseDecision::CreateNewCapsule
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn smoke_runner_carries_combat_search_telemetry() {
+        struct TelemetryExecutor;
+
+        impl PanelSliceExecutor for TelemetryExecutor {
+            fn run_slice(
+                &mut self,
+                request: OwnerAuditSliceRequest,
+            ) -> Result<RunSliceResult, String> {
+                let mut telemetry = CombatSearchTelemetrySummary::default();
+                telemetry.record_attempt("primary", true, 3, 44, 55);
+                telemetry.record_attempt_with_timing(
+                    "quality",
+                    false,
+                    0,
+                    6,
+                    70,
+                    CombatSearchTimingSummary {
+                        rollout_us: 40,
+                        expansion_us: 5,
+                        engine_step_us: 7,
+                        pre_expand_us: 2,
+                        frontier_pop_us: 11,
+                        child_bookkeeping_us: 3,
+                        turn_plan_seed_us: 13,
+                        shadow_audit_us: 17,
+                        root_turn_plan_diag_us: 19,
+                        unattributed_us: 13,
+                    },
+                );
+                let primary = super::PrimarySearchOutcomeSummary {
+                    status: "no_accepted_line".to_string(),
+                    profile: PrimarySearchProfileSummary {
+                        profile_id: Some("primary".to_string()),
+                        stakes: Some("hallway".to_string()),
+                        max_nodes: Some(100),
+                        wall_ms: Some(500),
+                        potion_policy: Some("never".to_string()),
+                        max_potions_used: Some(0),
+                        internal_no_win_rescue_enabled: false,
+                    },
+                    telemetry: PrimarySearchTelemetrySummary {
+                        elapsed_ms: Some(125),
+                        deadline_hit: Some(true),
+                        expanded_nodes: Some(44),
+                        terminal_wins: Some(0),
+                        first_win_node: Some(17),
+                        first_win_ms: None,
+                        first_accepted_node: None,
+                        first_accepted_ms: None,
+                        rollout_us: Some(40),
+                        expansion_us: Some(5),
+                        transition_us: Some(7),
+                        selected_first_action: Some("combat/play:Strike:target0".to_string()),
+                        top_root_actions: vec!["combat/play:Strike:target0".to_string()],
+                    },
+                    accepted_line: None,
+                    best_complete_line: None,
+                    best_partial_line: None,
+                };
+                Ok(ok_slice_result(request.args)
+                    .with_combat_search_telemetry(telemetry)
+                    .with_primary_search_outcome(primary))
+            }
+        }
+
+        let root = std::env::temp_dir().join("runtime_branch_panel_combat_search_telemetry");
+        let _ = fs::remove_dir_all(&root);
+        let config = PanelInspectConfig {
+            seeds: vec![1],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: args(0),
+            source_identity: source_identity(),
+        };
+
+        let summary =
+            run_slices_with_executor(config, PanelRunOptions::smoke(1), TelemetryExecutor).unwrap();
+
+        let search = &summary.rows[0].combat_search;
+        assert_eq!(search.attempt_count, 2);
+        assert_eq!(search.complete_win_count, 1);
+        assert_eq!(search.terminal_win_count, 3);
+        assert_eq!(search.nodes_expanded, 50);
+        assert_eq!(search.total_us, 125);
+        assert_eq!(search.timing.rollout_us, 40);
+        assert_eq!(search.timing.frontier_pop_us, 11);
+        assert_eq!(search.timing.turn_plan_seed_us, 13);
+        assert_eq!(search.timing.shadow_audit_us, 17);
+        assert_eq!(search.timing.root_turn_plan_diag_us, 19);
+        assert_eq!(search.timing.unattributed_us, 13);
+        assert_eq!(search.by_source[0].source, "primary");
+        assert_eq!(search.by_source[0].nodes_expanded, 44);
+        assert_eq!(search.by_source[1].source, "quality");
+        assert_eq!(search.by_source[1].total_us, 70);
+        assert_eq!(search.by_source[1].timing.engine_step_us, 7);
+        assert_eq!(search.by_source[1].timing.root_turn_plan_diag_us, 19);
+        assert_eq!(summary.rows[0].primary_search.status, "no_accepted_line");
+        assert_eq!(
+            summary.rows[0].primary_search.profile.profile_id.as_deref(),
+            Some("primary")
+        );
+        assert_eq!(
+            summary.rows[0].primary_search.telemetry.first_win_node,
+            Some(17)
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1352,9 +1584,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(summary.total_rows, 2);
-        assert_eq!(summary.counts_by_status["scheduled"], 1);
+        assert_eq!(summary.counts_by_status["soft_paused"], 1);
         assert_eq!(summary.counts_by_status["tool_failed"], 1);
-        assert_eq!(summary.rows[0].row_status, PanelRowStatus::Scheduled);
+        assert_eq!(summary.rows[0].row_status, PanelRowStatus::SoftPaused);
         assert_eq!(summary.rows[1].row_status, PanelRowStatus::ToolFailed);
         assert_eq!(
             summary.rows[1].tool_error.as_deref(),
@@ -1364,6 +1596,39 @@ mod tests {
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
         assert!(ledger.contains("\"event\":\"executed\""));
         assert!(ledger.contains("\"event\":\"failed\""));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn smoke_runner_reports_real_stop_rows_after_execution() {
+        struct CombatGapExecutor;
+
+        impl PanelSliceExecutor for CombatGapExecutor {
+            fn run_slice(
+                &mut self,
+                request: OwnerAuditSliceRequest,
+            ) -> Result<RunSliceResult, String> {
+                Ok(combat_gap_slice_result(request.args))
+            }
+        }
+
+        let root = std::env::temp_dir().join("runtime_branch_panel_real_stop_status");
+        let _ = fs::remove_dir_all(&root);
+        let config = PanelInspectConfig {
+            seeds: vec![1],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: args(0),
+            source_identity: source_identity(),
+        };
+
+        let summary =
+            run_slices_with_executor(config, PanelRunOptions::smoke(1), CombatGapExecutor).unwrap();
+
+        assert_eq!(summary.total_rows, 1);
+        assert_eq!(summary.counts_by_status["real_stopped"], 1);
+        assert_eq!(summary.rows[0].row_status, PanelRowStatus::RealStopped);
+        assert_eq!(summary.rows[0].scheduler_action, PanelSeedAction::StartNew);
 
         let _ = fs::remove_dir_all(root);
     }

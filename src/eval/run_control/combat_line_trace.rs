@@ -88,6 +88,16 @@ pub(super) fn combat_line_performance_trace_annotation(
     snapshot.nodes_generated = performance.nodes_generated;
     snapshot.terminal_wins = u64::from(selected_line.terminal == CombatTerminal::Win);
     snapshot.total_us = performance.total_us;
+    snapshot.unattributed_us = performance.total_us;
+    snapshot.rollout_us = 0;
+    snapshot.expansion_us = 0;
+    snapshot.child_bookkeeping_us = 0;
+    snapshot.engine_step_us = 0;
+    snapshot.pre_expand_us = 0;
+    snapshot.frontier_pop_us = 0;
+    snapshot.turn_plan_seed_us = 0;
+    snapshot.shadow_audit_us = 0;
+    snapshot.root_turn_plan_diag_us = 0;
     RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot }
 }
 
@@ -126,6 +136,8 @@ fn combat_search_performance_snapshot(
             .best_win_trajectory
             .as_ref()
             .map(|trajectory| trajectory.hp_loss),
+        nodes_to_first_win: report.stats.nodes_to_first_win,
+        deadline_hit: report.stats.deadline_hit,
         nodes_expanded: report.stats.nodes_expanded,
         nodes_generated: report.stats.nodes_generated,
         terminal_wins: report.stats.terminal_wins,

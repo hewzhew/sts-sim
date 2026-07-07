@@ -111,6 +111,10 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     pub best_win: Option<CombatSearchTerminalLineSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nodes_to_first_win: Option<u64>,
+    #[serde(default)]
+    pub deadline_hit: bool,
     pub nodes_expanded: u64,
     pub nodes_generated: u64,
     pub terminal_wins: u64,
@@ -179,6 +183,20 @@ pub struct CombatSearchTerminalLineSummary {
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchTraceSummary {
     pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_max_nodes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_wall_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_potion_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_max_potions_used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_internal_no_win_rescue_enabled: Option<bool>,
     pub act: u8,
     pub floor: i32,
     pub turn: u32,
@@ -194,9 +212,33 @@ pub struct CombatSearchTraceSummary {
     pub best_win: Option<CombatSearchTerminalLineSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nodes_to_first_win: Option<u64>,
+    #[serde(default)]
+    pub deadline_hit: bool,
     pub nodes_expanded: u64,
     pub terminal_wins: u64,
     pub total_us: u64,
+    #[serde(default)]
+    pub unattributed_us: u64,
+    #[serde(default)]
+    pub rollout_us: u64,
+    #[serde(default)]
+    pub expansion_us: u64,
+    #[serde(default)]
+    pub child_bookkeeping_us: u64,
+    #[serde(default)]
+    pub engine_step_us: u64,
+    #[serde(default)]
+    pub pre_expand_us: u64,
+    #[serde(default)]
+    pub frontier_pop_us: u64,
+    #[serde(default)]
+    pub turn_plan_seed_us: u64,
+    #[serde(default)]
+    pub shadow_audit_us: u64,
+    #[serde(default)]
+    pub root_turn_plan_diag_us: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -411,6 +453,13 @@ pub fn combat_search_trace_summaries(
         };
         Some(CombatSearchTraceSummary {
             source: snapshot.source.clone(),
+            lane: None,
+            profile_id: None,
+            profile_max_nodes: None,
+            profile_wall_ms: None,
+            profile_potion_policy: None,
+            profile_max_potions_used: None,
+            profile_internal_no_win_rescue_enabled: None,
             act: snapshot.act,
             floor: snapshot.floor,
             turn: snapshot.turn,
@@ -422,9 +471,21 @@ pub fn combat_search_trace_summaries(
             best_complete: snapshot.best_complete.clone(),
             best_win: snapshot.best_win.clone(),
             best_hp_loss: snapshot.best_hp_loss,
+            nodes_to_first_win: snapshot.nodes_to_first_win,
+            deadline_hit: snapshot.deadline_hit,
             nodes_expanded: snapshot.nodes_expanded,
             terminal_wins: snapshot.terminal_wins,
             total_us: snapshot.total_us,
+            unattributed_us: snapshot.unattributed_us,
+            rollout_us: snapshot.rollout_us,
+            expansion_us: snapshot.expansion_us,
+            child_bookkeeping_us: snapshot.child_bookkeeping_us,
+            engine_step_us: snapshot.engine_step_us,
+            pre_expand_us: snapshot.pre_expand_us,
+            frontier_pop_us: snapshot.frontier_pop_us,
+            turn_plan_seed_us: snapshot.turn_plan_seed_us,
+            shadow_audit_us: snapshot.shadow_audit_us,
+            root_turn_plan_diag_us: snapshot.root_turn_plan_diag_us,
         })
     })
 }

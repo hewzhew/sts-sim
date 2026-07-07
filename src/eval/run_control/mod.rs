@@ -112,7 +112,8 @@ pub use trace_annotation::{
     annotations_have_combat_automation_trajectory_v1, combat_search_trace_summaries,
     CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
     CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-    CombatSearchPerformanceSnapshotV1, CombatSearchTraceSummary, RunControlTraceAnnotationV1,
+    CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary, CombatSearchTraceSummary,
+    RunControlTraceAnnotationV1,
 };
 pub use trace_replay::{
     load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,

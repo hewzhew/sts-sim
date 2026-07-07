@@ -92,6 +92,8 @@ mod owner_orchestrator;
 mod owner_routines;
 #[path = "owner_audit/owners.rs"]
 mod owners;
+#[path = "owner_audit/primary_search_outcome.rs"]
+mod primary_search_outcome;
 #[path = "owner_audit/render.rs"]
 mod render;
 #[path = "owner_audit/render_choice.rs"]

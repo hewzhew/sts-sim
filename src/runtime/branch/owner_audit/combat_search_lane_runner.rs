@@ -23,6 +23,7 @@ pub(super) struct CombatSearchLaneAttempt {
         Option<sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy>,
     pub(super) max_potions_used: Option<u32>,
     pub(super) action_keys: Vec<String>,
+    pub(super) internal_no_win_rescue_enabled: bool,
     pub(super) committed: bool,
     pub(super) auto_stop_kind: Option<RunControlAutoStopKind>,
     pub(super) applied_operations: usize,
@@ -60,6 +61,7 @@ pub(super) fn run_lane_attempt(
             .as_ref()
             .and_then(|config| config.max_potions_used)
     });
+    let internal_no_win_rescue_enabled = !options.search.disable_no_win_rescue;
     let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
         Ok(outcome) => outcome,
         Err(err) => {
@@ -72,6 +74,7 @@ pub(super) fn run_lane_attempt(
                 potion_policy,
                 max_potions_used,
                 action_keys: Vec::new(),
+                internal_no_win_rescue_enabled,
                 committed: false,
                 auto_stop_kind: None,
                 applied_operations: 0,
@@ -105,6 +108,7 @@ pub(super) fn run_lane_attempt(
         potion_policy,
         max_potions_used,
         action_keys,
+        internal_no_win_rescue_enabled,
         committed,
         auto_stop_kind,
         applied_operations,
@@ -112,10 +116,26 @@ pub(super) fn run_lane_attempt(
 }
 
 pub(super) fn combat_search_summaries(
-    outcome: &RunControlCommandOutcome,
+    attempt: &CombatSearchLaneAttempt,
 ) -> Vec<CombatSearchTraceSummary> {
-    sts_simulator::eval::run_control::combat_search_trace_summaries(&outcome.trace_annotations)
-        .collect()
+    let Some(outcome) = attempt.outcome.as_ref() else {
+        return Vec::new();
+    };
+    let mut summaries =
+        sts_simulator::eval::run_control::combat_search_trace_summaries(&outcome.trace_annotations)
+            .collect::<Vec<_>>();
+    for summary in &mut summaries {
+        summary.lane = Some(attempt.label.to_string());
+        summary.profile_id = Some(attempt.label.to_string());
+        summary.profile_max_nodes = Some(attempt.max_nodes);
+        summary.profile_wall_ms = Some(attempt.wall_ms);
+        summary.profile_potion_policy =
+            Some(potion_policy_label(attempt.potion_policy).to_string());
+        summary.profile_max_potions_used = attempt.max_potions_used;
+        summary.profile_internal_no_win_rescue_enabled =
+            Some(attempt.internal_no_win_rescue_enabled);
+    }
+    summaries
 }
 
 pub(super) fn lane_attempt_report(attempt: &CombatSearchLaneAttempt) -> CombatSearchLaneReport {
@@ -145,4 +165,17 @@ fn master_deck_curse_count(session: &RunControlSession) -> usize {
         .iter()
         .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
         .count()
+}
+
+fn potion_policy_label(
+    policy: Option<sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy>,
+) -> &'static str {
+    match policy {
+        Some(sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never) => "never",
+        Some(sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::All) => "all",
+        Some(sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted) => {
+            "semantic"
+        }
+        None => "default",
+    }
 }

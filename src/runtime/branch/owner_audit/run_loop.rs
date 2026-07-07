@@ -2,8 +2,9 @@ use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
-    frontier_summary_from_branches, objective_satisfied_result, slice_result_from_summary,
-    FrontierExhausted, RunSliceResult, RunStop, SoftPause,
+    combat_search_telemetry_from_branches, frontier_summary_from_branches,
+    objective_satisfied_result, slice_result_from_summary, FrontierExhausted, RunSliceResult,
+    RunStop, SoftPause,
 };
 use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
@@ -199,6 +200,11 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             })
         }
     });
+    let combat_search = if let Some(branch) = selected_branch.as_ref() {
+        combat_search_telemetry_from_branches(std::iter::once(branch))
+    } else {
+        combat_search_telemetry_from_branches(frontier.iter())
+    };
     let result = slice_result_from_summary(
         args,
         request_kind,
@@ -211,7 +217,8 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         artifact_writes,
         deadline.remaining_ms(),
         elapsed_ms(started),
-    );
+    )
+    .with_combat_search_telemetry(combat_search);
     finish_slice_result(run_capsule.as_ref(), result)
 }
 

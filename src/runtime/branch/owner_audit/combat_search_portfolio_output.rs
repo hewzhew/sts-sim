@@ -17,7 +17,7 @@ impl CombatSearchPortfolioOutput {
         self.applied_operations = self
             .applied_operations
             .saturating_add(attempt.applied_operations);
-        self.combat_search.extend(combat_search_summaries(outcome));
+        self.combat_search.extend(combat_search_summaries(attempt));
         if attempt.committed {
             self.auto_steps.extend(outcome.auto_applied_steps.clone());
         }
