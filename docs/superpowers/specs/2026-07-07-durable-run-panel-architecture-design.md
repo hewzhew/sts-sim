@@ -6,6 +6,33 @@ Implementation-ready review draft. This document defines the intended
 architecture before implementation. It does not change runner behavior by
 itself.
 
+## Implementation Progress
+
+Current implementation has established the first durable panel path:
+
+- `branch_panel panel inspect` reads existing capsule artifacts and writes a
+  structured `panel_summary.json`.
+- `branch_panel panel smoke` runs in-process through the Rust runtime facade;
+  it does not shell out to `branch_tiny`.
+- `branch_panel panel continue` advances only compatible soft-paused capsules;
+  it does not start missing capsules.
+- `branch_panel panel drain` runs bounded repeated slices for longer
+  continuation experiments.
+- `panel_summary.json` now records run mode, max slices, row status, reuse
+  decision, scheduler action, artifact facts, and tool errors.
+- `panel_ledger.jsonl` records each executed/skipped/failed slice with run
+  mode and slice index.
+- `--slice-ms` is the preferred panel deadline option; legacy `--wall-ms`
+  remains accepted for compatibility.
+
+Still open:
+
+- `--fresh` archival/replacement policy.
+- compare mode and named policy/search config comparison.
+- retiring or wrapping `tools/gap_panel.py`.
+- moving more capsule artifact writes behind `BranchArtifactStore`.
+- making `branch_tiny` itself a thinner adapter over the same runtime surface.
+
 ## Problem
 
 `tools/gap_panel.py` currently behaves like a convenience wrapper:
@@ -1471,7 +1498,7 @@ The first cut should come after `BranchRuntime` and in-process continuation:
 
 ```text
 1. Add branch_panel binary.
-2. Support mode=continue and mode=smoke only.
+2. Support mode=smoke, continue, and drain.
 3. Support max_active=1 only.
 4. Use BranchRuntime directly.
 5. Write panel_summary.json and panel_ledger.jsonl.
