@@ -698,9 +698,9 @@ Reviewability:
 The target for implementation is not feature parity with workflow engines. The
 target is passing this scorecard in a small local tool.
 
-## Implementation Phases
+## Detailed Migration Design
 
-The design is complete, but implementation can be staged.
+The following sections define the implementation-ready runtime boundaries.
 
 ## Migration Shape From Current `branch_tiny`
 
@@ -1240,6 +1240,270 @@ should:
 
 Then later cuts can move artifact writes behind `ArtifactStore` and remove
 summary/log parsing.
+
+## ArtifactStore Design
+
+`ArtifactStore` is the only runtime component allowed to know the concrete
+filesystem shape of a capsule. Runtime and panel code should talk to the store
+through typed operations, not by constructing JSON paths directly.
+
+### Store Responsibilities
+
+`ArtifactStore` owns:
+
+```text
+capsule directory allocation
+manifest read/write
+frontier checkpoint read/write
+result/path/terminal artifact write
+summary projection write
+combat case sidecar write
+capsule ledger append
+old-capsule archive/tombstone
+legacy args/run_contract migration reads
+```
+
+It does not own:
+
+```text
+run scheduling
+branch expansion
+owner policy
+combat search policy
+panel-level reuse decisions
+human report interpretation
+```
+
+### Typed Store Interface
+
+The runtime-facing store should be narrow:
+
+```text
+ArtifactStore:
+  open_capsule(CapsuleRef) -> CapsuleHandle
+
+CapsuleHandle:
+  read_manifest() -> Option<CapsuleManifest>
+  read_frontier() -> FrontierCheckpoint
+  write_running_manifest(RunContract, CapsuleRunState)
+  write_frontier(RunContract, FrontierCheckpoint, RunSliceResult)
+  write_result(RunContract, BranchResultArtifact, RunSliceResult)
+  write_terminal_entry(RunContract, TerminalArtifact)
+  write_summary(CapsuleSummary)
+  write_combat_case(CombatCaseArtifact) -> Option<ArtifactRef>
+  append_ledger(CapsuleLedgerEvent)
+  archive_existing(ArchiveReason) -> ArchivedCapsuleRef
+```
+
+The exact Rust names can differ. The important rule is that callers pass typed
+payloads and receive typed artifact references.
+
+### ArtifactRef
+
+Artifacts should be referenced through a small typed reference:
+
+```text
+ArtifactRef:
+  kind
+  path
+  schema
+  created_by
+```
+
+This keeps ledgers and summaries from embedding large payloads while still
+letting tools find the underlying detail.
+
+### Summary Generation
+
+`CapsuleSummary` should be produced from:
+
+```text
+RunSliceResult
+  + latest branch/run state projection
+  + artifact refs
+```
+
+It should not independently inspect result/frontier files to rediscover the
+stop. That is how summaries become a parallel logic layer.
+
+### Legacy Compatibility
+
+The store should be the compatibility boundary for old artifacts:
+
+```text
+old manifest.args -> RunContract
+old frontier.args -> RunContract
+missing run_contract -> LegacyIdentity
+```
+
+Runtime code should not contain scattered legacy JSON parsing. If a legacy
+field needs to be understood, `ArtifactStore` converts it into typed data and
+marks its provenance.
+
+### First ArtifactStore Cut
+
+The first cut should be deliberately modest:
+
+```text
+1. Introduce ArtifactRef and ArtifactWriteSummary.
+2. Wrap existing RunCapsule writes behind a CapsuleArtifactStore adapter.
+3. Keep existing JSON schemas stable.
+4. Make RunSliceResult receive ArtifactWriteSummary from the adapter.
+5. Keep direct JSON format code private to the store adapter.
+```
+
+It should not yet redesign every artifact schema. The goal is to put a wall
+around persistence semantics first.
+
+## PanelScheduler Design
+
+`PanelScheduler` is a Rust orchestrator over `BranchRuntime`. It should never
+shell out to `branch_tiny`, parse `branch_tiny` output, or infer strategy from
+game-specific labels.
+
+### Panel Request
+
+Panel scheduling starts from a typed request:
+
+```text
+PanelRunRequest:
+  panel_id
+  mode
+  capsule_root
+  seeds
+  run_contract_template
+  max_slices
+  max_active
+  fresh_policy
+  identity_policy
+```
+
+`run_contract_template` carries all non-seed run settings. Each seed produces a
+concrete `RunContract`.
+
+### Panel Row Lifecycle
+
+Each seed row moves through a simple lifecycle:
+
+```text
+Requested
+  -> IdentityResolved
+  -> ReusedRealStop
+  -> Scheduled
+  -> SoftPaused
+  -> RealStopped
+  -> ToolFailed
+  -> Skipped
+```
+
+This lifecycle is scheduler state, not a human report. It is what makes
+round-robin, resume, and partial failure understandable.
+
+### Scheduling Loop
+
+The scheduler loop should be:
+
+```text
+resolve identities for all seeds
+for round in 0..max_slices:
+  for row in seed order:
+    if row is terminal for panel purposes:
+      continue
+    if no runnable capsule action exists:
+      mark skipped or tool_failed
+      continue
+    call BranchRuntime for one slice
+    persist through ArtifactStore
+    update row from RunSliceResult
+    append panel ledger event
+  if all rows are terminal for panel purposes:
+    break
+write panel_summary.json
+```
+
+Panel purposes vary by mode:
+
+```text
+smoke:
+  one slice per seed unless real stop appears first.
+
+continue:
+  run only missing or soft-paused compatible capsules.
+
+drain:
+  continue until real stop, tool failure, or panel budget.
+
+compare:
+  materialize separate compatible result sets by named config.
+```
+
+### Identity Resolution
+
+Before any slice runs, scheduler resolves:
+
+```text
+requested RunIdentity
+existing capsule identity
+identity_match
+reuse_decision
+```
+
+`PanelScheduler` chooses reuse or scheduling. `ArtifactStore` only reports what
+exists. `BranchRuntime` only executes a requested slice.
+
+### Failure Handling
+
+A failed seed must not remove the row:
+
+```text
+runtime error -> ToolFailed row with error kind
+artifact error -> ToolFailed row with artifact ref if available
+identity mismatch -> Skipped or ToolFailed depending on policy
+```
+
+The panel may return non-zero for tool failures, but it must still write a full
+summary with one row per requested seed.
+
+### First PanelScheduler Cut
+
+The first cut should come after `BranchRuntime` and in-process continuation:
+
+```text
+1. Add branch_panel binary.
+2. Support mode=continue and mode=smoke only.
+3. Support max_active=1 only.
+4. Use BranchRuntime directly.
+5. Write panel_summary.json and panel_ledger.jsonl.
+6. Keep tools/gap_panel.py as deprecated wrapper or leave it untouched until
+   branch_panel covers current usage.
+```
+
+It should not yet implement compare mode, parallelism, HTML, or ML export.
+
+## Design Completion Checklist
+
+This design is complete enough to start implementation when these statements
+are true:
+
+```text
+Run identity is defined as input-addressed typed data.
+RunContract is separated from CLI Args.
+RunSliceResult is the typed result of a slice.
+RunStop distinguishes real stop, soft pause, and frontier exhaustion.
+ArtifactStore owns capsule filesystem semantics.
+PanelScheduler calls BranchRuntime in-process.
+CLI binaries are adapters.
+Python tools only consume outputs.
+Legacy artifacts have a migration path.
+Implementation phases start with low-risk compatibility cuts.
+```
+
+The design is not trying to solve search quality, reward strategy, or ML. It is
+trying to make those future experiments sit on a clean runtime surface.
+
+## Implementation Phases
+
+The design is complete, but implementation should be staged.
 
 ### Phase 1: Extract BranchRuntime
 
