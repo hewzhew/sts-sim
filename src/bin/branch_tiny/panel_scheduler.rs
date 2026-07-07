@@ -188,6 +188,17 @@ impl PanelScheduler {
             .map(PanelSeedRequest::resolve)
             .collect()
     }
+
+    pub(super) fn summarize_requests(
+        requests: impl IntoIterator<Item = PanelSeedRequest>,
+    ) -> PanelSummary {
+        PanelSummary::from_rows(
+            Self::resolve_requests(requests)
+                .into_iter()
+                .map(PanelRow::from_resolution)
+                .collect(),
+        )
+    }
 }
 
 impl PanelRow {
@@ -653,5 +664,36 @@ mod tests {
             resolution.scheduler_action(),
             PanelSeedAction::ContinueCapsule
         );
+    }
+
+    #[test]
+    fn scheduler_summarizes_requests_into_panel_summary_rows() {
+        let root = std::env::temp_dir().join("branch_tiny_panel_scheduler_summary");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let capsule = root.join("seed1");
+        fs::create_dir_all(&capsule).unwrap();
+        fs::write(
+            capsule.join("manifest.json"),
+            exact_manifest(RunContract::from_args(args(1))).to_string(),
+        )
+        .unwrap();
+        fs::write(capsule.join("result.json"), "{}").unwrap();
+
+        let summary = PanelScheduler::summarize_requests(vec![PanelSeedRequest {
+            seed: 1,
+            capsule_path: capsule,
+            contract: RunContract::from_args(args(1)),
+            source_identity: source_identity(),
+        }]);
+
+        assert_eq!(summary.total_rows, 1);
+        assert_eq!(
+            summary.rows[0].scheduler_action,
+            PanelSeedAction::ReuseRealStop
+        );
+        assert_eq!(summary.counts_by_reuse_decision["reuse_real_stop"], 1);
+
+        let _ = fs::remove_dir_all(root);
     }
 }
