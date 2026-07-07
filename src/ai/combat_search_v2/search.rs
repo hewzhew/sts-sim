@@ -16,6 +16,7 @@ mod finish_evidence;
 mod finish_frontier;
 mod finish_outcome;
 mod finish_policy;
+mod finish_trajectories;
 mod loop_state;
 mod node_action_ordering;
 mod node_action_surface;

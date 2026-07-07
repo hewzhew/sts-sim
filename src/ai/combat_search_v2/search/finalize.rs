@@ -1,10 +1,10 @@
 use super::super::*;
-use super::best_trajectories::SearchTrajectoryBook;
 use super::finish_coverage::{coverage_status_for_finished_search, coverage_status_reason};
 use super::finish_evidence::evidence_reliability_report;
 use super::finish_frontier::frontier_sample_states;
 use super::finish_outcome::outcome_report;
 use super::finish_policy::{budget_report, search_policy_report};
+use super::finish_trajectories::trajectory_reports;
 use super::loop_state::SearchLoopState;
 
 pub(super) struct SearchFinishInput {
@@ -36,13 +36,6 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         accepted_complete_candidate,
         ..
     } = loop_state;
-    let SearchTrajectoryBook {
-        best_complete,
-        best_win,
-        win_candidates,
-        best_frontier,
-    } = trajectories;
-
     let exhaustive = !accepted_complete_candidate && !exhausted && frontier.is_empty();
     let coverage_status =
         coverage_status_for_finished_search(&stats, exhaustive, accepted_complete_candidate);
@@ -64,6 +57,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         diagnostics.card_identity.states_with_uuid_card_id_conflict > 0;
     let search_policy = search_policy_report(&config);
     let budget = budget_report(&config);
+    let rollout = rollout_cache.finish(trajectories.best_frontier.as_ref());
+    let trajectory_reports = trajectory_reports(trajectories);
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
@@ -76,36 +71,24 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         outcome: outcome_report(
             coverage_status,
             coverage_reason,
-            best_complete.is_some(),
-            best_win.is_some(),
+            trajectory_reports.best_complete_trajectory.is_some(),
+            trajectory_reports.best_win_trajectory.is_some(),
             exhaustive,
         ),
-        best_complete_trajectory: best_complete
-            .as_ref()
-            .map(|node| trajectory_report(node, false)),
-        best_win_trajectory: best_win.as_ref().map(|node| trajectory_report(node, false)),
-        win_candidate_trajectories: win_candidates
-            .iter()
-            .map(|node| trajectory_report(node, false))
-            .collect(),
-        best_frontier_trajectory: best_frontier.as_ref().map(|node| {
-            trajectory_report(
-                node,
-                terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved,
-            )
-        }),
+        best_complete_trajectory: trajectory_reports.best_complete_trajectory,
+        best_win_trajectory: trajectory_reports.best_win_trajectory,
+        win_candidate_trajectories: trajectory_reports.win_candidate_trajectories,
+        best_frontier_trajectory: trajectory_reports.best_frontier_trajectory,
         frontier: CombatSearchV2FrontierReport {
             remaining_states: frontier.len(),
             unresolved_leaf_count,
             max_actions_cut_count,
             engine_step_limit_count,
             potion_budget_cut_count,
-            best_estimated_value: best_frontier
-                .as_ref()
-                .map(combat_search_frontier_value_report),
+            best_estimated_value: trajectory_reports.best_frontier_value,
             sample_states,
         },
-        rollout: rollout_cache.finish(best_frontier.as_ref()),
+        rollout,
         diagnostics,
         stats,
         performance,
