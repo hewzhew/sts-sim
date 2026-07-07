@@ -30,6 +30,12 @@ Current implementation has established the first durable panel path:
 - `branch_panel panel compare` materializes named search profiles under
   `_compare/<profile>/<seed>` and writes one combined comparison summary. V0
   supports `baseline` and `double-search`.
+- `branch_tiny` is now a thin CLI adapter over `OwnerAuditRuntime::run_cli`.
+- `branch_tiny --continue-capsule` runs continuation slices in-process through
+  `BranchRuntime`; it no longer spawns nested `branch_tiny` child processes.
+- Owner-audit implementation files now live under
+  `src/runtime/branch/owner_audit/`; the runtime facade no longer imports
+  implementation modules from `src/bin/branch_tiny`.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -41,7 +47,8 @@ Still open:
 - richer named policy/search config comparison beyond the current
   `baseline` / `double-search` V0.
 - moving more capsule artifact writes behind `BranchArtifactStore`.
-- making `branch_tiny` itself a thinner adapter over the same runtime surface.
+- narrowing the remaining owner-audit facade surface so persistence and
+  run-slice result construction are less mixed with owner/search internals.
 
 ## Problem
 
@@ -53,11 +60,12 @@ Still open:
 - optionally continue once after `wall_deadline`,
 - collect `summary.json`.
 
-`branch_tiny --continue-capsule` also uses a transitional shape: it starts
-another `branch_tiny` process for each continuation slice. That was acceptable
-while the runner was still being made resumable, but it is now the wrong core
-abstraction. Process boundaries force state and errors through files, stdout,
-stderr, and exit codes even when the caller is Rust code in the same crate.
+`branch_tiny --continue-capsule` previously used a transitional shape: it
+started another `branch_tiny` process for each continuation slice. That has
+been removed. The remaining transitional shape is internal layering:
+owner-audit implementation files now live under runtime code, but persistence,
+run-slice construction, owner policy, and combat portfolio internals still sit
+inside the same owner-audit implementation subtree.
 
 That was useful while owner coverage was the main problem, but it is now the
 wrong control surface. Five-seed panels take minutes, often redo already known
@@ -1552,6 +1560,8 @@ The design is complete, but implementation should be staged.
 - Move `run_loop::run` behind a runtime API that returns a typed result.
 - Keep `branch_tiny` behavior stable by making it a CLI adapter over runtime.
 - Preserve current capsule artifacts where practical.
+- Current status: implemented. `branch_tiny` is a thin adapter and the
+  owner-audit implementation files are runtime-owned.
 
 ### Phase 2: Remove Child-Process Continuation
 
@@ -1559,6 +1569,8 @@ The design is complete, but implementation should be staged.
 - Delete or retire child-process continuation from `run_chain`.
 - Record slice results through typed runtime values, not subprocess status.
 - Keep the CLI command as a compatibility surface only.
+- Current status: implemented. `run_chain` calls `BranchRuntime::run_slice`
+  directly and writes slice results from typed `RunSliceResult` values.
 
 ### Phase 3: Ledger, Identity, And Compatibility
 
