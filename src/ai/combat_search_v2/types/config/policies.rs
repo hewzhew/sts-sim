@@ -137,6 +137,7 @@ impl CombatSearchV2RolloutPolicy {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2TurnPlanPolicy {
+    Disabled,
     DiagnosticOnly,
     RootFrontierSeed,
     TurnBoundaryFrontierSeed,
@@ -146,13 +147,14 @@ pub enum CombatSearchV2TurnPlanPolicy {
 
 impl Default for CombatSearchV2TurnPlanPolicy {
     fn default() -> Self {
-        Self::DiagnosticOnly
+        Self::Disabled
     }
 }
 
 impl CombatSearchV2TurnPlanPolicy {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Disabled => "disabled",
             Self::DiagnosticOnly => "diagnostic_only",
             Self::RootFrontierSeed => "root_frontier_seed",
             Self::TurnBoundaryFrontierSeed => "turn_boundary_frontier_seed",
@@ -178,6 +180,10 @@ impl CombatSearchV2TurnPlanPolicy {
 
     pub(in crate::ai::combat_search_v2) fn requires_tactical_enemy_gate(self) -> bool {
         matches!(self, Self::TacticalEnemyTurnBoundaryFrontierSeed)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn observes_root_diagnostics(self) -> bool {
+        !matches!(self, Self::Disabled)
     }
 }
 

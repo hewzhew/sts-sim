@@ -40,7 +40,7 @@ impl Default for CombatSearchPluginStack {
         Self {
             action_prior: CombatSearchActionPriorPluginId::Default,
             node_evaluator: CombatSearchNodeEvaluatorPluginId::CombatOutcomeScore,
-            turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
+            turn_plan: CombatSearchTurnPlanPluginId::Disabled,
             child_rollout: CombatSearchChildRolloutPluginId::LazyOnPop,
             rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
             frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
@@ -112,6 +112,7 @@ pub enum CombatSearchNodeEvaluatorPluginId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchTurnPlanPluginId {
+    Disabled,
     DiagnosticOnly,
     RootFrontierSeed,
     TurnBoundaryFrontierSeed,
@@ -416,6 +417,7 @@ impl From<CombatSearchV2SetupBiasPolicy> for CombatSearchActionPriorPluginId {
 impl From<CombatSearchTurnPlanPluginId> for CombatSearchV2TurnPlanPolicy {
     fn from(plugin: CombatSearchTurnPlanPluginId) -> Self {
         match plugin {
+            CombatSearchTurnPlanPluginId::Disabled => Self::Disabled,
             CombatSearchTurnPlanPluginId::DiagnosticOnly => Self::DiagnosticOnly,
             CombatSearchTurnPlanPluginId::RootFrontierSeed => Self::RootFrontierSeed,
             CombatSearchTurnPlanPluginId::TurnBoundaryFrontierSeed => {
@@ -431,6 +433,7 @@ impl From<CombatSearchTurnPlanPluginId> for CombatSearchV2TurnPlanPolicy {
 impl From<CombatSearchV2TurnPlanPolicy> for CombatSearchTurnPlanPluginId {
     fn from(policy: CombatSearchV2TurnPlanPolicy) -> Self {
         match policy {
+            CombatSearchV2TurnPlanPolicy::Disabled => Self::Disabled,
             CombatSearchV2TurnPlanPolicy::DiagnosticOnly => Self::DiagnosticOnly,
             CombatSearchV2TurnPlanPolicy::RootFrontierSeed => Self::RootFrontierSeed,
             CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed => {

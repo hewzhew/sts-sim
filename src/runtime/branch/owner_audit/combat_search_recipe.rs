@@ -29,6 +29,7 @@ impl CombatSearchRecipe {
             search: RunControlSearchCombatOptions {
                 profile: Some(self.profile),
                 max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+                disable_no_win_rescue: true,
                 ..Default::default()
             },
             max_operations: Some(auto_run_chunk_ops(self.auto_ops, self.wall_limited)),
@@ -95,7 +96,7 @@ mod tests {
         assert_eq!(options.route, RunControlRouteAutomationMode::Planner);
         assert_eq!(
             config.turn_plan_policy,
-            CombatSearchV2TurnPlanPolicy::DiagnosticOnly
+            CombatSearchV2TurnPlanPolicy::Disabled
         );
         assert_eq!(
             config.child_rollout_policy,
@@ -126,6 +127,14 @@ mod tests {
         let options = CombatSearchRecipe::from_profile(profile, 99, true).into_auto_step_options();
 
         assert_eq!(options.max_operations, Some(1));
+    }
+
+    #[test]
+    fn portfolio_recipe_disables_internal_no_win_rescue() {
+        let profile = profile_for_test(10, 20);
+        let options = CombatSearchRecipe::from_profile(profile, 3, false).into_auto_step_options();
+
+        assert!(options.search.disable_no_win_rescue);
     }
 
     #[test]

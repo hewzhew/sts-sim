@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, find_combat_turn_pool_rescue_win_v0,
     plan_combat_turn_segment_v1, CombatSearchV2ActionTrace, CombatSearchV2Config,
@@ -76,9 +78,11 @@ fn try_apply_line_lab_turn_pool_after_no_win(
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     let budget_ms = turn_pool_rescue_budget_ms(config);
+    let rescue_started = Instant::now();
     let Some(rescue) = find_combat_turn_pool_rescue_win_v0(start, config, budget_ms) else {
         return Ok(None);
     };
+    let rescue_elapsed = rescue_started.elapsed();
     let replay = replay_candidate_line(
         start,
         CombatCandidateLineSource::TurnPoolRescue,
@@ -104,7 +108,7 @@ fn try_apply_line_lab_turn_pool_after_no_win(
         Some(CombatCandidateLinePerformance {
             nodes_expanded: rescue.nodes_expanded,
             nodes_generated: rescue.nodes_generated,
-            total_us: millis_to_micros_u64(u128::from(budget_ms)),
+            total_us: duration_to_micros_u64(rescue_elapsed),
         }),
     )
     .map(Some)
@@ -218,6 +222,10 @@ pub(super) fn segment_mode_allows_turn_segment(
         Some(RunControlCombatSegmentMode::NonBossTurnBoundary) => !start.combat.meta.is_boss_fight,
         None => false,
     }
+}
+
+fn duration_to_micros_u64(duration: Duration) -> u64 {
+    duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
 fn verify_segment_trajectory_replays(

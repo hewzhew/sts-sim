@@ -44,6 +44,17 @@ pub(super) fn run_combat_portfolio_step(
         ));
     }
 
+    let post_primary_lanes = request.portfolio_after_primary();
+    if post_primary_lanes.is_empty() {
+        let report = portfolio_report(&request, status.clone(), attempts);
+        return Ok(combat_search_result(
+            status,
+            primary_stop_kind,
+            report,
+            output,
+        ));
+    }
+
     if request.combat_budget_capped() {
         status = combat_budget_capped_status(&request);
         let report = portfolio_report(&request, status.clone(), attempts);
@@ -68,7 +79,7 @@ pub(super) fn run_combat_portfolio_step(
         ));
     }
 
-    for lane in request.portfolio_after_primary() {
+    for lane in post_primary_lanes {
         let attempt = run_lane_attempt(session, &request, lane)
             .map_err(|err| format!("{} failed: {err}", lane.label()))?;
         output.collect_attempt(&attempt);

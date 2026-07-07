@@ -52,7 +52,7 @@ impl Default for CombatSearchV2Config {
                 crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: crate::ai::combat_search_v2::rollout::DEFAULT_TURN_BEAM_WIDTH,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::default(),
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
             setup_bias_policy: CombatSearchV2SetupBiasPolicy::Default,

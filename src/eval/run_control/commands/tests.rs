@@ -104,6 +104,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 setup_bias_policy: Some(CombatSearchV2SetupBiasPolicy::KeyCardOnline),
                 segment_mode: None,
                 evidence: None,
+                disable_no_win_rescue: false,
             })
         );
     assert_eq!(
@@ -201,6 +202,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 setup_bias_policy: None,
                 segment_mode: None,
                 evidence: None,
+                disable_no_win_rescue: false,
             },
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Manual,
@@ -234,6 +236,17 @@ fn run_control_parser_accepts_auto_step_options() {
         parse_run_control_command("sc max_hp_loss=off").expect("hp-loss gate off should parse"),
         RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+            ..Default::default()
+        })
+    );
+    assert_eq!(
+        parse_run_control_command("nr turn_plan=off").expect("disabled turn-plan should parse"),
+        RunControlCommand::AutoStep(RunControlAutoStepOptions {
+            route: RunControlRouteAutomationMode::Planner,
+            search: RunControlSearchCombatOptions {
+                turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::Disabled),
+                ..Default::default()
+            },
             ..Default::default()
         })
     );

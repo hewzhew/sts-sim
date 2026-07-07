@@ -44,16 +44,18 @@ pub(super) fn apply_search_combat(
         ));
     }
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
-        if let Some(outcome) = try_apply_no_win_fallback(
-            session,
-            &start,
-            &config,
-            &options,
-            &report,
-            saved_evidence.as_deref(),
-            effective_hp_loss_limit(session, &options),
-        )? {
-            return Ok(outcome);
+        if !options.disable_no_win_rescue {
+            if let Some(outcome) = try_apply_no_win_fallback(
+                session,
+                &start,
+                &config,
+                &options,
+                &report,
+                saved_evidence.as_deref(),
+                effective_hp_loss_limit(session, &options),
+            )? {
+                return Ok(outcome);
+            }
         }
         return Ok(build_combat_search_rejection_outcome(
             session,

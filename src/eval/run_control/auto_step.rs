@@ -542,7 +542,7 @@ fn auto_search_options(
     mut options: RunControlSearchCombatOptions,
 ) -> RunControlSearchCombatOptions {
     let plan = super::combat_auto_policy::combat_auto_search_plan(session, &options);
-    if options.wall_ms.is_none() {
+    if should_apply_auto_default_wall_ms(&options) {
         options.wall_ms = plan.default_wall_ms;
     }
     if options.potion_policy.is_none() && session.search_potion_policy.is_none() {
@@ -564,7 +564,7 @@ fn auto_no_potion_first_options(
     }
 
     let mut no_potion = options.clone();
-    if no_potion.wall_ms.is_none() {
+    if should_apply_auto_default_wall_ms(&no_potion) {
         no_potion.wall_ms = plan.default_wall_ms;
     }
     no_potion.potion_policy = Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
@@ -583,12 +583,16 @@ fn auto_potion_rescue_options(
     };
 
     let mut rescue = options.clone();
-    if rescue.wall_ms.is_none() {
+    if should_apply_auto_default_wall_ms(&rescue) {
         rescue.wall_ms = plan.default_wall_ms;
     }
     rescue.potion_policy = Some(potion_policy);
     rescue.max_potions_used = plan.potion_rescue_max_potions_used;
     Some(rescue)
+}
+
+fn should_apply_auto_default_wall_ms(options: &RunControlSearchCombatOptions) -> bool {
+    options.wall_ms.is_none() && options.profile.is_none()
 }
 
 fn high_stakes_auto_search_requires_hp_loss_gate(
@@ -1194,7 +1198,9 @@ mod tests {
         high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
-        CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
+        CombatSearchPluginStack, CombatSearchProfile, CombatSearchV2FrontierPolicy,
+        CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
@@ -1320,6 +1326,24 @@ mod tests {
         let session = RunControlSession::new(RunControlConfig::default());
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
         assert_eq!(options.wall_ms, Some(5_000));
+
+        let profile_options = auto_search_options(
+            &session,
+            RunControlSearchCombatOptions {
+                profile: Some(CombatSearchProfile {
+                    label: "test_profile_budget",
+                    budget: CombatSearchBudgetSpec {
+                        max_nodes: 10_000,
+                        wall_ms: 100,
+                    },
+                    plugins: CombatSearchPluginStack::default(),
+                    acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                    artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+                }),
+                ..RunControlSearchCombatOptions::default()
+            },
+        );
+        assert_eq!(profile_options.wall_ms, None);
     }
 
     fn match_and_keep_session_at_first_flip() -> RunControlSession {

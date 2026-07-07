@@ -11,7 +11,7 @@ Help:
   Combat:
     play <hand_idx> [target_slot], end, potion <slot> [target_slot], discard-potion <slot>
     draw, discard, exhaust, actions, action <idx>
-    sc/search-combat [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [child_rollout=lazy_on_pop|immediate] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [segment=off|turn] [save=case|path]
+    sc/search-combat [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [child_rollout=lazy_on_pop|immediate] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=disabled|diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [segment=off|turn] [save=case|path]
     sc/n/nr high-stakes default: boss combat uses semantic potions with max_potions=2, elite combat uses max_potions=1, unless potion/defaults override it
     sd/search-defaults [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] sets session defaults for sc/n/nr; sd clear resets them
 
@@ -37,7 +37,7 @@ Help:
     bench-add <benchmark_dir> <case_id>
 
   Automation:
-    n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [child_rollout=lazy_on_pop|immediate] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [frontier=single_queue|round_robin_eval_buckets] [segment=off|turn] [save=case|path] [max_ops=N]
+    n/next/advance-to-human-boundary [route=manual|planner] [max_nodes=N] [wall_ms=N] [max_hp_loss=N|off] [potion=never|all|semantic] [max_potions=N] [rollout=enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion|disabled] [child_rollout=lazy_on_pop|immediate] [rollouts=N] [rollout_actions=N] [beam=N] [turn_plan=disabled|diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed] [frontier=single_queue|round_robin_eval_buckets] [segment=off|turn] [save=case|path] [max_ops=N]
     nr/next-route = n route=planner
     ar/auto-run = repeat guarded automation with route=planner and a larger default max_ops budget; stops at the next human-required boundary
     Boss/elite n/nr requires max_hp_loss=N or explicit max_hp_loss=off; this prevents auto-search from silently spending too much HP.

@@ -607,17 +607,16 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
         ..CombatSearchV2Config::default()
     };
 
-    let diagnostic_only = run_combat_search_v2_with_stepper(
+    let baseline = run_combat_search_v2_with_stepper(
         &EngineState::CombatPlayerTurn,
         &combat,
         base_config.clone(),
         &OneCardWinStepper,
     );
-    assert!(!diagnostic_only.outcome.complete_trajectory_found);
-    assert_eq!(
-        diagnostic_only.search_policy.turn_plan_policy,
-        "diagnostic_only"
-    );
+    assert!(!baseline.outcome.complete_trajectory_found);
+    assert_eq!(baseline.search_policy.turn_plan_policy, "disabled");
+    assert_eq!(baseline.diagnostics.turn_plan.frontier_seeded_nodes, 0);
+    assert_eq!(baseline.diagnostics.turn_plan.root_states_observed, 0);
 
     let seeded = run_combat_search_v2_with_stepper(
         &EngineState::CombatPlayerTurn,
@@ -811,10 +810,29 @@ fn config_and_turn_plan_policy_defaults_match() {
         CombatSearchV2Config::default().frontier_policy,
         CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
     );
-    assert_eq!(
-        CombatSearchV2TurnPlanPolicy::default().label(),
-        "diagnostic_only"
+    assert_eq!(CombatSearchV2TurnPlanPolicy::default().label(), "disabled");
+}
+
+#[test]
+fn default_turn_plan_policy_does_not_run_root_diagnostics() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
     );
+
+    assert_eq!(report.search_policy.turn_plan_policy, "disabled");
+    assert_eq!(report.diagnostics.turn_plan.root_states_observed, 0);
+    assert_eq!(report.performance.root_turn_plan_diagnostics_elapsed_us, 0);
 }
 
 #[test]

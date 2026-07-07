@@ -302,7 +302,8 @@ fn parse_child_rollout_policy(value: &str) -> Result<CombatSearchV2ChildRolloutP
 
 fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
-        "diagnostic" | "diagnostic_only" | "diagnostic-only" | "off" => {
+        "disabled" | "disable" | "none" | "off" => Ok(CombatSearchV2TurnPlanPolicy::Disabled),
+        "diagnostic" | "diagnostic_only" | "diagnostic-only" => {
             Ok(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
         }
         "root_seed" | "root-seed" | "root_frontier_seed" | "root-frontier-seed" | "seed" => {
@@ -331,7 +332,7 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
             Ok(CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed)
         }
         _ => Err(format!(
-            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
+            "invalid turn plan policy '{value}', expected disabled|diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
         )),
     }
 }

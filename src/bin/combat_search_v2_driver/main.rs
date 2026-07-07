@@ -529,7 +529,8 @@ fn parse_max_hp_loss(value: &str) -> Result<Option<u32>, String> {
 
 fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
-        "diagnostic" | "diagnostic-only" | "diagnostic_only" | "off" => {
+        "disabled" | "disable" | "none" | "off" => Ok(CombatSearchV2TurnPlanPolicy::Disabled),
+        "diagnostic" | "diagnostic-only" | "diagnostic_only" => {
             Ok(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
         }
         "root-seed" | "root_seed" | "root-frontier-seed" | "root_frontier_seed" | "seed" => {
@@ -554,7 +555,7 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
             Ok(CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed)
         }
         _ => Err(format!(
-            "invalid turn plan policy '{value}', expected diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
+            "invalid turn plan policy '{value}', expected disabled|diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
         )),
     }
 }
@@ -587,6 +588,18 @@ mod tests {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2TurnPlanPolicy::RootFrontierSeed
             )
+        );
+    }
+
+    #[test]
+    fn parse_turn_plan_policy_accepts_disabled() {
+        assert_eq!(
+            parse_turn_plan_policy("disabled").expect("policy should parse"),
+            CombatSearchV2TurnPlanPolicy::Disabled
+        );
+        assert_eq!(
+            parse_turn_plan_policy("off").expect("policy should parse"),
+            CombatSearchV2TurnPlanPolicy::Disabled
         );
     }
 

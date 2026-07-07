@@ -2,11 +2,13 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
     CombatSearchChildRolloutPluginId, CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId,
     CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
-    CombatSearchTurnPlanPluginId, CombatSearchV2PotionPolicy,
+    CombatSearchV2PotionPolicy,
 };
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
-use super::combat_search_lanes::{CombatSearchLane, CombatSearchLaneKind, CombatSearchRequest};
+use super::combat_search_lanes::{
+    CombatSearchLane, CombatSearchLaneKind, CombatSearchRequest, CombatSearchStakes,
+};
 use super::combat_search_recipe::CombatSearchRecipe;
 use super::Args;
 
@@ -28,12 +30,18 @@ pub(super) fn lane_options(
     request: &CombatSearchRequest,
     session: &RunControlSession,
 ) -> RunControlAutoStepOptions {
-    CombatSearchRecipe::from_profile(
+    let mut options = CombatSearchRecipe::from_profile(
         lane_profile(lane, request, session),
         request.args.auto_ops,
         request.args.wall_ms.is_some(),
     )
-    .into_auto_step_options()
+    .into_auto_step_options();
+    options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
+    options
+}
+
+fn lane_allows_internal_no_win_rescue(lane: CombatSearchLane) -> bool {
+    matches!(lane.kind(), CombatSearchLaneKind::DiagnosticRescue)
 }
 
 fn lane_profile(
@@ -42,12 +50,7 @@ fn lane_profile(
     session: &RunControlSession,
 ) -> CombatSearchProfile {
     let profile = match lane.kind() {
-        CombatSearchLaneKind::Primary => profile_with_budget(
-            lane.label(),
-            request.args,
-            LaneSearchBudget::Primary,
-            CombatSearchChildRolloutPluginId::LazyOnPop,
-        ),
+        CombatSearchLaneKind::Primary => primary_profile(lane.label(), request),
         CombatSearchLaneKind::DiagnosticRescue => profile_with_budget(
             lane.label(),
             request.args,
@@ -112,6 +115,48 @@ fn lane_profile(
     profile.with_acceptance(lane.acceptance_plugin())
 }
 
+fn primary_profile(label: &'static str, request: &CombatSearchRequest) -> CombatSearchProfile {
+    match request.stakes() {
+        CombatSearchStakes::Boss => high_stakes_primary_profile(
+            label,
+            request.args,
+            LaneSearchBudget::Boss,
+            CombatSearchV2PotionPolicy::All,
+            BOSS_POTION_RESCUE_MAX_POTIONS_USED,
+        ),
+        CombatSearchStakes::Elite => high_stakes_primary_profile(
+            label,
+            request.args,
+            LaneSearchBudget::Rescue,
+            CombatSearchV2PotionPolicy::SemanticBudgeted,
+            NONBOSS_POTION_RESCUE_MAX_POTIONS_USED,
+        ),
+        CombatSearchStakes::Hallway => profile_with_budget(
+            label,
+            request.args,
+            LaneSearchBudget::Primary,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
+        ),
+    }
+}
+
+fn high_stakes_primary_profile(
+    label: &'static str,
+    args: Args,
+    budget: LaneSearchBudget,
+    potion_policy: CombatSearchV2PotionPolicy,
+    max_potions_used: u32,
+) -> CombatSearchProfile {
+    profile_with_budget(
+        label,
+        args,
+        budget,
+        CombatSearchChildRolloutPluginId::LazyOnPop,
+    )
+    .with_potion_policy(potion_policy)
+    .with_max_potions_used(max_potions_used)
+}
+
 fn profile_with_budget(
     label: &'static str,
     args: Args,
@@ -125,7 +170,6 @@ fn profile_with_budget(
             wall_ms: budget.wall_ms(args),
         },
         plugins: CombatSearchPluginStack {
-            turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
             child_rollout: child_rollout_plugin,
             ..CombatSearchPluginStack::default()
         },
@@ -225,6 +269,9 @@ mod tests {
     use sts_simulator::ai::combat_search_v2::{
         CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2RolloutPolicy,
     };
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
+    use sts_simulator::state::map::node::RoomType;
 
     fn test_args() -> Args {
         Args {
@@ -245,6 +292,27 @@ mod tests {
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
+    }
+
+    fn session_with_combat_stakes(is_boss_fight: bool, is_elite_fight: bool) -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = is_boss_fight;
+        combat.meta.is_elite_fight = is_elite_fight;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: if is_boss_fight {
+                    RoomType::MonsterRoomBoss
+                } else if is_elite_fight {
+                    RoomType::MonsterRoomElite
+                } else {
+                    RoomType::MonsterRoom
+                },
+            }),
+        ));
+        session
     }
 
     #[test]
@@ -308,8 +376,63 @@ mod tests {
             sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId::Immediate
         );
         assert_eq!(
+            profile.plugins.turn_plan,
+            sts_simulator::ai::combat_search_v2::CombatSearchTurnPlanPluginId::Disabled
+        );
+        assert_eq!(
             profile.acceptance,
             sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly
         );
+    }
+
+    #[test]
+    fn primary_boss_lane_uses_boss_budget_and_all_potions() {
+        let session = session_with_combat_stakes(true, false);
+        let request = CombatSearchRequest::from_session(&session, test_args());
+        let options = lane_options(CombatSearchLane::primary(), &request, &session);
+        let config = options.search.profile.expect("profile").to_config();
+
+        assert_eq!(config.max_nodes, test_args().boss_search_nodes);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis() as u64),
+            Some(test_args().boss_search_ms)
+        );
+        assert_eq!(
+            config.potion_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
+        );
+        assert_eq!(config.max_potions_used, Some(3));
+    }
+
+    #[test]
+    fn primary_elite_lane_uses_rescue_budget_and_one_semantic_potion() {
+        let session = session_with_combat_stakes(false, true);
+        let request = CombatSearchRequest::from_session(&session, test_args());
+        let options = lane_options(CombatSearchLane::primary(), &request, &session);
+        let config = options.search.profile.expect("profile").to_config();
+
+        assert_eq!(config.max_nodes, test_args().rescue_search_nodes);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis() as u64),
+            Some(test_args().rescue_search_ms)
+        );
+        assert_eq!(
+            config.potion_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(1));
+    }
+
+    #[test]
+    fn only_explicit_rescue_lane_allows_internal_no_win_rescue() {
+        assert!(!lane_allows_internal_no_win_rescue(
+            CombatSearchLane::primary()
+        ));
+        assert!(lane_allows_internal_no_win_rescue(CombatSearchLane::new(
+            CombatSearchLaneKind::DiagnosticRescue
+        )));
+        assert!(!lane_allows_internal_no_win_rescue(CombatSearchLane::new(
+            CombatSearchLaneKind::BossNoPotion
+        )));
     }
 }

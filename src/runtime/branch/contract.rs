@@ -143,7 +143,7 @@ pub fn default_branch_args(seed: u64) -> Args {
         rescue_search_nodes: 200_000,
         rescue_search_ms: 3_000,
         boss_search_nodes: 800_000,
-        boss_search_ms: 8_000,
+        boss_search_ms: 10_000,
         wall_ms: None,
         checkpoint_before_combat_portfolio: false,
         wall_capped_search_budget: false,
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(args.rescue_search_nodes, 200_000);
         assert_eq!(args.rescue_search_ms, 3_000);
         assert_eq!(args.boss_search_nodes, 800_000);
-        assert_eq!(args.boss_search_ms, 8_000);
+        assert_eq!(args.boss_search_ms, 10_000);
         assert_eq!(args.wall_ms, None);
         assert!(!args.checkpoint_before_combat_portfolio);
         assert!(!args.wall_capped_search_budget);

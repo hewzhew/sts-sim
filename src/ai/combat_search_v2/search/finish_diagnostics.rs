@@ -18,12 +18,14 @@ pub(super) fn finish_diagnostics_and_timing(
     );
     loop_state.performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
 
-    let root_turn_plan_diagnostics_started = Instant::now();
-    loop_state
-        .diagnostics
-        .observe_root_turn_plan(root_for_turn_plan_diagnostics, stepper);
-    loop_state.performance.root_turn_plan_diagnostics_elapsed_us =
-        root_turn_plan_diagnostics_started.elapsed().as_micros();
+    if config.turn_plan_policy.observes_root_diagnostics() {
+        let root_turn_plan_diagnostics_started = Instant::now();
+        loop_state
+            .diagnostics
+            .observe_root_turn_plan(root_for_turn_plan_diagnostics, stepper);
+        loop_state.performance.root_turn_plan_diagnostics_elapsed_us =
+            root_turn_plan_diagnostics_started.elapsed().as_micros();
+    }
 
     let total_elapsed = started.elapsed();
     loop_state.stats.elapsed_ms = total_elapsed.as_millis();
