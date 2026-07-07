@@ -1,11 +1,16 @@
 use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::run_identity::{current_source_identity, SourceIdentity};
-use super::run_slice_result::{ArtifactKind, ArtifactRef, ArtifactWriteSummary};
+use super::run_slice_result::{
+    ArtifactKind, ArtifactRef, ArtifactWriteSummary, RunSliceResult, RunStop,
+};
 use super::{
     combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
     BranchStatus,
@@ -194,6 +199,19 @@ impl CapsuleArtifactStore {
         Ok(true)
     }
 
+    pub(super) fn append_slice_ledger(&self, result: &RunSliceResult) -> Result<(), String> {
+        ensure_dir(&self.root)?;
+        let event = CapsuleLedgerEvent::from_result(result);
+        let encoded = serde_json::to_string(&event)
+            .map_err(|error| format!("serialize capsule ledger event: {error}"))?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.root.join("capsule_ledger.jsonl"))
+            .map_err(|error| format!("open capsule ledger: {error}"))?;
+        writeln!(file, "{encoded}").map_err(|error| format!("write capsule ledger: {error}"))
+    }
+
     fn write_branch_result(
         &self,
         args: Args,
@@ -343,6 +361,41 @@ impl CapsuleArtifactStore {
             schema,
             "owner_audit_runtime",
         )
+    }
+}
+
+#[derive(Serialize)]
+struct CapsuleLedgerEvent {
+    schema: &'static str,
+    event: &'static str,
+    seed: u64,
+    request_kind: super::run_slice_result::RunSliceRequestKind,
+    generation_start: usize,
+    generation_end: usize,
+    stop_kind: &'static str,
+    artifact_refs: Vec<ArtifactRef>,
+}
+
+impl CapsuleLedgerEvent {
+    fn from_result(result: &RunSliceResult) -> Self {
+        Self {
+            schema: "branch_tiny_capsule_ledger_event_v0",
+            event: "slice_finished",
+            seed: result.contract.game.seed,
+            request_kind: result.request_kind,
+            generation_start: result.generation_start,
+            generation_end: result.generation_end,
+            stop_kind: stop_kind(&result.stop),
+            artifact_refs: result.artifacts.refs(),
+        }
+    }
+}
+
+fn stop_kind(stop: &RunStop) -> &'static str {
+    match stop {
+        RunStop::Real(_) => "real",
+        RunStop::SoftPause(_) => "soft_pause",
+        RunStop::FrontierExhausted(_) => "frontier_exhausted",
     }
 }
 

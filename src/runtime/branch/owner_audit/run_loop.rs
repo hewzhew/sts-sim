@@ -1,4 +1,4 @@
-use super::run_capsule::RunCapsuleSave;
+use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
@@ -108,7 +108,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 )
                 .with_artifacts(artifact_writes)
                 .with_selected_branch(&branch);
-                return Ok(result);
+                return finish_slice_result(run_capsule.as_ref(), result);
             }
             branch_generation::GenerationAdvance::Advanced {
                 next,
@@ -225,6 +225,16 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         result = result.with_selected_branch(branch);
     }
     result = result.with_artifacts(artifact_writes);
+    finish_slice_result(run_capsule.as_ref(), result)
+}
+
+fn finish_slice_result(
+    run_capsule: Option<&RunCapsule>,
+    result: RunSliceResult,
+) -> Result<RunSliceResult, String> {
+    if let Some(run_capsule) = run_capsule {
+        run_capsule.append_slice_ledger(&result)?;
+    }
     Ok(result)
 }
 

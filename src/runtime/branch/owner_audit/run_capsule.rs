@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use super::capsule_artifact_store::CapsuleArtifactStore;
-use super::run_slice_result::ArtifactWriteSummary;
+use super::run_slice_result::{ArtifactWriteSummary, RunSliceResult};
 use super::{Args, Branch, BranchStatus, TerminalOutcome};
 
 pub(super) struct RunCapsule {
@@ -129,6 +129,10 @@ impl RunCapsule {
             return Ok(self.store.terminal_summary());
         }
         Ok(ArtifactWriteSummary::default())
+    }
+
+    pub(super) fn append_slice_ledger(&self, result: &RunSliceResult) -> Result<(), String> {
+        self.store.append_slice_ledger(result)
     }
 
     fn save_frontier(

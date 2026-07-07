@@ -255,4 +255,48 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn owner_audit_runtime_records_capsule_ledger_slice_event() {
+        let root = std::env::temp_dir().join("owner_audit_runtime_capsule_ledger");
+        let _ = std::fs::remove_dir_all(&root);
+        let mut args = default_branch_args(123);
+        args.generations = 0;
+        args.max_branches = 1;
+        args.search_nodes = 1;
+        args.search_ms = 1;
+        args.rescue_search_nodes = 1;
+        args.rescue_search_ms = 1;
+        args.boss_search_nodes = 1;
+        args.boss_search_ms = 1;
+        args.wall_ms = Some(1_000);
+
+        OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+            args,
+            capsule_path: root.clone(),
+            resume: false,
+            human_output: false,
+        })
+        .unwrap();
+
+        let ledger = std::fs::read_to_string(root.join("capsule_ledger.jsonl")).unwrap();
+        let rows = ledger.lines().collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1);
+        let row: serde_json::Value = serde_json::from_str(rows[0]).unwrap();
+        assert_eq!(row["schema"], "branch_tiny_capsule_ledger_event_v0");
+        assert_eq!(row["event"], "slice_finished");
+        assert_eq!(row["seed"], 123);
+        assert_eq!(row["generation_start"], 0);
+        assert_eq!(row["generation_end"], 0);
+        assert!(row["artifact_refs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| {
+                artifact["kind"] == "frontier"
+                    && artifact["schema"] == "branch_tiny_frontier_checkpoint"
+            }));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

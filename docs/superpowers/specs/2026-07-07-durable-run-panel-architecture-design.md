@@ -22,6 +22,9 @@ Current implementation has established the first durable panel path:
   decision, scheduler action, artifact facts, and tool errors.
 - `panel_ledger.jsonl` records each executed/skipped/failed slice with run
   mode and slice index.
+- `capsule_ledger.jsonl` records each completed capsule slice with stop kind
+  and typed `ArtifactRef` entries, so a capsule has its own execution history
+  separate from scheduler decisions.
 - `--slice-ms` is the preferred panel deadline option; legacy `--wall-ms`
   remains accepted for compatibility.
 - `--fresh` archives an existing seed capsule under `_archive/` before
@@ -64,8 +67,8 @@ Still open:
   `baseline` / `double-search` V0.
 - completing the capsule artifact store boundary with a more public store
   facade; concrete owner-audit capsule writes have been moved out of
-  `run_capsule.rs`, and panel ledger/summary rows now consume runtime artifact
-  refs.
+  `run_capsule.rs`, capsule ledgers are emitted by the store adapter, and panel
+  ledger/summary rows now consume runtime artifact refs.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.
 
@@ -1421,10 +1424,11 @@ The first cut should be deliberately modest:
 Current implementation has completed the first `ArtifactWriteSummary` plumbing
 for core capsule writes in `RunSliceResult`; those summaries now carry typed
 `ArtifactRef` values. Owner-audit JSON writes live behind a
-`CapsuleArtifactStore` adapter. Panel ledger events and summary rows now
-consume those refs from executed `RunSliceResult` values. A fully public store
-facade remains open; the current adapter still preserves the legacy JSON
-schemas.
+`CapsuleArtifactStore` adapter. The adapter also appends
+`capsule_ledger.jsonl` slice events with typed artifact refs. Panel ledger
+events and summary rows consume those refs from executed `RunSliceResult`
+values. A fully public store facade remains open; the current adapter still
+preserves the legacy JSON schemas.
 
 It should not yet redesign every artifact schema. The goal is to put a wall
 around persistence semantics first.
