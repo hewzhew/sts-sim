@@ -37,7 +37,7 @@ fn run_smoke(args: RunArgs) -> Result<(), String> {
     let store = args.common.artifact_store();
     let summary = PanelSmokeRunner::run_slices(
         args.common.inspect_config(current_source_identity())?,
-        PanelRunOptions::smoke(args.max_slices),
+        args.run_options(PanelRunOptions::smoke(args.max_slices)),
     )?;
     let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("smoke", &summary, &summary_path);
@@ -48,7 +48,7 @@ fn run_continue(args: RunArgs) -> Result<(), String> {
     let store = args.common.artifact_store();
     let summary = PanelSmokeRunner::run_slices(
         args.common.inspect_config(current_source_identity())?,
-        PanelRunOptions::continue_existing(args.max_slices),
+        args.run_options(PanelRunOptions::continue_existing(args.max_slices)),
     )?;
     let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("continue", &summary, &summary_path);
@@ -59,7 +59,7 @@ fn run_drain(args: RunArgs) -> Result<(), String> {
     let store = args.common.artifact_store();
     let summary = PanelSmokeRunner::run_slices(
         args.common.inspect_config(current_source_identity())?,
-        PanelRunOptions::drain(args.max_slices),
+        args.run_options(PanelRunOptions::drain(args.max_slices)),
     )?;
     let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("drain", &summary, &summary_path);
@@ -139,6 +139,8 @@ struct RawRunArgs {
     common: RawInspectArgs,
     #[arg(long, default_value_t = 1)]
     max_slices: usize,
+    #[arg(long)]
+    fresh: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -164,6 +166,7 @@ struct InspectArgs {
 struct RunArgs {
     common: InspectArgs,
     max_slices: usize,
+    fresh: bool,
 }
 
 impl RawInspectArgs {
@@ -201,7 +204,18 @@ impl RawRunArgs {
         Ok(RunArgs {
             common: self.common.into_inspect_args()?,
             max_slices: self.max_slices,
+            fresh: self.fresh,
         })
+    }
+}
+
+impl RunArgs {
+    fn run_options(&self, options: PanelRunOptions) -> PanelRunOptions {
+        if self.fresh {
+            options.fresh()
+        } else {
+            options
+        }
     }
 }
 
@@ -484,6 +498,28 @@ mod tests {
 
         assert_eq!(args.common.seeds, vec!["1".to_string()]);
         assert_eq!(args.max_slices, 3);
+    }
+
+    #[test]
+    fn parses_panel_fresh_flag() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "drain",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--fresh",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Drain(args) = panel.command else {
+            panic!("expected panel drain command");
+        };
+
+        assert!(args.fresh);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -34,6 +34,7 @@ pub enum PanelReuseDecision {
     CreateNewCapsule,
     ReuseRealStop,
     ContinueSoftPause,
+    FreshReplacedCapsule,
     RejectUnknownIdentity,
     RejectIncompatibleIdentity,
     RejectIncompleteCapsule,
@@ -98,6 +99,7 @@ pub enum PanelRunMode {
 pub struct PanelRunOptions {
     pub mode: PanelRunMode,
     pub max_slices: usize,
+    pub fresh: bool,
 }
 
 impl PanelRunOptions {
@@ -105,6 +107,7 @@ impl PanelRunOptions {
         Self {
             mode: PanelRunMode::Smoke,
             max_slices,
+            fresh: false,
         }
     }
 
@@ -112,6 +115,7 @@ impl PanelRunOptions {
         Self {
             mode: PanelRunMode::Continue,
             max_slices,
+            fresh: false,
         }
     }
 
@@ -119,7 +123,13 @@ impl PanelRunOptions {
         Self {
             mode: PanelRunMode::Drain,
             max_slices,
+            fresh: false,
         }
+    }
+
+    pub fn fresh(mut self) -> Self {
+        self.fresh = true;
+        self
     }
 }
 
@@ -155,6 +165,7 @@ pub struct PanelRow {
     pub summary_exists: bool,
     pub read_error: Option<String>,
     pub tool_error: Option<String>,
+    pub archived_capsule_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -230,6 +241,7 @@ impl PanelSeedResolution {
     pub fn scheduler_action(&self) -> PanelSeedAction {
         match self.decision.reuse_decision {
             PanelReuseDecision::CreateNewCapsule => PanelSeedAction::StartNew,
+            PanelReuseDecision::FreshReplacedCapsule => PanelSeedAction::StartNew,
             PanelReuseDecision::ReuseRealStop => PanelSeedAction::ReuseRealStop,
             PanelReuseDecision::ContinueSoftPause => PanelSeedAction::ContinueCapsule,
             PanelReuseDecision::RejectUnknownIdentity
@@ -287,6 +299,8 @@ impl PanelInspectConfig {
         &self,
         failures: &BTreeMap<u64, String>,
         status_overrides: &BTreeMap<u64, PanelRowStatus>,
+        reuse_overrides: &BTreeMap<u64, PanelReuseDecision>,
+        archive_paths: &BTreeMap<u64, PathBuf>,
         options: PanelRunOptions,
     ) -> PanelSummary {
         PanelSummary::from_rows_with_run_options(
@@ -295,10 +309,16 @@ impl PanelInspectConfig {
                 .map(|resolution| {
                     let tool_error = failures.get(&resolution.seed).cloned();
                     let status_override = status_overrides.get(&resolution.seed).copied();
+                    let reuse_override = reuse_overrides.get(&resolution.seed).copied();
+                    let archived_capsule_path = archive_paths
+                        .get(&resolution.seed)
+                        .map(|path| path.display().to_string());
                     PanelRow::from_resolution_with_execution(
                         resolution,
                         status_override,
+                        reuse_override,
                         tool_error,
+                        archived_capsule_path,
                     )
                 })
                 .collect(),
@@ -348,16 +368,43 @@ fn run_slices_with_executor(
     }
     let mut failures = BTreeMap::new();
     let mut status_overrides = BTreeMap::new();
+    let mut reuse_overrides = BTreeMap::new();
+    let mut archive_paths = BTreeMap::new();
+    let mut fresh_prepared = BTreeSet::new();
     for slice_index in 0..options.max_slices {
         let mut ran_slice = false;
         for resolution in PanelScheduler::resolve_requests(config.requests()) {
             if failures.contains_key(&resolution.seed) {
                 continue;
             }
-            let action = resolution.scheduler_action();
+            let mut action = resolution.scheduler_action();
+            if options.fresh && fresh_prepared.insert(resolution.seed) {
+                match config.artifact_store.archive_capsule(resolution.seed) {
+                    Ok(Some(archive_path)) => {
+                        archive_paths.insert(resolution.seed, archive_path);
+                        reuse_overrides
+                            .insert(resolution.seed, PanelReuseDecision::FreshReplacedCapsule);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        append_panel_event(
+                            &config,
+                            resolution.seed,
+                            action,
+                            "failed",
+                            options.mode,
+                            slice_index,
+                            Some(error.clone()),
+                        )?;
+                        failures.insert(resolution.seed, error);
+                        continue;
+                    }
+                }
+                action = PanelSeedAction::StartNew;
+            }
             match action {
                 PanelSeedAction::StartNew => {
-                    if options.mode == PanelRunMode::Continue {
+                    if options.mode == PanelRunMode::Continue && !options.fresh {
                         append_panel_event(
                             &config,
                             resolution.seed,
@@ -416,7 +463,13 @@ fn run_slices_with_executor(
             break;
         }
     }
-    Ok(config.summarize_with_execution(&failures, &status_overrides, options))
+    Ok(config.summarize_with_execution(
+        &failures,
+        &status_overrides,
+        &reuse_overrides,
+        &archive_paths,
+        options,
+    ))
 }
 
 fn run_panel_seed_slice(
@@ -480,13 +533,15 @@ fn append_panel_event(
 
 impl PanelRow {
     pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
-        Self::from_resolution_with_execution(resolution, None, None)
+        Self::from_resolution_with_execution(resolution, None, None, None, None)
     }
 
     fn from_resolution_with_execution(
         resolution: PanelSeedResolution,
         status_override: Option<PanelRowStatus>,
+        reuse_override: Option<PanelReuseDecision>,
         tool_error: Option<String>,
+        archived_capsule_path: Option<String>,
     ) -> Self {
         let artifacts = resolution.decision.artifact_facts;
         let scheduler_action = resolution.scheduler_action();
@@ -500,7 +555,7 @@ impl PanelRow {
             capsule_path: resolution.capsule_path.display().to_string(),
             row_status,
             identity_status: resolution.decision.identity_status,
-            reuse_decision: resolution.decision.reuse_decision,
+            reuse_decision: reuse_override.unwrap_or(resolution.decision.reuse_decision),
             scheduler_action,
             manifest_exists: artifacts.manifest_exists,
             result_exists: artifacts.result_exists,
@@ -509,6 +564,7 @@ impl PanelRow {
             summary_exists: artifacts.summary_exists,
             read_error: resolution.read_error,
             tool_error,
+            archived_capsule_path,
         }
     }
 }
@@ -948,6 +1004,7 @@ mod tests {
                 summary_exists: true,
                 read_error: None,
                 tool_error: None,
+                archived_capsule_path: None,
             },
             PanelRow {
                 seed: 2,
@@ -963,6 +1020,7 @@ mod tests {
                 summary_exists: false,
                 read_error: None,
                 tool_error: None,
+                archived_capsule_path: None,
             },
         ];
 
@@ -1218,6 +1276,53 @@ mod tests {
 
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
         assert!(ledger.contains("\"event\":\"skipped\""));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fresh_run_archives_existing_capsule_before_starting_new_slice() {
+        struct OkExecutor;
+
+        impl PanelSliceExecutor for OkExecutor {
+            fn run_slice(&mut self, _request: OwnerAuditSliceRequest) -> Result<(), String> {
+                Ok(())
+            }
+        }
+
+        let root = std::env::temp_dir().join("runtime_branch_panel_fresh_archive");
+        let _ = fs::remove_dir_all(&root);
+        let capsule = root.join("1");
+        fs::create_dir_all(&capsule).unwrap();
+        fs::write(
+            capsule.join("manifest.json"),
+            exact_manifest(RunContract::from_args(args(1))).to_string(),
+        )
+        .unwrap();
+        fs::write(capsule.join("frontier.json"), "{}").unwrap();
+        fs::write(capsule.join("old-evidence.txt"), "old").unwrap();
+        let config = PanelInspectConfig {
+            seeds: vec![1],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: args(0),
+            source_identity: source_identity(),
+        };
+
+        let summary =
+            run_slices_with_executor(config, PanelRunOptions::drain(1).fresh(), OkExecutor)
+                .unwrap();
+
+        let archived_path = summary.rows[0].archived_capsule_path.as_ref().unwrap();
+
+        assert_eq!(
+            summary.rows[0].reuse_decision,
+            PanelReuseDecision::FreshReplacedCapsule
+        );
+        assert_eq!(summary.rows[0].scheduler_action, PanelSeedAction::StartNew);
+        assert!(!capsule.join("old-evidence.txt").exists());
+        assert!(PathBuf::from(archived_path)
+            .join("old-evidence.txt")
+            .exists());
 
         let _ = fs::remove_dir_all(root);
     }

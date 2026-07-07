@@ -2,6 +2,7 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -75,6 +76,41 @@ impl BranchArtifactStore {
         self.capsule_root.join("panel_ledger.jsonl")
     }
 
+    pub fn default_panel_archive_root(&self) -> PathBuf {
+        self.capsule_root.join("_archive")
+    }
+
+    pub fn archive_capsule(&self, seed: u64) -> Result<Option<PathBuf>, String> {
+        let capsule_path = self.capsule_path(seed);
+        if !capsule_path.exists() {
+            return Ok(None);
+        }
+        let archive_root = self.default_panel_archive_root();
+        fs::create_dir_all(&archive_root)
+            .map_err(|err| format!("failed to create {}: {err}", archive_root.display()))?;
+        let base_name = format!("{seed}-{}", archive_timestamp_ms()?);
+        for suffix in 0..1000 {
+            let name = if suffix == 0 {
+                base_name.clone()
+            } else {
+                format!("{base_name}-{suffix}")
+            };
+            let archive_path = archive_root.join(name);
+            if archive_path.exists() {
+                continue;
+            }
+            fs::rename(&capsule_path, &archive_path).map_err(|err| {
+                format!(
+                    "failed to archive {} to {}: {err}",
+                    capsule_path.display(),
+                    archive_path.display()
+                )
+            })?;
+            return Ok(Some(archive_path));
+        }
+        Err(format!("failed to choose archive path for seed {seed}"))
+    }
+
     pub fn write_panel_summary(
         &self,
         path: Option<&Path>,
@@ -119,6 +155,13 @@ impl BranchArtifactStore {
     }
 }
 
+fn archive_timestamp_ms() -> Result<u128, String> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .map_err(|err| format!("system clock before unix epoch: {err}"))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -159,6 +202,7 @@ mod tests {
             summary_exists: false,
             read_error: None,
             tool_error: None,
+            archived_capsule_path: None,
         }]);
 
         let path = store.write_panel_summary(None, &summary).unwrap();
