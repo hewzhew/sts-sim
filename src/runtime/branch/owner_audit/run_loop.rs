@@ -11,6 +11,7 @@ use super::{branch_frontier, branch_generation, run_stop_recorder, trace, Branch
 pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
     let RunSliceRequest {
         args,
+        capsule_args,
         request_kind,
         human_output,
         trace_path,
@@ -49,7 +50,13 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
     for generation in generation_start..=args.generations {
         last_generation = generation;
         if deadline.should_soft_stop(args) {
-            stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
+            stop_recorder.save_soft_wall(
+                capsule_args,
+                generation,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
             let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
                 generation,
@@ -68,7 +75,13 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             && deadline.would_cap_core_search(args, prepared.total_expanded)
         {
             frontier = prepared.into_frontier();
-            stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
+            stop_recorder.save_soft_wall(
+                capsule_args,
+                generation,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
             let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(
                 SoftPause::SearchBudgetCappedBeforeGeneration {
@@ -94,7 +107,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             branch_generation::GenerationAdvance::ObjectiveCompleted { branch, artifacts } => {
                 artifact_writes.merge(artifacts);
                 let result = objective_satisfied_result(
-                    args,
+                    capsule_args,
                     request_kind,
                     generation_start,
                     generation,
@@ -118,7 +131,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
             if let Some((result_generation, branch)) = generation_result.as_ref() {
-                stop_recorder.save_generation_result(args, *result_generation, branch)?;
+                stop_recorder.save_generation_result(capsule_args, *result_generation, branch)?;
             }
             if let Some((result_generation, branch)) = generation_result {
                 stop = Some(
@@ -153,7 +166,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 frontier_running_count: summary.running_count,
             }));
             stop_recorder.save_soft_wall(
-                args,
+                capsule_args,
                 generation + 1,
                 next_branch_id,
                 &frontier,
@@ -169,7 +182,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 frontier_running_count: summary.running_count,
             }));
             stop_recorder.save_soft_wall(
-                args,
+                capsule_args,
                 generation + 1,
                 next_branch_id,
                 &frontier,
@@ -182,7 +195,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     artifact_writes.merge(stop_recorder.save_recovery_if_needed(
-        args,
+        capsule_args,
         last_generation,
         next_branch_id,
         &frontier,
@@ -206,7 +219,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         combat_search_telemetry_from_branches(frontier.iter())
     };
     let result = slice_result_from_summary(
-        args,
+        capsule_args,
         request_kind,
         generation_start,
         last_generation,

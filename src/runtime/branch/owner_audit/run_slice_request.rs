@@ -9,6 +9,7 @@ use super::{branch_runtime, frontier_checkpoint, Args, Branch};
 
 pub(super) struct RunSliceRequest {
     pub(super) args: Args,
+    pub(super) capsule_args: Args,
     pub(super) request_kind: RunSliceRequestKind,
     pub(super) human_output: bool,
     pub(super) trace_path: Option<PathBuf>,
@@ -36,6 +37,7 @@ impl ContinueSliceRequest {
         let started = Instant::now();
         let run_capsule = RunCapsule::new(self.capsule_path.clone());
         let mut effective_args = self.args;
+        let mut capsule_args;
         let mut generation_start = 0usize;
         let resume_frontier = self.resume.then(|| self.capsule_path.join("frontier.json"));
         let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
@@ -44,6 +46,8 @@ impl ContinueSliceRequest {
                 .overrides
                 .generations
                 .unwrap_or(checkpoint.args.generations);
+            capsule_args = checkpoint.args;
+            self.overrides.apply_to(&mut capsule_args);
             effective_args = checkpoint.args;
             self.overrides.apply_to(&mut effective_args);
             if effective_args.wall_ms.is_none() {
@@ -55,16 +59,17 @@ impl ContinueSliceRequest {
             checkpoint.into_frontier()?
         } else {
             self.overrides.apply_to(&mut effective_args);
+            capsule_args = effective_args;
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
         };
-        let artifact_writes = run_capsule.write_running_manifest(effective_args)?;
+        let artifact_writes = run_capsule.write_running_manifest(capsule_args)?;
         let request_kind = if self.resume {
             RunSliceRequestKind::ResumeFrontier
         } else {
             RunSliceRequestKind::Start
         };
         run_capsule.append_slice_started_ledger(
-            effective_args,
+            capsule_args,
             request_kind,
             generation_start,
             &artifact_writes,
@@ -72,6 +77,7 @@ impl ContinueSliceRequest {
         let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
         Ok(RunSliceRequest {
             args: effective_args,
+            capsule_args,
             request_kind,
             human_output: self.human_output,
             trace_path: None,
@@ -186,6 +192,14 @@ mod tests {
             request.args.generations, 4,
             "resume should treat generations as per-slice budget, not the old absolute cap"
         );
+        assert_eq!(
+            request.capsule_args.generations, 2,
+            "capsule identity should keep the per-slice generation budget"
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(capsule.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["run_contract"]["branching"]["generations"], 2);
 
         let _ = fs::remove_dir_all(capsule);
     }

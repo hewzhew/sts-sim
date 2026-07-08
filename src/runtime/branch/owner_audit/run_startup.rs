@@ -55,23 +55,35 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
                 )
             });
     }
-    let mut artifact_writes = ArtifactWriteSummary::default();
-    if let Some(capsule) = run_capsule.as_ref() {
-        artifact_writes.merge(capsule.write_running_manifest(args)?);
-    }
     let started = Instant::now();
     let mut generation_start = 0usize;
+    let mut capsule_args;
     let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
         let checkpoint = frontier_checkpoint::load(path)?;
+        let requested_slice_generations =
+            overrides.generations.unwrap_or(checkpoint.args.generations);
+        capsule_args = checkpoint.args;
+        overrides.apply_to(&mut capsule_args);
         args = checkpoint.args;
         overrides.apply_to(&mut args);
         generation_start = checkpoint.generation;
+        args.generations = generation_start.saturating_add(requested_slice_generations);
+        if args.wall_ms.is_none() {
+            args.wall_ms = capsule_args.wall_ms;
+        }
         checkpoint.into_frontier()?
     } else {
+        overrides.apply_to(&mut args);
+        capsule_args = args;
         branch_runtime::BranchRuntime::initial_frontier(args, started)
     };
+    let mut artifact_writes = ArtifactWriteSummary::default();
+    if let Some(capsule) = run_capsule.as_ref() {
+        artifact_writes.merge(capsule.write_running_manifest(capsule_args)?);
+    }
     Ok(RunStartup::Ready(RunSliceRequest {
         args,
+        capsule_args,
         request_kind: if resume_frontier.is_some() {
             RunSliceRequestKind::ResumeFrontier
         } else {

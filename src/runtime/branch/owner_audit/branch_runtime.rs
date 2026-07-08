@@ -94,6 +94,7 @@ mod tests {
         let (frontier, next_branch_id) = BranchRuntime::initial_frontier(args, started);
         let request = RunSliceRequest {
             args,
+            capsule_args: args,
             request_kind: RunSliceRequestKind::ResumeFrontier,
             human_output: false,
             trace_path: None,
