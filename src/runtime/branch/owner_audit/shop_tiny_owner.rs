@@ -17,6 +17,7 @@ use super::owner_candidate_eval::candidate_annotation;
 use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice};
 use super::shop_investment::shop_investment_for_surface;
+use super::shop_route_evidence::has_visible_future_shop;
 
 pub(super) fn shop_tiny_owner_choices(
     session: &RunControlSession,
@@ -47,11 +48,15 @@ pub(super) fn shop_tiny_owner_choices(
 fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
     let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
     let context = DecisionPipelineContext::shop(deck_plan, session.run_state.gold);
-    if active_maw_bank(session) {
+    let active_maw_bank = active_maw_bank_opportunity(session);
+    let hard_checkpoint_imminent = hard_checkpoint_imminent(session);
+    let visible_future_shop = has_visible_future_shop(session);
+    if active_maw_bank || hard_checkpoint_imminent || visible_future_shop {
         context.with_shop_gold_opportunity(ShopGoldOpportunity {
             current_gold: session.run_state.gold,
-            active_maw_bank: true,
-            future_rooms_before_next_shop: 5,
+            active_maw_bank,
+            future_rooms_before_next_shop: if visible_future_shop { 2 } else { 5 },
+            hard_checkpoint_imminent,
             survival_purchase_needed: deck_plan.survival_pressure(),
             boss_answer_needed: matches!(
                 deck_plan.strategic_deficit.boss_scaling_plan,
@@ -63,12 +68,23 @@ fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
     }
 }
 
+fn active_maw_bank_opportunity(session: &RunControlSession) -> bool {
+    active_maw_bank(session)
+        || session
+            .shop_visit_context()
+            .is_some_and(|context| context.maw_bank_live_at_entry)
+}
+
 fn active_maw_bank(session: &RunControlSession) -> bool {
     session
         .run_state
         .relics
         .iter()
         .any(|relic| relic.id == RelicId::MawBank && !relic.used_up)
+}
+
+fn hard_checkpoint_imminent(session: &RunControlSession) -> bool {
+    session.run_state.act_num == 1 && session.run_state.floor_num >= 13
 }
 
 fn shop_tiny_candidate_for_choice(
@@ -106,9 +122,11 @@ mod tests {
     use sts_simulator::content::cards::CardId;
     use sts_simulator::content::relics::RelicState;
     use sts_simulator::eval::run_control::{
-        DecisionCandidateKey, RunControlCommand, RunControlConfig,
+        DecisionCandidateKey, RunControlCommand, RunControlConfig, ShopVisitContextV1,
     };
     use sts_simulator::runtime::combat::CombatCard;
+    use sts_simulator::state::core::{ClientInput, EngineState};
+    use sts_simulator::state::shop::{ShopRelic, ShopState};
 
     fn maw_bank_session() -> RunControlSession {
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -167,6 +185,85 @@ mod tests {
         assert!(
             shop_tiny_choice_rank(&leave) < shop_tiny_choice_rank(&clockwork),
             "ShopTiny should prefer LeaveWithGold over generic Maw Bank-breaking relic"
+        );
+    }
+
+    #[test]
+    fn shop_tiny_keeps_entry_maw_bank_cost_after_same_shop_spend() {
+        let mut session = maw_bank_session();
+        session.run_state.gold = 224;
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::ClockworkSouvenir,
+            price: 149,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        session
+            .apply_command(RunControlCommand::Input(ClientInput::PurgeCard(0)))
+            .expect("shop purge should apply");
+        assert_eq!(session.run_state.gold, 149);
+        assert!(
+            session
+                .run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::MawBank && relic.used_up),
+            "spending in shop should consume Maw Bank"
+        );
+
+        let context = shop_tiny_context(&session);
+        let mut clockwork = choice(DecisionCandidateKey::ShopBuyRelic {
+            shop_slot: 0,
+            relic: RelicId::ClockworkSouvenir,
+            price: 149,
+        });
+        clockwork.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &clockwork);
+        let mut auto_purge_targets = Vec::new();
+        clockwork.expansion =
+            shop_tiny_choice_expansion(&clockwork.annotation, &mut auto_purge_targets);
+
+        assert_eq!(
+            clockwork.inspect_only_reason(),
+            Some("BreaksMawBankWithoutHardNeed"),
+            "same-shop follow-up purchases must still carry entry Maw Bank opportunity cost"
+        );
+    }
+
+    #[test]
+    fn shop_tiny_ignores_stale_maw_bank_visit_context_on_later_shop_floor() {
+        let mut session = maw_bank_session();
+        session.run_state.floor_num = 13;
+        session.run_state.gold = 194;
+        session.run_state.relics.clear();
+        session.shop_visit_context = Some(ShopVisitContextV1 {
+            entry_act: 1,
+            entry_floor: 11,
+            entry_gold: 226,
+            maw_bank_live_at_entry: true,
+            spent_gold_in_visit: true,
+        });
+
+        let context = shop_tiny_context(&session);
+        let mut clockwork = choice(DecisionCandidateKey::ShopBuyRelic {
+            shop_slot: 0,
+            relic: RelicId::ClockworkSouvenir,
+            price: 149,
+        });
+        clockwork.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &clockwork);
+        let mut auto_purge_targets = Vec::new();
+        clockwork.expansion =
+            shop_tiny_choice_expansion(&clockwork.annotation, &mut auto_purge_targets);
+
+        assert_ne!(
+            clockwork.inspect_only_reason(),
+            Some("BreaksMawBankWithoutHardNeed"),
+            "Maw Bank entry cost must not leak into a later shop floor"
         );
     }
 }

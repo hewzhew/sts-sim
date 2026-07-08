@@ -1,6 +1,7 @@
 use crate::ai::strategy::decision_pipeline::{
     CandidateEvaluation, CandidateLane, DecisionCandidateIr, DecisionCandidateKind,
 };
+use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 
@@ -9,6 +10,7 @@ pub struct ShopGoldOpportunity {
     pub current_gold: i32,
     pub active_maw_bank: bool,
     pub future_rooms_before_next_shop: u8,
+    pub hard_checkpoint_imminent: bool,
     pub survival_purchase_needed: bool,
     pub boss_answer_needed: bool,
 }
@@ -60,7 +62,7 @@ pub fn evaluate_shop_purchase_bundle(
     candidate: &CandidateEvaluation,
 ) -> ShopPurchaseBundleDecision {
     let facts = bundle_facts(opportunity, candidate.candidate.kind);
-    let (verdict, reason) = bundle_verdict(candidate, facts);
+    let (verdict, reason) = bundle_verdict(opportunity, candidate, facts);
     ShopPurchaseBundleDecision {
         candidate: candidate.candidate,
         candidate_score: candidate.total_score(),
@@ -105,21 +107,27 @@ fn bundle_facts(
             price,
             true,
             false,
-            false,
+            opportunity.hard_checkpoint_imminent
+                && opportunity.boss_answer_needed
+                && is_boss_answer_card(kind),
         ),
         DecisionCandidateKind::ShopBuyRelic { relic, price } => (
             ShopPurchaseBundleKind::BuyOneRelic,
             price,
             false,
             false,
-            opportunity.boss_answer_needed && is_boss_answer_relic(relic),
+            opportunity.hard_checkpoint_imminent
+                && opportunity.boss_answer_needed
+                && is_boss_answer_relic(relic),
         ),
         DecisionCandidateKind::ShopBuyPotion { potion, price } => (
             ShopPurchaseBundleKind::BuyOnePotion,
             price,
             false,
             opportunity.survival_purchase_needed && is_hard_survival_potion(potion),
-            false,
+            opportunity.hard_checkpoint_imminent
+                && opportunity.boss_answer_needed
+                && is_boss_answer_potion(potion),
         ),
         _ => (
             ShopPurchaseBundleKind::LeaveWithGold,
@@ -151,6 +159,7 @@ fn bundle_facts(
 }
 
 fn bundle_verdict(
+    opportunity: ShopGoldOpportunity,
     candidate: &CandidateEvaluation,
     facts: ShopPurchaseBundleFacts,
 ) -> (ShopPurchaseBundleVerdict, &'static str) {
@@ -178,6 +187,12 @@ fn bundle_verdict(
             "BreaksMawBankWithoutHardNeed",
         );
     }
+    if spends_future_shop_liquidity_without_hard_need(opportunity, facts, candidate) {
+        return (
+            ShopPurchaseBundleVerdict::Reject,
+            "SpendsFutureShopLiquidityWithoutHardNeed",
+        );
+    }
     if facts.kind == ShopPurchaseBundleKind::RemoveOnly {
         return (
             ShopPurchaseBundleVerdict::EfficientBundleBuy,
@@ -191,6 +206,27 @@ fn bundle_verdict(
         ShopPurchaseBundleVerdict::Reject,
         "NoShopBundleJustification",
     )
+}
+
+fn spends_future_shop_liquidity_without_hard_need(
+    opportunity: ShopGoldOpportunity,
+    facts: ShopPurchaseBundleFacts,
+    candidate: &CandidateEvaluation,
+) -> bool {
+    !opportunity.hard_checkpoint_imminent
+        && opportunity.future_rooms_before_next_shop <= 2
+        && facts.total_cost > 0
+        && facts.future_gold_lost_if_breaks_maw_bank == 0
+        && !facts.preserves_next_shop_option
+        && !facts.solves_next_fight
+        && !facts.solves_boss_gap
+        && matches!(
+            candidate.candidate.kind,
+            DecisionCandidateKind::ShopBuyCard { .. }
+                | DecisionCandidateKind::ShopBuyRelic { .. }
+                | DecisionCandidateKind::ShopBuyPotion { .. }
+                | DecisionCandidateKind::ShopPurge { .. }
+        )
 }
 
 fn decision_score(decision: &ShopPurchaseBundleDecision) -> i32 {
@@ -228,6 +264,23 @@ fn is_boss_answer_relic(relic: RelicId) -> bool {
     )
 }
 
+fn is_boss_answer_card(kind: DecisionCandidateKind) -> bool {
+    matches!(
+        kind,
+        DecisionCandidateKind::ShopBuyCard {
+            card: CardId::FiendFire | CardId::Bludgeon | CardId::Immolate | CardId::Reaper,
+            ..
+        }
+    )
+}
+
+fn is_boss_answer_potion(potion: PotionId) -> bool {
+    matches!(
+        potion,
+        PotionId::FirePotion | PotionId::ExplosivePotion | PotionId::FearPotion
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +307,7 @@ mod tests {
             current_gold: gold,
             active_maw_bank: true,
             future_rooms_before_next_shop: 5,
+            hard_checkpoint_imminent: false,
             survival_purchase_needed: false,
             boss_answer_needed: false,
         }
@@ -262,6 +316,25 @@ mod tests {
     fn maw_bank_survival_opportunity(gold: i32) -> ShopGoldOpportunity {
         ShopGoldOpportunity {
             survival_purchase_needed: true,
+            ..maw_bank_opportunity(gold)
+        }
+    }
+
+    fn maw_bank_boss_gap_opportunity(gold: i32) -> ShopGoldOpportunity {
+        ShopGoldOpportunity {
+            boss_answer_needed: true,
+            hard_checkpoint_imminent: true,
+            ..maw_bank_opportunity(gold)
+        }
+    }
+
+    fn visible_future_shop_opportunity(gold: i32) -> ShopGoldOpportunity {
+        ShopGoldOpportunity {
+            active_maw_bank: false,
+            future_rooms_before_next_shop: 2,
+            hard_checkpoint_imminent: false,
+            survival_purchase_needed: false,
+            boss_answer_needed: false,
             ..maw_bank_opportunity(gold)
         }
     }
@@ -341,5 +414,105 @@ mod tests {
 
         assert_eq!(potion_bundle.verdict, ShopPurchaseBundleVerdict::Reject);
         assert_eq!(potion_bundle.reason, "BreaksMawBankWithoutHardNeed");
+    }
+
+    #[test]
+    fn deterministic_boss_repair_can_break_maw_bank_when_boss_gap_is_open() {
+        let leave = evaluation(DecisionCandidateKind::ShopLeave, 0);
+        let fiend_fire = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: crate::content::cards::CardId::FiendFire,
+                upgrades: 0,
+                price: 152,
+            },
+            70,
+        );
+        let fire_potion = evaluation(
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::FirePotion,
+                price: 51,
+            },
+            70,
+        );
+
+        let opportunity = maw_bank_boss_gap_opportunity(288);
+        let leave_bundle = evaluate_shop_purchase_bundle(opportunity, &leave);
+        let fiend_fire_bundle = evaluate_shop_purchase_bundle(opportunity, &fiend_fire);
+        let fire_potion_bundle = evaluate_shop_purchase_bundle(opportunity, &fire_potion);
+
+        assert_eq!(
+            fiend_fire_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardBossAnswerBuy
+        );
+        assert_eq!(
+            fire_potion_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardBossAnswerBuy
+        );
+        assert_ne!(
+            fiend_fire_bundle.reason, "BreaksMawBankWithoutHardNeed",
+            "boss repair card should not be hard-rejected by Maw Bank when boss plan is open"
+        );
+        assert!(
+            shop_purchase_bundle_order_key(&fiend_fire_bundle)
+                < shop_purchase_bundle_order_key(&leave_bundle),
+            "deterministic boss repair should outrank pure Maw Bank preservation: repair={:?} leave={:?}",
+            fiend_fire_bundle,
+            leave_bundle
+        );
+    }
+
+    #[test]
+    fn boss_repair_does_not_break_maw_bank_before_hard_checkpoint_window() {
+        let fiend_fire = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: crate::content::cards::CardId::FiendFire,
+                upgrades: 0,
+                price: 152,
+            },
+            70,
+        );
+
+        let early_boss_gap = ShopGoldOpportunity {
+            boss_answer_needed: true,
+            ..maw_bank_opportunity(230)
+        };
+        let fiend_fire_bundle = evaluate_shop_purchase_bundle(early_boss_gap, &fiend_fire);
+
+        assert_eq!(fiend_fire_bundle.verdict, ShopPurchaseBundleVerdict::Reject);
+        assert_eq!(fiend_fire_bundle.reason, "BreaksMawBankWithoutHardNeed");
+    }
+
+    #[test]
+    fn future_shop_liquidity_rejects_generic_relic_that_spends_below_shop_option() {
+        let clockwork = evaluation(
+            DecisionCandidateKind::ShopBuyRelic {
+                relic: RelicId::ClockworkSouvenir,
+                price: 149,
+            },
+            115,
+        );
+
+        let bundle =
+            evaluate_shop_purchase_bundle(visible_future_shop_opportunity(151), &clockwork);
+
+        assert_eq!(bundle.verdict, ShopPurchaseBundleVerdict::Reject);
+        assert_eq!(bundle.reason, "SpendsFutureShopLiquidityWithoutHardNeed");
+    }
+
+    #[test]
+    fn future_shop_liquidity_allows_remove_that_preserves_next_shop_option() {
+        let remove = evaluation(
+            DecisionCandidateKind::ShopPurge {
+                target: crate::ai::strategy::decision_pipeline::CleanupTarget::StarterStrike,
+            },
+            180,
+        );
+
+        let bundle = evaluate_shop_purchase_bundle(visible_future_shop_opportunity(224), &remove);
+
+        assert_eq!(
+            bundle.verdict,
+            ShopPurchaseBundleVerdict::EfficientBundleBuy
+        );
     }
 }

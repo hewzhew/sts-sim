@@ -67,6 +67,16 @@ pub enum MarginalAcquisitionQuality {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AcquisitionConstructionRole {
+    HardStrategicGap,
+    SoftStrategicGap,
+    EngineOrScaling,
+    UpgradeAccess,
+    RunReward,
+    SurvivalStabilizer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AcquisitionStrategicDelta {
     pub improves_hard_gap: bool,
     pub improves_any_gap: bool,
@@ -90,12 +100,13 @@ impl AcquisitionPolicyVerdict {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AcquisitionPolicyReason {
-    RewardSurfaceChoice,
     PremiumCard,
     UpgradedShopCard,
     HardGapWithAcceptableOpportunityCost,
+    ConstructionRoleAccepted,
     LowMarginLacksHardGap,
     PurgeReserveBlocksHardGap,
+    NoOpenConstructionRole,
     NoPolicySupport,
 }
 
@@ -114,6 +125,7 @@ pub struct CardAcquisitionReport {
     pub opportunity_cost: AcquisitionOpportunityCost,
     pub quality: MarginalAcquisitionQuality,
     pub strategic_delta: AcquisitionStrategicDelta,
+    pub construction_role: Option<AcquisitionConstructionRole>,
     pub low_margin_filler: bool,
 }
 
@@ -138,6 +150,7 @@ pub fn assess_card_acquisition(
         improves_any_gap,
         adds_card_without_gap_improvement: admission.card.is_some() && !improves_any_gap,
     };
+    let construction_role = construction_role(context.deck_plan, admission, &strategic_delta);
     let low_margin_filler = admission.card.is_some_and(low_margin_filler_card);
     CardAcquisitionReport {
         card,
@@ -147,11 +160,12 @@ pub fn assess_card_acquisition(
         opportunity_cost,
         quality,
         strategic_delta,
+        construction_role,
         low_margin_filler,
     }
 }
 
-pub fn evaluate_card_acquisition_policy_v0(
+pub fn evaluate_deck_construction_contract(
     report: &CardAcquisitionReport,
 ) -> AcquisitionPolicyDecision {
     acquisition_policy_decision(report)
@@ -220,9 +234,9 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
                 AcquisitionPolicyReason::LowMarginLacksHardGap,
             )
         }
-        AcquisitionSource::Reward if report.strategic_delta.improves_any_gap => acquisition_policy(
+        AcquisitionSource::Reward if report.construction_role.is_some() => acquisition_policy(
             AcquisitionPolicyVerdict::ContextTake,
-            AcquisitionPolicyReason::RewardSurfaceChoice,
+            AcquisitionPolicyReason::ConstructionRoleAccepted,
         ),
         AcquisitionSource::Reward
             if report.low_margin_filler
@@ -234,8 +248,8 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
             )
         }
         AcquisitionSource::Reward => acquisition_policy(
-            AcquisitionPolicyVerdict::ContextTake,
-            AcquisitionPolicyReason::RewardSurfaceChoice,
+            AcquisitionPolicyVerdict::Speculative,
+            AcquisitionPolicyReason::NoOpenConstructionRole,
         ),
         AcquisitionSource::Shop if report.quality == MarginalAcquisitionQuality::Premium => {
             acquisition_policy(
@@ -283,10 +297,13 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         AcquisitionPolicyReason::LowMarginLacksHardGap => {
             "low-margin card does not improve a hard strategic gap"
         }
-        AcquisitionPolicyReason::RewardSurfaceChoice
-        | AcquisitionPolicyReason::PremiumCard
+        AcquisitionPolicyReason::NoOpenConstructionRole => {
+            "card does not satisfy deck construction contract"
+        }
+        AcquisitionPolicyReason::PremiumCard
         | AcquisitionPolicyReason::UpgradedShopCard
-        | AcquisitionPolicyReason::HardGapWithAcceptableOpportunityCost => {
+        | AcquisitionPolicyReason::HardGapWithAcceptableOpportunityCost
+        | AcquisitionPolicyReason::ConstructionRoleAccepted => {
             "shop card fails acquisition discipline"
         }
     }
@@ -332,11 +349,50 @@ fn improves_any_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) ->
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
 }
 
+fn construction_role(
+    deck_plan: DeckPlanSnapshot,
+    admission: &RewardAdmission,
+    strategic_delta: &AcquisitionStrategicDelta,
+) -> Option<AcquisitionConstructionRole> {
+    if strategic_delta.improves_hard_gap {
+        return Some(AcquisitionConstructionRole::HardStrategicGap);
+    }
+    if has_run_reward(admission) {
+        return Some(AcquisitionConstructionRole::RunReward);
+    }
+    if has_combat_upgrade(admission) && deck_plan.roles.upgrade_access_units == 0 {
+        return Some(AcquisitionConstructionRole::UpgradeAccess);
+    }
+    if admission_scaling_or_engine(admission) && !fragile_supported_payoff(deck_plan, admission) {
+        return Some(AcquisitionConstructionRole::EngineOrScaling);
+    }
+    if strategic_delta.improves_any_gap {
+        return Some(AcquisitionConstructionRole::SoftStrategicGap);
+    }
+    if deck_plan.survival_pressure() && admission_survival_tool(admission) {
+        return Some(AcquisitionConstructionRole::SurvivalStabilizer);
+    }
+    None
+}
+
 fn needs(level: StrategicDeficitLevel) -> bool {
     matches!(
         level,
         StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
     )
+}
+
+fn has_combat_upgrade(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::CombatUpgrade)
+}
+
+fn has_run_reward(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .iter()
+        .any(|reason| matches!(reason, RewardAdmissionReason::RunReward(_)))
 }
 
 fn low_margin_filler_card(card: CardId) -> bool {
@@ -397,6 +453,19 @@ fn admission_survival_tool(admission: &RewardAdmission) -> bool {
         || admission_provides(admission, Mechanic::EnemyStrengthDown)
 }
 
+fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
+    admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Closes(_)
+                | RewardAdmissionReason::Supports(_)
+                | RewardAdmissionReason::Installs(_)
+                | RewardAdmissionReason::DamageScalesWith(_)
+        )
+    }) || admission_provides(admission, Mechanic::Strength)
+        || admission_provides(admission, Mechanic::StrengthMultiplier)
+}
+
 fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
     admission
         .reasons
@@ -413,8 +482,8 @@ mod tests {
     use crate::runtime::combat::CombatCard;
 
     use super::{
-        assess_card_acquisition, evaluate_card_acquisition_policy_v0, AcquisitionContext,
-        AcquisitionCost, AcquisitionOpportunityCost, AcquisitionPolicyReason,
+        assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionConstructionRole,
+        AcquisitionContext, AcquisitionCost, AcquisitionOpportunityCost, AcquisitionPolicyReason,
         AcquisitionPolicyVerdict, AcquisitionSource, MarginalAcquisitionQuality,
     };
 
@@ -461,6 +530,24 @@ mod tests {
         ]
     }
 
+    fn act1_roles_satisfied_deck() -> Vec<CardId> {
+        vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::Whirlwind,
+            CardId::ShrugItOff,
+            CardId::BattleTrance,
+            CardId::Inflame,
+        ]
+    }
+
     #[test]
     fn shop_card_acquisition_exposes_gold_opportunity_cost() {
         let cards = act1_missing_access_deck();
@@ -472,7 +559,7 @@ mod tests {
             0,
             &admission,
         );
-        let policy = evaluate_card_acquisition_policy_v0(&report);
+        let policy = evaluate_deck_construction_contract(&report);
 
         assert_eq!(report.source, AcquisitionSource::Shop);
         assert_eq!(
@@ -511,11 +598,40 @@ mod tests {
         assert_eq!(report.source, AcquisitionSource::Reward);
         assert_eq!(report.cost, AcquisitionCost::Free);
         assert_eq!(report.opportunity_cost, AcquisitionOpportunityCost::None);
+        assert_eq!(
+            report.construction_role,
+            Some(AcquisitionConstructionRole::HardStrategicGap)
+        );
 
-        let policy = evaluate_card_acquisition_policy_v0(&report);
+        let policy = evaluate_deck_construction_contract(&report);
         assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
-        assert_eq!(policy.reason, AcquisitionPolicyReason::RewardSurfaceChoice);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::ConstructionRoleAccepted
+        );
         assert!(policy.allows_acquisition());
+    }
+
+    #[test]
+    fn reward_without_open_construction_role_is_only_speculative() {
+        let cards = act1_roles_satisfied_deck();
+        let deck = deck(&cards);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Cleave, 0);
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act1_shop_plan(&cards)),
+            CardId::Cleave,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert_eq!(report.construction_role, None);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Speculative);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::NoOpenConstructionRole
+        );
+        assert!(!policy.allows_acquisition());
     }
 
     #[test]
@@ -530,7 +646,7 @@ mod tests {
             0,
             &admission,
         );
-        let policy = evaluate_card_acquisition_policy_v0(&report);
+        let policy = evaluate_deck_construction_contract(&report);
 
         assert_eq!(report.quality, MarginalAcquisitionQuality::Premium);
         assert_eq!(policy.verdict, AcquisitionPolicyVerdict::AutoAcquire);

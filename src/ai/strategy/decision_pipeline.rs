@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBurden, Mechanic};
 use crate::ai::strategy::acquisition::{
-    assess_card_acquisition, evaluate_card_acquisition_policy_v0, AcquisitionContext,
+    assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionContext,
     AcquisitionPolicyVerdict,
 };
 use crate::ai::strategy::boss_relic_admission::{
@@ -19,8 +19,7 @@ use crate::ai::strategy::role_saturation::{
     assess_role_saturation, marginal_reason_label, LaneCap, RoleSaturationCandidate,
 };
 use crate::ai::strategy::shop_purchase_bundle::{
-    evaluate_shop_purchase_bundle, shop_purchase_bundle_order_key, ShopGoldOpportunity,
-    ShopPurchaseBundleVerdict,
+    evaluate_shop_purchase_bundle, ShopGoldOpportunity, ShopPurchaseBundleVerdict,
 };
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
@@ -607,13 +606,16 @@ fn unsupported_payoff_filter(
 }
 
 fn risky_shop_card_filter(
-    _context: DecisionPipelineContext,
+    context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
     admission: Option<&RewardAdmission>,
 ) -> FilterDecision {
     let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = candidate.kind else {
         return FilterDecision::Pass;
     };
+    if is_hard_boss_answer_shop_bundle(context, candidate) {
+        return FilterDecision::Pass;
+    }
     let definition = card_definition_with_upgrades(card, upgrades);
     let card_risk = definition.burdens.iter().any(|burden| {
         matches!(
@@ -641,6 +643,27 @@ fn risky_shop_card_filter(
     }
 }
 
+fn is_hard_boss_answer_shop_bundle(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+) -> bool {
+    let Some(opportunity) = context.shop_gold_opportunity else {
+        return false;
+    };
+    if !is_shop_bundle_candidate(candidate.kind) {
+        return false;
+    }
+    let evaluation = CandidateEvaluation {
+        candidate,
+        lane: CandidateLane::Mainline,
+        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
+        expansion: ExpansionPlan::Auto,
+        scores: Vec::new(),
+    };
+    evaluate_shop_purchase_bundle(opportunity, &evaluation).verdict
+        == ShopPurchaseBundleVerdict::HardBossAnswerBuy
+}
+
 fn shop_card_acquisition_filter(
     context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
@@ -657,13 +680,16 @@ fn shop_card_acquisition_filter(
     let (Some(admission), Some(gold)) = (admission, context.gold) else {
         return FilterDecision::Pass;
     };
+    if is_hard_boss_answer_shop_bundle(context, candidate) {
+        return FilterDecision::Pass;
+    }
     let report = assess_card_acquisition(
         AcquisitionContext::shop(context.deck_plan, gold, price),
         card,
         upgrades,
         admission,
     );
-    let policy = evaluate_card_acquisition_policy_v0(&report);
+    let policy = evaluate_deck_construction_contract(&report);
     match policy.inspect_only_reason() {
         None => FilterDecision::Pass,
         Some(reason) => FilterDecision::InspectOnly(reason),
@@ -957,17 +983,23 @@ fn shop_purchase_bundle_score(
         ShopPurchaseBundleVerdict::PreserveGoldPreferred => "shop-bundle-preserve-gold",
         ShopPurchaseBundleVerdict::Reject => "shop-bundle-reject",
     };
-    scores.push(score(
-        label,
-        match shop_purchase_bundle_order_key(&bundle).0 {
-            0 => 180,
-            1 => 160,
-            2 => 120,
-            3 => 70,
-            4 => 50,
-            _ => 0,
+    scores.push(score(label, shop_purchase_bundle_score_value(&bundle)));
+}
+
+fn shop_purchase_bundle_score_value(
+    bundle: &crate::ai::strategy::shop_purchase_bundle::ShopPurchaseBundleDecision,
+) -> i32 {
+    match bundle.verdict {
+        ShopPurchaseBundleVerdict::HardSurvivalBuy => 180,
+        ShopPurchaseBundleVerdict::HardBossAnswerBuy => match bundle.facts.kind {
+            crate::ai::strategy::shop_purchase_bundle::ShopPurchaseBundleKind::BuyOneCard => 240,
+            _ => 160,
         },
-    ));
+        ShopPurchaseBundleVerdict::EfficientBundleBuy => 120,
+        ShopPurchaseBundleVerdict::ContextBuy => 70,
+        ShopPurchaseBundleVerdict::PreserveGoldPreferred => 50,
+        ShopPurchaseBundleVerdict::Reject => 0,
+    }
 }
 
 fn shop_relic_score(
@@ -1120,6 +1152,9 @@ fn acquisition_lane_cap(
     kind: DecisionCandidateKind,
     admission: Option<&RewardAdmission>,
 ) -> Option<LaneCap> {
+    if is_hard_boss_answer_shop_bundle(context, DecisionCandidateIr { kind }) {
+        return None;
+    }
     let admission = admission?;
     let (card, upgrades, source) = match kind {
         DecisionCandidateKind::CardRewardPick { card, upgrades } => (
@@ -1142,7 +1177,7 @@ fn acquisition_lane_cap(
         _ => return None,
     };
     let report = assess_card_acquisition(source, card, upgrades, admission);
-    let policy = evaluate_card_acquisition_policy_v0(&report);
+    let policy = evaluate_deck_construction_contract(&report);
     match policy.verdict {
         AcquisitionPolicyVerdict::AutoAcquire | AcquisitionPolicyVerdict::ContextTake => None,
         AcquisitionPolicyVerdict::Speculative | AcquisitionPolicyVerdict::SkipPreferred => {
@@ -1532,8 +1567,22 @@ mod tests {
                 current_gold: gold,
                 active_maw_bank: true,
                 future_rooms_before_next_shop: 5,
+                hard_checkpoint_imminent: false,
                 survival_purchase_needed: false,
                 boss_answer_needed: false,
+            },
+        )
+    }
+
+    fn shop_context_with_maw_bank_boss_gap(cards: &[CardId], gold: i32) -> DecisionPipelineContext {
+        shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
+            crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
+                current_gold: gold,
+                active_maw_bank: true,
+                future_rooms_before_next_shop: 5,
+                hard_checkpoint_imminent: true,
+                survival_purchase_needed: false,
+                boss_answer_needed: true,
             },
         )
     }
@@ -1789,6 +1838,52 @@ mod tests {
             "leave-with-gold should outrank ordinary Maw Bank-breaking purchase: leave={:?} clockwork={:?}",
             leave,
             clockwork
+        );
+    }
+
+    #[test]
+    fn shop_boss_repair_card_can_break_maw_bank_when_boss_gap_is_open() {
+        let deck_cards = act1_low_margin_reward_deck();
+        let deck = test_deck(&deck_cards);
+        let context = shop_context_with_maw_bank_boss_gap(&deck_cards, 288);
+
+        let fiend_fire = shop_card_in_context_with_price(context, &deck, CardId::FiendFire, 0, 152);
+        let leave = shop_leave(context);
+
+        assert_ne!(
+            fiend_fire.inspect_only_reason(),
+            Some("BreaksMawBankWithoutHardNeed"),
+            "deterministic boss repair should not be hidden behind Maw Bank protection"
+        );
+        assert!(
+            fiend_fire.order_key(false) < leave.order_key(false),
+            "boss-repair purchase should be eligible ahead of pure gold preservation: fiend_fire={:?} leave={:?}",
+            fiend_fire,
+            leave
+        );
+    }
+
+    #[test]
+    fn shop_boss_repair_card_orders_before_single_damage_potion() {
+        let deck_cards = act1_low_margin_reward_deck();
+        let deck = test_deck(&deck_cards);
+        let context = shop_context_with_maw_bank_boss_gap(&deck_cards, 288);
+
+        let fiend_fire = shop_card_in_context_with_price(context, &deck, CardId::FiendFire, 0, 152);
+        let fire_potion = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::FirePotion,
+                price: 51,
+            },
+            None,
+        );
+
+        assert!(
+            fiend_fire.order_key(false) < fire_potion.order_key(false),
+            "boss repair payload should outrank one-shot potion when both can break Maw Bank: fiend_fire={:?} fire_potion={:?}",
+            fiend_fire,
+            fire_potion
         );
     }
 
