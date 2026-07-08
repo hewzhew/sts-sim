@@ -37,5 +37,5 @@ pub(super) fn shop_tiny_choice_expansion(
 }
 
 pub(super) fn inspect_only() -> OwnerChoiceExpansion {
-    OwnerChoiceExpansion::InspectOnly("shop tiny keeps this atomic shop action inspect-only")
+    OwnerChoiceExpansion::InspectOnly("choice has no auto-expandable policy evaluation")
 }
