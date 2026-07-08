@@ -69,6 +69,8 @@ pub enum MarginalAcquisitionQuality {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AcquisitionStrategicDelta {
     pub improves_hard_gap: bool,
+    pub improves_any_gap: bool,
+    pub adds_card_without_gap_improvement: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,6 +94,7 @@ pub enum AcquisitionPolicyReason {
     PremiumCard,
     UpgradedShopCard,
     HardGapWithAcceptableOpportunityCost,
+    LowMarginLacksHardGap,
     PurgeReserveBlocksHardGap,
     NoPolicySupport,
 }
@@ -111,6 +114,7 @@ pub struct CardAcquisitionReport {
     pub opportunity_cost: AcquisitionOpportunityCost,
     pub quality: MarginalAcquisitionQuality,
     pub strategic_delta: AcquisitionStrategicDelta,
+    pub low_margin_filler: bool,
 }
 
 pub fn assess_card_acquisition(
@@ -127,9 +131,14 @@ pub fn assess_card_acquisition(
     } else {
         MarginalAcquisitionQuality::Ordinary
     };
+    let improves_hard_gap = improves_hard_gap(context.deck_plan, admission);
+    let improves_any_gap = improves_any_gap(context.deck_plan, admission);
     let strategic_delta = AcquisitionStrategicDelta {
-        improves_hard_gap: improves_hard_gap(context.deck_plan, admission),
+        improves_hard_gap,
+        improves_any_gap,
+        adds_card_without_gap_improvement: admission.card.is_some() && !improves_any_gap,
     };
+    let low_margin_filler = admission.card.is_some_and(low_margin_filler_card);
     CardAcquisitionReport {
         card,
         upgrades,
@@ -138,6 +147,7 @@ pub fn assess_card_acquisition(
         opportunity_cost,
         quality,
         strategic_delta,
+        low_margin_filler,
     }
 }
 
@@ -196,6 +206,33 @@ impl AcquisitionPolicyDecision {
 
 fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPolicyDecision {
     match report.source {
+        AcquisitionSource::Reward if report.quality == MarginalAcquisitionQuality::Premium => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::AutoAcquire,
+                AcquisitionPolicyReason::PremiumCard,
+            )
+        }
+        AcquisitionSource::Reward
+            if report.low_margin_filler && !report.strategic_delta.improves_hard_gap =>
+        {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::Speculative,
+                AcquisitionPolicyReason::LowMarginLacksHardGap,
+            )
+        }
+        AcquisitionSource::Reward if report.strategic_delta.improves_any_gap => acquisition_policy(
+            AcquisitionPolicyVerdict::ContextTake,
+            AcquisitionPolicyReason::RewardSurfaceChoice,
+        ),
+        AcquisitionSource::Reward
+            if report.low_margin_filler
+                && report.strategic_delta.adds_card_without_gap_improvement =>
+        {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::Speculative,
+                AcquisitionPolicyReason::LowMarginLacksHardGap,
+            )
+        }
         AcquisitionSource::Reward => acquisition_policy(
             AcquisitionPolicyVerdict::ContextTake,
             AcquisitionPolicyReason::RewardSurfaceChoice,
@@ -243,6 +280,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
             "shop card would spend purge reserve despite hard gap"
         }
         AcquisitionPolicyReason::NoPolicySupport => "shop card has no acquisition policy support",
+        AcquisitionPolicyReason::LowMarginLacksHardGap => {
+            "low-margin card does not improve a hard strategic gap"
+        }
         AcquisitionPolicyReason::RewardSurfaceChoice
         | AcquisitionPolicyReason::PremiumCard
         | AcquisitionPolicyReason::UpgradedShopCard
@@ -276,10 +316,42 @@ fn improves_hard_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -
             && admission_frontloads(admission))
 }
 
+fn improves_any_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -> bool {
+    let deficit = deck_plan.strategic_deficit;
+    (needs(deficit.deck_access)
+        && (admission_provides(admission, Mechanic::CardDraw)
+            || admission
+                .reasons
+                .contains(&RewardAdmissionReason::CombatUpgrade)))
+        || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
+        || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
+        || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
+        || (needs(deficit.boss_scaling_plan)
+            && assess_boss_scaling_evidence(deck_plan, None, admission).relevant_to_boss_plan
+            && !fragile_supported_payoff(deck_plan, admission))
+        || (needs(deficit.frontload_damage) && admission_frontloads(admission))
+}
+
 fn needs(level: StrategicDeficitLevel) -> bool {
     matches!(
         level,
         StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+    )
+}
+
+fn low_margin_filler_card(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::TwinStrike
+            | CardId::SwordBoomerang
+            | CardId::WildStrike
+            | CardId::RecklessCharge
+            | CardId::Rampage
+            | CardId::IronWave
+            | CardId::Clothesline
+            | CardId::ThunderClap
+            | CardId::Anger
+            | CardId::SwiftStrike
     )
 }
 
@@ -317,6 +389,12 @@ fn admission_aoe(admission: &RewardAdmission) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::AreaDamage)
+}
+
+fn admission_survival_tool(admission: &RewardAdmission) -> bool {
+    admission_provides(admission, Mechanic::Block)
+        || admission_provides(admission, Mechanic::Weak)
+        || admission_provides(admission, Mechanic::EnemyStrengthDown)
 }
 
 fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> bool {

@@ -1,6 +1,7 @@
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBurden, Mechanic};
 use crate::ai::strategy::acquisition::{
     assess_card_acquisition, evaluate_card_acquisition_policy_v0, AcquisitionContext,
+    AcquisitionPolicyVerdict,
 };
 use crate::ai::strategy::boss_relic_admission::{
     boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
@@ -258,8 +259,11 @@ pub fn evaluate_decision_candidate(
     let lane = capped_lane(
         lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum()),
         stricter_lane_cap(
-            saturation.lane_cap,
-            strategic_lane_cap(context, candidate.kind, admission),
+            stricter_lane_cap(
+                saturation.lane_cap,
+                strategic_lane_cap(context, candidate.kind, admission),
+            ),
+            acquisition_lane_cap(context, candidate.kind, admission),
         ),
     );
     let expansion = expansion_for_candidate(candidate.kind, lane);
@@ -963,6 +967,43 @@ fn strategic_lane_cap(
     Some(LaneCap::ProbeOnly)
 }
 
+fn acquisition_lane_cap(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: Option<&RewardAdmission>,
+) -> Option<LaneCap> {
+    let admission = admission?;
+    let (card, upgrades, source) = match kind {
+        DecisionCandidateKind::CardRewardPick { card, upgrades } => (
+            card,
+            upgrades,
+            AcquisitionContext::reward(context.deck_plan),
+        ),
+        DecisionCandidateKind::ShopBuyCard {
+            card,
+            upgrades,
+            price,
+        } => {
+            let gold = context.gold?;
+            (
+                card,
+                upgrades,
+                AcquisitionContext::shop(context.deck_plan, gold, price),
+            )
+        }
+        _ => return None,
+    };
+    let report = assess_card_acquisition(source, card, upgrades, admission);
+    let policy = evaluate_card_acquisition_policy_v0(&report);
+    match policy.verdict {
+        AcquisitionPolicyVerdict::AutoAcquire | AcquisitionPolicyVerdict::ContextTake => None,
+        AcquisitionPolicyVerdict::Speculative | AcquisitionPolicyVerdict::SkipPreferred => {
+            Some(LaneCap::ProbeOnly)
+        }
+        AcquisitionPolicyVerdict::Reject => Some(LaneCap::Reject),
+    }
+}
+
 fn role_saturation_candidate(kind: DecisionCandidateKind) -> Option<RoleSaturationCandidate> {
     match kind {
         DecisionCandidateKind::CardRewardPick { upgrades, .. } => Some(RoleSaturationCandidate {
@@ -1323,6 +1364,46 @@ mod tests {
         )
     }
 
+    fn reward_context_with_act(cards: &[CardId], act: u8) -> DecisionPipelineContext {
+        let deck = test_deck(cards);
+        DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
+            &deck,
+            DeckAdmissionContext {
+                act,
+                current_hp: 70,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: act,
+                starter_basic_count: deck
+                    .iter()
+                    .filter(|card| matches!(card.id, CardId::Strike | CardId::Defend))
+                    .count(),
+                curse_count: 0,
+                has_energy_relic: false,
+            },
+        ))
+    }
+
+    fn reward_card_with_act(
+        cards: &[CardId],
+        candidate: CardId,
+        upgrades: u8,
+        act: u8,
+    ) -> CandidateEvaluation {
+        let deck = test_deck(cards);
+        let context = reward_context_with_act(cards, act);
+        let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
+        evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::CardRewardPick {
+                card: candidate,
+                upgrades,
+            },
+            Some(&admission),
+        )
+    }
+
     fn shop_relic(context: DecisionPipelineContext, relic: RelicId) -> CandidateEvaluation {
         evaluate_decision_candidate(
             context,
@@ -1401,6 +1482,88 @@ mod tests {
             CardId::Inflame,
             CardId::ShrugItOff,
         ]
+    }
+
+    fn act1_low_margin_reward_deck() -> Vec<CardId> {
+        vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::IronWave,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::Bloodletting,
+        ]
+    }
+
+    #[test]
+    fn reward_low_margin_filler_cannot_enter_mainline_after_basic_roles_exist() {
+        let deck = act1_low_margin_reward_deck();
+
+        let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
+
+        assert_ne!(
+            iron_wave.lane,
+            CandidateLane::Mainline,
+            "low-margin filler should not be promoted by stacked weak evidence: {:?}",
+            iron_wave.scores
+        );
+    }
+
+    #[test]
+    fn reward_skip_sorts_before_probe_when_no_mainline_take_exists() {
+        let deck = act1_low_margin_reward_deck();
+        let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
+        let thunderclap = reward_card_with_act(&deck, CardId::ThunderClap, 0, 1);
+        let skip = evaluate_decision_candidate(
+            reward_context_with_act(&deck, 1),
+            DecisionCandidateKind::CardRewardSkip,
+            Some(&crate::ai::strategy::reward_admission::skip_reward_admission()),
+        );
+
+        assert_eq!(iron_wave.lane, CandidateLane::Probe);
+        assert_eq!(thunderclap.lane, CandidateLane::Probe);
+        assert_eq!(skip.lane, CandidateLane::Skip);
+        assert!(
+            skip.order_key(false) < iron_wave.order_key(false),
+            "skip should outrank probe when there is no mainline take"
+        );
+        assert!(
+            skip.order_key(false) < thunderclap.order_key(false),
+            "skip should outrank every probe filler when there is no mainline take"
+        );
+    }
+
+    #[test]
+    fn reward_low_margin_filler_does_not_mainline_for_only_soft_gap_contact() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::PommelStrike,
+        ];
+
+        let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
+
+        assert_ne!(
+            iron_wave.lane,
+            CandidateLane::Mainline,
+            "low-margin filler should not mainline just because it touches a soft gap: {:?}",
+            iron_wave.scores
+        );
     }
 
     #[test]
