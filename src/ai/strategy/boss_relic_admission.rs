@@ -1,5 +1,7 @@
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
@@ -48,6 +50,7 @@ pub enum BossRelicAdmissionReason {
     SneckoConfusion,
     Act2EnergyGap,
     DoesNotSolveAct2EnergyGap,
+    NoRestDebt,
     Skip,
     Unknown,
 }
@@ -170,7 +173,7 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
-    let lane = lane_for_relic(&facts, relic, class, &mut reasons);
+    let lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
 
     BossRelicAdmission {
         relic: Some(relic),
@@ -181,12 +184,17 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
 }
 
 fn lane_for_relic(
+    run_state: &RunState,
     facts: &RunStrategicFacts,
     relic: RelicId,
     class: BossRelicAdmissionClass,
     reasons: &mut Vec<BossRelicAdmissionReason>,
 ) -> BossRelicAdmissionLane {
     if facts.has_act2_energy_gap() {
+        if relic == RelicId::CoffeeDripper && coffee_dripper_no_rest_debt_high(run_state) {
+            reasons.push(BossRelicAdmissionReason::NoRestDebt);
+            return BossRelicAdmissionLane::Probe;
+        }
         if is_act2_default_energy_relic(relic) {
             reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
             return BossRelicAdmissionLane::Mainline;
@@ -197,6 +205,60 @@ fn lane_for_relic(
         }
     }
     default_lane(class)
+}
+
+fn coffee_dripper_no_rest_debt_high(run_state: &RunState) -> bool {
+    let hp_percent = hp_percent(run_state);
+    let self_damage = self_damage_source_count(run_state);
+    hp_percent < 45
+        || (self_damage >= 2 && !has_combat_healing_plan(run_state))
+        || (self_damage >= 1 && survival_support_count(run_state) <= 1 && hp_percent < 70)
+}
+
+fn hp_percent(run_state: &RunState) -> i32 {
+    if run_state.max_hp <= 0 {
+        return 0;
+    }
+    run_state.current_hp.max(0).saturating_mul(100) / run_state.max_hp
+}
+
+fn self_damage_source_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| card_mechanics_profile_v1(card.id).self_damage_source)
+        .count()
+}
+
+fn has_combat_healing_plan(run_state: &RunState) -> bool {
+    run_state
+        .master_deck
+        .iter()
+        .any(|card| card.id == CardId::Reaper)
+}
+
+fn survival_support_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            matches!(
+                card.id,
+                CardId::ShrugItOff
+                    | CardId::FlameBarrier
+                    | CardId::PowerThrough
+                    | CardId::Impervious
+                    | CardId::SecondWind
+                    | CardId::TrueGrit
+                    | CardId::Disarm
+                    | CardId::Shockwave
+                    | CardId::Uppercut
+                    | CardId::Clothesline
+                    | CardId::Intimidate
+                    | CardId::GhostlyArmor
+            )
+        })
+        .count()
 }
 
 fn is_act2_default_energy_relic(relic: RelicId) -> bool {
@@ -299,6 +361,7 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         BossRelicAdmissionReason::SneckoConfusion => "confusion".to_string(),
         BossRelicAdmissionReason::Act2EnergyGap => "act2-energy-gap".to_string(),
         BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap => "misses-act2-energy-gap".to_string(),
+        BossRelicAdmissionReason::NoRestDebt => "no-rest-debt".to_string(),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
@@ -307,6 +370,7 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::combat::CombatCard;
     use crate::state::run::RunState;
 
     #[test]
@@ -323,6 +387,27 @@ mod tests {
         assert!(
             boss_relic_admission_order_rank(&coffee) < boss_relic_admission_order_rank(&pyramid),
             "Act2 energy gap should let Coffee Dripper outrank generic strategic power"
+        );
+    }
+
+    #[test]
+    fn coffee_dripper_rest_lock_debt_yields_to_strategic_power() {
+        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+        run.current_hp = 9;
+        run.max_hp = 80;
+        run.master_deck
+            .push(CombatCard::new(CardId::Bloodletting, 1001));
+
+        let coffee = assess_boss_relic_admission(&run, RelicId::CoffeeDripper);
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
+
+        assert_eq!(coffee.lane, BossRelicAdmissionLane::Probe);
+        assert!(coffee
+            .reasons
+            .contains(&BossRelicAdmissionReason::NoRestDebt));
+        assert!(
+            boss_relic_admission_order_rank(&pyramid) < boss_relic_admission_order_rank(&coffee),
+            "low HP plus self-damage should prevent Coffee Dripper's energy gap shortcut from outranking Pyramid"
         );
     }
 }

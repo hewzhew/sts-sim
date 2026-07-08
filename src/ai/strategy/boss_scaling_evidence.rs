@@ -6,6 +6,7 @@ use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::package_transition::PackageKind;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BossScalingEvidence {
@@ -47,6 +48,9 @@ pub fn assess_boss_scaling_evidence(
 ) -> BossScalingEvidence {
     let card_semantics = card.map(|(id, upgrades)| card_definition_with_upgrades(id, upgrades));
 
+    if let Some(evidence) = boss_specific_support_evidence(deck, card) {
+        return evidence;
+    }
     if admission_provides(admission, Mechanic::Strength)
         || card_grants_strength(card_semantics.as_ref())
     {
@@ -101,6 +105,39 @@ pub fn assess_boss_scaling_evidence(
         return BossScalingEvidence::score_only("boss-premium-survival", 20);
     }
     BossScalingEvidence::none()
+}
+
+fn boss_specific_support_evidence(
+    deck: DeckPlanSnapshot,
+    card: Option<(CardId, u8)>,
+) -> Option<BossScalingEvidence> {
+    let (card, upgrades) = card?;
+    match deck.boss_key {
+        Some(EncounterId::Automaton) => automaton_support_evidence(card, upgrades),
+        _ => None,
+    }
+}
+
+fn automaton_support_evidence(card: CardId, upgrades: u8) -> Option<BossScalingEvidence> {
+    match card {
+        CardId::Shockwave => Some(BossScalingEvidence::relevant(
+            "automaton-artifact-debuff-window",
+            70,
+        )),
+        CardId::Uppercut => Some(BossScalingEvidence::relevant(
+            "automaton-artifact-debuff-bridge",
+            55,
+        )),
+        CardId::ShrugItOff if upgrades > 0 => Some(BossScalingEvidence::relevant(
+            "automaton-hyperbeam-survival",
+            45,
+        )),
+        CardId::SecondWind => Some(BossScalingEvidence::relevant(
+            "automaton-pyramid-hand-management",
+            45,
+        )),
+        _ => None,
+    }
 }
 
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
@@ -176,4 +213,79 @@ fn candidate_exhaust_payoff(
                 )
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::strategy::deck_admission::DeckAdmissionContext;
+    use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+    use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
+    use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+    use crate::runtime::combat::CombatCard;
+
+    fn card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
+    }
+
+    fn deck_plan(cards: &[CardId]) -> (Vec<CombatCard>, DeckPlanSnapshot) {
+        let deck: Vec<_> = cards
+            .iter()
+            .enumerate()
+            .map(|(index, id)| card(*id, index as u32 + 1))
+            .collect();
+        let plan = DeckPlanSnapshot::from_deck(
+            &deck,
+            DeckAdmissionContext {
+                act: 2,
+                current_hp: 70,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 2,
+                starter_basic_count: 0,
+                curse_count: 0,
+                has_energy_relic: false,
+            },
+        );
+        (deck, plan)
+    }
+
+    #[test]
+    fn conditional_strength_does_not_make_strength_payoff_boss_relevant() {
+        let (deck, plan) = deck_plan(&[CardId::SpotWeakness, CardId::SpotWeakness]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::HeavyBlade, 0);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::HeavyBlade, 0)), &admission);
+
+        assert_eq!(evidence.label, "boss-speculative-payoff");
+        assert!(!evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn stable_strength_makes_strength_payoff_boss_relevant() {
+        let (deck, plan) = deck_plan(&[CardId::Inflame]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::HeavyBlade, 0);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::HeavyBlade, 0)), &admission);
+
+        assert_eq!(evidence.label, "boss-strength-payoff");
+        assert!(evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn automaton_known_boss_makes_shockwave_boss_relevant() {
+        let (deck, plan) = deck_plan(&[
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Immolate,
+            CardId::FiendFire,
+        ]);
+        let plan = plan.with_boss_key(Some(EncounterId::Automaton));
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Shockwave, 0);
+        let evidence = assess_boss_scaling_evidence(plan, Some((CardId::Shockwave, 0)), &admission);
+
+        assert_eq!(evidence.label, "automaton-artifact-debuff-window");
+        assert!(evidence.relevant_to_boss_plan);
+    }
 }

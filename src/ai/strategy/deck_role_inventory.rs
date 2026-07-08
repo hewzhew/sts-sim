@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, DamageScalingAxis, InstalledRule, Mechanic,
-    PlayEffect, TriggeredEffect,
+    card_definition_with_upgrades, CardBurden, CombatEvent, DamageScalingAxis, InstalledRule,
+    Mechanic, PlayEffect, TriggeredEffect,
 };
 use crate::content::cards::get_card_definition;
 use crate::runtime::combat::CombatCard;
@@ -18,6 +18,7 @@ pub struct DeckRoleInventory {
     pub energy_units: u8,
     pub x_cost_payoff_units: u8,
     pub strength_source_units: u8,
+    pub conditional_strength_source_units: u8,
     pub corruption_units: u8,
     pub exhaust_stream_units: u8,
     pub exhaust_payoff_units: u8,
@@ -43,7 +44,21 @@ impl DeckRoleInventory {
             if provides_block && provides_draw {
                 inventory.cycle_block_units += 1;
             }
+            let conditional_strength_provider = definition
+                .play_effects
+                .contains(&PlayEffect::Provide(Mechanic::Strength))
+                && definition
+                    .burdens
+                    .contains(&CardBurden::RequiresEnemyAttackIntent);
+            if conditional_strength_provider {
+                inventory.conditional_strength_source_units += 1;
+            }
             for effect in &definition.play_effects {
+                if conditional_strength_provider
+                    && *effect == PlayEffect::Provide(Mechanic::Strength)
+                {
+                    continue;
+                }
                 inventory.add_play_effect(*effect);
             }
             for rule in &definition.installed_rules {
@@ -125,5 +140,35 @@ impl DeckRoleInventory {
             | Mechanic::StrengthMultiplier
             | Mechanic::TopdeckControl => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+
+    fn card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn spot_weakness_counts_as_conditional_strength_not_stable_strength() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::SpotWeakness, 1),
+            card(CardId::SpotWeakness, 2),
+        ]);
+
+        assert_eq!(inventory.strength_source_units, 0);
+        assert_eq!(inventory.conditional_strength_source_units, 2);
+    }
+
+    #[test]
+    fn inflame_and_demon_form_count_as_stable_strength_sources() {
+        let inventory =
+            DeckRoleInventory::from_deck(&[card(CardId::Inflame, 1), card(CardId::DemonForm, 2)]);
+
+        assert_eq!(inventory.strength_source_units, 3);
+        assert_eq!(inventory.conditional_strength_source_units, 0);
     }
 }

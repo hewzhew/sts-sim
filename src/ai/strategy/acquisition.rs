@@ -1,4 +1,4 @@
-use crate::ai::analysis::card_semantics::Mechanic;
+use crate::ai::analysis::card_semantics::{CardBurden, Mechanic};
 use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
@@ -104,6 +104,7 @@ pub enum AcquisitionPolicyReason {
     UpgradedShopCard,
     HardGapWithAcceptableOpportunityCost,
     ConstructionRoleAccepted,
+    HpCostAccessDebt,
     LowMarginLacksHardGap,
     PurgeReserveBlocksHardGap,
     NoOpenConstructionRole,
@@ -127,6 +128,7 @@ pub struct CardAcquisitionReport {
     pub strategic_delta: AcquisitionStrategicDelta,
     pub construction_role: Option<AcquisitionConstructionRole>,
     pub low_margin_filler: bool,
+    pub hp_cost_access_debt: bool,
 }
 
 pub fn assess_card_acquisition(
@@ -143,8 +145,9 @@ pub fn assess_card_acquisition(
     } else {
         MarginalAcquisitionQuality::Ordinary
     };
-    let improves_hard_gap = improves_hard_gap(context.deck_plan, admission);
-    let improves_any_gap = improves_any_gap(context.deck_plan, admission);
+    let candidate = Some((card, upgrades));
+    let improves_hard_gap = improves_hard_gap(context.deck_plan, candidate, admission);
+    let improves_any_gap = improves_any_gap(context.deck_plan, candidate, admission);
     let strategic_delta = AcquisitionStrategicDelta {
         improves_hard_gap,
         improves_any_gap,
@@ -152,6 +155,7 @@ pub fn assess_card_acquisition(
     };
     let construction_role = construction_role(context.deck_plan, admission, &strategic_delta);
     let low_margin_filler = admission.card.is_some_and(low_margin_filler_card);
+    let hp_cost_access_debt = hp_cost_access_debt(context.deck_plan, admission);
     CardAcquisitionReport {
         card,
         upgrades,
@@ -162,6 +166,7 @@ pub fn assess_card_acquisition(
         strategic_delta,
         construction_role,
         low_margin_filler,
+        hp_cost_access_debt,
     }
 }
 
@@ -220,6 +225,10 @@ impl AcquisitionPolicyDecision {
 
 fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPolicyDecision {
     match report.source {
+        AcquisitionSource::Reward if report.hp_cost_access_debt => acquisition_policy(
+            AcquisitionPolicyVerdict::Speculative,
+            AcquisitionPolicyReason::HpCostAccessDebt,
+        ),
         AcquisitionSource::Reward if report.quality == MarginalAcquisitionQuality::Premium => {
             acquisition_policy(
                 AcquisitionPolicyVerdict::AutoAcquire,
@@ -297,6 +306,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         AcquisitionPolicyReason::LowMarginLacksHardGap => {
             "low-margin card does not improve a hard strategic gap"
         }
+        AcquisitionPolicyReason::HpCostAccessDebt => {
+            "hp-cost access card does not improve an access or energy gap"
+        }
         AcquisitionPolicyReason::NoOpenConstructionRole => {
             "card does not satisfy deck construction contract"
         }
@@ -316,7 +328,38 @@ fn premium_card(card: CardId) -> bool {
     )
 }
 
-fn improves_hard_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -> bool {
+fn hp_cost_access_debt(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -> bool {
+    if !admission
+        .reasons
+        .contains(&RewardAdmissionReason::Burden(CardBurden::HpCost))
+    {
+        return false;
+    }
+    if !(admission_provides(admission, Mechanic::CardDraw)
+        || admission_provides(admission, Mechanic::Energy))
+    {
+        return false;
+    }
+    if needs(deck_plan.strategic_deficit.deck_access)
+        || needs(deck_plan.strategic_deficit.energy_or_playability)
+    {
+        return false;
+    }
+    !admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Closes(_)
+                | RewardAdmissionReason::Supports(_)
+                | RewardAdmissionReason::RunReward(_)
+        )
+    })
+}
+
+fn improves_hard_gap(
+    deck_plan: DeckPlanSnapshot,
+    candidate: Option<(CardId, u8)>,
+    admission: &RewardAdmission,
+) -> bool {
     let deficit = deck_plan.strategic_deficit;
     (deficit.deck_access == StrategicDeficitLevel::Missing
         && (admission_provides(admission, Mechanic::CardDraw)
@@ -327,13 +370,17 @@ fn improves_hard_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -
         || (deficit.aoe_or_minion_control == StrategicDeficitLevel::Missing
             && admission_aoe(admission))
         || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
-            && assess_boss_scaling_evidence(deck_plan, None, admission).relevant_to_boss_plan
+            && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
         || (deficit.frontload_damage == StrategicDeficitLevel::Missing
             && admission_frontloads(admission))
 }
 
-fn improves_any_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -> bool {
+fn improves_any_gap(
+    deck_plan: DeckPlanSnapshot,
+    candidate: Option<(CardId, u8)>,
+    admission: &RewardAdmission,
+) -> bool {
     let deficit = deck_plan.strategic_deficit;
     (needs(deficit.deck_access)
         && (admission_provides(admission, Mechanic::CardDraw)
@@ -344,7 +391,7 @@ fn improves_any_gap(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) ->
         || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
         || (needs(deficit.boss_scaling_plan)
-            && assess_boss_scaling_evidence(deck_plan, None, admission).relevant_to_boss_plan
+            && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
 }
@@ -548,6 +595,23 @@ mod tests {
         ]
     }
 
+    fn act2_access_saturated_plan(cards: &[CardId]) -> DeckPlanSnapshot {
+        DeckPlanSnapshot::from_deck(
+            &deck(cards),
+            DeckAdmissionContext {
+                act: 2,
+                current_hp: 42,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 3,
+                starter_basic_count: 0,
+                curse_count: 0,
+                has_energy_relic: true,
+            },
+        )
+    }
+
     #[test]
     fn shop_card_acquisition_exposes_gold_opportunity_cost() {
         let cards = act1_missing_access_deck();
@@ -652,5 +716,42 @@ mod tests {
         assert_eq!(policy.verdict, AcquisitionPolicyVerdict::AutoAcquire);
         assert_eq!(policy.reason, AcquisitionPolicyReason::PremiumCard);
         assert!(policy.allows_acquisition());
+    }
+
+    #[test]
+    fn hp_cost_access_debt_overrides_premium_reward_auto_acquire() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::BattleTrance,
+            CardId::Bloodletting,
+            CardId::SeeingRed,
+            CardId::FiendFire,
+        ];
+        let deck = deck(&cards);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Offering, 0);
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act2_access_saturated_plan(&cards)),
+            CardId::Offering,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert_eq!(report.quality, MarginalAcquisitionQuality::Premium);
+        assert!(report.hp_cost_access_debt);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Speculative);
+        assert_eq!(policy.reason, AcquisitionPolicyReason::HpCostAccessDebt);
+        assert!(
+            !policy.allows_acquisition(),
+            "premium access should not auto-acquire when HP-cost access no longer solves access/energy"
+        );
     }
 }

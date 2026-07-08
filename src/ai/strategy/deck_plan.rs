@@ -11,12 +11,14 @@ use crate::ai::strategy::deck_strategic_deficit::{
 };
 use crate::ai::strategy::reward_admission::RewardAdmission;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use crate::content::monsters::factory::EncounterId;
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeckPlanSnapshot {
     pub context: DeckAdmissionContext,
+    pub boss_key: Option<EncounterId>,
     pub deck_size: usize,
     pub roles: DeckRoleInventory,
     pub construction: DeckConstructionPressure,
@@ -35,6 +37,7 @@ impl DeckPlanSnapshot {
             },
             RunStrategicFacts::from_run_state(run_state),
         )
+        .with_boss_key(run_state.boss_key)
     }
 
     pub fn from_deck(
@@ -44,6 +47,7 @@ impl DeckPlanSnapshot {
     ) -> Self {
         Self {
             context,
+            boss_key: None,
             deck_size: deck.len(),
             roles: DeckRoleInventory::from_deck(deck),
             construction: assess_deck_construction_pressure(
@@ -53,6 +57,11 @@ impl DeckPlanSnapshot {
             strategic_deficit: assess_deck_strategic_deficit_summary(deck, run_facts),
             run_facts,
         }
+    }
+
+    pub fn with_boss_key(mut self, boss_key: Option<EncounterId>) -> Self {
+        self.boss_key = boss_key;
+        self
     }
 
     pub fn survival_pressure(self) -> bool {

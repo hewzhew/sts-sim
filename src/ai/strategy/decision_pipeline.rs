@@ -811,7 +811,7 @@ fn strategic_deficit_score(
         scores.push(score("strategic-frontload-gap", 35));
     }
 
-    if !improves && heavy_burden_penalty_applies(context, admission) {
+    if !improves && heavy_burden_penalty_applies(context, candidate.kind, admission) {
         scores.push(score("strategic-burden-no-gap", -85));
     }
     if deficit.too_many_low_impact_attacks
@@ -1141,7 +1141,7 @@ fn strategic_lane_cap(
         return None;
     }
     let admission = admission?;
-    if !heavy_burden_penalty_applies(context, admission) {
+    if !heavy_burden_penalty_applies(context, kind, admission) {
         return None;
     }
     Some(LaneCap::ProbeOnly)
@@ -1267,16 +1267,23 @@ fn ordinary_reward_addition(admission: &RewardAdmission) -> bool {
 
 fn heavy_burden_penalty_applies(
     context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
     admission: &RewardAdmission,
 ) -> bool {
     context.deck_plan.strategic_deficit.deck_burden == StrategicBurdenLevel::Heavy
         && ordinary_reward_addition(admission)
         && !improves_strategic_gap(context, admission)
-        && !heavy_burden_exception(context, admission)
+        && !heavy_burden_exception(context, kind, admission)
 }
 
-fn heavy_burden_exception(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+fn heavy_burden_exception(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: &RewardAdmission,
+) -> bool {
     survival_pressure_exception(context, admission)
+        || assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
+            .relevant_to_boss_plan
         || (admission_provides(admission, Mechanic::CardDraw)
             && admission_provides(admission, Mechanic::Energy))
         || admission
@@ -1521,6 +1528,7 @@ mod tests {
     use crate::ai::strategy::deck_admission::DeckAdmissionContext;
     use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
     use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+    use crate::content::monsters::factory::EncounterId;
     use crate::runtime::combat::CombatCard;
 
     fn shop_context(cards: &[CardId]) -> DecisionPipelineContext {
@@ -1612,6 +1620,34 @@ mod tests {
         ))
     }
 
+    fn reward_context_with_act_boss(
+        cards: &[CardId],
+        act: u8,
+        boss: EncounterId,
+    ) -> DecisionPipelineContext {
+        let deck = test_deck(cards);
+        DecisionPipelineContext::reward(
+            DeckPlanSnapshot::from_deck(
+                &deck,
+                DeckAdmissionContext {
+                    act,
+                    current_hp: 70,
+                    max_hp: 80,
+                },
+                RunStrategicFacts {
+                    entering_act: act,
+                    starter_basic_count: deck
+                        .iter()
+                        .filter(|card| matches!(card.id, CardId::Strike | CardId::Defend))
+                        .count(),
+                    curse_count: 0,
+                    has_energy_relic: false,
+                },
+            )
+            .with_boss_key(Some(boss)),
+        )
+    }
+
     fn reward_card_with_act(
         cards: &[CardId],
         candidate: CardId,
@@ -1620,6 +1656,26 @@ mod tests {
     ) -> CandidateEvaluation {
         let deck = test_deck(cards);
         let context = reward_context_with_act(cards, act);
+        let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
+        evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::CardRewardPick {
+                card: candidate,
+                upgrades,
+            },
+            Some(&admission),
+        )
+    }
+
+    fn reward_card_with_act_boss(
+        cards: &[CardId],
+        candidate: CardId,
+        upgrades: u8,
+        act: u8,
+        boss: EncounterId,
+    ) -> CandidateEvaluation {
+        let deck = test_deck(cards);
+        let context = reward_context_with_act_boss(cards, act, boss);
         let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
         evaluate_decision_candidate(
             context,
@@ -1956,6 +2012,40 @@ mod tests {
             "supported Corruption engine should outrank Feed run reward before Act2 boss: corruption={:?} feed={:?}",
             corruption.scores,
             feed.scores
+        );
+    }
+
+    #[test]
+    fn reward_automaton_context_keeps_shockwave_as_boss_support() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::Bloodletting,
+            CardId::FiendFire,
+            CardId::SpotWeakness,
+            CardId::SpotWeakness,
+            CardId::Offering,
+        ];
+
+        let shockwave =
+            reward_card_with_act_boss(&cards, CardId::Shockwave, 0, 2, EncounterId::Automaton);
+
+        assert_eq!(shockwave.lane, CandidateLane::Mainline);
+        assert!(shockwave.auto_expands(), "shockwave={shockwave:?}");
+        assert!(
+            shockwave
+                .scores
+                .iter()
+                .any(|score| score.by == "automaton-artifact-debuff-window"),
+            "shockwave scores should expose Automaton boss support: {:?}",
+            shockwave.scores
         );
     }
 
