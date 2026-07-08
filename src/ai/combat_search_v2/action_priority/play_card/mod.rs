@@ -2,6 +2,7 @@ mod setup;
 mod target;
 
 use super::super::action_effects::card_play_effect_facts;
+use super::super::action_resource_timing::resource_timing_facts_for_play;
 use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
 };
@@ -32,11 +33,16 @@ pub(super) fn priority_for_play_card(
     let evaluated = cards::evaluate_card_for_play(card, combat, target);
     let def = cards::get_card_definition(card.id);
     let target_kind = cards::effective_target(card);
-    let damage = evaluated.base_damage_mut.max(0);
+    let resource_timing = resource_timing_facts_for_play(combat, card_index, target);
+    let damage = evaluated
+        .base_damage_mut
+        .max(resource_timing.conversion_damage_hint)
+        .max(0);
     let effects = card_play_effect_facts(combat, card, target);
     let effect_diagnostics = effects.diagnostics();
     let block = evaluated
         .base_block_mut
+        .max(resource_timing.conversion_block_hint)
         .max(0)
         .saturating_add(effects.reactive.player_block);
     let target_progress = target_progress_hint(combat, target_kind, target, damage)
@@ -125,7 +131,9 @@ pub(super) fn priority_for_play_card(
 
     ActionOrderingPriority {
         role,
-        role_rank: role_rank.saturating_add(phase_hint.role_rank_adjustment),
+        role_rank: role_rank
+            .saturating_add(phase_hint.role_rank_adjustment)
+            .saturating_add(resource_timing.role_rank_adjustment),
         mitigation,
         reactive_risk: -reactive_risk,
         target_progress,
@@ -137,6 +145,7 @@ pub(super) fn priority_for_play_card(
             .saturating_add(current_turn_attack_setup),
         phase_survival: phase_hint.phase_survival,
         phase_transition_safety: phase_hint.phase_transition_safety,
+        resource_timing: resource_timing.ordering_score,
         phase_hint,
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)

@@ -173,3 +173,87 @@ fn key_card_setup_bias_promotes_strength_scaling_power() {
     assert_eq!(biased_setup.role, ActionOrderingRole::KeySetupCard);
     assert!(biased_setup > strike);
 }
+
+#[test]
+fn premature_fiend_fire_waits_behind_access_when_it_would_burn_key_hand_resources() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 80;
+    monster.max_hp = 80;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::FiendFire, 10),
+        CombatCard::new(CardId::Offering, 11),
+        CombatCard::new(CardId::SpotWeakness, 12),
+        CombatCard::new(CardId::Strike, 13),
+    ];
+
+    let fiend_fire = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let offering = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(fiend_fire.resource_timing < 0);
+    assert!(fiend_fire.role_rank < constants::ROLE_DAMAGE_PROGRESS);
+    assert!(
+        offering > fiend_fire,
+        "premature Fiend Fire should not outrank access while burning Offering/Spot Weakness"
+    );
+}
+
+#[test]
+fn lethal_fiend_fire_keeps_finisher_priority_even_when_it_consumes_hand_resources() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 20;
+    monster.max_hp = 20;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::FiendFire, 10),
+        CombatCard::new(CardId::Offering, 11),
+        CombatCard::new(CardId::SpotWeakness, 12),
+        CombatCard::new(CardId::Strike, 13),
+    ];
+
+    let fiend_fire = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let offering = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(fiend_fire.role, ActionOrderingRole::LethalCard);
+    assert!(fiend_fire > offering);
+}

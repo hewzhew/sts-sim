@@ -408,6 +408,7 @@ fn score_with_survival(
         action_sustained_mitigation: 0,
         action_visible_mitigation: 0,
         action_debuff_setup: 0,
+        action_resource_timing: 0,
         action_progress_hint: 0,
         action_access_gain: 0,
         action_reactive_safety: 0,

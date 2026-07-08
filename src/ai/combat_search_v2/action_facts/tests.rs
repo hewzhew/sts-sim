@@ -178,3 +178,42 @@ fn facts_report_dropkick_contextual_draw_and_energy_delta_from_simulator() {
     assert_eq!(facts.exact_one_step_delta.draw_delta, -1);
     assert_eq!(facts.exact_one_step_delta.hand_delta, 0);
 }
+
+#[test]
+fn facts_report_fiend_fire_hand_resource_conversion_timing() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::FiendFire, 10),
+        CombatCard::new(CardId::Offering, 11),
+        CombatCard::new(CardId::SpotWeakness, 12),
+        CombatCard::new(CardId::Strike, 13),
+    ];
+    let mut monster = planned_monster(EnemyId::JawWorm, 1);
+    monster.id = 1;
+    monster.current_hp = 80;
+    monster.max_hp = 80;
+    combat.entities.monsters = vec![monster];
+
+    let facts = summarize_action_facts(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        &EngineCombatStepper,
+        250,
+    );
+
+    assert_eq!(
+        facts.card.as_ref().map(|card| card.name),
+        Some("Fiend Fire")
+    );
+    assert_eq!(facts.mechanics.resource_timing.hand_exhaust_target_count, 3);
+    assert_eq!(facts.mechanics.resource_timing.hand_exhaust_fuel_count, 1);
+    assert!(facts.mechanics.resource_timing.hand_exhaust_value_at_risk > 0);
+    assert!(facts.mechanics.resource_timing.premature_conversion_risk > 0);
+    assert_eq!(facts.mechanics.resource_timing.conversion_damage_hint, 21);
+    assert_eq!(facts.immediate.damage_hint, 21);
+    assert_eq!(facts.immediate.action_payload_damage_hit_count_hint, 3);
+}

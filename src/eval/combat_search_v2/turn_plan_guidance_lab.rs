@@ -1160,10 +1160,10 @@ mod tests {
         CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
         CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
         CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
-        CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionTargetFacts,
-        CombatSearchV2ActionTrace, CombatSearchV2EnemySummary, CombatSearchV2StateSummary,
-        CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeStepReport,
-        SearchTerminalLabel,
+        CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionResourceTimingFacts,
+        CombatSearchV2ActionTargetFacts, CombatSearchV2ActionTrace, CombatSearchV2EnemySummary,
+        CombatSearchV2StateSummary, CombatSearchV2TurnPlanProbeCandidateReport,
+        CombatSearchV2TurnPlanProbeStepReport, SearchTerminalLabel,
     };
     use crate::content::cards::{CardTarget, CardType};
     use crate::state::core::ClientInput;
@@ -1879,6 +1879,7 @@ mod tests {
                 ..CombatSearchV2ActionReactiveMechanicsFacts::default()
             },
             access: CombatSearchV2ActionAccessMechanicsFacts::default(),
+            resource_timing: CombatSearchV2ActionResourceTimingFacts::default(),
             derived: CombatSearchV2ActionDerivedMechanicsFacts {
                 mitigation_score: visible_attack_mitigation_hint,
                 reactive_risk_score: reactive_player_hp_loss + reactive_bad_draw_cards,

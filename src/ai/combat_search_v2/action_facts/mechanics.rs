@@ -3,6 +3,7 @@ use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
 use super::super::action_effects::card_play_effect_facts;
+use super::super::action_resource_timing::resource_timing_facts_for_play;
 use super::payload::resolved_card_action_payload_facts;
 use super::target::{all_enemy_progress_hint, target_progress_hint};
 use super::types::{
@@ -40,10 +41,24 @@ pub(super) fn immediate_and_mechanics_facts(
     };
     let payload = resolved_card_action_payload_facts(combat, runtime_card, target);
     let effects = card_play_effect_facts(combat, runtime_card, target);
-    let target_progress_damage = if card_facts.effective_target == CardTarget::AllEnemy {
-        card_facts.evaluated_damage
+    let resource_timing = resource_timing_facts_for_play(combat, card_index, target);
+    let damage_hint = card_facts
+        .evaluated_damage
+        .max(resource_timing.conversion_damage_hint);
+    let conversion_damage_hit_count = if resource_timing.conversion_damage_hint > 0 {
+        resource_timing.hand_exhaust_target_count
     } else {
-        payload.damage_total_hint.max(card_facts.evaluated_damage)
+        0
+    };
+    let block_hint = card_facts
+        .evaluated_block
+        .max(payload.player_block_hint)
+        .max(resource_timing.conversion_block_hint)
+        .saturating_add(effects.reactive.player_block);
+    let target_progress_damage = if card_facts.effective_target == CardTarget::AllEnemy {
+        damage_hint
+    } else {
+        payload.damage_total_hint.max(damage_hint)
     };
     let target_progress = target_progress_hint(
         combat,
@@ -59,13 +74,14 @@ pub(super) fn immediate_and_mechanics_facts(
 
     (
         CombatSearchV2ActionImmediateFacts {
-            damage_hint: card_facts.evaluated_damage,
-            action_payload_damage_hint: payload.damage_total_hint,
-            action_payload_damage_hit_count_hint: payload.damage_hit_count_hint,
-            block_hint: card_facts
-                .evaluated_block
-                .max(payload.player_block_hint)
-                .saturating_add(effects.reactive.player_block),
+            damage_hint,
+            action_payload_damage_hint: payload
+                .damage_total_hint
+                .max(resource_timing.conversion_damage_hint),
+            action_payload_damage_hit_count_hint: payload
+                .damage_hit_count_hint
+                .max(conversion_damage_hit_count),
+            block_hint,
             target_progress_hint: target_progress,
             all_enemy_progress_hint: all_enemy_progress,
             exhausts_card: card_facts.exhaust,
@@ -99,6 +115,7 @@ pub(super) fn immediate_and_mechanics_facts(
                 conditional_draw_cards: effects.direct.conditional_draw_cards,
                 total_draw_cards: effects.total_draw_cards(),
             },
+            resource_timing,
             derived: CombatSearchV2ActionDerivedMechanicsFacts {
                 mitigation_score: effects.mitigation_ordering_score(),
                 enemy_scaling_risk_score: effects.enemy_scaling_risk_score(),

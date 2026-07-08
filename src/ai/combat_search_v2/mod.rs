@@ -28,6 +28,7 @@ mod action_equivalence;
 mod action_facts;
 mod action_ordering;
 mod action_priority;
+mod action_resource_timing;
 mod expansion;
 mod target_fanout;
 
@@ -150,7 +151,8 @@ pub use action_facts::{
     CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
     CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
     CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
-    CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionTargetFacts,
+    CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionResourceTimingFacts,
+    CombatSearchV2ActionTargetFacts,
 };
 pub use baseline::{
     compare_outcome_metrics, CombatSearchV2OutcomeMetrics, WHOLE_COMBAT_OUTCOME_CRITERIA,

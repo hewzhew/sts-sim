@@ -93,8 +93,12 @@ fn turn_plan_is_in_danger(plan: &TurnPlanV1) -> bool {
     )
 }
 
-fn turn_plan_seed_conservation(plan: &TurnPlanV1) -> (i32, i32) {
+fn turn_plan_seed_conservation(plan: &TurnPlanV1) -> (i32, i32, i32) {
     (
+        plan.action_facts
+            .iter()
+            .map(|facts| facts.mechanics.resource_timing.ordering_score)
+            .sum::<i32>(),
         -(low_impact_exhaust_action_count(plan) as i32),
         -(plan.actions.len() as i32),
     )

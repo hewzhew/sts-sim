@@ -145,6 +145,7 @@ fn rollout_action_probe_score(
         action_sustained_mitigation: action_facts_score.sustained_mitigation,
         action_visible_mitigation: action_facts_score.visible_mitigation,
         action_debuff_setup: action_facts_score.debuff_setup,
+        action_resource_timing: action_facts_score.resource_timing,
         action_progress_hint: action_facts_score.progress_hint,
         action_access_gain: action_facts_score.access_gain,
         action_reactive_safety: action_facts_score.reactive_safety,
@@ -164,6 +165,7 @@ fn action_facts_probe_score(facts: &CombatSearchV2ActionFacts) -> RolloutActionF
             .saturating_add(facts.mechanics.direct.visible_attack_mitigation_hint)
             .saturating_add(facts.mechanics.derived.enemy_weak),
         debuff_setup: facts.mechanics.derived.enemy_vulnerable,
+        resource_timing: facts.mechanics.resource_timing.ordering_score,
         progress_hint: facts
             .immediate
             .target_progress_hint

@@ -19,6 +19,7 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) phase_setup: i32,
     pub(in crate::ai::combat_search_v2) phase_survival: i32,
     pub(in crate::ai::combat_search_v2) phase_transition_safety: i32,
+    pub(in crate::ai::combat_search_v2) resource_timing: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_primary: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_secondary: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_selected_count: i32,
@@ -41,6 +42,7 @@ impl ActionOrderingPriority {
             phase_setup: 0,
             phase_survival: 0,
             phase_transition_safety: 0,
+            resource_timing: 0,
             pending_choice_primary: 0,
             pending_choice_secondary: 0,
             pending_choice_selected_count: 0,
@@ -63,6 +65,7 @@ impl Ord for ActionOrderingPriority {
                 self.phase_transition_safety
                     .cmp(&other.phase_transition_safety)
             })
+            .then_with(|| self.resource_timing.cmp(&other.resource_timing))
             .then_with(|| self.target_progress.cmp(&other.target_progress))
             .then_with(|| self.block.cmp(&other.block))
             .then_with(|| self.damage.cmp(&other.damage))

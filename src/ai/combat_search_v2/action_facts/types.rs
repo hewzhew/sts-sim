@@ -64,7 +64,23 @@ pub struct CombatSearchV2ActionMechanicsFacts {
     pub direct: CombatSearchV2ActionDirectMechanicsFacts,
     pub reactive: CombatSearchV2ActionReactiveMechanicsFacts,
     pub access: CombatSearchV2ActionAccessMechanicsFacts,
+    pub resource_timing: CombatSearchV2ActionResourceTimingFacts,
     pub derived: CombatSearchV2ActionDerivedMechanicsFacts,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2ActionResourceTimingFacts {
+    pub hand_resource_conversion: bool,
+    pub hand_exhaust_target_count: usize,
+    pub hand_exhaust_fuel_count: usize,
+    pub hand_exhaust_high_value_count: usize,
+    pub hand_exhaust_value_at_risk: i32,
+    pub conversion_damage_hint: i32,
+    pub conversion_block_hint: i32,
+    pub conversion_window_score: i32,
+    pub premature_conversion_risk: i32,
+    pub ordering_score: i32,
+    pub role_rank_adjustment: i32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
