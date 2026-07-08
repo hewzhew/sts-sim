@@ -95,15 +95,7 @@ fn expand_shop_boss_preview_bundle_children(
     if args.shop_boss_preview_bundle_limit == 0 {
         return Vec::new();
     }
-    let kinds = choices
-        .iter()
-        .filter_map(|choice| {
-            choice
-                .annotation
-                .candidate()
-                .map(|decision| decision.evaluation.candidate.kind)
-        })
-        .collect::<Vec<_>>();
+    let kinds = shop_boss_preview_bundle_kinds(choices);
     let bundles = shop_boss_preview_bundles(
         kinds,
         branch.session.run_state.gold,
@@ -195,4 +187,80 @@ fn bundle_label(choices: &[OwnerChoice], items: &[DecisionCandidateKind]) -> Str
         })
         .collect::<Vec<_>>()
         .join(" + ")
+}
+
+fn shop_boss_preview_bundle_kinds(choices: &[OwnerChoice]) -> Vec<DecisionCandidateKind> {
+    choices
+        .iter()
+        .filter(|choice| choice.auto_expand_allowed())
+        .filter_map(|choice| {
+            choice
+                .annotation
+                .candidate()
+                .map(|decision| decision.evaluation.candidate.kind)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::ai::strategy::decision_pipeline::{
+        CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, DecisionCandidateIr,
+        ExpansionPlan,
+    };
+    use sts_simulator::content::cards::CardId;
+    use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
+
+    fn candidate_choice(
+        kind: DecisionCandidateKind,
+        key: DecisionCandidateKey,
+        expansion: super::super::owner_model::OwnerChoiceExpansion,
+    ) -> OwnerChoice {
+        OwnerChoice {
+            key: Some(key),
+            action: RunControlCommand::Noop,
+            label: format!("{kind:?}"),
+            annotation: super::super::owner_model::ChoiceAnnotation::Candidate(
+                super::super::owner_model::OwnerCandidateDecision {
+                    evaluation: CandidateEvaluation {
+                        candidate: DecisionCandidateIr { kind },
+                        lane: CandidateLane::Mainline,
+                        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
+                        expansion: ExpansionPlan::Auto,
+                        scores: Vec::new(),
+                    },
+                    admission: None,
+                },
+            ),
+            expansion,
+        }
+    }
+
+    #[test]
+    fn shop_preview_bundle_kinds_exclude_inspect_only_choices() {
+        let leave = candidate_choice(
+            DecisionCandidateKind::ShopLeave,
+            DecisionCandidateKey::ShopLeave,
+            super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
+        );
+        let blocked_fiend_fire = candidate_choice(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::FiendFire,
+                upgrades: 0,
+                price: 152,
+            },
+            DecisionCandidateKey::ShopBuyCard {
+                shop_slot: 0,
+                card: CardId::FiendFire,
+                upgrades: 0,
+                price: 152,
+            },
+            super::super::owner_model::OwnerChoiceExpansion::InspectOnly("blocked"),
+        );
+
+        let kinds = shop_boss_preview_bundle_kinds(&[leave, blocked_fiend_fire]);
+
+        assert_eq!(kinds, vec![DecisionCandidateKind::ShopLeave]);
+    }
 }

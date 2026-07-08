@@ -134,6 +134,7 @@ impl BranchPathShopBossPreviewBundleSnapshot {
     pub(super) fn from_choices(choices: &[OwnerChoice], current_gold: i32) -> Vec<Self> {
         let kinds = choices
             .iter()
+            .filter(|choice| choice.auto_expand_allowed())
             .filter_map(|choice| {
                 choice
                     .annotation
@@ -461,5 +462,47 @@ mod tests {
         assert_eq!(preview.len(), 2);
         assert_eq!(preview[0].class, "DeterministicCleanup");
         assert_eq!(preview[1].class, "DeterministicCleanup");
+    }
+
+    #[test]
+    fn shop_boss_preview_bundle_summary_excludes_inspect_only_choices() {
+        fn choice(kind: DecisionCandidateKind, expansion: OwnerChoiceExpansion) -> OwnerChoice {
+            OwnerChoice {
+                key: None,
+                action: RunControlCommand::Noop,
+                label: format!("{kind:?}"),
+                annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
+                    evaluation: CandidateEvaluation {
+                        candidate: DecisionCandidateIr { kind },
+                        lane: CandidateLane::Mainline,
+                        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
+                        expansion: ExpansionPlan::Auto,
+                        scores: Vec::new(),
+                    },
+                    admission: None,
+                }),
+                expansion,
+            }
+        }
+
+        let choices = vec![
+            choice(
+                DecisionCandidateKind::ShopLeave,
+                OwnerChoiceExpansion::AutoAllowed,
+            ),
+            choice(
+                DecisionCandidateKind::ShopBuyCard {
+                    card: CardId::FiendFire,
+                    upgrades: 0,
+                    price: 152,
+                },
+                OwnerChoiceExpansion::InspectOnly("blocked"),
+            ),
+        ];
+
+        let bundles = BranchPathShopBossPreviewBundleSnapshot::from_choices(&choices, 200);
+
+        assert_eq!(bundles.len(), 1);
+        assert!(bundles[0].items.is_empty());
     }
 }
