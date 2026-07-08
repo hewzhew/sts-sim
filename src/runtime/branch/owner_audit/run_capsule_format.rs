@@ -542,4 +542,54 @@ mod tests {
         assert_eq!(value["telemetry"]["expanded_nodes"], 55);
         assert_eq!(value["telemetry"]["deadline_hit"], true);
     }
+
+    #[test]
+    fn primary_search_outcome_projects_attempt_economics() {
+        let attempt = sts_simulator::eval::run_control::CombatSearchTraceSummary {
+            source: "search_combat".to_string(),
+            lane: Some("primary".to_string()),
+            profile_id: Some("primary".to_string()),
+            profile_max_nodes: Some(10_000),
+            profile_wall_ms: Some(100),
+            profile_potion_policy: Some("never".to_string()),
+            profile_max_potions_used: Some(0),
+            profile_internal_no_win_rescue_enabled: Some(false),
+            act: 1,
+            floor: 14,
+            turn: 1,
+            combat_kind: "hallway".to_string(),
+            enemies: vec!["Spike Slime L".to_string()],
+            coverage_status: "DeadlineHit".to_string(),
+            complete_trajectory_found: false,
+            complete_win_found: false,
+            best_complete: None,
+            best_win: None,
+            best_hp_loss: None,
+            nodes_to_first_win: None,
+            deadline_hit: true,
+            nodes_expanded: 4,
+            terminal_wins: 0,
+            total_us: 1_000,
+            unattributed_us: 100,
+            rollout_us: 500,
+            expansion_us: 200,
+            child_bookkeeping_us: 0,
+            engine_step_us: 100,
+            pre_expand_us: 0,
+            frontier_pop_us: 0,
+            turn_plan_seed_us: 0,
+            shadow_audit_us: 50,
+            root_turn_plan_diag_us: 50,
+        };
+
+        let value =
+            super::super::primary_search_outcome::primary_search_outcome_value(&[attempt], None);
+
+        assert_eq!(value["telemetry"]["us_per_node"], 250);
+        assert_eq!(value["telemetry"]["rollout_pct"], 50);
+        assert_eq!(value["telemetry"]["expansion_pct"], 20);
+        assert_eq!(value["telemetry"]["transition_pct"], 10);
+        assert_eq!(value["telemetry"]["diagnostic_pct"], 10);
+        assert_eq!(value["telemetry"]["unattributed_pct"], 10);
+    }
 }

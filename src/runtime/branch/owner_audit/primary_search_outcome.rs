@@ -111,11 +111,14 @@ fn primary_search_telemetry(
     attempt: Option<&CombatSearchTraceSummary>,
     profile: Option<&CombatSearchLaneReport>,
 ) -> PrimarySearchTelemetrySummary {
+    let total_us = attempt.map(|attempt| attempt.total_us).unwrap_or(0);
     PrimarySearchTelemetrySummary {
         elapsed_ms: attempt.map(|attempt| attempt.total_us / 1_000),
         deadline_hit: attempt.map(|attempt| attempt.deadline_hit),
         expanded_nodes: attempt.map(|attempt| attempt.nodes_expanded),
         terminal_wins: attempt.map(|attempt| attempt.terminal_wins),
+        us_per_node: attempt
+            .and_then(|attempt| us_per_node(attempt.total_us, attempt.nodes_expanded)),
         first_win_node: attempt.and_then(|attempt| attempt.nodes_to_first_win),
         first_win_ms: None,
         first_accepted_node: None,
@@ -123,10 +126,40 @@ fn primary_search_telemetry(
         rollout_us: attempt.map(|attempt| attempt.rollout_us),
         expansion_us: attempt.map(|attempt| attempt.expansion_us),
         transition_us: attempt.map(|attempt| attempt.engine_step_us),
+        rollout_pct: attempt.and_then(|attempt| percent_of_total(attempt.rollout_us, total_us)),
+        expansion_pct: attempt.and_then(|attempt| percent_of_total(attempt.expansion_us, total_us)),
+        transition_pct: attempt
+            .and_then(|attempt| percent_of_total(attempt.engine_step_us, total_us)),
+        diagnostic_pct: attempt.and_then(|attempt| {
+            percent_of_total(
+                attempt
+                    .shadow_audit_us
+                    .saturating_add(attempt.root_turn_plan_diag_us),
+                total_us,
+            )
+        }),
+        unattributed_pct: attempt
+            .and_then(|attempt| percent_of_total(attempt.unattributed_us, total_us)),
         selected_first_action: profile.and_then(|profile| profile.action_keys.first().cloned()),
         top_root_actions: profile
             .map(|profile| profile.action_keys.clone())
             .unwrap_or_default(),
+    }
+}
+
+fn us_per_node(total_us: u64, nodes_expanded: u64) -> Option<u64> {
+    if nodes_expanded == 0 {
+        None
+    } else {
+        Some(total_us / nodes_expanded)
+    }
+}
+
+fn percent_of_total(part_us: u64, total_us: u64) -> Option<u64> {
+    if total_us == 0 {
+        None
+    } else {
+        Some(part_us.saturating_mul(100).saturating_add(total_us / 2) / total_us)
     }
 }
 
