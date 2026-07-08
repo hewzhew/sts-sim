@@ -2,9 +2,12 @@ use sts_simulator::ai::strategy::decision_pipeline::{
     CandidateOrderKey, DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
+use sts_simulator::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, RewardAdmission,
 };
+use sts_simulator::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity;
+use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::{DecisionSurface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
 
@@ -42,10 +45,30 @@ pub(super) fn shop_tiny_owner_choices(
 }
 
 fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
-    DecisionPipelineContext::shop(
-        DeckPlanSnapshot::from_run_state(&session.run_state),
-        session.run_state.gold,
-    )
+    let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
+    let context = DecisionPipelineContext::shop(deck_plan, session.run_state.gold);
+    if active_maw_bank(session) {
+        context.with_shop_gold_opportunity(ShopGoldOpportunity {
+            current_gold: session.run_state.gold,
+            active_maw_bank: true,
+            future_rooms_before_next_shop: 5,
+            survival_purchase_needed: deck_plan.survival_pressure(),
+            boss_answer_needed: matches!(
+                deck_plan.strategic_deficit.boss_scaling_plan,
+                StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+            ),
+        })
+    } else {
+        context
+    }
+}
+
+fn active_maw_bank(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::MawBank && !relic.used_up)
 }
 
 fn shop_tiny_candidate_for_choice(

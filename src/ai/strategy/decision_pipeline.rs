@@ -18,6 +18,10 @@ use crate::ai::strategy::reward_quality::RewardDuplicateConcern;
 use crate::ai::strategy::role_saturation::{
     assess_role_saturation, marginal_reason_label, LaneCap, RoleSaturationCandidate,
 };
+use crate::ai::strategy::shop_purchase_bundle::{
+    evaluate_shop_purchase_bundle, shop_purchase_bundle_order_key, ShopGoldOpportunity,
+    ShopPurchaseBundleVerdict,
+};
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -27,6 +31,7 @@ pub struct DecisionPipelineContext {
     pub deck_plan: DeckPlanSnapshot,
     pub gold: Option<i32>,
     pub shop_investment: Option<ShopInvestmentEvidence>,
+    pub shop_gold_opportunity: Option<ShopGoldOpportunity>,
 }
 
 impl DecisionPipelineContext {
@@ -35,6 +40,7 @@ impl DecisionPipelineContext {
             deck_plan,
             gold: None,
             shop_investment: None,
+            shop_gold_opportunity: None,
         }
     }
 
@@ -43,12 +49,20 @@ impl DecisionPipelineContext {
             deck_plan,
             gold: Some(gold),
             shop_investment: None,
+            shop_gold_opportunity: None,
         }
     }
 
     pub fn with_shop_investment(self, shop_investment: ShopInvestmentEvidence) -> Self {
         Self {
             shop_investment: Some(shop_investment),
+            ..self
+        }
+    }
+
+    pub fn with_shop_gold_opportunity(self, shop_gold_opportunity: ShopGoldOpportunity) -> Self {
+        Self {
+            shop_gold_opportunity: Some(shop_gold_opportunity),
             ..self
         }
     }
@@ -354,6 +368,7 @@ fn filter_passes() -> &'static [FilterPass] {
         missing_card_admission_filter,
         shop_affordability_filter,
         shop_investment_filter,
+        shop_purchase_bundle_filter,
         shop_followup_required_filter,
         cleanup_target_filter,
         unmodeled_card_filter,
@@ -377,6 +392,7 @@ fn score_passes() -> &'static [ScorePass] {
         reward_reason_score,
         payoff_support_quality_score,
         shop_investment_score,
+        shop_purchase_bundle_score,
         shop_relic_score,
         shop_potion_score,
         survival_pressure_score,
@@ -433,6 +449,31 @@ fn shop_investment_filter(
         ShopInvestmentDecision::Mainline
         | ShopInvestmentDecision::Probe
         | ShopInvestmentDecision::NotInvestment => FilterDecision::Pass,
+    }
+}
+
+fn shop_purchase_bundle_filter(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    let Some(opportunity) = context.shop_gold_opportunity else {
+        return FilterDecision::Pass;
+    };
+    if !is_shop_bundle_candidate(candidate.kind) {
+        return FilterDecision::Pass;
+    }
+    let evaluation = CandidateEvaluation {
+        candidate,
+        lane: CandidateLane::Mainline,
+        expansion: ExpansionPlan::Auto,
+        scores: Vec::new(),
+    };
+    let bundle = evaluate_shop_purchase_bundle(opportunity, &evaluation);
+    if bundle.verdict == ShopPurchaseBundleVerdict::Reject {
+        FilterDecision::InspectOnly(bundle.reason)
+    } else {
+        FilterDecision::Pass
     }
 }
 
@@ -856,6 +897,46 @@ fn shop_investment_score(
     }
 }
 
+fn shop_purchase_bundle_score(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(opportunity) = context.shop_gold_opportunity else {
+        return;
+    };
+    if !is_shop_bundle_candidate(candidate.kind) {
+        return;
+    }
+    let evaluation = CandidateEvaluation {
+        candidate,
+        lane: CandidateLane::Mainline,
+        expansion: ExpansionPlan::Auto,
+        scores: Vec::new(),
+    };
+    let bundle = evaluate_shop_purchase_bundle(opportunity, &evaluation);
+    let label = match bundle.verdict {
+        ShopPurchaseBundleVerdict::HardSurvivalBuy => "shop-bundle-hard-survival",
+        ShopPurchaseBundleVerdict::HardBossAnswerBuy => "shop-bundle-boss-answer",
+        ShopPurchaseBundleVerdict::EfficientBundleBuy => "shop-bundle-efficient",
+        ShopPurchaseBundleVerdict::ContextBuy => "shop-bundle-context",
+        ShopPurchaseBundleVerdict::PreserveGoldPreferred => "shop-bundle-preserve-gold",
+        ShopPurchaseBundleVerdict::Reject => "shop-bundle-reject",
+    };
+    scores.push(score(
+        label,
+        match shop_purchase_bundle_order_key(&bundle).0 {
+            0 => 180,
+            1 => 160,
+            2 => 120,
+            3 => 70,
+            4 => 50,
+            _ => 0,
+        },
+    ));
+}
+
 fn shop_relic_score(
     context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
@@ -1038,6 +1119,17 @@ fn candidate_requires_card_admission(kind: DecisionCandidateKind) -> bool {
     matches!(
         kind,
         DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
+    )
+}
+
+fn is_shop_bundle_candidate(kind: DecisionCandidateKind) -> bool {
+    matches!(
+        kind,
+        DecisionCandidateKind::ShopBuyCard { .. }
+            | DecisionCandidateKind::ShopBuyRelic { .. }
+            | DecisionCandidateKind::ShopBuyPotion { .. }
+            | DecisionCandidateKind::ShopPurge { .. }
+            | DecisionCandidateKind::ShopLeave
     )
 }
 
@@ -1364,6 +1456,18 @@ mod tests {
         )
     }
 
+    fn shop_context_with_maw_bank(cards: &[CardId], gold: i32) -> DecisionPipelineContext {
+        shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
+            crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
+                current_gold: gold,
+                active_maw_bank: true,
+                future_rooms_before_next_shop: 5,
+                survival_purchase_needed: false,
+                boss_answer_needed: false,
+            },
+        )
+    }
+
     fn reward_context_with_act(cards: &[CardId], act: u8) -> DecisionPipelineContext {
         let deck = test_deck(cards);
         DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
@@ -1410,6 +1514,10 @@ mod tests {
             DecisionCandidateKind::ShopBuyRelic { relic, price: 150 },
             None,
         )
+    }
+
+    fn shop_leave(context: DecisionPipelineContext) -> CandidateEvaluation {
+        evaluate_decision_candidate(context, DecisionCandidateKind::ShopLeave, None)
     }
 
     fn shop_card(cards: &[CardId], candidate: CardId) -> CandidateEvaluation {
@@ -1563,6 +1671,34 @@ mod tests {
             CandidateLane::Mainline,
             "low-margin filler should not mainline just because it touches a soft gap: {:?}",
             iron_wave.scores
+        );
+    }
+
+    #[test]
+    fn shop_maw_bank_prefers_leave_over_generic_relic_purchase() {
+        let context = shop_context_with_maw_bank(&act1_low_margin_reward_deck(), 224);
+        let leave = shop_leave(context);
+        let clockwork = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyRelic {
+                relic: RelicId::ClockworkSouvenir,
+                price: 149,
+            },
+            None,
+        );
+
+        assert_eq!(leave.lane, CandidateLane::Skip);
+        assert_ne!(
+            clockwork.lane,
+            CandidateLane::Mainline,
+            "generic relic should not mainline through active Maw Bank: {:?}",
+            clockwork.scores
+        );
+        assert!(
+            leave.order_key(false) < clockwork.order_key(false),
+            "leave-with-gold should outrank ordinary Maw Bank-breaking purchase: leave={:?} clockwork={:?}",
+            leave,
+            clockwork
         );
     }
 
