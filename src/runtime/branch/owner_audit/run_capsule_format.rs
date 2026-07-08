@@ -351,6 +351,7 @@ mod tests {
             boss_search_ms: 600,
             wall_ms: Some(700),
             checkpoint_before_combat_portfolio: true,
+            shop_boss_preview_bundle_limit: 0,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }

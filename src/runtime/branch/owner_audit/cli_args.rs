@@ -20,6 +20,7 @@ pub(super) struct ArgsOverrides {
     pub(super) boss_search_ms: Option<u64>,
     pub(super) wall_ms: Option<u64>,
     pub(super) checkpoint_before_combat_portfolio: bool,
+    pub(super) shop_boss_preview_bundle_limit: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -71,6 +72,9 @@ impl ArgsOverrides {
         if self.checkpoint_before_combat_portfolio {
             args.checkpoint_before_combat_portfolio = true;
         }
+        if let Some(value) = self.shop_boss_preview_bundle_limit {
+            args.shop_boss_preview_bundle_limit = value;
+        }
     }
 }
 
@@ -119,6 +123,9 @@ pub(super) fn parse_args() -> Result<
             println!(
                 "  optional: --checkpoint-before-combat-portfolio saves a resumable combat portfolio checkpoint"
             );
+            println!(
+                "  optional: --shop-boss-preview-bundles N expands up to N deterministic shop bundle preview branches"
+            );
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
@@ -154,6 +161,7 @@ pub(super) fn parse_args() -> Result<
                 | "--continue-capsule"
                 | "--continue-slices"
                 | "--checkpoint-before-combat-portfolio"
+                | "--shop-boss-preview-bundles"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
@@ -214,6 +222,11 @@ pub(super) fn parse_args() -> Result<
             "--wall-ms" => {
                 args.wall_ms = Some(parse(value, key)?);
                 overrides.wall_ms = args.wall_ms;
+            }
+            "--shop-boss-preview-bundles" => {
+                args.shop_boss_preview_bundle_limit = parse(value, key)?;
+                overrides.shop_boss_preview_bundle_limit =
+                    Some(args.shop_boss_preview_bundle_limit);
             }
             "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),
             "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),
