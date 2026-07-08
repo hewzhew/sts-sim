@@ -373,8 +373,11 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 continue;
             }
         }
-        let card_reward_policy_stop =
-            super::noncombat_auto::planner_noncombat_policy_stop_annotation(session)?;
+        let card_reward_policy_stop = if noncombat_mode == NonCombatAutoMode::FullPlanner {
+            super::noncombat_auto::planner_noncombat_policy_stop_annotation(session)?
+        } else {
+            None
+        };
 
         if noncombat_mode == NonCombatAutoMode::BranchExperimentBoundary
             && branch_experiment_should_stop_before_visible_candidate(session)
@@ -1193,9 +1196,9 @@ fn indent_block(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_guarded_auto_step, auto_boundary_key, auto_no_potion_first_options,
-        auto_potion_rescue_options, auto_search_options, auto_stall_key,
-        high_stakes_auto_search_requires_hp_loss_gate,
+        apply_guarded_auto_step, apply_guarded_auto_step_with_mode, auto_boundary_key,
+        auto_no_potion_first_options, auto_potion_rescue_options, auto_search_options,
+        auto_stall_key, high_stakes_auto_search_requires_hp_loss_gate, NonCombatAutoMode,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
@@ -1204,12 +1207,55 @@ mod tests {
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
-        RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions,
+        RunControlAutoStepOptions, RunControlConfig, RunControlHpLossLimit,
+        RunControlRouteAutomationMode, RunControlSearchCombatOptions,
         RunControlSearchEvidenceTarget, RunControlSession,
     };
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
     use std::path::PathBuf;
+
+    #[test]
+    fn owner_audit_auto_step_does_not_emit_legacy_card_reward_policy_stop_annotation() {
+        let mut session = test_session_at_pending_card_reward(vec![
+            crate::content::cards::CardId::SearingBlow,
+            crate::content::cards::CardId::HeavyBlade,
+            crate::content::cards::CardId::Clothesline,
+        ]);
+
+        let outcome = apply_guarded_auto_step_with_mode(
+            &mut session,
+            RunControlAutoStepOptions {
+                route: RunControlRouteAutomationMode::Planner,
+                max_operations: Some(1),
+                ..RunControlAutoStepOptions::default()
+            },
+            NonCombatAutoMode::OwnerAuditRoutineOnly,
+        )
+        .expect("owner audit auto step should stop cleanly at card reward");
+
+        assert_eq!(
+            outcome.auto_stop.as_ref().map(|stop| stop.kind),
+            Some(crate::eval::run_control::RunControlAutoStopKind::HumanBoundary)
+        );
+        let mut legacy_policy_sources = Vec::new();
+        for annotation in &outcome.trace_annotations {
+            if let
+                crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                    record,
+                    ..
+                } = annotation
+            {
+                if record.provenance.source_policy.contains("card_reward_policy") {
+                    legacy_policy_sources.push(record.provenance.source_policy.as_str());
+                }
+            }
+        }
+        assert!(
+            legacy_policy_sources.is_empty(),
+            "owner audit mode must not report legacy card reward policy stop annotations: {legacy_policy_sources:?}"
+        );
+    }
 
     #[test]
     fn auto_boundary_key_distinguishes_combat_enemy_hp_changes() {
@@ -1390,6 +1436,25 @@ mod tests {
         extra_data.push(-1);
         extra_data.push(-1);
         extra_data
+    }
+
+    fn test_session_at_pending_card_reward(
+        card_ids: Vec<crate::content::cards::CardId>,
+    ) -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        let cards = card_ids
+            .into_iter()
+            .map(|card_id| crate::state::rewards::RewardCard::new(card_id, 0))
+            .collect::<Vec<_>>();
+        let mut reward = crate::state::rewards::RewardState::new();
+        reward.items = vec![crate::state::rewards::RewardItem::Card {
+            cards: cards.clone(),
+        }];
+        reward.pending_card_choice = Some(cards);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+        session
     }
 
     #[test]
