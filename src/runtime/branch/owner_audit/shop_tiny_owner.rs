@@ -6,9 +6,10 @@ use sts_simulator::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, RewardAdmission,
 };
+use sts_simulator::ai::strategy::shop_boss_preview::shop_boss_preview_bundles;
 use sts_simulator::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity;
 use sts_simulator::content::relics::RelicId;
-use sts_simulator::eval::run_control::{DecisionSurface, RunControlSession};
+use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
 
 use super::candidate_ir_adapter::shop_tiny_kind;
@@ -41,7 +42,14 @@ pub(super) fn shop_tiny_owner_choices(
     for (_, choice) in choices.iter_mut() {
         choice.expansion = shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
     }
-    choices.sort_by_key(|(index, choice)| (shop_tiny_choice_rank(choice), *index));
+    let preferred_bundle_next = preferred_shop_boss_bundle_next_kind(session, &choices);
+    choices.sort_by_key(|(index, choice)| {
+        (
+            bundle_execution_rank(&preferred_bundle_next, &choice.key),
+            shop_tiny_choice_rank(choice),
+            *index,
+        )
+    });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
@@ -116,17 +124,57 @@ fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
     }
 }
 
+fn preferred_shop_boss_bundle_next_kind(
+    session: &RunControlSession,
+    choices: &[(usize, OwnerChoice)],
+) -> Option<DecisionCandidateKind> {
+    if !hard_checkpoint_imminent(session) {
+        return None;
+    }
+    let executable_kinds = choices
+        .iter()
+        .filter_map(|(_, choice)| {
+            if choice.auto_expand_allowed() {
+                Some(shop_tiny_kind(&choice.key))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let bundle = shop_boss_preview_bundles(executable_kinds, session.run_state.gold, 2)
+        .into_iter()
+        .find(|bundle| !bundle.items.is_empty())?;
+    bundle.items.into_iter().find(|kind| {
+        choices
+            .iter()
+            .any(|(_, choice)| choice.auto_expand_allowed() && shop_tiny_kind(&choice.key) == *kind)
+    })
+}
+
+fn bundle_execution_rank(
+    preferred_bundle_next: &Option<DecisionCandidateKind>,
+    key: &Option<DecisionCandidateKey>,
+) -> u8 {
+    match preferred_bundle_next {
+        Some(kind) if shop_tiny_kind(key) == *kind => 0,
+        Some(_) => 1,
+        None => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sts_simulator::content::cards::CardId;
+    use sts_simulator::content::potions::PotionId;
     use sts_simulator::content::relics::RelicState;
     use sts_simulator::eval::run_control::{
-        DecisionCandidateKey, RunControlCommand, RunControlConfig, ShopVisitContextV1,
+        build_decision_surface, DecisionCandidateKey, RunControlCommand, RunControlConfig,
+        ShopVisitContextV1,
     };
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::state::core::{ClientInput, EngineState};
-    use sts_simulator::state::shop::{ShopRelic, ShopState};
+    use sts_simulator::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
     fn maw_bank_session() -> RunControlSession {
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -185,6 +233,35 @@ mod tests {
         assert!(
             shop_tiny_choice_rank(&leave) < shop_tiny_choice_rank(&clockwork),
             "ShopTiny should prefer LeaveWithGold over generic Maw Bank-breaking relic"
+        );
+    }
+
+    #[test]
+    fn shop_tiny_allows_hard_checkpoint_starter_strike_cleanup_through_maw_bank() {
+        let mut session = maw_bank_session();
+        session.run_state.floor_num = 13;
+        session.run_state.gold = 249;
+        let context = shop_tiny_context(&session);
+        let mut remove_strike = choice(DecisionCandidateKey::ShopPurgeCard {
+            deck_index: 0,
+            card: CardId::Strike,
+            upgrades: 0,
+        });
+        let mut leave = choice(DecisionCandidateKey::ShopLeave);
+
+        remove_strike.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &remove_strike);
+        leave.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &leave);
+        let mut auto_purge_targets = Vec::new();
+        remove_strike.expansion =
+            shop_tiny_choice_expansion(&remove_strike.annotation, &mut auto_purge_targets);
+        leave.expansion = shop_tiny_choice_expansion(&leave.annotation, &mut auto_purge_targets);
+
+        assert_eq!(remove_strike.inspect_only_reason(), None);
+        assert!(
+            shop_tiny_choice_rank(&remove_strike) < shop_tiny_choice_rank(&leave),
+            "hard checkpoint cleanup should be eligible ahead of preserving Maw Bank"
         );
     }
 
@@ -264,6 +341,54 @@ mod tests {
             clockwork.inspect_only_reason(),
             Some("BreaksMawBankWithoutHardNeed"),
             "Maw Bank entry cost must not leak into a later shop floor"
+        );
+    }
+
+    #[test]
+    fn hard_checkpoint_bundle_next_item_preempts_random_potion_spend() {
+        let mut session = maw_bank_session();
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 13;
+        session.run_state.gold = 162;
+        session.run_state.relics.clear();
+        session.run_state.potions = vec![None, None, None];
+        let mut shop = ShopState::new();
+        shop.cards.push(ShopCard {
+            card_id: CardId::FiendFire,
+            upgrades: 0,
+            price: 152,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.cards.push(ShopCard {
+            card_id: CardId::Bludgeon,
+            upgrades: 0,
+            price: 162,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::GamblersBrew,
+            price: 73,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let choices = shop_tiny_owner_choices(&session, &surface);
+
+        assert!(
+            matches!(
+                choices.first().and_then(|choice| choice.key.as_ref()),
+                Some(DecisionCandidateKey::ShopBuyCard {
+                    card: CardId::FiendFire,
+                    price: 152,
+                    ..
+                })
+            ),
+            "hard checkpoint bundle execution should buy Fiend Fire before spending on random/deferred potions; got {:?}",
+            choices.first().map(|choice| choice.label.as_str())
         );
     }
 }

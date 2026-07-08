@@ -155,6 +155,11 @@ pub fn classify_shop_boss_preview_candidate(
                 true,
                 "DeterministicSupportPotion",
             ),
+            PotionId::PowerPotion => (
+                ShopBossPreviewClass::RandomOrDeferred,
+                true,
+                "HighCeilingPowerDiscoveryPotion",
+            ),
             PotionId::AttackPotion | PotionId::EntropicBrew | PotionId::GamblersBrew => (
                 ShopBossPreviewClass::RandomOrDeferred,
                 false,
@@ -502,6 +507,59 @@ mod tests {
                 .items
                 .contains(&DecisionCandidateKind::ShopBuyPotion {
                     potion: PotionId::FirePotion,
+                    price: 51,
+                })
+        }));
+    }
+
+    #[test]
+    fn includes_power_potion_as_high_ceiling_boss_preview_candidate() {
+        let power = classify_shop_boss_preview_candidate(DecisionCandidateKind::ShopBuyPotion {
+            potion: PotionId::PowerPotion,
+            price: 78,
+        });
+        assert_eq!(power.class, ShopBossPreviewClass::RandomOrDeferred);
+        assert!(power.include_in_v0);
+        assert_eq!(power.reason, "HighCeilingPowerDiscoveryPotion");
+
+        let bundles = shop_boss_preview_bundles(
+            [
+                DecisionCandidateKind::ShopLeave,
+                DecisionCandidateKind::ShopBuyCard {
+                    card: CardId::FiendFire,
+                    upgrades: 0,
+                    price: 152,
+                },
+                DecisionCandidateKind::ShopBuyPotion {
+                    potion: PotionId::PowerPotion,
+                    price: 78,
+                },
+                DecisionCandidateKind::ShopBuyPotion {
+                    potion: PotionId::AttackPotion,
+                    price: 51,
+                },
+            ],
+            240,
+            12,
+        );
+
+        assert!(bundles.iter().any(|bundle| {
+            bundle.items.contains(&DecisionCandidateKind::ShopBuyCard {
+                card: CardId::FiendFire,
+                upgrades: 0,
+                price: 152,
+            }) && bundle
+                .items
+                .contains(&DecisionCandidateKind::ShopBuyPotion {
+                    potion: PotionId::PowerPotion,
+                    price: 78,
+                })
+        }));
+        assert!(bundles.iter().all(|bundle| {
+            !bundle
+                .items
+                .contains(&DecisionCandidateKind::ShopBuyPotion {
+                    potion: PotionId::AttackPotion,
                     price: 51,
                 })
         }));

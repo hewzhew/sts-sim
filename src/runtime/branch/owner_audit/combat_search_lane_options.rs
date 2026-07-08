@@ -135,8 +135,10 @@ fn primary_profile(label: &'static str, request: &CombatSearchRequest) -> Combat
             label,
             request.args,
             LaneSearchBudget::Primary,
-            CombatSearchChildRolloutPluginId::Immediate,
-        ),
+            CombatSearchChildRolloutPluginId::LazyOnPop,
+        )
+        .with_potion_policy(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        .with_max_potions_used(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED),
     }
 }
 
@@ -426,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_hallway_lane_uses_primary_budget_and_immediate_child_rollout() {
+    fn primary_hallway_lane_uses_primary_budget_lazy_rollout_and_one_semantic_potion() {
         let session = session_with_combat_stakes(false, false);
         let request = CombatSearchRequest::from_session(&session, test_args());
         let options = lane_options(CombatSearchLane::primary(), &request, &session);
@@ -439,8 +441,13 @@ mod tests {
         );
         assert_eq!(
             config.child_rollout_policy,
-            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::LazyOnPop
         );
+        assert_eq!(
+            config.potion_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(1));
     }
 
     #[test]

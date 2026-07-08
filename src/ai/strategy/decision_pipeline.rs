@@ -1482,6 +1482,7 @@ fn shop_relic_score_value(relic: RelicId) -> i32 {
 
 fn shop_potion_score_value(potion: PotionId) -> i32 {
     match potion {
+        PotionId::PowerPotion => 100,
         PotionId::FairyPotion | PotionId::FruitJuice | PotionId::EntropicBrew => 90,
         PotionId::FirePotion
         | PotionId::ExplosivePotion
@@ -1494,7 +1495,10 @@ fn shop_potion_score_value(potion: PotionId) -> i32 {
         | PotionId::BlessingOfTheForge
         | PotionId::LiquidMemories
         | PotionId::GamblersBrew
-        | PotionId::DuplicationPotion => 70,
+        | PotionId::DuplicationPotion
+        | PotionId::AttackPotion
+        | PotionId::SkillPotion
+        | PotionId::ColorlessPotion => 70,
         PotionId::BlockPotion
         | PotionId::DexterityPotion
         | PotionId::SpeedPotion
@@ -1884,6 +1888,74 @@ mod tests {
             "boss repair payload should outrank one-shot potion when both can break Maw Bank: fiend_fire={:?} fire_potion={:?}",
             fiend_fire,
             fire_potion
+        );
+    }
+
+    #[test]
+    fn shop_power_potion_scores_as_premium_discovery_potion() {
+        let context = shop_context(&act1_low_margin_reward_deck());
+        let power_potion = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::PowerPotion,
+                price: 78,
+            },
+            None,
+        );
+        let attack_potion = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::AttackPotion,
+                price: 51,
+            },
+            None,
+        );
+        let block_potion = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::BlockPotion,
+                price: 51,
+            },
+            None,
+        );
+
+        assert!(
+            power_potion.total_score() > attack_potion.total_score()
+                && attack_potion.total_score() > block_potion.total_score(),
+            "Power Potion should be premium discovery, while Attack Potion remains useful access: power={:?} attack={:?} block={:?}",
+            power_potion.scores,
+            attack_potion.scores,
+            block_potion.scores
+        );
+    }
+
+    #[test]
+    fn reward_prefers_supported_corruption_engine_over_feed_run_reward_before_act2_boss() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::Bloodletting,
+            CardId::Armaments,
+            CardId::Impervious,
+            CardId::SpotWeakness,
+        ];
+
+        let feed = reward_card_with_act(&cards, CardId::Feed, 0, 2);
+        let corruption = reward_card_with_act(&cards, CardId::Corruption, 0, 2);
+
+        assert!(
+            corruption.order_key(false) < feed.order_key(false),
+            "supported Corruption engine should outrank Feed run reward before Act2 boss: corruption={:?} feed={:?}",
+            corruption.scores,
+            feed.scores
         );
     }
 

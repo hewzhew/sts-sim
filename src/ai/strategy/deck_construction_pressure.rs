@@ -4,7 +4,7 @@ use crate::ai::analysis::card_semantics::{
     InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::runtime::combat::CombatCard;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,6 +57,7 @@ pub struct AxisEvidence {
     pub small_cantrip_count: u8,
     pub has_mitigation: bool,
     pub block_source_count: u8,
+    pub skill_count: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,6 +98,7 @@ struct DeckConstructionCounts {
     small_cantrips: u8,
     real_draw: u8,
     energy_access: u8,
+    skill_count: u8,
     mitigation: u8,
     exhaust_fuel: u8,
     exhaust_payoff: u8,
@@ -265,6 +267,9 @@ pub fn reward_construction_lane_adjustment(
     if should_promote_needed_frontload(pressure, fit) {
         return ConstructionLaneAdjustment::PromoteToMainline;
     }
+    if should_promote_supported_engine_seed(pressure, fit, admission) {
+        return ConstructionLaneAdjustment::PromoteToMainline;
+    }
     if responds_to_open_or_thin_pressure(pressure, fit) {
         if fit.long_fight >= FitLevel::Supports
             || fit.card_flow >= FitLevel::Supports
@@ -295,6 +300,20 @@ fn should_promote_needed_frontload(
         && !fit.duplicate_low_margin
 }
 
+fn should_promote_supported_engine_seed(
+    pressure: DeckConstructionPressure,
+    fit: CandidateConstructionFit,
+    admission: &RewardAdmission,
+) -> bool {
+    pressure.long_fight.level != PressureLevel::Present
+        && fit.long_fight == FitLevel::Seed
+        && pressure.long_fight.evidence.skill_count >= 6
+        && pressure.card_flow.level != PressureLevel::Open
+        && admission.reasons.contains(&RewardAdmissionReason::Installs(
+            InstalledRule::SkillCardsCostZeroAndExhaust,
+        ))
+}
+
 fn responds_to_open_or_thin_pressure(
     pressure: DeckConstructionPressure,
     fit: CandidateConstructionFit,
@@ -319,6 +338,9 @@ fn should_demote_low_margin_reward(
 fn deck_counts(deck: &[CombatCard]) -> DeckConstructionCounts {
     let mut counts = DeckConstructionCounts::default();
     for card in deck {
+        if get_card_definition(card.id).card_type == CardType::Skill {
+            counts.skill_count = counts.skill_count.saturating_add(1);
+        }
         let definition = card_definition_with_upgrades(card.id, card.upgrades);
         if low_margin_frontload_card(card.id) {
             counts.low_margin_frontload = counts.low_margin_frontload.saturating_add(1);
@@ -407,6 +429,7 @@ fn axis_evidence(counts: DeckConstructionCounts) -> AxisEvidence {
         small_cantrip_count: counts.small_cantrips,
         has_mitigation: counts.mitigation > 0,
         block_source_count: counts.block_sources,
+        skill_count: counts.skill_count,
     }
 }
 

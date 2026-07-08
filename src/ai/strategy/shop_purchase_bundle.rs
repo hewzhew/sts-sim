@@ -1,5 +1,5 @@
 use crate::ai::strategy::decision_pipeline::{
-    CandidateEvaluation, CandidateLane, DecisionCandidateIr, DecisionCandidateKind,
+    CandidateEvaluation, CandidateLane, CleanupTarget, DecisionCandidateIr, DecisionCandidateKind,
 };
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
@@ -99,9 +99,13 @@ fn bundle_facts(
             false,
             false,
         ),
-        DecisionCandidateKind::ShopPurge { .. } => {
-            (ShopPurchaseBundleKind::RemoveOnly, 75, false, false, false)
-        }
+        DecisionCandidateKind::ShopPurge { target } => (
+            ShopPurchaseBundleKind::RemoveOnly,
+            75,
+            false,
+            false,
+            opportunity.hard_checkpoint_imminent && is_checkpoint_cleanup_target(target),
+        ),
         DecisionCandidateKind::ShopBuyCard { price, .. } => (
             ShopPurchaseBundleKind::BuyOneCard,
             price,
@@ -176,6 +180,12 @@ fn bundle_verdict(
         );
     }
     if facts.solves_boss_gap {
+        if facts.kind == ShopPurchaseBundleKind::RemoveOnly {
+            return (
+                ShopPurchaseBundleVerdict::HardBossAnswerBuy,
+                "HardCheckpointCleanupPurchase",
+            );
+        }
         return (
             ShopPurchaseBundleVerdict::HardBossAnswerBuy,
             "HardBossAnswerPurchase",
@@ -277,7 +287,17 @@ fn is_boss_answer_card(kind: DecisionCandidateKind) -> bool {
 fn is_boss_answer_potion(potion: PotionId) -> bool {
     matches!(
         potion,
-        PotionId::FirePotion | PotionId::ExplosivePotion | PotionId::FearPotion
+        PotionId::FirePotion
+            | PotionId::ExplosivePotion
+            | PotionId::FearPotion
+            | PotionId::PowerPotion
+    )
+}
+
+fn is_checkpoint_cleanup_target(target: CleanupTarget) -> bool {
+    matches!(
+        target,
+        CleanupTarget::Curse | CleanupTarget::Status | CleanupTarget::StarterStrike
     )
 }
 
@@ -457,6 +477,73 @@ mod tests {
                 < shop_purchase_bundle_order_key(&leave_bundle),
             "deterministic boss repair should outrank pure Maw Bank preservation: repair={:?} leave={:?}",
             fiend_fire_bundle,
+            leave_bundle
+        );
+    }
+
+    #[test]
+    fn power_potion_can_break_maw_bank_as_high_ceiling_boss_answer() {
+        let leave = evaluation(DecisionCandidateKind::ShopLeave, 0);
+        let power_potion = evaluation(
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::PowerPotion,
+                price: 78,
+            },
+            100,
+        );
+
+        let opportunity = maw_bank_boss_gap_opportunity(288);
+        let leave_bundle = evaluate_shop_purchase_bundle(opportunity, &leave);
+        let power_bundle = evaluate_shop_purchase_bundle(opportunity, &power_potion);
+
+        assert_eq!(
+            power_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardBossAnswerBuy
+        );
+        assert_ne!(
+            power_bundle.reason, "BreaksMawBankWithoutHardNeed",
+            "Power Potion should be allowed as a high-ceiling boss answer at a hard checkpoint"
+        );
+        assert!(
+            shop_purchase_bundle_order_key(&power_bundle)
+                < shop_purchase_bundle_order_key(&leave_bundle),
+            "Power Potion should outrank pure Maw Bank preservation when boss answer pressure is open: power={:?} leave={:?}",
+            power_bundle,
+            leave_bundle
+        );
+    }
+
+    #[test]
+    fn hard_checkpoint_cleanup_can_break_maw_bank() {
+        let leave = evaluation(DecisionCandidateKind::ShopLeave, 0);
+        let remove_strike = evaluation(
+            DecisionCandidateKind::ShopPurge {
+                target: crate::ai::strategy::decision_pipeline::CleanupTarget::StarterStrike,
+            },
+            180,
+        );
+
+        let opportunity = ShopGoldOpportunity {
+            hard_checkpoint_imminent: true,
+            boss_answer_needed: false,
+            ..maw_bank_opportunity(249)
+        };
+        let leave_bundle = evaluate_shop_purchase_bundle(opportunity, &leave);
+        let remove_bundle = evaluate_shop_purchase_bundle(opportunity, &remove_strike);
+
+        assert_eq!(
+            remove_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardBossAnswerBuy
+        );
+        assert_ne!(
+            remove_bundle.reason, "BreaksMawBankWithoutHardNeed",
+            "last checkpoint cleanup should not be hard-rejected by Maw Bank"
+        );
+        assert!(
+            shop_purchase_bundle_order_key(&remove_bundle)
+                < shop_purchase_bundle_order_key(&leave_bundle),
+            "checkpoint cleanup should outrank pure Maw Bank preservation: remove={:?} leave={:?}",
+            remove_bundle,
             leave_bundle
         );
     }

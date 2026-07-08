@@ -202,7 +202,10 @@ fn lane_for_relic(
 fn is_act2_default_energy_relic(relic: RelicId) -> bool {
     matches!(
         relic,
-        RelicId::CursedKey | RelicId::FusionHammer | RelicId::PhilosopherStone
+        RelicId::CoffeeDripper
+            | RelicId::CursedKey
+            | RelicId::FusionHammer
+            | RelicId::PhilosopherStone
     )
 }
 
@@ -298,5 +301,28 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap => "misses-act2-energy-gap".to_string(),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::run::RunState;
+
+    #[test]
+    fn coffee_dripper_solves_act2_energy_gap_before_strategic_power() {
+        let run = RunState::new(1552225673, 0, false, "Ironclad");
+
+        let coffee = assess_boss_relic_admission(&run, RelicId::CoffeeDripper);
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
+
+        assert_eq!(coffee.lane, BossRelicAdmissionLane::Mainline);
+        assert!(coffee
+            .reasons
+            .contains(&BossRelicAdmissionReason::Act2EnergyGap));
+        assert!(
+            boss_relic_admission_order_rank(&coffee) < boss_relic_admission_order_rank(&pyramid),
+            "Act2 energy gap should let Coffee Dripper outrank generic strategic power"
+        );
     }
 }

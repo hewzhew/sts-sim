@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn semantic_policy_rejects_attack_potion_when_only_ordinary_damage_is_uncovered() {
+fn semantic_policy_keeps_attack_potion_when_ordinary_damage_is_uncovered() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![attacking_monster()];
     combat.zones.hand = vec![
@@ -24,7 +24,7 @@ fn semantic_policy_rejects_attack_potion_when_only_ordinary_damage_is_uncovered(
     let filtered =
         filtered_legal_actions(legal, CombatSearchV2PotionPolicy::SemanticBudgeted, &combat);
 
-    assert!(filtered.iter().all(|choice| !matches!(
+    assert!(filtered.iter().any(|choice| matches!(
         choice.input,
         ClientInput::UsePotion {
             potion_index: 0,
@@ -43,7 +43,7 @@ fn semantic_policy_rejects_attack_potion_when_only_ordinary_damage_is_uncovered(
             },
         )
         .reason,
-        decision::PotionGateReason::NoTacticalPressure
+        decision::PotionGateReason::VisibleIncomingUncoveredByHandBlock
     );
     assert_eq!(
         proposals::semantic_potion_gate_decision(
@@ -54,7 +54,7 @@ fn semantic_policy_rejects_attack_potion_when_only_ordinary_damage_is_uncovered(
             },
         )
         .role,
-        None
+        Some(decision::PotionTacticalRole::PreventUncoveredDamage)
     );
 }
 

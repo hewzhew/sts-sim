@@ -125,14 +125,10 @@ pub(super) fn resource_conversion_gate(context: PotionPlanningContext) -> Potion
             PotionTacticalRole::PreventVisibleLethal,
         )
     } else if context.has_uncovered_visible_hp_loss() {
-        if context.high_stakes_combat {
-            PotionGateDecision::allow(
-                PotionGateReason::VisibleIncomingUncoveredByHandBlock,
-                PotionTacticalRole::PreventUncoveredDamage,
-            )
-        } else {
-            PotionGateDecision::reject(PotionGateReason::NoTacticalPressure)
-        }
+        PotionGateDecision::allow(
+            PotionGateReason::VisibleIncomingUncoveredByHandBlock,
+            PotionTacticalRole::PreventUncoveredDamage,
+        )
     } else if context.high_stakes_combat && context.lacks_visible_lethal() {
         PotionGateDecision::allow(
             PotionGateReason::HighStakesNoVisibleHandLethal,
