@@ -99,3 +99,74 @@ fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
         _ => (u8::MAX, CandidateOrderKey::fallback()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::content::cards::CardId;
+    use sts_simulator::content::relics::RelicState;
+    use sts_simulator::eval::run_control::{
+        DecisionCandidateKey, RunControlCommand, RunControlConfig,
+    };
+    use sts_simulator::runtime::combat::CombatCard;
+
+    fn maw_bank_session() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 224;
+        session.run_state.relics = vec![RelicState::new(RelicId::MawBank)];
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Defend, 3),
+            CombatCard::new(CardId::Defend, 4),
+            CombatCard::new(CardId::Bash, 5),
+            CombatCard::new(CardId::Immolate, 6),
+            CombatCard::new(CardId::IronWave, 7),
+            CombatCard::new(CardId::Cleave, 8),
+            CombatCard::new(CardId::ShrugItOff, 9),
+            CombatCard::new(CardId::PommelStrike, 10),
+            CombatCard::new(CardId::Bloodletting, 11),
+        ];
+        session
+    }
+
+    fn choice(key: DecisionCandidateKey) -> OwnerChoice {
+        OwnerChoice {
+            key: Some(key),
+            action: RunControlCommand::Noop,
+            label: String::new(),
+            annotation: ChoiceAnnotation::None,
+            expansion: super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
+        }
+    }
+
+    #[test]
+    fn shop_tiny_owner_context_prefers_leave_over_generic_maw_bank_breaking_relic() {
+        let session = maw_bank_session();
+        let context = shop_tiny_context(&session);
+        let mut clockwork = choice(DecisionCandidateKey::ShopBuyRelic {
+            shop_slot: 0,
+            relic: RelicId::ClockworkSouvenir,
+            price: 149,
+        });
+        let mut leave = choice(DecisionCandidateKey::ShopLeave);
+
+        clockwork.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &clockwork);
+        leave.annotation =
+            shop_tiny_candidate_for_choice(context, &session.run_state.master_deck, &leave);
+        let mut auto_purge_targets = Vec::new();
+        clockwork.expansion =
+            shop_tiny_choice_expansion(&clockwork.annotation, &mut auto_purge_targets);
+        leave.expansion = shop_tiny_choice_expansion(&leave.annotation, &mut auto_purge_targets);
+
+        assert_eq!(
+            clockwork.inspect_only_reason(),
+            Some("BreaksMawBankWithoutHardNeed")
+        );
+        assert!(
+            shop_tiny_choice_rank(&leave) < shop_tiny_choice_rank(&clockwork),
+            "ShopTiny should prefer LeaveWithGold over generic Maw Bank-breaking relic"
+        );
+    }
+}
