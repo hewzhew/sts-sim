@@ -154,6 +154,36 @@ pub struct ScoreComponent {
     pub value: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CandidateLaneCapSource {
+    RoleSaturation,
+    Strategic,
+    Acquisition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CandidateLaneCap {
+    pub source: CandidateLaneCapSource,
+    pub cap: LaneCap,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CandidateLaneAdjudication {
+    pub raw_lane: CandidateLane,
+    pub final_lane: CandidateLane,
+    pub caps: Vec<CandidateLaneCap>,
+}
+
+impl CandidateLaneAdjudication {
+    pub fn uncapped(lane: CandidateLane) -> Self {
+        Self {
+            raw_lane: lane,
+            final_lane: lane,
+            caps: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CandidateOrderKey {
     pub lane_rank: u8,
@@ -187,6 +217,7 @@ impl CandidateOrderKey {
 pub struct CandidateEvaluation {
     pub candidate: DecisionCandidateIr,
     pub lane: CandidateLane,
+    pub adjudication: CandidateLaneAdjudication,
     pub expansion: ExpansionPlan,
     pub scores: Vec<ScoreComponent>,
 }
@@ -196,6 +227,7 @@ impl CandidateEvaluation {
         Self {
             candidate,
             lane: CandidateLane::Reject,
+            adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Reject),
             expansion: ExpansionPlan::InspectOnly(reason),
             scores: Vec::new(),
         }
@@ -270,20 +302,19 @@ pub fn evaluate_decision_candidate(
             penalty.score_delta,
         ));
     }
-    let lane = capped_lane(
-        lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum()),
-        stricter_lane_cap(
-            stricter_lane_cap(
-                saturation.lane_cap,
-                strategic_lane_cap(context, candidate.kind, admission),
-            ),
-            acquisition_lane_cap(context, candidate.kind, admission),
-        ),
+    let adjudication = adjudicate_candidate_lane(
+        candidate.kind,
+        scores.iter().map(|score| score.value).sum(),
+        saturation.lane_cap,
+        strategic_lane_cap(context, candidate.kind, admission),
+        acquisition_lane_cap(context, candidate.kind, admission),
     );
+    let lane = adjudication.final_lane;
     let expansion = expansion_for_candidate(candidate.kind, lane);
     CandidateEvaluation {
         candidate,
         lane,
+        adjudication,
         expansion,
         scores,
     }
@@ -466,6 +497,7 @@ fn shop_purchase_bundle_filter(
     let evaluation = CandidateEvaluation {
         candidate,
         lane: CandidateLane::Mainline,
+        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
         expansion: ExpansionPlan::Auto,
         scores: Vec::new(),
     };
@@ -912,6 +944,7 @@ fn shop_purchase_bundle_score(
     let evaluation = CandidateEvaluation {
         candidate,
         lane: CandidateLane::Mainline,
+        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
         expansion: ExpansionPlan::Auto,
         scores: Vec::new(),
     };
@@ -1010,6 +1043,40 @@ fn lane_for_candidate(kind: DecisionCandidateKind, score: i32) -> CandidateLane 
         _ if score >= 45 => CandidateLane::Probe,
         _ => CandidateLane::Reject,
     }
+}
+
+fn adjudicate_candidate_lane(
+    kind: DecisionCandidateKind,
+    score: i32,
+    role_saturation: Option<LaneCap>,
+    strategic: Option<LaneCap>,
+    acquisition: Option<LaneCap>,
+) -> CandidateLaneAdjudication {
+    let raw_lane = lane_for_candidate(kind, score);
+    let caps = lane_caps(role_saturation, strategic, acquisition);
+    let cap = caps
+        .iter()
+        .fold(None, |cap, next| stricter_lane_cap(cap, Some(next.cap)));
+    CandidateLaneAdjudication {
+        raw_lane,
+        final_lane: capped_lane(raw_lane, cap),
+        caps,
+    }
+}
+
+fn lane_caps(
+    role_saturation: Option<LaneCap>,
+    strategic: Option<LaneCap>,
+    acquisition: Option<LaneCap>,
+) -> Vec<CandidateLaneCap> {
+    [
+        (CandidateLaneCapSource::RoleSaturation, role_saturation),
+        (CandidateLaneCapSource::Strategic, strategic),
+        (CandidateLaneCapSource::Acquisition, acquisition),
+    ]
+    .into_iter()
+    .filter_map(|(source, cap)| cap.map(|cap| CandidateLaneCap { source, cap }))
+    .collect()
 }
 
 fn capped_lane(lane: CandidateLane, cap: Option<LaneCap>) -> CandidateLane {
@@ -1618,6 +1685,13 @@ mod tests {
 
         let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
 
+        assert_eq!(iron_wave.adjudication.raw_lane, CandidateLane::Mainline);
+        assert_eq!(iron_wave.adjudication.final_lane, CandidateLane::Probe);
+        assert!(iron_wave
+            .adjudication
+            .caps
+            .iter()
+            .any(|cap| cap.source == CandidateLaneCapSource::Acquisition));
         assert_ne!(
             iron_wave.lane,
             CandidateLane::Mainline,

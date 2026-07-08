@@ -232,13 +232,15 @@ fn is_boss_answer_relic(relic: RelicId) -> bool {
 mod tests {
     use super::*;
     use crate::ai::strategy::decision_pipeline::{
-        CandidateEvaluation, CandidateLane, DecisionCandidateIr, ExpansionPlan, ScoreComponent,
+        CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, DecisionCandidateIr,
+        ExpansionPlan, ScoreComponent,
     };
 
     fn evaluation(kind: DecisionCandidateKind, score: i32) -> CandidateEvaluation {
         CandidateEvaluation {
             candidate: DecisionCandidateIr { kind },
             lane: CandidateLane::Mainline,
+            adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
             expansion: ExpansionPlan::Auto,
             scores: vec![ScoreComponent {
                 by: "test",

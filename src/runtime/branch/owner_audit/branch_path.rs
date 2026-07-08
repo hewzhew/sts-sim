@@ -45,6 +45,12 @@ pub(super) struct ScoreComponentSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct LaneCapSnapshot {
+    source: String,
+    cap: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct BranchPathCandidateSnapshot {
     rank: usize,
     selected: bool,
@@ -188,6 +194,10 @@ pub(super) enum ChoiceAnnotationSnapshot {
     None,
     Candidate {
         lane: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        raw_lane: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        lane_caps: Vec<LaneCapSnapshot>,
         score: i32,
         #[serde(default)]
         scores: Vec<ScoreComponentSnapshot>,
@@ -215,6 +225,20 @@ impl ChoiceAnnotationSnapshot {
             ChoiceAnnotation::None => Self::None,
             ChoiceAnnotation::Candidate(decision) => Self::Candidate {
                 lane: candidate_lane_label(decision.evaluation.lane).to_string(),
+                raw_lane: (decision.evaluation.adjudication.raw_lane != decision.evaluation.lane)
+                    .then(|| {
+                        candidate_lane_label(decision.evaluation.adjudication.raw_lane).to_string()
+                    }),
+                lane_caps: decision
+                    .evaluation
+                    .adjudication
+                    .caps
+                    .iter()
+                    .map(|cap| LaneCapSnapshot {
+                        source: format!("{:?}", cap.source),
+                        cap: format!("{:?}", cap.cap),
+                    })
+                    .collect(),
                 score: decision.evaluation.total_score(),
                 scores: decision
                     .evaluation
@@ -288,9 +312,10 @@ impl BranchPathState {
 #[cfg(test)]
 mod tests {
     use sts_simulator::ai::strategy::decision_pipeline::{
-        CandidateEvaluation, CandidateLane, DecisionCandidateIr, DecisionCandidateKind,
-        ExpansionPlan,
+        CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, CandidateLaneCap,
+        CandidateLaneCapSource, DecisionCandidateIr, DecisionCandidateKind, ExpansionPlan,
     };
+    use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::RunControlCommand;
 
@@ -336,6 +361,7 @@ mod tests {
                     },
                 },
                 lane: CandidateLane::Mainline,
+                adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
                 expansion: ExpansionPlan::Auto,
                 scores: Vec::new(),
             },
@@ -356,6 +382,49 @@ mod tests {
     }
 
     #[test]
+    fn candidate_snapshot_exposes_lane_adjudication_caps() {
+        let annotation = ChoiceAnnotation::Candidate(OwnerCandidateDecision {
+            evaluation: CandidateEvaluation {
+                candidate: DecisionCandidateIr {
+                    kind: DecisionCandidateKind::CardRewardPick {
+                        card: CardId::IronWave,
+                        upgrades: 0,
+                    },
+                },
+                lane: CandidateLane::Probe,
+                adjudication: CandidateLaneAdjudication {
+                    raw_lane: CandidateLane::Mainline,
+                    final_lane: CandidateLane::Probe,
+                    caps: vec![CandidateLaneCap {
+                        source: CandidateLaneCapSource::Acquisition,
+                        cap: LaneCap::ProbeOnly,
+                    }],
+                },
+                expansion: ExpansionPlan::Auto,
+                scores: Vec::new(),
+            },
+            admission: None,
+        });
+
+        let snapshot = ChoiceAnnotationSnapshot::from_annotation(&annotation);
+
+        let ChoiceAnnotationSnapshot::Candidate {
+            lane,
+            raw_lane,
+            lane_caps,
+            ..
+        } = snapshot
+        else {
+            panic!("expected candidate annotation snapshot");
+        };
+        assert_eq!(lane, "probe");
+        assert_eq!(raw_lane.as_deref(), Some("mainline"));
+        assert_eq!(lane_caps.len(), 1);
+        assert_eq!(lane_caps[0].source, "Acquisition");
+        assert_eq!(lane_caps[0].cap, "ProbeOnly");
+    }
+
+    #[test]
     fn shop_boss_preview_step_summary_deduplicates_cleanup_targets() {
         use sts_simulator::ai::strategy::decision_pipeline::CleanupTarget;
 
@@ -370,6 +439,7 @@ mod tests {
                             kind: DecisionCandidateKind::ShopPurge { target },
                         },
                         lane: CandidateLane::Mainline,
+                        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
                         expansion: ExpansionPlan::Auto,
                         scores: Vec::new(),
                     },
