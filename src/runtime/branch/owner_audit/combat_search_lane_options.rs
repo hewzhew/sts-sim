@@ -121,6 +121,7 @@ fn primary_profile(label: &'static str, request: &CombatSearchRequest) -> Combat
             label,
             request.args,
             LaneSearchBudget::Boss,
+            CombatSearchChildRolloutPluginId::Immediate,
             CombatSearchV2PotionPolicy::All,
             BOSS_POTION_RESCUE_MAX_POTIONS_USED,
         ),
@@ -128,6 +129,7 @@ fn primary_profile(label: &'static str, request: &CombatSearchRequest) -> Combat
             label,
             request.args,
             LaneSearchBudget::Rescue,
+            CombatSearchChildRolloutPluginId::Immediate,
             CombatSearchV2PotionPolicy::SemanticBudgeted,
             NONBOSS_POTION_RESCUE_MAX_POTIONS_USED,
         ),
@@ -146,17 +148,13 @@ fn high_stakes_primary_profile(
     label: &'static str,
     args: Args,
     budget: LaneSearchBudget,
+    child_rollout_plugin: CombatSearchChildRolloutPluginId,
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: u32,
 ) -> CombatSearchProfile {
-    profile_with_budget(
-        label,
-        args,
-        budget,
-        CombatSearchChildRolloutPluginId::LazyOnPop,
-    )
-    .with_potion_policy(potion_policy)
-    .with_max_potions_used(max_potions_used)
+    profile_with_budget(label, args, budget, child_rollout_plugin)
+        .with_potion_policy(potion_policy)
+        .with_max_potions_used(max_potions_used)
 }
 
 fn profile_with_budget(
@@ -406,6 +404,10 @@ mod tests {
             sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::All
         );
         assert_eq!(config.max_potions_used, Some(3));
+        assert_eq!(
+            config.child_rollout_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+        );
     }
 
     #[test]
@@ -425,6 +427,10 @@ mod tests {
             sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted
         );
         assert_eq!(config.max_potions_used, Some(1));
+        assert_eq!(
+            config.child_rollout_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+        );
     }
 
     #[test]
