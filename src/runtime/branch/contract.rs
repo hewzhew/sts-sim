@@ -139,7 +139,7 @@ pub fn default_branch_args(seed: u64) -> Args {
         max_branches: 24,
         auto_ops: 64,
         search_nodes: 50_000,
-        search_ms: 500,
+        search_ms: 1_000,
         rescue_search_nodes: 200_000,
         rescue_search_ms: 3_000,
         boss_search_nodes: 800_000,
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(args.max_branches, 24);
         assert_eq!(args.auto_ops, 64);
         assert_eq!(args.search_nodes, 50_000);
-        assert_eq!(args.search_ms, 500);
+        assert_eq!(args.search_ms, 1_000);
         assert_eq!(args.rescue_search_nodes, 200_000);
         assert_eq!(args.rescue_search_ms, 3_000);
         assert_eq!(args.boss_search_nodes, 800_000);
