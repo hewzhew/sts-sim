@@ -1169,6 +1169,9 @@ fn role_saturation_candidate(kind: DecisionCandidateKind) -> Option<RoleSaturati
 fn expansion_for_candidate(kind: DecisionCandidateKind, lane: CandidateLane) -> ExpansionPlan {
     match (kind, lane) {
         (_, CandidateLane::Reject) => ExpansionPlan::InspectOnly("candidate score rejected"),
+        (DecisionCandidateKind::CardRewardPick { .. }, CandidateLane::Probe) => {
+            ExpansionPlan::InspectOnly("card reward pick is below mainline")
+        }
         (DecisionCandidateKind::ShopBuyCard { .. }, CandidateLane::Probe) => {
             ExpansionPlan::InspectOnly("shop card buy is below mainline")
         }
@@ -1721,6 +1724,19 @@ mod tests {
         assert!(
             skip.order_key(false) < thunderclap.order_key(false),
             "skip should outrank every probe filler when there is no mainline take"
+        );
+    }
+
+    #[test]
+    fn reward_probe_filler_is_inspect_only_not_auto_expandable() {
+        let deck = act1_low_margin_reward_deck();
+        let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
+
+        assert_eq!(iron_wave.lane, CandidateLane::Probe);
+        assert_eq!(
+            iron_wave.inspect_only_reason(),
+            Some("card reward pick is below mainline"),
+            "probe reward picks may be visible for review, but must not auto-expand"
         );
     }
 
