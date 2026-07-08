@@ -21,6 +21,7 @@ pub(super) struct ArgsOverrides {
     pub(super) wall_ms: Option<u64>,
     pub(super) checkpoint_before_combat_portfolio: bool,
     pub(super) shop_boss_preview_bundle_limit: Option<usize>,
+    pub(super) shop_boss_preview_target_floor: Option<i32>,
 }
 
 #[derive(Clone, Copy)]
@@ -75,6 +76,9 @@ impl ArgsOverrides {
         if let Some(value) = self.shop_boss_preview_bundle_limit {
             args.shop_boss_preview_bundle_limit = value;
         }
+        if let Some(value) = self.shop_boss_preview_target_floor {
+            args.shop_boss_preview_target_floor = Some(value);
+        }
     }
 }
 
@@ -126,6 +130,9 @@ pub(super) fn parse_args() -> Result<
             println!(
                 "  optional: --shop-boss-preview-bundles N expands up to N deterministic shop bundle preview branches"
             );
+            println!(
+                "  optional: --shop-boss-preview-target-floor N limits shop preview bundle expansion to one floor"
+            );
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
@@ -162,6 +169,7 @@ pub(super) fn parse_args() -> Result<
                 | "--continue-slices"
                 | "--checkpoint-before-combat-portfolio"
                 | "--shop-boss-preview-bundles"
+                | "--shop-boss-preview-target-floor"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
@@ -227,6 +235,10 @@ pub(super) fn parse_args() -> Result<
                 args.shop_boss_preview_bundle_limit = parse(value, key)?;
                 overrides.shop_boss_preview_bundle_limit =
                     Some(args.shop_boss_preview_bundle_limit);
+            }
+            "--shop-boss-preview-target-floor" => {
+                args.shop_boss_preview_target_floor = Some(parse(value, key)?);
+                overrides.shop_boss_preview_target_floor = args.shop_boss_preview_target_floor;
             }
             "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),
             "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),

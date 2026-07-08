@@ -95,6 +95,11 @@ fn expand_shop_boss_preview_bundle_children(
     if args.shop_boss_preview_bundle_limit == 0 {
         return Vec::new();
     }
+    if let Some(target_floor) = args.shop_boss_preview_target_floor {
+        if branch.session.run_state.floor_num != target_floor {
+            return Vec::new();
+        }
+    }
     let kinds = shop_boss_preview_bundle_kinds(choices);
     let bundles = shop_boss_preview_bundles(
         kinds,
@@ -192,7 +197,6 @@ fn bundle_label(choices: &[OwnerChoice], items: &[DecisionCandidateKind]) -> Str
 fn shop_boss_preview_bundle_kinds(choices: &[OwnerChoice]) -> Vec<DecisionCandidateKind> {
     choices
         .iter()
-        .filter(|choice| choice.auto_expand_allowed())
         .filter_map(|choice| {
             choice
                 .annotation
@@ -238,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn shop_preview_bundle_kinds_exclude_inspect_only_choices() {
+    fn shop_preview_bundle_kinds_include_inspect_only_choices_for_review() {
         let leave = candidate_choice(
             DecisionCandidateKind::ShopLeave,
             DecisionCandidateKey::ShopLeave,
@@ -261,6 +265,16 @@ mod tests {
 
         let kinds = shop_boss_preview_bundle_kinds(&[leave, blocked_fiend_fire]);
 
-        assert_eq!(kinds, vec![DecisionCandidateKind::ShopLeave]);
+        assert_eq!(
+            kinds,
+            vec![
+                DecisionCandidateKind::ShopLeave,
+                DecisionCandidateKind::ShopBuyCard {
+                    card: CardId::FiendFire,
+                    upgrades: 0,
+                    price: 152,
+                }
+            ]
+        );
     }
 }

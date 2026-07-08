@@ -167,6 +167,8 @@ struct RawInspectArgs {
     checkpoint_before_combat_portfolio: bool,
     #[arg(long, default_value_t = 0)]
     shop_boss_preview_bundles: usize,
+    #[arg(long)]
+    shop_boss_preview_target_floor: Option<i32>,
 }
 
 #[derive(ClapArgs)]
@@ -206,6 +208,7 @@ struct InspectArgs {
     wall_ms: Option<u64>,
     checkpoint_before_combat_portfolio: bool,
     shop_boss_preview_bundle_limit: usize,
+    shop_boss_preview_target_floor: Option<i32>,
 }
 
 struct RunArgs {
@@ -249,6 +252,7 @@ impl RawInspectArgs {
             checkpoint_before_combat_portfolio: self.checkpoint_before_combat_portfolio
                 || defaults.checkpoint_before_combat_portfolio,
             shop_boss_preview_bundle_limit: self.shop_boss_preview_bundles,
+            shop_boss_preview_target_floor: self.shop_boss_preview_target_floor,
         })
     }
 }
@@ -341,6 +345,7 @@ impl InspectArgs {
         args.wall_ms = self.wall_ms;
         args.checkpoint_before_combat_portfolio = self.checkpoint_before_combat_portfolio;
         args.shop_boss_preview_bundle_limit = self.shop_boss_preview_bundle_limit;
+        args.shop_boss_preview_target_floor = self.shop_boss_preview_target_floor;
         args
     }
 }
@@ -492,6 +497,7 @@ mod tests {
             wall_ms: Some(707),
             checkpoint_before_combat_portfolio: true,
             shop_boss_preview_bundle_limit: 4,
+            shop_boss_preview_target_floor: Some(13),
         };
         let source = SourceIdentity {
             git_commit: Some("abc123".to_string()),
@@ -526,6 +532,10 @@ mod tests {
         assert_eq!(
             requests[0].contract.features.shop_boss_preview_bundle_limit,
             4
+        );
+        assert_eq!(
+            requests[0].contract.features.shop_boss_preview_target_floor,
+            Some(13)
         );
     }
 

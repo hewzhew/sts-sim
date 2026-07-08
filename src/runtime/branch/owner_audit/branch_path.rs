@@ -4,6 +4,8 @@ use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, Decis
 use sts_simulator::ai::strategy::shop_boss_preview::{
     classify_shop_boss_preview_candidate, shop_boss_preview_bundles,
 };
+use sts_simulator::content::relics::RelicId;
+use sts_simulator::eval::run_control::ShopVisitContextV1;
 
 use super::owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice};
 use super::{branch_status_view, decision_delta, render, trace, Branch};
@@ -36,6 +38,41 @@ pub(super) struct BranchPathState {
     gold: i32,
     deck_size: usize,
     boundary: String,
+    #[serde(default)]
+    relics: Vec<BranchPathRelicState>,
+    maw_bank: BranchPathMawBankState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shop_visit_context: Option<BranchPathShopVisitContext>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathRelicState {
+    id: RelicId,
+    #[serde(default, skip_serializing_if = "is_false")]
+    used_up: bool,
+    #[serde(default, skip_serializing_if = "is_default_counter")]
+    counter: i32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    amount: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathMawBankState {
+    owned: bool,
+    active: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    used_up: bool,
+    #[serde(default, skip_serializing_if = "is_default_counter")]
+    counter: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathShopVisitContext {
+    entry_act: u8,
+    entry_floor: i32,
+    entry_gold: i32,
+    maw_bank_live_at_entry: bool,
+    spent_gold_in_visit: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -84,6 +121,11 @@ pub(super) struct BranchPathShopBossPreviewBundleSnapshot {
 pub(super) struct BranchPathShopBossPreviewBundleItemSnapshot {
     pub(super) label: String,
     pub(super) candidate: Value,
+    pub(super) cost: i32,
+    #[serde(default)]
+    pub(super) auto_expand: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) blocked_reason: Option<String>,
 }
 
 impl BranchPathCandidateSnapshot {
@@ -134,7 +176,6 @@ impl BranchPathShopBossPreviewBundleSnapshot {
     pub(super) fn from_choices(choices: &[OwnerChoice], current_gold: i32) -> Vec<Self> {
         let kinds = choices
             .iter()
-            .filter(|choice| choice.auto_expand_allowed())
             .filter_map(|choice| {
                 choice
                     .annotation
@@ -144,32 +185,34 @@ impl BranchPathShopBossPreviewBundleSnapshot {
             .collect::<Vec<_>>();
         shop_boss_preview_bundles(kinds, current_gold, 12)
             .into_iter()
-            .enumerate()
-            .map(|(index, bundle)| {
+            .filter_map(|bundle| {
                 let items = bundle
                     .items
                     .iter()
-                    .map(|kind| BranchPathShopBossPreviewBundleItemSnapshot {
-                        label: preview_item_label(choices, *kind),
-                        candidate: trace::candidate_kind_value(*kind),
-                    })
+                    .map(|kind| preview_item_snapshot(choices, *kind))
                     .collect::<Vec<_>>();
-                Self {
-                    rank: index + 1,
-                    label: if items.is_empty() {
-                        "Leave".to_string()
-                    } else {
-                        items
-                            .iter()
-                            .map(|item| item.label.as_str())
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    },
-                    total_cost: bundle.total_cost,
-                    gold_after: bundle.gold_after,
-                    reason: format!("{:?}", bundle.reason),
-                    items,
+                let total_cost = items.iter().map(|item| item.cost).sum::<i32>();
+                if total_cost > current_gold {
+                    return None;
                 }
+                Some((bundle, items, total_cost))
+            })
+            .enumerate()
+            .map(|(index, (bundle, items, total_cost))| Self {
+                rank: index + 1,
+                label: if items.is_empty() {
+                    "Leave".to_string()
+                } else {
+                    items
+                        .iter()
+                        .map(|item| item.label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                },
+                total_cost,
+                gold_after: current_gold - total_cost,
+                reason: format!("{:?}", bundle.reason),
+                items,
             })
             .collect()
     }
@@ -187,6 +230,59 @@ fn preview_item_label(choices: &[OwnerChoice], kind: DecisionCandidateKind) -> S
             }
         })
         .unwrap_or_else(|| format!("{kind:?}"))
+}
+
+fn preview_item_snapshot(
+    choices: &[OwnerChoice],
+    kind: DecisionCandidateKind,
+) -> BranchPathShopBossPreviewBundleItemSnapshot {
+    choices
+        .iter()
+        .find_map(|choice| {
+            let decision = choice.annotation.candidate()?;
+            if decision.evaluation.candidate.kind == kind {
+                Some(BranchPathShopBossPreviewBundleItemSnapshot {
+                    label: choice.label.clone(),
+                    candidate: trace::candidate_kind_value(kind),
+                    cost: choice_cost(choice, kind),
+                    auto_expand: choice.auto_expand_allowed(),
+                    blocked_reason: choice.inspect_only_reason().map(str::to_string),
+                })
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| BranchPathShopBossPreviewBundleItemSnapshot {
+            label: format!("{kind:?}"),
+            candidate: trace::candidate_kind_value(kind),
+            cost: candidate_kind_cost_hint(kind),
+            auto_expand: false,
+            blocked_reason: Some("missing source choice".to_string()),
+        })
+}
+
+fn choice_cost(choice: &OwnerChoice, kind: DecisionCandidateKind) -> i32 {
+    match kind {
+        DecisionCandidateKind::ShopPurge { .. } => {
+            parse_gold_cost_from_label(&choice.label).unwrap_or(75)
+        }
+        _ => candidate_kind_cost_hint(kind),
+    }
+}
+
+fn candidate_kind_cost_hint(kind: DecisionCandidateKind) -> i32 {
+    match kind {
+        DecisionCandidateKind::ShopBuyCard { price, .. }
+        | DecisionCandidateKind::ShopBuyRelic { price, .. }
+        | DecisionCandidateKind::ShopBuyPotion { price, .. } => price,
+        DecisionCandidateKind::ShopPurge { .. } => 75,
+        _ => 0,
+    }
+}
+
+fn parse_gold_cost_from_label(label: &str) -> Option<i32> {
+    let (_, suffix) = label.rsplit_once('|')?;
+    suffix.trim().strip_suffix(" gold")?.trim().parse().ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -298,6 +394,7 @@ fn shop_boss_preview_value(kind: DecisionCandidateKind) -> Option<Value> {
 impl BranchPathState {
     pub(super) fn from_branch(branch: &Branch) -> Self {
         let run = &branch.session.run_state;
+        let maw_bank = run.relics.iter().find(|relic| relic.id == RelicId::MawBank);
         Self {
             act: run.act_num,
             floor: run.floor_num,
@@ -306,8 +403,52 @@ impl BranchPathState {
             gold: run.gold,
             deck_size: run.master_deck.len(),
             boundary: branch_status_view::status_boundary_label(&branch.status),
+            relics: run
+                .relics
+                .iter()
+                .map(|relic| BranchPathRelicState {
+                    id: relic.id,
+                    used_up: relic.used_up,
+                    counter: relic.counter,
+                    amount: relic.amount,
+                })
+                .collect(),
+            maw_bank: BranchPathMawBankState {
+                owned: maw_bank.is_some(),
+                active: maw_bank.is_some_and(|relic| !relic.used_up),
+                used_up: maw_bank.is_some_and(|relic| relic.used_up),
+                counter: maw_bank.map_or(-1, |relic| relic.counter),
+            },
+            shop_visit_context: branch
+                .session
+                .shop_visit_context()
+                .map(BranchPathShopVisitContext::from),
         }
     }
+}
+
+impl From<ShopVisitContextV1> for BranchPathShopVisitContext {
+    fn from(context: ShopVisitContextV1) -> Self {
+        Self {
+            entry_act: context.entry_act,
+            entry_floor: context.entry_floor,
+            entry_gold: context.entry_gold,
+            maw_bank_live_at_entry: context.maw_bank_live_at_entry,
+            spent_gold_in_visit: context.spent_gold_in_visit,
+        }
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn is_zero(value: &i32) -> bool {
+    *value == 0
+}
+
+fn is_default_counter(value: &i32) -> bool {
+    *value == -1
 }
 
 #[cfg(test)]
@@ -465,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn shop_boss_preview_bundle_summary_excludes_inspect_only_choices() {
+    fn shop_boss_preview_bundle_summary_includes_blocked_choices_for_review() {
         fn choice(kind: DecisionCandidateKind, expansion: OwnerChoiceExpansion) -> OwnerChoice {
             OwnerChoice {
                 key: None,
@@ -502,7 +643,59 @@ mod tests {
 
         let bundles = BranchPathShopBossPreviewBundleSnapshot::from_choices(&choices, 200);
 
-        assert_eq!(bundles.len(), 1);
+        assert_eq!(bundles.len(), 2);
         assert!(bundles[0].items.is_empty());
+        assert_eq!(
+            bundles[1].label,
+            "ShopBuyCard { card: FiendFire, upgrades: 0, price: 152 }"
+        );
+        assert_eq!(bundles[1].total_cost, 152);
+        assert_eq!(bundles[1].gold_after, 48);
+        assert_eq!(
+            bundles[1].items[0].blocked_reason.as_deref(),
+            Some("blocked")
+        );
+        assert!(!bundles[1].items[0].auto_expand);
+    }
+
+    #[test]
+    fn path_state_exposes_relic_status_for_timeline_review() {
+        use sts_simulator::content::relics::{RelicId, RelicState};
+        use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+
+        use super::super::branch_model::{BranchStatus, Owner};
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.relics.clear();
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::BurningBlood));
+        let mut maw_bank = RelicState::new(RelicId::MawBank);
+        maw_bank.used_up = true;
+        maw_bank.counter = -2;
+        session.run_state.relics.push(maw_bank);
+
+        let branch = Branch {
+            id: 1,
+            parent_id: None,
+            path: Vec::new(),
+            session,
+            status: BranchStatus::Running {
+                owner: Owner::ShopTiny,
+                boundary: "Shop".to_string(),
+            },
+            combat_portfolio: None,
+            auto_steps: Vec::new(),
+            combat_search: Vec::new(),
+        };
+
+        let state = serde_json::to_value(BranchPathState::from_branch(&branch)).unwrap();
+
+        assert_eq!(state["relics"][0]["id"], "BurningBlood");
+        assert_eq!(state["relics"][1]["id"], "MawBank");
+        assert_eq!(state["relics"][1]["used_up"], true);
+        assert_eq!(state["maw_bank"]["owned"], true);
+        assert_eq!(state["maw_bank"]["active"], false);
     }
 }
