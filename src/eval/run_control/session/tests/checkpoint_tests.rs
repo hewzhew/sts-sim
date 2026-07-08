@@ -108,6 +108,26 @@ fn run_control_session_checkpoint_preserves_last_combat_automation_trajectory() 
 }
 
 #[test]
+fn run_control_session_checkpoint_preserves_shop_visit_context() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.shop_visit_context = Some(ShopVisitContextV1 {
+        entry_act: 1,
+        entry_floor: 11,
+        entry_gold: 224,
+        maw_bank_live_at_entry: true,
+        spent_gold_in_visit: true,
+    });
+
+    let checkpoint = RunControlSessionCheckpointV1::from_session(&session);
+    let text = serde_json::to_string(&checkpoint).expect("checkpoint should serialize");
+    let loaded: RunControlSessionCheckpointV1 =
+        serde_json::from_str(&text).expect("checkpoint should deserialize");
+    let restored = loaded.into_session().expect("checkpoint should restore");
+
+    assert_eq!(restored.shop_visit_context, session.shop_visit_context);
+}
+
+#[test]
 fn run_control_session_checkpoint_preserves_map_traversal_edges() {
     let mut session = RunControlSession::new(RunControlConfig {
         seed: 1_800_564_075,

@@ -302,6 +302,8 @@ impl RunControlSession {
         } else {
             None
         };
+        self.observe_shop_visit_before_input();
+        let gold_before_input = self.run_state.gold;
         let before_snapshot = RunVisibleSnapshot::capture(self);
         let action_report = transition_action_for_input(self, &input);
         self.observe_active_combat_started();
@@ -337,6 +339,7 @@ impl RunControlSession {
             }
         }
         self.collapse_completed_event_room();
+        self.observe_shop_visit_after_input(gold_before_input);
         let after_combat = finished_combat
             .as_ref()
             .map(|finished| &finished.combat_state)

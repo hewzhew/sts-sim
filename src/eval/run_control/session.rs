@@ -4,6 +4,7 @@ use serde::de::{DeserializeOwned, Error as DeError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+use crate::content::relics::RelicId;
 use crate::eval::card_reward_value_loop::{
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
     CardRewardStrategyPackageCalibrationV1,
@@ -69,6 +70,7 @@ pub struct RunControlSession {
     pub active_combat: Option<ActiveCombat>,
     pub decision_step: u64,
     pub reward_automation: RewardAutomationConfig,
+    pub shop_visit_context: Option<ShopVisitContextV1>,
     pub(in crate::eval::run_control) auto_capture: AutoCombatCaptureConfig,
     pub(in crate::eval::run_control) search_max_nodes: Option<usize>,
     pub(in crate::eval::run_control) search_wall_ms: Option<u64>,
@@ -92,6 +94,36 @@ pub struct RunControlSession {
     last_capture_case: Option<LastBenchmarkCaptureCase>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct ShopVisitContextV1 {
+    #[serde(default)]
+    pub entry_act: u8,
+    #[serde(default)]
+    pub entry_floor: i32,
+    pub entry_gold: i32,
+    pub maw_bank_live_at_entry: bool,
+    pub spent_gold_in_visit: bool,
+}
+
+impl ShopVisitContextV1 {
+    fn from_run_state(run_state: &RunState) -> Self {
+        Self {
+            entry_act: run_state.act_num,
+            entry_floor: run_state.floor_num,
+            entry_gold: run_state.gold,
+            maw_bank_live_at_entry: run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::MawBank && !relic.used_up),
+            spent_gold_in_visit: false,
+        }
+    }
+
+    fn matches_run_state(self, run_state: &RunState) -> bool {
+        self.entry_act == run_state.act_num && self.entry_floor == run_state.floor_num
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(in crate::eval::run_control) struct LastBenchmarkCaptureCase {
     pub root: PathBuf,
@@ -112,6 +144,7 @@ pub struct RunControlSessionCheckpointV1 {
     active_combat: Option<ActiveCombat>,
     decision_step: u64,
     reward_automation: RewardAutomationConfig,
+    shop_visit_context: Option<ShopVisitContextV1>,
     auto_capture: AutoCombatCaptureConfig,
     search_max_nodes: Option<usize>,
     search_wall_ms: Option<u64>,
@@ -137,6 +170,8 @@ pub struct RunControlSessionCheckpointV1 {
 struct RunControlSessionCheckpointExtrasV1 {
     #[serde(skip_serializing_if = "reward_automation_config_is_default")]
     reward_automation: RewardAutomationConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shop_visit_context: Option<ShopVisitContextV1>,
     #[serde(skip_serializing_if = "auto_capture_config_is_default")]
     auto_capture: AutoCombatCaptureConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,6 +211,7 @@ impl Serialize for RunControlSessionCheckpointV1 {
     {
         let extras = RunControlSessionCheckpointExtrasV1 {
             reward_automation: self.reward_automation.clone(),
+            shop_visit_context: self.shop_visit_context,
             auto_capture: self.auto_capture.clone(),
             card_reward_outcome_calibration: self.card_reward_outcome_calibration.clone(),
             card_reward_route_risk_calibration: self.card_reward_route_risk_calibration.clone(),
@@ -241,6 +277,7 @@ fn compact_checkpoint_from_values(
         active_combat: compact_value(items, 2, "active_combat")?,
         decision_step: compact_value(items, 3, "decision_step")?,
         reward_automation: extras.reward_automation,
+        shop_visit_context: extras.shop_visit_context,
         auto_capture: extras.auto_capture,
         search_max_nodes: compact_value(items, 4, "search_max_nodes")?,
         search_wall_ms: compact_value(items, 5, "search_wall_ms")?,
@@ -281,6 +318,8 @@ struct RunControlSessionCheckpointLegacyV1 {
     decision_step: u64,
     #[serde(default)]
     reward_automation: RewardAutomationConfig,
+    #[serde(default)]
+    shop_visit_context: Option<ShopVisitContextV1>,
     #[serde(default)]
     auto_capture: AutoCombatCaptureConfig,
     #[serde(default)]
@@ -326,6 +365,7 @@ impl RunControlSessionCheckpointLegacyV1 {
             active_combat: self.active_combat,
             decision_step: self.decision_step,
             reward_automation: self.reward_automation,
+            shop_visit_context: self.shop_visit_context,
             auto_capture: self.auto_capture,
             search_max_nodes: self.search_max_nodes,
             search_wall_ms: self.search_wall_ms,
@@ -531,6 +571,7 @@ impl RunControlSession {
             active_combat: None,
             decision_step: 0,
             reward_automation: config.reward_automation,
+            shop_visit_context: None,
             auto_capture: config.auto_capture,
             search_max_nodes: config.search_max_nodes,
             search_wall_ms: config.search_wall_ms,
@@ -557,6 +598,59 @@ impl RunControlSession {
         self.auto_capture = auto_capture;
         self.auto_capture_last_combat_sequence = None;
     }
+
+    pub fn shop_visit_context(&self) -> Option<ShopVisitContextV1> {
+        self.shop_visit_context
+            .filter(|context| context.matches_run_state(&self.run_state))
+    }
+
+    pub(in crate::eval::run_control) fn observe_shop_visit_before_input(&mut self) {
+        if engine_state_is_inside_shop_visit(&self.engine_state) {
+            if !self
+                .shop_visit_context
+                .is_some_and(|context| context.matches_run_state(&self.run_state))
+            {
+                self.shop_visit_context = Some(ShopVisitContextV1::from_run_state(&self.run_state));
+            }
+        } else {
+            self.shop_visit_context = None;
+        }
+    }
+
+    pub(in crate::eval::run_control) fn observe_shop_visit_after_input(
+        &mut self,
+        gold_before: i32,
+    ) {
+        if engine_state_is_inside_shop_visit(&self.engine_state) {
+            if !self
+                .shop_visit_context
+                .is_some_and(|context| context.matches_run_state(&self.run_state))
+            {
+                self.shop_visit_context = Some(ShopVisitContextV1::from_run_state(&self.run_state));
+            }
+            if self.run_state.gold < gold_before {
+                if let Some(context) = self.shop_visit_context.as_mut() {
+                    context.spent_gold_in_visit = true;
+                }
+            }
+        } else {
+            self.shop_visit_context = None;
+        }
+    }
+}
+
+fn engine_state_is_inside_shop_visit(state: &EngineState) -> bool {
+    match state {
+        EngineState::Shop(_) => true,
+        EngineState::RewardOverlay { return_state, .. }
+        | EngineState::MapOverlay { return_state } => {
+            engine_state_is_inside_shop_visit(return_state)
+        }
+        EngineState::RunPendingChoice(choice) => {
+            engine_state_is_inside_shop_visit(&choice.return_state)
+        }
+        _ => false,
+    }
 }
 
 impl RunControlSessionCheckpointV1 {
@@ -567,6 +661,7 @@ impl RunControlSessionCheckpointV1 {
             active_combat: session.active_combat.clone(),
             decision_step: session.decision_step,
             reward_automation: session.reward_automation.clone(),
+            shop_visit_context: session.shop_visit_context,
             auto_capture: session.auto_capture.clone(),
             search_max_nodes: session.search_max_nodes,
             search_wall_ms: session.search_wall_ms,
@@ -702,6 +797,7 @@ impl RunControlSessionCheckpointV1 {
             active_combat: self.active_combat,
             decision_step: self.decision_step,
             reward_automation: self.reward_automation,
+            shop_visit_context: self.shop_visit_context,
             auto_capture: self.auto_capture,
             search_max_nodes: self.search_max_nodes,
             search_wall_ms: self.search_wall_ms,

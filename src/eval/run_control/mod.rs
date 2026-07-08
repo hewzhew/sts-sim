@@ -95,7 +95,7 @@ pub use search_evidence::{
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome, RunControlConfig,
-    RunControlSession, RunControlSessionCheckpointV1,
+    RunControlSession, RunControlSessionCheckpointV1, ShopVisitContextV1,
 };
 pub use session_trace::{
     SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,
