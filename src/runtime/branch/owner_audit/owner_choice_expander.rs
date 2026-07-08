@@ -47,6 +47,13 @@ pub(super) fn expand_registered_owner(
             state_before: Some(BranchPathState::from_branch(branch)),
             decision_delta,
             candidate_pool: BranchPathCandidateSnapshot::from_choices(choices, choice_index),
+            shop_boss_preview_candidates:
+                super::branch_path::BranchPathShopBossPreviewSnapshot::from_choices(choices),
+            shop_boss_preview_bundles:
+                super::branch_path::BranchPathShopBossPreviewBundleSnapshot::from_choices(
+                    choices,
+                    branch.session.run_state.gold,
+                ),
         });
         let id = *next_branch_id;
         *next_branch_id += 1;

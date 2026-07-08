@@ -5,6 +5,7 @@ use sts_simulator::ai::strategy::decision_pipeline::{
     candidate_lane_label, CleanupTarget, DecisionCandidateKind,
 };
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
+use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_candidate;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 
 use super::branch_path::BranchPathStep;
@@ -128,6 +129,10 @@ fn path_step_value(step: &BranchPathStep) -> Value {
         "key": step.key.as_ref(),
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
         "candidate_pool": serde_json::to_value(&step.candidate_pool).unwrap_or(Value::Null),
+        "shop_boss_preview_candidates": serde_json::to_value(&step.shop_boss_preview_candidates)
+            .unwrap_or(Value::Null),
+        "shop_boss_preview_bundles": serde_json::to_value(&step.shop_boss_preview_bundles)
+            .unwrap_or(Value::Null),
     })
 }
 
@@ -143,6 +148,7 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
                 "value": score.value,
             })).collect::<Vec<_>>(),
             "candidate": candidate_kind_value(decision.evaluation.candidate.kind),
+            "shop_boss_preview": shop_boss_preview_value(decision.evaluation.candidate.kind),
             "admission": decision.admission.as_ref().map(admission_value),
         }),
         ChoiceAnnotation::BossRelic(admission) => json!({
@@ -159,6 +165,24 @@ fn admission_value(admission: &RewardAdmission) -> Value {
         "card": admission.card,
         "class": format!("{:?}", admission.class),
     })
+}
+
+fn shop_boss_preview_value(kind: DecisionCandidateKind) -> Option<Value> {
+    match kind {
+        DecisionCandidateKind::ShopBuyCard { .. }
+        | DecisionCandidateKind::ShopBuyRelic { .. }
+        | DecisionCandidateKind::ShopBuyPotion { .. }
+        | DecisionCandidateKind::ShopPurge { .. }
+        | DecisionCandidateKind::ShopLeave => {
+            let preview = classify_shop_boss_preview_candidate(kind);
+            Some(json!({
+                "class": format!("{:?}", preview.class),
+                "include_in_v0": preview.include_in_v0,
+                "reason": preview.reason,
+            }))
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn candidate_kind_value(kind: DecisionCandidateKind) -> Value {
