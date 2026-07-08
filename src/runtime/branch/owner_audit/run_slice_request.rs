@@ -40,12 +40,18 @@ impl ContinueSliceRequest {
         let resume_frontier = self.resume.then(|| self.capsule_path.join("frontier.json"));
         let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
             let checkpoint = frontier_checkpoint::load(path)?;
+            let requested_slice_generations = self
+                .overrides
+                .generations
+                .unwrap_or(checkpoint.args.generations);
             effective_args = checkpoint.args;
             self.overrides.apply_to(&mut effective_args);
             if effective_args.wall_ms.is_none() {
                 effective_args.wall_ms = self.args.wall_ms;
             }
             generation_start = checkpoint.generation;
+            effective_args.generations =
+                generation_start.saturating_add(requested_slice_generations);
             checkpoint.into_frontier()?
         } else {
             self.overrides.apply_to(&mut effective_args);
@@ -128,6 +134,58 @@ mod tests {
 
         assert_eq!(request.request_kind, RunSliceRequestKind::Start);
         assert!(capsule.join("manifest.json").exists());
+
+        let _ = fs::remove_dir_all(capsule);
+    }
+
+    #[test]
+    fn resumed_slice_extends_generation_budget_from_checkpoint_generation() {
+        let capsule = std::env::temp_dir().join("branch_tiny_continue_slice_request_resume_budget");
+        let _ = fs::remove_dir_all(&capsule);
+        fs::create_dir_all(&capsule).unwrap();
+        let checkpoint = serde_json::json!({
+            "schema": "branch_tiny_frontier_checkpoint",
+            "args": {
+                "seed": 123,
+                "ascension": 0,
+                "objective": "first_victory",
+                "generations": 2,
+                "max_branches": 1,
+                "auto_ops": 64,
+                "search_nodes": 1,
+                "search_ms": 1,
+                "rescue_search_nodes": 1,
+                "rescue_search_ms": 1,
+                "boss_search_nodes": 1,
+                "boss_search_ms": 1,
+                "wall_ms": 5000
+            },
+            "generation": 2,
+            "next_branch_id": 3,
+            "frontier": []
+        });
+        fs::write(
+            capsule.join("frontier.json"),
+            serde_json::to_string_pretty(&checkpoint).unwrap(),
+        )
+        .unwrap();
+
+        let request = ContinueSliceRequest {
+            args: sample_args(123),
+            overrides: ArgsOverrides::default(),
+            capsule_path: capsule.clone(),
+            resume: true,
+            human_output: false,
+        }
+        .prepare()
+        .unwrap();
+
+        assert_eq!(request.request_kind, RunSliceRequestKind::ResumeFrontier);
+        assert_eq!(request.generation_start, 2);
+        assert_eq!(
+            request.args.generations, 4,
+            "resume should treat generations as per-slice budget, not the old absolute cap"
+        );
 
         let _ = fs::remove_dir_all(capsule);
     }
