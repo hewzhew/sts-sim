@@ -4,6 +4,7 @@ use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, Decis
 use sts_simulator::ai::strategy::shop_boss_preview::{
     classify_shop_boss_preview_candidate, shop_boss_preview_bundles,
 };
+use sts_simulator::content::cards::CardId;
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::ShopVisitContextV1;
 
@@ -37,12 +38,22 @@ pub(super) struct BranchPathState {
     max_hp: i32,
     gold: i32,
     deck_size: usize,
+    #[serde(default)]
+    deck: Vec<BranchPathCardState>,
     boundary: String,
     #[serde(default)]
     relics: Vec<BranchPathRelicState>,
     maw_bank: BranchPathMawBankState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     shop_visit_context: Option<BranchPathShopVisitContext>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathCardState {
+    id: CardId,
+    uuid: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    upgrades: u8,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -402,6 +413,15 @@ impl BranchPathState {
             max_hp: run.max_hp,
             gold: run.gold,
             deck_size: run.master_deck.len(),
+            deck: run
+                .master_deck
+                .iter()
+                .map(|card| BranchPathCardState {
+                    id: card.id,
+                    uuid: card.uuid,
+                    upgrades: card.upgrades,
+                })
+                .collect(),
             boundary: branch_status_view::status_boundary_label(&branch.status),
             relics: run
                 .relics
@@ -444,6 +464,10 @@ fn is_false(value: &bool) -> bool {
 }
 
 fn is_zero(value: &i32) -> bool {
+    *value == 0
+}
+
+fn is_zero_u8(value: &u8) -> bool {
     *value == 0
 }
 
@@ -692,6 +716,9 @@ mod tests {
 
         let state = serde_json::to_value(BranchPathState::from_branch(&branch)).unwrap();
 
+        assert_eq!(state["deck"].as_array().unwrap().len(), 10);
+        assert_eq!(state["deck"][0]["id"], "Strike");
+        assert!(state["deck"][0]["uuid"].is_number());
         assert_eq!(state["relics"][0]["id"], "BurningBlood");
         assert_eq!(state["relics"][1]["id"], "MawBank");
         assert_eq!(state["relics"][1]["used_up"], true);
