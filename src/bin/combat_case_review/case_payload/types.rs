@@ -1,4 +1,5 @@
 use serde::Serialize;
+use sts_simulator::ai::boss_matchup::BossMatchupAcquisitionPressureV0;
 use sts_simulator::ai::combat_search_v2::{
     CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2WitnessReplay,
 };
@@ -53,6 +54,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     pub(super) combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
     pub(super) static_boss_matchup_audit_v0: Option<StaticBossMatchupAuditV0>,
+    pub(super) boss_matchup_acquisition_pressure_v0: Option<BossMatchupAcquisitionPressureV0>,
     pub(super) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(super) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
@@ -77,6 +79,7 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     pub(crate) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     pub(crate) static_boss_matchup_audit_v0: Option<StaticBossMatchupAuditV0>,
+    pub(crate) boss_matchup_acquisition_pressure_v0: Option<BossMatchupAcquisitionPressureV0>,
     pub(crate) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(crate) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,

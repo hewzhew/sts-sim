@@ -1,3 +1,4 @@
+use sts_simulator::ai::boss_matchup::boss_matchup_acquisition_pressure_v0;
 use sts_simulator::ai::combat_search_v2::{
     derive_combat_deficit_evidence, replay_combat_search_witness_line_v0,
 };
@@ -68,6 +69,8 @@ pub(super) fn build_review(
         None
     };
     let static_boss_matchup_audit_v0 = static_boss_matchup_audit_v0(&case);
+    let boss_matchup_acquisition_pressure_v0 =
+        boss_matchup_acquisition_pressure_v0(&case.position.combat);
     let awakened_one_path_audit_v0 = awakened_one_path_audit_v0(&case);
     let awakened_one_failure_evidence =
         awakened_one_failure_evidence(&case, counterfactual_hp_probe.as_ref());
@@ -88,6 +91,7 @@ pub(super) fn build_review(
             counterfactual_hp_probe,
             combat_deficit_evidence,
             static_boss_matchup_audit_v0,
+            boss_matchup_acquisition_pressure_v0,
             awakened_one_failure_evidence,
             awakened_one_path_audit_v0,
             boss_pressure_lens,
