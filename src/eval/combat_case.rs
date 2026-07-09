@@ -91,6 +91,8 @@ pub struct CombatCaseCardSummary {
 pub struct CombatCasePathStep {
     pub key: Value,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_before: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

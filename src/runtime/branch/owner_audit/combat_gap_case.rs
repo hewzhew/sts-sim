@@ -89,6 +89,10 @@ fn path_step(step: &BranchPathStep) -> CombatCasePathStep {
     CombatCasePathStep {
         key: to_value(&step.key).unwrap_or(Value::Null),
         label: step.label.clone(),
+        state_before: step
+            .state_before
+            .as_ref()
+            .and_then(|state| to_value(state).ok()),
     }
 }
 
