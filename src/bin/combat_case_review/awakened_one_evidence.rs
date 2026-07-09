@@ -6,7 +6,18 @@ use sts_simulator::runtime::combat::{CombatCard, CombatState};
 
 use super::counterfactual_hp::CounterfactualHpProbe;
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
+pub(crate) struct StaticBossMatchupAuditV0 {
+    pub(super) schema: &'static str,
+    pub(super) contract: &'static str,
+    pub(super) boss: &'static str,
+    pub(super) start: AwakenedOneStartEvidence,
+    pub(super) claims: Vec<AwakenedOneEvidenceClaim>,
+    pub(super) risk_tags: Vec<&'static str>,
+    pub(super) conclusion: &'static str,
+}
+
+#[derive(Clone, Serialize)]
 pub(crate) struct AwakenedOneFailureEvidenceFrame {
     pub(super) schema: &'static str,
     pub(super) contract: &'static str,
@@ -17,7 +28,7 @@ pub(crate) struct AwakenedOneFailureEvidenceFrame {
     pub(super) conclusion: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(super) struct AwakenedOneStartEvidence {
     pub(super) turn: u32,
     pub(super) player_hp: i32,
@@ -30,7 +41,7 @@ pub(super) struct AwakenedOneStartEvidence {
     pub(super) total_enemy_hp: i32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(super) struct AwakenedOneEvidenceClaim {
     pub(super) claim: &'static str,
     pub(super) status: &'static str,
@@ -55,19 +66,8 @@ pub(super) fn awakened_one_failure_evidence(
     case: &CombatCase,
     hp_probe: Option<&CounterfactualHpProbe>,
 ) -> Option<AwakenedOneFailureEvidenceFrame> {
-    if !is_awakened_one_case(&case.position.combat) {
-        return None;
-    }
-
-    let signals = AwakenedOneDeckSignals::from_combat(&case.position.combat);
-    let mut claims = vec![
-        damage_scaling_claim(&signals),
-        defensive_scaling_claim(&signals),
-        cultist_deadline_claim(&signals),
-        phase2_dark_echo_claim(&signals),
-        power_penalty_claim(&signals),
-        deck_clean_not_sufficient_claim(&signals),
-    ];
+    let static_audit = static_boss_matchup_audit_v0(case)?;
+    let mut claims = static_audit.claims.clone();
     if let Some(probe) = hp_probe {
         claims.push(full_hp_probe_claim(probe));
     } else {
@@ -86,11 +86,43 @@ pub(super) fn awakened_one_failure_evidence(
         schema: "awakened_one_failure_evidence_frame_v0",
         contract: "review_only_boss_plan_claims_with_support_counterevidence_unknown_no_runner_policy_change",
         boss: "AwakenedOne",
-        start: start_evidence(&case.position.combat, &signals),
+        start: static_audit.start,
         claims,
         conclusion,
         risk_tags,
     })
+}
+
+pub(super) fn static_boss_matchup_audit_v0(case: &CombatCase) -> Option<StaticBossMatchupAuditV0> {
+    if !is_awakened_one_case(&case.position.combat) {
+        return None;
+    }
+
+    let signals = AwakenedOneDeckSignals::from_combat(&case.position.combat);
+    let claims = awakened_one_static_claims(&signals);
+    let risk_tags = risk_tags(&claims);
+    let conclusion = conclusion_from_risk_tags(&risk_tags);
+    Some(StaticBossMatchupAuditV0 {
+        schema: "static_boss_matchup_audit_v0",
+        contract:
+            "shadow_static_boss_plan_claims_from_boss_deck_relic_potion_energy_no_combat_outcome",
+        boss: "AwakenedOne",
+        start: start_evidence(&case.position.combat, &signals),
+        claims,
+        risk_tags,
+        conclusion,
+    })
+}
+
+fn awakened_one_static_claims(signals: &AwakenedOneDeckSignals) -> Vec<AwakenedOneEvidenceClaim> {
+    vec![
+        damage_scaling_claim(signals),
+        defensive_scaling_claim(signals),
+        cultist_deadline_claim(signals),
+        phase2_dark_echo_claim(signals),
+        power_penalty_claim(signals),
+        deck_clean_not_sufficient_claim(signals),
+    ]
 }
 
 impl AwakenedOneDeckSignals {
