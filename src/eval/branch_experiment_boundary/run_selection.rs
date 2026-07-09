@@ -1,5 +1,5 @@
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanCandidateV1,
+    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1, DeckMutationPlanCandidateV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
@@ -34,9 +34,7 @@ pub(super) fn run_selection_branch_options(
     let decision = compile_deck_mutation_decision_v1(
         &session.run_state,
         choice,
-        DeckMutationCompilerModeV1::BranchTopK {
-            max_active: MAX_RUN_SELECTION_OPTIONS_PER_BRANCH,
-        },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(MAX_RUN_SELECTION_OPTIONS_PER_BRANCH),
     );
     let options = decision
         .branch_active_plans

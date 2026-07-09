@@ -586,7 +586,7 @@ pub(super) fn render_checkpoint_deck_mutation_v1(
     let decision = sts_simulator::ai::deck_mutation_compiler_v1::compile_deck_mutation_decision_v1(
         &session.run_state,
         choice,
-        sts_simulator::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::Inspect,
+        sts_simulator::ai::deck_mutation_compiler_v1::DeckMutationCompilerRequestV1::optional_inspect(),
     );
     Ok(
         sts_simulator::ai::deck_mutation_compiler_v1::render_compiled_deck_mutation_decision_v1(

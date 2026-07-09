@@ -1,5 +1,5 @@
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
+    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1, DeckMutationKindV1,
     DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
 };
 use crate::ai::noncombat_strategy_v1::{
@@ -92,9 +92,7 @@ fn deck_mutation_campfire_targets(
     let decision = compile_deck_mutation_decision_v1(
         run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK {
-            max_active: usize::MAX,
-        },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(usize::MAX),
     );
 
     decision

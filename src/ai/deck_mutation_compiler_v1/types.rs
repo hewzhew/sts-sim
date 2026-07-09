@@ -6,6 +6,8 @@ pub struct CompiledDeckMutationDecisionV1 {
     pub reason: RunPendingChoiceReason,
     pub min_choices: usize,
     pub max_choices: usize,
+    pub output: DeckMutationCompilerOutputV1,
+    pub commitment: DeckMutationCommitmentModeV1,
     pub selected_plan: Option<DeckMutationPlanCandidateV1>,
     pub branch_active_plans: Vec<DeckMutationPlanCandidateV1>,
     pub inspect_only_plans: Vec<DeckMutationPlanCandidateV1>,
@@ -15,10 +17,52 @@ pub struct CompiledDeckMutationDecisionV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DeckMutationCompilerModeV1 {
+pub struct DeckMutationCompilerRequestV1 {
+    pub output: DeckMutationCompilerOutputV1,
+    pub commitment: DeckMutationCommitmentModeV1,
+}
+
+impl DeckMutationCompilerRequestV1 {
+    pub fn optional_execute_one() -> Self {
+        Self {
+            output: DeckMutationCompilerOutputV1::ExecuteOne,
+            commitment: DeckMutationCommitmentModeV1::Optional,
+        }
+    }
+
+    pub fn committed_forced_execute_one() -> Self {
+        Self {
+            output: DeckMutationCompilerOutputV1::ExecuteOne,
+            commitment: DeckMutationCommitmentModeV1::CommittedForced,
+        }
+    }
+
+    pub fn optional_branch_top_k(max_active: usize) -> Self {
+        Self {
+            output: DeckMutationCompilerOutputV1::BranchTopK { max_active },
+            commitment: DeckMutationCommitmentModeV1::Optional,
+        }
+    }
+
+    pub fn optional_inspect() -> Self {
+        Self {
+            output: DeckMutationCompilerOutputV1::Inspect,
+            commitment: DeckMutationCommitmentModeV1::Optional,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeckMutationCompilerOutputV1 {
     ExecuteOne,
     BranchTopK { max_active: usize },
     Inspect,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeckMutationCommitmentModeV1 {
+    Optional,
+    CommittedForced,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

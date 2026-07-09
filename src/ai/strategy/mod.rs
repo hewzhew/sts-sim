@@ -14,7 +14,6 @@ pub mod decision_pipeline;
 pub mod deck_admission;
 pub mod deck_construction_pressure;
 pub mod deck_plan;
-pub mod deck_purge_target;
 pub mod deck_role_inventory;
 pub mod deck_strategic_deficit;
 pub mod exhaust_corruption_assessment;

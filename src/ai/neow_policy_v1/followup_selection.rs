@@ -1,5 +1,5 @@
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1,
+    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
 };
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::run::RunState;
@@ -29,27 +29,9 @@ pub fn neow_followup_selection_v1(
     let decision = compile_deck_mutation_decision_v1(
         run_state,
         choice,
-        DeckMutationCompilerModeV1::ExecuteOne,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
     );
-    let selected = decision.selected_plan.or_else(|| {
-        if matches!(
-            choice.reason,
-            RunPendingChoiceReason::Transform
-                | RunPendingChoiceReason::TransformNonBottled
-                | RunPendingChoiceReason::TransformUpgraded
-        ) {
-            compile_deck_mutation_decision_v1(
-                run_state,
-                choice,
-                DeckMutationCompilerModeV1::BranchTopK { max_active: 1 },
-            )
-            .branch_active_plans
-            .into_iter()
-            .next()
-        } else {
-            None
-        }
-    })?;
+    let selected = decision.selected_plan?;
     if selected.step.deck_indices.len() != choice.min_choices
         || selected.step.cards.len() != choice.min_choices
     {

@@ -3,7 +3,6 @@ use sts_simulator::eval::run_control::{
     RunControlSession,
 };
 use sts_simulator::state::core::{EngineState, RunResult};
-use sts_simulator::state::selection::DomainEventSource;
 
 use super::{BoundarySite, BranchStatus, Owner, TerminalOutcome};
 
@@ -108,14 +107,12 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),
         EngineState::Shop(_) => Some(Owner::ShopTiny),
         EngineState::Campfire => Some(Owner::Campfire),
-        EngineState::RunPendingChoice(choice) => match choice.source {
-            DomainEventSource::Event(
-                event_id @ (sts_simulator::state::events::EventId::Designer
-                | sts_simulator::state::events::EventId::LivingWall),
-            ) => Some(Owner::Event(event_id)),
-            _ if super::run_choice_owner::can_handle(choice.reason) => Some(Owner::RunChoice),
-            _ => None,
-        },
+        EngineState::RunPendingChoice(choice)
+            if super::run_choice_owner::can_handle(choice.reason) =>
+        {
+            Some(Owner::RunChoice)
+        }
+        EngineState::RunPendingChoice(_) => None,
         _ => None,
     }
 }

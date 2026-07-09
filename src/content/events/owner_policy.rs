@@ -1,8 +1,10 @@
+use crate::ai::deck_mutation_compiler_v1::{
+    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
+};
 use crate::ai::strategy::decision_pipeline::{
     evaluate_decision_candidate, DecisionCandidateKind, DecisionPipelineContext,
 };
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
-use crate::ai::strategy::deck_purge_target::{best_purge_uuid, rank_purge_target};
 use crate::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit_summary, StrategicBurdenLevel, StrategicDeficitLevel,
 };
@@ -10,21 +12,17 @@ use crate::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1,
 };
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
-use crate::content::cards::{
-    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId,
-};
+use crate::content::cards::{get_card_definition, is_starter_basic, is_starter_strike, CardId};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
     EventActionKind, EventCardKind, EventEffect, EventId, EventOptionSemantics,
-    EventOwnerPolicyKind,
+    EventOwnerPolicyKind, EventRelicKind,
 };
 use crate::state::run::RunState;
-use crate::state::selection::{
-    DomainEventSource, SelectionResolution, SelectionScope, SelectionTargetRef,
-};
+use crate::state::selection::{DomainEventSource, SelectionResolution, SelectionScope};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EventOwnerPolicyGap {
@@ -32,8 +30,6 @@ pub enum EventOwnerPolicyGap {
     MissingMarkedPolicy(EventId),
     AmbiguousMarkedPolicy { event_id: EventId, found: usize },
     MissingPendingPolicy(EventId),
-    UnsupportedDesignerSelection(RunPendingChoiceReason),
-    UnsupportedLivingWallSelection(RunPendingChoiceReason),
     EmptySelectionTargets,
 }
 
@@ -89,6 +85,9 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
         EventId::ForgottenAltar => return Ok(choose(forgotten_altar_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
+        EventId::Cleric => return Ok(choose(cleric_choice(run_state))),
+        EventId::GoldenIdol => return Ok(choose(golden_idol_choice(run_state))),
+        EventId::GoldenWing => return Ok(choose(golden_wing_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::MaskedBandits => return Ok(choose(masked_bandits_choice(run_state))),
         EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
@@ -108,6 +107,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
+        EventId::WorldOfGoop => return Ok(choose(world_of_goop_choice(run_state))),
         _ => {}
     }
     let marked_count = crate::engine::event_handler::get_event_options(run_state)
@@ -136,14 +136,10 @@ fn event_run_choice_policy_action(
     choice: &RunPendingChoiceState,
     run_state: &RunState,
 ) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    let DomainEventSource::Event(event_id) = choice.source else {
+    let DomainEventSource::Event(_event_id) = choice.source else {
         return Err(EventOwnerPolicyGap::MissingEventState);
     };
-    match event_id {
-        EventId::Designer => designer_selection(choice, run_state),
-        EventId::LivingWall => living_wall_selection(choice, run_state),
-        _ => Err(EventOwnerPolicyGap::MissingPendingPolicy(event_id)),
-    }
+    deck_mutation_selection(choice, run_state)
 }
 
 fn choose(selector: EventOwnerOptionSelector) -> EventOwnerAction {
@@ -277,6 +273,150 @@ fn living_wall_remove_effect() -> EventEffect {
         target_uuid: None,
         kind: EventCardKind::Unknown,
     }
+}
+
+fn world_of_goop_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if has_relic(run_state, RelicId::Ectoplasm) => action(EventActionKind::Leave),
+        0 if hp_after_loss_is_safe(run_state, event_hp_loss_estimate(run_state, 11)) => {
+            effect(EventEffect::GainGold(75))
+        }
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn golden_wing_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if hp_after_loss_is_safe(run_state, event_hp_loss_estimate(run_state, 7))
+            && has_safe_purge_target(run_state) =>
+        {
+            action(EventActionKind::DeckOperation)
+        }
+        0 if golden_wing_destroy_available(run_state)
+            && !has_relic(run_state, RelicId::Ectoplasm) =>
+        {
+            effect(EventEffect::GainGoldRange { min: 50, max: 80 })
+        }
+        0 => action(EventActionKind::Leave),
+        1 => action(EventActionKind::DeckOperation),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn golden_wing_destroy_available(run_state: &RunState) -> bool {
+    crate::engine::event_handler::get_event_options(run_state)
+        .into_iter()
+        .any(|option| {
+            !option.ui.disabled
+                && option
+                    .semantics
+                    .effects
+                    .contains(&EventEffect::GainGoldRange { min: 50, max: 80 })
+        })
+}
+
+fn cleric_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if cleric_should_heal_before_purify(run_state) => action(EventActionKind::Trade),
+        0 if cleric_can_purify(run_state) && has_safe_purge_target(run_state) => {
+            action(EventActionKind::DeckOperation)
+        }
+        0 if cleric_heal_has_real_value(run_state) => action(EventActionKind::Trade),
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn cleric_should_heal_before_purify(run_state: &RunState) -> bool {
+    run_state.gold >= 35
+        && cleric_heal_effective_amount(run_state) > 0
+        && !has_relic(run_state, RelicId::MarkOfTheBloom)
+        && run_state.current_hp * 100 <= run_state.max_hp * 35
+}
+
+fn cleric_heal_has_real_value(run_state: &RunState) -> bool {
+    run_state.gold >= 35
+        && cleric_heal_effective_amount(run_state) >= 8
+        && !has_relic(run_state, RelicId::MarkOfTheBloom)
+        && run_state.current_hp * 100 <= run_state.max_hp * 55
+}
+
+fn cleric_heal_effective_amount(run_state: &RunState) -> i32 {
+    let heal = (run_state.max_hp as f32 * 0.25) as i32;
+    (run_state.max_hp - run_state.current_hp).max(0).min(heal)
+}
+
+fn cleric_can_purify(run_state: &RunState) -> bool {
+    run_state.gold >= cleric_purify_cost(run_state)
+        && crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state)
+}
+
+fn cleric_purify_cost(run_state: &RunState) -> i32 {
+    if run_state.ascension_level >= 15 {
+        75
+    } else {
+        50
+    }
+}
+
+fn golden_idol_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if golden_idol_has_acceptable_payment(run_state) => effect(EventEffect::ObtainRelic {
+            count: 1,
+            kind: EventRelicKind::Specific(RelicId::GoldenIdol),
+        }),
+        0 => action(EventActionKind::Leave),
+        1 if has_omamori_charge(run_state) => effect(EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Specific(CardId::Injury),
+        }),
+        1 if golden_idol_hide_is_acceptable(run_state) => {
+            effect(EventEffect::LoseMaxHp(golden_idol_max_hp_loss(run_state)))
+        }
+        1 if hp_after_loss_is_safe(
+            run_state,
+            event_hp_loss_estimate(run_state, golden_idol_damage(run_state)),
+        ) =>
+        {
+            effect(EventEffect::LoseHp(golden_idol_damage(run_state)))
+        }
+        1 => effect(EventEffect::LoseMaxHp(golden_idol_max_hp_loss(run_state))),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn golden_idol_has_acceptable_payment(run_state: &RunState) -> bool {
+    has_omamori_charge(run_state)
+        || golden_idol_hide_is_acceptable(run_state)
+        || hp_after_loss_is_safe(
+            run_state,
+            event_hp_loss_estimate(run_state, golden_idol_damage(run_state)),
+        )
+}
+
+fn golden_idol_hide_is_acceptable(run_state: &RunState) -> bool {
+    run_state
+        .max_hp
+        .saturating_sub(golden_idol_max_hp_loss(run_state))
+        >= 50
+}
+
+fn golden_idol_damage(run_state: &RunState) -> i32 {
+    if run_state.ascension_level >= 15 {
+        (run_state.max_hp as f32 * 0.35) as i32
+    } else {
+        (run_state.max_hp as f32 * 0.25) as i32
+    }
+}
+
+fn golden_idol_max_hp_loss(run_state: &RunState) -> i32 {
+    let loss = if run_state.ascension_level >= 15 {
+        (run_state.max_hp as f32 * 0.10) as i32
+    } else {
+        (run_state.max_hp as f32 * 0.08) as i32
+    };
+    loss.max(1)
 }
 
 fn transmorgrifier_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
@@ -682,7 +822,10 @@ fn designer_choice(run_state: &RunState) -> EventOwnerOptionSelector {
 fn designer_service_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     let asc = run_state.ascension_level;
     let has_remove = designer_has_clear_remove_target(run_state);
-    let has_upgrade = best_upgrade_uuid(run_state, &designer_upgrade_targets(run_state)).is_some();
+    let has_upgrade = run_state
+        .master_deck
+        .iter()
+        .any(crate::state::core::master_deck_card_can_upgrade);
     if run_state.gold >= designer_full_service_cost(asc) && has_remove {
         return option_index(2);
     }
@@ -698,39 +841,34 @@ fn designer_service_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     option_index(3)
 }
 
-fn designer_selection(
+fn deck_mutation_selection(
     choice: &RunPendingChoiceState,
     run_state: &RunState,
 ) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    let request = choice.selection_request(run_state);
-    let uuid = match choice.reason {
-        RunPendingChoiceReason::PurgeNonBottled => best_purge_uuid(run_state, &request.targets),
-        RunPendingChoiceReason::Upgrade => best_upgrade_uuid(run_state, &request.targets),
-        reason => return Err(EventOwnerPolicyGap::UnsupportedDesignerSelection(reason)),
+    let decision = compile_deck_mutation_decision_v1(
+        run_state,
+        choice,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+    let plan = decision
+        .selected_plan
+        .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
+    let uuids = plan
+        .step
+        .cards
+        .iter()
+        .map(|card| card.uuid)
+        .collect::<Vec<_>>();
+    if uuids.len() != choice.max_choices {
+        return Err(EventOwnerPolicyGap::EmptySelectionTargets);
     }
-    .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
     Ok(EventOwnerAction::SubmitSelection(
-        SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
+        SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
     ))
 }
 
 fn designer_has_clear_remove_target(run_state: &RunState) -> bool {
-    run_state.master_deck.iter().any(|card| {
-        crate::state::core::run_pending_choice_allows_card_for_run(
-            &RunPendingChoiceReason::PurgeNonBottled,
-            card,
-            run_state,
-        ) && rank_purge_target(card) <= 4
-    })
-}
-
-fn designer_upgrade_targets(run_state: &RunState) -> Vec<SelectionTargetRef> {
-    run_state
-        .master_deck
-        .iter()
-        .filter(|card| crate::state::core::master_deck_card_can_upgrade(card))
-        .map(|card| SelectionTargetRef::CardUuid(card.uuid))
-        .collect()
+    has_safe_purge_target(run_state)
 }
 
 fn designer_adjust_cost(asc: u8) -> i32 {
@@ -907,73 +1045,6 @@ fn curse_count(run_state: &RunState) -> usize {
         .count()
 }
 
-fn living_wall_selection(
-    choice: &RunPendingChoiceState,
-    run_state: &RunState,
-) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    let request = choice.selection_request(run_state);
-    let uuid = match choice.reason {
-        RunPendingChoiceReason::PurgeNonBottled => best_purge_uuid(run_state, &request.targets),
-        RunPendingChoiceReason::TransformNonBottled => {
-            pick_target_uuid(run_state, &request.targets, transform_rank)
-        }
-        RunPendingChoiceReason::Upgrade => best_upgrade_uuid(run_state, &request.targets),
-        reason => return Err(EventOwnerPolicyGap::UnsupportedLivingWallSelection(reason)),
-    }
-    .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
-    Ok(EventOwnerAction::SubmitSelection(
-        SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
-    ))
-}
-
-fn best_upgrade_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
-    crate::ai::strategy::campfire_upgrade_quality::rank_campfire_upgrades(&run_state.master_deck)
-        .into_iter()
-        .find_map(|target| {
-            let uuid = run_state.master_deck.get(target.deck_index)?.uuid;
-            targets
-                .iter()
-                .any(|target| target.card_uuid() == uuid)
-                .then_some(uuid)
-        })
-        .or_else(|| pick_target_uuid(run_state, targets, |_| 0))
-}
-
-fn pick_target_uuid(
-    run_state: &RunState,
-    targets: &[SelectionTargetRef],
-    rank: fn(&CombatCard) -> u8,
-) -> Option<u32> {
-    targets
-        .iter()
-        .filter_map(|target| {
-            let uuid = target.card_uuid();
-            let card = run_state
-                .master_deck
-                .iter()
-                .find(|card| card.uuid == uuid)?;
-            Some((rank(card), uuid))
-        })
-        .min_by_key(|(rank, _)| *rank)
-        .map(|(_, uuid)| uuid)
-}
-
-fn transform_rank(card: &CombatCard) -> u8 {
-    if card.id == crate::content::cards::CardId::Parasite {
-        0
-    } else if is_starter_strike(card.id) {
-        1
-    } else if is_starter_defend(card.id) {
-        2
-    } else if is_starter_basic(card.id) {
-        3
-    } else if is_non_parasite_curse(card) {
-        4
-    } else {
-        5
-    }
-}
-
 fn has_bad_purge_target(run_state: &RunState) -> bool {
     legal_purge_targets(run_state)
         .into_iter()
@@ -981,9 +1052,24 @@ fn has_bad_purge_target(run_state: &RunState) -> bool {
 }
 
 fn has_safe_purge_target(run_state: &RunState) -> bool {
-    legal_purge_targets(run_state)
-        .into_iter()
-        .any(|card| rank_purge_target(card) <= 4)
+    let choice = single_deck_mutation_choice(RunPendingChoiceReason::PurgeNonBottled);
+    compile_deck_mutation_decision_v1(
+        run_state,
+        &choice,
+        DeckMutationCompilerRequestV1::optional_execute_one(),
+    )
+    .selected_plan
+    .is_some()
+}
+
+fn single_deck_mutation_choice(reason: RunPendingChoiceReason) -> RunPendingChoiceState {
+    RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason,
+        source: DomainEventSource::Selection(reason.into()),
+        return_state: Box::new(EngineState::EventRoom),
+    }
 }
 
 fn legal_purge_targets(run_state: &RunState) -> Vec<&CombatCard> {
@@ -1122,6 +1208,112 @@ mod tests {
             EventOwnerOptionSelector::Effect(EventEffect::ObtainCurse {
                 count: 1,
                 kind: EventCardKind::Specific(CardId::Decay),
+            })
+        );
+    }
+
+    fn event_run(event_id: EventId, current_hp: i32, max_hp: i32, gold: i32) -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.current_hp = current_hp;
+        run_state.max_hp = max_hp;
+        run_state.gold = gold;
+        run_state.event_state = Some(EventState::new(event_id));
+        run_state
+    }
+
+    #[test]
+    fn world_of_goop_gathers_gold_when_hp_loss_is_safe() {
+        let run_state = event_run(EventId::WorldOfGoop, 80, 80, 0);
+
+        assert_eq!(
+            world_of_goop_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::GainGold(75))
+        );
+    }
+
+    #[test]
+    fn world_of_goop_leaves_when_hp_loss_is_unsafe() {
+        let run_state = event_run(EventId::WorldOfGoop, 20, 80, 100);
+
+        assert_eq!(
+            world_of_goop_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Leave)
+        );
+    }
+
+    #[test]
+    fn golden_wing_prays_when_hp_and_remove_target_are_safe() {
+        let run_state = event_run(EventId::GoldenWing, 80, 80, 0);
+
+        assert_eq!(
+            golden_wing_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::DeckOperation)
+        );
+    }
+
+    #[test]
+    fn golden_wing_destroys_when_remove_hp_is_unsafe_but_attack_is_available() {
+        let mut run_state = event_run(EventId::GoldenWing, 20, 80, 0);
+        let mut pommel = CombatCard::new(CardId::PommelStrike, 99);
+        pommel.upgrades = 1;
+        run_state.master_deck.push(pommel);
+
+        assert_eq!(
+            golden_wing_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::GainGoldRange { min: 50, max: 80 })
+        );
+    }
+
+    #[test]
+    fn cleric_purifies_when_hp_is_safe_and_remove_target_exists() {
+        let run_state = event_run(EventId::Cleric, 70, 80, 50);
+
+        assert_eq!(
+            cleric_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::DeckOperation)
+        );
+    }
+
+    #[test]
+    fn cleric_heals_before_purify_when_hp_is_dangerous() {
+        let run_state = event_run(EventId::Cleric, 20, 80, 100);
+
+        assert_eq!(
+            cleric_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Trade)
+        );
+    }
+
+    #[test]
+    fn golden_idol_takes_idol_and_defaults_to_hide_payment() {
+        let mut run_state = event_run(EventId::GoldenIdol, 80, 80, 0);
+
+        assert_eq!(
+            golden_idol_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::Specific(RelicId::GoldenIdol),
+            })
+        );
+
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        assert_eq!(
+            golden_idol_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::LoseMaxHp(6))
+        );
+    }
+
+    #[test]
+    fn golden_idol_uses_omamori_to_block_injury_payment() {
+        let mut run_state = event_run(EventId::GoldenIdol, 80, 80, 0);
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+
+        assert_eq!(
+            golden_idol_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Injury),
             })
         );
     }

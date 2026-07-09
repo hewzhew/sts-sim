@@ -1,8 +1,8 @@
 use crate::ai::deck_mutation_compiler_v1::{
     best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
-    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
-    DeckMutationTargetLossTierV1, DuplicateTargetRoleV1, TransformRandomAdditionBandV1,
-    TransformVarianceRiskV1,
+    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
+    DeckMutationPlanRoleV1, DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
+    TransformRandomAdditionBandV1, TransformVarianceRiskV1,
 };
 use crate::ai::upgrade_planner_v1::{
     upgrade_candidate_for_deck_index_v1, upgrade_candidate_score_hint_v1,
@@ -23,7 +23,7 @@ fn compiler_marks_functional_purge_inspect_only_when_low_value_targets_exist() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
 
     assert!(decision.inspect_only_plans.iter().any(|plan| plan
@@ -46,7 +46,7 @@ fn compiler_keeps_low_value_purge_targets_branch_active() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
 
     let commands = decision
@@ -73,7 +73,7 @@ fn compiler_execute_one_selects_evaluated_executable_plan() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::ExecuteOne,
+        DeckMutationCompilerRequestV1::optional_execute_one(),
     );
     let selected = decision.selected_plan.expect("selected plan");
 
@@ -93,7 +93,7 @@ fn transform_compiler_keeps_low_value_targets_branchable_without_autopilot_execu
     let branch_decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
 
     let strike_transform = branch_decision
@@ -120,12 +120,37 @@ fn transform_compiler_keeps_low_value_targets_branchable_without_autopilot_execu
     let execute_decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::ExecuteOne,
+        DeckMutationCompilerRequestV1::optional_execute_one(),
     );
     assert!(
         execute_decision.selected_plan.is_none(),
         "transform is a random deck mutation and should not share purge's autopilot gate"
     );
+}
+
+#[test]
+fn committed_forced_transform_selects_least_bad_legal_target() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let choice = choice(RunPendingChoiceReason::TransformNonBottled, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+    let selected = decision
+        .selected_plan
+        .expect("committed forced transform should select a legal target");
+
+    assert_eq!(selected.step.cards[0].card, CardId::Strike);
+    assert!(selected
+        .reasons
+        .iter()
+        .any(|reason| reason == "commitment_mode=CommittedForced"));
+    assert!(selected
+        .risks
+        .iter()
+        .any(|risk| risk == "committed_forced_selected_non_autopilot_target"));
 }
 
 #[test]
@@ -137,7 +162,7 @@ fn transform_compiler_marks_functional_targets_as_high_variance() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
     let true_grit = decision
         .candidate_plans
@@ -173,7 +198,7 @@ fn compiler_render_exposes_active_and_inspect_only_plan_groups() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
 
     let rendered = render_compiled_deck_mutation_decision_v1(&decision);
@@ -203,7 +228,7 @@ fn compiler_exposes_target_loss_for_functional_mutation_targets() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 16 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(16),
     );
 
     let burning_pact = decision
@@ -248,7 +273,7 @@ fn upgrade_compiler_scores_targets_from_upgrade_planner() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(12),
     );
     let bash_plan = decision
         .candidate_plans
@@ -300,7 +325,7 @@ fn duplicate_compiler_exposes_target_role_evidence() {
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 4 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(4),
     );
     let offering = decision
         .branch_active_plans
@@ -336,7 +361,7 @@ fn bottle_flame_compiler_does_not_rank_starter_strike_above_real_opening_target(
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 3 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(3),
     );
 
     let first = decision
@@ -359,7 +384,7 @@ fn bottle_compiler_keeps_best_bad_target_branchable_when_no_clean_target_exists(
     let decision = compile_deck_mutation_decision_v1(
         &run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK { max_active: 3 },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(3),
     );
 
     assert!(

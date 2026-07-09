@@ -5,7 +5,7 @@ use super::card_reward::{
 use super::BranchBoundaryActionV1;
 use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, compile_direct_deck_mutation_plan_candidate_v1,
-    deck_mutation_target_class_for_card_v1, DeckMutationCompilerModeV1,
+    deck_mutation_target_class_for_card_v1, DeckMutationCompilerRequestV1,
     DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
 };
 use crate::ai::event_policy_v1::{
@@ -414,9 +414,7 @@ fn expand_open_selection_deck_mutation_event_option(
     let decision = compile_deck_mutation_decision_v1(
         &session.run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK {
-            max_active: max_expanded_options,
-        },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(max_expanded_options),
     );
     let expanded = decision
         .branch_active_plans

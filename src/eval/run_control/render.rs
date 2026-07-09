@@ -132,7 +132,7 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
             let decision = crate::ai::deck_mutation_compiler_v1::compile_deck_mutation_decision_v1(
                 &session.run_state,
                 choice,
-                crate::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::Inspect,
+                crate::ai::deck_mutation_compiler_v1::DeckMutationCompilerRequestV1::optional_inspect(),
             );
             push_line(&mut out, "");
             out.push_str(

@@ -15,12 +15,12 @@ use crate::state::run::RunState;
 
 use super::types::{
     AllowedDeckMutationConsumersV1, CompiledDeckMutationDecisionV1, DeckMutationCardSnapshotV1,
-    DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationOpeningHandDebtTierV1,
-    DeckMutationOpeningHandProfileV1, DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
-    DeckMutationPlanStepV1, DeckMutationTargetClassV1, DeckMutationTargetLossTierV1,
-    DeckMutationTargetLossV1, DeckMutationTransformProfileV1, DuplicateStackBehaviorV1,
-    DuplicateTargetEvaluationV1, DuplicateTargetRoleV1, TransformRandomAdditionBandV1,
-    TransformVarianceRiskV1,
+    DeckMutationCommitmentModeV1, DeckMutationCompilerOutputV1, DeckMutationCompilerRequestV1,
+    DeckMutationKindV1, DeckMutationOpeningHandDebtTierV1, DeckMutationOpeningHandProfileV1,
+    DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1, DeckMutationPlanStepV1,
+    DeckMutationTargetClassV1, DeckMutationTargetLossTierV1, DeckMutationTargetLossV1,
+    DeckMutationTransformProfileV1, DuplicateStackBehaviorV1, DuplicateTargetEvaluationV1,
+    DuplicateTargetRoleV1, TransformRandomAdditionBandV1, TransformVarianceRiskV1,
 };
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
@@ -50,10 +50,10 @@ struct GroupCountCombination {
 pub fn compile_deck_mutation_decision_v1(
     run_state: &RunState,
     choice: &RunPendingChoiceState,
-    mode: DeckMutationCompilerModeV1,
+    request: DeckMutationCompilerRequestV1,
 ) -> CompiledDeckMutationDecisionV1 {
     let targets = exact_targets(run_state, choice);
-    let mut candidate_plans = plan_candidates(choice, &targets, mode);
+    let mut candidate_plans = plan_candidates(choice, &targets, request.output);
 
     let low_value_available = targets
         .iter()
@@ -81,12 +81,9 @@ pub fn compile_deck_mutation_decision_v1(
     }
     candidate_plans.sort_by(compare_deck_mutation_candidates_v1);
 
-    let selected_plan = candidate_plans
-        .iter()
-        .find(|candidate| candidate.allowed_consumers.execute_autopilot)
-        .cloned();
-    let branch_limit = match mode {
-        DeckMutationCompilerModeV1::BranchTopK { max_active } => max_active,
+    let selected_plan = selected_plan_for_commitment(request.commitment, &candidate_plans);
+    let branch_limit = match request.output {
+        DeckMutationCompilerOutputV1::BranchTopK { max_active } => max_active,
         _ => usize::MAX,
     };
     let branch_active_plans = candidate_plans
@@ -110,12 +107,49 @@ pub fn compile_deck_mutation_decision_v1(
         reason: choice.reason,
         min_choices: choice.min_choices,
         max_choices: choice.max_choices,
+        output: request.output,
+        commitment: request.commitment,
         selected_plan,
         branch_active_plans,
         inspect_only_plans,
         blocked_plans,
         candidate_plans,
         label_role: "behavior_policy_not_teacher",
+    }
+}
+
+fn selected_plan_for_commitment(
+    commitment: DeckMutationCommitmentModeV1,
+    candidate_plans: &[DeckMutationPlanCandidateV1],
+) -> Option<DeckMutationPlanCandidateV1> {
+    match commitment {
+        DeckMutationCommitmentModeV1::Optional => candidate_plans
+            .iter()
+            .find(|candidate| candidate.allowed_consumers.execute_autopilot)
+            .cloned(),
+        DeckMutationCommitmentModeV1::CommittedForced => candidate_plans
+            .iter()
+            .find(|candidate| candidate.role != DeckMutationPlanRoleV1::Blocked)
+            .cloned()
+            .map(|mut candidate| {
+                candidate
+                    .reasons
+                    .push("commitment_mode=CommittedForced".to_string());
+                if !candidate.allowed_consumers.execute_autopilot {
+                    candidate
+                        .risks
+                        .push("committed_forced_selected_non_autopilot_target".to_string());
+                }
+                if matches!(
+                    candidate.role,
+                    DeckMutationPlanRoleV1::RiskyExploration | DeckMutationPlanRoleV1::InspectOnly
+                ) {
+                    candidate.risks.push(
+                        "committed_forced_least_bad_protected_or_functional_target".to_string(),
+                    );
+                }
+                candidate
+            }),
     }
 }
 
@@ -262,7 +296,7 @@ fn exact_target_for_deck_index(
 fn plan_candidates(
     choice: &RunPendingChoiceState,
     targets: &[ExactTarget],
-    mode: DeckMutationCompilerModeV1,
+    output: DeckMutationCompilerOutputV1,
 ) -> Vec<DeckMutationPlanCandidateV1> {
     if choice.min_choices == 0 || choice.min_choices != choice.max_choices {
         return Vec::new();
@@ -277,8 +311,8 @@ fn plan_candidates(
                     .cmp(&left.score_hint)
                     .then_with(|| left.step.command.cmp(&right.step.command))
             });
-            let limit = match mode {
-                DeckMutationCompilerModeV1::BranchTopK { max_active } => {
+            let limit = match output {
+                DeckMutationCompilerOutputV1::BranchTopK { max_active } => {
                     max_active.min(MAX_DUPLICATE_OPTIONS_PER_BRANCH)
                 }
                 _ => candidates.len(),
@@ -292,8 +326,8 @@ fn plan_candidates(
     compressed_multi_candidates(
         choice,
         targets,
-        match mode {
-            DeckMutationCompilerModeV1::BranchTopK { max_active } => max_active,
+        match output {
+            DeckMutationCompilerOutputV1::BranchTopK { max_active } => max_active,
             _ => usize::MAX,
         },
     )

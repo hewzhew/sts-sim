@@ -13,7 +13,7 @@ use super::types::{
 };
 use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
+    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1, DeckMutationKindV1,
     DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1, DeckMutationTargetClassV1,
 };
 use crate::ai::upgrade_planner_v1::{plan_upgrades_v1, UpgradeSlotPressureV1};
@@ -407,9 +407,7 @@ fn shop_purge_candidates_from_deck_mutation_compiler_v1(
     let decision = compile_deck_mutation_decision_v1(
         run_state,
         &choice,
-        DeckMutationCompilerModeV1::BranchTopK {
-            max_active: usize::MAX,
-        },
+        DeckMutationCompilerRequestV1::optional_branch_top_k(usize::MAX),
     );
 
     decision

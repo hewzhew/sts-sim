@@ -12,9 +12,10 @@ pub use compiler::{
 pub use render::render_compiled_deck_mutation_decision_v1;
 pub use types::{
     AllowedDeckMutationConsumersV1, CompiledDeckMutationDecisionV1, DeckMutationCardSnapshotV1,
-    DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationPlanCandidateV1,
-    DeckMutationPlanRoleV1, DeckMutationPlanStepV1, DeckMutationTargetClassV1,
-    DeckMutationTargetLossTierV1, DeckMutationTargetLossV1, DeckMutationTransformProfileV1,
-    DuplicateStackBehaviorV1, DuplicateTargetEvaluationV1, DuplicateTargetRoleV1,
-    TransformRandomAdditionBandV1, TransformVarianceRiskV1,
+    DeckMutationCommitmentModeV1, DeckMutationCompilerOutputV1, DeckMutationCompilerRequestV1,
+    DeckMutationKindV1, DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
+    DeckMutationPlanStepV1, DeckMutationTargetClassV1, DeckMutationTargetLossTierV1,
+    DeckMutationTargetLossV1, DeckMutationTransformProfileV1, DuplicateStackBehaviorV1,
+    DuplicateTargetEvaluationV1, DuplicateTargetRoleV1, TransformRandomAdditionBandV1,
+    TransformVarianceRiskV1,
 };
