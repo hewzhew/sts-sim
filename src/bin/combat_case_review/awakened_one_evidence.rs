@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sts_simulator::content::cards::{self, CardId};
 use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_simulator::eval::combat_case::{CombatCase, CombatCasePathStep};
 use sts_simulator::runtime::combat::{CombatCard, CombatState};
 
 use super::counterfactual_hp::CounterfactualHpProbe;
@@ -15,6 +15,48 @@ pub(crate) struct StaticBossMatchupAuditV0 {
     pub(super) claims: Vec<AwakenedOneEvidenceClaim>,
     pub(super) risk_tags: Vec<&'static str>,
     pub(super) conclusion: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct AwakenedOnePathAuditV0 {
+    pub(super) schema: &'static str,
+    pub(super) contract: &'static str,
+    pub(super) boss: &'static str,
+    pub(super) first_known_boss_alarm: Option<AwakenedOnePathAlarm>,
+    pub(super) first_retrospective_alarm: Option<AwakenedOnePathAlarm>,
+    pub(super) steps: Vec<AwakenedOnePathAuditStep>,
+}
+
+#[derive(Clone, Serialize)]
+pub(super) struct AwakenedOnePathAlarm {
+    pub(super) path_index: usize,
+    pub(super) label: String,
+    pub(super) previous_label: Option<String>,
+    pub(super) state_point: &'static str,
+    pub(super) act: u8,
+    pub(super) floor: i32,
+    pub(super) hp: i32,
+    pub(super) max_hp: i32,
+    pub(super) deck_size: usize,
+    pub(super) risk_tags: Vec<&'static str>,
+    pub(super) conclusion: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+pub(super) struct AwakenedOnePathAuditStep {
+    pub(super) path_index: usize,
+    pub(super) label: String,
+    pub(super) previous_label: Option<String>,
+    pub(super) state_point: &'static str,
+    pub(super) act: u8,
+    pub(super) floor: i32,
+    pub(super) hp: i32,
+    pub(super) max_hp: i32,
+    pub(super) deck_size: usize,
+    pub(super) deck: Vec<String>,
+    pub(super) risk_tags: Vec<&'static str>,
+    pub(super) conclusion: &'static str,
+    pub(super) known_boss_policy_scope: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -62,6 +104,25 @@ struct AwakenedOneDeckSignals {
     curses: Vec<CombatCard>,
 }
 
+#[derive(Deserialize)]
+struct PathStateSnapshot {
+    act: u8,
+    floor: i32,
+    hp: i32,
+    max_hp: i32,
+    deck_size: usize,
+    #[serde(default)]
+    deck: Vec<PathCardSnapshot>,
+}
+
+#[derive(Deserialize)]
+struct PathCardSnapshot {
+    id: CardId,
+    uuid: u32,
+    #[serde(default)]
+    upgrades: u8,
+}
+
 pub(super) fn awakened_one_failure_evidence(
     case: &CombatCase,
     hp_probe: Option<&CounterfactualHpProbe>,
@@ -93,6 +154,44 @@ pub(super) fn awakened_one_failure_evidence(
     })
 }
 
+pub(super) fn awakened_one_path_audit_v0(case: &CombatCase) -> Option<AwakenedOnePathAuditV0> {
+    if !is_awakened_one_case(&case.position.combat) {
+        return None;
+    }
+
+    let mut steps = Vec::new();
+    for (path_index, step) in case.path.iter().enumerate() {
+        let previous_label = path_index
+            .checked_sub(1)
+            .and_then(|previous| case.path.get(previous))
+            .map(|previous| previous.label.clone());
+        if let Some(audit_step) = path_audit_step(path_index, previous_label, step) {
+            steps.push(audit_step);
+        }
+    }
+    if steps.is_empty() {
+        return None;
+    }
+
+    let first_known_boss_alarm = steps
+        .iter()
+        .find(|step| step.known_boss_policy_scope && is_alarm_step(step))
+        .map(path_alarm_from_step);
+    let first_retrospective_alarm = steps
+        .iter()
+        .find(|step| is_retrospective_alarm_step(step))
+        .map(path_alarm_from_step);
+
+    Some(AwakenedOnePathAuditV0 {
+        schema: "awakened_one_path_audit_v0",
+        contract: "review_only_replay_of_static_boss_plan_claims_on_recorded_path_states_no_runner_policy_change",
+        boss: "AwakenedOne",
+        first_known_boss_alarm,
+        first_retrospective_alarm,
+        steps,
+    })
+}
+
 pub(super) fn static_boss_matchup_audit_v0(case: &CombatCase) -> Option<StaticBossMatchupAuditV0> {
     if !is_awakened_one_case(&case.position.combat) {
         return None;
@@ -114,6 +213,82 @@ pub(super) fn static_boss_matchup_audit_v0(case: &CombatCase) -> Option<StaticBo
     })
 }
 
+fn path_audit_step(
+    path_index: usize,
+    previous_label: Option<String>,
+    step: &CombatCasePathStep,
+) -> Option<AwakenedOnePathAuditStep> {
+    let state = step.state_before.as_ref()?;
+    let snapshot: PathStateSnapshot = serde_json::from_value(state.clone()).ok()?;
+    if snapshot.deck.is_empty() {
+        return None;
+    }
+    let signals = AwakenedOneDeckSignals::from_deck(path_deck_to_combat_cards(&snapshot.deck));
+    let claims = awakened_one_static_claims(&signals);
+    let risk_tags = risk_tags(&claims);
+    let conclusion = conclusion_from_risk_tags(&risk_tags);
+    Some(AwakenedOnePathAuditStep {
+        path_index,
+        label: step.label.clone(),
+        previous_label,
+        state_point: "before_decision",
+        act: snapshot.act,
+        floor: snapshot.floor,
+        hp: snapshot.hp,
+        max_hp: snapshot.max_hp,
+        deck_size: snapshot.deck_size,
+        deck: card_labels(&signals.deck),
+        risk_tags,
+        conclusion,
+        known_boss_policy_scope: snapshot.act >= 3,
+    })
+}
+
+fn path_deck_to_combat_cards(cards: &[PathCardSnapshot]) -> Vec<CombatCard> {
+    cards
+        .iter()
+        .map(|card| {
+            let mut combat_card = CombatCard::new(card.id, card.uuid);
+            combat_card.upgrades = card.upgrades;
+            combat_card
+        })
+        .collect()
+}
+
+fn is_alarm_step(step: &AwakenedOnePathAuditStep) -> bool {
+    step.risk_tags
+        .iter()
+        .any(|tag| *tag == "missing_defensive_scaling_or_mitigation")
+        && step
+            .risk_tags
+            .iter()
+            .any(|tag| *tag == "phase2_dark_echo_plan_missing")
+}
+
+fn is_retrospective_alarm_step(step: &AwakenedOnePathAuditStep) -> bool {
+    is_alarm_step(step)
+        && step.risk_tags.iter().any(|tag| {
+            *tag == "single_slow_damage_scaling_source"
+                || *tag == "awakened_one_power_penalty_exposure"
+        })
+}
+
+fn path_alarm_from_step(step: &AwakenedOnePathAuditStep) -> AwakenedOnePathAlarm {
+    AwakenedOnePathAlarm {
+        path_index: step.path_index,
+        label: step.label.clone(),
+        previous_label: step.previous_label.clone(),
+        state_point: step.state_point,
+        act: step.act,
+        floor: step.floor,
+        hp: step.hp,
+        max_hp: step.max_hp,
+        deck_size: step.deck_size,
+        risk_tags: step.risk_tags.clone(),
+        conclusion: step.conclusion,
+    }
+}
+
 fn awakened_one_static_claims(signals: &AwakenedOneDeckSignals) -> Vec<AwakenedOneEvidenceClaim> {
     vec![
         damage_scaling_claim(signals),
@@ -126,6 +301,15 @@ fn awakened_one_static_claims(signals: &AwakenedOneDeckSignals) -> Vec<AwakenedO
 }
 
 impl AwakenedOneDeckSignals {
+    fn from_deck(deck: Vec<CombatCard>) -> Self {
+        let mut signals = Self {
+            deck,
+            ..Default::default()
+        };
+        signals.collect_signals();
+        signals
+    }
+
     fn from_combat(combat: &CombatState) -> Self {
         let deck = if combat.meta.master_deck_snapshot.is_empty() {
             combat
@@ -140,34 +324,33 @@ impl AwakenedOneDeckSignals {
         } else {
             combat.meta.master_deck_snapshot.clone()
         };
-        let mut signals = Self {
-            deck,
-            ..Default::default()
-        };
-        for card in &signals.deck {
+        Self::from_deck(deck)
+    }
+
+    fn collect_signals(&mut self) {
+        for card in &self.deck {
             if is_power(card.id) {
-                signals.powers.push(card.clone());
+                self.powers.push(card.clone());
             }
             if is_damage_scaling(card.id) {
-                signals.damage_scaling.push(card.clone());
+                self.damage_scaling.push(card.clone());
             }
             if is_defensive_scaling_or_mitigation(card.id) {
-                signals.defensive_scaling_or_mitigation.push(card.clone());
+                self.defensive_scaling_or_mitigation.push(card.clone());
             }
             if is_big_block(card.id) {
-                signals.big_block.push(card.clone());
+                self.big_block.push(card.clone());
             }
             if is_aoe(card.id) {
-                signals.aoe.push(card.clone());
+                self.aoe.push(card.clone());
             }
             if is_access(card.id) {
-                signals.access.push(card.clone());
+                self.access.push(card.clone());
             }
             if is_curse(card.id) {
-                signals.curses.push(card.clone());
+                self.curses.push(card.clone());
             }
         }
-        signals
     }
 }
 
@@ -600,6 +783,24 @@ mod tests {
         }
     }
 
+    fn path_step_with_tags(tags: Vec<&'static str>) -> AwakenedOnePathAuditStep {
+        AwakenedOnePathAuditStep {
+            path_index: 0,
+            label: "test".to_string(),
+            previous_label: None,
+            state_point: "before_decision",
+            act: 2,
+            floor: 26,
+            hp: 47,
+            max_hp: 99,
+            deck_size: 17,
+            deck: Vec::new(),
+            risk_tags: tags,
+            conclusion: "boss_plan_thin_with_missing_survival_plan",
+            known_boss_policy_scope: false,
+        }
+    }
+
     #[test]
     fn full_hp_risk_requires_counterfactual_hp_evidence() {
         let tags = risk_tags(&[
@@ -639,5 +840,23 @@ mod tests {
             conclusion_from_risk_tags(&tags),
             "likely_boss_plan_insufficient_not_low_hp_only"
         );
+    }
+
+    #[test]
+    fn retrospective_path_alarm_requires_scaling_context() {
+        let starter_only = path_step_with_tags(vec![
+            "cultist_cleanup_deadline_uncertain",
+            "missing_defensive_scaling_or_mitigation",
+            "phase2_dark_echo_plan_missing",
+        ]);
+        assert!(!is_retrospective_alarm_step(&starter_only));
+
+        let slow_scaling = path_step_with_tags(vec![
+            "cultist_cleanup_deadline_uncertain",
+            "missing_defensive_scaling_or_mitigation",
+            "phase2_dark_echo_plan_missing",
+            "single_slow_damage_scaling_source",
+        ]);
+        assert!(is_retrospective_alarm_step(&slow_scaling));
     }
 }
