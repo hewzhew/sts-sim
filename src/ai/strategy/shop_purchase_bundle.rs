@@ -8,6 +8,8 @@ use crate::content::relics::RelicId;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ShopGoldOpportunity {
     pub current_gold: i32,
+    pub current_hp: i32,
+    pub max_hp: i32,
     pub active_maw_bank: bool,
     pub future_rooms_before_next_shop: u8,
     pub hard_checkpoint_imminent: bool,
@@ -119,7 +121,7 @@ fn bundle_facts(
             ShopPurchaseBundleKind::BuyOneRelic,
             price,
             false,
-            false,
+            is_hard_survival_relic(opportunity, relic),
             opportunity.hard_checkpoint_imminent
                 && opportunity.boss_answer_needed
                 && is_boss_answer_relic(relic),
@@ -267,6 +269,19 @@ fn is_hard_survival_potion(potion: PotionId) -> bool {
     )
 }
 
+fn is_hard_survival_relic(opportunity: ShopGoldOpportunity, relic: RelicId) -> bool {
+    match relic {
+        RelicId::Waffle => {
+            opportunity.survival_purchase_needed || low_hp_for_full_heal_relic(opportunity)
+        }
+        _ => false,
+    }
+}
+
+fn low_hp_for_full_heal_relic(opportunity: ShopGoldOpportunity) -> bool {
+    opportunity.max_hp > 0 && opportunity.current_hp * 2 <= opportunity.max_hp
+}
+
 fn is_boss_answer_relic(relic: RelicId) -> bool {
     matches!(
         relic,
@@ -325,6 +340,8 @@ mod tests {
     fn maw_bank_opportunity(gold: i32) -> ShopGoldOpportunity {
         ShopGoldOpportunity {
             current_gold: gold,
+            current_hp: 70,
+            max_hp: 80,
             active_maw_bank: true,
             future_rooms_before_next_shop: 5,
             hard_checkpoint_imminent: false,
@@ -335,6 +352,8 @@ mod tests {
 
     fn maw_bank_survival_opportunity(gold: i32) -> ShopGoldOpportunity {
         ShopGoldOpportunity {
+            current_hp: 41,
+            max_hp: 85,
             survival_purchase_needed: true,
             ..maw_bank_opportunity(gold)
         }
@@ -416,6 +435,58 @@ mod tests {
                 < shop_purchase_bundle_order_key(&leave_bundle),
             "hard survival potion should be allowed to break Maw Bank: potion={:?} leave={:?}",
             potion_bundle,
+            leave_bundle
+        );
+    }
+
+    #[test]
+    fn low_hp_waffle_is_hard_survival_buy() {
+        let leave = evaluation(DecisionCandidateKind::ShopLeave, 0);
+        let remove = evaluation(
+            DecisionCandidateKind::ShopPurge {
+                target: crate::ai::strategy::decision_pipeline::CleanupTarget::StarterStrike,
+            },
+            300,
+        );
+        let waffle = evaluation(
+            DecisionCandidateKind::ShopBuyRelic {
+                relic: RelicId::Waffle,
+                price: 155,
+            },
+            220,
+        );
+
+        let opportunity = ShopGoldOpportunity {
+            current_gold: 335,
+            current_hp: 41,
+            max_hp: 85,
+            active_maw_bank: false,
+            future_rooms_before_next_shop: 2,
+            hard_checkpoint_imminent: false,
+            survival_purchase_needed: false,
+            boss_answer_needed: false,
+        };
+        let leave_bundle = evaluate_shop_purchase_bundle(opportunity, &leave);
+        let remove_bundle = evaluate_shop_purchase_bundle(opportunity, &remove);
+        let waffle_bundle = evaluate_shop_purchase_bundle(opportunity, &waffle);
+
+        assert_eq!(
+            waffle_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardSurvivalBuy
+        );
+        assert_eq!(waffle_bundle.reason, "HardSurvivalPurchase");
+        assert!(
+            shop_purchase_bundle_order_key(&waffle_bundle)
+                < shop_purchase_bundle_order_key(&remove_bundle),
+            "low HP Waffle should outrank cleanup: waffle={:?} remove={:?}",
+            waffle_bundle,
+            remove_bundle
+        );
+        assert!(
+            shop_purchase_bundle_order_key(&waffle_bundle)
+                < shop_purchase_bundle_order_key(&leave_bundle),
+            "low HP Waffle should outrank leaving with gold: waffle={:?} leave={:?}",
+            waffle_bundle,
             leave_bundle
         );
     }
@@ -524,6 +595,8 @@ mod tests {
         );
 
         let opportunity = ShopGoldOpportunity {
+            current_hp: 70,
+            max_hp: 80,
             hard_checkpoint_imminent: true,
             boss_answer_needed: false,
             ..maw_bank_opportunity(249)
@@ -560,6 +633,8 @@ mod tests {
         );
 
         let early_boss_gap = ShopGoldOpportunity {
+            current_hp: 70,
+            max_hp: 80,
             boss_answer_needed: true,
             ..maw_bank_opportunity(230)
         };

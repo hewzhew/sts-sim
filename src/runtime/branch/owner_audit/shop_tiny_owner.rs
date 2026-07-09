@@ -62,6 +62,8 @@ fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
     if active_maw_bank || hard_checkpoint_imminent || visible_future_shop {
         context.with_shop_gold_opportunity(ShopGoldOpportunity {
             current_gold: session.run_state.gold,
+            current_hp: session.run_state.current_hp,
+            max_hp: session.run_state.max_hp,
             active_maw_bank,
             future_rooms_before_next_shop: if visible_future_shop { 2 } else { 5 },
             hard_checkpoint_imminent,
@@ -308,6 +310,45 @@ mod tests {
             clockwork.inspect_only_reason(),
             Some("BreaksMawBankWithoutHardNeed"),
             "same-shop follow-up purchases must still carry entry Maw Bank opportunity cost"
+        );
+    }
+
+    #[test]
+    fn shop_tiny_prefers_low_hp_waffle_before_cleanup() {
+        let mut session = maw_bank_session();
+        session.run_state.current_hp = 41;
+        session.run_state.max_hp = 85;
+        session.run_state.gold = 335;
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Waffle,
+            price: 155,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::FearPotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let choices = shop_tiny_owner_choices(&session, &surface);
+
+        assert!(
+            matches!(
+                choices.first().and_then(|choice| choice.key.as_ref()),
+                Some(DecisionCandidateKey::ShopBuyRelic {
+                    relic: RelicId::Waffle,
+                    price: 155,
+                    ..
+                })
+            ),
+            "low HP Waffle should be treated as survival repair before cleanup/potions; got {:?}",
+            choices.first().map(|choice| choice.label.as_str())
         );
     }
 

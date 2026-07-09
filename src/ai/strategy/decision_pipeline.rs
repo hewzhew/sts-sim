@@ -1577,6 +1577,8 @@ mod tests {
         shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
             crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
                 current_gold: gold,
+                current_hp: 70,
+                max_hp: 80,
                 active_maw_bank: true,
                 future_rooms_before_next_shop: 5,
                 hard_checkpoint_imminent: false,
@@ -1590,6 +1592,8 @@ mod tests {
         shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
             crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
                 current_gold: gold,
+                current_hp: 70,
+                max_hp: 80,
                 active_maw_bank: true,
                 future_rooms_before_next_shop: 5,
                 hard_checkpoint_imminent: true,
