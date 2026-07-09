@@ -11,7 +11,7 @@ notes are not kept searchable; use git history for archaeology.
 
 ## Review Drafts
 
-- [Durable Run Panel Architecture](superpowers/specs/2026-07-07-durable-run-panel-architecture-design.md):
+- [Durable Run Panel Architecture](design/2026-07-07-durable-run-panel-architecture-design.md):
   proposed scheduler/capsule contract for replacing rerun-style gap panels.
 
 ## Rules
