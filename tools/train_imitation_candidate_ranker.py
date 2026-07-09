@@ -233,6 +233,7 @@ def collect_examples(paths: list[Path]) -> list[CandidateExample]:
         data = json.loads(path.read_text(encoding="utf-8"))
         for episode in data.get("episodes", []):
             episode_id = str(episode.get("episode_id", path))
+            episode_metadata = episode.get("episode_metadata") or {}
             for step in episode.get("steps", []):
                 if step.get("is_last"):
                     continue
@@ -263,6 +264,7 @@ def collect_examples(paths: list[Path]) -> list[CandidateExample]:
                                 observation=observation,
                                 action=action,
                                 candidate=candidate,
+                                episode_metadata=episode_metadata,
                             ),
                         )
                     )
@@ -279,6 +281,7 @@ def flatten_candidate_features(
     for key in [
         "act",
         "floor",
+        "floors_to_act_boss",
         "hp",
         "max_hp",
         "hp_ratio_bp",
@@ -290,6 +293,8 @@ def flatten_candidate_features(
         add_numeric(features, f"obs.{key}", observation.get(key))
     add_categorical(features, "obs.boundary_kind", observation.get("boundary_kind"))
     add_categorical(features, "obs.boss", observation.get("boss"))
+    for boss_id in observation.get("boss_list") or []:
+        add_numeric(features, f"obs.boss_list.{boss_id}", 1)
 
     for card_id, count in sorted((observation.get("deck_card_counts") or {}).items()):
         add_numeric(features, f"obs.deck.{card_id}", count)
@@ -440,10 +445,20 @@ def candidate_display(
     observation: dict[str, Any],
     action: dict[str, Any],
     candidate: dict[str, Any],
+    episode_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     card_definition = action.get("card_definition") or {}
     if not isinstance(card_definition, dict):
         card_definition = {}
+    final_outcome = episode_metadata.get("final_outcome") or {}
+    if not isinstance(final_outcome, dict):
+        final_outcome = {}
+    final_status = final_outcome.get("status") or {}
+    if not isinstance(final_status, dict):
+        final_status = {}
+    combat_summary = episode_metadata.get("episode_combat_summary") or {}
+    if not isinstance(combat_summary, dict):
+        combat_summary = {}
     return {
         "context": {
             "act": observation.get("act"),
@@ -454,6 +469,15 @@ def candidate_display(
             "deck_size": observation.get("deck_size"),
             "boundary_kind": observation.get("boundary_kind"),
             "boss": observation.get("boss"),
+            "final_act": final_outcome.get("act"),
+            "final_floor": final_outcome.get("floor"),
+            "final_hp": final_outcome.get("hp"),
+            "final_max_hp": final_outcome.get("max_hp"),
+            "final_blocker_kind": final_outcome.get("blocker_kind"),
+            "final_status_kind": final_status.get("kind"),
+            "high_hp_loss_attempt_count": len(
+                combat_summary.get("high_hp_loss_attempts") or []
+            ),
         },
         "candidate": {
             "label": candidate.get("label"),
@@ -639,23 +663,31 @@ def summarize_mistakes(mistakes: list[dict[str, Any]]) -> dict[str, Any]:
     by_boundary = Counter()
     by_kind_pair = Counter()
     by_label_pair = Counter()
+    by_final_blocker = Counter()
     predicted_kind = Counter()
     selected_kind = Counter()
+    skip_pressure = Counter()
     for row in mistakes:
         context = row.get("context") or {}
         selected = ((row.get("selected") or {}).get("display") or {}).get("candidate") or {}
         predicted = ((row.get("predicted") or {}).get("display") or {}).get("candidate") or {}
         by_boundary[str(context.get("boundary_kind"))] += 1
+        by_final_blocker[str(context.get("final_blocker_kind"))] += 1
         selected_kind[str(selected.get("kind"))] += 1
         predicted_kind[str(predicted.get("kind"))] += 1
         by_kind_pair[f"{selected.get('kind')} -> {predicted.get('kind')}"] += 1
         by_label_pair[f"{selected.get('label')} -> {predicted.get('label')}"] += 1
+        if predicted.get("kind") in {"CardRewardSkip", "ShopLeave"}:
+            skip_pressure[str(selected.get("label"))] += 1
     return {
         "by_boundary_kind": counter_top(by_boundary),
+        "by_final_blocker_kind": counter_top(by_final_blocker),
         "selected_kind": counter_top(selected_kind),
         "predicted_kind": counter_top(predicted_kind),
         "selected_to_predicted_kind": counter_top(by_kind_pair),
         "selected_to_predicted_label": counter_top(by_label_pair, limit=12),
+        "skip_pressure_selected_label": counter_top(skip_pressure, limit=12),
+        "high_confidence_mistakes": high_confidence_mistakes(mistakes, limit=12),
     }
 
 
@@ -664,6 +696,35 @@ def counter_top(counter: Counter, limit: int = 10) -> list[dict[str, Any]]:
         {"key": key, "count": count}
         for key, count in counter.most_common(limit)
     ]
+
+
+def high_confidence_mistakes(
+    mistakes: list[dict[str, Any]], *, limit: int
+) -> list[dict[str, Any]]:
+    rows = []
+    for row in mistakes:
+        selected = row.get("selected") or {}
+        predicted = row.get("predicted") or {}
+        selected_display = (selected.get("display") or {}).get("candidate") or {}
+        predicted_display = (predicted.get("display") or {}).get("candidate") or {}
+        predicted_prob = float(predicted.get("model_prob_selected") or 0.0)
+        selected_prob = float(selected.get("model_prob_selected") or 0.0)
+        rows.append(
+            {
+                "episode_id": row.get("episode_id"),
+                "step_index": row.get("step_index"),
+                "context": row.get("context"),
+                "selected_label": selected_display.get("label"),
+                "selected_kind": selected_display.get("kind"),
+                "predicted_label": predicted_display.get("label"),
+                "predicted_kind": predicted_display.get("kind"),
+                "predicted_prob": predicted_prob,
+                "selected_prob": selected_prob,
+                "prob_margin": predicted_prob - selected_prob,
+            }
+        )
+    rows.sort(key=lambda item: item["prob_margin"], reverse=True)
+    return rows[:limit]
 
 
 def limited_scored_candidates(

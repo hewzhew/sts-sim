@@ -38,6 +38,10 @@ pub(super) struct BranchPathState {
     max_hp: i32,
     gold: i32,
     deck_size: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boss: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    boss_list: Vec<String>,
     #[serde(default)]
     deck: Vec<BranchPathCardState>,
     boundary: String,
@@ -413,6 +417,12 @@ impl BranchPathState {
             max_hp: run.max_hp,
             gold: run.gold,
             deck_size: run.master_deck.len(),
+            boss: run.boss_key.as_ref().map(|boss| format!("{boss:?}")),
+            boss_list: run
+                .boss_list
+                .iter()
+                .map(|boss| format!("{boss:?}"))
+                .collect(),
             deck: run
                 .master_deck
                 .iter()

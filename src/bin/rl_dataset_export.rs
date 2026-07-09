@@ -470,6 +470,8 @@ fn action_value(action_index: usize, step: &Value, actions: &[ActionMetaV0]) -> 
 }
 
 fn observation_features(state: &Value) -> Value {
+    let act = i64_field(state, "act");
+    let floor = i64_field(state, "floor");
     let hp = i64_field(state, "hp");
     let max_hp = i64_field(state, "max_hp");
     let deck = state.get("deck").and_then(Value::as_array);
@@ -477,11 +479,19 @@ fn observation_features(state: &Value) -> Value {
     let upgraded_deck_counts = deck_card_counts(deck, true);
     let deck_definition_counts = deck_definition_counts(deck);
     let boundary_label = string_field(state, "boundary");
+    let boss = state
+        .get("boss")
+        .or_else(|| state.get("boss_id"))
+        .or_else(|| state.get("known_boss"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let boss_list = state.get("boss_list").cloned().unwrap_or(Value::Null);
 
     json!({
         "schema": "observation_features_v0",
-        "act": i64_field(state, "act"),
-        "floor": i64_field(state, "floor"),
+        "act": act,
+        "floor": floor,
+        "floors_to_act_boss": floors_to_act_boss(act, floor),
         "hp": hp,
         "max_hp": max_hp,
         "hp_ratio_bp": ratio_basis_points(hp, max_hp),
@@ -496,10 +506,21 @@ fn observation_features(state: &Value) -> Value {
         "relic_count": state.get("relics").and_then(Value::as_array).map(|items| items.len()),
         "potion_ids": id_list(state.get("potions")),
         "potion_count": state.get("potions").and_then(Value::as_array).map(|items| items.len()),
-        "boss": state.get("boss").or_else(|| state.get("boss_id")).or_else(|| state.get("known_boss")).cloned().unwrap_or(Value::Null),
+        "boss": boss,
+        "boss_list": boss_list,
         "boundary_label": boundary_label,
         "boundary_kind": boundary_label.as_deref().map(normalize_boundary_kind),
     })
+}
+
+fn floors_to_act_boss(act: Option<i64>, floor: Option<i64>) -> Option<i64> {
+    let boss_floor = match act? {
+        1 => 16,
+        2 => 33,
+        3 => 50,
+        _ => return None,
+    };
+    Some((boss_floor - floor?).max(0))
 }
 
 fn action_features(key: Option<&Value>, label: Option<&str>) -> Value {
@@ -959,6 +980,8 @@ fn normalize_boundary_kind(label: &str) -> String {
         "reward".to_string()
     } else if lower.contains("event") {
         "event".to_string()
+    } else if lower.contains("run choice") {
+        "run_choice".to_string()
     } else if lower.contains("boss") {
         "boss".to_string()
     } else if lower.contains("elite") {
