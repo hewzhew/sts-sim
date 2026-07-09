@@ -510,6 +510,14 @@ fn action_features(key: Option<&Value>, label: Option<&str>) -> Value {
         .as_deref()
         .and_then(card_definition_features)
         .unwrap_or(Value::Null);
+    let key_price = body.and_then(|body| i64_field(body, "price"));
+    let label_price = label.and_then(label_gold_price);
+    let price = key_price.or(label_price);
+    let price_source = match (key_price, label_price) {
+        (Some(_), _) => Some("key"),
+        (None, Some(_)) => Some("label"),
+        (None, None) => None,
+    };
     json!({
         "schema": "action_features_v0",
         "kind": kind_text,
@@ -522,7 +530,8 @@ fn action_features(key: Option<&Value>, label: Option<&str>) -> Value {
         "option_index": body.and_then(|body| i64_field(body, "option_index")),
         "reward_item_index": body.and_then(|body| i64_field(body, "reward_item_index")),
         "shop_slot": body.and_then(|body| i64_field(body, "shop_slot")),
-        "price": body.and_then(|body| i64_field(body, "price")),
+        "price": price,
+        "price_source": price_source,
         "deck_index": body.and_then(|body| i64_field(body, "deck_index")),
         "upgrades": body.and_then(|body| i64_field(body, "upgrades")),
         "is_skip": action_is_skip(&kind_text),
@@ -532,6 +541,14 @@ fn action_features(key: Option<&Value>, label: Option<&str>) -> Value {
         "is_leave": kind_text.contains("Leave"),
         "is_event_option": kind_text == "EventOption",
     })
+}
+
+fn label_gold_price(label: &str) -> Option<i64> {
+    let (_, suffix) = label.rsplit_once('|')?;
+    let mut parts = suffix.split_whitespace();
+    let amount = parts.next()?.parse::<i64>().ok()?;
+    let unit = parts.next()?.to_ascii_lowercase();
+    unit.contains("gold").then_some(amount)
 }
 
 fn candidate_group_features(candidates: &[ActionMetaV0], selected_index: usize) -> Value {
