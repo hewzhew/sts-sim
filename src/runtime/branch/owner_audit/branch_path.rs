@@ -712,6 +712,7 @@ mod tests {
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
+            combat_search_history: Vec::new(),
         };
 
         let state = serde_json::to_value(BranchPathState::from_branch(&branch)).unwrap();

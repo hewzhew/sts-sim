@@ -242,6 +242,7 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
         "combat_case": combat_case,
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
+        "combat_search_history": &branch.combat_search_history,
         "primary_search": super::primary_search_outcome::primary_search_outcome_value(
             &branch.combat_search,
             branch.combat_portfolio.as_ref()

@@ -18,4 +18,5 @@ pub(super) struct Branch {
     pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+    pub(super) combat_search_history: Vec<CombatSearchTraceSummary>,
 }

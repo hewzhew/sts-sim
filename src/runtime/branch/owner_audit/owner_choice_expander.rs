@@ -45,6 +45,9 @@ pub(super) fn expand_registered_owner(
                 None,
             ),
         };
+        let combat_search = advance.combat_search;
+        let mut combat_search_history = branch.combat_search_history.clone();
+        combat_search_history.extend(combat_search.clone());
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: choice.key,
@@ -72,7 +75,8 @@ pub(super) fn expand_registered_owner(
             status: advance.status,
             combat_portfolio: advance.combat_portfolio,
             auto_steps: advance.auto_steps,
-            combat_search: advance.combat_search,
+            combat_search,
+            combat_search_history,
         });
     }
     children.extend(expand_shop_boss_preview_bundle_children(
@@ -144,6 +148,9 @@ fn expand_shop_boss_preview_bundle_children(
                     None,
                 ),
             };
+        let combat_search = advance.combat_search;
+        let mut combat_search_history = branch.combat_search_history.clone();
+        combat_search_history.extend(combat_search.clone());
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: None,
@@ -169,7 +176,8 @@ fn expand_shop_boss_preview_bundle_children(
             status: advance.status,
             combat_portfolio: advance.combat_portfolio,
             auto_steps: advance.auto_steps,
-            combat_search: advance.combat_search,
+            combat_search,
+            combat_search_history,
         });
     }
     children

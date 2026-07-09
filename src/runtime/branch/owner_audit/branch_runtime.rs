@@ -31,6 +31,7 @@ impl BranchRuntime {
         let deadline = RunDeadline::new(started, args.wall_ms);
         let advance =
             runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1), deadline);
+        let combat_search = advance.combat_search;
         (
             VecDeque::from([Branch {
                 id: 0,
@@ -40,7 +41,8 @@ impl BranchRuntime {
                 status: advance.status,
                 combat_portfolio: advance.combat_portfolio,
                 auto_steps: advance.auto_steps,
-                combat_search: advance.combat_search,
+                combat_search: combat_search.clone(),
+                combat_search_history: combat_search,
             }]),
             1usize,
         )

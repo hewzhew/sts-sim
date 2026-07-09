@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
+use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunControlSessionCheckpointV1};
 
 use super::branch_path::BranchPathStep;
 use super::run_contract::RunContract;
@@ -27,6 +27,8 @@ struct BranchCheckpoint {
     path: Vec<BranchPathStep>,
     session: RunControlSessionCheckpointV1,
     status: BranchStatus,
+    #[serde(default)]
+    combat_search_history: Vec<CombatSearchTraceSummary>,
 }
 
 pub(super) fn save(
@@ -91,6 +93,7 @@ impl BranchCheckpoint {
             path: branch.path.clone(),
             session,
             status: branch.status.clone(),
+            combat_search_history: branch.combat_search_history.clone(),
         }
     }
 
@@ -104,6 +107,7 @@ impl BranchCheckpoint {
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
+            combat_search_history: self.combat_search_history,
         })
     }
 }

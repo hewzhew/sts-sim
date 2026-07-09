@@ -61,6 +61,7 @@ struct PathObservableFactsV0 {
     shop_purges: Vec<LabelAtStepV0>,
     shop_leaves: Vec<LabelAtStepV0>,
     boss_relic_picks: Vec<LabelAtStepV0>,
+    combat_search: CombatSearchFactsV0,
 }
 
 #[derive(Default, Serialize)]
@@ -107,6 +108,42 @@ struct LabelAtStepV0 {
     gold: Option<i64>,
     deck_size: Option<i64>,
     label: String,
+}
+
+#[derive(Default, Serialize)]
+struct CombatSearchFactsV0 {
+    attempt_count: usize,
+    complete_win_count: usize,
+    terminal_win_count: usize,
+    max_best_complete_hp_loss: Option<i64>,
+    high_hp_loss_threshold: i64,
+    attempts: Vec<CombatAttemptFactsV0>,
+    high_hp_loss_attempts: Vec<CombatAttemptFactsV0>,
+}
+
+#[derive(Clone, Default, Serialize)]
+struct CombatAttemptFactsV0 {
+    act: Option<i64>,
+    floor: Option<i64>,
+    combat_kind: Option<String>,
+    enemies: Vec<String>,
+    lane: Option<String>,
+    source: Option<String>,
+    coverage_status: Option<String>,
+    complete_trajectory_found: bool,
+    complete_win_found: bool,
+    terminal_wins: Option<i64>,
+    deadline_hit: bool,
+    nodes_expanded: Option<i64>,
+    profile_wall_ms: Option<i64>,
+    profile_max_nodes: Option<i64>,
+    profile_potion_policy: Option<String>,
+    best_complete_terminal: Option<String>,
+    best_complete_final_hp: Option<i64>,
+    best_complete_hp_loss: Option<i64>,
+    best_complete_turns: Option<i64>,
+    best_complete_potions_used: Option<i64>,
+    best_win_hp_loss: Option<i64>,
 }
 
 #[derive(Default, Serialize)]
@@ -195,7 +232,7 @@ fn main() -> Result<(), String> {
     }
 
     if args.facts {
-        let facts = path_observable_facts(&args.input, seed, &records);
+        let facts = path_observable_facts(&args.input, seed, &records, &input);
         write_json_value(args.out, &facts)?;
         return Ok(());
     }
@@ -272,6 +309,7 @@ fn path_observable_facts(
     input_path: &PathBuf,
     seed: Option<u64>,
     records: &[DecisionRecordV0],
+    input: &Value,
 ) -> PathObservableFactsV0 {
     let branch_id = records.iter().find_map(|record| record.branch_id);
     let outcome = records
@@ -336,6 +374,105 @@ fn path_observable_facts(
         shop_purges,
         shop_leaves,
         boss_relic_picks,
+        combat_search: combat_search_facts(input),
+    }
+}
+
+fn combat_search_facts(input: &Value) -> CombatSearchFactsV0 {
+    let high_hp_loss_threshold = 25;
+    let attempts = combat_search_attempt_values(input)
+        .into_iter()
+        .map(combat_attempt_facts)
+        .collect::<Vec<_>>();
+    let complete_win_count = attempts
+        .iter()
+        .filter(|attempt| attempt.complete_win_found)
+        .count();
+    let terminal_win_count = attempts
+        .iter()
+        .filter_map(|attempt| attempt.terminal_wins)
+        .map(|wins| wins.max(0) as usize)
+        .sum();
+    let max_best_complete_hp_loss = attempts
+        .iter()
+        .filter_map(|attempt| attempt.best_complete_hp_loss)
+        .max();
+    let high_hp_loss_attempts = attempts
+        .iter()
+        .filter(|attempt| {
+            attempt
+                .best_complete_hp_loss
+                .is_some_and(|hp_loss| hp_loss >= high_hp_loss_threshold)
+        })
+        .cloned()
+        .collect();
+    CombatSearchFactsV0 {
+        attempt_count: attempts.len(),
+        complete_win_count,
+        terminal_win_count,
+        max_best_complete_hp_loss,
+        high_hp_loss_threshold,
+        attempts,
+        high_hp_loss_attempts,
+    }
+}
+
+fn combat_search_attempt_values(input: &Value) -> Vec<&Value> {
+    input
+        .get("combat_search_history")
+        .and_then(Value::as_array)
+        .filter(|history| !history.is_empty())
+        .or_else(|| {
+            input
+                .get("combat_search_attempts")
+                .and_then(Value::as_array)
+                .filter(|attempts| !attempts.is_empty())
+        })
+        .map(|attempts| attempts.iter().collect())
+        .unwrap_or_default()
+}
+
+fn combat_attempt_facts(attempt: &Value) -> CombatAttemptFactsV0 {
+    let best_complete = attempt.get("best_complete");
+    CombatAttemptFactsV0 {
+        act: attempt.get("act").and_then(Value::as_i64),
+        floor: attempt.get("floor").and_then(Value::as_i64),
+        combat_kind: string_field(attempt, "combat_kind"),
+        enemies: string_array_field(attempt, "enemies"),
+        lane: string_field(attempt, "lane"),
+        source: string_field(attempt, "source"),
+        coverage_status: string_field(attempt, "coverage_status"),
+        complete_trajectory_found: attempt
+            .get("complete_trajectory_found")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        complete_win_found: attempt
+            .get("complete_win_found")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        terminal_wins: attempt.get("terminal_wins").and_then(Value::as_i64),
+        deadline_hit: attempt
+            .get("deadline_hit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        nodes_expanded: attempt.get("nodes_expanded").and_then(Value::as_i64),
+        profile_wall_ms: attempt.get("profile_wall_ms").and_then(Value::as_i64),
+        profile_max_nodes: attempt.get("profile_max_nodes").and_then(Value::as_i64),
+        profile_potion_policy: string_field(attempt, "profile_potion_policy"),
+        best_complete_terminal: best_complete.and_then(|value| string_field(value, "terminal")),
+        best_complete_final_hp: best_complete
+            .and_then(|value| value.get("final_hp"))
+            .and_then(Value::as_i64),
+        best_complete_hp_loss: best_complete
+            .and_then(|value| value.get("hp_loss"))
+            .and_then(Value::as_i64),
+        best_complete_turns: best_complete
+            .and_then(|value| value.get("turns"))
+            .and_then(Value::as_i64),
+        best_complete_potions_used: best_complete
+            .and_then(|value| value.get("potions_used"))
+            .and_then(Value::as_i64),
+        best_win_hp_loss: attempt.get("best_hp_loss").and_then(Value::as_i64),
     }
 }
 
@@ -658,6 +795,20 @@ fn string_field(value: &Value, field: &str) -> Option<String> {
         Value::Null => None,
         other => Some(render_json_scalar(other)),
     }
+}
+
+fn string_array_field(value: &Value, field: &str) -> Vec<String> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn render_json_scalar(value: &Value) -> String {

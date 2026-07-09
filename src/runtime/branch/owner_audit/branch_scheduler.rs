@@ -27,6 +27,9 @@ pub(super) fn prepare_branch_work(
         branch.combat_portfolio = advance.combat_portfolio;
         branch.auto_steps = advance.auto_steps;
         branch.combat_search = advance.combat_search;
+        branch
+            .combat_search_history
+            .extend(branch.combat_search.clone());
         expandable = generation < args.generations && branch.status.is_expandable_now();
         choices = if expandable {
             branch_owner_choices(&branch)
