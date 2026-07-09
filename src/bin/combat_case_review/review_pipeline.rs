@@ -6,6 +6,7 @@ use sts_simulator::eval::combat_case::CombatCase;
 #[path = "review_pipeline/ladder.rs"]
 mod ladder;
 
+use super::awakened_one_evidence::awakened_one_failure_evidence;
 use super::boss_pressure_lens::boss_pressure_lens;
 use super::boss_setup_lane::run_boss_setup_lane;
 use super::case_payload::{
@@ -64,6 +65,8 @@ pub(super) fn build_review(
     } else {
         None
     };
+    let awakened_one_failure_evidence =
+        awakened_one_failure_evidence(&case, counterfactual_hp_probe.as_ref());
     let champ_phase_audit = review_focus
         .as_ref()
         .and_then(|focus| champ_phase_audit(&case.position, focus));
@@ -80,6 +83,7 @@ pub(super) fn build_review(
             quality_lanes,
             counterfactual_hp_probe,
             combat_deficit_evidence,
+            awakened_one_failure_evidence,
             boss_pressure_lens,
             boss_setup_lane,
             frozen_panel_lanes,

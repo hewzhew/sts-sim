@@ -1,6 +1,8 @@
 use clap::Parser;
 #[path = "combat_case_review/args.rs"]
 mod args;
+#[path = "combat_case_review/awakened_one_evidence.rs"]
+mod awakened_one_evidence;
 #[path = "combat_case_review/boss_pressure_lens.rs"]
 mod boss_pressure_lens;
 #[path = "combat_case_review/boss_setup_lane.rs"]

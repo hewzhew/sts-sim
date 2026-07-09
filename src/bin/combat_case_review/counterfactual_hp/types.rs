@@ -59,3 +59,48 @@ pub(super) struct CounterfactualHpCandidate {
     pub(super) quality: CombatLineQuality,
     pub(super) witness: CombatSearchV2WitnessLine,
 }
+
+impl CounterfactualHpProbe {
+    pub(crate) fn classification_label(&self) -> &'static str {
+        match self.classification {
+            CounterfactualHpClassification::OriginalHpWin => "original_hp_win",
+            CounterfactualHpClassification::CounterfactualLineStillWinsOriginalHp => {
+                "counterfactual_line_still_wins_original_hp"
+            }
+            CounterfactualHpClassification::CounterfactualOnlyWin => "counterfactual_only_win",
+            CounterfactualHpClassification::NoWinFound => "no_win_found",
+        }
+    }
+
+    pub(crate) fn any_complete_win(&self) -> bool {
+        self.levels.iter().any(|level| level.complete_win)
+    }
+
+    pub(crate) fn full_hp_best_progress_enemy_hp(&self) -> Option<i32> {
+        self.full_hp_level()
+            .and_then(|level| level.best_progress.as_ref())
+            .map(|progress| progress.facts.total_enemy_hp)
+    }
+
+    pub(crate) fn full_hp_best_progress_turns(&self) -> Option<u32> {
+        self.full_hp_level()
+            .and_then(|level| level.best_progress.as_ref())
+            .map(|progress| progress.facts.turns)
+    }
+
+    pub(crate) fn full_hp_complete_win(&self) -> Option<bool> {
+        self.full_hp_level().map(|level| level.complete_win)
+    }
+
+    pub(crate) fn original_hp(&self) -> i32 {
+        self.original_hp
+    }
+
+    pub(crate) fn max_hp(&self) -> i32 {
+        self.max_hp
+    }
+
+    fn full_hp_level(&self) -> Option<&CounterfactualHpLevel> {
+        self.levels.iter().find(|level| level.hp == self.max_hp)
+    }
+}

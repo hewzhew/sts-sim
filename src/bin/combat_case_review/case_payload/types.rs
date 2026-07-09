@@ -9,6 +9,7 @@ use sts_simulator::eval::combat_case::{
 };
 use sts_simulator::eval::run_control::CombatSearchTraceSummary;
 
+use super::super::awakened_one_evidence::AwakenedOneFailureEvidenceFrame;
 use super::super::boss_pressure_lens::BossPressureLensReport;
 use super::super::boss_setup_lane::BossSetupLaneReview;
 use super::super::champ_phase::ChampPhaseAudit;
@@ -49,6 +50,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     pub(super) combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
+    pub(super) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
@@ -70,6 +72,7 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) quality_lanes: Option<CombatQualityLaneReview>,
     pub(crate) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     pub(crate) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
+    pub(crate) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(crate) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
