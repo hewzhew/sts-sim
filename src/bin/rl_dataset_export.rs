@@ -16,7 +16,7 @@ use sts_simulator::content::cards::{
     version
 )]
 struct Args {
-    /// Path to a branch_tiny result.json/path.json file or a capsule/panel directory.
+    /// Path to a branch_tiny result.json/frontier.json/path.json file or a capsule/panel directory.
     #[arg(long)]
     input: PathBuf,
 
@@ -106,7 +106,7 @@ fn main() -> Result<(), String> {
 
         for path in path_values(&bundle.input)? {
             if let Some(episode) = episode_from_path(
-                path,
+                &path,
                 seed,
                 &bundle.path,
                 &bundle.input,
@@ -137,7 +137,7 @@ fn main() -> Result<(), String> {
             source_file_count,
             reward_contract: "sparse_terminal_victory_v0: +1 terminal victory, -1 terminal defeat, 0 otherwise",
             action_contract: "action.index is a discrete index into step_metadata.action_candidates_v0 for non-last steps; final step action is null",
-            observation_contract: "raw_branch_path_state_json_v0; final step observation is result.state when available",
+            observation_contract: "raw_branch_path_state_json_v0; final step observation is result/frontier state when available",
             action_feature_contract: "action_features_v0: stable observed identity fields such as kind, card/relic/potion/event ids, price, slot, option indexes, and skip/buy/remove/pick flags",
             observation_feature_contract: "observation_features_v0: fixed scalar/list/count facts derived from visible run state; raw observation remains authoritative",
             truncation_contract: "RLDS-style: is_last=true and is_terminal=false means truncated/gap/timeout, not a terminal game result",
@@ -266,17 +266,17 @@ fn read_input_bundles(
         return Err("--summary is only supported with file input".to_string());
     }
 
-    let mut result_paths = Vec::new();
-    collect_result_json_paths(input_path, &mut result_paths)?;
-    result_paths.sort();
-    if result_paths.is_empty() {
+    let mut source_paths = Vec::new();
+    collect_episode_source_paths(input_path, &mut source_paths)?;
+    source_paths.sort();
+    if source_paths.is_empty() {
         return Err(format!(
-            "directory contains no branch_tiny result.json files: {}",
+            "directory contains no branch_tiny result.json/frontier.json/path.json files: {}",
             input_path.display()
         ));
     }
 
-    result_paths
+    source_paths
         .into_iter()
         .map(|path| {
             let summary_path = path.with_file_name("summary.json");
@@ -293,7 +293,11 @@ fn read_input_bundles(
         .collect()
 }
 
-fn collect_result_json_paths(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+fn collect_episode_source_paths(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let mut local_result = None;
+    let mut local_frontier = None;
+    let mut local_path = None;
+
     for entry in fs::read_dir(root)
         .map_err(|err| format!("failed to read directory {}: {err}", root.display()))?
     {
@@ -305,10 +309,18 @@ fn collect_result_json_paths(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), 
         })?;
         let path = entry.path();
         if path.is_dir() {
-            collect_result_json_paths(&path, out)?;
-        } else if path.file_name().and_then(|name| name.to_str()) == Some("result.json") {
-            out.push(path);
+            collect_episode_source_paths(&path, out)?;
+        } else {
+            match path.file_name().and_then(|name| name.to_str()) {
+                Some("result.json") => local_result = Some(path),
+                Some("frontier.json") => local_frontier = Some(path),
+                Some("path.json") => local_path = Some(path),
+                _ => {}
+            }
         }
+    }
+    if let Some(path) = local_result.or(local_frontier).or(local_path) {
+        out.push(path);
     }
     Ok(())
 }
@@ -343,17 +355,31 @@ fn write_json<T: Serialize>(out: Option<PathBuf>, value: &T) -> Result<(), Strin
     Ok(())
 }
 
-fn path_values(input: &Value) -> Result<Vec<&Value>, String> {
+fn path_values(input: &Value) -> Result<Vec<Value>, String> {
     if let Some(path) = input.get("path") {
-        return Ok(vec![path]);
+        return Ok(vec![path.clone()]);
     }
     if input.get("steps").is_some() {
-        return Ok(vec![input]);
+        return Ok(vec![input.clone()]);
+    }
+    if let Some(frontier) = input.get("frontier").and_then(Value::as_array) {
+        return Ok(frontier
+            .iter()
+            .filter_map(|branch| {
+                let steps = branch.get("path")?.clone();
+                Some(json!({
+                    "branch_id": branch.get("id").cloned().unwrap_or(Value::Null),
+                    "parent_id": branch.get("parent_id").cloned().unwrap_or(Value::Null),
+                    "steps": steps,
+                    "source": "frontier",
+                }))
+            })
+            .collect());
     }
     if let Some(paths) = input.as_array() {
-        return Ok(paths.iter().collect());
+        return Ok(paths.iter().cloned().collect());
     }
-    Err("input is not a result.json, path.json object, or path array".to_string())
+    Err("input is not a result.json, frontier.json, path.json object, or path array".to_string())
 }
 
 fn episode_id(seed: Option<u64>, branch_id: Option<i64>, input_path: &PathBuf) -> String {
