@@ -1,5 +1,6 @@
 use crate::ai::analysis::card_semantics::{CardBurden, Mechanic};
 use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
+use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
@@ -372,6 +373,8 @@ fn improves_hard_gap(
         || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
+        || assess_boss_survival_evidence(deck_plan, candidate, admission)
+            .relevant_to_boss_survival_plan
         || (deficit.frontload_damage == StrategicDeficitLevel::Missing
             && admission_frontloads(admission))
 }
@@ -393,6 +396,8 @@ fn improves_any_gap(
         || (needs(deficit.boss_scaling_plan)
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
+        || assess_boss_survival_evidence(deck_plan, candidate, admission)
+            .relevant_to_boss_survival_plan
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
 }
 

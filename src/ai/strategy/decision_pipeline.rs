@@ -7,6 +7,7 @@ use crate::ai::strategy::boss_relic_admission::{
     boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
 };
 use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
+use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -806,6 +807,17 @@ fn strategic_deficit_score(
             improves = true;
         }
     }
+    let survival_evidence =
+        assess_boss_survival_evidence(context.deck_plan, candidate_card(candidate.kind), admission);
+    if survival_evidence.score_delta != 0 {
+        scores.push(score(
+            survival_evidence.label,
+            survival_evidence.score_delta,
+        ));
+    }
+    if survival_evidence.relevant_to_boss_survival_plan {
+        improves = true;
+    }
     if needs(deficit.frontload_damage) && admission_frontloads(admission) {
         improves = true;
         scores.push(score("strategic-frontload-gap", 35));
@@ -1284,6 +1296,8 @@ fn heavy_burden_exception(
     survival_pressure_exception(context, admission)
         || assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
             .relevant_to_boss_plan
+        || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
+            .relevant_to_boss_survival_plan
         || (admission_provides(admission, Mechanic::CardDraw)
             && admission_provides(admission, Mechanic::Energy))
         || admission
@@ -2050,6 +2064,83 @@ mod tests {
                 .any(|score| score.by == "automaton-artifact-debuff-window"),
             "shockwave scores should expose Automaton boss support: {:?}",
             shockwave.scores
+        );
+    }
+
+    #[test]
+    fn reward_awakened_one_context_promotes_true_survival_repair() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Headbutt,
+            CardId::Armaments,
+            CardId::BurningPact,
+            CardId::Whirlwind,
+            CardId::Feed,
+            CardId::ShrugItOff,
+            CardId::Cleave,
+            CardId::DemonForm,
+            CardId::Rupture,
+            CardId::Feed,
+        ];
+
+        let disarm =
+            reward_card_with_act_boss(&cards, CardId::Disarm, 0, 3, EncounterId::AwakenedOne);
+
+        assert_eq!(disarm.lane, CandidateLane::Mainline);
+        assert!(disarm.auto_expands(), "disarm={disarm:?}");
+        assert!(
+            disarm
+                .scores
+                .iter()
+                .any(|score| score.by == "awakened-one-strength-down-survival"),
+            "Disarm should expose Awakened One survival repair: {:?}",
+            disarm.scores
+        );
+    }
+
+    #[test]
+    fn reward_awakened_one_context_keeps_generic_block_access_distinct_from_survival_repair() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Headbutt,
+            CardId::Armaments,
+            CardId::BurningPact,
+            CardId::Whirlwind,
+            CardId::Feed,
+            CardId::ShrugItOff,
+            CardId::Cleave,
+            CardId::DemonForm,
+            CardId::Rupture,
+            CardId::Feed,
+        ];
+
+        let shrug =
+            reward_card_with_act_boss(&cards, CardId::ShrugItOff, 1, 3, EncounterId::AwakenedOne);
+
+        assert!(
+            shrug
+                .scores
+                .iter()
+                .any(|score| score.by == "awakened-one-generic-block-access"),
+            "Shrug+ may receive generic block/access support: {:?}",
+            shrug.scores
+        );
+        assert!(
+            !shrug.scores.iter().any(|score| matches!(
+                score.by,
+                "awakened-one-strength-down-survival"
+                    | "awakened-one-weak-strength-down-survival"
+                    | "awakened-one-dark-echo-block-plan"
+                    | "awakened-one-repeatable-block-plan"
+            )),
+            "Shrug+ should not masquerade as a boss survival repair: {:?}",
+            shrug.scores
         );
     }
 
