@@ -15,6 +15,8 @@ mod classification;
 mod counterfactual_hp;
 #[path = "combat_case_review/focus.rs"]
 mod focus;
+#[path = "combat_case_review/forced_potion_opening.rs"]
+mod forced_potion_opening;
 #[path = "combat_case_review/frozen_panel_lanes.rs"]
 mod frozen_panel_lanes;
 #[path = "combat_case_review/key_card_counterfactual.rs"]

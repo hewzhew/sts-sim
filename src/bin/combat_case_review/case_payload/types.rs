@@ -15,6 +15,7 @@ use super::super::champ_phase::ChampPhaseAudit;
 use super::super::classification::CombatGapReviewClassification;
 use super::super::counterfactual_hp::CounterfactualHpProbe;
 use super::super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
+use super::super::forced_potion_opening::ForcedPotionOpeningReview;
 use super::super::frozen_panel_lanes::FrozenPanelLaneReview;
 use super::super::key_card_counterfactual::KeyCardCounterfactualProbe;
 use super::super::key_card_decision_microscope::KeyCardDecisionMicroscopeProbe;
@@ -51,6 +52,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
+    pub(super) forced_potion_opening_lanes: Option<ForcedPotionOpeningReview>,
     pub(super) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     pub(super) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
     pub(super) root_action_role_duel: Option<RootActionRoleDuelProbe>,
@@ -71,6 +73,7 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(crate) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
+    pub(crate) forced_potion_opening_lanes: Option<ForcedPotionOpeningReview>,
     pub(crate) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     pub(crate) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
     pub(crate) root_action_role_duel: Option<RootActionRoleDuelProbe>,

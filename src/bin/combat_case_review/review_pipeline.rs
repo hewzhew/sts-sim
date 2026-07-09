@@ -15,6 +15,7 @@ use super::champ_phase::champ_phase_audit;
 use super::classification::classify_gap_review;
 use super::counterfactual_hp::run_counterfactual_hp_probe;
 use super::focus::{focus_witness_line, review_focus, witness_prior_rerun};
+use super::forced_potion_opening::run_forced_potion_opening_lanes;
 use super::frozen_panel_lanes::run_frozen_panel_lanes;
 use super::key_card_counterfactual::run_key_card_counterfactual_probe;
 use super::key_card_decision_microscope::run_key_card_decision_microscope_probe;
@@ -49,6 +50,7 @@ pub(super) fn build_review(
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
     let boss_setup_lane = run_boss_setup_lane(&options, &case);
     let frozen_panel_lanes = run_frozen_panel_lanes(&options, &case);
+    let forced_potion_opening_lanes = run_forced_potion_opening_lanes(&options, &case);
     let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
     let key_card_decision_microscope = run_key_card_decision_microscope_probe(&options, &case);
     let root_action_role_duel = run_root_action_role_duel_probe(&options, &case);
@@ -81,6 +83,7 @@ pub(super) fn build_review(
             boss_pressure_lens,
             boss_setup_lane,
             frozen_panel_lanes,
+            forced_potion_opening_lanes,
             key_card_counterfactual,
             key_card_decision_microscope,
             root_action_role_duel,

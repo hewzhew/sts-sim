@@ -49,6 +49,8 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) frozen_panel_lanes: bool,
     #[arg(long)]
+    pub(super) forced_potion_opening_lanes: bool,
+    #[arg(long)]
     pub(super) boss_setup_lane: bool,
     #[arg(long)]
     pub(super) key_card_counterfactual: bool,
