@@ -33,6 +33,8 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) disable_rollout: bool,
     #[arg(long)]
+    pub(super) turn_plan_ladder: bool,
+    #[arg(long)]
     pub(super) line_lab: bool,
     #[arg(long, default_value_t = 30_000)]
     pub(super) line_lab_ms: u64,

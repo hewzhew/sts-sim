@@ -1,3 +1,4 @@
+use sts_simulator::ai::combat_search_v2::CombatSearchTurnPlanPluginId;
 use sts_simulator::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
 use sts_simulator::eval::combat_case::CombatCase;
 
@@ -37,8 +38,22 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
     let (slow_review, slow_report) =
         run_profile_search(case, slow_profile, options.action_preview_limit);
 
+    let mut reviews = vec![fast_review, slow_review];
+    if options.turn_plan_ladder {
+        let turn_plan_profile = review_no_potion_profile(
+            "turn_boundary_seed_no_potion",
+            options.fast_nodes,
+            options.fast_ms,
+            options,
+        )
+        .with_turn_plan_plugin(CombatSearchTurnPlanPluginId::TurnBoundaryFrontierSeed);
+        let (turn_plan_review, _) =
+            run_profile_search(case, turn_plan_profile, options.action_preview_limit);
+        reviews.push(turn_plan_review);
+    }
+
     ReviewLadderRun {
-        reviews: vec![fast_review, slow_review],
+        reviews,
         line_lab_parent: slow_report.best_complete_trajectory,
     }
 }
