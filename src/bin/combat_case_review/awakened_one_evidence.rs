@@ -441,20 +441,34 @@ fn cultist_deadline_claim(signals: &AwakenedOneDeckSignals) -> AwakenedOneEviden
 }
 
 fn phase2_dark_echo_claim(signals: &AwakenedOneDeckSignals) -> AwakenedOneEvidenceClaim {
-    if !signals.big_block.is_empty() || !signals.defensive_scaling_or_mitigation.is_empty() {
+    if !signals.defensive_scaling_or_mitigation.is_empty() {
         AwakenedOneEvidenceClaim {
             claim: "phase2_dark_echo_plan",
             status: "supported",
             support: card_labels(
                 &signals
-                    .big_block
+                    .defensive_scaling_or_mitigation
                     .iter()
-                    .chain(signals.defensive_scaling_or_mitigation.iter())
+                    .chain(signals.big_block.iter())
                     .cloned()
                     .collect::<Vec<_>>(),
             ),
             counterevidence: vec![],
             unknown: vec![],
+        }
+    } else if !signals.big_block.is_empty() {
+        AwakenedOneEvidenceClaim {
+            claim: "phase2_dark_echo_plan",
+            status: "weak_supported",
+            support: card_labels(&signals.big_block),
+            counterevidence: vec![
+                "single-use big block does not prove it is drawn and playable on the phase-2 Dark Echo turn"
+                    .to_string(),
+            ],
+            unknown: vec![
+                "search/replay evidence is needed to prove the transition turn is covered"
+                    .to_string(),
+            ],
         }
     } else {
         AwakenedOneEvidenceClaim {
@@ -555,6 +569,9 @@ fn risk_tags(claims: &[AwakenedOneEvidenceClaim]) -> Vec<&'static str> {
                 tags.push("cultist_cleanup_deadline_uncertain")
             }
             ("phase2_dark_echo_plan", "unsupported") => tags.push("phase2_dark_echo_plan_missing"),
+            ("phase2_dark_echo_plan", "weak_supported") => {
+                tags.push("phase2_dark_echo_plan_uncertain")
+            }
             ("awakened_one_power_penalty_exposure", "supported") => {
                 tags.push("awakened_one_power_penalty_exposure")
             }
@@ -701,7 +718,6 @@ fn is_defensive_scaling_or_mitigation(card: CardId) -> bool {
             | CardId::Shockwave
             | CardId::Impervious
             | CardId::PowerThrough
-            | CardId::FlameBarrier
             | CardId::FeelNoPain
             | CardId::SecondWind
             | CardId::Barricade
@@ -840,6 +856,27 @@ mod tests {
             conclusion_from_risk_tags(&tags),
             "likely_boss_plan_insufficient_not_low_hp_only"
         );
+    }
+
+    #[test]
+    fn flame_barrier_is_big_block_not_defensive_scaling_for_awakened_one() {
+        let signals =
+            AwakenedOneDeckSignals::from_deck(vec![CombatCard::new(CardId::FlameBarrier, 1)]);
+
+        let defensive = defensive_scaling_claim(&signals);
+        assert_eq!(defensive.status, "unsupported");
+        assert!(defensive
+            .counterevidence
+            .iter()
+            .any(|line| line.contains("generic block cards do not establish")));
+
+        let dark_echo = phase2_dark_echo_claim(&signals);
+        assert_eq!(dark_echo.status, "weak_supported");
+        assert_eq!(dark_echo.support, vec!["Flame Barrier+0"]);
+
+        let tags = risk_tags(&[defensive, dark_echo]);
+        assert!(tags.contains(&"missing_defensive_scaling_or_mitigation"));
+        assert!(tags.contains(&"phase2_dark_echo_plan_uncertain"));
     }
 
     #[test]
