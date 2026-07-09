@@ -35,6 +35,10 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) turn_plan_ladder: bool,
     #[arg(long)]
+    pub(super) rollout_max_actions: Option<usize>,
+    #[arg(long)]
+    pub(super) rollout_max_evaluations: Option<usize>,
+    #[arg(long)]
     pub(super) line_lab: bool,
     #[arg(long, default_value_t = 30_000)]
     pub(super) line_lab_ms: u64,

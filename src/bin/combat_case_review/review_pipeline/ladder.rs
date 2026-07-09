@@ -1,10 +1,12 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchTurnPlanPluginId;
-use sts_simulator::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchProfile, CombatSearchTurnPlanPluginId, CombatSearchV2Report,
+    CombatSearchV2TrajectoryReport,
+};
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::super::options::ReviewOptions;
 use super::super::search_runner::{
-    review_all_potions_profile, review_no_potion_profile, run_profile_search,
+    review_all_potions_profile, review_no_potion_profile, run_config_search,
 };
 use super::super::search_types::SearchReview;
 
@@ -27,7 +29,7 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         options.fast_ms,
         options,
     );
-    let (fast_review, _) = run_profile_search(case, fast_profile, options.action_preview_limit);
+    let (fast_review, _) = run_ladder_profile(case, fast_profile, options);
 
     let slow_profile = review_all_potions_profile(
         "slow_potion_diagnostic",
@@ -35,8 +37,7 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         options.slow_ms,
         options,
     );
-    let (slow_review, slow_report) =
-        run_profile_search(case, slow_profile, options.action_preview_limit);
+    let (slow_review, slow_report) = run_ladder_profile(case, slow_profile, options);
 
     let mut reviews = vec![fast_review, slow_review];
     if options.turn_plan_ladder {
@@ -47,8 +48,7 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
             options,
         )
         .with_turn_plan_plugin(CombatSearchTurnPlanPluginId::TurnBoundaryFrontierSeed);
-        let (turn_plan_review, _) =
-            run_profile_search(case, turn_plan_profile, options.action_preview_limit);
+        let (turn_plan_review, _) = run_ladder_profile(case, turn_plan_profile, options);
         reviews.push(turn_plan_review);
     }
 
@@ -56,4 +56,20 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         reviews,
         line_lab_parent: slow_report.best_complete_trajectory,
     }
+}
+
+fn run_ladder_profile(
+    case: &CombatCase,
+    profile: CombatSearchProfile,
+    options: &ReviewOptions,
+) -> (SearchReview, CombatSearchV2Report) {
+    let label = profile.label;
+    let mut config = profile.to_config();
+    if let Some(max_actions) = options.rollout_max_actions {
+        config.rollout_max_actions = max_actions;
+    }
+    if let Some(max_evaluations) = options.rollout_max_evaluations {
+        config.rollout_max_evaluations = max_evaluations;
+    }
+    run_config_search(label, case, config, options.action_preview_limit)
 }
