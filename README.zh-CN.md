@@ -71,6 +71,7 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): 当前本地命令。
 - [docs/TESTING.md](docs/TESTING.md): 测试归属和清理标准。
 - [tools/README.md](tools/README.md): 离线工具边界和 artifact 规则。
+- [src/ai/README.md](src/ai/README.md): AI 模块地图和清理方向。
 
 退役文档不保留在工作区里污染搜索结果。需要考古时查 git history。
 

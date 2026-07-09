@@ -78,6 +78,7 @@ See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
 - [docs/TESTING.md](docs/TESTING.md): test ownership and cleanup standards.
 - [tools/README.md](tools/README.md): offline tool boundaries and artifact
   rules.
+- [src/ai/README.md](src/ai/README.md): AI module map and cleanup direction.
 
 Retired docs are not kept searchable in the working tree. Use git history for
 archaeology.
