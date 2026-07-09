@@ -9,9 +9,15 @@ impl CombatSearchPortfolioPlan {
     pub(super) fn after_primary(context: CombatSearchPortfolioContext) -> Self {
         let lanes = match context.stakes {
             CombatSearchStakes::Hallway => {
-                vec![CombatSearchLane::new(
+                let mut lanes = vec![CombatSearchLane::new(
                     CombatSearchLaneKind::PrimaryImmediateEscalation,
-                )]
+                )];
+                if context.nonboss_potion_rescue_signal {
+                    lanes.push(CombatSearchLane::new(
+                        CombatSearchLaneKind::HallwayQualityPotionRescue,
+                    ));
+                }
+                lanes
             }
             CombatSearchStakes::Elite | CombatSearchStakes::Boss => Vec::new(),
         };
@@ -73,6 +79,24 @@ mod tests {
         assert_eq!(
             plan.lane_kinds(),
             vec![CombatSearchLaneKind::PrimaryImmediateEscalation]
+        );
+        assert!(!plan.should_report());
+    }
+
+    #[test]
+    fn pressured_hallway_plan_adds_explicit_quality_potion_rescue() {
+        let plan = CombatSearchPortfolioPlan::after_primary(CombatSearchPortfolioContext {
+            stakes: CombatSearchStakes::Hallway,
+            time_eater_boss: false,
+            nonboss_potion_rescue_signal: true,
+        });
+
+        assert_eq!(
+            plan.lane_kinds(),
+            vec![
+                CombatSearchLaneKind::PrimaryImmediateEscalation,
+                CombatSearchLaneKind::HallwayQualityPotionRescue,
+            ]
         );
         assert!(!plan.should_report());
     }
