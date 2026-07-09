@@ -4,7 +4,7 @@ use crate::ai::strategy::decision_pipeline::{
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_purge_target::{best_purge_uuid, rank_purge_target};
 use crate::ai::strategy::deck_strategic_deficit::{
-    assess_deck_strategic_deficit_summary, StrategicDeficitLevel,
+    assess_deck_strategic_deficit_summary, StrategicBurdenLevel, StrategicDeficitLevel,
 };
 use crate::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1,
@@ -87,6 +87,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
         EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
+        EventId::ForgottenAltar => return Ok(choose(forgotten_altar_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::MaskedBandits => return Ok(choose(masked_bandits_choice(run_state))),
@@ -453,6 +454,96 @@ fn mushrooms_choice(run_state: &RunState) -> EventOwnerOptionSelector {
 
 fn mushrooms_eat_is_emergency(run_state: &RunState) -> bool {
     run_state.current_hp * 100 < run_state.max_hp * 30
+}
+
+fn forgotten_altar_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    if has_relic(run_state, RelicId::GoldenIdol) {
+        return action(EventActionKind::Trade);
+    }
+    if has_omamori_charge(run_state) {
+        return effect(EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Specific(CardId::Decay),
+        });
+    }
+    if forgotten_altar_pray_projected_hp(run_state) >= forgotten_altar_min_hp_after_pray(run_state)
+    {
+        effect(EventEffect::GainMaxHp(5))
+    } else {
+        effect(EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Specific(CardId::Decay),
+        })
+    }
+}
+
+fn forgotten_altar_pray_projected_hp(run_state: &RunState) -> i32 {
+    let (max_hp_gain, raw_loss) = forgotten_altar_pray_effects(run_state)
+        .unwrap_or((5, forgotten_altar_fallback_pray_loss(run_state)));
+    let healed_hp = (run_state.current_hp + max_hp_gain).min(run_state.max_hp + max_hp_gain);
+    healed_hp.saturating_sub(event_hp_loss_estimate(run_state, raw_loss))
+}
+
+fn forgotten_altar_pray_effects(run_state: &RunState) -> Option<(i32, i32)> {
+    crate::engine::event_handler::get_event_options(run_state)
+        .into_iter()
+        .filter(|option| !option.ui.disabled)
+        .find_map(|option| {
+            let max_hp_gain = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::GainMaxHp(amount) => Some(*amount),
+                    _ => None,
+                })?;
+            let hp_loss = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::LoseHp(amount) => Some(*amount),
+                    _ => None,
+                })?;
+            Some((max_hp_gain, hp_loss))
+        })
+}
+
+fn forgotten_altar_fallback_pray_loss(run_state: &RunState) -> i32 {
+    let pct = if run_state.ascension_level >= 15 {
+        0.35
+    } else {
+        0.25
+    };
+    (run_state.max_hp as f32 * pct).round() as i32
+}
+
+fn forgotten_altar_min_hp_after_pray(run_state: &RunState) -> i32 {
+    let deficit = assess_deck_strategic_deficit_summary(
+        &run_state.master_deck,
+        RunStrategicFacts::from_run_state(run_state),
+    );
+    let mut min_hp = if run_state.ascension_level >= 15 {
+        32
+    } else {
+        26
+    };
+    if has_relic(run_state, RelicId::RunicDome) {
+        min_hp += 4;
+    }
+    if matches!(
+        deficit.block_or_mitigation,
+        StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+    ) {
+        min_hp += 4;
+    }
+    if deficit.deck_burden == StrategicBurdenLevel::Heavy {
+        min_hp -= 2;
+    }
+    min_hp
 }
 
 fn masked_bandits_choice(run_state: &RunState) -> EventOwnerOptionSelector {
@@ -939,4 +1030,99 @@ fn event_screen(run_state: &RunState) -> usize {
         .as_ref()
         .map(|event| event.current_screen)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::relics::RelicState;
+    use crate::state::events::{EventId, EventState};
+
+    fn forgotten_altar_run(current_hp: i32, max_hp: i32) -> RunState {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.floor_num = 29;
+        run_state.current_hp = current_hp;
+        run_state.max_hp = max_hp;
+        run_state.event_state = Some(EventState::new(EventId::ForgottenAltar));
+        run_state.relics = vec![RelicState::new(RelicId::RunicDome)];
+        run_state.master_deck = forgotten_altar_heavy_burden_deck();
+        run_state
+    }
+
+    fn forgotten_altar_heavy_burden_deck() -> Vec<CombatCard> {
+        [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Headbutt,
+            CardId::Armaments,
+            CardId::BurningPact,
+            CardId::Whirlwind,
+            CardId::Feed,
+            CardId::ShrugItOff,
+            CardId::Cleave,
+            CardId::DemonForm,
+            CardId::Rupture,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(idx, id)| CombatCard::new(id, idx as u32))
+        .collect()
+    }
+
+    #[test]
+    fn forgotten_altar_prays_when_projected_hp_clears_v0_safety_floor() {
+        let run_state = forgotten_altar_run(52, 99);
+
+        assert_eq!(
+            forgotten_altar_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::GainMaxHp(5))
+        );
+    }
+
+    #[test]
+    fn forgotten_altar_takes_decay_when_projected_hp_is_below_v0_safety_floor() {
+        let run_state = forgotten_altar_run(40, 99);
+
+        assert_eq!(
+            forgotten_altar_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Decay),
+            })
+        );
+    }
+
+    #[test]
+    fn forgotten_altar_offers_golden_idol_before_other_choices() {
+        let mut run_state = forgotten_altar_run(20, 99);
+        run_state.relics.push(RelicState::new(RelicId::GoldenIdol));
+
+        assert_eq!(
+            forgotten_altar_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Trade)
+        );
+    }
+
+    #[test]
+    fn forgotten_altar_uses_omamori_to_block_decay_before_losing_hp() {
+        let mut run_state = forgotten_altar_run(52, 99);
+        run_state.relics.push(RelicState::new(RelicId::Omamori));
+
+        assert_eq!(
+            forgotten_altar_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::ObtainCurse {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::Decay),
+            })
+        );
+    }
 }
