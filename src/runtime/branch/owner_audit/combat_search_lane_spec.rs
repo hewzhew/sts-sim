@@ -15,7 +15,9 @@ pub(super) fn lane_spec(kind: CombatSearchLaneKind) -> CombatSearchLaneSpec {
             acceptance: CombatSearchAcceptancePluginId::AcceptedLineOrPrimaryChunk,
         },
         CombatSearchLaneKind::DiagnosticRescue => rescue_spec("diagnostic_rescue"),
-        CombatSearchLaneKind::HallwayImmediateRescue => rescue_spec("hallway_immediate_rescue"),
+        CombatSearchLaneKind::PrimaryImmediateEscalation => {
+            rescue_spec("primary_immediate_escalation")
+        }
         CombatSearchLaneKind::NonBossPotionRescue => dirty_rejecting_spec("nonboss_potion_rescue"),
         CombatSearchLaneKind::HallwayQualityPotionRescue => {
             dirty_rejecting_spec("hallway_quality_potion_rescue")

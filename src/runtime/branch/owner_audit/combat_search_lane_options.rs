@@ -57,7 +57,7 @@ fn lane_profile(
             LaneSearchBudget::Rescue,
             CombatSearchChildRolloutPluginId::LazyOnPop,
         ),
-        CombatSearchLaneKind::HallwayImmediateRescue => profile_with_budget(
+        CombatSearchLaneKind::PrimaryImmediateEscalation => profile_with_budget(
             lane.label(),
             request.args,
             LaneSearchBudget::Rescue,
