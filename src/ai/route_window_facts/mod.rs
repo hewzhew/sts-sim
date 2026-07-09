@@ -11,12 +11,12 @@ use crate::content::relics::RelicId;
 use crate::state::map::node::{MapRoomNode, RoomType};
 use crate::state::RunState;
 
-pub const ROUTE_WINDOW_FACTS_SCHEMA_NAME: &str = "RouteWindowFactsV1";
+pub const ROUTE_WINDOW_FACTS_SCHEMA_NAME: &str = "RouteWindowFacts";
 pub const ROUTE_WINDOW_FACTS_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowFactsConfigV1 {
+pub struct RouteWindowFactsConfig {
     /// Number of future map nodes to inspect after the current decision resolves.
     pub horizon_nodes: usize,
     /// Maximum number of path suffixes to enumerate before downgrading universal
@@ -24,7 +24,7 @@ pub struct RouteWindowFactsConfigV1 {
     pub path_budget: usize,
 }
 
-impl Default for RouteWindowFactsConfigV1 {
+impl Default for RouteWindowFactsConfig {
     fn default() -> Self {
         Self {
             horizon_nodes: 5,
@@ -35,17 +35,17 @@ impl Default for RouteWindowFactsConfigV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowFactsV1 {
+pub struct RouteWindowFacts {
     pub schema_name: String,
     pub schema_version: u32,
-    pub cursor: RouteWindowCursorV1,
-    pub coverage: RouteWindowCoverageV1,
+    pub cursor: RouteWindowCursor,
+    pub coverage: RouteWindowCoverage,
     pub observed_path_count: usize,
-    pub facts: Vec<RouteWindowFactV1>,
+    pub facts: Vec<RouteWindowFact>,
 }
 
-impl RouteWindowFactsV1 {
-    pub fn facts_for(&self, predicate: &RouteWindowPredicateV1) -> Vec<&RouteWindowFactV1> {
+impl RouteWindowFacts {
+    pub fn facts_for(&self, predicate: &RouteWindowPredicate) -> Vec<&RouteWindowFact> {
         self.facts
             .iter()
             .filter(|fact| &fact.predicate == predicate)
@@ -55,16 +55,16 @@ impl RouteWindowFactsV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowCursorV1 {
+pub struct RouteWindowCursor {
     pub current_x: i32,
     pub current_y: i32,
     pub starts_after_current_decision: bool,
-    pub start_targets: Vec<RouteWindowNodeV1>,
+    pub start_targets: Vec<RouteWindowNode>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowCoverageKindV1 {
+pub enum RouteWindowCoverageKind {
     CompleteWithinHorizon,
     PartialPathBudget,
     PartialUnmodeledMobility,
@@ -74,24 +74,24 @@ pub enum RouteWindowCoverageKindV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowCoverageV1 {
-    pub kind: RouteWindowCoverageKindV1,
+pub struct RouteWindowCoverage {
+    pub kind: RouteWindowCoverageKind,
     pub horizon_nodes: usize,
     pub path_budget: usize,
     pub path_budget_exhausted: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub limitations: Vec<RouteWindowLimitationV1>,
+    pub limitations: Vec<RouteWindowLimitation>,
 }
 
-impl RouteWindowCoverageV1 {
+impl RouteWindowCoverage {
     fn can_prove_universal_and_negative(&self) -> bool {
-        self.kind == RouteWindowCoverageKindV1::CompleteWithinHorizon
+        self.kind == RouteWindowCoverageKind::CompleteWithinHorizon
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowLimitationV1 {
+pub enum RouteWindowLimitation {
     MapPlaceholder,
     PathBudgetExhausted,
     FutureWingBootsJumpsNotEnumerated,
@@ -100,7 +100,7 @@ pub enum RouteWindowLimitationV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowNodeV1 {
+pub struct RouteWindowNode {
     pub x: i32,
     pub y: i32,
     pub room_type: Option<RoomType>,
@@ -108,18 +108,18 @@ pub struct RouteWindowNodeV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RouteWindowFactV1 {
-    pub window: RouteWindowKindV1,
-    pub predicate: RouteWindowPredicateV1,
-    pub modality: RouteWindowModalityV1,
-    pub scope: RouteWindowScopeV1,
+pub struct RouteWindowFact {
+    pub window: RouteWindowKind,
+    pub predicate: RouteWindowPredicate,
+    pub modality: RouteWindowModality,
+    pub scope: RouteWindowScope,
     pub horizon_nodes: usize,
-    pub provenance: RouteWindowProvenanceV1,
+    pub provenance: RouteWindowProvenance,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowKindV1 {
+pub enum RouteWindowKind {
     Danger,
     Recovery,
     Liquidity,
@@ -129,42 +129,42 @@ pub enum RouteWindowKindV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum RouteWindowPredicateV1 {
+pub enum RouteWindowPredicate {
     ReachableWithin {
-        subject: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
         nodes: usize,
     },
     PresentInWindow {
-        subject: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
     },
     CountRangeInWindow {
-        subject: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
         min: usize,
         max: usize,
     },
     OccursBefore {
-        subject: RouteWindowSubjectV1,
-        before: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
+        before: RouteWindowSubject,
     },
     CoReachableWithin {
-        left: RouteWindowSubjectV1,
-        right: RouteWindowSubjectV1,
+        left: RouteWindowSubject,
+        right: RouteWindowSubject,
         nodes: usize,
     },
     BypassExists {
-        subject: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
     },
     UnknownOpportunity {
-        subject: RouteWindowSubjectV1,
+        subject: RouteWindowSubject,
     },
     Coverage {
-        coverage_kind: RouteWindowCoverageKindV1,
+        coverage_kind: RouteWindowCoverageKind,
     },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowSubjectV1 {
+pub enum RouteWindowSubject {
     KnownCombat,
     HallwayCombat,
     Elite,
@@ -177,7 +177,7 @@ pub enum RouteWindowSubjectV1 {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowModalityV1 {
+pub enum RouteWindowModality {
     Must,
     Can,
     Cannot,
@@ -186,13 +186,13 @@ pub enum RouteWindowModalityV1 {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowScopeV1 {
+pub enum RouteWindowScope {
     PathFamily,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RouteWindowProvenanceV1 {
+pub enum RouteWindowProvenance {
     AllCoveredPaths,
     SomeCoveredPath,
     NoCoveredPathComplete,
@@ -202,26 +202,26 @@ pub enum RouteWindowProvenanceV1 {
 
 #[derive(Clone, Debug)]
 struct ObservedPath {
-    nodes: Vec<RouteWindowNodeV1>,
+    nodes: Vec<RouteWindowNode>,
 }
 
-pub fn build_route_window_facts_v1(
+pub fn build_route_window_facts(
     run_state: &RunState,
-    config: RouteWindowFactsConfigV1,
-) -> RouteWindowFactsV1 {
-    let cursor = route_window_cursor_v1(run_state);
+    config: RouteWindowFactsConfig,
+) -> RouteWindowFacts {
+    let cursor = route_window_cursor(run_state);
     let mut facts = Vec::new();
 
     if run_state.map.is_checkpoint_externalized_placeholder() || run_state.map.graph.is_empty() {
-        let coverage = RouteWindowCoverageV1 {
-            kind: RouteWindowCoverageKindV1::UnavailableMap,
+        let coverage = RouteWindowCoverage {
+            kind: RouteWindowCoverageKind::UnavailableMap,
             horizon_nodes: config.horizon_nodes,
             path_budget: config.path_budget,
             path_budget_exhausted: false,
-            limitations: vec![RouteWindowLimitationV1::MapPlaceholder],
+            limitations: vec![RouteWindowLimitation::MapPlaceholder],
         };
         facts.push(coverage_fact(&coverage));
-        return RouteWindowFactsV1 {
+        return RouteWindowFacts {
             schema_name: ROUTE_WINDOW_FACTS_SCHEMA_NAME.to_string(),
             schema_version: ROUTE_WINDOW_FACTS_SCHEMA_VERSION,
             cursor,
@@ -252,25 +252,25 @@ pub fn build_route_window_facts_v1(
     let has_unmodeled_future_mobility = wing_boots_charges(run_state) > 0;
     let mut limitations = Vec::new();
     if path_budget_exhausted {
-        limitations.push(RouteWindowLimitationV1::PathBudgetExhausted);
+        limitations.push(RouteWindowLimitation::PathBudgetExhausted);
     }
     if has_unmodeled_future_mobility {
-        limitations.push(RouteWindowLimitationV1::FutureWingBootsJumpsNotEnumerated);
+        limitations.push(RouteWindowLimitation::FutureWingBootsJumpsNotEnumerated);
     }
     if paths.is_empty() {
-        limitations.push(RouteWindowLimitationV1::NoLegalFutureTargets);
+        limitations.push(RouteWindowLimitation::NoLegalFutureTargets);
     }
 
     let coverage_kind = if path_budget_exhausted {
-        RouteWindowCoverageKindV1::PartialPathBudget
+        RouteWindowCoverageKind::PartialPathBudget
     } else if paths.is_empty() {
-        RouteWindowCoverageKindV1::NoVisibleContinuation
+        RouteWindowCoverageKind::NoVisibleContinuation
     } else if has_unmodeled_future_mobility {
-        RouteWindowCoverageKindV1::PartialUnmodeledMobility
+        RouteWindowCoverageKind::PartialUnmodeledMobility
     } else {
-        RouteWindowCoverageKindV1::CompleteWithinHorizon
+        RouteWindowCoverageKind::CompleteWithinHorizon
     };
-    let coverage = RouteWindowCoverageV1 {
+    let coverage = RouteWindowCoverage {
         kind: coverage_kind,
         horizon_nodes: config.horizon_nodes,
         path_budget: config.path_budget,
@@ -298,7 +298,7 @@ pub fn build_route_window_facts_v1(
     facts.sort_by_key(fact_sort_key);
     facts.dedup();
 
-    RouteWindowFactsV1 {
+    RouteWindowFacts {
         schema_name: ROUTE_WINDOW_FACTS_SCHEMA_NAME.to_string(),
         schema_version: ROUTE_WINDOW_FACTS_SCHEMA_VERSION,
         cursor,
@@ -308,7 +308,7 @@ pub fn build_route_window_facts_v1(
     }
 }
 
-fn route_window_cursor_v1(run_state: &RunState) -> RouteWindowCursorV1 {
+fn route_window_cursor(run_state: &RunState) -> RouteWindowCursor {
     let start_targets = if run_state.map.is_checkpoint_externalized_placeholder()
         || run_state.map.graph.is_empty()
     {
@@ -316,14 +316,14 @@ fn route_window_cursor_v1(run_state: &RunState) -> RouteWindowCursorV1 {
     } else {
         route_targets(run_state)
             .into_iter()
-            .map(|target| RouteWindowNodeV1 {
+            .map(|target| RouteWindowNode {
                 x: target.x,
                 y: target.y,
                 room_type: target.room_type,
             })
             .collect()
     };
-    RouteWindowCursorV1 {
+    RouteWindowCursor {
         current_x: run_state.map.current_x,
         current_y: run_state.map.current_y,
         starts_after_current_decision: true,
@@ -336,7 +336,7 @@ fn collect_path_suffixes(
     run_state: &RunState,
     x: i32,
     y: i32,
-    mut prefix: Vec<RouteWindowNodeV1>,
+    mut prefix: Vec<RouteWindowNode>,
     horizon_nodes: usize,
     path_budget: usize,
     paths: &mut Vec<ObservedPath>,
@@ -354,7 +354,7 @@ fn collect_path_suffixes(
         paths.push(ObservedPath { nodes: prefix });
         return;
     };
-    prefix.push(RouteWindowNodeV1 {
+    prefix.push(RouteWindowNode {
         x: node.x,
         y: node.y,
         room_type: node.class,
@@ -397,30 +397,30 @@ fn wing_boots_charges(run_state: &RunState) -> i32 {
         .unwrap_or_default()
 }
 
-fn coverage_fact(coverage: &RouteWindowCoverageV1) -> RouteWindowFactV1 {
-    RouteWindowFactV1 {
-        window: RouteWindowKindV1::Coverage,
-        predicate: RouteWindowPredicateV1::Coverage {
+fn coverage_fact(coverage: &RouteWindowCoverage) -> RouteWindowFact {
+    RouteWindowFact {
+        window: RouteWindowKind::Coverage,
+        predicate: RouteWindowPredicate::Coverage {
             coverage_kind: coverage.kind,
         },
         modality: match coverage.kind {
-            RouteWindowCoverageKindV1::CompleteWithinHorizon => RouteWindowModalityV1::Must,
-            RouteWindowCoverageKindV1::UnavailableMap
-            | RouteWindowCoverageKindV1::NoVisibleContinuation => RouteWindowModalityV1::Unknown,
-            RouteWindowCoverageKindV1::PartialPathBudget
-            | RouteWindowCoverageKindV1::PartialUnmodeledMobility => RouteWindowModalityV1::Unknown,
+            RouteWindowCoverageKind::CompleteWithinHorizon => RouteWindowModality::Must,
+            RouteWindowCoverageKind::UnavailableMap
+            | RouteWindowCoverageKind::NoVisibleContinuation => RouteWindowModality::Unknown,
+            RouteWindowCoverageKind::PartialPathBudget
+            | RouteWindowCoverageKind::PartialUnmodeledMobility => RouteWindowModality::Unknown,
         },
-        scope: RouteWindowScopeV1::PathFamily,
+        scope: RouteWindowScope::PathFamily,
         horizon_nodes: coverage.horizon_nodes,
         provenance: match coverage.kind {
-            RouteWindowCoverageKindV1::CompleteWithinHorizon => {
-                RouteWindowProvenanceV1::AllCoveredPaths
+            RouteWindowCoverageKind::CompleteWithinHorizon => {
+                RouteWindowProvenance::AllCoveredPaths
             }
-            RouteWindowCoverageKindV1::UnavailableMap => RouteWindowProvenanceV1::MapUnavailable,
-            RouteWindowCoverageKindV1::PartialPathBudget
-            | RouteWindowCoverageKindV1::PartialUnmodeledMobility
-            | RouteWindowCoverageKindV1::NoVisibleContinuation => {
-                RouteWindowProvenanceV1::PartialObservation
+            RouteWindowCoverageKind::UnavailableMap => RouteWindowProvenance::MapUnavailable,
+            RouteWindowCoverageKind::PartialPathBudget
+            | RouteWindowCoverageKind::PartialUnmodeledMobility
+            | RouteWindowCoverageKind::NoVisibleContinuation => {
+                RouteWindowProvenance::PartialObservation
             }
         },
     }
@@ -428,9 +428,9 @@ fn coverage_fact(coverage: &RouteWindowCoverageV1) -> RouteWindowFactV1 {
 
 fn derive_subject_facts(
     paths: &[ObservedPath],
-    coverage: &RouteWindowCoverageV1,
+    coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
-) -> Vec<RouteWindowFactV1> {
+) -> Vec<RouteWindowFact> {
     let mut facts = Vec::new();
     for subject in standard_subjects() {
         let counts = paths
@@ -444,31 +444,31 @@ fn derive_subject_facts(
             .collect::<Vec<_>>();
         let min = counts.iter().copied().min().unwrap_or(0);
         let max = counts.iter().copied().max().unwrap_or(0);
-        facts.push(RouteWindowFactV1 {
+        facts.push(RouteWindowFact {
             window: window_for_subject(*subject),
-            predicate: RouteWindowPredicateV1::CountRangeInWindow {
+            predicate: RouteWindowPredicate::CountRangeInWindow {
                 subject: *subject,
                 min,
                 max,
             },
             modality: if paths.is_empty() {
-                RouteWindowModalityV1::Unknown
+                RouteWindowModality::Unknown
             } else if min > 0 && coverage.can_prove_universal_and_negative() {
-                RouteWindowModalityV1::Must
+                RouteWindowModality::Must
             } else if max > 0 {
-                RouteWindowModalityV1::Can
+                RouteWindowModality::Can
             } else if coverage.can_prove_universal_and_negative() {
-                RouteWindowModalityV1::Cannot
+                RouteWindowModality::Cannot
             } else {
-                RouteWindowModalityV1::Unknown
+                RouteWindowModality::Unknown
             },
-            scope: RouteWindowScopeV1::PathFamily,
+            scope: RouteWindowScope::PathFamily,
             horizon_nodes,
             provenance: provenance_for_counts(min, max, coverage),
         });
 
         facts.push(presence_fact(
-            RouteWindowPredicateV1::PresentInWindow { subject: *subject },
+            RouteWindowPredicate::PresentInWindow { subject: *subject },
             *subject,
             min,
             max,
@@ -483,14 +483,14 @@ fn derive_subject_facts(
                 .collect::<Vec<_>>();
             let can = within.iter().any(|value| *value);
             let must = !within.is_empty() && within.iter().all(|value| *value);
-            facts.push(RouteWindowFactV1 {
+            facts.push(RouteWindowFact {
                 window: window_for_subject(*subject),
-                predicate: RouteWindowPredicateV1::ReachableWithin {
+                predicate: RouteWindowPredicate::ReachableWithin {
                     subject: *subject,
                     nodes,
                 },
                 modality: modality_from_can_must(can, must, coverage),
-                scope: RouteWindowScopeV1::PathFamily,
+                scope: RouteWindowScope::PathFamily,
                 horizon_nodes,
                 provenance: provenance_from_can_must(can, must, coverage),
             });
@@ -501,29 +501,29 @@ fn derive_subject_facts(
             .filter(|path| first_subject_index(path, *subject).is_none())
             .count();
         if bypass_count > 0 {
-            facts.push(RouteWindowFactV1 {
+            facts.push(RouteWindowFact {
                 window: window_for_subject(*subject),
-                predicate: RouteWindowPredicateV1::BypassExists { subject: *subject },
-                modality: RouteWindowModalityV1::Can,
-                scope: RouteWindowScopeV1::PathFamily,
+                predicate: RouteWindowPredicate::BypassExists { subject: *subject },
+                modality: RouteWindowModality::Can,
+                scope: RouteWindowScope::PathFamily,
                 horizon_nodes,
-                provenance: RouteWindowProvenanceV1::SomeCoveredPath,
+                provenance: RouteWindowProvenance::SomeCoveredPath,
             });
         } else {
-            facts.push(RouteWindowFactV1 {
+            facts.push(RouteWindowFact {
                 window: window_for_subject(*subject),
-                predicate: RouteWindowPredicateV1::BypassExists { subject: *subject },
+                predicate: RouteWindowPredicate::BypassExists { subject: *subject },
                 modality: if paths.is_empty() || !coverage.can_prove_universal_and_negative() {
-                    RouteWindowModalityV1::Unknown
+                    RouteWindowModality::Unknown
                 } else {
-                    RouteWindowModalityV1::Cannot
+                    RouteWindowModality::Cannot
                 },
-                scope: RouteWindowScopeV1::PathFamily,
+                scope: RouteWindowScope::PathFamily,
                 horizon_nodes,
                 provenance: if paths.is_empty() || !coverage.can_prove_universal_and_negative() {
-                    RouteWindowProvenanceV1::PartialObservation
+                    RouteWindowProvenance::PartialObservation
                 } else {
-                    RouteWindowProvenanceV1::NoCoveredPathComplete
+                    RouteWindowProvenance::NoCoveredPathComplete
                 },
             });
         }
@@ -533,25 +533,19 @@ fn derive_subject_facts(
 
 fn derive_before_facts(
     paths: &[ObservedPath],
-    coverage: &RouteWindowCoverageV1,
+    coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
-) -> Vec<RouteWindowFactV1> {
+) -> Vec<RouteWindowFact> {
     let pairs = [
         (
-            RouteWindowSubjectV1::KnownCombat,
-            RouteWindowSubjectV1::Campfire,
+            RouteWindowSubject::KnownCombat,
+            RouteWindowSubject::Campfire,
         ),
-        (
-            RouteWindowSubjectV1::KnownCombat,
-            RouteWindowSubjectV1::Shop,
-        ),
-        (RouteWindowSubjectV1::Elite, RouteWindowSubjectV1::Campfire),
-        (RouteWindowSubjectV1::Campfire, RouteWindowSubjectV1::Elite),
-        (
-            RouteWindowSubjectV1::Shop,
-            RouteWindowSubjectV1::KnownCombat,
-        ),
-        (RouteWindowSubjectV1::Boss, RouteWindowSubjectV1::Campfire),
+        (RouteWindowSubject::KnownCombat, RouteWindowSubject::Shop),
+        (RouteWindowSubject::Elite, RouteWindowSubject::Campfire),
+        (RouteWindowSubject::Campfire, RouteWindowSubject::Elite),
+        (RouteWindowSubject::Shop, RouteWindowSubject::KnownCombat),
+        (RouteWindowSubject::Boss, RouteWindowSubject::Campfire),
     ];
     pairs
         .into_iter()
@@ -562,11 +556,11 @@ fn derive_before_facts(
                 .collect::<Vec<_>>();
             let can = observations.iter().any(|value| *value);
             let must = !observations.is_empty() && observations.iter().all(|value| *value);
-            RouteWindowFactV1 {
+            RouteWindowFact {
                 window: window_for_subject(subject),
-                predicate: RouteWindowPredicateV1::OccursBefore { subject, before },
+                predicate: RouteWindowPredicate::OccursBefore { subject, before },
                 modality: modality_from_can_must(can, must, coverage),
-                scope: RouteWindowScopeV1::PathFamily,
+                scope: RouteWindowScope::PathFamily,
                 horizon_nodes,
                 provenance: provenance_from_can_must(can, must, coverage),
             }
@@ -576,14 +570,14 @@ fn derive_before_facts(
 
 fn derive_coreachability_facts(
     paths: &[ObservedPath],
-    coverage: &RouteWindowCoverageV1,
+    coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
-) -> Vec<RouteWindowFactV1> {
+) -> Vec<RouteWindowFact> {
     let pairs = [
-        (RouteWindowSubjectV1::Shop, RouteWindowSubjectV1::Campfire),
-        (RouteWindowSubjectV1::Elite, RouteWindowSubjectV1::Campfire),
-        (RouteWindowSubjectV1::Shop, RouteWindowSubjectV1::Elite),
-        (RouteWindowSubjectV1::Treasure, RouteWindowSubjectV1::Shop),
+        (RouteWindowSubject::Shop, RouteWindowSubject::Campfire),
+        (RouteWindowSubject::Elite, RouteWindowSubject::Campfire),
+        (RouteWindowSubject::Shop, RouteWindowSubject::Elite),
+        (RouteWindowSubject::Treasure, RouteWindowSubject::Shop),
     ];
     pairs
         .into_iter()
@@ -597,15 +591,15 @@ fn derive_coreachability_facts(
                 .collect::<Vec<_>>();
             let can = observations.iter().any(|value| *value);
             let must = !observations.is_empty() && observations.iter().all(|value| *value);
-            RouteWindowFactV1 {
+            RouteWindowFact {
                 window: window_for_subject(left),
-                predicate: RouteWindowPredicateV1::CoReachableWithin {
+                predicate: RouteWindowPredicate::CoReachableWithin {
                     left,
                     right,
                     nodes: horizon_nodes,
                 },
                 modality: modality_from_can_must(can, must, coverage),
-                scope: RouteWindowScopeV1::PathFamily,
+                scope: RouteWindowScope::PathFamily,
                 horizon_nodes,
                 provenance: provenance_from_can_must(can, must, coverage),
             }
@@ -615,111 +609,109 @@ fn derive_coreachability_facts(
 
 fn derive_unknown_opportunity_facts(
     paths: &[ObservedPath],
-    coverage: &RouteWindowCoverageV1,
+    coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
-) -> Vec<RouteWindowFactV1> {
+) -> Vec<RouteWindowFact> {
     let has_unknown = paths
         .iter()
-        .any(|path| first_subject_index(path, RouteWindowSubjectV1::UnknownRoom).is_some());
+        .any(|path| first_subject_index(path, RouteWindowSubject::UnknownRoom).is_some());
     [
-        RouteWindowSubjectV1::Shop,
-        RouteWindowSubjectV1::Treasure,
-        RouteWindowSubjectV1::KnownCombat,
+        RouteWindowSubject::Shop,
+        RouteWindowSubject::Treasure,
+        RouteWindowSubject::KnownCombat,
     ]
     .into_iter()
-    .map(|subject| RouteWindowFactV1 {
+    .map(|subject| RouteWindowFact {
         window: window_for_subject(subject),
-        predicate: RouteWindowPredicateV1::UnknownOpportunity { subject },
+        predicate: RouteWindowPredicate::UnknownOpportunity { subject },
         modality: if has_unknown {
-            RouteWindowModalityV1::Unknown
+            RouteWindowModality::Unknown
         } else if coverage.can_prove_universal_and_negative() {
-            RouteWindowModalityV1::Cannot
+            RouteWindowModality::Cannot
         } else {
-            RouteWindowModalityV1::Unknown
+            RouteWindowModality::Unknown
         },
-        scope: RouteWindowScopeV1::PathFamily,
+        scope: RouteWindowScope::PathFamily,
         horizon_nodes,
         provenance: if has_unknown || !coverage.can_prove_universal_and_negative() {
-            RouteWindowProvenanceV1::PartialObservation
+            RouteWindowProvenance::PartialObservation
         } else {
-            RouteWindowProvenanceV1::NoCoveredPathComplete
+            RouteWindowProvenance::NoCoveredPathComplete
         },
     })
     .collect()
 }
 
 fn presence_fact(
-    predicate: RouteWindowPredicateV1,
-    subject: RouteWindowSubjectV1,
+    predicate: RouteWindowPredicate,
+    subject: RouteWindowSubject,
     min: usize,
     max: usize,
-    coverage: &RouteWindowCoverageV1,
+    coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
-) -> RouteWindowFactV1 {
-    RouteWindowFactV1 {
+) -> RouteWindowFact {
+    RouteWindowFact {
         window: window_for_subject(subject),
         predicate,
         modality: if min > 0 && coverage.can_prove_universal_and_negative() {
-            RouteWindowModalityV1::Must
+            RouteWindowModality::Must
         } else if max > 0 {
-            RouteWindowModalityV1::Can
+            RouteWindowModality::Can
         } else if coverage.can_prove_universal_and_negative() {
-            RouteWindowModalityV1::Cannot
+            RouteWindowModality::Cannot
         } else {
-            RouteWindowModalityV1::Unknown
+            RouteWindowModality::Unknown
         },
-        scope: RouteWindowScopeV1::PathFamily,
+        scope: RouteWindowScope::PathFamily,
         horizon_nodes,
         provenance: provenance_for_counts(min, max, coverage),
     }
 }
 
-fn standard_subjects() -> &'static [RouteWindowSubjectV1] {
+fn standard_subjects() -> &'static [RouteWindowSubject] {
     &[
-        RouteWindowSubjectV1::KnownCombat,
-        RouteWindowSubjectV1::HallwayCombat,
-        RouteWindowSubjectV1::Elite,
-        RouteWindowSubjectV1::Boss,
-        RouteWindowSubjectV1::Campfire,
-        RouteWindowSubjectV1::Shop,
-        RouteWindowSubjectV1::Treasure,
-        RouteWindowSubjectV1::UnknownRoom,
+        RouteWindowSubject::KnownCombat,
+        RouteWindowSubject::HallwayCombat,
+        RouteWindowSubject::Elite,
+        RouteWindowSubject::Boss,
+        RouteWindowSubject::Campfire,
+        RouteWindowSubject::Shop,
+        RouteWindowSubject::Treasure,
+        RouteWindowSubject::UnknownRoom,
     ]
 }
 
-fn window_for_subject(subject: RouteWindowSubjectV1) -> RouteWindowKindV1 {
+fn window_for_subject(subject: RouteWindowSubject) -> RouteWindowKind {
     match subject {
-        RouteWindowSubjectV1::KnownCombat
-        | RouteWindowSubjectV1::HallwayCombat
-        | RouteWindowSubjectV1::Elite
-        | RouteWindowSubjectV1::Boss => RouteWindowKindV1::Danger,
-        RouteWindowSubjectV1::Campfire => RouteWindowKindV1::Recovery,
-        RouteWindowSubjectV1::Shop => RouteWindowKindV1::Liquidity,
-        RouteWindowSubjectV1::Treasure | RouteWindowSubjectV1::UnknownRoom => {
-            RouteWindowKindV1::Payoff
-        }
+        RouteWindowSubject::KnownCombat
+        | RouteWindowSubject::HallwayCombat
+        | RouteWindowSubject::Elite
+        | RouteWindowSubject::Boss => RouteWindowKind::Danger,
+        RouteWindowSubject::Campfire => RouteWindowKind::Recovery,
+        RouteWindowSubject::Shop => RouteWindowKind::Liquidity,
+        RouteWindowSubject::Treasure | RouteWindowSubject::UnknownRoom => RouteWindowKind::Payoff,
     }
 }
 
-fn subject_matches(subject: RouteWindowSubjectV1, node: &RouteWindowNodeV1) -> bool {
+fn subject_matches(subject: RouteWindowSubject, node: &RouteWindowNode) -> bool {
     match subject {
-        RouteWindowSubjectV1::KnownCombat => matches!(
+        RouteWindowSubject::KnownCombat => matches!(
             node.room_type,
             Some(RoomType::MonsterRoom)
                 | Some(RoomType::MonsterRoomElite)
                 | Some(RoomType::MonsterRoomBoss)
         ),
-        RouteWindowSubjectV1::HallwayCombat => node.room_type == Some(RoomType::MonsterRoom),
-        RouteWindowSubjectV1::Elite => node.room_type == Some(RoomType::MonsterRoomElite),
-        RouteWindowSubjectV1::Boss => node.room_type == Some(RoomType::MonsterRoomBoss),
-        RouteWindowSubjectV1::Campfire => node.room_type == Some(RoomType::RestRoom),
-        RouteWindowSubjectV1::Shop => node.room_type == Some(RoomType::ShopRoom),
-        RouteWindowSubjectV1::Treasure => node.room_type == Some(RoomType::TreasureRoom),
-        RouteWindowSubjectV1::UnknownRoom => node.room_type == Some(RoomType::EventRoom),
+        RouteWindowSubject::HallwayCombat => node.room_type == Some(RoomType::MonsterRoom),
+        RouteWindowSubject::Elite => node.room_type == Some(RoomType::MonsterRoomElite),
+        RouteWindowSubject::Boss => node.room_type == Some(RoomType::MonsterRoomBoss),
+        RouteWindowSubject::Campfire => node.room_type == Some(RoomType::RestRoom),
+        RouteWindowSubject::Shop => node.room_type == Some(RoomType::ShopRoom),
+        RouteWindowSubject::Treasure => node.room_type == Some(RoomType::TreasureRoom),
+        RouteWindowSubject::UnknownRoom => node.room_type == Some(RoomType::EventRoom),
     }
 }
 
-fn first_subject_index(path: &ObservedPath, subject: RouteWindowSubjectV1) -> Option<usize> {
+fn first_subject_index(path: &ObservedPath, subject: RouteWindowSubject) -> Option<usize> {
     path.nodes
         .iter()
         .position(|node| subject_matches(subject, node))
@@ -727,8 +719,8 @@ fn first_subject_index(path: &ObservedPath, subject: RouteWindowSubjectV1) -> Op
 
 fn occurs_before(
     path: &ObservedPath,
-    subject: RouteWindowSubjectV1,
-    before: RouteWindowSubjectV1,
+    subject: RouteWindowSubject,
+    before: RouteWindowSubject,
 ) -> bool {
     let Some(subject_idx) = first_subject_index(path, subject) else {
         return false;
@@ -742,52 +734,52 @@ fn occurs_before(
 fn modality_from_can_must(
     can: bool,
     must: bool,
-    coverage: &RouteWindowCoverageV1,
-) -> RouteWindowModalityV1 {
+    coverage: &RouteWindowCoverage,
+) -> RouteWindowModality {
     if must && coverage.can_prove_universal_and_negative() {
-        RouteWindowModalityV1::Must
+        RouteWindowModality::Must
     } else if can {
-        RouteWindowModalityV1::Can
+        RouteWindowModality::Can
     } else if coverage.can_prove_universal_and_negative() {
-        RouteWindowModalityV1::Cannot
+        RouteWindowModality::Cannot
     } else {
-        RouteWindowModalityV1::Unknown
+        RouteWindowModality::Unknown
     }
 }
 
 fn provenance_from_can_must(
     can: bool,
     must: bool,
-    coverage: &RouteWindowCoverageV1,
-) -> RouteWindowProvenanceV1 {
+    coverage: &RouteWindowCoverage,
+) -> RouteWindowProvenance {
     if must && coverage.can_prove_universal_and_negative() {
-        RouteWindowProvenanceV1::AllCoveredPaths
+        RouteWindowProvenance::AllCoveredPaths
     } else if can {
-        RouteWindowProvenanceV1::SomeCoveredPath
+        RouteWindowProvenance::SomeCoveredPath
     } else if coverage.can_prove_universal_and_negative() {
-        RouteWindowProvenanceV1::NoCoveredPathComplete
+        RouteWindowProvenance::NoCoveredPathComplete
     } else {
-        RouteWindowProvenanceV1::PartialObservation
+        RouteWindowProvenance::PartialObservation
     }
 }
 
 fn provenance_for_counts(
     min: usize,
     max: usize,
-    coverage: &RouteWindowCoverageV1,
-) -> RouteWindowProvenanceV1 {
+    coverage: &RouteWindowCoverage,
+) -> RouteWindowProvenance {
     if min > 0 && coverage.can_prove_universal_and_negative() {
-        RouteWindowProvenanceV1::AllCoveredPaths
+        RouteWindowProvenance::AllCoveredPaths
     } else if max > 0 {
-        RouteWindowProvenanceV1::SomeCoveredPath
+        RouteWindowProvenance::SomeCoveredPath
     } else if coverage.can_prove_universal_and_negative() {
-        RouteWindowProvenanceV1::NoCoveredPathComplete
+        RouteWindowProvenance::NoCoveredPathComplete
     } else {
-        RouteWindowProvenanceV1::PartialObservation
+        RouteWindowProvenance::PartialObservation
     }
 }
 
-fn fact_sort_key(fact: &RouteWindowFactV1) -> (u8, String, u8, u8, usize, u8) {
+fn fact_sort_key(fact: &RouteWindowFact) -> (u8, String, u8, u8, usize, u8) {
     (
         window_sort_key(fact.window),
         format!("{:?}", fact.predicate),
@@ -798,38 +790,38 @@ fn fact_sort_key(fact: &RouteWindowFactV1) -> (u8, String, u8, u8, usize, u8) {
     )
 }
 
-fn window_sort_key(window: RouteWindowKindV1) -> u8 {
+fn window_sort_key(window: RouteWindowKind) -> u8 {
     match window {
-        RouteWindowKindV1::Danger => 0,
-        RouteWindowKindV1::Recovery => 1,
-        RouteWindowKindV1::Liquidity => 2,
-        RouteWindowKindV1::Payoff => 3,
-        RouteWindowKindV1::Coverage => 4,
+        RouteWindowKind::Danger => 0,
+        RouteWindowKind::Recovery => 1,
+        RouteWindowKind::Liquidity => 2,
+        RouteWindowKind::Payoff => 3,
+        RouteWindowKind::Coverage => 4,
     }
 }
 
-fn modality_sort_key(modality: RouteWindowModalityV1) -> u8 {
+fn modality_sort_key(modality: RouteWindowModality) -> u8 {
     match modality {
-        RouteWindowModalityV1::Must => 0,
-        RouteWindowModalityV1::Can => 1,
-        RouteWindowModalityV1::Cannot => 2,
-        RouteWindowModalityV1::Unknown => 3,
+        RouteWindowModality::Must => 0,
+        RouteWindowModality::Can => 1,
+        RouteWindowModality::Cannot => 2,
+        RouteWindowModality::Unknown => 3,
     }
 }
 
-fn scope_sort_key(scope: RouteWindowScopeV1) -> u8 {
+fn scope_sort_key(scope: RouteWindowScope) -> u8 {
     match scope {
-        RouteWindowScopeV1::PathFamily => 0,
+        RouteWindowScope::PathFamily => 0,
     }
 }
 
-fn provenance_sort_key(provenance: RouteWindowProvenanceV1) -> u8 {
+fn provenance_sort_key(provenance: RouteWindowProvenance) -> u8 {
     match provenance {
-        RouteWindowProvenanceV1::AllCoveredPaths => 0,
-        RouteWindowProvenanceV1::SomeCoveredPath => 1,
-        RouteWindowProvenanceV1::NoCoveredPathComplete => 2,
-        RouteWindowProvenanceV1::PartialObservation => 3,
-        RouteWindowProvenanceV1::MapUnavailable => 4,
+        RouteWindowProvenance::AllCoveredPaths => 0,
+        RouteWindowProvenance::SomeCoveredPath => 1,
+        RouteWindowProvenance::NoCoveredPathComplete => 2,
+        RouteWindowProvenance::PartialObservation => 3,
+        RouteWindowProvenance::MapUnavailable => 4,
     }
 }
 
@@ -853,10 +845,10 @@ mod tests {
     }
 
     fn has_fact(
-        facts: &RouteWindowFactsV1,
-        predicate: RouteWindowPredicateV1,
-        modality: RouteWindowModalityV1,
-        provenance: RouteWindowProvenanceV1,
+        facts: &RouteWindowFacts,
+        predicate: RouteWindowPredicate,
+        modality: RouteWindowModality,
+        provenance: RouteWindowProvenance,
     ) -> bool {
         facts.facts.iter().any(|fact| {
             fact.predicate == predicate
@@ -872,9 +864,9 @@ mod tests {
         let fire = node(0, 1, RoomType::RestRoom);
         let run_state = run_with_graph(vec![vec![event], vec![fire]], 0, 0);
 
-        let facts = build_route_window_facts_v1(
+        let facts = build_route_window_facts(
             &run_state,
-            RouteWindowFactsConfigV1 {
+            RouteWindowFactsConfig {
                 horizon_nodes: 2,
                 path_budget: 16,
             },
@@ -882,19 +874,19 @@ mod tests {
 
         assert!(has_fact(
             &facts,
-            RouteWindowPredicateV1::PresentInWindow {
-                subject: RouteWindowSubjectV1::UnknownRoom
+            RouteWindowPredicate::PresentInWindow {
+                subject: RouteWindowSubject::UnknownRoom
             },
-            RouteWindowModalityV1::Cannot,
-            RouteWindowProvenanceV1::NoCoveredPathComplete,
+            RouteWindowModality::Cannot,
+            RouteWindowProvenance::NoCoveredPathComplete,
         ));
         assert!(has_fact(
             &facts,
-            RouteWindowPredicateV1::PresentInWindow {
-                subject: RouteWindowSubjectV1::Campfire
+            RouteWindowPredicate::PresentInWindow {
+                subject: RouteWindowSubject::Campfire
             },
-            RouteWindowModalityV1::Must,
-            RouteWindowProvenanceV1::AllCoveredPaths,
+            RouteWindowModality::Must,
+            RouteWindowProvenance::AllCoveredPaths,
         ));
     }
 
@@ -907,9 +899,9 @@ mod tests {
         let fire = node(1, 1, RoomType::RestRoom);
         let run_state = run_with_graph(vec![vec![start], vec![shop, fire]], 0, 0);
 
-        let facts = build_route_window_facts_v1(
+        let facts = build_route_window_facts(
             &run_state,
-            RouteWindowFactsConfigV1 {
+            RouteWindowFactsConfig {
                 horizon_nodes: 1,
                 path_budget: 16,
             },
@@ -917,20 +909,20 @@ mod tests {
 
         assert!(has_fact(
             &facts,
-            RouteWindowPredicateV1::ReachableWithin {
-                subject: RouteWindowSubjectV1::Shop,
+            RouteWindowPredicate::ReachableWithin {
+                subject: RouteWindowSubject::Shop,
                 nodes: 1,
             },
-            RouteWindowModalityV1::Can,
-            RouteWindowProvenanceV1::SomeCoveredPath,
+            RouteWindowModality::Can,
+            RouteWindowProvenance::SomeCoveredPath,
         ));
         assert!(has_fact(
             &facts,
-            RouteWindowPredicateV1::BypassExists {
-                subject: RouteWindowSubjectV1::Shop,
+            RouteWindowPredicate::BypassExists {
+                subject: RouteWindowSubject::Shop,
             },
-            RouteWindowModalityV1::Can,
-            RouteWindowProvenanceV1::SomeCoveredPath,
+            RouteWindowModality::Can,
+            RouteWindowProvenance::SomeCoveredPath,
         ));
     }
 
@@ -943,9 +935,9 @@ mod tests {
         let shop = node(1, 1, RoomType::ShopRoom);
         let run_state = run_with_graph(vec![vec![start], vec![combat, shop]], 0, 0);
 
-        let facts = build_route_window_facts_v1(
+        let facts = build_route_window_facts(
             &run_state,
-            RouteWindowFactsConfigV1 {
+            RouteWindowFactsConfig {
                 horizon_nodes: 1,
                 path_budget: 1,
             },
@@ -953,15 +945,15 @@ mod tests {
 
         assert_eq!(
             facts.coverage.kind,
-            RouteWindowCoverageKindV1::PartialPathBudget
+            RouteWindowCoverageKind::PartialPathBudget
         );
         assert!(!has_fact(
             &facts,
-            RouteWindowPredicateV1::PresentInWindow {
-                subject: RouteWindowSubjectV1::Shop
+            RouteWindowPredicate::PresentInWindow {
+                subject: RouteWindowSubject::Shop
             },
-            RouteWindowModalityV1::Cannot,
-            RouteWindowProvenanceV1::NoCoveredPathComplete,
+            RouteWindowModality::Cannot,
+            RouteWindowProvenance::NoCoveredPathComplete,
         ));
     }
 }

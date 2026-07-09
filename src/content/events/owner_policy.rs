@@ -1,6 +1,11 @@
 use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
 };
+use crate::ai::event_resource_budget::{
+    build_event_resource_budget, EventGainClass, EventResourceBudget, EventSpendClass,
+    EventVarianceTolerance,
+};
+use crate::ai::route_window_facts::{build_route_window_facts, RouteWindowFactsConfig};
 use crate::ai::strategy::decision_pipeline::{
     evaluate_decision_candidate, DecisionCandidateKind, DecisionPipelineContext,
 };
@@ -12,7 +17,9 @@ use crate::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1,
 };
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
-use crate::content::cards::{get_card_definition, is_starter_basic, is_starter_strike, CardId};
+use crate::content::cards::{
+    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
+};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
@@ -79,10 +86,14 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::BackTotheBasics => return Ok(choose(back_to_basics_choice(run_state))),
         EventId::Beggar => return Ok(choose(beggar_choice(run_state))),
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
+        EventId::BonfireElementals => return Ok(choose(bonfire_choice(run_state))),
+        EventId::BonfireSpirits => return Ok(choose(bonfire_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
+        EventId::DrugDealer => return Ok(choose(drug_dealer_choice(run_state))),
         EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
+        EventId::FaceTrader => return Ok(choose(face_trader_choice(run_state))),
         EventId::ForgottenAltar => return Ok(choose(forgotten_altar_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::Cleric => return Ok(choose(cleric_choice(run_state))),
@@ -99,6 +110,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
         EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
         EventId::Purifier => return Ok(choose(purifier_choice(run_state))),
+        EventId::ScrapOoze => return Ok(choose(scrap_ooze_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
         EventId::TheLibrary => return Ok(choose(the_library_choice(run_state))),
         EventId::TombRedMask => return Ok(choose(tomb_red_mask_choice(run_state))),
@@ -204,6 +216,206 @@ fn back_to_basics_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     } else {
         option_index(1)
     }
+}
+
+fn scrap_ooze_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if scrap_ooze_should_reach(run_state) => action(EventActionKind::Special),
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn scrap_ooze_should_reach(run_state: &RunState) -> bool {
+    let Some(event_state) = run_state.event_state.as_ref() else {
+        return false;
+    };
+    let next_loss = scrap_ooze_next_hp_loss(run_state).unwrap_or_else(|| {
+        if run_state.ascension_level >= 15 {
+            5
+        } else {
+            3
+        }
+    });
+    let hp_after = run_state.current_hp.saturating_sub(next_loss);
+    let budget = event_resource_budget_for(run_state);
+    if hp_after < budget.hp.route_break_floor || hp_after < 8 {
+        return false;
+    }
+    if spend_breaks_route(hp_loss_class(&budget, next_loss)) {
+        return false;
+    }
+
+    let already_digging = event_state.internal_state != 0;
+    if !already_digging
+        && (spend_reserved_or_worse(budget.hp.session_loss)
+            || budget.variance.tolerance == EventVarianceTolerance::Low)
+    {
+        return false;
+    }
+
+    if already_digging {
+        hp_after >= budget.hp.reserve_floor
+    } else {
+        hp_after >= budget.hp.free_floor
+            || matches!(
+                budget.hp.session_loss,
+                EventSpendClass::FreeToSpend | EventSpendClass::BudgetedForHighReturn
+            )
+    }
+}
+
+fn scrap_ooze_next_hp_loss(run_state: &RunState) -> Option<i32> {
+    crate::engine::event_handler::get_event_options(run_state)
+        .first()
+        .and_then(|option| {
+            option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::LoseHp(loss) => Some(*loss),
+                    _ => None,
+                })
+        })
+}
+
+fn drug_dealer_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if drug_dealer_should_take_jax(run_state) => option_index(0),
+        0 if drug_dealer_should_take_mutagenic(run_state) => option_index(2),
+        0 if drug_dealer_has_safe_transform_two_plan(run_state) => option_index(1),
+        0 => option_index(2),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn drug_dealer_has_safe_transform_two_plan(run_state: &RunState) -> bool {
+    matches!(
+        event_resource_budget_for(run_state).deck.random_transform,
+        EventSpendClass::FreeToSpend | EventSpendClass::BudgetedForHighReturn
+    ) && drug_dealer_safe_transform_target_count(run_state) >= 2
+}
+
+fn drug_dealer_safe_transform_target_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            let def = get_card_definition(card.id);
+            def.card_type != CardType::Curse
+                && card.id != CardId::Parasite
+                && (is_starter_strike(card.id) || is_starter_defend(card.id))
+        })
+        .count()
+}
+
+fn drug_dealer_should_take_mutagenic(run_state: &RunState) -> bool {
+    has_relic(run_state, RelicId::ClockworkSouvenir)
+        || has_relic(run_state, RelicId::OrangePellets)
+        || has_relic(run_state, RelicId::BagOfMarbles)
+        || has_card(run_state, CardId::Panacea)
+        || drug_dealer_turn_one_conversion_score(run_state) >= 3
+}
+
+fn drug_dealer_turn_one_conversion_score(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .map(|card| {
+            let def = get_card_definition(card.id);
+            if def.card_type != CardType::Attack || is_starter_strike(card.id) {
+                0
+            } else if def.is_multi_damage
+                || matches!(
+                    card.id,
+                    CardId::Pummel
+                        | CardId::TwinStrike
+                        | CardId::SwordBoomerang
+                        | CardId::Whirlwind
+                )
+            {
+                2
+            } else if def.cost <= 1 {
+                1
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+fn drug_dealer_should_take_jax(run_state: &RunState) -> bool {
+    has_card(run_state, CardId::Rupture)
+        && (has_card(run_state, CardId::Reaper) || has_relic(run_state, RelicId::RunicCube))
+        && (has_strength_payoff_card(run_state)
+            || drug_dealer_turn_one_conversion_score(run_state) >= 3)
+        && !spend_reserved_or_worse(event_resource_budget_for(run_state).hp.medium_loss)
+}
+
+fn has_strength_payoff_card(run_state: &RunState) -> bool {
+    run_state.master_deck.iter().any(|card| {
+        matches!(
+            card.id,
+            CardId::HeavyBlade
+                | CardId::LimitBreak
+                | CardId::Pummel
+                | CardId::Reaper
+                | CardId::SwordBoomerang
+                | CardId::TwinStrike
+        )
+    })
+}
+
+fn bonfire_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 => action(EventActionKind::Continue),
+        1 => action(EventActionKind::DeckOperation),
+        2 => action(EventActionKind::Continue),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn face_trader_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 => action(EventActionKind::Continue),
+        1 if face_trader_should_touch(run_state) => option_index(0),
+        1 if face_trader_should_trade(run_state) => option_index(1),
+        1 => option_index(2),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn face_trader_should_touch(run_state: &RunState) -> bool {
+    let budget = event_resource_budget_for(run_state);
+    let loss = (run_state.max_hp / 10).max(1);
+    !has_relic(run_state, RelicId::Ectoplasm)
+        && !spend_reserved_or_worse(hp_loss_class(&budget, loss))
+        && matches!(
+            budget.gold.gold_gain,
+            EventGainClass::UsefulSoon | EventGainClass::UnknownOpportunity
+        )
+}
+
+fn face_trader_should_trade(run_state: &RunState) -> bool {
+    if run_state.ascension_level >= 15 {
+        return false;
+    }
+    let very_early = run_state.act_num == 1 && run_state.floor_num <= 6;
+    let cannot_touch = !face_trader_should_touch(run_state);
+    very_early
+        && cannot_touch
+        && run_state.current_hp * 100 >= run_state.max_hp * 60
+        && !deck_hates_turn_one_weak(run_state)
+}
+
+fn deck_hates_turn_one_weak(run_state: &RunState) -> bool {
+    let deficit = assess_deck_strategic_deficit_summary(
+        &run_state.master_deck,
+        RunStrategicFacts::from_run_state(run_state),
+    );
+    deficit.frontload_damage == StrategicDeficitLevel::Missing
+        || drug_dealer_turn_one_conversion_score(run_state) >= 4
 }
 
 fn shining_light_choice(run_state: &RunState) -> EventOwnerOptionSelector {
@@ -979,6 +1191,35 @@ fn cursed_tome_take_loss_from(run_state: &RunState, screen: usize) -> i32 {
         .sum()
 }
 
+fn event_resource_budget_for(run_state: &RunState) -> EventResourceBudget {
+    let route_facts = build_route_window_facts(run_state, RouteWindowFactsConfig::default());
+    build_event_resource_budget(run_state, &route_facts)
+}
+
+fn hp_loss_class(budget: &EventResourceBudget, loss: i32) -> EventSpendClass {
+    if loss <= 5 {
+        budget.hp.small_loss
+    } else if loss <= 12 {
+        budget.hp.medium_loss
+    } else {
+        budget.hp.large_loss
+    }
+}
+
+fn spend_reserved_or_worse(class: EventSpendClass) -> bool {
+    matches!(
+        class,
+        EventSpendClass::Reserved | EventSpendClass::RouteBreaking | EventSpendClass::Unavailable
+    )
+}
+
+fn spend_breaks_route(class: EventSpendClass) -> bool {
+    matches!(
+        class,
+        EventSpendClass::RouteBreaking | EventSpendClass::Unavailable
+    )
+}
+
 fn event_hp_loss_estimate(run_state: &RunState, amount: i32) -> i32 {
     let has_tungsten_rod = run_state
         .relics
@@ -1315,6 +1556,77 @@ mod tests {
                 count: 1,
                 kind: EventCardKind::Specific(CardId::Injury),
             })
+        );
+    }
+
+    #[test]
+    fn scrap_ooze_reaches_when_hp_budget_is_safe_and_leaves_when_low() {
+        let run_state = event_run(EventId::ScrapOoze, 80, 80, 0);
+        assert_eq!(
+            scrap_ooze_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Special)
+        );
+
+        let low_hp = event_run(EventId::ScrapOoze, 14, 80, 0);
+        assert_eq!(
+            scrap_ooze_choice(&low_hp),
+            EventOwnerOptionSelector::Action(EventActionKind::Leave)
+        );
+    }
+
+    #[test]
+    fn drug_dealer_defaults_to_transform_two_when_safe_targets_exist() {
+        let run_state = event_run(EventId::DrugDealer, 70, 80, 0);
+
+        assert_eq!(
+            drug_dealer_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(1)
+        );
+    }
+
+    #[test]
+    fn drug_dealer_takes_mutagenic_when_artifact_preserves_strength() {
+        let mut run_state = event_run(EventId::DrugDealer, 70, 80, 0);
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+
+        assert_eq!(
+            drug_dealer_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(2)
+        );
+    }
+
+    #[test]
+    fn bonfire_approaches_and_offers_when_card_can_be_removed() {
+        let mut run_state = event_run(EventId::BonfireSpirits, 70, 80, 0);
+
+        assert_eq!(
+            bonfire_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Continue)
+        );
+
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        assert_eq!(
+            bonfire_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::DeckOperation)
+        );
+    }
+
+    #[test]
+    fn face_trader_touches_when_hp_can_buy_near_term_gold_and_leaves_when_low() {
+        let mut run_state = event_run(EventId::FaceTrader, 70, 80, 0);
+        run_state.event_state.as_mut().unwrap().current_screen = 1;
+        assert_eq!(
+            face_trader_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(0)
+        );
+
+        let mut low_hp = event_run(EventId::FaceTrader, 12, 80, 0);
+        low_hp.event_state.as_mut().unwrap().current_screen = 1;
+        assert_eq!(
+            face_trader_choice(&low_hp),
+            EventOwnerOptionSelector::OptionIndex(2)
         );
     }
 }
