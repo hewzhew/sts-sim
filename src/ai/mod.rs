@@ -27,6 +27,7 @@ pub mod random_upgrade_opportunity_v1;
 pub mod relic_trade_policy_v1;
 pub mod reward_policy_v1;
 pub mod route_planner_v1;
+pub mod route_window_facts_v1;
 pub mod shop_policy_v1;
 pub mod strategic;
 pub mod strategy;
