@@ -3,7 +3,7 @@ use sts_simulator::ai::combat_search_v2::CombatSearchV2WitnessLine;
 use sts_simulator::sim::combat::CombatTerminal;
 
 use super::super::quality_lanes::CombatLineQuality;
-use super::super::search_types::SearchReview;
+use super::super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
 
 #[derive(Serialize)]
 pub(crate) struct CounterfactualHpProbe {
@@ -22,9 +22,16 @@ pub(super) struct CounterfactualHpLevel {
     pub(super) selected_lane: Option<&'static str>,
     pub(super) complete_win: bool,
     pub(super) quality: Option<CombatLineQuality>,
+    pub(super) best_progress: Option<CounterfactualHpProgress>,
     pub(super) nodes_to_first_win: Option<u64>,
     pub(super) total_terminal_wins: u64,
     pub(super) replay_on_original_hp: Option<CounterfactualHpReplay>,
+}
+
+#[derive(Clone, Serialize)]
+pub(super) struct CounterfactualHpProgress {
+    pub(super) lane: &'static str,
+    pub(super) facts: SearchDiagnosticProgressFacts,
 }
 
 #[derive(Serialize)]
