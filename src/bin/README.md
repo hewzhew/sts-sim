@@ -11,11 +11,14 @@ file only records binary ownership and boundaries.
 
 | Binary | Boundary |
 | --- | --- |
-| `branch_campaign_driver` | Rust-owned campaign application: run, inspect, dataset, continuation, and self-check commands. |
-| `branch_tiny` | Lightweight owner-audit runner with run capsules, frontier continuation, and seed-panel diagnostics. |
-| `combat_search_v2_driver` | Whole-combat search from start specs, combat captures, and benchmark suites. |
+| `branch_tiny` | Lightweight owner-audit runner with run capsules, frontier continuation, seed-panel diagnostics, and combat-case capture. |
+| `branch_panel` | Rust seed-panel scheduler for smoke/drain runs over multiple `branch_tiny` capsules. |
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
+| `combat_search_v2_driver` | Whole-combat search from start specs, combat captures, and benchmark suites. |
 | `run_play_driver` | Manual and semi-automatic REPL over `eval::run_control`: traces, bookmarks, captures, baselines, and interactive panels. |
+| `branch_campaign_driver` | Rust-owned campaign application: run, inspect, dataset, continuation, and self-check commands. |
+| `decision_records` | Decision-record inspection utility; reports typed decision artifacts without owning policy. |
+| `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments; exported labels are behavior-policy data, not truth. |
 
 ## Ownership Rules
 
@@ -24,11 +27,15 @@ file only records binary ownership and boundaries.
   subcommands.
 - `branch_tiny` owner modules produce typed decisions. The runner applies those
   decisions without parsing rendered labels.
+- `branch_panel` schedules and resumes `branch_tiny` capsules. It should not
+  reinterpret owner policy or combat strategy.
 - `combat_search_v2_driver` and `combat_case_review` are combat investigation
   tools. They do not decide non-combat policy.
 - `run_play_driver` is an interactive shell over the run-control kernel. Its
   detailed command help belongs in the binary and in `docs/RUNBOOK.md`, not in
   this map.
+- `rl_dataset_export` may read journals, summaries, and capsules, but it should
+  not create policy conclusions that are not present in the source artifacts.
 
 ## File Boundaries
 

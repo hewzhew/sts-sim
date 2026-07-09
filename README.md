@@ -5,79 +5,84 @@
 `sts_simulator` is an unofficial Rust simulator and AI-search workspace for
 Slay the Spire.
 
-Current main line:
+The project is currently a research and automation codebase, not a polished
+library crate. Its main goal is to make simulator state, run decisions, combat
+search, and experiment artifacts explicit enough that failures can be replayed
+and improved instead of explained from terminal logs.
+
+## Current Focus
 
 ```text
-simulator correctness
-  -> Rust-owned campaign application
-  -> source/output/continuation lifecycle
-  -> search/rollout evidence when needed
+typed simulator state
+  -> typed non-combat owners and deck mutation bridges
+  -> branch-tiny run capsules and seed panels
+  -> combat cases for search review
+  -> offline datasets and diagnostics when useful
 ```
 
-The project is not currently focused on old watch UI, Workbench,
-DecisionFrame, prompt engineering, or an LLM-driven controller. Those may return
-later as adapters, but they do not define simulator truth or search quality.
+The active direction is to keep strategy, execution, and diagnostics separate:
 
-## Current Workflow
+- owners choose typed non-combat decisions;
+- runtime applies those decisions without parsing display text;
+- combat search only solves combat;
+- panels and review tools expose evidence, not teacher labels.
 
-The maintained campaign wrapper direction is:
-
-1. resolve a source artifact when continuing or inspecting
-2. allocate a new output artifact for each run/continue invocation
-3. run a new campaign or continue a source for a small explicit round budget
-
-Autopilot, route planning, card reward policy, traces, and search-assisted
-combat are convenience/evidence tools. They are not teacher labels.
-
-The campaign system is owned by typed Rust application boundaries. The
-PowerShell wrapper is a local source/output/continuation launcher, not the
-architecture. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the maintained boundary
+contract.
 
 ## Quick Start
 
-Use the Rust campaign surface directly when checking architecture, CLI
-behavior, or artifact semantics:
+Run one owner-audit seed:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
+cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
-Use the local launcher when you want the current short aliases:
+Run a small seed panel:
 
 ```powershell
-.\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
-.\tools\campaign.ps1 -From latest -Inspect
+cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
-Treat wrapper commands as launch aliases, not architecture. See
-[docs/RUNBOOK.md](docs/RUNBOOK.md) for branch-tiny panels, combat case review,
-manual REPL usage, search drivers, and verification commands.
+Review a saved combat case:
+
+```powershell
+cargo run --bin combat_case_review -- --case <case.json> --ladder
+```
+
+Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained commands, continuation
+examples, combat search drivers, manual REPL usage, and verification.
 
 ## Main Entrypoints
 
 | Binary | Purpose |
 | --- | --- |
-| `branch_campaign_driver` | current automated branch campaign, checkpoint inspection, outcome export, and continuation experiments |
-| `branch_tiny` | lightweight owner-audit runner with run capsules, frontier continuation, and gap-panel diagnostics |
-| `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
-| `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
-| `combat_case_review` | review ladder for saved combat cases from branch-tiny combat gaps |
+| `branch_tiny` | lightweight run runner for owner coverage, run capsules, frontier continuation, and combat-case capture |
+| `branch_panel` | Rust seed-panel scheduler for smoke/drain runs across several seeds |
+| `combat_case_review` | diagnostic review ladder for saved combat cases |
+| `combat_search_v2_driver` | fixed combat search from start specs, captures, or benchmark suites |
+| `run_play_driver` | manual and semi-automatic simulator REPL |
+| `branch_campaign_driver` | older Rust campaign application surface for campaign artifacts and continuation experiments |
+| `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
+| `decision_records` | decision-record inspection utility |
 
-See [src/bin/README.md](src/bin/README.md) for binary details.
+See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
 
-## Active Docs
+## Documentation Map
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): current ownership boundaries
-  and design rules.
-- [docs/RUNBOOK.md](docs/RUNBOOK.md): maintained local commands and
-  verification.
+- [docs/README.md](docs/README.md): current documentation index.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): ownership boundaries and design
+  rules.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): maintained local commands.
+- [docs/TESTING.md](docs/TESTING.md): test ownership and cleanup standards.
+- [tools/README.md](tools/README.md): offline tool boundaries and artifact
+  rules.
 
 Retired docs are not kept searchable in the working tree. Use git history for
 archaeology.
 
-## Architecture
+## Repository Layout
 
 | Directory | Role |
 | --- | --- |
@@ -86,11 +91,16 @@ archaeology.
 | `src/engine` | state transitions and action handlers |
 | `src/runtime` | runtime support for run/combat execution |
 | `src/sim` | simulator-facing legal action and apply/search boundaries |
-| `src/ai` | combat search, state keys, route planner, value/rollout work |
+| `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
 | `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
 | `src/bin` | maintained command entrypoints |
+| `tools` | offline scripts, datasets, panels, and generated artifacts |
+| `docs` | maintained architecture, runbook, testing notes, and current drafts |
 
-## Editing Hygiene
+Generated outputs belong under ignored locations such as `target/` and
+`tools/artifacts/`.
+
+## Development Hygiene
 
 The repository stores source, docs, and PowerShell scripts with LF line endings.
 After mechanical edits on Windows, check that a small source change did not
@@ -102,14 +112,21 @@ git diff --ignore-space-at-eol --stat
 git ls-files --eol $(git diff --name-only)
 ```
 
-Prefer `apply_patch` for source edits. If a one-off PowerShell migration must
-rewrite files, write UTF-8 without BOM and normalize text to LF before saving.
+Prefer small commits with honest names. Do not preserve duplicate policy modules
+only because migration is uncomfortable; when a boundary is ready, delete the
+old entrypoint instead of keeping a compatibility layer.
 
 ## Verification
 
-Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained verification commands.
-Run targeted tests only when the changed surface has a stable structural
-contract worth protecting.
+For documentation-only changes:
+
+```powershell
+git diff --check
+```
+
+For core code changes, start from the commands in
+[docs/RUNBOOK.md](docs/RUNBOOK.md). Run targeted tests only when the changed
+surface has a stable structural contract worth protecting.
 
 ## License and Game Notice
 

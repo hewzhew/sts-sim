@@ -4,70 +4,77 @@
 
 `sts_simulator` 是一个非官方的 Slay the Spire Rust 模拟器和 AI 搜索实验仓库。
 
-当前主线：
+这个仓库目前是研究和自动化工作区，不是已经整理成稳定 API 的库。当前目标是把模拟器状态、跑局决策、战斗搜索和实验 artifact 做到足够明确，让失败可以复现、复盘、改进，而不是靠终端日志猜。
+
+## 当前主线
 
 ```text
-simulator correctness
-  -> Rust-owned campaign application
-  -> source/output/continuation lifecycle
-  -> search/rollout evidence when needed
+typed simulator state
+  -> typed non-combat owners and deck mutation bridges
+  -> branch-tiny run capsules and seed panels
+  -> combat cases for search review
+  -> offline datasets and diagnostics when useful
 ```
 
-项目现在不以旧 watch UI、Workbench、DecisionFrame、prompt 工程或 LLM 接管控制为主线。这些以后可以作为适配层回来，但不能定义模拟器真相或搜索质量。
+当前设计方向是把策略、执行、诊断分开：
 
-## 当前工作流
+- owner 只产出 typed non-combat decision；
+- runtime 执行 typed decision，不重新解析展示文本；
+- combat search 只解决战斗内部问题；
+- panel 和 review tool 输出证据，不充当 teacher label。
 
-当前维护的闭环是：
-
-1. 继续或检查时先解析 source artifact
-2. 每次 run/continue 都分配新的 output artifact
-3. 用小而明确的 round budget 运行新 campaign 或继续 source
-
-Autopilot、route planner、card reward policy、trace、搜索托管战斗都是便利工具或证据工具，不是 teacher label。
-
-campaign 系统由 typed Rust application boundary 拥有。PowerShell wrapper 只是本地 source/output/continuation launcher，不是架构本身。见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+维护中的边界契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 快速开始
 
-检查架构、CLI 行为或 artifact 语义时，优先直接调用 Rust campaign surface：
+跑单个 owner-audit seed：
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
+cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
-需要当前短别名时再用本地 launcher：
+跑一个小 seed panel：
 
 ```powershell
-.\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
-.\tools\campaign.ps1 -From latest -Inspect
+cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
-把 wrapper command 当成 launch alias，不要当成架构。branch-tiny panel、
-combat case review、手动 REPL、search driver 和验证命令见
+复盘保存下来的 combat case：
+
+```powershell
+cargo run --bin combat_case_review -- --case <case.json> --ladder
+```
+
+当前维护命令、续跑、combat search driver、手动 REPL 和验证方式见
 [docs/RUNBOOK.md](docs/RUNBOOK.md)。
 
 ## 主要入口
 
 | Binary | 用途 |
 | --- | --- |
-| `branch_campaign_driver` | 当前自动分支 campaign、checkpoint 检查、outcome 导出和 continuation 实验 |
-| `branch_tiny` | 轻量 owner-audit runner，负责 run capsule、frontier continuation 和 gap-panel 诊断 |
-| `run_play_driver` | 手动和半自动模拟器跑局、trace、bookmark、capture、baseline |
-| `combat_search_v2_driver` | 从 start spec、combat capture 或 benchmark suite 跑整场战斗搜索 |
-| `combat_case_review` | 检查 branch-tiny combat gap 保存下来的 combat case |
+| `branch_tiny` | 轻量跑局 runner，用于 owner 覆盖、run capsule、frontier continuation 和 combat case capture |
+| `branch_panel` | Rust seed-panel scheduler，用于多 seed smoke/drain run |
+| `combat_case_review` | saved combat case 的诊断 review ladder |
+| `combat_search_v2_driver` | 从 start spec、capture 或 benchmark suite 跑固定战斗搜索 |
+| `run_play_driver` | 手动和半自动模拟器 REPL |
+| `branch_campaign_driver` | 较旧但仍保留的 Rust campaign application surface，用于 campaign artifact 和 continuation 实验 |
+| `rl_dataset_export` | 离线 decision sample 导出，用于 imitation/RL 实验 |
+| `decision_records` | decision record 检查工具 |
 
-Binary 细节见 [src/bin/README.md](src/bin/README.md)。
+Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 
-## 当前文档
+## 文档地图
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): 当前 ownership boundary 和设计规则。
-- [docs/RUNBOOK.md](docs/RUNBOOK.md): 当前本地命令和验证方式。
+- [docs/README.md](docs/README.md): 当前文档索引。
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): ownership boundary 和设计规则。
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): 当前本地命令。
+- [docs/TESTING.md](docs/TESTING.md): 测试归属和清理标准。
+- [tools/README.md](tools/README.md): 离线工具边界和 artifact 规则。
 
-退役文档不保留在工作区里污染搜索结果。需要考古时请查 git history。
+退役文档不保留在工作区里污染搜索结果。需要考古时查 git history。
 
-## 架构
+## 仓库结构
 
 | 目录 | 角色 |
 | --- | --- |
@@ -76,13 +83,35 @@ Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 | `src/engine` | 状态转移和 action handler |
 | `src/runtime` | run/combat 执行时支持 |
 | `src/sim` | 面向模拟器的 legal action、apply、search 边界 |
-| `src/ai` | combat search、state key、route planner、value/rollout |
+| `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
 | `src/eval` | run-control、benchmark artifact、diagnostics、report |
 | `src/bin` | 当前维护的命令入口 |
+| `tools` | 离线脚本、dataset、panel 和生成 artifact |
+| `docs` | 当前架构、runbook、测试说明和设计草稿 |
+
+生成物应放在 ignored 位置，例如 `target/` 和 `tools/artifacts/`。
+
+## 开发卫生
+
+仓库中的 source、docs、PowerShell 脚本使用 LF 换行。在 Windows 上做机械改动后，检查小改动是否意外变成整文件 CRLF 重写：
+
+```powershell
+git diff --stat
+git diff --ignore-space-at-eol --stat
+git ls-files --eol $(git diff --name-only)
+```
+
+提交应该小而诚实。不要因为迁移麻烦就保留重复 policy 模块；边界准备好后，应该删除旧入口，而不是长期保留兼容层。
 
 ## 验证
 
-当前验证命令见 [docs/RUNBOOK.md](docs/RUNBOOK.md)。只有改动面存在稳定结构契约时，才运行或新增有针对性的测试。
+只改文档时：
+
+```powershell
+git diff --check
+```
+
+核心代码改动从 [docs/RUNBOOK.md](docs/RUNBOOK.md) 里的命令开始。只有改动面存在稳定结构契约时，才运行或新增有针对性的测试。
 
 ## License 和游戏说明
 
