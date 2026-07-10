@@ -1,4 +1,4 @@
-use super::priority::priority_for_node;
+use super::priority::{priority_for_node, priority_for_node_with_action_prior};
 use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
@@ -76,6 +76,68 @@ fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
 
     better_progress.combat.entities.monsters[0].current_hp = 240;
     assert!(priority_for_node(&disarmed) > priority_for_node(&better_progress));
+}
+
+#[test]
+fn collector_control_frontier_prefers_one_living_head_to_zero() {
+    let mut one_head = collector_node(282, &[20]);
+    let zero_heads = collector_node(282, &[]);
+    one_head.rollout_estimate = zero_heads.rollout_estimate.clone();
+
+    assert!(
+        priority_for_node_with_action_prior(
+            &one_head,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ) > priority_for_node_with_action_prior(
+            &zero_heads,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        )
+    );
+    assert!(priority_for_node(&zero_heads) > priority_for_node(&one_head));
+}
+
+#[test]
+fn collector_control_frontier_prefers_concentrated_head_damage() {
+    let concentrated = collector_node(282, &[10, 40]);
+    let spread = collector_node(282, &[25, 25]);
+
+    assert!(
+        priority_for_node_with_action_prior(
+            &concentrated,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ) > priority_for_node_with_action_prior(
+            &spread,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        )
+    );
+}
+
+#[test]
+fn collector_boss_race_frontier_prefers_damage_on_collector() {
+    let collector_damage = collector_node(252, &[40]);
+    let torch_damage = collector_node(282, &[10]);
+
+    assert!(
+        priority_for_node_with_action_prior(
+            &collector_damage,
+            CombatSearchActionPriorPluginId::CollectorBossRace,
+        ) > priority_for_node_with_action_prior(
+            &torch_damage,
+            CombatSearchActionPriorPluginId::CollectorBossRace,
+        )
+    );
+}
+
+#[test]
+fn collector_tactic_frontier_queue_uses_configured_prior() {
+    let mut queue = FrontierQueue::new_with_action_prior(
+        CombatSearchV2FrontierPolicy::SingleQueue,
+        CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+    );
+    queue.push_node(collector_node(282, &[]));
+    queue.push_node(collector_node(282, &[20]));
+
+    assert_eq!(queue.pop().unwrap().node.combat.entities.monsters.len(), 2);
 }
 
 #[test]
@@ -214,4 +276,22 @@ fn test_node() -> SearchNode {
         action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     }
+}
+
+fn collector_node(collector_hp: i32, torch_hps: &[i32]) -> SearchNode {
+    let mut node = test_node();
+    let mut collector = test_monster(EnemyId::TheCollector);
+    collector.id = 1;
+    collector.current_hp = collector_hp;
+    collector.max_hp = 282;
+    let mut monsters = vec![collector];
+    for (index, hp) in torch_hps.iter().copied().enumerate() {
+        let mut torch = test_monster(EnemyId::TorchHead);
+        torch.id = index + 2;
+        torch.current_hp = hp;
+        torch.max_hp = 40;
+        monsters.push(torch);
+    }
+    node.combat.entities.monsters = monsters;
+    node
 }

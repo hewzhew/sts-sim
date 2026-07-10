@@ -6,22 +6,35 @@ use super::super::value::{
 };
 use super::super::SearchTerminalLabel;
 use super::node::SearchNode;
-use super::priority::{priority_for_node, QueueEntry};
+use super::priority::{priority_for_node_with_action_prior, QueueEntry};
 use std::collections::BinaryHeap;
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
     policy: CombatSearchFrontierPluginId,
+    action_prior: super::super::CombatSearchActionPriorPluginId,
     single: BinaryHeap<QueueEntry>,
     lanes: FrontierLanes,
     next_sequence_id: u64,
 }
 
 impl FrontierQueue {
+    #[cfg(test)]
     pub(in crate::ai::combat_search_v2) fn new(
         policy: impl Into<CombatSearchFrontierPluginId>,
     ) -> Self {
+        Self::new_with_action_prior(
+            policy,
+            super::super::CombatSearchActionPriorPluginId::Default,
+        )
+    }
+
+    pub(in crate::ai::combat_search_v2) fn new_with_action_prior(
+        policy: impl Into<CombatSearchFrontierPluginId>,
+        action_prior: super::super::CombatSearchActionPriorPluginId,
+    ) -> Self {
         Self {
             policy: policy.into(),
+            action_prior,
             single: BinaryHeap::new(),
             lanes: FrontierLanes::new(),
             next_sequence_id: 0,
@@ -30,7 +43,7 @@ impl FrontierQueue {
 
     pub(in crate::ai::combat_search_v2) fn push_node(&mut self, node: SearchNode) {
         let entry = QueueEntry {
-            priority: priority_for_node(&node),
+            priority: priority_for_node_with_action_prior(&node, self.action_prior),
             sequence_id: self.next_sequence_id,
             node,
         };
