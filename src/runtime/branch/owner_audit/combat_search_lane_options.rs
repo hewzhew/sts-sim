@@ -37,6 +37,10 @@ pub(super) fn lane_options(
         request.args.wall_ms.is_some(),
     )
     .into_auto_step_options();
+    options.search.potion_policy = options
+        .search
+        .profile
+        .map(|profile| profile.to_config().potion_policy);
     options.search.max_hp_loss = Some(owner_audit_hp_loss_limit(session));
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
     options
@@ -444,6 +448,11 @@ mod tests {
         let session = session_with_combat_stakes(false, true);
         let request = CombatSearchRequest::from_session(&session, test_args());
         let options = lane_options(CombatSearchLane::primary(), &request, &session);
+        assert_eq!(
+            options.search.potion_policy,
+            Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
+            "owner-audit must pin its profile policy so run-control does not stage another portfolio"
+        );
         let config = options.search.profile.expect("profile").to_config();
 
         assert_eq!(config.max_nodes, test_args().rescue_search_nodes);
