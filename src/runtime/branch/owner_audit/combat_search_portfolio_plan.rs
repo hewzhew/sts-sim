@@ -19,7 +19,10 @@ impl CombatSearchPortfolioPlan {
                 }
                 lanes
             }
-            CombatSearchStakes::Elite | CombatSearchStakes::Boss => Vec::new(),
+            CombatSearchStakes::Elite => vec![CombatSearchLane::new(
+                CombatSearchLaneKind::NonBossPotionRescue,
+            )],
+            CombatSearchStakes::Boss => Vec::new(),
         };
         Self { lanes }
     }
@@ -57,14 +60,17 @@ mod tests {
     }
 
     #[test]
-    fn elite_plan_disables_post_primary_lanes() {
+    fn elite_plan_adds_one_bounded_quality_rescue() {
         let plan = CombatSearchPortfolioPlan::after_primary(CombatSearchPortfolioContext {
             stakes: CombatSearchStakes::Elite,
             time_eater_boss: false,
             nonboss_potion_rescue_signal: true,
         });
 
-        assert!(plan.lane_kinds().is_empty());
+        assert_eq!(
+            plan.lane_kinds(),
+            vec![CombatSearchLaneKind::NonBossPotionRescue]
+        );
         assert!(!plan.should_report());
     }
 

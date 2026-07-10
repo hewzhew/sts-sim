@@ -66,13 +66,13 @@ fn lane_profile(
             CombatSearchChildRolloutPluginId::Immediate,
         )
         .with_max_potions_used(0),
-        CombatSearchLaneKind::NonBossPotionRescue => profile_with_budget(
+        CombatSearchLaneKind::NonBossPotionRescue => quality_profile(
             lane.label(),
             request.args,
-            LaneSearchBudget::Boss,
-            CombatSearchChildRolloutPluginId::LazyOnPop,
+            LaneSearchBudget::HallwayQuality,
+            CombatSearchChildRolloutPluginId::Immediate,
+            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         )
-        .with_potion_policy(CombatSearchV2PotionPolicy::All)
         .with_max_potions_used(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED),
         CombatSearchLaneKind::HallwayQualityPotionRescue => quality_profile(
             lane.label(),
@@ -481,6 +481,41 @@ mod tests {
         assert_eq!(
             config.potion_policy,
             sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(config.max_potions_used, Some(1));
+    }
+
+    #[test]
+    fn nonboss_potion_rescue_uses_bounded_quality_profile() {
+        let session = session_with_combat_stakes(false, true);
+        let request = CombatSearchRequest::from_session(&session, test_args());
+        let options = lane_options(
+            CombatSearchLane::new(CombatSearchLaneKind::NonBossPotionRescue),
+            &request,
+            &session,
+        );
+        let config = options.search.profile.expect("profile").to_config();
+
+        assert_eq!(config.max_nodes, test_args().boss_search_nodes);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis() as u64),
+            Some(5_000)
+        );
+        assert_eq!(
+            config.child_rollout_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+        );
+        assert_eq!(
+            config.rollout_policy,
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+        );
+        assert_eq!(
+            config.frontier_policy,
+            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
+        );
+        assert_eq!(
+            config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
         );
         assert_eq!(config.max_potions_used, Some(1));
     }
