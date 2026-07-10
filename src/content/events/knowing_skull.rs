@@ -37,7 +37,7 @@ fn inc_card(state: &mut i32) {
 fn potion_cost(state: i32) -> i32 {
     BASE_COST + potion_n(state)
 }
-fn gold_cost(state: i32) -> i32 {
+pub(crate) fn gold_cost(state: i32) -> i32 {
     BASE_COST + gold_n(state)
 }
 fn card_cost(state: i32) -> i32 {

@@ -83,7 +83,7 @@ fn focus_owner_policy(run_state: &RunState, choice_idx: usize) -> EventOwnerPoli
     }
 }
 
-fn sensory_focus_choice(run_state: &RunState) -> usize {
+pub(crate) fn sensory_focus_choice(run_state: &RunState) -> usize {
     if sensory_hp_safe_after(run_state, 10) {
         2
     } else if sensory_hp_safe_after(run_state, 5) {

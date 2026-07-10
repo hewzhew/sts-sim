@@ -1,9 +1,10 @@
 mod coverage_rules;
 
 use coverage_rules::{
-    accursed_blacksmith_choice, colosseum_choice, duplicator_choice,
-    fountain_choice, golden_shrine_choice, gremlin_wheel_choice, lab_choice,
-    note_for_yourself_choice, the_joust_choice, upgrade_shrine_choice,
+    accursed_blacksmith_choice, addict_choice, colosseum_choice, duplicator_choice,
+    fountain_choice, golden_shrine_choice, gremlin_wheel_choice, knowing_skull_choice, lab_choice,
+    note_for_yourself_choice, secret_portal_choice, sensory_stone_choice, ssssserpent_choice,
+    the_joust_choice, upgrade_shrine_choice,
 };
 
 use crate::ai::deck_mutation_compiler_v1::{
@@ -128,22 +129,21 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
         EventId::WorldOfGoop => return Ok(choose(world_of_goop_choice(run_state))),
-        EventId::AccursedBlacksmith => {
-            return Ok(choose(accursed_blacksmith_choice(run_state)))
-        }
+        EventId::AccursedBlacksmith => return Ok(choose(accursed_blacksmith_choice(run_state))),
         EventId::Colosseum => return Ok(choose(colosseum_choice(run_state))),
         EventId::Duplicator => return Ok(choose(duplicator_choice(run_state))),
-        EventId::FountainOfCurseCleansing => {
-            return Ok(choose(fountain_choice(run_state)))
-        }
+        EventId::FountainOfCurseCleansing => return Ok(choose(fountain_choice(run_state))),
         EventId::GoldenShrine => return Ok(choose(golden_shrine_choice(run_state))),
         EventId::GremlinWheelGame => return Ok(choose(gremlin_wheel_choice(run_state))),
         EventId::Lab => return Ok(choose(lab_choice(run_state))),
-        EventId::NoteForYourself => {
-            return Ok(choose(note_for_yourself_choice(run_state)))
-        }
+        EventId::NoteForYourself => return Ok(choose(note_for_yourself_choice(run_state))),
         EventId::TheJoust => return Ok(choose(the_joust_choice(run_state))),
         EventId::UpgradeShrine => return Ok(choose(upgrade_shrine_choice(run_state))),
+        EventId::Addict => return Ok(choose(addict_choice(run_state))),
+        EventId::KnowingSkull => return Ok(choose(knowing_skull_choice(run_state))),
+        EventId::SecretPortal => return Ok(choose(secret_portal_choice(run_state))),
+        EventId::SensoryStone => return Ok(choose(sensory_stone_choice(run_state))),
+        EventId::Ssssserpent => return Ok(choose(ssssserpent_choice(run_state))),
         _ => {}
     }
     let marked_count = crate::engine::event_handler::get_event_options(run_state)

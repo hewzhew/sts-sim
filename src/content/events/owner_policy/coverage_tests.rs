@@ -27,13 +27,20 @@ fn assert_unique_selector(run_state: &RunState, expected: EventOwnerOptionSelect
             !option.ui.disabled && selector.matches(*index, &option.semantics)
         })
         .count();
-    assert_eq!(matches, 1, "selector must resolve to one enabled real option");
+    assert_eq!(
+        matches, 1,
+        "selector must resolve to one enabled real option"
+    );
 }
 
 #[test]
 fn forced_flow_events_select_one_real_option_on_every_screen() {
     let cases = [
-        (EventId::GremlinWheelGame, 0, action(EventActionKind::Special)),
+        (
+            EventId::GremlinWheelGame,
+            0,
+            action(EventActionKind::Special),
+        ),
         (EventId::GremlinWheelGame, 1, action(EventActionKind::Leave)),
         (EventId::Lab, 0, action(EventActionKind::Gain)),
         (EventId::Lab, 1, action(EventActionKind::Leave)),
@@ -98,10 +105,7 @@ fn fountain_upgrade_blacksmith_duplicate_and_note_use_real_deck_facts() {
     assert_unique_selector(&empty_duplicate, action(EventActionKind::Leave));
     let mut premium_duplicate = event_run(EventId::Duplicator, 0);
     premium_duplicate.add_card_to_deck(CardId::Offering);
-    assert_unique_selector(
-        &premium_duplicate,
-        action(EventActionKind::DeckOperation),
-    );
+    assert_unique_selector(&premium_duplicate, action(EventActionKind::DeckOperation));
 
     let default_note = event_run(EventId::NoteForYourself, 1);
     assert_unique_selector(&default_note, action(EventActionKind::Decline));
@@ -127,8 +131,80 @@ fn deck_positive_events_cover_intro_and_completion_screens() {
             action(EventActionKind::Leave),
         ),
         (EventId::Duplicator, 1, action(EventActionKind::Leave)),
-        (EventId::NoteForYourself, 0, action(EventActionKind::Continue)),
+        (
+            EventId::NoteForYourself,
+            0,
+            action(EventActionKind::Continue),
+        ),
         (EventId::NoteForYourself, 2, action(EventActionKind::Leave)),
+    ];
+    for (event_id, screen, expected) in cases {
+        assert_unique_selector(&event_run(event_id, screen), expected);
+    }
+}
+
+#[test]
+fn curse_trades_require_omamori_and_addict_preserves_gold_reserve() {
+    let serpent = event_run(EventId::Ssssserpent, 0);
+    assert_unique_selector(&serpent, action(EventActionKind::Decline));
+    let mut protected_serpent = event_run(EventId::Ssssserpent, 0);
+    protected_serpent
+        .relics
+        .push(RelicState::new(RelicId::Omamori));
+    assert_unique_selector(&protected_serpent, action(EventActionKind::Accept));
+
+    let poor_addict = event_run(EventId::Addict, 0);
+    assert_unique_selector(&poor_addict, action(EventActionKind::Leave));
+    let mut protected_addict = event_run(EventId::Addict, 0);
+    protected_addict
+        .relics
+        .push(RelicState::new(RelicId::Omamori));
+    assert_unique_selector(&protected_addict, option_index(1));
+    let mut funded_addict = event_run(EventId::Addict, 0);
+    funded_addict.gold = 300;
+    assert_unique_selector(&funded_addict, option_index(0));
+}
+
+#[test]
+fn knowing_skull_sensory_stone_and_secret_portal_use_survival_gates() {
+    let healthy_skull = event_run(EventId::KnowingSkull, 1);
+    assert_unique_selector(&healthy_skull, effect(EventEffect::GainGold(90)));
+    let mut low_skull = event_run(EventId::KnowingSkull, 1);
+    low_skull.current_hp = 12;
+    assert_unique_selector(&low_skull, action(EventActionKind::Leave));
+    let mut blocked_skull = event_run(EventId::KnowingSkull, 1);
+    blocked_skull
+        .relics
+        .push(RelicState::new(RelicId::Ectoplasm));
+    assert_unique_selector(&blocked_skull, action(EventActionKind::Leave));
+
+    let high_focus = event_run(EventId::SensoryStone, 1);
+    assert_unique_selector(&high_focus, option_index(2));
+    let mut low_focus = event_run(EventId::SensoryStone, 1);
+    low_focus.current_hp = 20;
+    assert_unique_selector(&low_focus, option_index(0));
+
+    assert_unique_selector(
+        &event_run(EventId::SecretPortal, 0),
+        action(EventActionKind::Decline),
+    );
+    assert_unique_selector(
+        &event_run(EventId::SecretPortal, 1),
+        action(EventActionKind::Special),
+    );
+}
+
+#[test]
+fn risk_events_cover_intro_confirmation_and_completion_screens() {
+    let cases = [
+        (EventId::Ssssserpent, 1, action(EventActionKind::Continue)),
+        (EventId::Ssssserpent, 99, action(EventActionKind::Leave)),
+        (EventId::Addict, 1, action(EventActionKind::Leave)),
+        (EventId::KnowingSkull, 0, action(EventActionKind::Continue)),
+        (EventId::KnowingSkull, 2, action(EventActionKind::Leave)),
+        (EventId::SensoryStone, 0, action(EventActionKind::Continue)),
+        (EventId::SensoryStone, 2, action(EventActionKind::Leave)),
+        (EventId::SecretPortal, 2, action(EventActionKind::Leave)),
     ];
     for (event_id, screen, expected) in cases {
         assert_unique_selector(&event_run(event_id, screen), expected);
