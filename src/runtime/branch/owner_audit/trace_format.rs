@@ -105,6 +105,7 @@ fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
         RunControlAutoAppliedKindV1::RoutePlanner => "route_planner",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward_overlay",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine_candidate",
+        RunControlAutoAppliedKindV1::BranchExperimentPolicy => "branch_experiment_policy",
         RunControlAutoAppliedKindV1::AutoCapture => "auto_capture",
         RunControlAutoAppliedKindV1::OwnerRoutine => "owner_routine",
     }
@@ -311,4 +312,17 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
         "relics": run_state_json::relics_value(run),
         "potions": run_state_json::potions_value(run),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn branch_experiment_policy_uses_precise_trace_json_label() {
+        assert_eq!(
+            auto_step_kind_value(RunControlAutoAppliedKindV1::BranchExperimentPolicy),
+            "branch_experiment_policy"
+        );
+    }
 }

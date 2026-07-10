@@ -441,6 +441,7 @@ pub enum RunControlAutoAppliedKindV1 {
     RoutePlanner,
     RewardOverlay,
     RoutineCandidate,
+    BranchExperimentPolicy,
     AutoCapture,
     OwnerRoutine,
 }

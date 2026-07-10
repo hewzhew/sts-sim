@@ -350,7 +350,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 let auto_capture_summaries =
                     auto_capture_summaries(&application.outcome.trace_annotations);
                 applied.push_outcome(
-                    RunControlAutoAppliedKindV1::RoutineCandidate,
+                    RunControlAutoAppliedKindV1::BranchExperimentPolicy,
                     application.summary,
                     &application.outcome,
                 );

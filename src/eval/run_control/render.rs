@@ -273,6 +273,7 @@ fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'s
         RunControlAutoAppliedKindV1::RoutePlanner => "route",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
+        RunControlAutoAppliedKindV1::BranchExperimentPolicy => "branch-policy",
         RunControlAutoAppliedKindV1::AutoCapture => "capture",
         RunControlAutoAppliedKindV1::OwnerRoutine => "owner-routine",
     }
@@ -467,6 +468,20 @@ mod tests {
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
     use crate::state::core::EngineState;
     use crate::state::rewards::BossRelicChoiceState;
+
+    #[test]
+    fn branch_experiment_policy_uses_precise_compact_label() {
+        let step = RunControlAutoAppliedStepV1 {
+            kind: RunControlAutoAppliedKindV1::BranchExperimentPolicy,
+            label: "event policy: Match and Keep".to_string(),
+            action_result: None,
+        };
+
+        assert_eq!(
+            render_auto_applied_step_compact_v1(&step),
+            "branch-policy | event policy: Match and Keep"
+        );
+    }
 
     #[test]
     fn main_view_is_default_and_keeps_debug_fields_out_of_startup_panel() {

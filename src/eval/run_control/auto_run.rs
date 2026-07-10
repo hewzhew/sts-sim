@@ -184,6 +184,11 @@ mod tests {
         .expect("branch campaign auto-run should use Match and Keep event policy");
 
         assert!(outcome.message.contains("event policy: Match and Keep"));
+        assert_eq!(outcome.auto_applied_steps.len(), 2);
+        assert!(outcome.auto_applied_steps.iter().all(|step| {
+            step.kind
+                == crate::eval::run_control::RunControlAutoAppliedKindV1::BranchExperimentPolicy
+        }));
         assert_eq!(
             session.run_state.master_deck.last().unwrap().id,
             crate::content::cards::CardId::IronWave
@@ -221,6 +226,11 @@ mod tests {
             outcome.message.contains("event policy: Note For Yourself"),
             "message={}",
             outcome.message
+        );
+        assert_eq!(outcome.auto_applied_steps.len(), 1);
+        assert_eq!(
+            outcome.auto_applied_steps[0].kind,
+            crate::eval::run_control::RunControlAutoAppliedKindV1::BranchExperimentPolicy
         );
         assert_eq!(
             session

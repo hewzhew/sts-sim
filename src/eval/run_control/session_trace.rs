@@ -1134,9 +1134,60 @@ mod tests {
 
     #[test]
     fn historical_search_evidence_artifact_kind_remains_readable() {
-        let kind: SessionTraceArtifactKind = serde_json::from_str("\"combat_search_evidence\"")
-            .expect("historical search evidence kind should deserialize");
-        assert_eq!(kind, SessionTraceArtifactKind::CombatSearchEvidence);
+        let root = unique_temp_dir("session_trace_historical_search_evidence");
+        let trace_path = root.join("trace.json");
+        let historical_search_evidence_path = "artifacts/combat-search-evidence.json";
+        let payload = serde_json::json!({
+            "schema_name": SESSION_TRACE_SCHEMA_NAME,
+            "schema_version": 6,
+            "label_role": "diagnostic_not_teacher_label",
+            "trainable_as_action_label": false,
+            "policy_quality_claim": false,
+            "run_config": {
+                "seed": 521,
+                "ascension_level": 0,
+                "player_class": "Ironclad",
+                "final_act": false,
+                "reward_automation": {
+                    "claim_gold": true,
+                    "claim_potion_with_empty_slot": true
+                }
+            },
+            "steps": [],
+            "artifact_refs": [{
+                "raw_command_line": "sc save=historical-case",
+                "decision_step": 7,
+                "artifact_kind": "combat_search_evidence",
+                "capture_path": null,
+                "baseline_path": null,
+                "search_evidence_path": historical_search_evidence_path,
+                "benchmark_manifest_path": null
+            }]
+        });
+        fs::create_dir_all(&root).expect("temporary trace directory should be created");
+        fs::write(
+            &trace_path,
+            serde_json::to_vec_pretty(&payload).expect("historical trace should serialize"),
+        )
+        .expect("historical trace fixture should be written");
+
+        let loaded = crate::eval::run_control::load_session_trace_v1(&trace_path)
+            .expect("historical search evidence trace should load");
+        let artifact = loaded
+            .artifact_refs
+            .first()
+            .expect("historical trace should preserve its artifact ref");
+
+        assert_eq!(
+            artifact.artifact_kind,
+            SessionTraceArtifactKind::CombatSearchEvidence
+        );
+        assert_eq!(
+            artifact.search_evidence_path.as_deref(),
+            Some(historical_search_evidence_path)
+        );
+
+        fs::remove_dir_all(&root).expect("temporary trace directory should be removed");
     }
 
     #[test]
