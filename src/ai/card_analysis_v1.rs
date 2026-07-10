@@ -755,7 +755,10 @@ fn is_upgrade_exhaust_control_delta_v1(card: CardId) -> bool {
 }
 
 fn is_upgrade_exhaust_removed_delta_v1(card: CardId) -> bool {
-    matches!(card, CardId::Havoc | CardId::Armaments)
+    matches!(
+        card,
+        CardId::Havoc | CardId::Armaments | CardId::LimitBreak
+    )
 }
 
 fn is_upgrade_core_mechanic_v1(card: CardId) -> bool {
@@ -896,5 +899,18 @@ fn boss_transition_burst_v1(card: CardId) -> CardAnalysisBossTransitionBurstV1 {
         CardId::HeavyBlade => CardAnalysisBossTransitionBurstV1::StrengthPayoff,
         CardId::LimitBreak => CardAnalysisBossTransitionBurstV1::StrengthConverter,
         _ => CardAnalysisBossTransitionBurstV1::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::card_analysis_profile_v1;
+    use crate::content::cards::CardId;
+
+    #[test]
+    fn limit_break_upgrade_records_exhaust_removal() {
+        let profile = card_analysis_profile_v1(CardId::LimitBreak, 0);
+
+        assert!(profile.is_upgrade_exhaust_removed_delta);
     }
 }
