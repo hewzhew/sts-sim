@@ -2,8 +2,8 @@
 
 ## Status
 
-Approved by the user on 2026-07-10. Replace panel-driven discovery of missing
-event owners with complete, compiler-enforced event-owner coverage.
+Implemented and verified on 2026-07-10. Event-owner completeness is enforced
+by exhaustive `EventId` dispatch and seed-free typed owner contracts.
 
 ## Goal
 
