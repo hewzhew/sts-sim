@@ -171,7 +171,7 @@ Expected: the block exits successfully; the second command prints no
 Run:
 
 ```powershell
-$env:Remove('CARGO_LOG')
+Remove-Item Env:CARGO_LOG -ErrorAction SilentlyContinue
 $env:CARGO_TARGET_DIR='D:\rust\sts_simulator\target'
 cargo test --lib
 ```
