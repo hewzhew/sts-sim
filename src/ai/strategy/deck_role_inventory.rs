@@ -1,8 +1,8 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CardBurden, CombatEvent, DamageScalingAxis, InstalledRule,
-    Mechanic, PlayEffect, TriggeredEffect,
+    card_definition_with_upgrades, CardBurden, CardDefinition, CombatEvent, DamageScalingAxis,
+    InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
-use crate::content::cards::get_card_definition;
+use crate::content::cards::{get_card_definition, CardId};
 use crate::runtime::combat::CombatCard;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -19,6 +19,7 @@ pub struct DeckRoleInventory {
     pub x_cost_payoff_units: u8,
     pub strength_source_units: u8,
     pub conditional_strength_source_units: u8,
+    pub strength_multiplier_units: u8,
     pub corruption_units: u8,
     pub exhaust_stream_units: u8,
     pub exhaust_payoff_units: u8,
@@ -44,12 +45,8 @@ impl DeckRoleInventory {
             if provides_block && provides_draw {
                 inventory.cycle_block_units += 1;
             }
-            let conditional_strength_provider = definition
-                .play_effects
-                .contains(&PlayEffect::Provide(Mechanic::Strength))
-                && definition
-                    .burdens
-                    .contains(&CardBurden::RequiresEnemyAttackIntent);
+            let conditional_strength_provider =
+                definition_is_conditional_strength_source(&definition);
             if conditional_strength_provider {
                 inventory.conditional_strength_source_units += 1;
             }
@@ -136,17 +133,36 @@ impl DeckRoleInventory {
             Mechanic::CardDraw => self.draw_units += 1,
             Mechanic::Energy => self.energy_units += 1,
             Mechanic::Strength => self.strength_source_units += 1,
-            Mechanic::TemporaryStrength
-            | Mechanic::StrengthMultiplier
-            | Mechanic::TopdeckControl => {}
+            Mechanic::StrengthMultiplier => self.strength_multiplier_units += 1,
+            Mechanic::TemporaryStrength | Mechanic::TopdeckControl => {}
         }
     }
+}
+
+pub(super) fn card_is_stable_strength_source(card: CardId, upgrades: u8) -> bool {
+    let definition = card_definition_with_upgrades(card, upgrades);
+    (definition
+        .play_effects
+        .contains(&PlayEffect::Provide(Mechanic::Strength))
+        && !definition_is_conditional_strength_source(&definition))
+        || definition
+            .event_handlers
+            .iter()
+            .any(|handler| handler.effect == TriggeredEffect::Provide(Mechanic::Strength))
+}
+
+fn definition_is_conditional_strength_source(definition: &CardDefinition) -> bool {
+    definition
+        .play_effects
+        .contains(&PlayEffect::Provide(Mechanic::Strength))
+        && definition
+            .burdens
+            .contains(&CardBurden::RequiresEnemyAttackIntent)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::cards::CardId;
 
     fn card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
@@ -170,5 +186,14 @@ mod tests {
 
         assert_eq!(inventory.strength_source_units, 3);
         assert_eq!(inventory.conditional_strength_source_units, 0);
+    }
+
+    #[test]
+    fn limit_break_counts_as_multiplier_without_becoming_a_strength_source() {
+        let inventory =
+            DeckRoleInventory::from_deck(&[card(CardId::Inflame, 1), card(CardId::LimitBreak, 2)]);
+
+        assert_eq!(inventory.strength_source_units, 1);
+        assert_eq!(inventory.strength_multiplier_units, 1);
     }
 }

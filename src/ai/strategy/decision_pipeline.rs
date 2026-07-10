@@ -2209,6 +2209,40 @@ mod tests {
     }
 
     #[test]
+    fn shop_keeps_second_stable_source_for_live_strength_multiplier_package() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::Cleave,
+            CardId::Inflame,
+            CardId::LimitBreak,
+            CardId::HeavyBlade,
+            CardId::BurningPact,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::Disarm,
+        ];
+        let deck = test_deck(&cards);
+        let context = shop_context_with_gold_and_hp(&cards, 152, 47, 79);
+
+        let inflame = shop_card_in_context_with_price(context, &deck, CardId::Inflame, 0, 81);
+
+        assert!(inflame.auto_expands(), "inflame={inflame:?}");
+        assert!(
+            !inflame
+                .adjudication
+                .caps
+                .iter()
+                .any(|cap| cap.source == CandidateLaneCapSource::Acquisition),
+            "inflame={inflame:?}"
+        );
+    }
+
+    #[test]
     fn shop_rejects_act2_ordinary_cards_that_only_pad_adequate_roles() {
         let deck = act2_collector_pressure_deck();
 

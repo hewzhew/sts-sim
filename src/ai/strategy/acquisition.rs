@@ -3,6 +3,7 @@ use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
 use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_construction_pressure::candidate_improves_card_flow;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::deck_role_inventory::card_is_stable_strength_source;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::{get_card_definition, CardId};
@@ -71,6 +72,7 @@ pub enum MarginalAcquisitionQuality {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AcquisitionConstructionRole {
     HardStrategicGap,
+    PackageReliability,
     SoftStrategicGap,
     EngineOrScaling,
     UpgradeAccess,
@@ -82,6 +84,7 @@ pub enum AcquisitionConstructionRole {
 pub struct AcquisitionStrategicDelta {
     pub improves_hard_gap: bool,
     pub improves_any_gap: bool,
+    pub repairs_package_reliability: bool,
     pub adds_card_without_gap_improvement: bool,
     pub adds_deployability_debt: bool,
 }
@@ -105,6 +108,7 @@ impl AcquisitionPolicyVerdict {
 pub enum AcquisitionPolicyReason {
     PremiumCard,
     UpgradedShopCard,
+    PackageReliabilityRepair,
     HardGapWithAcceptableOpportunityCost,
     ConstructionRoleAccepted,
     HpCostAccessDebt,
@@ -152,12 +156,17 @@ pub fn assess_card_acquisition(
     let candidate = Some((card, upgrades));
     let improves_hard_gap = improves_hard_gap(context.deck_plan, candidate, admission);
     let improves_any_gap = improves_any_gap(context.deck_plan, candidate, admission);
+    let repairs_package_reliability =
+        repairs_strength_package_reliability(context.deck_plan, candidate);
     let adds_deployability_debt =
         adds_deployability_debt(context.deck_plan, card, admission, improves_hard_gap);
     let strategic_delta = AcquisitionStrategicDelta {
         improves_hard_gap,
         improves_any_gap,
-        adds_card_without_gap_improvement: admission.card.is_some() && !improves_any_gap,
+        repairs_package_reliability,
+        adds_card_without_gap_improvement: admission.card.is_some()
+            && !improves_any_gap
+            && !repairs_package_reliability,
         adds_deployability_debt,
     };
     let construction_role = construction_role(context.deck_plan, admission, &strategic_delta);
@@ -283,6 +292,12 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
             AcquisitionPolicyVerdict::AutoAcquire,
             AcquisitionPolicyReason::UpgradedShopCard,
         ),
+        AcquisitionSource::Shop if report.strategic_delta.repairs_package_reliability => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::ContextTake,
+                AcquisitionPolicyReason::PackageReliabilityRepair,
+            )
+        }
         AcquisitionSource::Shop
             if report.strategic_delta.improves_hard_gap
                 && report.opportunity_cost != AcquisitionOpportunityCost::SpendsPurgeReserve =>
@@ -330,6 +345,7 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         }
         AcquisitionPolicyReason::PremiumCard
         | AcquisitionPolicyReason::UpgradedShopCard
+        | AcquisitionPolicyReason::PackageReliabilityRepair
         | AcquisitionPolicyReason::HardGapWithAcceptableOpportunityCost
         | AcquisitionPolicyReason::ConstructionRoleAccepted => {
             "shop card fails acquisition discipline"
@@ -447,6 +463,9 @@ fn construction_role(
     if strategic_delta.improves_hard_gap {
         return Some(AcquisitionConstructionRole::HardStrategicGap);
     }
+    if strategic_delta.repairs_package_reliability {
+        return Some(AcquisitionConstructionRole::PackageReliability);
+    }
     if has_run_reward(admission) {
         return Some(AcquisitionConstructionRole::RunReward);
     }
@@ -470,6 +489,16 @@ fn needs(level: StrategicDeficitLevel) -> bool {
         level,
         StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
     )
+}
+
+fn repairs_strength_package_reliability(
+    deck_plan: DeckPlanSnapshot,
+    candidate: Option<(CardId, u8)>,
+) -> bool {
+    deck_plan.roles.strength_multiplier_units > 0
+        && deck_plan.roles.strength_source_units == 1
+        && needs(deck_plan.strategic_deficit.boss_scaling_plan)
+        && candidate.is_some_and(|(card, upgrades)| card_is_stable_strength_source(card, upgrades))
 }
 
 fn has_combat_upgrade(admission: &RewardAdmission) -> bool {
@@ -670,6 +699,110 @@ mod tests {
                 has_energy_relic: false,
             },
         )
+    }
+
+    fn live_strength_multiplier_package() -> Vec<CardId> {
+        vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::Cleave,
+            CardId::Inflame,
+            CardId::LimitBreak,
+            CardId::HeavyBlade,
+            CardId::BurningPact,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::Disarm,
+        ]
+    }
+
+    #[test]
+    fn shop_accepts_second_stable_strength_source_for_live_multiplier_package() {
+        let cards = live_strength_multiplier_package();
+        let deck = deck(&cards);
+        let plan = act2_access_saturated_plan(&cards);
+        assert_eq!(plan.roles.strength_source_units, 1);
+        assert_eq!(
+            plan.strategic_deficit.boss_scaling_plan,
+            crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel::Thin
+        );
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Inflame, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::shop(plan, 152, 81),
+            CardId::Inflame,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert_eq!(
+            report.opportunity_cost,
+            AcquisitionOpportunityCost::SpendsPurgeReserve
+        );
+        assert!(report.strategic_delta.repairs_package_reliability);
+        assert_eq!(
+            report.construction_role,
+            Some(AcquisitionConstructionRole::PackageReliability)
+        );
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::PackageReliabilityRepair
+        );
+        assert!(policy.allows_acquisition());
+    }
+
+    #[test]
+    fn strength_package_reliability_does_not_promote_third_conditional_or_payoff_cards() {
+        let cards = live_strength_multiplier_package();
+        let master_deck = deck(&cards);
+        let plan = act2_access_saturated_plan(&cards);
+
+        for candidate in [CardId::SpotWeakness, CardId::HeavyBlade] {
+            let admission = assess_reward_admission_from_master_deck(&master_deck, candidate, 0);
+            let report = assess_card_acquisition(
+                AcquisitionContext::shop(plan, 152, 81),
+                candidate,
+                0,
+                &admission,
+            );
+            let policy = evaluate_deck_construction_contract(&report);
+
+            assert!(
+                !report.strategic_delta.repairs_package_reliability,
+                "candidate={candidate:?} report={report:?}"
+            );
+            assert_ne!(
+                policy.reason,
+                AcquisitionPolicyReason::PackageReliabilityRepair
+            );
+            assert!(!policy.allows_acquisition(), "candidate={candidate:?}");
+        }
+
+        let mut two_source_cards = cards;
+        two_source_cards.push(CardId::Inflame);
+        let two_source_deck = deck(&two_source_cards);
+        let admission =
+            assess_reward_admission_from_master_deck(&two_source_deck, CardId::Inflame, 0);
+        let report = assess_card_acquisition(
+            AcquisitionContext::shop(act2_access_saturated_plan(&two_source_cards), 152, 81),
+            CardId::Inflame,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert_eq!(report.strategic_delta.repairs_package_reliability, false);
+        assert_ne!(
+            policy.reason,
+            AcquisitionPolicyReason::PackageReliabilityRepair
+        );
+        assert!(!policy.allows_acquisition());
     }
 
     #[test]
