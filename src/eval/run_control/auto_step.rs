@@ -572,7 +572,6 @@ fn auto_no_potion_first_options(
     }
     no_potion.potion_policy = Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
     no_potion.max_potions_used = Some(0);
-    no_potion.evidence = None;
     Some(no_potion)
 }
 
@@ -1208,12 +1207,10 @@ mod tests {
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         RunControlAutoStepOptions, RunControlConfig, RunControlHpLossLimit,
-        RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-        RunControlSearchEvidenceTarget, RunControlSession,
+        RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
     };
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
-    use std::path::PathBuf;
 
     #[test]
     fn owner_audit_auto_step_does_not_emit_legacy_card_reward_policy_stop_annotation() {
@@ -1551,7 +1548,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_no_potion_first_uses_hp_loss_limit_without_saving_probe_evidence() {
+    fn auto_no_potion_first_uses_hp_loss_limit() {
         let mut session = RunControlSession::new(RunControlConfig {
             search_max_hp_loss: Some(12),
             ..RunControlConfig::default()
@@ -1573,7 +1570,6 @@ mod tests {
         assert_eq!(probe.wall_ms, Some(5_000));
         assert_eq!(probe.potion_policy, Some(CombatSearchV2PotionPolicy::Never));
         assert_eq!(probe.max_potions_used, Some(0));
-        assert_eq!(probe.evidence, None);
 
         let mut no_limit = RunControlSession::new(RunControlConfig::default());
         let mut no_limit_combat = crate::test_support::blank_test_combat();
@@ -1590,14 +1586,6 @@ mod tests {
             None
         );
 
-        let with_evidence = RunControlSearchCombatOptions {
-            max_hp_loss: Some(RunControlHpLossLimit::Limit(8)),
-            evidence: Some(RunControlSearchEvidenceTarget::Path(PathBuf::from(
-                "search.json",
-            ))),
-            ..RunControlSearchCombatOptions::default()
-        };
-        assert_eq!(auto_no_potion_first_options(&session, &with_evidence), None);
     }
 
     #[test]

@@ -30,7 +30,6 @@ pub struct CombatAutoSearchContextV1 {
     pub command_max_potions_used_set: bool,
     pub session_max_potions_used_set: bool,
     pub hp_loss_gate: CombatAutoHpLossGateV1,
-    pub evidence_requested: bool,
 }
 
 impl CombatAutoSearchContextV1 {

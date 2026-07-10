@@ -24,8 +24,7 @@ pub fn plan_combat_auto_search_v1(context: &CombatAutoSearchContextV1) -> Combat
         };
     let no_potion_first = context.high_stakes_potion_budget.is_some()
         && !context.has_potion_policy_override()
-        && context.hp_loss_gate.is_limited()
-        && !context.evidence_requested;
+        && context.hp_loss_gate.is_limited();
 
     let allow_rescue = context.hp_loss_gate.is_limited()
         && !context.has_potion_policy_override()

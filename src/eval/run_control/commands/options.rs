@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::ai::combat_search_v2::{
     CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
     CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
@@ -10,7 +8,7 @@ use super::super::reward_auto::{parse_on_off, parse_reward_automation_target};
 use super::{
     RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlCommand,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSearchDefaultsCommand, RunControlSearchEvidenceTarget,
+    RunControlSearchDefaultsCommand,
 };
 
 pub(super) fn parse_search_combat_options(
@@ -74,9 +72,6 @@ pub(super) fn parse_search_combat_options(
             "segment" | "segment_mode" | "partial" | "partial_mode" => {
                 options.segment_mode = parse_segment_mode(value)?;
             }
-            "save" | "evidence" | "output" | "out" => {
-                options.evidence = Some(parse_search_evidence_target(value));
-            }
             other => return Err(format!("unknown search-combat option '{other}'")),
         }
     }
@@ -92,15 +87,6 @@ fn parse_hp_loss_limit(value: &str) -> Result<RunControlHpLossLimit, String> {
             value,
             "max_hp_loss",
         )?)),
-    }
-}
-
-fn parse_search_evidence_target(value: &str) -> RunControlSearchEvidenceTarget {
-    match value.to_ascii_lowercase().as_str() {
-        "case" | "capture" | "last_capture" | "last-capture" => {
-            RunControlSearchEvidenceTarget::LastCaptureCase
-        }
-        _ => RunControlSearchEvidenceTarget::Path(PathBuf::from(value)),
     }
 }
 
@@ -177,9 +163,6 @@ fn validate_search_default_options(options: &RunControlSearchCombatOptions) -> R
     }
     if options.segment_mode.is_some() {
         unsupported.push("segment");
-    }
-    if options.evidence.is_some() {
-        unsupported.push("save");
     }
     if unsupported.is_empty() {
         Ok(())

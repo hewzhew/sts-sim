@@ -20,7 +20,6 @@ pub(super) fn combat_auto_search_plan(
         command_max_potions_used_set: options.max_potions_used.is_some(),
         session_max_potions_used_set: session.search_max_potions_used.is_some(),
         hp_loss_gate: combat_auto_hp_loss_gate(session, options),
-        evidence_requested: options.evidence.is_some(),
     })
 }
 

@@ -111,13 +111,9 @@ fn run_control_parser_accepts_search_combat_options() {
         parse_run_control_command("sc").expect("sc should parse"),
         RunControlCommand::SearchCombat(RunControlSearchCombatOptions::default())
     );
-    assert_eq!(
-        parse_run_control_command("sc save=case").expect("search evidence should parse"),
-        RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
-            evidence: Some(RunControlSearchEvidenceTarget::LastCaptureCase),
-            ..Default::default()
-        })
-    );
+    let error = parse_run_control_command("sc save=case")
+        .expect_err("standalone search evidence is retired");
+    assert!(error.contains("unknown search-combat option 'save'"));
     assert_eq!(
         parse_run_control_command("sc segment=turn").expect("segment option should parse"),
         RunControlCommand::SearchCombat(RunControlSearchCombatOptions {

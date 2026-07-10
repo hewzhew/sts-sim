@@ -15,7 +15,6 @@ fn boss_context() -> CombatAutoSearchContextV1 {
         command_max_potions_used_set: false,
         session_max_potions_used_set: false,
         hp_loss_gate: CombatAutoHpLossGateV1::Limited,
-        evidence_requested: false,
     }
 }
 
@@ -61,7 +60,6 @@ fn ordinary_limited_plan_keeps_primary_no_potion_but_allows_rescue() {
         command_max_potions_used_set: false,
         session_max_potions_used_set: false,
         hp_loss_gate: CombatAutoHpLossGateV1::Limited,
-        evidence_requested: false,
     };
 
     let plan = plan_combat_auto_search_v1(&context);
