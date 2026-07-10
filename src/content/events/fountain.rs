@@ -19,7 +19,7 @@ fn is_fountain_removable_curse(
         && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
 }
 
-fn removable_curse_count(run_state: &RunState) -> usize {
+pub(crate) fn removable_curse_count(run_state: &RunState) -> usize {
     run_state
         .master_deck
         .iter()

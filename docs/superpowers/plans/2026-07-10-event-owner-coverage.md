@@ -213,7 +213,7 @@ git commit -m "feat: cover forced-flow event owners"
 - Modify: `src/content/events/fountain.rs`
 
 **Interfaces:**
-- Consumes: `has_omamori_charge`, `has_safe_purge_target`, `single_deck_mutation_choice`, and `DeckMutationCompilerRequestV1::optional_execute_one()` from the parent policy module.
+- Consumes: `has_omamori_charge`, `has_safe_purge_target`, and the public hidden-free `best_duplicate_target_for_shop_v1` premium-target fact.
 - Produces: six explicit selectors for `GoldenShrine`, `FountainOfCurseCleansing`, `UpgradeShrine`, `AccursedBlacksmith`, `Duplicator`, and `NoteForYourself`.
 
 - [ ] **Step 1: Add failing state-dependent contract tests**
@@ -249,7 +249,8 @@ fn fountain_upgrade_blacksmith_duplicate_and_note_use_real_deck_facts() {
     cursed.add_card_to_deck(CardId::Injury);
     assert_unique_selector(&cursed, action(EventActionKind::DeckOperation));
 
-    let empty_upgrade = event_run(EventId::UpgradeShrine, 0);
+    let mut empty_upgrade = event_run(EventId::UpgradeShrine, 0);
+    empty_upgrade.master_deck.clear();
     assert_unique_selector(&empty_upgrade, action(EventActionKind::Leave));
     let mut upgrade = event_run(EventId::UpgradeShrine, 0);
     upgrade.add_card_to_deck(CardId::Bash);
@@ -258,10 +259,12 @@ fn fountain_upgrade_blacksmith_duplicate_and_note_use_real_deck_facts() {
     let mut forge = event_run(EventId::AccursedBlacksmith, 0);
     forge.add_card_to_deck(CardId::Bash);
     assert_unique_selector(&forge, action(EventActionKind::DeckOperation));
-    let plain_blacksmith = event_run(EventId::AccursedBlacksmith, 0);
+    let mut plain_blacksmith = event_run(EventId::AccursedBlacksmith, 0);
+    plain_blacksmith.master_deck.clear();
     assert_unique_selector(&plain_blacksmith, action(EventActionKind::Leave));
 
-    let empty_duplicate = event_run(EventId::Duplicator, 0);
+    let mut empty_duplicate = event_run(EventId::Duplicator, 0);
+    empty_duplicate.master_deck.clear();
     assert_unique_selector(&empty_duplicate, action(EventActionKind::Leave));
     let mut premium_duplicate = event_run(EventId::Duplicator, 0);
     premium_duplicate.add_card_to_deck(CardId::Offering);
@@ -326,14 +329,11 @@ pub(crate) fn removable_curse_count(run_state: &RunState) -> usize {
 Append to `coverage_rules.rs`:
 
 ```rust
-use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
-};
+use crate::ai::deck_mutation_compiler_v1::best_duplicate_target_for_shop_v1;
 use crate::content::cards::CardId;
-use crate::state::core::RunPendingChoiceReason;
 use crate::state::events::{EventCardKind, EventEffect};
 
-use super::{effect, has_omamori_charge, has_safe_purge_target, single_deck_mutation_choice};
+use super::{effect, has_omamori_charge, has_safe_purge_target};
 
 pub(super) fn golden_shrine_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
@@ -388,20 +388,9 @@ pub(super) fn accursed_blacksmith_choice(run_state: &RunState) -> EventOwnerOpti
     }
 }
 
-fn has_optional_mutation_target(run_state: &RunState, reason: RunPendingChoiceReason) -> bool {
-    let choice = single_deck_mutation_choice(reason);
-    compile_deck_mutation_decision_v1(
-        run_state,
-        &choice,
-        DeckMutationCompilerRequestV1::optional_execute_one(),
-    )
-    .selected_plan
-    .is_some()
-}
-
 pub(super) fn duplicator_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     match event_screen(run_state) {
-        0 if has_optional_mutation_target(run_state, RunPendingChoiceReason::Duplicate) => {
+        0 if best_duplicate_target_for_shop_v1(run_state).is_some() => {
             action(EventActionKind::DeckOperation)
         }
         _ => action(EventActionKind::Leave),
