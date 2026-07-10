@@ -113,6 +113,49 @@ fn collector_control_frontier_prefers_concentrated_head_damage() {
 }
 
 #[test]
+fn collector_control_frontier_does_not_skip_the_initial_spawn_window() {
+    let mut opening_window = collector_node(276, &[]);
+    opening_window.combat.entities.monsters[0]
+        .collector
+        .initial_spawn = true;
+    let mut after_spawn = collector_node(282, &[40, 40]);
+    after_spawn.combat.entities.monsters[0]
+        .collector
+        .initial_spawn = false;
+
+    assert!(
+        priority_for_node_with_action_prior(
+            &opening_window,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ) > priority_for_node_with_action_prior(
+            &after_spawn,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ),
+        "the control prior must use the free pre-spawn action window before advancing the enemy turn"
+    );
+}
+
+#[test]
+fn collector_control_frontier_does_not_stall_in_the_initial_spawn_window() {
+    let mut opening_window = collector_node(276, &[]);
+    opening_window.combat.entities.monsters[0]
+        .collector
+        .initial_spawn = true;
+    let one_head_control = collector_node(282, &[20]);
+
+    assert!(
+        priority_for_node_with_action_prior(
+            &one_head_control,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ) > priority_for_node_with_action_prior(
+            &opening_window,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ),
+        "achieving one-head control must outrank lingering in the pre-spawn window"
+    );
+}
+
+#[test]
 fn collector_boss_race_frontier_prefers_damage_on_collector() {
     let collector_damage = collector_node(252, &[40]);
     let torch_damage = collector_node(282, &[10]);
@@ -298,6 +341,7 @@ fn collector_node(collector_hp: i32, torch_hps: &[i32]) -> SearchNode {
     collector.id = 1;
     collector.current_hp = collector_hp;
     collector.max_hp = 282;
+    collector.collector.initial_spawn = false;
     let mut monsters = vec![collector];
     for (index, hp) in torch_hps.iter().copied().enumerate() {
         let mut torch = test_monster(EnemyId::TorchHead);

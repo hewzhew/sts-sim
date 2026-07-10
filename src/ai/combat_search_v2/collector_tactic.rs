@@ -1,4 +1,4 @@
-use crate::content::monsters::EnemyId;
+use crate::content::monsters::{get_hp_range, EnemyId};
 use crate::runtime::combat::{CombatState, MonsterEntity};
 
 use super::CombatSearchActionPriorPluginId;
@@ -34,12 +34,21 @@ pub(super) fn collector_tactic_value(
             secondary_progress: 0,
         },
         CombatSearchActionPriorPluginId::CollectorSingleHeadControl => {
-            let formation = match torches.len() {
-                1 => 3,
-                2.. => 2,
-                0 => 1,
+            let initial_spawn_window = torches.is_empty() && collector.collector.initial_spawn;
+            let formation = if initial_spawn_window {
+                2
+            } else {
+                match torches.len() {
+                    1 => 3,
+                    2.. => 2,
+                    0 => 1,
+                }
             };
-            let (primary_progress, secondary_progress) = if torches.len() >= 2 {
+            let (primary_progress, secondary_progress) = if initial_spawn_window {
+                let expected_head_hp =
+                    get_hp_range(EnemyId::TorchHead, combat.meta.ascension_level).0;
+                (-expected_head_hp, -collector.current_hp)
+            } else if torches.len() >= 2 {
                 let focused_head_hp = torches
                     .iter()
                     .map(|torch| torch.current_hp)
