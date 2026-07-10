@@ -755,10 +755,7 @@ fn is_upgrade_exhaust_control_delta_v1(card: CardId) -> bool {
 }
 
 fn is_upgrade_exhaust_removed_delta_v1(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Havoc | CardId::Armaments | CardId::LimitBreak
-    )
+    matches!(card, CardId::Havoc | CardId::Armaments | CardId::LimitBreak)
 }
 
 fn is_upgrade_core_mechanic_v1(card: CardId) -> bool {
