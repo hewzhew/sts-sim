@@ -141,6 +141,20 @@ fn collector_tactic_frontier_queue_uses_configured_prior() {
 }
 
 #[test]
+fn collector_tactic_prior_is_neutral_outside_collector_fights() {
+    let mut node = test_node();
+    node.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+
+    assert_eq!(
+        priority_for_node_with_action_prior(
+            &node,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+        ),
+        priority_for_node(&node)
+    );
+}
+
+#[test]
 fn frontier_queue_preserves_single_queue_priority_order() {
     let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::SingleQueue);
 

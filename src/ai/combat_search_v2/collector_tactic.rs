@@ -11,6 +11,12 @@ pub(super) struct CollectorTacticValueV0 {
     secondary_progress: i32,
 }
 
+impl CollectorTacticValueV0 {
+    pub(super) fn is_applicable(self) -> bool {
+        self.applicable > 0
+    }
+}
+
 pub(super) fn collector_tactic_value(
     combat: &CombatState,
     plugin: CombatSearchActionPriorPluginId,

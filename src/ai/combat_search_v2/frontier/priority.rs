@@ -124,6 +124,10 @@ fn collector_tactic_frontier_gate(
     if !action_prior.is_collector_tactic() {
         return CollectorTacticFrontierGate::default();
     }
+    let tactic = collector_tactic_value(&node.combat, action_prior);
+    if !tactic.is_applicable() {
+        return CollectorTacticFrontierGate::default();
+    }
     let eval = combat_eval_from_rollout_estimate(&node.rollout_estimate);
     CollectorTacticFrontierGate {
         enabled: 1,
@@ -141,7 +145,7 @@ fn collector_tactic_frontier_gate(
             CombatEvalSurvivalBucket::Stable => 4,
         },
         rollout_risk_margin: eval.risk_margin(),
-        tactic: collector_tactic_value(&node.combat, action_prior),
+        tactic,
     }
 }
 
