@@ -13,6 +13,8 @@ mod case_payload;
 mod champ_phase;
 #[path = "combat_case_review/classification.rs"]
 mod classification;
+#[path = "combat_case_review/collector_tactic_lanes.rs"]
+mod collector_tactic_lanes;
 #[path = "combat_case_review/counterfactual_hp.rs"]
 mod counterfactual_hp;
 #[path = "combat_case_review/focus.rs"]

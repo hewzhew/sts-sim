@@ -17,6 +17,7 @@ use super::case_payload::{
 };
 use super::champ_phase::champ_phase_audit;
 use super::classification::classify_gap_review;
+use super::collector_tactic_lanes::run_collector_tactic_lanes;
 use super::counterfactual_hp::run_counterfactual_hp_probe;
 use super::focus::{focus_witness_line, review_focus, witness_prior_rerun};
 use super::forced_potion_opening::run_forced_potion_opening_lanes;
@@ -58,6 +59,7 @@ pub(super) fn build_review(
     let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
     let key_card_decision_microscope = run_key_card_decision_microscope_probe(&options, &case);
     let root_action_role_duel = run_root_action_role_duel_probe(&options, &case);
+    let collector_tactic_lanes = run_collector_tactic_lanes(&options, &case);
     let quality_lanes = if options.quality_lanes {
         Some(run_quality_lanes(&options, &case))
     } else {
@@ -101,6 +103,7 @@ pub(super) fn build_review(
             key_card_counterfactual,
             key_card_decision_microscope,
             root_action_role_duel,
+            collector_tactic_lanes,
             champ_phase_audit,
         },
     )

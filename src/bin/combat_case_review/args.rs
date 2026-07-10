@@ -59,6 +59,8 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) root_action_role_duel: bool,
     #[arg(long)]
+    pub(super) collector_tactic_lanes: bool,
+    #[arg(long)]
     pub(super) quality_lane_total_nodes: Option<usize>,
     #[arg(long)]
     pub(super) quality_lane_total_ms: Option<u64>,

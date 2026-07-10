@@ -37,6 +37,7 @@ pub(super) fn assemble_combat_case_review(
         key_card_counterfactual,
         key_card_decision_microscope,
         root_action_role_duel,
+        collector_tactic_lanes,
         champ_phase_audit,
     } = artifacts;
     let derived = derived_payload_from_case(&case);
@@ -82,6 +83,7 @@ pub(super) fn assemble_combat_case_review(
         key_card_counterfactual,
         key_card_decision_microscope,
         root_action_role_duel,
+        collector_tactic_lanes,
         champ_phase_audit,
         key_card_lifecycle,
     }
