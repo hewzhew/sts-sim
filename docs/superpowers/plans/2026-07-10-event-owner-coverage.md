@@ -1001,3 +1001,16 @@ by exhaustive `EventId` dispatch and seed-free typed owner contracts.
 git add docs/superpowers/specs/2026-07-10-event-owner-coverage-design.md
 git commit -m "docs: record exhaustive event owner coverage"
 ```
+
+---
+
+## Post-review remediation
+
+The final review added a private owner-audit integration module that executes
+the real decision surface and owner command path across the approved event
+boundaries. It covers event-origin Upgrade, Duplicate, and PurgeNonBottled
+pending choices; Lab and Sensory Stone reward ownership; the mandatory first
+Colosseum fight and post-combat flee; Secret Portal decline; and repeated
+Knowing Skull decisions through the HP-budget leave. The remediation is
+accepted only after the focused module, event-owner and owner-audit suites,
+format/diff checks, and a fresh complete `cargo test --lib` all pass.

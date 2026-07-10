@@ -3,7 +3,9 @@
 ## Status
 
 Implemented and verified on 2026-07-10. Event-owner completeness is enforced
-by exhaustive `EventId` dispatch and seed-free typed owner contracts.
+by exhaustive `EventId` dispatch and seed-free executable cross-boundary owner
+contracts, including real pending-choice, reward, combat, portal, and repeated
+event transitions.
 
 ## Goal
 

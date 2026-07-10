@@ -79,7 +79,7 @@ fn is_combat_gap(session: &RunControlSession, stop_kind: RunControlAutoStopKind)
     )
 }
 
-fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
+pub(super) fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
     match &session.engine_state {
         EngineState::EventRoom => {
             let event = session.run_state.event_state.as_ref()?;

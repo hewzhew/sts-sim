@@ -68,6 +68,9 @@ mod combat_search_report;
 mod combat_search_trace_actions;
 #[path = "owner_audit/decision_delta.rs"]
 mod decision_delta;
+#[cfg(test)]
+#[path = "owner_audit/event_owner_boundaries.rs"]
+mod event_owner_boundaries;
 #[path = "owner_audit/event_owner_bridge.rs"]
 mod event_owner_bridge;
 #[path = "owner_audit/event_owner_probe.rs"]
