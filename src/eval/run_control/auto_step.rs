@@ -24,8 +24,7 @@ const DEFAULT_MAX_OPERATIONS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::eval::run_control) enum NonCombatAutoMode {
-    FullPlanner,
-    OwnerAuditRoutineOnly,
+    RoutineOnly,
     BranchExperimentBoundary,
 }
 
@@ -94,7 +93,7 @@ pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
 ) -> Result<RunControlCommandOutcome, String> {
-    apply_guarded_auto_step_with_mode(session, options, NonCombatAutoMode::FullPlanner)
+    apply_guarded_auto_step_with_mode(session, options, NonCombatAutoMode::RoutineOnly)
 }
 
 pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
@@ -373,12 +372,6 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 continue;
             }
         }
-        let card_reward_policy_stop = if noncombat_mode == NonCombatAutoMode::FullPlanner {
-            super::noncombat_auto::planner_noncombat_policy_stop_annotation(session)?
-        } else {
-            None
-        };
-
         if noncombat_mode == NonCombatAutoMode::BranchExperimentBoundary
             && branch_experiment_should_stop_before_visible_candidate(session)
         {
@@ -430,10 +423,6 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             continue;
         }
 
-        let detail = card_reward_policy_stop.map(|(annotation, detail)| {
-            trace_annotations.push(annotation);
-            detail
-        });
         return finish_auto_step(
             session,
             &before,
@@ -442,7 +431,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             decision_parent_snapshots,
             RunControlAutoStopKind::HumanBoundary,
             human_stop_reason(session),
-            detail,
+            None,
         );
     }
 
@@ -485,12 +474,7 @@ fn apply_noncombat_policy(
     mode: NonCombatAutoMode,
 ) -> Result<Option<super::noncombat_auto::NonCombatAutoApplication>, String> {
     match mode {
-        NonCombatAutoMode::FullPlanner => {
-            super::noncombat_auto::apply_planner_noncombat_policy(session)
-        }
-        NonCombatAutoMode::OwnerAuditRoutineOnly => {
-            super::noncombat_auto::apply_owner_audit_noncombat_policy(session)
-        }
+        NonCombatAutoMode::RoutineOnly => Ok(None),
         NonCombatAutoMode::BranchExperimentBoundary => {
             super::noncombat_auto::apply_branch_experiment_noncombat_policy(session)
         }
@@ -1227,7 +1211,7 @@ mod tests {
                 max_operations: Some(1),
                 ..RunControlAutoStepOptions::default()
             },
-            NonCombatAutoMode::OwnerAuditRoutineOnly,
+            NonCombatAutoMode::RoutineOnly,
         )
         .expect("owner audit auto step should stop cleanly at card reward");
 

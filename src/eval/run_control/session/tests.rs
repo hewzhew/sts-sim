@@ -359,7 +359,7 @@ fn run_control_auto_step_labels_single_event_state_resolution_as_forced() {
 }
 
 #[test]
-fn run_control_auto_run_event_policy_takes_free_known_benefit() {
+fn run_control_auto_run_stops_at_event_owner_boundary() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 0;
     session.run_state.event_state = Some(crate::state::events::EventState::new(
@@ -375,10 +375,14 @@ fn run_control_auto_run_event_policy_takes_free_known_benefit() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should take a free known event benefit");
+        .expect("auto-run should stop at the event owner boundary");
 
-    assert!(outcome.message.contains("event policy: [Pray]"));
-    assert_eq!(session.run_state.gold, 100);
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    assert!(outcome.action_result.is_none());
+    assert_eq!(session.run_state.gold, 0);
     assert!(matches!(session.engine_state, EngineState::EventRoom));
     assert_eq!(
         session
@@ -387,71 +391,17 @@ fn run_control_auto_run_event_policy_takes_free_known_benefit() {
             .as_ref()
             .unwrap()
             .current_screen,
-        1
+        0
     );
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("event policy should attach a noncombat record");
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("event policy noncombat record should validate");
+    let record = noncombat_human_boundary_record(&outcome);
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Event
     );
     assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
+        record.data_role,
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
     );
-}
-
-#[test]
-fn run_control_auto_run_match_and_keep_flips_best_safe_pair() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    let mut event_state =
-        crate::state::events::EventState::new(crate::state::events::EventId::MatchAndKeep);
-    event_state.current_screen = 1;
-    event_state.extra_data = match_and_keep_board_with_entries(&[
-        (crate::content::cards::CardId::Bash, 1),
-        (crate::content::cards::CardId::Strike, 0),
-        (crate::content::cards::CardId::Defend, 0),
-        (crate::content::cards::CardId::Clumsy, 0),
-        (crate::content::cards::CardId::IronWave, 0),
-        (crate::content::cards::CardId::Cleave, 0),
-    ]);
-    session.run_state.event_state = Some(event_state);
-    session.engine_state = EngineState::EventRoom;
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should use the visible Match and Keep board strategy");
-
-    assert!(
-        outcome.message.contains("event policy: Match and Keep"),
-        "{}",
-        outcome.message
-    );
-    let obtained = session.run_state.master_deck.last().unwrap();
-    assert_eq!(obtained.id, crate::content::cards::CardId::IronWave);
-    assert_eq!(obtained.upgrades, 0);
-    assert!(session
-        .run_state
-        .master_deck
-        .iter()
-        .all(|card| card.id != crate::content::cards::CardId::Clumsy));
 }
 
 #[test]
@@ -594,7 +544,7 @@ fn run_control_auto_step_campfire_stop_exports_human_boundary_record() {
 }
 
 #[test]
-fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire() {
+fn run_control_auto_run_stops_at_low_hp_campfire_without_choosing() {
     let mut session = test_session_at_campfire_with_hp(20, 80);
 
     let outcome = session
@@ -604,51 +554,28 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
                 ..Default::default()
             },
         ))
-        .expect("auto-run should rest when recovery pressure is strong");
+        .expect("auto-run should stop at the campfire owner boundary");
 
-    assert!(outcome.message.contains("campfire policy: rest"));
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("campfire policy should attach a noncombat record");
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("campfire policy noncombat record should validate");
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    assert!(outcome.action_result.is_none());
+    assert_eq!(session.run_state.current_hp, 20);
+    assert!(matches!(session.engine_state, EngineState::Campfire));
+    let record = noncombat_human_boundary_record(&outcome);
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Campfire
     );
     assert_eq!(
         record.data_role,
-        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
     );
-    assert_eq!(record.provenance.source_policy, "campfire_policy_v1");
-    assert_eq!(record.provenance.source_schema_name, "CampfireDecisionV1");
-    assert_eq!(
-        record.selection.selection_mode,
-        "campfire_autopilot_plan_v1"
-    );
-    assert!(record
-        .evidence
-        .items
-        .iter()
-        .any(|item| item.label.contains("campfire plan role=")));
-    assert!(outcome.action_result.is_some());
-    assert!(
-        session.run_state.current_hp > 20,
-        "rest should heal before leaving the campfire"
-    );
-    assert!(matches!(session.engine_state, EngineState::MapNavigation));
 }
 
 #[test]
-fn run_control_auto_run_purges_curse_at_shop() {
+fn run_control_auto_run_stops_at_shop_owner_boundary() {
     let mut session = test_session_at_shop();
     session
         .run_state
@@ -665,45 +592,24 @@ fn run_control_auto_run_purges_curse_at_shop() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should purge a visible curse at shop");
+        .expect("auto-run should stop at the shop owner boundary");
 
-    assert!(outcome.message.contains("shop policy: purge Doubt"));
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("shop policy should attach a noncombat record");
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("shop policy noncombat record should validate");
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    assert!(outcome.action_result.is_none());
+    let record = noncombat_human_boundary_record(&outcome);
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
     );
     assert_eq!(
         record.data_role,
-        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
     );
-    assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
-    );
-    assert_eq!(record.provenance.source_policy, "shop_compiler_v1");
-    assert_eq!(
-        record.provenance.source_schema_name,
-        "CompiledShopDecisionV1"
-    );
-    assert_eq!(
-        record.selection.selection_mode,
-        "compiled_shop_rollout_head_v1"
-    );
-    assert_eq!(session.run_state.gold, 25);
-    assert!(!session
+    assert_eq!(session.run_state.gold, 100);
+    assert!(session
         .run_state
         .master_deck
         .iter()
@@ -761,70 +667,6 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
 }
 
 #[test]
-fn run_control_auto_run_executes_compiled_shop_policy_when_purchase_is_visible() {
-    let mut session = test_session_at_shop();
-    session.run_state.gold = 200;
-    if let EngineState::Shop(shop) = &mut session.engine_state {
-        shop.cards = vec![
-            crate::state::shop::ShopCard {
-                card_id: crate::content::cards::CardId::Shockwave,
-                upgrades: 0,
-                price: 90,
-                can_buy: true,
-                blocked_reason: None,
-            },
-            crate::state::shop::ShopCard {
-                card_id: crate::content::cards::CardId::Clash,
-                upgrades: 0,
-                price: 45,
-                can_buy: true,
-                blocked_reason: None,
-            },
-        ];
-    }
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should buy a clear high-impact shop card");
-
-    assert!(
-        outcome.message.contains("shop policy:"),
-        "auto-run should report the shop policy action, got:\n{}",
-        outcome.message
-    );
-    assert!(
-        session.run_state.gold < 200,
-        "shop policy should execute the compiler-selected shop action"
-    );
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("shop policy should attach a noncombat decision record");
-    assert_eq!(
-        record.site,
-        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
-    );
-    assert_eq!(record.provenance.source_policy, "shop_compiler_v1");
-    assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
-    );
-    assert!(matches!(session.engine_state, EngineState::Shop(_)));
-}
-
-#[test]
 fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = crate::state::rewards::RewardState::new();
@@ -853,45 +695,7 @@ fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
 }
 
 #[test]
-fn run_control_auto_run_uses_core_plan_package_to_purge_starter_when_no_purchase_competes() {
-    let mut session = test_session_at_shop();
-    if let EngineState::Shop(shop) = &mut session.engine_state {
-        shop.cards.clear();
-        shop.relics.clear();
-        shop.potions.clear();
-    }
-    session
-        .run_state
-        .add_card_to_deck(crate::content::cards::CardId::Inflame);
-    session
-        .run_state
-        .add_card_to_deck(crate::content::cards::CardId::HeavyBlade);
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should purge a starter strike when core-plan protection is strong");
-
-    assert!(outcome.message.contains("shop policy: purge Strike"));
-    assert_eq!(session.run_state.gold, 25);
-    assert_eq!(
-        session
-            .run_state
-            .master_deck
-            .iter()
-            .filter(|card| card.id == crate::content::cards::CardId::Strike)
-            .count(),
-        4
-    );
-    assert!(matches!(session.engine_state, EngineState::Shop(_)));
-}
-
-#[test]
-fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
+fn run_control_auto_run_stops_at_run_choice_owner_boundary() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
         .run_state
@@ -918,79 +722,31 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should purge a curse at a run pending purge choice");
+        .expect("auto-run should stop at the run-choice owner boundary");
 
-    assert!(outcome
-        .message
-        .contains("deck mutation compiler: select Doubt"));
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("run choice policy should attach a noncombat record");
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("run choice policy noncombat record should validate");
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    assert!(outcome.action_result.is_none());
+    let record = noncombat_human_boundary_record(&outcome);
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::RunChoice
     );
     assert_eq!(
         record.data_role,
-        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
+        crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
     );
-    assert_eq!(record.provenance.source_policy, "deck_mutation_compiler_v1");
-    assert_eq!(record.selection.selection_mode, "deck_mutation_compiler_v1");
-    assert!(!session
+    assert!(session
         .run_state
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Doubt));
-    assert!(matches!(session.engine_state, EngineState::MapNavigation));
-}
-
-#[test]
-fn run_control_auto_run_selects_starter_at_run_pending_purge_choice() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.engine_state =
-        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
-            min_choices: 1,
-            max_choices: 1,
-            reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
-            source: crate::state::selection::DomainEventSource::Selection(
-                crate::state::core::RunPendingChoiceReason::PurgeNonBottled.into(),
-            ),
-            return_state: Box::new(EngineState::MapNavigation),
-        });
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should select a low-value starter at a purge choice without a curse");
-
-    assert!(outcome
-        .message
-        .contains("deck mutation compiler: select Strike"));
-    assert_eq!(session.run_state.master_deck.len(), 9);
-    assert_eq!(
-        session
-            .run_state
-            .master_deck
-            .iter()
-            .filter(|card| card.id == crate::content::cards::CardId::Strike)
-            .count(),
-        4
-    );
-    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert!(matches!(
+        session.engine_state,
+        EngineState::RunPendingChoice(_)
+    ));
 }
 
 #[test]
@@ -1503,18 +1259,15 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
-    assert!(outcome.message.contains("card reward policy stopped:"));
-    assert!(outcome.trace_annotations.iter().any(|annotation| {
-        matches!(
-            annotation,
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
-                && record.selection.status
-                    == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
-        )
-    }));
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
+    );
     assert!(!session
         .run_state
         .master_deck
@@ -1667,18 +1420,15 @@ fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
-    assert!(outcome.message.contains("card reward policy stopped:"));
-    assert!(outcome.trace_annotations.iter().any(|annotation| {
-        matches!(
-            annotation,
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } if record.site == crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
-                && record.selection.status
-                    == crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
-        )
-    }));
+    assert_eq!(
+        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        Some(RunControlAutoStopKind::HumanBoundary)
+    );
+    let record = noncombat_human_boundary_record(&outcome);
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Reward
+    );
     assert!(outcome.action_result.is_none());
     let EngineState::RewardScreen(reward) = &session.engine_state else {
         panic!("Singing Bowl card reward item should remain unopened");
@@ -2228,19 +1978,6 @@ fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> 
     reward.pending_card_reward_index = Some(0);
     session.engine_state = EngineState::RewardScreen(reward);
     session
-}
-
-fn match_and_keep_board_with_entries(
-    entries: &[(crate::content::cards::CardId, u8); 6],
-) -> Vec<i32> {
-    let mut extra_data = vec![0, 0, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 0, 5, -1];
-    for &(card_id, upgrades) in entries {
-        extra_data.push(card_id as i32);
-        extra_data.push(upgrades as i32);
-    }
-    extra_data.push(-1);
-    extra_data.push(-1);
-    extra_data
 }
 
 fn test_card_reward_calibration_for_twin_strike(

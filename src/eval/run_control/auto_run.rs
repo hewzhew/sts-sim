@@ -12,7 +12,7 @@ pub(in crate::eval::run_control) fn apply_auto_run(
     let outcome = apply_auto_run_with_noncombat_mode(
         session,
         options,
-        super::auto_step::NonCombatAutoMode::FullPlanner,
+        super::auto_step::NonCombatAutoMode::RoutineOnly,
     )?;
     if matches!(session.engine_state, EngineState::GameOver(_)) {
         Ok(outcome)
@@ -28,7 +28,7 @@ pub fn apply_owner_audit_auto_run(
     apply_auto_run_with_noncombat_mode(
         session,
         options,
-        super::auto_step::NonCombatAutoMode::OwnerAuditRoutineOnly,
+        super::auto_step::NonCombatAutoMode::RoutineOnly,
     )
 }
 
