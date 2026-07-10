@@ -2,7 +2,7 @@ use crate::content::cards::CardId;
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
-    EventOptionSemantics, EventOptionTransition, EventOwnerPolicyKind, EventState,
+    EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -46,7 +46,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     EventChoiceMeta::new("[Disagree] Leave."),
                     EventOptionSemantics {
                         action: EventActionKind::Decline,
-                        owner_policy: EventOwnerPolicyKind::ConservativeAuto,
                         transition: EventOptionTransition::AdvanceScreen,
                         ..Default::default()
                     },
@@ -69,7 +68,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
             EventChoiceMeta::new("[Leave]"),
             EventOptionSemantics {
                 action: EventActionKind::Leave,
-                owner_policy: EventOwnerPolicyKind::ConservativeAuto,
                 transition: EventOptionTransition::Complete,
                 terminal: true,
                 ..Default::default()

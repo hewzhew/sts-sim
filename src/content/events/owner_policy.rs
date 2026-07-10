@@ -34,32 +34,21 @@ use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventEffect, EventId, EventOptionSemantics,
-    EventOwnerPolicyKind, EventRelicKind,
+    EventActionKind, EventCardKind, EventEffect, EventId, EventOptionSemantics, EventRelicKind,
 };
 use crate::state::run::RunState;
-use crate::state::selection::{DomainEventSource, SelectionResolution, SelectionScope};
+use crate::state::selection::DomainEventSource;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EventOwnerPolicyGap {
     MissingEventState,
-    MissingMarkedPolicy(EventId),
-    AmbiguousMarkedPolicy { event_id: EventId, found: usize },
-    MissingPendingPolicy(EventId),
-    EmptySelectionTargets,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EventOwnerAction {
-    ChooseOption(EventOwnerOptionSelector),
-    SubmitSelection(SelectionResolution),
+    NeowOwnedByNeowStart,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EventOwnerOptionSelector {
     Action(EventActionKind),
     Effect(EventEffect),
-    OwnerPolicy(EventOwnerPolicyKind),
     OptionIndex(usize),
 }
 
@@ -68,118 +57,75 @@ impl EventOwnerOptionSelector {
         match self {
             EventOwnerOptionSelector::Action(action) => semantics.action == *action,
             EventOwnerOptionSelector::Effect(effect) => semantics.effects.contains(effect),
-            EventOwnerOptionSelector::OwnerPolicy(policy) => semantics.owner_policy == *policy,
             EventOwnerOptionSelector::OptionIndex(index) => option_index == *index,
         }
     }
 }
 
-pub fn event_owner_policy_action(
-    engine_state: &EngineState,
+pub fn event_owner_policy_selector(
     run_state: &RunState,
-) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    match engine_state {
-        EngineState::EventRoom => event_room_policy_action(run_state),
-        EngineState::RunPendingChoice(choice) => event_run_choice_policy_action(choice, run_state),
-        _ => Err(EventOwnerPolicyGap::MissingEventState),
-    }
-}
-
-fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
+) -> Result<EventOwnerOptionSelector, EventOwnerPolicyGap> {
     let event_id = run_state
         .event_state
         .as_ref()
         .map(|event| event.id)
         .ok_or(EventOwnerPolicyGap::MissingEventState)?;
-    match event_id {
-        EventId::BackTotheBasics => return Ok(choose(back_to_basics_choice(run_state))),
-        EventId::Beggar => return Ok(choose(beggar_choice(run_state))),
-        EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
-        EventId::BonfireElementals => return Ok(choose(bonfire_choice(run_state))),
-        EventId::BonfireSpirits => return Ok(choose(bonfire_choice(run_state))),
-        EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
-        EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
-        EventId::Designer => return Ok(choose(designer_choice(run_state))),
-        EventId::DrugDealer => return Ok(choose(drug_dealer_choice(run_state))),
-        EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
-        EventId::FaceTrader => return Ok(choose(face_trader_choice(run_state))),
-        EventId::ForgottenAltar => return Ok(choose(forgotten_altar_choice(run_state))),
-        EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
-        EventId::Cleric => return Ok(choose(cleric_choice(run_state))),
-        EventId::GoldenIdol => return Ok(choose(golden_idol_choice(run_state))),
-        EventId::GoldenWing => return Ok(choose(golden_wing_choice(run_state))),
-        EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
-        EventId::MaskedBandits => return Ok(choose(masked_bandits_choice(run_state))),
-        EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
-        EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
-        EventId::MindBloom => return Ok(choose(mind_bloom_choice(run_state))),
-        EventId::MoaiHead => return Ok(choose(moai_head_choice(run_state))),
-        EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
-        EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
-        EventId::Nest => return Ok(choose(nest_choice(run_state))),
-        EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
-        EventId::Purifier => return Ok(choose(purifier_choice(run_state))),
-        EventId::ScrapOoze => return Ok(choose(scrap_ooze_choice(run_state))),
-        EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
-        EventId::TheLibrary => return Ok(choose(the_library_choice(run_state))),
-        EventId::TombRedMask => return Ok(choose(tomb_red_mask_choice(run_state))),
-        EventId::Transmorgrifier => return Ok(choose(transmorgrifier_choice(run_state))),
-        EventId::Vampires => return Ok(choose(vampires_choice(run_state))),
-        EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
-        EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
-        EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
-        EventId::WorldOfGoop => return Ok(choose(world_of_goop_choice(run_state))),
-        EventId::AccursedBlacksmith => return Ok(choose(accursed_blacksmith_choice(run_state))),
-        EventId::Colosseum => return Ok(choose(colosseum_choice(run_state))),
-        EventId::Duplicator => return Ok(choose(duplicator_choice(run_state))),
-        EventId::FountainOfCurseCleansing => return Ok(choose(fountain_choice(run_state))),
-        EventId::GoldenShrine => return Ok(choose(golden_shrine_choice(run_state))),
-        EventId::GremlinWheelGame => return Ok(choose(gremlin_wheel_choice(run_state))),
-        EventId::Lab => return Ok(choose(lab_choice(run_state))),
-        EventId::NoteForYourself => return Ok(choose(note_for_yourself_choice(run_state))),
-        EventId::TheJoust => return Ok(choose(the_joust_choice(run_state))),
-        EventId::UpgradeShrine => return Ok(choose(upgrade_shrine_choice(run_state))),
-        EventId::Addict => return Ok(choose(addict_choice(run_state))),
-        EventId::KnowingSkull => return Ok(choose(knowing_skull_choice(run_state))),
-        EventId::SecretPortal => return Ok(choose(secret_portal_choice(run_state))),
-        EventId::SensoryStone => return Ok(choose(sensory_stone_choice(run_state))),
-        EventId::Ssssserpent => return Ok(choose(ssssserpent_choice(run_state))),
-        _ => {}
-    }
-    let marked_count = crate::engine::event_handler::get_event_options(run_state)
-        .iter()
-        .filter(|option| {
-            !option.ui.disabled
-                && option.semantics.owner_policy == EventOwnerPolicyKind::ConservativeAuto
-        })
-        .count();
-    if marked_count != 1 {
-        return if marked_count == 0 {
-            Err(EventOwnerPolicyGap::MissingMarkedPolicy(event_id))
-        } else {
-            Err(EventOwnerPolicyGap::AmbiguousMarkedPolicy {
-                event_id,
-                found: marked_count,
-            })
-        };
-    }
-    Ok(choose(EventOwnerOptionSelector::OwnerPolicy(
-        EventOwnerPolicyKind::ConservativeAuto,
-    )))
-}
-
-fn event_run_choice_policy_action(
-    choice: &RunPendingChoiceState,
-    run_state: &RunState,
-) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    let DomainEventSource::Event(_event_id) = choice.source else {
-        return Err(EventOwnerPolicyGap::MissingEventState);
+    let selector = match event_id {
+        EventId::BigFish => big_fish_choice(run_state),
+        EventId::Cleric => cleric_choice(run_state),
+        EventId::DeadAdventurer => dead_adventurer_choice(run_state),
+        EventId::GoldenIdol => golden_idol_choice(run_state),
+        EventId::LivingWall => living_wall_choice(run_state),
+        EventId::Mushrooms => mushrooms_choice(run_state),
+        EventId::ScrapOoze => scrap_ooze_choice(run_state),
+        EventId::ShiningLight => shining_light_choice(run_state),
+        EventId::Ssssserpent => ssssserpent_choice(run_state),
+        EventId::WorldOfGoop => world_of_goop_choice(run_state),
+        EventId::GoldenWing => golden_wing_choice(run_state),
+        EventId::MatchAndKeep => match_and_keep_choice(run_state),
+        EventId::GoldenShrine => golden_shrine_choice(run_state),
+        EventId::Addict => addict_choice(run_state),
+        EventId::BackTotheBasics => back_to_basics_choice(run_state),
+        EventId::Beggar => beggar_choice(run_state),
+        EventId::Colosseum => colosseum_choice(run_state),
+        EventId::CursedTome => cursed_tome_choice(run_state),
+        EventId::DrugDealer => drug_dealer_choice(run_state),
+        EventId::ForgottenAltar => forgotten_altar_choice(run_state),
+        EventId::Ghosts => ghosts_choice(run_state),
+        EventId::KnowingSkull => knowing_skull_choice(run_state),
+        EventId::MaskedBandits => masked_bandits_choice(run_state),
+        EventId::Mausoleum => mausoleum_choice(run_state),
+        EventId::Nest => nest_choice(run_state),
+        EventId::Nloth => nloth_choice(run_state),
+        EventId::TheJoust => the_joust_choice(run_state),
+        EventId::TheLibrary => the_library_choice(run_state),
+        EventId::Vampires => vampires_choice(run_state),
+        EventId::Falling => super::falling_owner::falling_choice(run_state),
+        EventId::MindBloom => mind_bloom_choice(run_state),
+        EventId::MoaiHead => moai_head_choice(run_state),
+        EventId::MysteriousSphere => mysterious_sphere_choice(run_state),
+        EventId::SensoryStone => sensory_stone_choice(run_state),
+        EventId::TombRedMask => tomb_red_mask_choice(run_state),
+        EventId::WindingHalls => winding_halls_choice(run_state),
+        EventId::AccursedBlacksmith => accursed_blacksmith_choice(run_state),
+        EventId::BonfireElementals => bonfire_choice(run_state),
+        EventId::BonfireSpirits => bonfire_choice(run_state),
+        EventId::Designer => designer_choice(run_state),
+        EventId::Duplicator => duplicator_choice(run_state),
+        EventId::FaceTrader => face_trader_choice(run_state),
+        EventId::FountainOfCurseCleansing => fountain_choice(run_state),
+        EventId::GremlinWheelGame => gremlin_wheel_choice(run_state),
+        EventId::Lab => lab_choice(run_state),
+        EventId::NoteForYourself => note_for_yourself_choice(run_state),
+        EventId::Purifier => purifier_choice(run_state),
+        EventId::SecretPortal => secret_portal_choice(run_state),
+        EventId::Transmorgrifier => transmorgrifier_choice(run_state),
+        EventId::UpgradeShrine => upgrade_shrine_choice(run_state),
+        EventId::WeMeetAgain => we_meet_again_choice(run_state),
+        EventId::WomanInBlue => woman_in_blue_choice(run_state),
+        EventId::Neow => return Err(EventOwnerPolicyGap::NeowOwnedByNeowStart),
     };
-    deck_mutation_selection(choice, run_state)
-}
-
-fn choose(selector: EventOwnerOptionSelector) -> EventOwnerAction {
-    EventOwnerAction::ChooseOption(selector)
+    Ok(selector)
 }
 
 fn action(action: EventActionKind) -> EventOwnerOptionSelector {
@@ -1075,32 +1021,6 @@ fn designer_service_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         return option_index(0);
     }
     option_index(3)
-}
-
-fn deck_mutation_selection(
-    choice: &RunPendingChoiceState,
-    run_state: &RunState,
-) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
-    let decision = compile_deck_mutation_decision_v1(
-        run_state,
-        choice,
-        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
-    );
-    let plan = decision
-        .selected_plan
-        .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
-    let uuids = plan
-        .step
-        .cards
-        .iter()
-        .map(|card| card.uuid)
-        .collect::<Vec<_>>();
-    if uuids.len() != choice.max_choices {
-        return Err(EventOwnerPolicyGap::EmptySelectionTargets);
-    }
-    Ok(EventOwnerAction::SubmitSelection(
-        SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
-    ))
 }
 
 fn designer_has_clear_remove_target(run_state: &RunState) -> bool {

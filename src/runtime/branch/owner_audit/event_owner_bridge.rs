@@ -1,23 +1,15 @@
 use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunControlSession};
-use sts_simulator::state::core::ClientInput;
 
-use super::owner_commands::visible_input_decision;
 use super::owner_model::{OwnerDecision, OwnerRoutine};
 
 pub(super) fn event_owner_decision(
     session: &RunControlSession,
     surface: &DecisionSurface,
 ) -> OwnerDecision {
-    match sts_simulator::content::events::owner_policy::event_owner_policy_action(
-        &session.engine_state,
+    match sts_simulator::content::events::owner_policy::event_owner_policy_selector(
         &session.run_state,
     ) {
-        Ok(sts_simulator::content::events::owner_policy::EventOwnerAction::ChooseOption(
-            selector,
-        )) => visible_event_option_decision(session, surface, &selector),
-        Ok(sts_simulator::content::events::owner_policy::EventOwnerAction::SubmitSelection(
-            resolution,
-        )) => visible_input_decision(surface, ClientInput::SubmitSelection(resolution)),
+        Ok(selector) => visible_event_option_decision(session, surface, &selector),
         Err(err) => OwnerDecision::Gap(format!("{err:?}")),
     }
 }

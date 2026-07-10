@@ -12,11 +12,17 @@ fn event_run(event_id: EventId, screen: usize) -> RunState {
     run_state
 }
 
+#[test]
+fn neow_is_owned_separately_from_regular_event_policy() {
+    let run_state = event_run(EventId::Neow, 0);
+    assert_eq!(
+        event_owner_policy_selector(&run_state),
+        Err(EventOwnerPolicyGap::NeowOwnedByNeowStart)
+    );
+}
+
 fn assert_unique_selector(run_state: &RunState, expected: EventOwnerOptionSelector) {
-    let action = event_owner_policy_action(&EngineState::EventRoom, run_state).unwrap();
-    let EventOwnerAction::ChooseOption(selector) = action else {
-        panic!("event-room owner must choose an event option");
-    };
+    let selector = event_owner_policy_selector(run_state).unwrap();
     assert_eq!(selector, expected);
 
     let options = get_event_options(run_state);

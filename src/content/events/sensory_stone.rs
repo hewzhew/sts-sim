@@ -3,7 +3,7 @@ use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
-    EventOptionSemantics, EventOptionTransition, EventOwnerPolicyKind, EventState,
+    EventOptionSemantics, EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -20,14 +20,13 @@ fn focus_effects(focus_count: usize, hp_loss: Option<i32>) -> Vec<EventEffect> {
     effects
 }
 
-pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
+pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => vec![EventOption::new(
             EventChoiceMeta::new("[Recall]"),
             EventOptionSemantics {
                 action: EventActionKind::Continue,
                 transition: EventOptionTransition::AdvanceScreen,
-                owner_policy: EventOwnerPolicyKind::ConservativeAuto,
                 ..Default::default()
             },
         )],
@@ -38,7 +37,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     action: EventActionKind::Gain,
                     effects: focus_effects(1, None),
                     transition: EventOptionTransition::OpenReward,
-                    owner_policy: focus_owner_policy(run_state, 0),
                     ..Default::default()
                 },
             ),
@@ -48,7 +46,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     action: EventActionKind::Trade,
                     effects: focus_effects(2, Some(5)),
                     transition: EventOptionTransition::OpenReward,
-                    owner_policy: focus_owner_policy(run_state, 1),
                     ..Default::default()
                 },
             ),
@@ -58,7 +55,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     action: EventActionKind::Trade,
                     effects: focus_effects(3, Some(10)),
                     transition: EventOptionTransition::OpenReward,
-                    owner_policy: focus_owner_policy(run_state, 2),
                     ..Default::default()
                 },
             ),
@@ -72,14 +68,6 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 ..Default::default()
             },
         )],
-    }
-}
-
-fn focus_owner_policy(run_state: &RunState, choice_idx: usize) -> EventOwnerPolicyKind {
-    if sensory_focus_choice(run_state) == choice_idx {
-        EventOwnerPolicyKind::ConservativeAuto
-    } else {
-        EventOwnerPolicyKind::None
     }
 }
 

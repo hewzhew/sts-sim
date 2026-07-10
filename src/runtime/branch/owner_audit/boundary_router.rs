@@ -136,3 +136,40 @@ fn boundary_site(session: &RunControlSession) -> BoundarySite {
         _ => BoundarySite::Unknown,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::eval::run_control::RunControlConfig;
+    use sts_simulator::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
+    use sts_simulator::state::events::{EventId, EventState};
+    use sts_simulator::state::selection::DomainEventSource;
+
+    #[test]
+    fn neow_regular_events_and_event_deck_choices_have_distinct_owners() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = Some(EventState::new(EventId::Neow));
+        assert!(matches!(
+            owner_for_current_boundary(&session),
+            Some(Owner::NeowStart)
+        ));
+
+        session.run_state.event_state = Some(EventState::new(EventId::GoldenShrine));
+        assert!(matches!(
+            owner_for_current_boundary(&session),
+            Some(Owner::Event(EventId::GoldenShrine))
+        ));
+
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::Upgrade,
+            source: DomainEventSource::Event(EventId::UpgradeShrine),
+            return_state: Box::new(EngineState::EventRoom),
+        });
+        assert!(matches!(
+            owner_for_current_boundary(&session),
+            Some(Owner::RunChoice)
+        ));
+    }
+}

@@ -125,3 +125,38 @@ fn deck_mutation_owner_decision(
         expansion: OwnerChoiceExpansion::AutoAllowed,
     }])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::content::cards::CardId;
+    use sts_simulator::eval::run_control::{RunControlCommand, RunControlConfig};
+    use sts_simulator::state::events::EventId;
+    use sts_simulator::state::selection::{DomainEventSource, SelectionScope};
+
+    #[test]
+    fn event_origin_upgrade_produces_one_typed_run_choice_target() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.add_card_to_deck(CardId::Bash);
+        session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: RunPendingChoiceReason::Upgrade,
+            source: DomainEventSource::Event(EventId::UpgradeShrine),
+            return_state: Box::new(EngineState::EventRoom),
+        });
+
+        let OwnerDecision::Candidates(choices) = run_choice_owner_decision(&session) else {
+            panic!("event-origin upgrade must be owned by RunChoice");
+        };
+        let [choice] = choices.as_slice() else {
+            panic!("RunChoice must produce one committed candidate");
+        };
+        let RunControlCommand::Input(ClientInput::SubmitSelection(resolution)) = &choice.action
+        else {
+            panic!("RunChoice candidate must submit a typed selection");
+        };
+        assert_eq!(resolution.scope, SelectionScope::Deck);
+        assert_eq!(resolution.selected_card_uuids().len(), 1);
+    }
+}
