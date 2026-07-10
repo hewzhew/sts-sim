@@ -199,12 +199,26 @@ fn lane_for_relic(
             reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
             return BossRelicAdmissionLane::Mainline;
         }
+        if relic == RelicId::Sozu && !has_live_potion_synergy(run_state) {
+            reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
+            return BossRelicAdmissionLane::Mainline;
+        }
         if relic == RelicId::EmptyCage {
             reasons.push(BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap);
             return BossRelicAdmissionLane::Probe;
         }
     }
     default_lane(class)
+}
+
+fn has_live_potion_synergy(run_state: &RunState) -> bool {
+    run_state.relics.iter().any(|relic| {
+        !relic.used_up
+            && matches!(
+                relic.id,
+                RelicId::WhiteBeastStatue | RelicId::SacredBark | RelicId::PotionBelt
+            )
+    })
 }
 
 fn coffee_dripper_no_rest_debt_high(run_state: &RunState) -> bool {
@@ -370,6 +384,7 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::relics::RelicState;
     use crate::runtime::combat::CombatCard;
     use crate::state::run::RunState;
 
@@ -409,5 +424,50 @@ mod tests {
             boss_relic_admission_order_rank(&pyramid) < boss_relic_admission_order_rank(&coffee),
             "low HP plus self-damage should prevent Coffee Dripper's energy gap shortcut from outranking Pyramid"
         );
+    }
+
+    #[test]
+    fn sozu_solves_unconstrained_act2_energy_gap_before_black_blood() {
+        let run = RunState::new(1552225673, 0, false, "Ironclad");
+
+        let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+        let black_blood = assess_boss_relic_admission(&run, RelicId::BlackBlood);
+
+        assert_eq!(sozu.lane, BossRelicAdmissionLane::Mainline);
+        assert!(sozu
+            .reasons
+            .contains(&BossRelicAdmissionReason::Act2EnergyGap));
+        assert!(
+            boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&black_blood),
+            "an unconstrained energy solution should outrank a starter upgrade"
+        );
+    }
+
+    #[test]
+    fn potion_synergy_relics_keep_sozu_out_of_act2_energy_shortcut() {
+        for synergy in [
+            RelicId::WhiteBeastStatue,
+            RelicId::SacredBark,
+            RelicId::PotionBelt,
+        ] {
+            let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+            run.relics.push(RelicState::new(synergy));
+
+            let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+            let black_blood = assess_boss_relic_admission(&run, RelicId::BlackBlood);
+
+            assert_eq!(sozu.lane, BossRelicAdmissionLane::Probe, "{synergy:?}");
+            assert!(
+                !sozu
+                    .reasons
+                    .contains(&BossRelicAdmissionReason::Act2EnergyGap),
+                "{synergy:?}"
+            );
+            assert!(
+                boss_relic_admission_order_rank(&black_blood)
+                    < boss_relic_admission_order_rank(&sozu),
+                "{synergy:?} should keep Sozu behind the unconstrained starter upgrade"
+            );
+        }
     }
 }

@@ -54,7 +54,10 @@ pub struct AxisEvidence {
     pub has_strength_multiplier: bool,
     pub has_slow_scaling: bool,
     pub has_real_draw: bool,
+    pub real_draw_count: u8,
     pub small_cantrip_count: u8,
+    pub energy_access_count: u8,
+    pub expensive_card_count: u8,
     pub has_mitigation: bool,
     pub block_source_count: u8,
     pub skill_count: u8,
@@ -98,6 +101,7 @@ struct DeckConstructionCounts {
     small_cantrips: u8,
     real_draw: u8,
     energy_access: u8,
+    expensive_cards: u8,
     skill_count: u8,
     mitigation: u8,
     exhaust_fuel: u8,
@@ -338,8 +342,12 @@ fn should_demote_low_margin_reward(
 fn deck_counts(deck: &[CombatCard]) -> DeckConstructionCounts {
     let mut counts = DeckConstructionCounts::default();
     for card in deck {
-        if get_card_definition(card.id).card_type == CardType::Skill {
+        let card_definition = get_card_definition(card.id);
+        if card_definition.card_type == CardType::Skill {
             counts.skill_count = counts.skill_count.saturating_add(1);
+        }
+        if card_definition.cost >= 2 {
+            counts.expensive_cards = counts.expensive_cards.saturating_add(1);
         }
         let definition = card_definition_with_upgrades(card.id, card.upgrades);
         if low_margin_frontload_card(card.id) {
@@ -426,7 +434,10 @@ fn axis_evidence(counts: DeckConstructionCounts) -> AxisEvidence {
         has_strength_multiplier: counts.strength_multipliers > 0,
         has_slow_scaling: counts.slow_scaling > 0,
         has_real_draw: counts.real_draw > 0,
+        real_draw_count: counts.real_draw,
         small_cantrip_count: counts.small_cantrips,
+        energy_access_count: counts.energy_access,
+        expensive_card_count: counts.expensive_cards,
         has_mitigation: counts.mitigation > 0,
         block_source_count: counts.block_sources,
         skill_count: counts.skill_count,
@@ -459,6 +470,43 @@ fn card_flow_level(counts: DeckConstructionCounts) -> PressureLevel {
         PressureLevel::Thin
     } else {
         PressureLevel::Open
+    }
+}
+
+pub(super) fn candidate_improves_card_flow(
+    pressure: AxisPressure,
+    card: CardId,
+    upgrades: u8,
+) -> bool {
+    let mut projected = DeckConstructionCounts {
+        small_cantrips: pressure.evidence.small_cantrip_count,
+        real_draw: pressure.evidence.real_draw_count,
+        energy_access: pressure.evidence.energy_access_count,
+        ..DeckConstructionCounts::default()
+    };
+    let before = card_flow_level(projected);
+    for effect in &card_definition_with_upgrades(card, upgrades).play_effects {
+        match effect {
+            PlayEffect::Provide(Mechanic::CardDraw) if real_draw_card(card) => {
+                projected.real_draw = projected.real_draw.saturating_add(1)
+            }
+            PlayEffect::Provide(Mechanic::CardDraw) => {
+                projected.small_cantrips = projected.small_cantrips.saturating_add(1)
+            }
+            PlayEffect::Provide(Mechanic::Energy) => {
+                projected.energy_access = projected.energy_access.saturating_add(1)
+            }
+            _ => {}
+        }
+    }
+    pressure_rank(card_flow_level(projected)) > pressure_rank(before)
+}
+
+fn pressure_rank(level: PressureLevel) -> u8 {
+    match level {
+        PressureLevel::Open => 0,
+        PressureLevel::Thin => 1,
+        PressureLevel::Present => 2,
     }
 }
 

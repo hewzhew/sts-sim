@@ -3,6 +3,9 @@ use serde::Serialize;
 use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, Mechanic, PlayEffect, TriggeredEffect,
 };
+use crate::ai::strategy::deck_construction_pressure::{
+    assess_deck_construction_pressure, DeckConstructionContext, PressureLevel,
+};
 use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
 use crate::ai::strategy::exhaust_corruption_assessment::{
     assess_exhaust_corruption, ExhaustCorruptionAssessment, ExhaustCorruptionRisk,
@@ -112,12 +115,14 @@ pub fn assess_deck_strategic_deficit(
 ) -> DeckStrategicDeficit {
     let inventory = DeckRoleInventory::from_deck(deck);
     let counts = StrategicCounts::from_deck(deck, facts);
+    let construction =
+        assess_deck_construction_pressure(deck, DeckConstructionContext { act: counts.act });
     let exhaust_corruption = assess_exhaust_corruption(deck);
     let frontload_units = calibrated_frontload_units(&inventory, &counts);
     let block_or_mitigation_units = block_or_mitigation_units(&inventory, &counts);
     let package_evidence = package_evidence(&inventory, &counts, &exhaust_corruption);
     let boss_scaling_plan = boss_scaling_level(&package_evidence, &counts);
-    let deck_access = access_level(inventory.draw_units, counts.deck_size);
+    let deck_access = access_level(construction.card_flow.level);
     let energy_or_playability = energy_level(&inventory, &counts);
     let risks = risks(&inventory, &counts, deck_access, &exhaust_corruption);
 
@@ -425,15 +430,11 @@ fn boss_scaling_level(
     }
 }
 
-fn access_level(draw_units: u8, deck_size: usize) -> StrategicDeficitLevel {
-    match draw_units {
-        0 => StrategicDeficitLevel::Missing,
-        1 if deck_size >= 18 => StrategicDeficitLevel::Thin,
-        1 => StrategicDeficitLevel::Adequate,
-        2 if deck_size >= 28 => StrategicDeficitLevel::Thin,
-        2..=4 => StrategicDeficitLevel::Adequate,
-        _ if deck_size >= 30 => StrategicDeficitLevel::Adequate,
-        _ => StrategicDeficitLevel::Surplus,
+fn access_level(card_flow: PressureLevel) -> StrategicDeficitLevel {
+    match card_flow {
+        PressureLevel::Open => StrategicDeficitLevel::Missing,
+        PressureLevel::Thin => StrategicDeficitLevel::Thin,
+        PressureLevel::Present => StrategicDeficitLevel::Adequate,
     }
 }
 
@@ -550,6 +551,42 @@ mod tests {
         }
     }
 
+    fn act2_facts() -> RunStrategicFacts {
+        RunStrategicFacts {
+            entering_act: 2,
+            starter_basic_count: 7,
+            curse_count: 0,
+            has_energy_relic: false,
+        }
+    }
+
+    fn first_cycle_access_deck() -> Vec<CombatCard> {
+        [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::Cleave,
+            CardId::Inflame,
+            CardId::LimitBreak,
+            CardId::Pummel,
+            CardId::Uppercut,
+            CardId::Disarm,
+            CardId::BurningPact,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| card(id, index as u32 + 1))
+        .collect()
+    }
+
     #[test]
     fn triggered_strength_source_counts_as_boss_scaling_evidence() {
         let deficit = assess_deck_strategic_deficit(
@@ -566,5 +603,22 @@ mod tests {
         assert!(deficit
             .package_evidence
             .contains(&StrategicPackageEvidence::StrengthScaling));
+    }
+
+    #[test]
+    fn one_real_draw_source_plus_cantrips_is_thin_first_cycle_access() {
+        let deficit = assess_deck_strategic_deficit(&first_cycle_access_deck(), act2_facts());
+
+        assert_eq!(deficit.deck_access, StrategicDeficitLevel::Thin);
+    }
+
+    #[test]
+    fn second_real_draw_source_makes_first_cycle_access_adequate() {
+        let mut deck = first_cycle_access_deck();
+        deck.push(card(CardId::BattleTrance, 100));
+
+        let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
+
+        assert_eq!(deficit.deck_access, StrategicDeficitLevel::Adequate);
     }
 }

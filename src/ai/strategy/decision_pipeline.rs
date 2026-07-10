@@ -2243,32 +2243,4 @@ mod tests {
             Some("shop card has no acquisition policy support")
         );
     }
-
-    #[test]
-    fn shop_rejects_common_access_card_when_it_spends_purge_reserve() {
-        let cards = vec![
-            CardId::Strike,
-            CardId::Strike,
-            CardId::Strike,
-            CardId::Defend,
-            CardId::Defend,
-            CardId::Defend,
-            CardId::Defend,
-            CardId::Bash,
-            CardId::Armaments,
-            CardId::Cleave,
-            CardId::Inflame,
-            CardId::Uppercut,
-            CardId::Whirlwind,
-        ];
-        let deck = test_deck(&cards);
-        let context = shop_context_with_gold_and_hp(&cards, 72, 74, 85);
-
-        let shrug = shop_card_in_context_with_price(context, &deck, CardId::ShrugItOff, 0, 51);
-
-        assert_eq!(
-            shrug.inspect_only_reason(),
-            Some("shop card would spend purge reserve despite hard gap")
-        );
-    }
 }

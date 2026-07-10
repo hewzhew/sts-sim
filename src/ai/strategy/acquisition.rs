@@ -1,10 +1,11 @@
-use crate::ai::analysis::card_semantics::{CardBurden, Mechanic};
+use crate::ai::analysis::card_semantics::{CardBurden, InstalledRule, Mechanic};
 use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
 use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
+use crate::ai::strategy::deck_construction_pressure::candidate_improves_card_flow;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId};
 
 const CHEAP_SHOP_CARD_PRICE: i32 = 35;
 const SHOP_PURGE_RESERVE: i32 = 75;
@@ -82,6 +83,7 @@ pub struct AcquisitionStrategicDelta {
     pub improves_hard_gap: bool,
     pub improves_any_gap: bool,
     pub adds_card_without_gap_improvement: bool,
+    pub adds_deployability_debt: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,6 +108,7 @@ pub enum AcquisitionPolicyReason {
     HardGapWithAcceptableOpportunityCost,
     ConstructionRoleAccepted,
     HpCostAccessDebt,
+    DeployabilityDebt,
     LowMarginLacksHardGap,
     PurgeReserveBlocksHardGap,
     NoOpenConstructionRole,
@@ -149,10 +152,13 @@ pub fn assess_card_acquisition(
     let candidate = Some((card, upgrades));
     let improves_hard_gap = improves_hard_gap(context.deck_plan, candidate, admission);
     let improves_any_gap = improves_any_gap(context.deck_plan, candidate, admission);
+    let adds_deployability_debt =
+        adds_deployability_debt(context.deck_plan, card, admission, improves_hard_gap);
     let strategic_delta = AcquisitionStrategicDelta {
         improves_hard_gap,
         improves_any_gap,
         adds_card_without_gap_improvement: admission.card.is_some() && !improves_any_gap,
+        adds_deployability_debt,
     };
     let construction_role = construction_role(context.deck_plan, admission, &strategic_delta);
     let low_margin_filler = admission.card.is_some_and(low_margin_filler_card);
@@ -236,6 +242,12 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
                 AcquisitionPolicyReason::PremiumCard,
             )
         }
+        AcquisitionSource::Reward if report.strategic_delta.adds_deployability_debt => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::Speculative,
+                AcquisitionPolicyReason::DeployabilityDebt,
+            )
+        }
         AcquisitionSource::Reward
             if report.low_margin_filler && !report.strategic_delta.improves_hard_gap =>
         {
@@ -310,6 +322,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         AcquisitionPolicyReason::HpCostAccessDebt => {
             "hp-cost access card does not improve an access or energy gap"
         }
+        AcquisitionPolicyReason::DeployabilityDebt => {
+            "expensive card deepens an unresolved energy or playability gap"
+        }
         AcquisitionPolicyReason::NoOpenConstructionRole => {
             "card does not satisfy deck construction contract"
         }
@@ -356,6 +371,27 @@ fn hp_cost_access_debt(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission)
     })
 }
 
+fn adds_deployability_debt(
+    deck_plan: DeckPlanSnapshot,
+    card: CardId,
+    admission: &RewardAdmission,
+    improves_hard_gap: bool,
+) -> bool {
+    !improves_hard_gap
+        && needs(deck_plan.strategic_deficit.energy_or_playability)
+        && deck_plan
+            .construction
+            .card_flow
+            .evidence
+            .expensive_card_count
+            > 0
+        && get_card_definition(card).cost >= 2
+        && !admission_provides(admission, Mechanic::Energy)
+        && !admission.reasons.contains(&RewardAdmissionReason::Installs(
+            InstalledRule::SkillCardsCostZeroAndExhaust,
+        ))
+}
+
 fn improves_hard_gap(
     deck_plan: DeckPlanSnapshot,
     candidate: Option<(CardId, u8)>,
@@ -363,10 +399,11 @@ fn improves_hard_gap(
 ) -> bool {
     let deficit = deck_plan.strategic_deficit;
     (deficit.deck_access == StrategicDeficitLevel::Missing
-        && (admission_provides(admission, Mechanic::CardDraw)
-            || admission
-                .reasons
-                .contains(&RewardAdmissionReason::CombatUpgrade)))
+        && (candidate.is_some_and(|(card, upgrades)| {
+            candidate_improves_card_flow(deck_plan.construction.card_flow, card, upgrades)
+        }) || admission
+            .reasons
+            .contains(&RewardAdmissionReason::CombatUpgrade)))
         || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
         || (deficit.aoe_or_minion_control == StrategicDeficitLevel::Missing
             && admission_aoe(admission))
@@ -386,10 +423,11 @@ fn improves_any_gap(
 ) -> bool {
     let deficit = deck_plan.strategic_deficit;
     (needs(deficit.deck_access)
-        && (admission_provides(admission, Mechanic::CardDraw)
-            || admission
-                .reasons
-                .contains(&RewardAdmissionReason::CombatUpgrade)))
+        && (candidate.is_some_and(|(card, upgrades)| {
+            candidate_improves_card_flow(deck_plan.construction.card_flow, card, upgrades)
+        }) || admission
+            .reasons
+            .contains(&RewardAdmissionReason::CombatUpgrade)))
         || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
         || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
@@ -617,14 +655,31 @@ mod tests {
         )
     }
 
+    fn act2_energy_thin_plan(cards: &[CardId]) -> DeckPlanSnapshot {
+        DeckPlanSnapshot::from_deck(
+            &deck(cards),
+            DeckAdmissionContext {
+                act: 2,
+                current_hp: 62,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 2,
+                starter_basic_count: 4,
+                curse_count: 0,
+                has_energy_relic: false,
+            },
+        )
+    }
+
     #[test]
     fn shop_card_acquisition_exposes_gold_opportunity_cost() {
         let cards = act1_missing_access_deck();
         let deck = deck(&cards);
-        let admission = assess_reward_admission_from_master_deck(&deck, CardId::ShrugItOff, 0);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::BattleTrance, 0);
         let report = assess_card_acquisition(
             AcquisitionContext::shop(act1_shop_plan(&cards), 72, 51),
-            CardId::ShrugItOff,
+            CardId::BattleTrance,
             0,
             &admission,
         );
@@ -656,10 +711,10 @@ mod tests {
     fn reward_card_acquisition_has_no_gold_opportunity_cost() {
         let cards = act1_missing_access_deck();
         let deck = deck(&cards);
-        let admission = assess_reward_admission_from_master_deck(&deck, CardId::ShrugItOff, 0);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::BattleTrance, 0);
         let report = assess_card_acquisition(
             AcquisitionContext::reward(act1_shop_plan(&cards)),
-            CardId::ShrugItOff,
+            CardId::BattleTrance,
             0,
             &admission,
         );
@@ -679,6 +734,121 @@ mod tests {
             AcquisitionPolicyReason::ConstructionRoleAccepted
         );
         assert!(policy.allows_acquisition());
+    }
+
+    #[test]
+    fn cantrip_does_not_claim_thin_access_gap_without_improving_card_flow() {
+        let mut cards = act1_missing_access_deck();
+        cards.push(CardId::BurningPact);
+        let deck = deck(&cards);
+        let plan = act1_shop_plan(&cards);
+        assert_eq!(
+            plan.strategic_deficit.deck_access,
+            crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel::Thin
+        );
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::ShrugItOff, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(plan),
+            CardId::ShrugItOff,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(!report.strategic_delta.improves_any_gap);
+        assert_eq!(report.construction_role, None);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Speculative);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::NoOpenConstructionRole
+        );
+    }
+
+    #[test]
+    fn real_draw_receives_thin_access_gap_credit() {
+        let mut cards = act1_missing_access_deck();
+        cards.push(CardId::BurningPact);
+        let deck = deck(&cards);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::BattleTrance, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act1_shop_plan(&cards)),
+            CardId::BattleTrance,
+            0,
+            &admission,
+        );
+
+        assert!(report.strategic_delta.improves_any_gap);
+        assert_eq!(
+            report.construction_role,
+            Some(AcquisitionConstructionRole::SoftStrategicGap)
+        );
+    }
+
+    #[test]
+    fn ordinary_expensive_soft_gap_card_is_speculative_when_energy_is_thin() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::Whirlwind,
+            CardId::Immolate,
+            CardId::Inflame,
+            CardId::LimitBreak,
+            CardId::BurningPact,
+            CardId::BattleTrance,
+        ];
+        let deck = deck(&cards);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Uppercut, 0);
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act2_energy_thin_plan(&cards)),
+            CardId::Uppercut,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(!report.strategic_delta.improves_hard_gap);
+        assert!(report.strategic_delta.improves_any_gap);
+        assert!(report.strategic_delta.adds_deployability_debt);
+        assert_eq!(
+            report.construction_role,
+            Some(AcquisitionConstructionRole::SoftStrategicGap)
+        );
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Speculative);
+        assert_eq!(policy.reason, AcquisitionPolicyReason::DeployabilityDebt);
+    }
+
+    #[test]
+    fn expensive_hard_gap_solution_is_not_deployability_debt() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Inflame,
+            CardId::LimitBreak,
+            CardId::BurningPact,
+            CardId::BattleTrance,
+        ];
+        let deck = deck(&cards);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Immolate, 0);
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act2_energy_thin_plan(&cards)),
+            CardId::Immolate,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(report.strategic_delta.improves_hard_gap);
+        assert!(!report.strategic_delta.adds_deployability_debt);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
     }
 
     #[test]
