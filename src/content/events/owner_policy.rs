@@ -1,3 +1,9 @@
+mod coverage_rules;
+
+use coverage_rules::{
+    colosseum_choice, gremlin_wheel_choice, lab_choice, the_joust_choice,
+};
+
 use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
 };
@@ -120,6 +126,10 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
         EventId::WorldOfGoop => return Ok(choose(world_of_goop_choice(run_state))),
+        EventId::Colosseum => return Ok(choose(colosseum_choice(run_state))),
+        EventId::GremlinWheelGame => return Ok(choose(gremlin_wheel_choice(run_state))),
+        EventId::Lab => return Ok(choose(lab_choice(run_state))),
+        EventId::TheJoust => return Ok(choose(the_joust_choice(run_state))),
         _ => {}
     }
     let marked_count = crate::engine::event_handler::get_event_options(run_state)
@@ -1630,3 +1640,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod coverage_tests;
