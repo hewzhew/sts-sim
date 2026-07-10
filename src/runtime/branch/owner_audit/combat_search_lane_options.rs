@@ -327,7 +327,13 @@ mod tests {
 
     #[test]
     fn lane_options_attach_survival_hp_loss_gate() {
-        for (current_hp, max_hp, expected_max_loss) in [(80, 80, 60), (54, 80, 34), (17, 85, 0)] {
+        for (current_hp, max_hp, expected_max_loss) in [
+            (80, 80, 60),
+            (54, 80, 34),
+            (29, 79, 10),
+            (54, 85, 33),
+            (17, 85, 0),
+        ] {
             let mut session = session_with_combat_stakes(false, false);
             let player = &mut session
                 .active_combat
