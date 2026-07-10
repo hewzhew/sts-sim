@@ -88,6 +88,8 @@ impl Default for CombatSearchPotionPlugin {
 pub enum CombatSearchActionPriorPluginId {
     Default,
     KeyCardOnline,
+    CollectorSingleHeadControl,
+    CollectorBossRace,
 }
 
 impl CombatSearchActionPriorPluginId {
@@ -95,11 +97,20 @@ impl CombatSearchActionPriorPluginId {
         match self {
             Self::Default => "default",
             Self::KeyCardOnline => "key_card_online",
+            Self::CollectorSingleHeadControl => "collector_single_head_control",
+            Self::CollectorBossRace => "collector_boss_race",
         }
     }
 
     pub(in crate::ai::combat_search_v2) fn prioritizes_key_card_online(self) -> bool {
         matches!(self, Self::KeyCardOnline)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_collector_tactic(self) -> bool {
+        matches!(
+            self,
+            Self::CollectorSingleHeadControl | Self::CollectorBossRace
+        )
     }
 }
 
@@ -401,6 +412,10 @@ impl From<CombatSearchActionPriorPluginId> for CombatSearchV2SetupBiasPolicy {
         match plugin {
             CombatSearchActionPriorPluginId::Default => Self::Default,
             CombatSearchActionPriorPluginId::KeyCardOnline => Self::KeyCardOnline,
+            CombatSearchActionPriorPluginId::CollectorSingleHeadControl => {
+                Self::CollectorSingleHeadControl
+            }
+            CombatSearchActionPriorPluginId::CollectorBossRace => Self::CollectorBossRace,
         }
     }
 }
@@ -410,6 +425,10 @@ impl From<CombatSearchV2SetupBiasPolicy> for CombatSearchActionPriorPluginId {
         match policy {
             CombatSearchV2SetupBiasPolicy::Default => Self::Default,
             CombatSearchV2SetupBiasPolicy::KeyCardOnline => Self::KeyCardOnline,
+            CombatSearchV2SetupBiasPolicy::CollectorSingleHeadControl => {
+                Self::CollectorSingleHeadControl
+            }
+            CombatSearchV2SetupBiasPolicy::CollectorBossRace => Self::CollectorBossRace,
         }
     }
 }
@@ -533,6 +552,25 @@ impl From<CombatSearchV2PhaseGuardPolicy> for CombatSearchPhaseGuardPluginId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collector_tactic_plugins_round_trip_through_config_policy() {
+        for (plugin, label) in [
+            (
+                CombatSearchActionPriorPluginId::CollectorSingleHeadControl,
+                "collector_single_head_control",
+            ),
+            (
+                CombatSearchActionPriorPluginId::CollectorBossRace,
+                "collector_boss_race",
+            ),
+        ] {
+            let policy = CombatSearchV2SetupBiasPolicy::from(plugin);
+
+            assert_eq!(CombatSearchActionPriorPluginId::from(policy), plugin);
+            assert_eq!(plugin.label(), label);
+        }
+    }
 
     #[test]
     fn plugin_ids_implement_their_role_traits() {

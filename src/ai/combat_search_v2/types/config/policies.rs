@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub enum CombatSearchV2SetupBiasPolicy {
     Default,
     KeyCardOnline,
+    CollectorSingleHeadControl,
+    CollectorBossRace,
 }
 
 impl Default for CombatSearchV2SetupBiasPolicy {
@@ -18,6 +20,8 @@ impl CombatSearchV2SetupBiasPolicy {
         match self {
             Self::Default => "default",
             Self::KeyCardOnline => "key_card_online",
+            Self::CollectorSingleHeadControl => "collector_single_head_control",
+            Self::CollectorBossRace => "collector_boss_race",
         }
     }
 }
