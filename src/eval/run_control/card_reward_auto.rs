@@ -1,80 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::RunControlTraceAnnotationV1;
-
-pub(super) fn apply_card_reward_policy_pick(
-    session: &mut RunControlSession,
-) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    if let Some(cards) = active_pending_reward_cards(session) {
-        return apply_policy_to_pending_cards(session, cards);
-    }
-
-    let Some((reward_index, cards)) = visible_card_reward_item(session) else {
-        return Ok(None);
-    };
-    let decision = card_reward_decision(session, &cards);
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let trace_annotation = card_reward_policy_trace_annotation(&decision, noncombat_record)?;
-    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
-        index,
-        card,
-        confidence,
-        reason,
-    } = decision.action
-    else {
-        return Ok(None);
-    };
-
-    session.apply_input(ClientInput::ClaimReward(reward_index))?;
-    let Some(opened_cards) = active_pending_reward_cards(session) else {
-        return Err(
-            "card reward policy opened a reward item but no pending card choice appeared"
-                .to_string(),
-        );
-    };
-    if opened_cards.len() <= index || opened_cards[index].id != card {
-        return Err(
-            "card reward policy opened a reward item but the pending card choices drifted"
-                .to_string(),
-        );
-    }
-    let outcome = session
-        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![trace_annotation]);
-    Ok(Some((
-        outcome,
-        card_reward_summary(card, confidence, &reason, decision.label_role),
-    )))
-}
-
-pub(super) fn apply_card_reward_item_open(
-    session: &mut RunControlSession,
-) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    let Some((reward_index, _cards)) = visible_card_reward_item(session) else {
-        return Ok(None);
-    };
-    let decision = card_reward_decision(session, &_cards);
-    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { disposition, .. } =
-        decision.action
-    else {
-        return Ok(None);
-    };
-    if disposition
-        == crate::ai::card_reward_policy_v1::CardRewardStopDispositionV1::KeepRewardItemClosed
-    {
-        return Ok(None);
-    }
-    let outcome = session.apply_input(ClientInput::ClaimReward(reward_index))?;
-    Ok(Some((
-        outcome,
-        "card reward: opened card reward item".to_string(),
-    )))
-}
 
 pub(super) fn apply_recorded_card_reward_pick(
     session: &mut RunControlSession,
@@ -166,53 +95,6 @@ fn ensure_visible_card_reward_item_at(
     Ok(())
 }
 
-pub(super) fn card_reward_policy_stop_annotation(
-    session: &RunControlSession,
-) -> Result<Option<(RunControlTraceAnnotationV1, String)>, String> {
-    let cards = active_pending_reward_cards(session)
-        .or_else(|| visible_card_reward_item(session).map(|(_, cards)| cards));
-    let Some(cards) = cards else {
-        return Ok(None);
-    };
-    let decision = card_reward_decision(session, &cards);
-    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Stop { reason, .. } =
-        &decision.action
-    else {
-        return Ok(None);
-    };
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let detail = card_reward_policy_stop_detail(&decision, reason, &noncombat_record);
-    Ok(Some((
-        card_reward_policy_trace_annotation(&decision, noncombat_record)?,
-        detail,
-    )))
-}
-
-fn apply_policy_to_pending_cards(
-    session: &mut RunControlSession,
-    cards: Vec<RewardCard>,
-) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
-    let decision = card_reward_decision(session, &cards);
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let trace_annotation = card_reward_policy_trace_annotation(&decision, noncombat_record)?;
-    let crate::ai::card_reward_policy_v1::CardRewardPolicyActionV1::Pick {
-        index,
-        card,
-        confidence,
-        reason,
-    } = decision.action
-    else {
-        return Ok(None);
-    };
-    let outcome = session
-        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![trace_annotation]);
-    Ok(Some((
-        outcome,
-        card_reward_summary(card, confidence, &reason, decision.label_role),
-    )))
-}
-
 fn apply_recorded_pick_to_pending_cards(
     session: &mut RunControlSession,
     cards: Vec<RewardCard>,
@@ -278,113 +160,6 @@ fn card_reward_estimator_inputs(
     )
 }
 
-fn card_reward_policy_stop_detail(
-    decision: &crate::ai::card_reward_policy_v1::CardRewardDecisionV1,
-    reason: &str,
-    record: &crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1,
-) -> String {
-    let mut details = Vec::new();
-    let value_tags = record
-        .values
-        .iter()
-        .flat_map(|value| value.components.iter())
-        .filter_map(|component| {
-            (component.name.starts_with("value_source_")
-                || component.name.starts_with("value_status_"))
-            .then_some(component.name.clone())
-        })
-        .collect::<BTreeSet<_>>();
-    if !value_tags.is_empty() {
-        details.push(format!(
-            "value inputs: {}",
-            value_tags.into_iter().collect::<Vec<_>>().join(", ")
-        ));
-    }
-
-    let gate_estimate_counts = gate_estimate_source_counts(decision);
-    if !gate_estimate_counts.is_empty() {
-        details.push(format!(
-            "gate estimates: {}",
-            gate_estimate_counts
-                .into_iter()
-                .map(|(source, count)| format!("{source}={count}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-
-    let uncalibrated_candidates = decision
-        .value_arbitration
-        .candidate_reports
-        .iter()
-        .filter(|report| {
-            report.selected_source
-                == Some(
-                    crate::ai::card_reward_policy_v1::CardRewardValueSourceV1::UncalibratedImpactPrior,
-                )
-        })
-        .map(|report| {
-            decision
-                .candidates
-                .iter()
-                .find(|candidate| candidate.index == report.index && candidate.card == report.card)
-                .map(|candidate| candidate.name.clone())
-                .unwrap_or_else(|| format!("{:?}", report.card))
-        })
-        .collect::<Vec<_>>();
-    if !uncalibrated_candidates.is_empty() {
-        details.push(format!(
-            "uncalibrated gate candidates: {}",
-            uncalibrated_candidates.join(", ")
-        ));
-    }
-
-    let non_gate_candidates = decision
-        .value_arbitration
-        .candidate_reports
-        .iter()
-        .filter(|report| {
-            report.selected_source.is_some() && !report.selected_estimate_gate_eligible
-        })
-        .map(|report| {
-            let name = decision
-                .candidates
-                .iter()
-                .find(|candidate| candidate.index == report.index && candidate.card == report.card)
-                .map(|candidate| candidate.name.clone())
-                .unwrap_or_else(|| format!("{:?}", report.card));
-            let source = report
-                .selected_source
-                .map(|source| format!("{source:?}"))
-                .unwrap_or_else(|| "MissingValueEstimate".to_string());
-            format!("{name} ({source})")
-        })
-        .collect::<Vec<_>>();
-    if !non_gate_candidates.is_empty() {
-        details.push(format!(
-            "non-gate value candidates: {}",
-            non_gate_candidates.join(", ")
-        ));
-    }
-
-    let base = format!("card reward policy stopped: {reason}");
-    if details.is_empty() {
-        base
-    } else {
-        format!("{base}; {}", details.join("; "))
-    }
-}
-
-fn gate_estimate_source_counts(
-    decision: &crate::ai::card_reward_policy_v1::CardRewardDecisionV1,
-) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::<String, usize>::new();
-    for estimate in &decision.value_arbitration.gate_value_estimates {
-        *counts.entry(format!("{:?}", estimate.source)).or_default() += 1;
-    }
-    counts
-}
-
 fn recorded_card_reward_decision(
     session: &RunControlSession,
     cards: &[RewardCard],
@@ -441,18 +216,6 @@ fn card_reward_policy_trace_annotation(
             ),
         ),
     })
-}
-
-fn card_reward_summary(
-    card: crate::content::cards::CardId,
-    confidence: f32,
-    reason: &str,
-    label_role: &'static str,
-) -> String {
-    let name = crate::content::cards::get_card_definition(card).name;
-    format!(
-        "card reward policy: {name} confidence={confidence:.2} reason={reason} label_role={label_role}",
-    )
 }
 
 fn active_pending_reward_cards(session: &RunControlSession) -> Option<Vec<RewardCard>> {

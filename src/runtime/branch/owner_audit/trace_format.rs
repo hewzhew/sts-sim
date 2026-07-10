@@ -104,7 +104,6 @@ fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
         RunControlAutoAppliedKindV1::CombatSearch => "combat_search",
         RunControlAutoAppliedKindV1::RoutePlanner => "route_planner",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward_overlay",
-        RunControlAutoAppliedKindV1::NoncombatPolicy => "noncombat_policy",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine_candidate",
         RunControlAutoAppliedKindV1::AutoCapture => "auto_capture",
         RunControlAutoAppliedKindV1::OwnerRoutine => "owner_routine",

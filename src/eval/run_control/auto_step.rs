@@ -350,25 +350,13 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 let auto_capture_summaries =
                     auto_capture_summaries(&application.outcome.trace_annotations);
                 applied.push_outcome(
-                    RunControlAutoAppliedKindV1::NoncombatPolicy,
+                    RunControlAutoAppliedKindV1::RoutineCandidate,
                     application.summary,
                     &application.outcome,
                 );
                 decision_parent_snapshots.extend(application.outcome.decision_parent_snapshots);
                 trace_annotations.extend(application.outcome.trace_annotations);
                 applied.extend(auto_capture_summaries);
-                if let Some(reason) = application.stop_after_reason {
-                    return finish_auto_step(
-                        session,
-                        &before,
-                        applied,
-                        trace_annotations,
-                        decision_parent_snapshots,
-                        RunControlAutoStopKind::NoncombatPolicyStop,
-                        reason,
-                        None,
-                    );
-                }
                 continue;
             }
         }
@@ -1197,7 +1185,7 @@ mod tests {
     use crate::state::map::node::RoomType;
 
     #[test]
-    fn owner_audit_auto_step_does_not_emit_legacy_card_reward_policy_stop_annotation() {
+    fn owner_audit_auto_step_stops_at_card_reward_human_boundary() {
         let mut session = test_session_at_pending_card_reward(vec![
             crate::content::cards::CardId::SearingBlow,
             crate::content::cards::CardId::HeavyBlade,
@@ -1219,23 +1207,11 @@ mod tests {
             outcome.auto_stop.as_ref().map(|stop| stop.kind),
             Some(crate::eval::run_control::RunControlAutoStopKind::HumanBoundary)
         );
-        let mut legacy_policy_sources = Vec::new();
-        for annotation in &outcome.trace_annotations {
-            if let
-                crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                    record,
-                    ..
-                } = annotation
-            {
-                if record.provenance.source_policy.contains("card_reward_policy") {
-                    legacy_policy_sources.push(record.provenance.source_policy.as_str());
-                }
-            }
-        }
-        assert!(
-            legacy_policy_sources.is_empty(),
-            "owner audit mode must not report legacy card reward policy stop annotations: {legacy_policy_sources:?}"
-        );
+        assert!(outcome.action_result.is_none());
+        assert!(matches!(
+            session.engine_state,
+            EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. }
+        ));
     }
 
     #[test]

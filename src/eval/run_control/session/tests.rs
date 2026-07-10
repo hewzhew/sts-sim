@@ -618,7 +618,7 @@ fn run_control_auto_run_stops_at_shop_owner_boundary() {
 }
 
 #[test]
-fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
+fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_owner_boundary() {
     let mut session = test_session_at_shop();
     session
         .reward_automation
@@ -646,7 +646,7 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should reopen pending reward overlay before shop policy");
+        .expect("auto-run should reopen pending rewards before the shop owner boundary");
 
     assert!(outcome.message.contains("routine: Open pending rewards"));
     assert!(outcome
@@ -658,7 +658,7 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
             .master_deck
             .iter()
             .any(|card| card.id == crate::content::cards::CardId::Doubt),
-        "shop purge policy must not run before pending overlay rewards are restored"
+        "shop owner action must not run before pending overlay rewards are restored"
     );
     assert!(matches!(
         session.engine_state,
