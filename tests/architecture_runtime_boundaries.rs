@@ -98,3 +98,30 @@ fn run_loop_delegates_capsule_result_persistence() {
         "run_loop should not directly format capsule result output"
     );
 }
+
+#[test]
+fn build_script_only_watches_consumed_inputs() {
+    let build_script = std::fs::read_to_string("build.rs").expect("read root build script");
+
+    for required in [
+        "cargo:rerun-if-changed=build.rs",
+        "cargo:rerun-if-changed=tools/compiled_protocol_schema.json",
+    ] {
+        assert!(
+            build_script.contains(required),
+            "build script must keep the consumed input watcher `{required}`"
+        );
+    }
+
+    for obsolete in [
+        "emit_git_rerun_watchers",
+        "Command::new(\"git\")",
+        "packed-refs",
+        "refs/heads",
+    ] {
+        assert!(
+            !build_script.contains(obsolete),
+            "build script must not retain obsolete Git invalidation `{obsolete}`"
+        );
+    }
+}
