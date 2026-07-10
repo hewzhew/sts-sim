@@ -1004,46 +1004,59 @@ mod tests {
     }
 
     #[test]
-    fn recorder_records_stopped_noncombat_policy_boundary_without_human_annotation() {
+    fn recorder_records_reward_item_human_boundary_without_outcome_attachment() {
         let mut session = test_session_at_ambiguous_card_reward();
-        let path =
-            unique_temp_dir("session_trace_stopped_noncombat_policy_boundary").join("trace.json");
+        let path = unique_temp_dir("session_trace_reward_item_human_boundary").join("trace.json");
         let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
         let outcome = session
             .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
                 max_operations: Some(2),
                 ..Default::default()
             }))
-            .expect("ambiguous card reward should stop with policy evidence");
-        let policy_annotations = outcome
+            .expect("ambiguous card reward should stop at a human boundary");
+        let human_annotations = outcome
             .trace_annotations
             .iter()
             .filter(|annotation| {
                 matches!(
                     annotation,
-                    RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
+                    RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
                 )
             })
             .cloned()
             .collect::<Vec<_>>();
-        assert_eq!(policy_annotations.len(), 1);
+        assert_eq!(human_annotations.len(), 1);
+        assert!(outcome.action_result.is_none());
 
         let recorded = recorder
-            .record_boundary_annotations("ar", &session, &policy_annotations)
-            .expect("stopped noncombat policy annotation should be recordable");
+            .record_boundary_annotations("ar", &session, &human_annotations)
+            .expect("card reward human boundary should be recordable");
 
         assert!(recorded);
         assert!(recorder.trace().steps.is_empty());
         assert_eq!(recorder.trace().boundary_records.len(), 1);
-        let RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } =
+        assert!(recorder.trace().noncombat_outcome_attachments.is_empty());
+        let RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } =
             &recorder.trace().boundary_records[0].annotations[0]
         else {
-            panic!("expected stopped noncombat policy annotation");
+            panic!("expected card reward human boundary annotation");
         };
         assert_eq!(
-            record.selection.status,
-            crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+            record.site,
+            crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Reward
         );
+        assert_eq!(
+            record.data_role,
+            crate::ai::noncombat_decision_v1::DataRoleV1::HumanBoundaryNotTeacher
+        );
+
+        session.run_state.floor_num += 1;
+        session.run_state.current_hp -= 5;
+        let resolved = recorder
+            .record_boundary_annotations("state", &session, &[])
+            .expect("empty boundary check should not fail");
+        assert!(!resolved);
+        assert!(recorder.trace().noncombat_outcome_attachments.is_empty());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -1222,45 +1235,6 @@ mod tests {
         assert_eq!(attachment.metrics.hp_delta, -8);
         assert!(!attachment.trainable_as_action_label);
         assert!(!attachment.policy_quality_claim);
-
-        let _ = fs::remove_dir_all(path.parent().unwrap());
-    }
-
-    #[test]
-    fn recorder_does_not_attach_outcome_for_stopped_noncombat_policy() {
-        let mut session = test_session_at_ambiguous_card_reward();
-        let path = unique_temp_dir("session_trace_stopped_noncombat_outcome").join("trace.json");
-        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
-        let outcome = session
-            .apply_command(RunControlCommand::AutoRun(RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            }))
-            .expect("ambiguous card reward should stop with policy evidence");
-        let policy_annotations = outcome
-            .trace_annotations
-            .iter()
-            .filter(|annotation| {
-                matches!(
-                    annotation,
-                    RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
-                )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        recorder
-            .record_boundary_annotations("ar", &session, &policy_annotations)
-            .expect("stopped policy annotation should save boundary");
-
-        session.run_state.floor_num += 1;
-        session.run_state.current_hp -= 5;
-        let recorded = recorder
-            .record_boundary_annotations("state", &session, &[])
-            .expect("empty boundary check should not fail");
-
-        assert!(!recorded);
-        assert!(recorder.trace().noncombat_outcome_attachments.is_empty());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

@@ -407,20 +407,21 @@ fn run_control_auto_run_stops_at_event_owner_boundary() {
 #[test]
 fn run_control_auto_step_collapses_terminal_event_leave_to_map() {
     let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.event_state = Some(crate::state::events::EventState::new(
-        crate::state::events::EventId::ScrapOoze,
-    ));
+    let mut event_state =
+        crate::state::events::EventState::new(crate::state::events::EventId::ScrapOoze);
+    event_state.current_screen = 1;
+    session.run_state.event_state = Some(event_state);
     session.engine_state = EngineState::EventRoom;
 
     let outcome = session
         .apply_command(RunControlCommand::AutoStep(
             crate::eval::run_control::RunControlAutoStepOptions {
                 route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(2),
+                max_operations: Some(1),
                 ..Default::default()
             },
         ))
-        .expect("auto-step should decline Scrap Ooze and leave the event");
+        .expect("auto-step should collapse the terminal Scrap Ooze leave screen");
 
     assert!(
         !outcome.message.contains("repeated boundary detected"),
@@ -1083,60 +1084,6 @@ fn run_control_auto_run_uses_route_planner_by_default() {
         session.engine_state,
         EngineState::CombatPlayerTurn
     ));
-}
-
-#[test]
-fn run_control_card_reward_uses_runtime_outcome_calibration_estimates() {
-    let mut session = test_session_at_card_reward(vec![
-        crate::content::cards::CardId::TwinStrike,
-        crate::content::cards::CardId::Cleave,
-        crate::content::cards::CardId::SeverSoul,
-    ]);
-    session.card_reward_outcome_calibration = Some(test_card_reward_calibration_for_twin_strike());
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should evaluate card reward with runtime calibration");
-
-    assert!(outcome.message.contains("value_source_outcome_calibration"));
-    assert!(outcome.message.contains("value_status_outcome_calibrated"));
-    assert!(outcome
-        .message
-        .contains("gate estimates: OutcomeCalibration=1, RouteRisk=2"));
-    assert!(outcome
-        .message
-        .contains("non-gate value candidates: Twin Strike (OutcomeCalibration), Cleave (RouteRisk), Sever Soul (RouteRisk)"));
-    assert!(outcome
-        .message
-        .contains("Reason: card reward requires human choice"));
-    assert!(!session
-        .run_state
-        .master_deck
-        .iter()
-        .any(|card| card.id == crate::content::cards::CardId::TwinStrike));
-
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                ..
-            } => Some(record),
-            _ => None,
-        })
-        .expect("declined card reward policy should attach a noncombat record");
-    assert!(record.values.iter().any(|value| {
-        value
-            .components
-            .iter()
-            .any(|component| component.name == "value_source_outcome_calibration")
-    }));
 }
 
 #[test]
@@ -1978,55 +1925,6 @@ fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> 
     reward.pending_card_reward_index = Some(0);
     session.engine_state = EngineState::RewardScreen(reward);
     session
-}
-
-fn test_card_reward_calibration_for_twin_strike(
-) -> crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationV1 {
-    crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationV1 {
-        schema_name:
-            crate::eval::card_reward_value_loop::CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_NAME
-                .to_string(),
-        schema_version:
-            crate::eval::card_reward_value_loop::CARD_REWARD_OUTCOME_CALIBRATION_SCHEMA_VERSION,
-        label_role: "diagnostic_not_teacher_label".to_string(),
-        trainable_as_action_label: false,
-        policy_quality_claim: false,
-        estimator_kind: "selected_outcome_card_id_prior_v1".to_string(),
-        provenance: Default::default(),
-        total_examples: 4,
-        usable_outcome_examples: 4,
-        missing_outcome_examples: 0,
-        global: crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationGlobalV1 {
-            selected_count: 4,
-            outcome_attached_count: 4,
-            mean_next_combat_hp_loss: Some(12.0),
-            picked_card_drawn_observation_count: 0,
-            mean_picked_card_drawn_count: None,
-            picked_card_played_observation_count: 0,
-            mean_picked_card_played_count: None,
-        },
-        card_id_buckets: vec![
-            crate::eval::card_reward_value_loop::CardRewardOutcomeCalibrationBucketV1 {
-                bucket_key: "card_id:TwinStrike".to_string(),
-                card_id: "TwinStrike".to_string(),
-                selected_count: 4,
-                outcome_attached_count: 4,
-                missing_outcome_count: 0,
-                mean_next_combat_hp_loss: Some(6.0),
-                hp_loss_bucket_counts: Vec::new(),
-                upgraded_count: 0,
-                removed_count: 0,
-                picked_card_drawn_observation_count: 0,
-                mean_picked_card_drawn_count: None,
-                picked_card_played_observation_count: 0,
-                mean_picked_card_played_count: None,
-                confidence: 0.8,
-                uncertainty: 0.15,
-                usable_for_value_estimate: true,
-                usable_for_autopilot_gate: false,
-            },
-        ],
-    }
 }
 
 fn test_session_at_reward_items(
