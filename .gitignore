@@ -2,6 +2,7 @@
 /target/
 **/target/
 /target_codex*/
+/.worktrees/
 
 # Python
 **/__pycache__/
