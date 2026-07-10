@@ -44,7 +44,6 @@ mod reward_auto;
 mod route_policy;
 mod run_choice_policy;
 mod search_defaults;
-mod search_evidence;
 mod selection_surface;
 mod session;
 mod session_trace;
@@ -69,7 +68,6 @@ pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
     RunControlCombatSegmentMode, RunControlCommand, RunControlHpLossLimit,
     RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
-    RunControlSearchEvidenceTarget,
 };
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
@@ -87,10 +85,6 @@ pub use render::{
 };
 pub use reward_auto::{
     apply_reward_tiny_automation, RewardAutomationConfig, RewardAutomationTarget,
-};
-pub use search_evidence::{
-    load_combat_search_evidence_v1, validate_combat_search_evidence_v1,
-    COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME, COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION,
 };
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,

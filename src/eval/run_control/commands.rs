@@ -127,7 +127,6 @@ pub struct RunControlSearchCombatOptions {
     pub phase_guard_policy: Option<CombatSearchV2PhaseGuardPolicy>,
     pub setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
     pub segment_mode: Option<RunControlCombatSegmentMode>,
-    pub evidence: Option<RunControlSearchEvidenceTarget>,
     pub disable_no_win_rescue: bool,
 }
 
@@ -135,12 +134,6 @@ pub struct RunControlSearchCombatOptions {
 pub enum RunControlCombatSegmentMode {
     TurnBoundary,
     NonBossTurnBoundary,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum RunControlSearchEvidenceTarget {
-    LastCaptureCase,
-    Path(PathBuf),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

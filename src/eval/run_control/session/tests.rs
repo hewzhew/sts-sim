@@ -144,61 +144,6 @@ fn run_control_baseline_command_rejects_search_resolved_combat() {
 }
 
 #[test]
-fn run_control_search_combat_can_save_search_evidence_for_capture_case() {
-    let mut session = test_session_with_first_monster_room();
-    session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
-        .expect("map input should enter combat");
-
-    let root = unique_temp_dir("run_control_search_evidence");
-    session
-        .apply_command(RunControlCommand::CaptureCase {
-            root: root.clone(),
-            case_id: "first_fight".to_string(),
-            label: None,
-        })
-        .expect("capture-case should remember the case");
-    let decision_step = session.decision_step;
-
-    let outcome = session
-        .apply_command(RunControlCommand::SearchCombat(
-            crate::eval::run_control::RunControlSearchCombatOptions {
-                max_nodes: Some(2_000),
-                wall_ms: Some(5_000),
-                evidence: Some(
-                    crate::eval::run_control::RunControlSearchEvidenceTarget::LastCaptureCase,
-                ),
-                ..Default::default()
-            },
-        ))
-        .expect("search-combat should finish and save evidence");
-
-    assert!(outcome.message.contains("Search evidence saved"));
-    assert!(outcome
-        .message
-        .contains("information_access=privileged_simulator public_safe=false"));
-    let evidence_path = root
-        .join("search_evidence")
-        .join(format!("first_fight.step{decision_step}.search.json"));
-    let payload = fs::read_to_string(&evidence_path).expect("search evidence should exist");
-    assert!(payload.contains("\"schema_name\": \"CombatSearchEvidenceV1\""));
-    assert!(payload.contains("\"label_role\": \"search_evidence_not_human_baseline\""));
-    assert!(payload.contains("\"capture_case_id\": \"first_fight\""));
-    assert!(payload.contains("\"capture_path\":"));
-    assert!(payload.contains("first_fight.capture.json"));
-    assert!(payload.contains("\"schema_name\": \"CombatSearchV2Report\""));
-    assert!(payload.contains("\"policy_evidence\":"));
-    assert!(payload.contains("\"information_access\": \"privileged_simulator\""));
-    assert!(payload.contains("\"public_safe\": false"));
-    assert!(payload.contains("\"privileged_simulator_state\""));
-    assert!(payload.contains("\"exact_rng_state\""));
-    crate::eval::run_control::load_combat_search_evidence_v1(&evidence_path)
-        .expect("search evidence should validate");
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn run_control_capture_command_rejects_map_state() {
     let session = test_session_after_neow_at_map();
 

@@ -9,8 +9,7 @@ use super::combat_search_rejection::{
     build_combat_search_rejection_outcome, CombatSearchRejectionOutcome,
 };
 use super::combat_search_setup::{
-    effective_hp_loss_limit, prepare_search_combat, save_search_evidence_if_requested,
-    search_report_has_invalid_card_identity,
+    effective_hp_loss_limit, prepare_search_combat, search_report_has_invalid_card_identity,
 };
 use super::commands::RunControlSearchCombatOptions;
 use super::session::{
@@ -27,8 +26,6 @@ pub(super) fn apply_search_combat(
     let start = prepared.start;
     let config = prepared.config;
     let report = run_combat_search_v2(&start.engine, &start.combat, config.clone());
-    let saved_evidence =
-        save_search_evidence_if_requested(session, options.evidence.as_ref(), &report)?;
     if search_report_has_invalid_card_identity(&report) {
         return Ok(build_combat_search_rejection_outcome(
             session,
@@ -39,7 +36,6 @@ pub(super) fn apply_search_combat(
                 detail: None,
                 rejection: RunControlCombatSearchRejection::InvalidCardIdentity,
                 trace_source: "search_combat_rejected",
-                saved_evidence: saved_evidence.as_deref(),
             },
         ));
     }
@@ -51,7 +47,6 @@ pub(super) fn apply_search_combat(
                 &config,
                 &options,
                 &report,
-                saved_evidence.as_deref(),
                 effective_hp_loss_limit(session, &options),
             )? {
                 return Ok(outcome);
@@ -66,7 +61,6 @@ pub(super) fn apply_search_combat(
                 detail: None,
                 rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
                 trace_source: "search_combat_rejected",
-                saved_evidence: saved_evidence.as_deref(),
             },
         ));
     };
@@ -83,7 +77,6 @@ pub(super) fn apply_search_combat(
                         detail: Some(detail),
                         rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
                         trace_source: "search_combat_rejected_dirty_win",
-                        saved_evidence: saved_evidence.as_deref(),
                     },
                 ));
             }
@@ -97,7 +90,6 @@ pub(super) fn apply_search_combat(
                 &config,
                 &options,
                 &report,
-                saved_evidence.as_deref(),
                 "complete_winning_candidate_exceeds_hp_loss_limit",
             )? {
                 return Ok(outcome);
@@ -114,7 +106,6 @@ pub(super) fn apply_search_combat(
                     )),
                     rejection: RunControlCombatSearchRejection::HpLossLimitExceeded,
                     trace_source: "search_combat_rejected",
-                    saved_evidence: saved_evidence.as_deref(),
                 },
             ));
         }
@@ -127,15 +118,11 @@ pub(super) fn apply_search_combat(
     if let Some(repair_summary) = selected.summary.as_ref() {
         summary.push_str(&format!(" {repair_summary}"));
     }
-    if let Some(path) = saved_evidence.as_ref() {
-        summary.push_str(&format!(" saved_search={}", path.display()));
-    }
     apply_selected_combat_candidate_line(
         session,
         &start,
         &config,
         selected.report.as_ref().unwrap_or(&report),
-        saved_evidence.as_deref(),
         selected.line,
         CombatAutomationTrajectorySource::SearchCombat,
         summary,
@@ -145,16 +132,14 @@ pub(super) fn apply_search_combat(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use super::super::combat_line_trace::combat_automation_step_state_v1;
     use super::super::combat_no_win_fallback::{
         segment_mode_allows_turn_segment, try_apply_smoke_bomb_survival_fallback_after_rejection,
     };
     use super::super::combat_search_setup::{
-        effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
-        search_config,
+        effective_hp_loss_limit, high_stakes_search_options, search_config,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
@@ -318,7 +303,6 @@ mod tests {
 
         let outcome = try_apply_smoke_bomb_survival_fallback_after_rejection(
             &mut session,
-            None,
             "no_complete_winning_candidate",
         )
         .expect("fallback should not error")
@@ -336,31 +320,6 @@ mod tests {
             "fallback outcome should be explicit, got: {}",
             outcome.message
         );
-    }
-
-    #[test]
-    fn search_evidence_path_does_not_overwrite_existing_file() {
-        let root = std::env::temp_dir().join(format!(
-            "sts_search_evidence_path_{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock should be after unix epoch")
-                .as_nanos()
-        ));
-        fs::create_dir_all(&root).expect("temp dir should be created");
-        let base = root.join("case.step1.search.json");
-        fs::write(&base, "{}").expect("base file should be written");
-
-        let next = next_available_evidence_path(&base);
-
-        assert_ne!(next, base);
-        assert_eq!(
-            next.file_name().and_then(|name| name.to_str()),
-            Some("case.step1.search.2.json")
-        );
-        assert!(!next.exists());
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

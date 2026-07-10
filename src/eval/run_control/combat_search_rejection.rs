@@ -3,31 +3,29 @@ use crate::sim::combat::CombatPosition;
 
 use super::combat_line_trace::combat_search_performance_trace_annotation;
 use super::combat_search_render::{
-    render_policy_evidence_summary, render_saved_evidence_note, render_search_diagnostics_summary,
+    render_policy_evidence_summary, render_search_diagnostics_summary,
     render_search_performance_summary, render_search_policy_summary,
 };
 use super::session::{
     RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
 };
 
-pub(super) struct CombatSearchRejectionOutcome<'a> {
+pub(super) struct CombatSearchRejectionOutcome {
     pub(super) result: &'static str,
     pub(super) detail: Option<String>,
     pub(super) rejection: RunControlCombatSearchRejection,
     pub(super) trace_source: &'static str,
-    pub(super) saved_evidence: Option<&'a std::path::Path>,
 }
 
 pub(super) fn build_combat_search_rejection_outcome(
     session: &RunControlSession,
     start: &CombatPosition,
     report: &CombatSearchV2Report,
-    rejection: CombatSearchRejectionOutcome<'_>,
+    rejection: CombatSearchRejectionOutcome,
 ) -> RunControlCommandOutcome {
     let mut outcome = RunControlCommandOutcome::message(format!(
-        "{}{}\n\n{}",
+        "{}\n\n{}",
         render_search_rejection(report, rejection.result, rejection.detail),
-        render_saved_evidence_note(rejection.saved_evidence),
         super::render::render_run_control_state(session)
     ))
     .with_combat_search_rejection(rejection.rejection);
@@ -39,7 +37,6 @@ pub(super) fn build_combat_search_rejection_outcome(
             start,
             report,
         ));
-    outcome.search_evidence_path = rejection.saved_evidence.map(std::path::Path::to_path_buf);
     outcome
 }
 

@@ -5,11 +5,6 @@ use crate::ai::combat_search_v2::{
 use super::combat_candidate_line::CombatCandidateLine;
 use super::view_model::client_input_hint;
 
-pub(super) fn render_saved_evidence_note(path: Option<&std::path::Path>) -> String {
-    path.map(|path| format!("\nSearch evidence saved: {}", path.display()))
-        .unwrap_or_default()
-}
-
 pub(super) fn render_search_application(
     report: &CombatSearchV2Report,
     actions: &[CombatSearchV2ActionTrace],

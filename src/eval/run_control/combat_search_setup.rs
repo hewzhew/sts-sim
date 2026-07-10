@@ -3,11 +3,7 @@ use crate::ai::combat_search_v2::{
 };
 use crate::sim::combat::CombatPosition;
 
-use super::commands::{
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
-};
-use super::registry::BenchmarkCasePaths;
-use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
+use super::commands::{RunControlHpLossLimit, RunControlSearchCombatOptions};
 use super::session::RunControlSession;
 
 pub(super) struct PreparedCombatSearch {
@@ -28,50 +24,6 @@ pub(super) fn prepare_search_combat(
         start,
         config,
     })
-}
-
-pub(super) fn save_search_evidence_if_requested(
-    session: &RunControlSession,
-    target: Option<&RunControlSearchEvidenceTarget>,
-    report: &CombatSearchV2Report,
-) -> Result<Option<std::path::PathBuf>, String> {
-    let Some(target) = target else {
-        return Ok(None);
-    };
-    let (path, capture_case_id, capture_root, capture_path) = match target {
-        RunControlSearchEvidenceTarget::Path(path) => {
-            (next_available_evidence_path(path), None, None, None)
-        }
-        RunControlSearchEvidenceTarget::LastCaptureCase => {
-            let case = session.active_capture_case().ok_or_else(|| {
-                "search evidence save=case requires the current combat to have a matching cap <case_id>"
-                    .to_string()
-            })?;
-            let paths = BenchmarkCasePaths::for_case(&case.root, &case.case_id);
-            let base_path = case.root.join("search_evidence").join(format!(
-                "{}.step{}.search.json",
-                case.case_id, session.decision_step
-            ));
-            (
-                next_available_evidence_path(&base_path),
-                Some(case.case_id.clone()),
-                Some(case.root.display().to_string()),
-                Some(paths.capture_path.display().to_string()),
-            )
-        }
-    };
-    save_combat_search_evidence_v1(
-        &path,
-        CombatSearchEvidenceContextV1 {
-            source_kind: "run_control_search_combat",
-            decision_step: session.decision_step,
-            capture_case_id,
-            capture_root,
-            capture_path,
-        },
-        report,
-    )?;
-    Ok(Some(path))
 }
 
 pub(super) fn effective_hp_loss_limit(
@@ -111,28 +63,6 @@ pub(super) fn search_report_has_invalid_card_identity(report: &CombatSearchV2Rep
         .card_identity
         .states_with_uuid_card_id_conflict
         > 0
-}
-
-pub(super) fn next_available_evidence_path(path: &std::path::Path) -> std::path::PathBuf {
-    if !path.exists() {
-        return path.to_path_buf();
-    }
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("search_evidence");
-    let ext = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("json");
-    for idx in 2..10_000 {
-        let candidate = parent.join(format!("{stem}.{idx}.{ext}"));
-        if !candidate.exists() {
-            return candidate;
-        }
-    }
-    parent.join(format!("{stem}.overflow.{ext}"))
 }
 
 pub(super) fn search_config(

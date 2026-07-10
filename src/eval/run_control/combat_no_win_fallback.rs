@@ -28,7 +28,6 @@ pub(super) fn try_apply_no_win_fallback(
     config: &CombatSearchV2Config,
     options: &RunControlSearchCombatOptions,
     search_report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     if let Some(outcome) = try_apply_complete_line_solver_after_no_win(
@@ -36,7 +35,6 @@ pub(super) fn try_apply_no_win_fallback(
         start,
         config,
         search_report,
-        saved_evidence,
         hp_loss_limit,
     )? {
         return Ok(Some(outcome));
@@ -46,7 +44,6 @@ pub(super) fn try_apply_no_win_fallback(
         start,
         config,
         search_report,
-        saved_evidence,
         hp_loss_limit,
     )? {
         return Ok(Some(outcome));
@@ -57,16 +54,11 @@ pub(super) fn try_apply_no_win_fallback(
         config,
         options,
         search_report,
-        saved_evidence,
         "no_complete_winning_candidate",
     )? {
         return Ok(Some(outcome));
     }
-    try_apply_smoke_bomb_survival_fallback_after_rejection(
-        session,
-        saved_evidence,
-        "no_complete_winning_candidate",
-    )
+    try_apply_smoke_bomb_survival_fallback_after_rejection(session, "no_complete_winning_candidate")
 }
 
 fn try_apply_line_lab_turn_pool_after_no_win(
@@ -74,7 +66,6 @@ fn try_apply_line_lab_turn_pool_after_no_win(
     start: &CombatPosition,
     config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     let budget_ms = turn_pool_rescue_budget_ms(config);
@@ -101,7 +92,6 @@ fn try_apply_line_lab_turn_pool_after_no_win(
         start,
         config,
         search_report,
-        saved_evidence,
         replay.line,
         CombatAutomationTrajectorySource::TurnPoolRescue,
         summary,
@@ -128,7 +118,6 @@ fn try_apply_complete_line_solver_after_no_win(
     start: &CombatPosition,
     config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     let Some(solution) = super::combat_complete_line_solver::try_solve_complete_line(start, config)
@@ -144,7 +133,6 @@ fn try_apply_complete_line_solver_after_no_win(
         start,
         config,
         search_report,
-        saved_evidence,
         solution.line,
         CombatAutomationTrajectorySource::CompleteLineSolver,
         summary,
@@ -163,7 +151,6 @@ pub(super) fn try_apply_turn_segment_after_rejection(
     config: &CombatSearchV2Config,
     options: &RunControlSearchCombatOptions,
     search_report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
     rejection_result: &'static str,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     if !segment_mode_allows_turn_segment(options.segment_mode, start) {
@@ -180,7 +167,6 @@ pub(super) fn try_apply_turn_segment_after_rejection(
         start,
         search_report,
         &segment_report,
-        saved_evidence,
         rejection_result,
     )
     .map(Some)
@@ -188,7 +174,6 @@ pub(super) fn try_apply_turn_segment_after_rejection(
 
 pub(super) fn try_apply_smoke_bomb_survival_fallback_after_rejection(
     session: &mut RunControlSession,
-    saved_evidence: Option<&std::path::Path>,
     rejection_result: &'static str,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
     let Some(active) = session.active_combat.as_ref() else {
@@ -209,8 +194,7 @@ pub(super) fn try_apply_smoke_bomb_survival_fallback_after_rejection(
     let Some(smoke_input) = smoke_input else {
         return Ok(None);
     };
-    apply_smoke_bomb_survival_fallback(session, smoke_input, saved_evidence, rejection_result)
-        .map(Some)
+    apply_smoke_bomb_survival_fallback(session, smoke_input, rejection_result).map(Some)
 }
 
 pub(super) fn segment_mode_allows_turn_segment(

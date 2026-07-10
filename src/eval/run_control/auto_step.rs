@@ -1585,7 +1585,6 @@ mod tests {
             auto_no_potion_first_options(&no_limit, &RunControlSearchCombatOptions::default()),
             None
         );
-
     }
 
     #[test]

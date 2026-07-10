@@ -93,14 +93,6 @@ impl RunControlSession {
         self.last_capture_case.as_ref()
     }
 
-    pub(in crate::eval::run_control) fn active_capture_case(
-        &self,
-    ) -> Option<&LastBenchmarkCaptureCase> {
-        let case = self.last_capture_case.as_ref()?;
-        (self.active_combat.is_some() && case.combat_sequence == self.combat_sequence)
-            .then_some(case)
-    }
-
     pub(in crate::eval::run_control) fn last_completed_combat_matches_capture_case(&self) -> bool {
         let Some(case) = self.last_capture_case.as_ref() else {
             return false;

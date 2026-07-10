@@ -103,7 +103,6 @@ fn run_control_parser_accepts_search_combat_options() {
                 phase_guard_policy: None,
                 setup_bias_policy: Some(CombatSearchV2SetupBiasPolicy::KeyCardOnline),
                 segment_mode: None,
-                evidence: None,
                 disable_no_win_rescue: false,
             })
         );
@@ -197,7 +196,6 @@ fn run_control_parser_accepts_auto_step_options() {
                 phase_guard_policy: None,
                 setup_bias_policy: None,
                 segment_mode: None,
-                evidence: None,
                 disable_no_win_rescue: false,
             },
             max_operations: Some(9),

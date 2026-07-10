@@ -12,8 +12,7 @@ use super::combat_line_trace::{
     CombatCandidateLinePerformance,
 };
 use super::combat_search_render::{
-    render_complete_line_solver_application, render_saved_evidence_note, render_search_application,
-    render_segment_application,
+    render_complete_line_solver_application, render_search_application, render_segment_application,
 };
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{
@@ -29,7 +28,6 @@ pub(super) fn apply_selected_combat_candidate_line(
     start: &CombatPosition,
     config: &CombatSearchV2Config,
     report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
     mut selected_line: CombatCandidateLine,
     trajectory_source: CombatAutomationTrajectorySource,
     transition_label: String,
@@ -70,17 +68,16 @@ pub(super) fn apply_selected_combat_candidate_line(
         render_search_application(report, &applied, &selected_line, replay.applied_count)
     };
     let message = format!(
-        "{}{}\n{}\n{}",
+        "{}\n{}\n{}",
         application,
-        render_saved_evidence_note(saved_evidence),
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
     let automation_record =
         CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions);
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let mut outcome = RunControlCommandOutcome::action(message, action_result)
-        .with_trace_annotations(vec![
+    let outcome =
+        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
             automation_record.into_annotation(),
             combat_line_performance_trace_annotation(
                 trajectory_source.label(),
@@ -91,7 +88,6 @@ pub(super) fn apply_selected_combat_candidate_line(
                 line_performance,
             ),
         ]);
-    outcome.search_evidence_path = saved_evidence.map(std::path::Path::to_path_buf);
     Ok(outcome)
 }
 
@@ -100,7 +96,6 @@ pub(super) fn apply_combat_turn_segment(
     start: &CombatPosition,
     search_report: &CombatSearchV2Report,
     segment_report: &CombatSearchV2TurnSegmentReport,
-    saved_evidence: Option<&std::path::Path>,
     rejection_result: &'static str,
 ) -> Result<RunControlCommandOutcome, String> {
     let trajectory = segment_report
@@ -113,13 +108,10 @@ pub(super) fn apply_combat_turn_segment(
     let automation_actions = apply_combat_action_traces(session, &applied)?;
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
-    let mut transition_label = format!(
+    let transition_label = format!(
         "search-combat segment applied {} actions (partial turn; not terminal claim)",
         applied.len()
     );
-    if let Some(path) = saved_evidence.as_ref() {
-        transition_label.push_str(&format!(" saved_search={}", path.display()));
-    }
     let action_result = action_result_from_transition(
         TransitionAction {
             label: transition_label,
@@ -129,9 +121,8 @@ pub(super) fn apply_combat_turn_segment(
         status,
     );
     let message = format!(
-        "{}{}\n{}\n{}",
+        "{}\n{}\n{}",
         render_segment_application(search_report, segment_report, rejection_result),
-        render_saved_evidence_note(saved_evidence),
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
@@ -140,8 +131,8 @@ pub(super) fn apply_combat_turn_segment(
         automation_actions,
     );
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let mut outcome = RunControlCommandOutcome::action(message, action_result)
-        .with_trace_annotations(vec![
+    let outcome =
+        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
             automation_record.into_annotation(),
             combat_search_performance_trace_annotation(
                 "search_combat_turn_segment",
@@ -150,14 +141,12 @@ pub(super) fn apply_combat_turn_segment(
                 search_report,
             ),
         ]);
-    outcome.search_evidence_path = saved_evidence.map(std::path::Path::to_path_buf);
     Ok(outcome)
 }
 
 pub(super) fn apply_smoke_bomb_survival_fallback(
     session: &mut RunControlSession,
     smoke_input: ClientInput,
-    saved_evidence: Option<&std::path::Path>,
     rejection_result: &'static str,
 ) -> Result<RunControlCommandOutcome, String> {
     let before_snapshot = RunVisibleSnapshot::capture(session);
@@ -182,12 +171,9 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
-    let mut transition_label = format!(
+    let transition_label = format!(
         "Smoke Bomb survival fallback after {rejection_result} (not a combat victory claim)"
     );
-    if let Some(path) = saved_evidence.as_ref() {
-        transition_label.push_str(&format!(" saved_search={}", path.display()));
-    }
     let action_result = action_result_from_transition(
         TransitionAction {
             label: transition_label,
@@ -197,8 +183,7 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
         status,
     );
     let message = format!(
-        "Search combat did not find a complete win; used Smoke Bomb as a survival fallback after {rejection_result}.{}\n{}\n{}",
-        render_saved_evidence_note(saved_evidence),
+        "Search combat did not find a complete win; used Smoke Bomb as a survival fallback after {rejection_result}.\n{}\n{}",
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
@@ -207,9 +192,8 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
         automation_actions,
     );
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let mut outcome = RunControlCommandOutcome::action(message, action_result)
+    let outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![automation_record.into_annotation()]);
-    outcome.search_evidence_path = saved_evidence.map(std::path::Path::to_path_buf);
     Ok(outcome)
 }
 
