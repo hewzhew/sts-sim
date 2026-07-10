@@ -1,6 +1,6 @@
 use crate::ai::reward_policy_v1::{
     build_reward_decision_context_v1, plan_reward_decision_v1, RewardPolicyActionV1,
-    RewardPolicyConfigV1,
+    RewardPolicyClassV1, RewardPolicyConfigV1,
 };
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState};
@@ -101,7 +101,7 @@ pub fn apply_reward_tiny_automation(
                 .with_trace_annotations(report.trace_annotations),
         ));
     }
-    let Some(labels) = discard_full_slot_potion_rewards(session) else {
+    let Some(labels) = discard_unclaimable_potion_rewards(session) else {
         return Ok(None);
     };
     Ok(Some(RunControlCommandOutcome::message(format!(
@@ -110,8 +110,19 @@ pub fn apply_reward_tiny_automation(
     ))))
 }
 
-fn discard_full_slot_potion_rewards(session: &mut RunControlSession) -> Option<Vec<String>> {
-    if session.run_state.find_empty_potion_slot().is_some() {
+fn discard_unclaimable_potion_rewards(session: &mut RunControlSession) -> Option<Vec<String>> {
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return None,
+    };
+    let context = build_reward_decision_context_v1(&session.run_state, reward);
+    if !context.candidates.iter().any(|candidate| {
+        matches!(
+            candidate.class,
+            RewardPolicyClassV1::PotionNoEmptySlot | RewardPolicyClassV1::PotionBlockedBySozu
+        )
+    }) {
         return None;
     }
 
@@ -284,6 +295,7 @@ fn on_off(enabled: bool) -> &'static str {
 mod tests {
     use super::*;
     use crate::content::potions::PotionId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::state::rewards::{RewardItem, RewardState};
 
     #[test]
@@ -364,6 +376,30 @@ mod tests {
                 potion_id: PotionId::EssenceOfSteel
             }]
         ));
+    }
+
+    #[test]
+    fn reward_tiny_discards_sozu_blocked_potion_with_empty_slot() {
+        let mut session = reward_screen_session(vec![RewardItem::Potion {
+            potion_id: PotionId::EnergyPotion,
+        }]);
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::Sozu));
+        assert!(session.run_state.find_empty_potion_slot().is_some());
+
+        let outcome = apply_reward_tiny_automation(&mut session)
+            .expect("reward tiny automation should run")
+            .expect("blocked potion should be resolved as an ignored reward");
+
+        assert!(outcome
+            .message
+            .contains("Ignored unclaimable potion reward"));
+        assert!(session.run_state.potions.iter().all(Option::is_none));
+        if let EngineState::RewardScreen(reward) = &session.engine_state {
+            assert!(reward.items.is_empty());
+        }
     }
 
     #[test]
