@@ -61,8 +61,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
     let trajectory_reports = trajectory_reports(trajectories);
 
     CombatSearchV2Report {
-        schema_name: "CombatSearchV2Report",
-        schema_version: 11,
+        schema_name: COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME,
+        schema_version: COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         policy_evidence,

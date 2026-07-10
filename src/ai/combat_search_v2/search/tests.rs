@@ -1,4 +1,7 @@
 use super::*;
+use crate::ai::combat_search_v2::{
+    COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME, COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::relics::{RelicId, RelicState};
@@ -400,7 +403,11 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
         &OneCardWinStepper,
     );
 
-    assert_eq!(report.schema_version, 11);
+    assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
+    assert_eq!(
+        report.schema_version,
+        COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
+    );
     assert_eq!(
         report.policy_evidence.information_access,
         CombatSearchV2InformationAccess::PrivilegedSimulator
