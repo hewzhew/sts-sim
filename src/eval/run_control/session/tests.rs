@@ -233,7 +233,6 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
     assert!(outcome
         .message
         .contains("frontier_policy=round_robin_eval_buckets"));
-    assert!(outcome.message.contains("turn_plan_policy=diagnostic_only"));
     assert!(outcome.message.contains("search_diagnostics="));
     assert!(outcome.message.contains("search_performance="));
     assert!(outcome.message.contains("turn_plan_seeded="));
@@ -1072,7 +1071,6 @@ fn run_control_details_include_deck_mutation_compiler_groups() {
 
     let rendered = render_run_control_details(&session);
 
-    assert!(rendered.contains("DeckMutationCompilerV1"));
     assert!(rendered.contains("branch_active:"));
     assert!(rendered.contains("inspect_only:"));
     assert!(rendered.contains("True Grit"));

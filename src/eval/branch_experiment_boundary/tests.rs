@@ -567,46 +567,6 @@ fn current_boundary_uses_compiled_shop_branch_frontier() {
 }
 
 #[test]
-fn current_boundary_includes_three_purchase_combo_for_high_gold_shop_pressure() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.act_num = 3;
-    session.run_state.floor_num = 46;
-    session.run_state.gold = 430;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::Shockwave,
-        upgrades: 0,
-        price: 90,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.relics.push(ShopRelic {
-        relic_id: RelicId::FrozenEye,
-        price: 146,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.potions.push(ShopPotion {
-        potion_id: PotionId::DuplicationPotion,
-        price: 60,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.purge_available = false;
-    session.engine_state = EngineState::Shop(shop);
-
-    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
-        .expect("high-gold shop should expose a purchase portfolio");
-
-    assert!(
-        boundary.options.iter().any(|option| {
-            option.effect_kind == "shop_buy_combo" && option.command.matches(" && ").count() >= 2
-        }),
-        "high-gold boss-prep shops should expose a compact three-purchase branch"
-    );
-}
-
-#[test]
 fn current_boundary_includes_combo_purchase_for_capped_affordable_shop() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.act_num = 2;

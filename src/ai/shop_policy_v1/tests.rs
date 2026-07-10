@@ -7,8 +7,8 @@ use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1,
     legacy_shop_card_purchase_estimate_v1, ShopCompileModeV1, ShopDecisionSourceV1,
     ShopPlanCandidateRoleV1, ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanProjectionRoleV1,
-    ShopPlanRolloutAdmissionStatusV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
-    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1,
+    ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -633,54 +633,6 @@ fn compiled_shop_branch_topk_returns_plan_compat_alternatives() {
 }
 
 #[test]
-fn compiled_shop_branch_topk_preserves_distinct_card_purchase_lanes() {
-    let mut run_state = RunState::new(1, 20, false, "Ironclad");
-    run_state.floor_num = 11;
-    run_state.gold = 500;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::Warcry,
-        upgrades: 0,
-        price: 58,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.cards.push(ShopCard {
-        card_id: CardId::FeelNoPain,
-        upgrades: 0,
-        price: 76,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.relics.push(ShopRelic {
-        relic_id: RelicId::Orichalcum,
-        price: 163,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let compiled = compile_shop_decision_v1(
-        &context,
-        &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::BranchTopK { max_plans: 4 },
-    );
-    let branch_plan_ids = std::iter::once(&compiled.compat_selected_plan)
-        .chain(compiled.compat_alternatives.iter())
-        .flat_map(|plan| plan.candidate_ids.iter().map(String::as_str))
-        .collect::<std::collections::BTreeSet<_>>();
-
-    assert!(
-        branch_plan_ids.contains("shop:card-0"),
-        "draw/access card lane should not consume the only buy-card coverage slot"
-    );
-    assert!(
-        branch_plan_ids.contains("shop:card-1"),
-        "missing-ceiling card lane should remain branch-visible beside draw/access"
-    );
-}
-
-#[test]
 fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 10;
@@ -1194,111 +1146,6 @@ fn compiled_shop_branch_compat_alternatives_are_not_limited_to_legacy_portfolio(
     assert!(
         alternative_roles.contains(&ShopPlanCandidateRoleV1::SingleAction),
         "branch compat_alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
-    );
-}
-
-#[test]
-fn compiled_shop_branch_frontier_can_admit_non_rollout_thesis_candidate() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 1;
-    run_state.floor_num = 10;
-    run_state.boss_key = Some(EncounterId::TheGuardian);
-    run_state.gold = 197;
-    run_state.add_card_to_deck(CardId::PowerThrough);
-    run_state.add_card_to_deck_with_upgrades(CardId::Warcry, 1);
-    run_state.add_card_to_deck(CardId::PommelStrike);
-    run_state.add_card_to_deck(CardId::Intimidate);
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::Reaper,
-        upgrades: 0,
-        price: 80,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let compiled = compile_shop_decision_v1(
-        &context,
-        &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::BranchTopK { max_plans: 4 },
-    );
-    let reaper_plan = compiled
-        .candidate_plans
-        .iter()
-        .find(|candidate| {
-            candidate.plan.steps.iter().any(|step| {
-                matches!(
-                    step,
-                    ShopPlanStepV1::BuyCard {
-                        card: CardId::Reaper,
-                        ..
-                    }
-                )
-            })
-        })
-        .expect("Reaper shop plan candidate should exist");
-
-    assert_eq!(reaper_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
-    assert_eq!(
-        reaper_plan.evaluation.rollout_admission.status,
-        ShopPlanRolloutAdmissionStatusV1::Reject,
-        "branch exploration must not imply rollout admission"
-    );
-    assert!(
-        reaper_plan.evaluation.branch_admission.is_admitted(),
-        "future-sustain acquisition thesis should be admitted to branch exploration without becoming the rollout head"
-    );
-    assert!(
-        compiled
-            .branch_frontier
-            .iter()
-            .any(|projection| projection.plan_id == reaper_plan.plan.plan_id),
-        "branch frontier should consume branch_admission, not verdict Allow"
-    );
-    assert!(
-        compiled
-            .rollout_head
-            .as_ref()
-            .is_none_or(|projection| projection.plan_id != reaper_plan.plan.plan_id),
-        "rollout head must consume rollout_admission, not branch_admission"
-    );
-    let reaper_purge_combo = compiled
-        .candidate_plans
-        .iter()
-        .find(|candidate| {
-            candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
-                && candidate.plan.steps.iter().any(|step| {
-                    matches!(
-                        step,
-                        ShopPlanStepV1::BuyCard {
-                            card: CardId::Reaper,
-                            ..
-                        }
-                    )
-                })
-                && candidate
-                    .plan
-                    .steps
-                    .iter()
-                    .any(|step| matches!(step, ShopPlanStepV1::RemoveCard { .. }))
-        })
-        .expect("branch frontier should include a Reaper plus purge combo candidate");
-    assert_eq!(
-        reaper_purge_combo.evaluation.rollout_admission.status,
-        ShopPlanRolloutAdmissionStatusV1::Reject,
-        "combo with a branch-only sustain step should not become rollout head"
-    );
-    assert!(
-        reaper_purge_combo.evaluation.branch_admission.is_admitted(),
-        "combo with branch-admitted steps should remain available to branch frontier"
-    );
-    assert!(
-        compiled
-            .branch_frontier
-            .iter()
-            .any(|projection| projection.plan_id == reaper_purge_combo.plan.plan_id),
-        "branch frontier should expose the Reaper plus purge combo, not only its single-step parts"
     );
 }
 

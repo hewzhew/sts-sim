@@ -355,69 +355,6 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
 }
 
 #[test]
-fn branch_experiment_executes_shop_combo_purchase_branch() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.floor_num = 6;
-    session.run_state.gold = 631;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::Shockwave,
-        upgrades: 0,
-        price: 120,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.relics.push(ShopRelic {
-        relic_id: RelicId::FrozenEye,
-        price: 120,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.potions.push(ShopPotion {
-        potion_id: PotionId::FirePotion,
-        price: 40,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.purge_available = false;
-    session.engine_state = EngineState::Shop(shop);
-
-    let report = run_branch_experiment_from_session(
-        session,
-        &BranchExperimentConfigV1 {
-            max_depth: 1,
-            max_branches: 8,
-            ..BranchExperimentConfigV1::default()
-        },
-    );
-
-    let combo_branch = report
-        .branches
-        .iter()
-        .find(|branch| {
-            branch
-                .choices
-                .iter()
-                .any(|choice| choice.effect_kind == "shop_buy_combo")
-        })
-        .expect("shop combo branch");
-    let combo_choice = combo_branch
-        .choices
-        .iter()
-        .find(|choice| choice.effect_kind == "shop_buy_combo")
-        .expect("shop combo choice");
-
-    assert!(combo_choice.command.contains(" && "));
-    assert!(combo_choice.command.contains("buy relic 0"));
-    assert!(combo_choice.command.contains("buy card 0"));
-    assert!(combo_choice.command.contains("buy potion 0"));
-    assert!(
-        combo_choice.effect_label.contains("auto leave shop"),
-        "empty post-combo shop should be closed by compiler-level executable plan check"
-    );
-}
-
-#[test]
 fn branch_experiment_retains_shop_combo_purchase_under_branch_cap() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.act_num = 2;

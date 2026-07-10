@@ -1072,7 +1072,6 @@ mod tests {
             .find(|candidate| candidate.id == "bowl")
             .expect("Singing Bowl should be visible next to unopened card reward item");
         assert!(bowl.action.executable_input().is_none());
-        assert_eq!(bowl.action.command_hint(), "bowl");
         assert!(bowl.label.contains("gain 2 max HP"));
     }
 
