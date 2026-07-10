@@ -10,6 +10,7 @@ use super::combat_search_lanes::{
     CombatSearchLane, CombatSearchLaneKind, CombatSearchRequest, CombatSearchStakes,
 };
 use super::combat_search_recipe::CombatSearchRecipe;
+use super::combat_search_survival::owner_audit_hp_loss_limit;
 use super::Args;
 
 const BOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
@@ -36,6 +37,7 @@ pub(super) fn lane_options(
         request.args.wall_ms.is_some(),
     )
     .into_auto_step_options();
+    options.search.max_hp_loss = Some(owner_audit_hp_loss_limit(session));
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
     options
 }
@@ -269,7 +271,9 @@ mod tests {
     use sts_simulator::ai::combat_search_v2::{
         CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2RolloutPolicy,
     };
-    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::eval::run_control::{
+        RunControlConfig, RunControlHpLossLimit, RunControlSession,
+    };
     use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use sts_simulator::state::map::node::RoomType;
 
@@ -315,6 +319,31 @@ mod tests {
             }),
         ));
         session
+    }
+
+    #[test]
+    fn lane_options_attach_survival_hp_loss_gate() {
+        for (current_hp, max_hp, expected_max_loss) in [(80, 80, 60), (54, 80, 34), (17, 85, 0)] {
+            let mut session = session_with_combat_stakes(false, false);
+            let player = &mut session
+                .active_combat
+                .as_mut()
+                .expect("active combat")
+                .combat_state
+                .entities
+                .player;
+            player.current_hp = current_hp;
+            player.max_hp = max_hp;
+            let request = CombatSearchRequest::from_session(&session, test_args());
+
+            let options = lane_options(CombatSearchLane::primary(), &request, &session);
+
+            assert_eq!(
+                options.search.max_hp_loss,
+                Some(RunControlHpLossLimit::Limit(expected_max_loss)),
+                "visible hp {current_hp}/{max_hp}"
+            );
+        }
     }
 
     #[test]

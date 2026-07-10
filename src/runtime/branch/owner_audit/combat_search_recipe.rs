@@ -1,7 +1,6 @@
 use sts_simulator::ai::combat_search_v2::CombatSearchProfile;
 use sts_simulator::eval::run_control::{
-    RunControlAutoStepOptions, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions,
+    RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 
 #[derive(Clone, Copy)]
@@ -28,7 +27,6 @@ impl CombatSearchRecipe {
         RunControlAutoStepOptions {
             search: RunControlSearchCombatOptions {
                 profile: Some(self.profile),
-                max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
                 disable_no_win_rescue: true,
                 ..Default::default()
             },
@@ -67,6 +65,14 @@ mod tests {
             acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
             artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
         }
+    }
+
+    #[test]
+    fn recipe_leaves_hp_loss_policy_to_owner_audit() {
+        let options = CombatSearchRecipe::from_profile(profile_for_test(10, 20), 3, false)
+            .into_auto_step_options();
+
+        assert_eq!(options.search.max_hp_loss, None);
     }
 
     #[test]

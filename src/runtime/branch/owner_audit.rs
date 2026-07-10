@@ -64,6 +64,8 @@ mod combat_search_portfolio_result;
 mod combat_search_recipe;
 #[path = "owner_audit/combat_search_report.rs"]
 mod combat_search_report;
+#[path = "owner_audit/combat_search_survival.rs"]
+mod combat_search_survival;
 #[path = "owner_audit/combat_search_trace_actions.rs"]
 mod combat_search_trace_actions;
 #[path = "owner_audit/decision_delta.rs"]
