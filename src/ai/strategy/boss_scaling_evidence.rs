@@ -293,8 +293,7 @@ mod tests {
     fn unsupported_rupture_is_not_a_usable_boss_scaling_source() {
         let (deck, plan) = deck_plan(&[CardId::Strike, CardId::Defend, CardId::Bash]);
         let admission = assess_reward_admission_from_master_deck(&deck, CardId::Rupture, 0);
-        let evidence =
-            assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 0)), &admission);
+        let evidence = assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 0)), &admission);
 
         assert!(!evidence.relevant_to_boss_plan);
     }
@@ -303,8 +302,7 @@ mod tests {
     fn repeated_rupture_does_not_repeat_full_boss_scaling_credit() {
         let (deck, plan) = deck_plan(&[CardId::Rupture, CardId::Hemokinesis]);
         let admission = assess_reward_admission_from_master_deck(&deck, CardId::Rupture, 1);
-        let evidence =
-            assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 1)), &admission);
+        let evidence = assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 1)), &admission);
 
         assert!(!evidence.relevant_to_boss_plan);
         assert_eq!(evidence.score_delta, 0);
@@ -314,8 +312,7 @@ mod tests {
     fn multiplier_with_one_stable_source_keeps_reliability_repair() {
         let (deck, plan) = deck_plan(&[CardId::Inflame, CardId::LimitBreak]);
         let admission = assess_reward_admission_from_master_deck(&deck, CardId::DemonForm, 0);
-        let evidence =
-            assess_boss_scaling_evidence(plan, Some((CardId::DemonForm, 0)), &admission);
+        let evidence = assess_boss_scaling_evidence(plan, Some((CardId::DemonForm, 0)), &admission);
 
         assert!(evidence.relevant_to_boss_plan);
     }

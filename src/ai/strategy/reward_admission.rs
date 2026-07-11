@@ -639,10 +639,8 @@ mod tests {
 
     #[test]
     fn repeated_supported_rupture_is_not_a_new_engine_seed() {
-        let admission = assess_reward_admission(
-            &[CardId::Rupture, CardId::Hemokinesis],
-            CardId::Rupture,
-        );
+        let admission =
+            assess_reward_admission(&[CardId::Rupture, CardId::Hemokinesis], CardId::Rupture);
 
         assert_ne!(admission.class, RewardAdmissionClass::EngineSeed);
     }

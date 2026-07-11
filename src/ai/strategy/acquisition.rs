@@ -394,6 +394,7 @@ fn adds_deployability_debt(
     improves_hard_gap: bool,
 ) -> bool {
     !improves_hard_gap
+        && !(deck_plan.survival_pressure() && admission_survival_tool(admission))
         && needs(deck_plan.strategic_deficit.energy_or_playability)
         && deck_plan
             .construction

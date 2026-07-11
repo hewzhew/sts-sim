@@ -307,6 +307,7 @@ git commit -m "fix: require marginal boss scaling value"
 ### Task 3: Acute survival lane boundary
 
 **Files:**
+- Modify: `src/ai/strategy/acquisition.rs`
 - Modify: `src/ai/strategy/decision_pipeline.rs`
 
 **Interfaces:**
@@ -477,6 +478,17 @@ fn survival_pressure_exception(
 
 This removes the heavy-burden penalty and strategic cap from pure immediate block only while survival pressure is active.
 
+The acquisition boundary also treats the same acute survival tool as an exception to generic
+two-cost deployability debt. Add this condition to `adds_deployability_debt` before the energy
+and expensive-card checks:
+
+```rust
+&& !(deck_plan.survival_pressure() && admission_survival_tool(admission))
+```
+
+Without this paired exception, the candidate has a mainline raw score and no strategic cap but
+is still demoted by the acquisition contract before it can serve as a survival stabilizer.
+
 - [ ] **Step 4: Add the categorical setup lane cap**
 
 At the start of `strategic_lane_cap`, after obtaining `admission`, return `ProbeOnly` when this helper is true:
@@ -553,7 +565,7 @@ Expected: all decision-pipeline tests pass with zero failures.
 - [ ] **Step 7: Commit Task 3**
 
 ```powershell
-git add src/ai/strategy/decision_pipeline.rs
+git add docs/superpowers/plans/2026-07-11-marginal-acquisition-survival-gate.md src/ai/strategy/acquisition.rs src/ai/strategy/decision_pipeline.rs
 git commit -m "fix: prioritize acute survival over setup"
 ```
 

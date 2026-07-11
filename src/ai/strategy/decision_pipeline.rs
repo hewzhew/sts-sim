@@ -1153,6 +1153,9 @@ fn strategic_lane_cap(
         return None;
     }
     let admission = admission?;
+    if acute_survival_setup_only(context, kind, admission) {
+        return Some(LaneCap::ProbeOnly);
+    }
     if !heavy_burden_penalty_applies(context, kind, admission) {
         return None;
     }
@@ -1332,10 +1335,44 @@ fn survival_pressure_exception(
     admission: &RewardAdmission,
 ) -> bool {
     context.deck_plan.survival_pressure()
-        && (admission_provides(admission, Mechanic::EnemyStrengthDown)
-            || admission_provides(admission, Mechanic::Weak)
-            || (admission_provides(admission, Mechanic::Block)
-                && admission_provides(admission, Mechanic::CardDraw)))
+        && (admission_provides(admission, Mechanic::Block)
+            || admission_provides(admission, Mechanic::EnemyStrengthDown)
+            || admission_provides(admission, Mechanic::Weak))
+}
+
+fn acute_survival_setup_only(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: &RewardAdmission,
+) -> bool {
+    if !context.deck_plan.survival_pressure()
+        || admission.class == RewardAdmissionClass::ClosesRequirement
+        || context
+            .deck_plan
+            .repairs_strength_package_reliability(candidate_card(kind))
+        || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
+            .relevant_to_boss_survival_plan
+    {
+        return false;
+    }
+
+    let immediate_survival_or_access = admission_survival_tool(admission)
+        || admission_frontloads(admission)
+        || admission_provides(admission, Mechanic::CardDraw)
+        || admission_provides(admission, Mechanic::Energy)
+        || admission
+            .reasons
+            .contains(&RewardAdmissionReason::RecoverCurrentHp);
+    if immediate_survival_or_access {
+        return false;
+    }
+
+    let setup_burden = candidate_card(kind).is_some_and(|(card, upgrades)| {
+        card_definition_with_upgrades(card, upgrades)
+            .burdens
+            .contains(&CardBurden::PowerSetup)
+    });
+    setup_burden || admission_scaling_or_engine(admission)
 }
 
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
@@ -1622,13 +1659,22 @@ mod tests {
     }
 
     fn reward_context_with_act(cards: &[CardId], act: u8) -> DecisionPipelineContext {
+        reward_context_with_act_and_hp(cards, act, 70, 80)
+    }
+
+    fn reward_context_with_act_and_hp(
+        cards: &[CardId],
+        act: u8,
+        current_hp: i32,
+        max_hp: i32,
+    ) -> DecisionPipelineContext {
         let deck = test_deck(cards);
         DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
             &deck,
             DeckAdmissionContext {
                 act,
-                current_hp: 70,
-                max_hp: 80,
+                current_hp,
+                max_hp,
             },
             RunStrategicFacts {
                 entering_act: act,
@@ -1678,6 +1724,27 @@ mod tests {
     ) -> CandidateEvaluation {
         let deck = test_deck(cards);
         let context = reward_context_with_act(cards, act);
+        let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
+        evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::CardRewardPick {
+                card: candidate,
+                upgrades,
+            },
+            Some(&admission),
+        )
+    }
+
+    fn reward_card_with_act_and_hp(
+        cards: &[CardId],
+        candidate: CardId,
+        upgrades: u8,
+        act: u8,
+        current_hp: i32,
+        max_hp: i32,
+    ) -> CandidateEvaluation {
+        let deck = test_deck(cards);
+        let context = reward_context_with_act_and_hp(cards, act, current_hp, max_hp);
         let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
         evaluate_decision_candidate(
             context,
@@ -1810,6 +1877,32 @@ mod tests {
             CardId::ShrugItOff,
             CardId::PommelStrike,
             CardId::Bloodletting,
+        ]
+    }
+
+    fn low_hp_heavy_burden_deck() -> Vec<CardId> {
+        vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+            CardId::Armaments,
+            CardId::Cleave,
+            CardId::Cleave,
+            CardId::Rupture,
+            CardId::Apparition,
+            CardId::Apparition,
+            CardId::Apparition,
+            CardId::Apparition,
+            CardId::Apparition,
+            CardId::Hemokinesis,
+            CardId::ShrugItOff,
+            CardId::Offering,
         ]
     }
 
@@ -2015,6 +2108,53 @@ mod tests {
         );
 
         assert_ne!(rupture.lane, CandidateLane::Mainline);
+    }
+
+    #[test]
+    fn low_hp_pure_block_survives_heavy_burden_lane_cap() {
+        let deck = low_hp_heavy_burden_deck();
+        let flame_barrier = reward_card_with_act_and_hp(&deck, CardId::FlameBarrier, 1, 3, 12, 39);
+
+        assert_eq!(
+            flame_barrier.lane,
+            CandidateLane::Mainline,
+            "flame_barrier={flame_barrier:#?}"
+        );
+        assert!(!flame_barrier
+            .adjudication
+            .caps
+            .iter()
+            .any(|cap| cap.source == CandidateLaneCapSource::Strategic));
+    }
+
+    #[test]
+    fn low_hp_redundant_rupture_cannot_enter_mainline() {
+        let deck = low_hp_heavy_burden_deck();
+        let rupture = reward_card_with_act_and_hp(&deck, CardId::Rupture, 1, 3, 13, 39);
+
+        assert_ne!(rupture.lane, CandidateLane::Mainline);
+    }
+
+    #[test]
+    fn low_hp_setup_only_scaling_is_capped_below_mainline() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+            CardId::Cleave,
+        ];
+        let demon_form = reward_card_with_act_and_hp(&deck, CardId::DemonForm, 0, 3, 12, 39);
+
+        assert_ne!(demon_form.lane, CandidateLane::Mainline);
+        assert!(demon_form.adjudication.caps.iter().any(|cap| {
+            cap.source == CandidateLaneCapSource::Strategic && cap.cap == LaneCap::ProbeOnly
+        }));
     }
 
     #[test]
