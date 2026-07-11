@@ -559,7 +559,8 @@ fn card_reward_record_from_annotation(
         | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
+        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+        | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => None,
     }
 }
 

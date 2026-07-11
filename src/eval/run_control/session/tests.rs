@@ -183,6 +183,10 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
     assert!(outcome.message.contains("turn_plan_seeded="));
     assert!(outcome.message.contains("pending_high_fanout="));
     assert!(outcome.action_result.is_some());
+    let accepted =
+        crate::eval::run_control::accepted_combat_line_evidence_v1(&outcome.trace_annotations)
+            .expect("applied search combat should expose original and selected line evidence");
+    assert_eq!(accepted.original.terminal, accepted.selected.terminal);
     assert!(session.active_combat.is_none());
     assert_eq!(
         session

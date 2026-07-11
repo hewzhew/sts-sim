@@ -72,32 +72,31 @@ pub(super) fn combat_line_performance_trace_annotation(
     line_performance: Option<CombatCandidateLinePerformance>,
 ) -> RunControlTraceAnnotationV1 {
     let source = source.into();
-    let Some(performance) = line_performance else {
-        return combat_search_performance_trace_annotation(source, session, start, report);
-    };
     let mut snapshot = combat_search_performance_snapshot(source.clone(), session, start, report);
     let line_summary = combat_candidate_line_summary(selected_line);
-    snapshot.coverage_status = format!("{source}Applied");
     snapshot.complete_trajectory_found = true;
     snapshot.complete_win_found = selected_line.terminal == CombatTerminal::Win;
     snapshot.best_complete = Some(line_summary.clone());
     snapshot.best_win = (selected_line.terminal == CombatTerminal::Win).then_some(line_summary);
     snapshot.best_hp_loss =
         (selected_line.terminal == CombatTerminal::Win).then_some(selected_line.hp_loss);
-    snapshot.nodes_expanded = performance.nodes_expanded;
-    snapshot.nodes_generated = performance.nodes_generated;
-    snapshot.terminal_wins = u64::from(selected_line.terminal == CombatTerminal::Win);
-    snapshot.total_us = performance.total_us;
-    snapshot.unattributed_us = performance.total_us;
-    snapshot.rollout_us = 0;
-    snapshot.expansion_us = 0;
-    snapshot.child_bookkeeping_us = 0;
-    snapshot.engine_step_us = 0;
-    snapshot.pre_expand_us = 0;
-    snapshot.frontier_pop_us = 0;
-    snapshot.turn_plan_seed_us = 0;
-    snapshot.shadow_audit_us = 0;
-    snapshot.root_turn_plan_diag_us = 0;
+    if let Some(performance) = line_performance {
+        snapshot.coverage_status = format!("{source}Applied");
+        snapshot.nodes_expanded = performance.nodes_expanded;
+        snapshot.nodes_generated = performance.nodes_generated;
+        snapshot.terminal_wins = u64::from(selected_line.terminal == CombatTerminal::Win);
+        snapshot.total_us = performance.total_us;
+        snapshot.unattributed_us = performance.total_us;
+        snapshot.rollout_us = 0;
+        snapshot.expansion_us = 0;
+        snapshot.child_bookkeeping_us = 0;
+        snapshot.engine_step_us = 0;
+        snapshot.pre_expand_us = 0;
+        snapshot.frontier_pop_us = 0;
+        snapshot.turn_plan_seed_us = 0;
+        snapshot.shadow_audit_us = 0;
+        snapshot.root_turn_plan_diag_us = 0;
+    }
     RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot }
 }
 
@@ -239,7 +238,7 @@ fn combat_enemy_names(combat: &crate::runtime::combat::CombatState) -> Vec<Strin
         .collect()
 }
 
-fn combat_search_line_summary(
+pub(super) fn combat_search_line_summary(
     trajectory: &crate::ai::combat_search_v2::CombatSearchV2TrajectoryReport,
 ) -> CombatSearchTerminalLineSummary {
     CombatSearchTerminalLineSummary {
@@ -254,7 +253,9 @@ fn combat_search_line_summary(
     }
 }
 
-fn combat_candidate_line_summary(line: &CombatCandidateLine) -> CombatSearchTerminalLineSummary {
+pub(super) fn combat_candidate_line_summary(
+    line: &CombatCandidateLine,
+) -> CombatSearchTerminalLineSummary {
     CombatSearchTerminalLineSummary {
         terminal: match line.terminal {
             CombatTerminal::Win => SearchTerminalLabel::Win,
@@ -285,4 +286,51 @@ pub(super) fn millis_to_micros_u64(value: u128) -> u64 {
 
 fn micros_to_u64(value: u128) -> u64 {
     value.min(u128::from(u64::MAX)) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::combat_search_v2::{run_combat_search_v2, CombatSearchV2Config};
+    use crate::eval::run_control::combat_candidate_line::CombatCandidateLineSource;
+    use crate::state::core::EngineState;
+
+    #[test]
+    fn selected_line_snapshot_keeps_report_performance() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters.clear();
+        let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let report = run_combat_search_v2(
+            &start.engine,
+            &start.combat,
+            CombatSearchV2Config {
+                max_nodes: 1,
+                ..CombatSearchV2Config::default()
+            },
+        );
+        let mut selected_position = start.clone();
+        selected_position.combat.entities.player.current_hp = 65;
+        let selected = CombatCandidateLine::from_position(
+            CombatCandidateLineSource::SearchComplete,
+            Vec::new(),
+            80,
+            &selected_position,
+        );
+        let session = RunControlSession::new(Default::default());
+
+        let annotation = combat_line_performance_trace_annotation(
+            "search_combat",
+            &session,
+            &start,
+            &report,
+            &selected,
+            None,
+        );
+        let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation else {
+            panic!("expected combat search performance annotation")
+        };
+
+        assert_eq!(snapshot.best_hp_loss, Some(15));
+        assert_eq!(snapshot.nodes_expanded, report.stats.nodes_expanded);
+    }
 }

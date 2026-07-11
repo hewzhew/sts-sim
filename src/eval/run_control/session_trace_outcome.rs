@@ -262,7 +262,8 @@ fn selected_noncombat_records(
             }
             | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
+            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+            | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => None,
         })
         .collect()
 }

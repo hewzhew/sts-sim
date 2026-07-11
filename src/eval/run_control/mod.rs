@@ -1,3 +1,4 @@
+mod accepted_combat_line_evidence;
 mod artifact_commands;
 mod auto_capture;
 mod auto_run;
@@ -52,6 +53,9 @@ mod trace_replay;
 mod transition_report;
 mod view_model;
 
+pub use accepted_combat_line_evidence::{
+    accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
+};
 pub use auto_capture::AutoCombatCaptureConfig;
 pub(crate) use auto_run::apply_branch_experiment_auto_run;
 pub use auto_run::apply_owner_audit_auto_run;

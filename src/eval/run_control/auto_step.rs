@@ -507,7 +507,8 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
+            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+            | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => None,
         })
         .collect()
 }

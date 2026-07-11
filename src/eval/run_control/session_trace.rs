@@ -612,7 +612,8 @@ fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bo
         }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => false,
+        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+        | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => false,
     }
 }
 
@@ -642,7 +643,8 @@ fn annotation_artifact_refs(
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
+            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+            | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => None,
         })
         .collect()
 }

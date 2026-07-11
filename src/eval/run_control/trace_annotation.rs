@@ -9,6 +9,7 @@ use crate::ai::noncombat_decision_v1::{
 use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::state::core::ClientInput;
 
+use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::transition_report::CardSnapshot;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -364,6 +365,9 @@ pub enum RunControlTraceAnnotationV1 {
     CombatSearchPerformance {
         snapshot: CombatSearchPerformanceSnapshotV1,
     },
+    AcceptedCombatLine {
+        evidence: AcceptedCombatLineEvidenceV1,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -528,7 +532,8 @@ fn validate_run_control_trace_annotation_v1(
         }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
-        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => Ok(()),
+        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
+        | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => Ok(()),
     }
 }
 
@@ -548,6 +553,32 @@ fn validate_noncombat_record_annotation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn terminal_win(final_hp: i32, hp_loss: i32) -> CombatSearchTerminalLineSummary {
+        CombatSearchTerminalLineSummary {
+            terminal: SearchTerminalLabel::Win,
+            final_hp,
+            hp_loss,
+            turns: 7,
+            cards_played: 27,
+            potions_used: 0,
+            potions_discarded: 0,
+            action_count: 34,
+        }
+    }
+
+    #[test]
+    fn accepted_line_evidence_keeps_original_and_selected_losses_separate() {
+        let evidence = AcceptedCombatLineEvidenceV1::new(
+            terminal_win(24, 35),
+            terminal_win(44, 15),
+            Some("line_repair attempts=4 wins=2 improvements=1".to_string()),
+        );
+
+        assert_eq!(evidence.original.hp_loss, 35);
+        assert_eq!(evidence.selected.hp_loss, 15);
+        assert_eq!(evidence.hp_saved_by_selection, 20);
+    }
 
     #[test]
     fn combat_automation_trajectory_accessor_exposes_recorded_actions() {

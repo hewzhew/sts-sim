@@ -1,7 +1,9 @@
 use crate::ai::combat_search_v2::run_combat_search_v2;
 
+use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::combat_line_executor::apply_selected_combat_candidate_line;
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
+use super::combat_line_trace::{combat_candidate_line_summary, combat_search_line_summary};
 use super::combat_no_win_fallback::{
     try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
 };
@@ -118,7 +120,12 @@ pub(super) fn apply_search_combat(
     if let Some(repair_summary) = selected.summary.as_ref() {
         summary.push_str(&format!(" {repair_summary}"));
     }
-    apply_selected_combat_candidate_line(
+    let accepted_line_evidence = AcceptedCombatLineEvidenceV1::new(
+        combat_search_line_summary(trajectory),
+        combat_candidate_line_summary(&selected.line),
+        selected.summary.clone(),
+    );
+    let mut outcome = apply_selected_combat_candidate_line(
         session,
         &start,
         &config,
@@ -127,7 +134,11 @@ pub(super) fn apply_search_combat(
         CombatAutomationTrajectorySource::SearchCombat,
         summary,
         None,
-    )
+    )?;
+    outcome
+        .trace_annotations
+        .push(accepted_line_evidence.into_annotation());
+    Ok(outcome)
 }
 
 #[cfg(test)]
