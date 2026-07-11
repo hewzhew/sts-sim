@@ -21,6 +21,7 @@ pub(super) enum CombatSearchLaneKind {
     PrimaryImmediateEscalation,
     NonBossPotionRescue,
     HallwayQualityPotionRescue,
+    HallwaySurvivalFallback,
     BossNoPotion,
     BossPotionRescue,
     BossTimeEaterClock,

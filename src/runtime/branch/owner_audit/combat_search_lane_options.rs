@@ -4,7 +4,9 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
     CombatSearchV2PotionPolicy,
 };
-use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
+use sts_simulator::eval::run_control::{
+    RunControlAutoStepOptions, RunControlHpLossLimit, RunControlSession,
+};
 
 use super::combat_search_lanes::{
     CombatSearchLane, CombatSearchLaneKind, CombatSearchRequest, CombatSearchStakes,
@@ -41,7 +43,10 @@ pub(super) fn lane_options(
         .search
         .profile
         .map(|profile| profile.to_config().potion_policy);
-    options.search.max_hp_loss = Some(owner_audit_hp_loss_limit(session));
+    options.search.max_hp_loss = Some(match lane.kind() {
+        CombatSearchLaneKind::HallwaySurvivalFallback => RunControlHpLossLimit::Unlimited,
+        _ => owner_audit_hp_loss_limit(session),
+    });
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
     options
 }
@@ -79,6 +84,13 @@ fn lane_profile(
         )
         .with_max_potions_used(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED),
         CombatSearchLaneKind::HallwayQualityPotionRescue => quality_profile(
+            lane.label(),
+            request.args,
+            LaneSearchBudget::HallwayQuality,
+            CombatSearchChildRolloutPluginId::Immediate,
+            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+        ),
+        CombatSearchLaneKind::HallwaySurvivalFallback => quality_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
@@ -354,6 +366,47 @@ mod tests {
                 "visible hp {current_hp}/{max_hp}"
             );
         }
+    }
+
+    #[test]
+    fn hallway_survival_fallback_relaxes_only_hp_reserve() {
+        let mut session = session_with_combat_stakes(false, false);
+        let player = &mut session
+            .active_combat
+            .as_mut()
+            .expect("active combat")
+            .combat_state
+            .entities
+            .player;
+        player.current_hp = 20;
+        player.max_hp = 74;
+        let request = CombatSearchRequest::from_session(&session, test_args());
+
+        let quality = lane_options(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue),
+            &request,
+            &session,
+        );
+        let fallback = lane_options(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
+            &request,
+            &session,
+        );
+        let fallback_config = fallback.search.profile.expect("profile").to_config();
+
+        assert_eq!(
+            quality.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Limit(2))
+        );
+        assert_eq!(
+            fallback.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
+        assert_eq!(
+            fallback_config.potion_policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(fallback_config.max_potions_used, Some(2));
     }
 
     #[test]

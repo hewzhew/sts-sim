@@ -16,6 +16,9 @@ impl CombatSearchPortfolioPlan {
                     lanes.push(CombatSearchLane::new(
                         CombatSearchLaneKind::HallwayQualityPotionRescue,
                     ));
+                    lanes.push(CombatSearchLane::new(
+                        CombatSearchLaneKind::HallwaySurvivalFallback,
+                    ));
                 }
                 lanes
             }
@@ -34,6 +37,11 @@ impl CombatSearchPortfolioPlan {
     #[cfg(test)]
     fn lane_kinds(&self) -> Vec<CombatSearchLaneKind> {
         self.lanes.iter().map(|lane| lane.kind()).collect()
+    }
+
+    #[cfg(test)]
+    fn lane_labels(&self) -> Vec<&'static str> {
+        self.lanes.iter().map(|lane| lane.label()).collect()
     }
 
     #[cfg(test)]
@@ -90,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn pressured_hallway_plan_adds_explicit_quality_potion_rescue() {
+    fn pressured_hallway_plan_ends_with_survival_fallback() {
         let plan = CombatSearchPortfolioPlan::after_primary(CombatSearchPortfolioContext {
             stakes: CombatSearchStakes::Hallway,
             time_eater_boss: false,
@@ -98,10 +106,11 @@ mod tests {
         });
 
         assert_eq!(
-            plan.lane_kinds(),
+            plan.lane_labels(),
             vec![
-                CombatSearchLaneKind::PrimaryImmediateEscalation,
-                CombatSearchLaneKind::HallwayQualityPotionRescue,
+                "primary_immediate_escalation",
+                "hallway_quality_potion_rescue",
+                "hallway_survival_fallback",
             ]
         );
         assert!(!plan.should_report());

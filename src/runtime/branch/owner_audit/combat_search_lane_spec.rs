@@ -22,6 +22,9 @@ pub(super) fn lane_spec(kind: CombatSearchLaneKind) -> CombatSearchLaneSpec {
         CombatSearchLaneKind::HallwayQualityPotionRescue => {
             dirty_rejecting_spec("hallway_quality_potion_rescue")
         }
+        CombatSearchLaneKind::HallwaySurvivalFallback => {
+            dirty_rejecting_spec("hallway_survival_fallback")
+        }
         CombatSearchLaneKind::BossNoPotion => rescue_spec("no_potion"),
         CombatSearchLaneKind::BossPotionRescue => rescue_spec("potion_rescue"),
         CombatSearchLaneKind::BossTimeEaterClock => rescue_spec("time_eater_clock"),
