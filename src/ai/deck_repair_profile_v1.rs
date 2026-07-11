@@ -94,6 +94,7 @@ pub fn deck_repair_profile_v1(run_state: &RunState) -> DeckRepairProfileV1 {
             })
         })
         .collect();
+    let reliability_upgrades = repair_upgrade_candidates(run_state, &thin_or_missing_functions);
     let source_tags = run_state
         .relics
         .iter()
@@ -104,9 +105,58 @@ pub fn deck_repair_profile_v1(run_state: &RunState) -> DeckRepairProfileV1 {
     DeckRepairProfileV1 {
         thin_or_missing_functions,
         low_loss_removals,
-        reliability_upgrades: Vec::new(),
+        reliability_upgrades,
         source_tags,
     }
+}
+
+fn repair_upgrade_candidates(
+    run_state: &RunState,
+    thin_or_missing_functions: &[DeckRepairFunctionV1],
+) -> Vec<DeckRepairUpgradeCandidateV1> {
+    use crate::ai::upgrade_planner_v1::{plan_upgrades_v1, UpgradeDebtSeverityV1, UpgradeRoleV1};
+
+    plan_upgrades_v1(run_state)
+        .candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            let card = run_state.master_deck.get(candidate.deck_index)?;
+            let retains_time_sensitive_defense = candidate.mechanical_delta.ethereal_removed_delta
+                && candidate.roles.contains(&UpgradeRoleV1::DefensiveSurvival);
+            let lowers_needed_function_cost = candidate.mechanical_delta.cost_delta > 0
+                && functions_for_card(candidate.card, candidate.upgrades)
+                    .iter()
+                    .any(|function| thin_or_missing_functions.contains(function));
+            let pays_important_upgrade_debt =
+                candidate.urgency >= UpgradeDebtSeverityV1::ImportantBeforeBoss;
+
+            let priority = if lowers_needed_function_cost || pays_important_upgrade_debt {
+                DeckRepairUpgradePriorityV1::NeededFunction
+            } else if retains_time_sensitive_defense {
+                DeckRepairUpgradePriorityV1::Reliability
+            } else {
+                return None;
+            };
+            let mut reasons = Vec::new();
+            if retains_time_sensitive_defense {
+                reasons.push(DeckRepairUpgradeReasonV1::RetainsTimeSensitiveDefense);
+            }
+            if lowers_needed_function_cost {
+                reasons.push(DeckRepairUpgradeReasonV1::LowersNeededFunctionCost);
+            }
+            if pays_important_upgrade_debt {
+                reasons.push(DeckRepairUpgradeReasonV1::PaysImportantUpgradeDebt);
+            }
+
+            Some(DeckRepairUpgradeCandidateV1 {
+                deck_index: candidate.deck_index,
+                uuid: card.uuid,
+                card: candidate.card,
+                priority,
+                reasons,
+            })
+        })
+        .collect()
 }
 
 fn is_thin_or_missing(level: StrategicDeficitLevel) -> bool {
@@ -198,7 +248,7 @@ fn card_semantics_supported_for_repair(card: CardId, upgrades: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::deck_repair_profile_v1;
+    use super::{deck_repair_profile_v1, DeckRepairUpgradePriorityV1, DeckRepairUpgradeReasonV1};
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
@@ -245,5 +295,33 @@ mod tests {
         let profile = deck_repair_profile_v1(&run);
 
         assert!(profile.low_loss_removals.is_empty());
+    }
+
+    #[test]
+    fn unupgraded_apparitions_are_explicit_reliability_repairs() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck = (0..5)
+            .map(|index| CombatCard::new(CardId::Apparition, 100 + index))
+            .chain(std::iter::once(CombatCard::new(CardId::Cleave, 200)))
+            .collect();
+
+        let profile = deck_repair_profile_v1(&run);
+        let apparition_repairs = profile
+            .reliability_upgrades
+            .iter()
+            .filter(|candidate| candidate.card == CardId::Apparition)
+            .collect::<Vec<_>>();
+
+        assert_eq!(apparition_repairs.len(), 5);
+        assert!(apparition_repairs.iter().all(|candidate| {
+            candidate.priority == DeckRepairUpgradePriorityV1::Reliability
+                && candidate
+                    .reasons
+                    .contains(&DeckRepairUpgradeReasonV1::RetainsTimeSensitiveDefense)
+        }));
+        assert!(!profile
+            .reliability_upgrades
+            .iter()
+            .any(|candidate| candidate.card == CardId::Cleave));
     }
 }

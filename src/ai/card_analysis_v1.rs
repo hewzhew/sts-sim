@@ -192,6 +192,7 @@ pub struct CardAnalysisProfileV1 {
     pub upgrade_stack_behavior: CardAnalysisUpgradeStackBehaviorV1,
     pub is_upgrade_exhaust_control_delta: bool,
     pub is_upgrade_exhaust_removed_delta: bool,
+    pub is_upgrade_ethereal_removed_delta: bool,
     pub is_upgrade_innate_delta: bool,
     pub is_upgrade_core_mechanic: bool,
     pub is_upgrade_engine_enabler: bool,
@@ -312,6 +313,7 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         upgrade_stack_behavior: upgrade_stack_behavior_v1(card),
         is_upgrade_exhaust_control_delta: is_upgrade_exhaust_control_delta_v1(card),
         is_upgrade_exhaust_removed_delta: is_upgrade_exhaust_removed_delta_v1(card),
+        is_upgrade_ethereal_removed_delta: matches!(card, CardId::Apparition),
         is_upgrade_innate_delta: matches!(card, CardId::BootSequence),
         is_upgrade_core_mechanic: is_upgrade_core_mechanic_v1(card),
         is_upgrade_engine_enabler: is_upgrade_engine_enabler_v1(card),
@@ -909,5 +911,12 @@ mod tests {
         let profile = card_analysis_profile_v1(CardId::LimitBreak, 0);
 
         assert!(profile.is_upgrade_exhaust_removed_delta);
+    }
+
+    #[test]
+    fn apparition_upgrade_records_ethereal_removal() {
+        let profile = card_analysis_profile_v1(CardId::Apparition, 0);
+
+        assert!(profile.is_upgrade_ethereal_removed_delta);
     }
 }

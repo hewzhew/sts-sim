@@ -114,6 +114,7 @@ pub struct UpgradeMechanicalDeltaV1 {
     pub magic_delta: i32,
     pub exhaust_control_delta: bool,
     pub exhaust_removed_delta: bool,
+    pub ethereal_removed_delta: bool,
     pub innate_delta: bool,
     pub notes: Vec<String>,
 }
@@ -335,13 +336,14 @@ pub fn upgrade_plan_evidence_for_deck_index_v1(
     {
         evidence.push(format!("upgrade_plan: {}", candidate.summary_label()));
         evidence.push(format!(
-            "upgrade_delta: cost={} damage={} block={} magic={} exhaust_control={} exhaust_removed={}",
+            "upgrade_delta: cost={} damage={} block={} magic={} exhaust_control={} exhaust_removed={} ethereal_removed={}",
             candidate.mechanical_delta.cost_delta,
             candidate.mechanical_delta.damage_delta,
             candidate.mechanical_delta.block_delta,
             candidate.mechanical_delta.magic_delta,
             candidate.mechanical_delta.exhaust_control_delta,
-            candidate.mechanical_delta.exhaust_removed_delta
+            candidate.mechanical_delta.exhaust_removed_delta,
+            candidate.mechanical_delta.ethereal_removed_delta
         ));
         evidence.push(format!(
             "upgrade_redundancy: group={:?} stack={:?} same_card_count={} existing_group_count={} saturated={}",
@@ -459,6 +461,7 @@ fn mechanical_upgrade_delta(card: &CombatCard) -> UpgradeMechanicalDeltaV1 {
         magic_delta: def.upgrade_magic,
         exhaust_control_delta: analysis.is_upgrade_exhaust_control_delta,
         exhaust_removed_delta: analysis.is_upgrade_exhaust_removed_delta,
+        ethereal_removed_delta: analysis.is_upgrade_ethereal_removed_delta,
         innate_delta: analysis.is_upgrade_innate_delta,
         notes: Vec::new(),
     };
@@ -471,6 +474,11 @@ fn mechanical_upgrade_delta(card: &CombatCard) -> UpgradeMechanicalDeltaV1 {
         delta
             .notes
             .push("upgrade removes exhaust or substantially improves repeat usability".to_string());
+    }
+    if delta.ethereal_removed_delta {
+        delta
+            .notes
+            .push("upgrade removes ethereal and retains the card across turns".to_string());
     }
     if delta.cost_delta > 0 {
         delta
@@ -1025,6 +1033,21 @@ fn is_starter(card: CardId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apparition_upgrade_delta_keeps_ethereal_distinct_from_exhaust() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.master_deck = vec![CombatCard::new(CardId::Apparition, 1)];
+
+        let candidate = plan_upgrades_v1(&run_state)
+            .candidates
+            .into_iter()
+            .next()
+            .expect("unupgraded Apparition should be an upgrade candidate");
+
+        assert!(candidate.mechanical_delta.ethereal_removed_delta);
+        assert!(!candidate.mechanical_delta.exhaust_removed_delta);
+    }
 
     #[test]
     fn upgrade_planner_marks_second_clothesline_as_low_marginal_repeat() {

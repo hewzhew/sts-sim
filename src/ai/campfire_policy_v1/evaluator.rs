@@ -98,6 +98,7 @@ fn clear_core_upgrade_tag(tag: &str) -> bool {
     matches!(
         tag,
         "upgrade_role:core_mechanic"
+            | "deck_repair:needed_function"
             | "upgrade_role:engine_enabler"
             | "upgrade_role:consistency"
             | "upgrade_role:scaling"
@@ -111,6 +112,7 @@ fn combat_patch_upgrade_tag(tag: &str) -> bool {
     matches!(
         tag,
         "upgrade_role:defensive_survival"
+            | "deck_repair:reliability"
             | "upgrade_role:phase_burst"
             | "upgrade_role:debuff_coverage"
             | "upgrade_debt:stasis_recovery"

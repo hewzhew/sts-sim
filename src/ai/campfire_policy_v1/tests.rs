@@ -2,6 +2,7 @@ use crate::ai::campfire_policy_v1::{
     build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanRoleV1,
     CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
 };
+use crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::{RelicId, RelicState};
@@ -204,6 +205,65 @@ fn campfire_policy_uses_full_hp_rest_as_empty_campfire_exit() {
         .reasons
         .iter()
         .any(|reason| reason.contains("campfire exit")));
+}
+
+#[test]
+fn reliability_repair_smith_precedes_generic_growth_when_safe() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = run_state.max_hp;
+    run_state.master_deck = vec![
+        crate::runtime::combat::CombatCard::new(CardId::Cleave, 1),
+        crate::runtime::combat::CombatCard::new(CardId::Apparition, 2),
+        crate::runtime::combat::CombatCard::new(CardId::Apparition, 3),
+    ];
+
+    let context = build_campfire_decision_context_v1(&run_state, vec![CampfireChoice::Smith(0)]);
+    assert!(context.candidates.iter().any(|candidate| {
+        matches!(candidate.choice, CampfireChoice::Smith(1 | 2))
+            && candidate.repair_priority == Some(DeckRepairUpgradePriorityV1::Reliability)
+            && candidate.strategy_tag.as_deref() == Some("deck_repair:reliability")
+    }));
+
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CampfirePolicyActionV1::Smith {
+            deck_index: 1 | 2,
+            ..
+        }
+    ));
+    assert_eq!(
+        decision.selected_plan.repair_priority,
+        Some(DeckRepairUpgradePriorityV1::Reliability)
+    );
+}
+
+#[test]
+fn rest_favored_still_blocks_reliability_repair_smith() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 35;
+    run_state.max_hp = 80;
+    run_state.master_deck = vec![
+        crate::runtime::combat::CombatCard::new(CardId::Cleave, 1),
+        crate::runtime::combat::CombatCard::new(CardId::Apparition, 2),
+        crate::runtime::combat::CombatCard::new(CardId::Apparition, 3),
+    ];
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CampfirePolicyActionV1::Rest { .. }
+    ));
+    assert!(decision
+        .candidate_plans
+        .iter()
+        .all(|candidate| { candidate.repair_priority.is_none() || !candidate.execute_autopilot }));
 }
 
 fn install_visible_rest_route(run_state: &mut RunState) {

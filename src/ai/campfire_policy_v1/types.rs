@@ -1,3 +1,4 @@
+use crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1;
 use crate::ai::noncombat_decision_v1::{
     CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
     EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
@@ -28,6 +29,7 @@ pub struct CampfireCandidateEvidenceV1 {
     pub class: CampfirePolicyClassV1,
     pub upgrade_priority: Option<i32>,
     pub upgrade_plan_score_hint: Option<i32>,
+    pub repair_priority: Option<DeckRepairUpgradePriorityV1>,
     pub strategy_tag: Option<String>,
     pub deck_mutation_execute_allowed: Option<bool>,
     pub deck_mutation_branch_allowed: Option<bool>,
@@ -86,6 +88,7 @@ pub struct CampfirePlanCandidateV1 {
     pub action: CampfirePolicyActionV1,
     pub role: CampfirePlanRoleV1,
     pub score_hint: i32,
+    pub repair_priority: Option<DeckRepairUpgradePriorityV1>,
     pub strategy_tag: Option<String>,
     pub confidence: f32,
     pub reasons: Vec<String>,

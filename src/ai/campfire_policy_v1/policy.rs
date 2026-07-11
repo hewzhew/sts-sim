@@ -23,10 +23,19 @@ pub fn build_campfire_decision_context_v1(
 ) -> CampfireDecisionContextV1 {
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let upgrade_plan = crate::ai::upgrade_planner_v1::plan_upgrades_v1(run_state);
+    let repair_profile = crate::ai::deck_repair_profile_v1::deck_repair_profile_v1(run_state);
     let candidates = available_choices
         .into_iter()
         .flat_map(|choice| expand_choice_targets(run_state, choice))
-        .map(|choice| candidate_evidence(choice, &strategy, run_state, &upgrade_plan.rest_vs_smith))
+        .map(|choice| {
+            candidate_evidence(
+                choice,
+                &strategy,
+                run_state,
+                &upgrade_plan.rest_vs_smith,
+                &repair_profile,
+            )
+        })
         .collect();
 
     CampfireDecisionContextV1 {
@@ -134,6 +143,7 @@ pub fn plan_campfire_decision_v1(
             },
             role: CampfirePlanRoleV1::StopFallback,
             score_hint: 0,
+            repair_priority: None,
             strategy_tag: None,
             confidence: 0.0,
             reasons: vec!["campfire compiler found no executable plan".to_string()],
@@ -196,6 +206,7 @@ fn campfire_candidate_plan(
             CampfirePlanRoleV1::InspectOnly
         },
         score_hint: campfire_candidate_score_hint(context, candidate),
+        repair_priority: candidate.repair_priority,
         strategy_tag: candidate.strategy_tag.clone(),
         confidence,
         reasons,
@@ -223,6 +234,7 @@ fn stop_candidate_plan(
             CampfirePlanRoleV1::StopFallback
         },
         score_hint: 0,
+        repair_priority: None,
         strategy_tag: None,
         confidence: 0.0,
         reasons: vec![reason],
@@ -295,9 +307,25 @@ fn compare_campfire_plan_candidates_v1(
 ) -> std::cmp::Ordering {
     campfire_plan_role_rank(left.role)
         .cmp(&campfire_plan_role_rank(right.role))
+        .then_with(|| {
+            campfire_repair_priority_rank(left.repair_priority)
+                .cmp(&campfire_repair_priority_rank(right.repair_priority))
+        })
         .then_with(|| right.score_hint.cmp(&left.score_hint))
         .then_with(|| right.confidence.total_cmp(&left.confidence))
         .then_with(|| left.plan_id.cmp(&right.plan_id))
+}
+
+fn campfire_repair_priority_rank(
+    priority: Option<crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1>,
+) -> u8 {
+    use crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1;
+
+    match priority {
+        Some(DeckRepairUpgradePriorityV1::NeededFunction) => 0,
+        Some(DeckRepairUpgradePriorityV1::Reliability) => 1,
+        None => 2,
+    }
 }
 
 fn campfire_plan_role_rank(role: CampfirePlanRoleV1) -> u8 {
@@ -313,6 +341,7 @@ fn candidate_evidence(
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     run_state: &RunState,
     rest_vs_smith: &crate::ai::upgrade_planner_v1::RestVsSmithPlanV1,
+    repair_profile: &crate::ai::deck_repair_profile_v1::DeckRepairProfileV1,
 ) -> CampfireCandidateEvidenceV1 {
     let choice = expanded.choice;
     let class = class_for_choice(choice);
@@ -347,13 +376,50 @@ fn candidate_evidence(
         .as_ref()
         .map(crate::ai::upgrade_planner_v1::upgrade_candidate_score_hint_v1);
     let upgrade_priority = upgrade_plan_score_hint;
-    let strategy_tag = upgrade_plan_candidate
+    let repair_candidate = match choice {
+        CampfireChoice::Smith(idx) => run_state.master_deck.get(idx).and_then(|card| {
+            repair_profile
+                .reliability_upgrades
+                .iter()
+                .find(|candidate| {
+                    candidate.deck_index == idx
+                        && candidate.uuid == card.uuid
+                        && candidate.card == card.id
+                })
+        }),
+        _ => None,
+    };
+    let repair_priority = repair_candidate.map(|candidate| candidate.priority);
+    let repair_strategy_tag = repair_candidate.map(|candidate| match candidate.priority {
+        crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1::NeededFunction => {
+            "deck_repair:needed_function".to_string()
+        }
+        crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1::Reliability => {
+            "deck_repair:reliability".to_string()
+        }
+    });
+    let upgrade_strategy_tag = upgrade_plan_candidate
         .as_ref()
         .and_then(crate::ai::upgrade_planner_v1::upgrade_candidate_strategy_tag_v1);
+    let has_important_upgrade_debt = upgrade_plan_candidate.as_ref().is_some_and(|candidate| {
+        candidate.urgency
+            >= crate::ai::upgrade_planner_v1::UpgradeDebtSeverityV1::ImportantBeforeBoss
+    });
+    let strategy_tag = match upgrade_strategy_tag {
+        Some(tag) if has_important_upgrade_debt && tag.starts_with("upgrade_debt:") => Some(tag),
+        other => repair_strategy_tag.clone().or(other),
+    };
     if let CampfireChoice::Smith(idx) = choice {
         evidence.extend(
             crate::ai::upgrade_planner_v1::upgrade_plan_evidence_for_deck_index_v1(run_state, idx),
         );
+        if let Some(repair) = repair_candidate {
+            evidence.push(format!("deck repair priority is {:?}", repair.priority));
+            evidence.push(format!("deck repair reasons are {:?}", repair.reasons));
+            if let Some(tag) = &repair_strategy_tag {
+                evidence.push(format!("deck repair tag is {tag}"));
+            }
+        }
     }
     if let Some(plan) = &expanded.deck_mutation_plan {
         evidence.extend(deck_mutation_plan_evidence(plan));
@@ -411,6 +477,7 @@ fn candidate_evidence(
         class,
         upgrade_priority,
         upgrade_plan_score_hint,
+        repair_priority,
         strategy_tag,
         deck_mutation_execute_allowed,
         deck_mutation_branch_allowed,
