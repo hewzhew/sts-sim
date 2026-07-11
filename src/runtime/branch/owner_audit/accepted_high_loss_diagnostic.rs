@@ -106,6 +106,21 @@ pub(super) fn capture_active_combat(
     .map(Some)
 }
 
+pub(super) fn extend_unique_diagnostics(
+    target: &mut Vec<AcceptedHighLossDiagnosticDraft>,
+    incoming: impl IntoIterator<Item = AcceptedHighLossDiagnosticDraft>,
+) {
+    for diagnostic in incoming {
+        if target
+            .iter()
+            .any(|existing| existing.identity == diagnostic.identity)
+        {
+            continue;
+        }
+        target.push(diagnostic);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +215,17 @@ mod tests {
         assert_eq!(draft.evidence.selected.hp_loss, 24);
         assert_eq!(draft.trajectory.action_count, 1);
         assert_eq!(draft.hard_hp_loss_limit, Some(26));
+    }
+
+    #[test]
+    fn extend_unique_diagnostics_deduplicates_combat_identity() {
+        let draft =
+            accepted_high_loss_diagnostic(capture(), "primary", &annotations(), true, Some(26))
+                .unwrap();
+        let mut diagnostics = Vec::new();
+
+        extend_unique_diagnostics(&mut diagnostics, vec![draft.clone(), draft]);
+
+        assert_eq!(diagnostics.len(), 1);
     }
 }

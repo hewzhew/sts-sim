@@ -1,6 +1,7 @@
 use sts_simulator::ai::strategy::decision_pipeline::DecisionCandidateKind;
 use sts_simulator::ai::strategy::shop_boss_preview::shop_boss_preview_bundles;
 
+use super::accepted_high_loss_diagnostic::extend_unique_diagnostics;
 use super::branch_path::{
     BranchPathCandidateSnapshot, BranchPathShopBossPreviewBundleSnapshot,
     BranchPathShopBossPreviewSnapshot, BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot,
@@ -49,6 +50,11 @@ pub(super) fn expand_registered_owner(
         let combat_search = advance.combat_search;
         let mut combat_search_history = branch.combat_search_history.clone();
         combat_search_history.extend(combat_search.clone());
+        let mut accepted_high_loss_diagnostics = branch.accepted_high_loss_diagnostics.clone();
+        extend_unique_diagnostics(
+            &mut accepted_high_loss_diagnostics,
+            advance.accepted_high_loss_diagnostics,
+        );
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: choice.key,
@@ -78,6 +84,7 @@ pub(super) fn expand_registered_owner(
             auto_steps: advance.auto_steps,
             combat_search,
             combat_search_history,
+            accepted_high_loss_diagnostics,
         });
     }
     children.extend(expand_shop_boss_preview_bundle_children(
@@ -153,6 +160,11 @@ fn expand_shop_boss_preview_bundle_children(
         let combat_search = advance.combat_search;
         let mut combat_search_history = branch.combat_search_history.clone();
         combat_search_history.extend(combat_search.clone());
+        let mut accepted_high_loss_diagnostics = branch.accepted_high_loss_diagnostics.clone();
+        extend_unique_diagnostics(
+            &mut accepted_high_loss_diagnostics,
+            advance.accepted_high_loss_diagnostics,
+        );
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: None,
@@ -180,6 +192,7 @@ fn expand_shop_boss_preview_bundle_children(
             auto_steps: advance.auto_steps,
             combat_search,
             combat_search_history,
+            accepted_high_loss_diagnostics,
         });
     }
     children

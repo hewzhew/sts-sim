@@ -723,6 +723,7 @@ mod tests {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
+            accepted_high_loss_diagnostics: Vec::new(),
         };
 
         let state = serde_json::to_value(BranchPathState::from_branch(&branch)).unwrap();

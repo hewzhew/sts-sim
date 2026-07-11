@@ -43,6 +43,7 @@ impl BranchRuntime {
                 auto_steps: advance.auto_steps,
                 combat_search: combat_search.clone(),
                 combat_search_history: combat_search,
+                accepted_high_loss_diagnostics: advance.accepted_high_loss_diagnostics,
             }]),
             1usize,
         )
@@ -88,6 +89,11 @@ mod tests {
 
         assert_eq!(frontier.len(), 1);
         assert_eq!(frontier.front().unwrap().id, 0);
+        assert!(frontier
+            .front()
+            .unwrap()
+            .accepted_high_loss_diagnostics
+            .is_empty());
         assert_eq!(next_branch_id, 1);
     }
 

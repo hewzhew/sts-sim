@@ -2,6 +2,7 @@ use sts_simulator::eval::run_control::{
     CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlSession,
 };
 
+use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
 use super::combat_search_report::CombatSearchPortfolioReport;
 pub(super) use sts_simulator::runtime::branch::{
@@ -19,4 +20,5 @@ pub(super) struct Branch {
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
     pub(super) combat_search_history: Vec<CombatSearchTraceSummary>,
+    pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }

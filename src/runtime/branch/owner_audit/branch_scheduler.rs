@@ -1,3 +1,4 @@
+use super::accepted_high_loss_diagnostic::extend_unique_diagnostics;
 use super::owner_model::{OwnerChoice, OwnerDecision};
 use super::run_deadline::RunDeadline;
 use super::{owners, runner, Args, Branch, BranchStatus};
@@ -30,6 +31,10 @@ pub(super) fn prepare_branch_work(
         branch
             .combat_search_history
             .extend(branch.combat_search.clone());
+        extend_unique_diagnostics(
+            &mut branch.accepted_high_loss_diagnostics,
+            advance.accepted_high_loss_diagnostics,
+        );
         expandable = generation < args.generations && branch.status.is_expandable_now();
         choices = if expandable {
             branch_owner_choices(&branch)

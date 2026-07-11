@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunControlSessionCheckpointV1};
 
+use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
 use super::run_contract::RunContract;
 use super::{Args, Branch, BranchStatus};
@@ -29,6 +30,8 @@ struct BranchCheckpoint {
     status: BranchStatus,
     #[serde(default)]
     combat_search_history: Vec<CombatSearchTraceSummary>,
+    #[serde(default)]
+    accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
 pub(super) fn save(
@@ -94,6 +97,7 @@ impl BranchCheckpoint {
             session,
             status: branch.status.clone(),
             combat_search_history: branch.combat_search_history.clone(),
+            accepted_high_loss_diagnostics: branch.accepted_high_loss_diagnostics.clone(),
         }
     }
 
@@ -108,6 +112,7 @@ impl BranchCheckpoint {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: self.combat_search_history,
+            accepted_high_loss_diagnostics: self.accepted_high_loss_diagnostics,
         })
     }
 }
