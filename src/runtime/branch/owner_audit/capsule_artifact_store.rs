@@ -418,15 +418,7 @@ impl CapsuleArtifactStore {
             .collect::<Vec<_>>();
         paths.sort();
         for path in paths {
-            let schema = if path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".capture.json"))
-            {
-                "CombatCaptureV1"
-            } else {
-                "accepted_high_loss_combat_evidence_v1"
-            };
+            let schema = accepted_combat_diagnostic_schema(&path);
             summary.record_ref(ArtifactRef::new(
                 ArtifactKind::AcceptedCombatDiagnostic,
                 path,
@@ -444,6 +436,28 @@ impl CapsuleArtifactStore {
             "owner_audit_runtime",
         )
     }
+}
+
+fn accepted_combat_diagnostic_schema(path: &std::path::Path) -> String {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".capture.json"))
+    {
+        return "CombatCaptureV1".to_string();
+    }
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|payload| serde_json::from_str::<Value>(&payload).ok())
+        .and_then(|value| value.get("schema")?.as_str().map(str::to_string))
+        .filter(|schema| {
+            matches!(
+                schema.as_str(),
+                "accepted_high_loss_combat_evidence_v1"
+                    | "accepted_high_loss_combat_evidence_v2"
+            )
+        })
+        .unwrap_or_else(|| "accepted_high_loss_combat_evidence_v1".to_string())
 }
 
 #[derive(Serialize)]
@@ -504,4 +518,38 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod accepted_diagnostic_schema_tests {
+    use super::*;
+
+    #[test]
+    fn accepted_diagnostic_schema_reads_v1_and_v2_sidecars() {
+        let root = std::env::temp_dir().join("accepted_diagnostic_schema_versions");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let v1 = root.join("old.evidence.json");
+        let v2 = root.join("new.evidence.json");
+        std::fs::write(
+            &v1,
+            r#"{"schema":"accepted_high_loss_combat_evidence_v1"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &v2,
+            r#"{"schema":"accepted_high_loss_combat_evidence_v2"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            accepted_combat_diagnostic_schema(&v1),
+            "accepted_high_loss_combat_evidence_v1"
+        );
+        assert_eq!(
+            accepted_combat_diagnostic_schema(&v2),
+            "accepted_high_loss_combat_evidence_v2"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

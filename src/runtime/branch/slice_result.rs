@@ -518,9 +518,23 @@ mod accepted_combat_diagnostic_tests {
             "accepted_high_loss_combat_evidence_v1",
             "owner_audit_runtime",
         ));
+        summary.record_ref(ArtifactRef::new(
+            ArtifactKind::AcceptedCombatDiagnostic,
+            "two.evidence.json",
+            "accepted_high_loss_combat_evidence_v2",
+            "owner_audit_runtime",
+        ));
 
-        assert_eq!(summary.accepted_combat_diagnostic_refs.len(), 2);
-        assert_eq!(summary.refs().len(), 2);
+        assert_eq!(summary.accepted_combat_diagnostic_refs.len(), 3);
+        assert_eq!(summary.refs().len(), 3);
+        assert_eq!(
+            summary.accepted_combat_diagnostic_refs[1].schema,
+            "accepted_high_loss_combat_evidence_v1"
+        );
+        assert_eq!(
+            summary.accepted_combat_diagnostic_refs[2].schema,
+            "accepted_high_loss_combat_evidence_v2"
+        );
     }
 }
 
