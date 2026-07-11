@@ -1,5 +1,5 @@
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
-use crate::ai::deck_startup_profile_v1::deck_startup_profile_v1;
+use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, PyramidApparitionCoverageV1};
 use crate::ai::strategic::run_debt_projection_for_relic_v1;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
@@ -64,6 +64,10 @@ pub enum BossRelicAdmissionReason {
         contracts: usize,
     },
     IntroducesStartupLiability,
+    PyramidApparitionCoverage(PyramidApparitionCoverageV1),
+    OpeningActionBudgetRequired {
+        generated_options: u8,
+    },
     Skip,
     Unknown,
 }
@@ -212,14 +216,20 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
-    let mut lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
+    let lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
     let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
-    let introduces_startup_liability = introduces_known_startup_liability(run_state, relic);
-    let burden = if introduces_startup_liability {
-        reasons.push(BossRelicAdmissionReason::IntroducesStartupLiability);
-        lane = BossRelicAdmissionLane::Probe;
-        BossRelicAdmissionBurden::IntroducedStartupLiability
-    } else if debt_projection.added_contracts.is_empty() {
+    let projected_startup = projected_startup_profile(run_state, relic);
+    if relic == RelicId::RunicPyramid {
+        reasons.push(BossRelicAdmissionReason::PyramidApparitionCoverage(
+            projected_startup.pyramid_apparition_coverage,
+        ));
+        if projected_startup.has_pyramid_choker_generated_opening_tradeoff {
+            reasons.push(BossRelicAdmissionReason::OpeningActionBudgetRequired {
+                generated_options: projected_startup.opening_generated_option_count,
+            });
+        }
+    }
+    let burden = if debt_projection.added_contracts.is_empty() {
         BossRelicAdmissionBurden::None
     } else {
         reasons.push(BossRelicAdmissionReason::AddsRunDebt {
@@ -237,15 +247,15 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
     }
 }
 
-fn introduces_known_startup_liability(run_state: &RunState, relic: RelicId) -> bool {
-    let current = deck_startup_profile_v1(run_state);
+fn projected_startup_profile(
+    run_state: &RunState,
+    relic: RelicId,
+) -> crate::ai::deck_startup_profile_v1::DeckStartupProfileV1 {
     let mut projected_run = run_state.clone();
     if !projected_run.relics.iter().any(|state| state.id == relic) {
         projected_run.relics.push(RelicState::new(relic));
     }
-    let projected = deck_startup_profile_v1(&projected_run);
-
-    !current.has_pyramid_unupgraded_apparition && projected.has_pyramid_unupgraded_apparition
+    deck_startup_profile_v1(&projected_run)
 }
 
 fn lane_for_relic(
@@ -445,6 +455,12 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
             format!("adds-run-debt:{contracts}")
         }
         BossRelicAdmissionReason::IntroducesStartupLiability => "startup-liability".to_string(),
+        BossRelicAdmissionReason::PyramidApparitionCoverage(coverage) => {
+            format!("apparition-coverage:{}", coverage.label())
+        }
+        BossRelicAdmissionReason::OpeningActionBudgetRequired { generated_options } => {
+            format!("opening-action-budget:{generated_options}")
+        }
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
@@ -551,46 +567,68 @@ mod tests {
     }
 
     #[test]
-    fn pyramid_apparition_liability_is_projected_without_mutating_run() {
+    fn pyramid_reports_repairable_coverage_without_mutating_run_or_adding_burden() {
         let mut run = RunState::new(1552225673, 0, false, "Ironclad");
         run.act_num = 2;
         run.master_deck
             .push(CombatCard::new(CardId::Apparition, 1001));
+        let mut armaments = CombatCard::new(CardId::Armaments, 1002);
+        armaments.upgrades = 1;
+        run.master_deck.push(armaments);
         let relic_count = run.relics.len();
 
         let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
 
         assert_eq!(pyramid.lane, BossRelicAdmissionLane::Probe);
-        assert_eq!(
-            pyramid.burden,
-            BossRelicAdmissionBurden::IntroducedStartupLiability
-        );
+        assert_eq!(pyramid.burden, BossRelicAdmissionBurden::None);
         assert!(pyramid
             .reasons
+            .contains(&BossRelicAdmissionReason::PyramidApparitionCoverage(
+                PyramidApparitionCoverageV1::CombatRepairAvailable,
+            )));
+        assert!(!pyramid
+            .reasons
             .contains(&BossRelicAdmissionReason::IntroducesStartupLiability));
+        assert!(render_boss_relic_admission_compact(&pyramid)
+            .contains("apparition-coverage:combat-repair"));
         assert_eq!(run.relics.len(), relic_count);
-        assert!(!run
-            .relics
-            .iter()
-            .any(|relic| relic.id == RelicId::RunicPyramid));
     }
 
     #[test]
-    fn same_lane_prefers_no_burden_then_run_debt_then_startup_liability() {
+    fn repairable_pyramid_competes_normally_inside_probe_lane() {
         let mut run = RunState::new(1552225673, 0, false, "Ironclad");
         run.act_num = 2;
         run.master_deck
             .push(CombatCard::new(CardId::Apparition, 1001));
+        let mut armaments = CombatCard::new(CardId::Armaments, 1002);
+        armaments.upgrades = 1;
+        run.master_deck.push(armaments);
 
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
         let bark = assess_boss_relic_admission(&run, RelicId::SacredBark);
         let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+
+        assert!(boss_relic_admission_order_rank(&pyramid) < boss_relic_admission_order_rank(&bark));
+        assert!(boss_relic_admission_order_rank(&bark) < boss_relic_admission_order_rank(&sozu));
+    }
+
+    #[test]
+    fn pyramid_reports_choker_generated_opening_budget_as_evidence() {
+        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.relics = vec![
+            RelicState::new(RelicId::VelvetChoker),
+            RelicState::new(RelicId::Enchiridion),
+        ];
+
         let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
 
-        assert_eq!(bark.lane, BossRelicAdmissionLane::Probe);
-        assert_eq!(sozu.lane, BossRelicAdmissionLane::Probe);
-        assert_eq!(pyramid.lane, BossRelicAdmissionLane::Probe);
-        assert!(boss_relic_admission_order_rank(&bark) < boss_relic_admission_order_rank(&sozu));
-        assert!(boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&pyramid));
+        assert!(pyramid
+            .reasons
+            .contains(&BossRelicAdmissionReason::OpeningActionBudgetRequired {
+                generated_options: 1,
+            }));
+        assert_eq!(pyramid.burden, BossRelicAdmissionBurden::None);
     }
 
     #[test]

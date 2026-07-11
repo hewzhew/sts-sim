@@ -22,6 +22,18 @@ impl Default for PyramidApparitionCoverageV1 {
     }
 }
 
+impl PyramidApparitionCoverageV1 {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::NotApplicable => "not-applicable",
+            Self::Ready => "ready",
+            Self::CombatRepairAvailable => "combat-repair",
+            Self::FutureUpgradeWindow => "future-upgrade-window",
+            Self::Limited => "limited",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeckStartupProfileV1 {
     pub setup_debt: u8,
