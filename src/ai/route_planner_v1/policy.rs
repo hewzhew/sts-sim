@@ -81,7 +81,7 @@ fn build_route_candidate_trace_v1(
     config: &RoutePlannerConfigV1,
     target: &super::types::MapRouteTargetV1,
 ) -> RouteCandidateTraceV1 {
-    let horizon_nodes = 15_usize.saturating_sub(target.y.max(0) as usize);
+    let horizon_nodes = 15_usize.saturating_sub(target.y.max(0) as usize).max(1);
     let family = build_route_path_family_from_target(
         run_state,
         target.x,

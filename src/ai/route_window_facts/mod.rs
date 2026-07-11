@@ -391,6 +391,13 @@ fn collect_path_suffixes(
         return;
     }
     let Some(node) = node_at(run_state, x, y) else {
+        if x == 0 && y == 15 && run_state.map.can_travel_to(0, 15, false) {
+            prefix.push(RouteWindowNode {
+                x,
+                y,
+                room_type: Some(RoomType::MonsterRoomBoss),
+            });
+        }
         paths.push(RouteWindowPath { nodes: prefix });
         return;
     };

@@ -607,6 +607,37 @@ fn route_value_uses_one_real_suffix_instead_of_cross_path_maxima() {
     );
 }
 
+#[test]
+fn synthetic_boss_target_is_included_in_the_danger_segment() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    run.current_hp = 80;
+    run.max_hp = 80;
+    run.map = MapState::new(
+        (0..15)
+            .map(|y| vec![linked_node(0, y, RoomType::RestRoom, &[])])
+            .collect(),
+    );
+    run.map.current_x = 0;
+    run.map.current_y = 14;
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let boss = selected_candidate(&trace);
+    let viability = boss
+        .viability
+        .representative
+        .as_ref()
+        .expect("synthetic boss target should have a risk projection");
+
+    assert_eq!(boss.target.room_type, Some(RoomType::MonsterRoomBoss));
+    assert_eq!(viability.cumulative_hp_loss_p90, 60.0);
+    assert_eq!(boss.value_factors.hp_loss_p90, 60.0);
+}
+
 fn replace_master_deck(run: &mut RunState, cards: &[CardId]) {
     run.master_deck = cards
         .iter()

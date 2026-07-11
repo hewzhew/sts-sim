@@ -1,8 +1,9 @@
 use crate::ai::route_planner_v1::{
     plan_route_decision_v1, render_route_decision_trace_v1, MapDecisionPacketV1,
-    RouteCandidateOrderingV1, RouteEvaluationCalibrationStatusV1, RouteEvaluationSourceV1,
-    RoutePlannerConfigV1, RouteProjectionCoverageV1, MAP_DECISION_PACKET_SCHEMA_NAME,
-    ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    RouteCandidateOrderingV1, RouteDecisionTraceV1, RouteEvaluationCalibrationStatusV1,
+    RouteEvaluationSourceV1, RoutePlannerConfigV1, RouteProjectionCoverageV1,
+    MAP_DECISION_PACKET_SCHEMA_NAME, MAP_DECISION_PACKET_SCHEMA_VERSION,
+    ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
 };
 use crate::state::core::EngineState;
 use crate::state::RunState;
@@ -18,6 +19,8 @@ fn route_planner_trace_is_behavior_policy_not_teacher_label() {
     );
 
     assert_eq!(trace.schema_name, ROUTE_DECISION_TRACE_SCHEMA_NAME);
+    assert_eq!(trace.schema_version, ROUTE_DECISION_TRACE_SCHEMA_VERSION);
+    assert_eq!(trace.schema_version, 3);
     assert_eq!(trace.label_role, "behavior_policy_not_teacher");
     assert!(!trace.candidates.is_empty());
     assert!(trace.selected_index.is_some());
@@ -68,6 +71,11 @@ fn route_planner_trace_serializes_structured_evidence() {
     assert!(value["candidates"][0]["score_terms"]["elite_prep"].is_number());
     assert!(value["candidates"][0]["needs"].is_object());
     assert!(value["candidates"][0]["path_summary"]["first_elite"].is_object());
+    assert!(value["candidates"][0]["viability"].is_object());
+    assert!(
+        value["candidates"][0]["viability"]["representative"]["projected_hp_after_segment"]
+            .is_number()
+    );
 }
 
 #[test]
@@ -83,6 +91,8 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
     let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
 
     assert_eq!(packet.schema_name, MAP_DECISION_PACKET_SCHEMA_NAME);
+    assert_eq!(packet.schema_version, MAP_DECISION_PACKET_SCHEMA_VERSION);
+    assert_eq!(packet.schema_version, 2);
     assert_eq!(packet.selected_index, trace.selected_index);
     assert_eq!(packet.candidates.len(), trace.candidates.len());
     assert_eq!(
@@ -111,6 +121,10 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
         assert_eq!(
             packet_candidate.projection.path_summary,
             trace_candidate.path_summary
+        );
+        assert_eq!(
+            packet_candidate.projection.viability,
+            trace_candidate.viability
         );
         assert_eq!(
             packet_candidate.projection.metadata.path_budget,
@@ -158,4 +172,30 @@ fn route_planner_render_shows_first_elite_segment_evidence() {
 
     assert!(rendered.contains("elite_prep="));
     assert!(rendered.contains("first_elite="));
+    assert!(rendered.contains("projected HP after visible danger segment"));
+}
+
+#[test]
+fn route_trace_defaults_missing_legacy_viability_evidence() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let mut value = serde_json::to_value(&trace).expect("trace should serialize");
+    value["candidates"][0]
+        .as_object_mut()
+        .expect("candidate should be an object")
+        .remove("viability");
+
+    let restored: RouteDecisionTraceV1 =
+        serde_json::from_value(value).expect("legacy route trace should deserialize");
+
+    assert_eq!(
+        restored.candidates[0].viability,
+        Default::default(),
+        "missing viability evidence should remain readable as unknown/default"
+    );
 }

@@ -8,7 +8,7 @@ use super::features::{
 use super::score::{NeedVectorV1, RouteScoreTermsV1, RouteValueFactorsV1};
 
 pub const ROUTE_DECISION_TRACE_SCHEMA_NAME: &str = "RouteDecisionTraceV1";
-pub const ROUTE_DECISION_TRACE_SCHEMA_VERSION: u32 = 2;
+pub const ROUTE_DECISION_TRACE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RouteDecisionTraceV1 {

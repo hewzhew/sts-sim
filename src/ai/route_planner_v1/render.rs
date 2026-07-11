@@ -76,6 +76,23 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
             &mut out,
             format!("    path: {}", path_line(&candidate.path_summary)),
         );
+        if let Some(viability) = candidate.viability.representative.as_ref() {
+            push_line(
+                &mut out,
+                format!(
+                    "    reliability: observed_paths={} surviving_paths={} coverage={} projected HP after visible danger segment={:.1} cumulative_p90_loss={:.1}",
+                    candidate.viability.observed_path_count,
+                    candidate.viability.surviving_path_count,
+                    if candidate.viability.coverage_complete {
+                        "complete"
+                    } else {
+                        "partial"
+                    },
+                    viability.projected_hp_after_segment,
+                    viability.cumulative_hp_loss_p90,
+                ),
+            );
+        }
     }
     push_line(&mut out, "");
     match trace.selected_index {
