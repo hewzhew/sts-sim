@@ -1,3 +1,4 @@
+pub mod action_supply_v1;
 pub mod analysis;
 pub mod block_plan_profile_v1;
 pub mod boss_matchup;
