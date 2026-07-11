@@ -1,8 +1,8 @@
 use crate::ai::deck_mutation_compiler_v1::{
     best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
-    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
-    DeckMutationPlanRoleV1, DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
-    TransformRandomAdditionBandV1, TransformVarianceRiskV1,
+    deck_removal_target_snapshots_v1, render_compiled_deck_mutation_decision_v1,
+    DeckMutationCompilerRequestV1, DeckMutationPlanRoleV1, DeckMutationTargetLossTierV1,
+    DuplicateTargetRoleV1, TransformRandomAdditionBandV1, TransformVarianceRiskV1,
 };
 use crate::ai::upgrade_planner_v1::{
     upgrade_candidate_for_deck_index_v1, upgrade_candidate_score_hint_v1,
@@ -11,6 +11,22 @@ use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::run::RunState;
+
+#[test]
+fn removal_snapshots_preserve_redundant_functional_loss_tier() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.master_deck = vec![
+        CombatCard::new(CardId::Flex, 1),
+        CombatCard::new(CardId::Flex, 2),
+    ];
+
+    let snapshots = deck_removal_target_snapshots_v1(&run);
+
+    assert_eq!(snapshots.len(), 2);
+    assert!(snapshots.iter().all(|snapshot| {
+        snapshot.target_loss.tier == DeckMutationTargetLossTierV1::RedundantFunctional
+    }));
+}
 
 #[test]
 fn compiler_marks_functional_purge_inspect_only_when_low_value_targets_exist() {

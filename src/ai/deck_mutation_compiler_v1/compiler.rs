@@ -184,6 +184,25 @@ pub fn deck_mutation_target_class_for_card_v1(
     target_class_for_card_mutation(reason, card)
 }
 
+pub fn deck_removal_target_snapshots_v1(run_state: &RunState) -> Vec<DeckMutationCardSnapshotV1> {
+    run_state
+        .master_deck
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| crate::state::core::master_deck_card_is_purgeable(card))
+        .filter_map(|(deck_index, _)| {
+            exact_target_for_deck_index(
+                run_state,
+                RunPendingChoiceReason::PurgeNonBottled,
+                deck_index,
+                true,
+                None,
+            )
+            .map(|target| target.card)
+        })
+        .collect()
+}
+
 pub fn best_duplicate_target_for_shop_v1(
     run_state: &RunState,
 ) -> Option<DuplicateTargetEvaluationV1> {

@@ -8,6 +8,7 @@ mod tests;
 pub use compiler::{
     best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
     compile_direct_deck_mutation_plan_candidate_v1, deck_mutation_target_class_for_card_v1,
+    deck_removal_target_snapshots_v1,
 };
 pub use render::render_compiled_deck_mutation_decision_v1;
 pub use types::{
