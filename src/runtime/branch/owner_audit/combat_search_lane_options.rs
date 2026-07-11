@@ -111,7 +111,7 @@ fn lane_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::Boss,
-            boss_potion_rescue_child_rollout_plugin(session),
+            CombatSearchChildRolloutPluginId::LazyOnPop,
         )
         .with_rollout_plugin(CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion)
         .with_potion_policy(CombatSearchV2PotionPolicy::All)
@@ -194,16 +194,6 @@ fn profile_with_budget(
         },
         acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
         artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
-    }
-}
-
-fn boss_potion_rescue_child_rollout_plugin(
-    session: &RunControlSession,
-) -> CombatSearchChildRolloutPluginId {
-    if session.run_state.act_num >= 3 {
-        CombatSearchChildRolloutPluginId::LazyOnPop
-    } else {
-        CombatSearchChildRolloutPluginId::Immediate
     }
 }
 
@@ -500,6 +490,36 @@ mod tests {
         assert_eq!(
             config.child_rollout_policy,
             sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+        );
+    }
+
+    #[test]
+    fn act2_boss_potion_rescue_uses_lazy_complete_win_profile() {
+        let mut session = session_with_combat_stakes(true, false);
+        session.run_state.act_num = 2;
+        let request = CombatSearchRequest::from_session(&session, test_args());
+        let lane = CombatSearchLane::new(CombatSearchLaneKind::BossPotionRescue);
+        let options = lane_options(lane, &request, &session);
+        let config = options.search.profile.expect("profile").to_config();
+
+        assert_eq!(config.max_nodes, test_args().boss_search_nodes);
+        assert_eq!(
+            config.wall_time.map(|duration| duration.as_millis() as u64),
+            Some(test_args().boss_search_ms)
+        );
+        assert_eq!(
+            config.child_rollout_policy,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::LazyOnPop
+        );
+        assert_eq!(
+            config.rollout_policy,
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+        );
+        assert_eq!(config.potion_policy, CombatSearchV2PotionPolicy::All);
+        assert_eq!(config.max_potions_used, Some(3));
+        assert_eq!(
+            lane.acceptance_plugin(),
+            sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly
         );
     }
 
