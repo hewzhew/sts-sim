@@ -719,6 +719,9 @@ fn upgrade_redundancy_group_v1(card: CardId) -> CardAnalysisUpgradeRedundancyGro
 }
 
 fn upgrade_stack_behavior_v1(card: CardId) -> CardAnalysisUpgradeStackBehaviorV1 {
+    if card == CardId::Apparition {
+        return CardAnalysisUpgradeStackBehaviorV1::DensityPositive;
+    }
     match upgrade_redundancy_group_v1(card) {
         CardAnalysisUpgradeRedundancyGroupV1::WeakApplication
         | CardAnalysisUpgradeRedundancyGroupV1::VulnerableApplication => {

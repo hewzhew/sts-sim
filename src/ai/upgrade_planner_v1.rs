@@ -1050,6 +1050,27 @@ mod tests {
     }
 
     #[test]
+    fn repeated_apparition_upgrades_keep_independent_reliability_value() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck = (0..5)
+            .map(|index| CombatCard::new(CardId::Apparition, 100 + index))
+            .collect();
+
+        let plan = plan_upgrades_v1(&run);
+        let apparitions = plan
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.card == CardId::Apparition)
+            .collect::<Vec<_>>();
+
+        assert_eq!(apparitions.len(), 5);
+        assert!(apparitions.iter().all(|candidate| {
+            candidate.redundancy.stack_behavior == StackBehaviorV1::DensityPositive
+                && !candidate.roles.contains(&UpgradeRoleV1::LowMarginalRepeat)
+        }));
+    }
+
+    #[test]
     fn upgrade_planner_marks_second_clothesline_as_low_marginal_repeat() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.act_num = 2;

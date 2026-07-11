@@ -211,28 +211,37 @@ fn campfire_policy_uses_full_hp_rest_as_empty_campfire_exit() {
 fn reliability_repair_smith_precedes_generic_growth_when_safe() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = run_state.max_hp;
-    run_state.master_deck = vec![
-        crate::runtime::combat::CombatCard::new(CardId::Cleave, 1),
-        crate::runtime::combat::CombatCard::new(CardId::Apparition, 2),
-        crate::runtime::combat::CombatCard::new(CardId::Apparition, 3),
-    ];
+    run_state.master_deck =
+        std::iter::once(crate::runtime::combat::CombatCard::new(CardId::Cleave, 1))
+            .chain((0..5).map(|index| {
+                crate::runtime::combat::CombatCard::new(CardId::Apparition, 100 + index)
+            }))
+            .collect();
+    let is_apparition_smith = |choice: CampfireChoice| match choice {
+        CampfireChoice::Smith(index) => run_state
+            .master_deck
+            .get(index)
+            .is_some_and(|card| card.id == CardId::Apparition),
+        _ => false,
+    };
 
     let context = build_campfire_decision_context_v1(&run_state, vec![CampfireChoice::Smith(0)]);
     assert!(context.candidates.iter().any(|candidate| {
-        matches!(candidate.choice, CampfireChoice::Smith(1 | 2))
+        is_apparition_smith(candidate.choice)
             && candidate.repair_priority == Some(DeckRepairUpgradePriorityV1::Reliability)
             && candidate.strategy_tag.as_deref() == Some("deck_repair:reliability")
     }));
 
     let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
 
-    assert!(matches!(
-        decision.action,
-        CampfirePolicyActionV1::Smith {
-            deck_index: 1 | 2,
-            ..
-        }
-    ));
+    let selected_index = match decision.action {
+        CampfirePolicyActionV1::Smith { deck_index, .. } => deck_index,
+        other => panic!("expected Apparition Smith, got {other:?}"),
+    };
+    assert!(run_state
+        .master_deck
+        .get(selected_index)
+        .is_some_and(|card| card.id == CardId::Apparition));
     assert_eq!(
         decision.selected_plan.repair_priority,
         Some(DeckRepairUpgradePriorityV1::Reliability)
@@ -244,11 +253,12 @@ fn rest_favored_still_blocks_reliability_repair_smith() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = 35;
     run_state.max_hp = 80;
-    run_state.master_deck = vec![
-        crate::runtime::combat::CombatCard::new(CardId::Cleave, 1),
-        crate::runtime::combat::CombatCard::new(CardId::Apparition, 2),
-        crate::runtime::combat::CombatCard::new(CardId::Apparition, 3),
-    ];
+    run_state.master_deck =
+        std::iter::once(crate::runtime::combat::CombatCard::new(CardId::Cleave, 1))
+            .chain((0..5).map(|index| {
+                crate::runtime::combat::CombatCard::new(CardId::Apparition, 100 + index)
+            }))
+            .collect();
 
     let context = build_campfire_decision_context_v1(
         &run_state,
