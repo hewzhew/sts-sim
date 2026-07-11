@@ -1,10 +1,8 @@
+use super::accepted_combat_attrition::{accepted_combat_attrition_v1, AcceptedCombatAttritionV1};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use super::accepted_combat_attrition::{
-    accepted_combat_attrition_v1, AcceptedCombatAttritionV1,
-};
 use sts_simulator::eval::combat_capture::{
     capture_combat_position_from_auto_run_v1, save_combat_capture_v1, CombatCaptureV1,
 };
@@ -72,13 +70,9 @@ pub(super) fn high_loss_trigger(
     observed_combat_drawdown: i32,
 ) -> bool {
     let max_hp = i64::from(max_hp.max(1));
-    [
-        original_hp_loss,
-        selected_hp_loss,
-        observed_combat_drawdown,
-    ]
-    .into_iter()
-    .any(|loss| i64::from(loss.max(0)).saturating_mul(4) >= max_hp)
+    [original_hp_loss, selected_hp_loss, observed_combat_drawdown]
+        .into_iter()
+        .any(|loss| i64::from(loss.max(0)).saturating_mul(4) >= max_hp)
 }
 
 pub(super) fn accepted_high_loss_diagnostic(
@@ -95,11 +89,8 @@ pub(super) fn accepted_high_loss_diagnostic(
     let trajectory = combat_automation_trajectories_v1(annotations)
         .find(|trajectory| trajectory.source == CombatAutomationTrajectorySource::SearchCombat)
         .map(CombatAutomationTrajectoryRecordV1::from_ref)?;
-    let attrition = accepted_combat_attrition_v1(
-        capture.summary.player_hp,
-        &evidence.selected,
-        &trajectory,
-    );
+    let attrition =
+        accepted_combat_attrition_v1(capture.summary.player_hp, &evidence.selected, &trajectory);
     if !high_loss_trigger(
         capture.summary.player_max_hp,
         evidence.original.hp_loss,
@@ -432,11 +423,7 @@ mod tests {
         assert_eq!(evidence["attrition"]["start_hp"], 44);
         assert_eq!(evidence["attrition"]["lowest_observed_hp"], 8);
         assert_eq!(
-            written
-                .attrition
-                .as_ref()
-                .unwrap()
-                .persistent_net_hp_loss,
+            written.attrition.as_ref().unwrap().persistent_net_hp_loss,
             24
         );
         assert_eq!(evidence["label_role"], "diagnostic_not_teacher_label");

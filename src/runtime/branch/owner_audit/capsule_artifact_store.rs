@@ -453,8 +453,7 @@ fn accepted_combat_diagnostic_schema(path: &std::path::Path) -> String {
         .filter(|schema| {
             matches!(
                 schema.as_str(),
-                "accepted_high_loss_combat_evidence_v1"
-                    | "accepted_high_loss_combat_evidence_v2"
+                "accepted_high_loss_combat_evidence_v1" | "accepted_high_loss_combat_evidence_v2"
             )
         })
         .unwrap_or_else(|| "accepted_high_loss_combat_evidence_v1".to_string())
@@ -531,16 +530,8 @@ mod accepted_diagnostic_schema_tests {
         std::fs::create_dir_all(&root).unwrap();
         let v1 = root.join("old.evidence.json");
         let v2 = root.join("new.evidence.json");
-        std::fs::write(
-            &v1,
-            r#"{"schema":"accepted_high_loss_combat_evidence_v1"}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            &v2,
-            r#"{"schema":"accepted_high_loss_combat_evidence_v2"}"#,
-        )
-        .unwrap();
+        std::fs::write(&v1, r#"{"schema":"accepted_high_loss_combat_evidence_v1"}"#).unwrap();
+        std::fs::write(&v2, r#"{"schema":"accepted_high_loss_combat_evidence_v2"}"#).unwrap();
 
         assert_eq!(
             accepted_combat_diagnostic_schema(&v1),

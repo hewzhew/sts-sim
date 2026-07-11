@@ -47,9 +47,8 @@ mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
     use sts_simulator::eval::run_control::{
-        CombatAutomationActionV1, CombatAutomationStepStateV1,
-        CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-        CombatSearchTerminalLineSummary,
+        CombatAutomationActionV1, CombatAutomationStepStateV1, CombatAutomationTrajectoryRecordV1,
+        CombatAutomationTrajectorySource, CombatSearchTerminalLineSummary,
     };
     use sts_simulator::state::core::ClientInput;
 
