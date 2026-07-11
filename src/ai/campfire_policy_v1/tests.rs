@@ -2,10 +2,13 @@ use crate::ai::campfire_policy_v1::{
     build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanRoleV1,
     CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
 };
+use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
 use crate::ai::deck_repair_profile_v1::DeckRepairUpgradePriorityV1;
+use crate::ai::upgrade_planner_v1::{plan_upgrades_v1, CombatUpgradeCreditV1, UpgradeVerdictV1};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::{RelicId, RelicState};
+use crate::runtime::combat::CombatCard;
 use crate::state::core::CampfireChoice;
 use crate::state::map::{MapEdge, MapRoomNode, MapState, RoomType};
 use crate::state::run::RunState;
@@ -274,6 +277,56 @@ fn rest_favored_still_blocks_reliability_repair_smith() {
         .candidate_plans
         .iter()
         .all(|candidate| { candidate.repair_priority.is_none() || !candidate.execute_autopilot }));
+}
+
+#[test]
+fn combat_repairable_transitional_attack_no_longer_clears_smith_gate() {
+    let mut baseline = RunState::new(1, 0, false, "Ironclad");
+    baseline.current_hp = baseline.max_hp;
+    baseline.master_deck = vec![CombatCard::new(CardId::SeverSoul, 1001)];
+
+    let baseline_context =
+        build_campfire_decision_context_v1(&baseline, vec![CampfireChoice::Smith(0)]);
+    let baseline_decision =
+        plan_campfire_decision_v1(&baseline_context, &CampfirePolicyConfigV1::default());
+    assert!(
+        matches!(
+            baseline_decision.action,
+            CampfirePolicyActionV1::Smith { .. }
+        ),
+        "baseline action={:?} candidates={:?}",
+        baseline_decision.action,
+        baseline_decision.context.candidates
+    );
+
+    let mut covered = baseline.clone();
+    let mut armaments_plus = CombatCard::new(CardId::Armaments, 1002);
+    armaments_plus.upgrades = 1;
+    covered.master_deck.insert(0, armaments_plus);
+
+    let upgrade_plan = plan_upgrades_v1(&covered);
+    let sever_soul = upgrade_plan
+        .candidates
+        .iter()
+        .find(|candidate| candidate.card == CardId::SeverSoul)
+        .expect("Sever Soul should remain an upgrade candidate");
+    assert_eq!(sever_soul.verdict, UpgradeVerdictV1::Defer);
+    assert!(matches!(
+        sever_soul.combat_upgrade_credit,
+        CombatUpgradeCreditV1::PriorityReduced {
+            scope: CombatUpgradeScopeV1::WholeHand,
+            ..
+        }
+    ));
+
+    let covered_context =
+        build_campfire_decision_context_v1(&covered, vec![CampfireChoice::Smith(1)]);
+    let covered_decision =
+        plan_campfire_decision_v1(&covered_context, &CampfirePolicyConfigV1::default());
+    assert!(matches!(
+        covered_decision.action,
+        CampfirePolicyActionV1::Stop { .. }
+    ));
 }
 
 fn install_visible_rest_route(run_state: &mut RunState) {

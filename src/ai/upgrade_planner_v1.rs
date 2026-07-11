@@ -6,6 +6,9 @@ use crate::ai::card_analysis_v1::{
     card_analysis_profile_v1, CardAnalysisDeckSourceV1, CardAnalysisProfileV1,
     CardAnalysisUpgradeRedundancyGroupV1, CardAnalysisUpgradeStackBehaviorV1,
 };
+use crate::ai::combat_upgrade_coverage_v1::{
+    combat_upgrade_coverage_profile_v1, CombatUpgradeCoverageProfileV1, CombatUpgradeScopeV1,
+};
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
@@ -14,6 +17,7 @@ use crate::state::run::RunState;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpgradePlanV1 {
+    pub combat_upgrade_coverage: CombatUpgradeCoverageProfileV1,
     pub candidates: Vec<UpgradeCandidateV1>,
     pub debt_ledger: UpgradeDebtLedgerV1,
     pub rest_vs_smith: RestVsSmithPlanV1,
@@ -75,6 +79,8 @@ pub struct UpgradeCandidateV1 {
     pub upgrades: u8,
     pub label: String,
     pub mechanical_delta: UpgradeMechanicalDeltaV1,
+    pub combat_upgrade_class: CombatUpgradeCandidateClassV1,
+    pub combat_upgrade_credit: CombatUpgradeCreditV1,
     pub roles: Vec<UpgradeRoleV1>,
     pub redundancy: RedundancyProfileV1,
     pub pays_debts: Vec<UpgradeDebtKindV1>,
@@ -117,6 +123,26 @@ pub struct UpgradeMechanicalDeltaV1 {
     pub ethereal_removed_delta: bool,
     pub innate_delta: bool,
     pub notes: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatUpgradeCandidateClassV1 {
+    OrdinaryStat,
+    TimingSensitive,
+    NoCombatCredit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatUpgradeCreditV1 {
+    None,
+    EvidenceOnly {
+        scope: CombatUpgradeScopeV1,
+    },
+    PriorityReduced {
+        scope: CombatUpgradeScopeV1,
+        previous_urgency: UpgradeDebtSeverityV1,
+        resulting_urgency: UpgradeDebtSeverityV1,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -235,10 +261,12 @@ impl UpgradeRoleV1 {
 }
 
 pub fn plan_upgrades_v1(run_state: &RunState) -> UpgradePlanV1 {
+    let combat_upgrade_coverage = combat_upgrade_coverage_profile_v1(run_state);
     let mut candidates = enumerate_upgrade_candidates(run_state);
     let debt_ledger = build_upgrade_debt_ledger(run_state, &candidates);
     for candidate in &mut candidates {
         apply_debt_ledger(candidate, &debt_ledger);
+        apply_combat_upgrade_coverage(candidate, &combat_upgrade_coverage);
     }
     candidates.sort_by(compare_upgrade_candidates);
     let best_smith = candidates.first().map(|candidate| candidate.deck_index);
@@ -258,6 +286,7 @@ pub fn plan_upgrades_v1(run_state: &RunState) -> UpgradePlanV1 {
     }
 
     UpgradePlanV1 {
+        combat_upgrade_coverage,
         candidates,
         debt_ledger,
         rest_vs_smith,
@@ -335,6 +364,10 @@ pub fn upgrade_plan_evidence_for_deck_index_v1(
         .find(|candidate| candidate.deck_index == deck_index)
     {
         evidence.push(format!("upgrade_plan: {}", candidate.summary_label()));
+        evidence.push(format!(
+            "combat_upgrade_coverage: class={:?} credit={:?}",
+            candidate.combat_upgrade_class, candidate.combat_upgrade_credit
+        ));
         evidence.push(format!(
             "upgrade_delta: cost={} damage={} block={} magic={} exhaust_control={} exhaust_removed={} ethereal_removed={}",
             candidate.mechanical_delta.cost_delta,
@@ -434,6 +467,8 @@ fn build_upgrade_candidate(
         upgrades: card.upgrades,
         label: card_label(card.id, card.upgrades),
         mechanical_delta,
+        combat_upgrade_class: CombatUpgradeCandidateClassV1::NoCombatCredit,
+        combat_upgrade_credit: CombatUpgradeCreditV1::None,
         roles,
         redundancy,
         pays_debts: Vec::new(),
@@ -898,23 +933,162 @@ fn apply_debt_ledger(candidate: &mut UpgradeCandidateV1, debt_ledger: &UpgradeDe
         }
     }
 
-    candidate.verdict = if candidate.roles.contains(&UpgradeRoleV1::LowMarginalRepeat) {
-        if candidate.urgency >= UpgradeDebtSeverityV1::ImportantBeforeBoss {
+    candidate.verdict = upgrade_verdict_for_candidate(candidate);
+}
+
+fn upgrade_verdict_for_candidate(candidate: &UpgradeCandidateV1) -> UpgradeVerdictV1 {
+    if candidate.roles.contains(&UpgradeRoleV1::LowMarginalRepeat) {
+        return if candidate.urgency >= UpgradeDebtSeverityV1::ImportantBeforeBoss {
             UpgradeVerdictV1::Defer
         } else {
             UpgradeVerdictV1::Avoid
-        }
-    } else if candidate.urgency >= UpgradeDebtSeverityV1::CriticalBeforeBoss {
-        UpgradeVerdictV1::CoreDebtPayment
-    } else if candidate.urgency >= UpgradeDebtSeverityV1::ImportantBeforeBoss {
-        UpgradeVerdictV1::Important
-    } else if candidate.urgency >= UpgradeDebtSeverityV1::UsefulSoon {
-        UpgradeVerdictV1::Useful
-    } else if candidate.roles.contains(&UpgradeRoleV1::Speculative) {
-        UpgradeVerdictV1::Opportunistic
+        };
+    }
+
+    match candidate.urgency {
+        UpgradeDebtSeverityV1::CriticalBeforeBoss => UpgradeVerdictV1::CoreDebtPayment,
+        UpgradeDebtSeverityV1::ImportantBeforeBoss => UpgradeVerdictV1::Important,
+        UpgradeDebtSeverityV1::UsefulSoon => UpgradeVerdictV1::Useful,
+        UpgradeDebtSeverityV1::Opportunistic => UpgradeVerdictV1::Opportunistic,
+        UpgradeDebtSeverityV1::Defer => UpgradeVerdictV1::Defer,
+        UpgradeDebtSeverityV1::Avoid => UpgradeVerdictV1::Avoid,
+    }
+}
+
+fn combat_upgrade_candidate_class(candidate: &UpgradeCandidateV1) -> CombatUpgradeCandidateClassV1 {
+    if matches!(candidate.card, CardId::Armaments | CardId::Apotheosis)
+        || candidate.mechanical_delta.innate_delta
+    {
+        return CombatUpgradeCandidateClassV1::NoCombatCredit;
+    }
+    if candidate.mechanical_delta.cost_delta != 0
+        || candidate.mechanical_delta.exhaust_control_delta
+        || candidate.mechanical_delta.exhaust_removed_delta
+        || candidate.mechanical_delta.ethereal_removed_delta
+    {
+        return CombatUpgradeCandidateClassV1::TimingSensitive;
+    }
+
+    let timing_sensitive_role = candidate.roles.iter().any(|role| {
+        !matches!(
+            role,
+            UpgradeRoleV1::FrontloadDamage
+                | UpgradeRoleV1::TransitionalPower
+                | UpgradeRoleV1::LowMarginalRepeat
+                | UpgradeRoleV1::Speculative
+        )
+    });
+    if timing_sensitive_role {
+        return CombatUpgradeCandidateClassV1::TimingSensitive;
+    }
+
+    if candidate.mechanical_delta.damage_delta > 0
+        || candidate.mechanical_delta.block_delta > 0
+        || candidate.mechanical_delta.magic_delta != 0
+    {
+        CombatUpgradeCandidateClassV1::OrdinaryStat
     } else {
-        UpgradeVerdictV1::Opportunistic
+        CombatUpgradeCandidateClassV1::NoCombatCredit
+    }
+}
+
+fn lower_upgrade_urgency_one_level(urgency: UpgradeDebtSeverityV1) -> UpgradeDebtSeverityV1 {
+    match urgency {
+        UpgradeDebtSeverityV1::CriticalBeforeBoss | UpgradeDebtSeverityV1::ImportantBeforeBoss => {
+            urgency
+        }
+        UpgradeDebtSeverityV1::UsefulSoon => UpgradeDebtSeverityV1::Opportunistic,
+        UpgradeDebtSeverityV1::Opportunistic => UpgradeDebtSeverityV1::Defer,
+        UpgradeDebtSeverityV1::Defer => UpgradeDebtSeverityV1::Avoid,
+        UpgradeDebtSeverityV1::Avoid => UpgradeDebtSeverityV1::Avoid,
+    }
+}
+
+fn combat_upgrade_source_evidence(coverage: &CombatUpgradeCoverageProfileV1) -> String {
+    coverage
+        .sources
+        .iter()
+        .map(|source| {
+            format!(
+                "{:?}@{}+{}:{:?}",
+                source.card, source.deck_index, source.upgrades, source.scope
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn apply_combat_upgrade_coverage(
+    candidate: &mut UpgradeCandidateV1,
+    coverage: &CombatUpgradeCoverageProfileV1,
+) {
+    candidate.combat_upgrade_class = combat_upgrade_candidate_class(candidate);
+    let Some(scope) = coverage.strongest_scope() else {
+        candidate.combat_upgrade_credit = CombatUpgradeCreditV1::None;
+        return;
     };
+
+    candidate.evidence.push(format!(
+        "combat upgrade coverage sources={} class={:?}",
+        combat_upgrade_source_evidence(coverage),
+        candidate.combat_upgrade_class
+    ));
+    if candidate.combat_upgrade_class != CombatUpgradeCandidateClassV1::OrdinaryStat {
+        candidate.evidence.push(
+            match candidate.combat_upgrade_class {
+                CombatUpgradeCandidateClassV1::TimingSensitive => {
+                    "combat upgrade credit withheld: timing-sensitive or unrecognized role/delta"
+                }
+                CombatUpgradeCandidateClassV1::NoCombatCredit => {
+                    "combat upgrade credit withheld: provider, innate, or no ordinary stat delta"
+                }
+                CombatUpgradeCandidateClassV1::OrdinaryStat => unreachable!(),
+            }
+            .to_string(),
+        );
+        candidate.combat_upgrade_credit = CombatUpgradeCreditV1::EvidenceOnly { scope };
+        return;
+    }
+
+    let broad_coverage = coverage.has_scope(CombatUpgradeScopeV1::WholeHand)
+        || coverage.has_scope(CombatUpgradeScopeV1::AllCombatZones);
+    let selected_coverage_applies = coverage.has_scope(CombatUpgradeScopeV1::SelectedCardInHand)
+        && (is_starter(candidate.card)
+            || candidate.roles.contains(&UpgradeRoleV1::LowMarginalRepeat));
+    if !broad_coverage && !selected_coverage_applies {
+        candidate.evidence.push(
+            "combat upgrade credit withheld: selected-card access is too narrow for this target"
+                .to_string(),
+        );
+        candidate.combat_upgrade_credit = CombatUpgradeCreditV1::EvidenceOnly { scope };
+        return;
+    }
+    if candidate.urgency >= UpgradeDebtSeverityV1::ImportantBeforeBoss {
+        candidate.evidence.push(
+            "combat upgrade credit withheld: high-severity permanent upgrade debt".to_string(),
+        );
+        candidate.combat_upgrade_credit = CombatUpgradeCreditV1::EvidenceOnly { scope };
+        return;
+    }
+
+    let previous_urgency = candidate.urgency;
+    let resulting_urgency = lower_upgrade_urgency_one_level(previous_urgency);
+    if resulting_urgency == previous_urgency {
+        candidate.combat_upgrade_credit = CombatUpgradeCreditV1::EvidenceOnly { scope };
+        return;
+    }
+
+    candidate.urgency = resulting_urgency;
+    candidate.verdict = upgrade_verdict_for_candidate(candidate);
+    candidate.combat_upgrade_credit = CombatUpgradeCreditV1::PriorityReduced {
+        scope,
+        previous_urgency,
+        resulting_urgency,
+    };
+    candidate.evidence.push(format!(
+        "combat upgrade coverage reduced urgency {:?}->{:?}",
+        previous_urgency, resulting_urgency
+    ));
 }
 
 fn rest_vs_smith_plan(
@@ -1153,5 +1327,125 @@ mod tests {
             plan.rest_vs_smith.verdict,
             RestVsSmithVerdictV1::SmithFavored
         );
+    }
+
+    #[test]
+    fn selected_armaments_credit_is_limited_to_ordinary_starter_targets() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck = vec![
+            CombatCard::new(CardId::Armaments, 1001),
+            CombatCard::new(CardId::Strike, 1002),
+            CombatCard::new(CardId::Cleave, 1003),
+        ];
+
+        let plan = plan_upgrades_v1(&run);
+        let strike = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::Strike)
+            .expect("Strike should remain an upgrade candidate");
+        let cleave = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::Cleave)
+            .expect("Cleave should remain an upgrade candidate");
+
+        assert_eq!(
+            strike.combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::OrdinaryStat
+        );
+        assert!(matches!(
+            strike.combat_upgrade_credit,
+            CombatUpgradeCreditV1::PriorityReduced {
+                scope: CombatUpgradeScopeV1::SelectedCardInHand,
+                previous_urgency: UpgradeDebtSeverityV1::Opportunistic,
+                resulting_urgency: UpgradeDebtSeverityV1::Defer,
+            }
+        ));
+        assert_eq!(strike.verdict, UpgradeVerdictV1::Defer);
+        assert_eq!(
+            cleave.combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::OrdinaryStat
+        );
+        assert_eq!(
+            cleave.combat_upgrade_credit,
+            CombatUpgradeCreditV1::EvidenceOnly {
+                scope: CombatUpgradeScopeV1::SelectedCardInHand,
+            }
+        );
+        assert_eq!(cleave.urgency, UpgradeDebtSeverityV1::Opportunistic);
+    }
+
+    #[test]
+    fn armaments_plus_reduces_an_ordinary_nonstarter_by_one_level() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        let mut armaments_plus = CombatCard::new(CardId::Armaments, 1001);
+        armaments_plus.upgrades = 1;
+        run.master_deck = vec![armaments_plus, CombatCard::new(CardId::Cleave, 1002)];
+
+        let plan = plan_upgrades_v1(&run);
+        let cleave = plan
+            .candidates
+            .iter()
+            .find(|candidate| candidate.card == CardId::Cleave)
+            .expect("Cleave should remain an upgrade candidate");
+
+        assert_eq!(
+            cleave.combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::OrdinaryStat
+        );
+        assert!(matches!(
+            cleave.combat_upgrade_credit,
+            CombatUpgradeCreditV1::PriorityReduced {
+                scope: CombatUpgradeScopeV1::WholeHand,
+                previous_urgency: UpgradeDebtSeverityV1::Opportunistic,
+                resulting_urgency: UpgradeDebtSeverityV1::Defer,
+            }
+        ));
+        assert_eq!(cleave.verdict, UpgradeVerdictV1::Defer);
+    }
+
+    #[test]
+    fn combat_upgrade_coverage_does_not_discount_providers_innate_or_phase_burst() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.boss_key = Some(EncounterId::TheChamp);
+        let mut armaments_plus = CombatCard::new(CardId::Armaments, 1001);
+        armaments_plus.upgrades = 1;
+        run.master_deck = vec![
+            armaments_plus,
+            CombatCard::new(CardId::Armaments, 1002),
+            CombatCard::new(CardId::BootSequence, 1003),
+            CombatCard::new(CardId::Whirlwind, 1004),
+        ];
+
+        let plan = plan_upgrades_v1(&run);
+        let candidate = |card| {
+            plan.candidates
+                .iter()
+                .find(|candidate| candidate.card == card)
+                .expect("protected card should remain an upgrade candidate")
+        };
+
+        assert_eq!(
+            candidate(CardId::Armaments).combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::NoCombatCredit
+        );
+        assert_eq!(
+            candidate(CardId::BootSequence).combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::NoCombatCredit
+        );
+        assert_eq!(
+            candidate(CardId::Whirlwind).combat_upgrade_class,
+            CombatUpgradeCandidateClassV1::TimingSensitive
+        );
+        assert_eq!(
+            candidate(CardId::Whirlwind).urgency,
+            UpgradeDebtSeverityV1::ImportantBeforeBoss
+        );
+        assert!(!matches!(
+            candidate(CardId::Whirlwind).combat_upgrade_credit,
+            CombatUpgradeCreditV1::PriorityReduced { .. }
+        ));
     }
 }
