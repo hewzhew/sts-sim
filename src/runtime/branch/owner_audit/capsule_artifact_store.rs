@@ -12,8 +12,8 @@ use super::run_slice_result::{
     ArtifactKind, ArtifactRef, ArtifactWriteSummary, RunSliceRequestKind, RunSliceResult, RunStop,
 };
 use super::{
-    combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
-    BranchStatus,
+    accepted_high_loss_diagnostic, combat_gap_case, frontier_checkpoint, run_capsule_format,
+    run_capsule_io, Args, Branch, BranchStatus,
 };
 use run_capsule_io::{ensure_dir, read_terminal_entries, remove_if_exists, write_json};
 
@@ -101,15 +101,18 @@ impl CapsuleArtifactStore {
             "summary.json",
             "branch_tiny_capsule_summary",
         ));
+        self.record_accepted_combat_diagnostic_refs(&mut summary);
         summary
     }
 
     pub(super) fn terminal_summary(&self) -> ArtifactWriteSummary {
-        ArtifactWriteSummary::single_ref(self.artifact_ref(
+        let mut summary = ArtifactWriteSummary::single_ref(self.artifact_ref(
             ArtifactKind::Terminal,
             "terminal.json",
             "branch_tiny_terminal_results",
-        ))
+        ));
+        self.record_accepted_combat_diagnostic_refs(&mut summary);
+        summary
     }
 
     pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
@@ -190,10 +193,13 @@ impl CapsuleArtifactStore {
             return Ok(false);
         }
         let combat_case = self.combat_case_value(args, generation, branch);
+        let accepted_high_loss_combat_diagnostics =
+            self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
         entries.push(run_capsule_format::result_value(
             generation,
             branch,
             combat_case,
+            accepted_high_loss_combat_diagnostics,
         ));
         write_json(&path, run_capsule_format::terminal_results_value(entries))?;
         Ok(true)
@@ -240,9 +246,16 @@ impl CapsuleArtifactStore {
     ) -> Result<(), String> {
         ensure_dir(&self.root)?;
         let combat_case = self.combat_case_value(args, generation, branch);
+        let accepted_high_loss_combat_diagnostics =
+            self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
         write_json(
             &self.root.join("result.json"),
-            run_capsule_format::result_value(generation, branch, combat_case.clone()),
+            run_capsule_format::result_value(
+                generation,
+                branch,
+                combat_case.clone(),
+                accepted_high_loss_combat_diagnostics.clone(),
+            ),
         )?;
         write_json(
             &self.root.join("path.json"),
@@ -255,6 +268,7 @@ impl CapsuleArtifactStore {
             generation,
             branch,
             &combat_case,
+            &accepted_high_loss_combat_diagnostics,
             capsule_status,
             reason,
         )
@@ -266,6 +280,7 @@ impl CapsuleArtifactStore {
         generation: usize,
         branch: &Branch,
         combat_case: &Value,
+        accepted_high_loss_combat_diagnostics: &Value,
         capsule_status: &'static str,
         reason: Option<&'static str>,
     ) -> Result<(), String> {
@@ -277,6 +292,7 @@ impl CapsuleArtifactStore {
                 generation,
                 branch,
                 combat_case,
+                accepted_high_loss_combat_diagnostics,
                 capsule_status,
                 reason,
                 None,
@@ -311,6 +327,7 @@ impl CapsuleArtifactStore {
                     generation,
                     branch,
                     &Value::Null,
+                    &Value::Array(Vec::new()),
                     capsule_status,
                     reason,
                     Some(frontier_info),
@@ -369,6 +386,53 @@ impl CapsuleArtifactStore {
             Ok(Some(path)) => json!(path.display().to_string()),
             Ok(None) => Value::Null,
             Err(error) => json!({"error": error}),
+        }
+    }
+
+    fn accepted_high_loss_combat_diagnostics_value(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<Value, String> {
+        let dir = self.root.join("accepted_high_loss_combat");
+        let mut values = Vec::new();
+        for diagnostic in &branch.accepted_high_loss_diagnostics {
+            let written = accepted_high_loss_diagnostic::write_diagnostic_pair(
+                &dir, args.seed, generation, branch.id, diagnostic,
+            )?;
+            values.push(written.value());
+        }
+        Ok(Value::Array(values))
+    }
+
+    fn record_accepted_combat_diagnostic_refs(&self, summary: &mut ArtifactWriteSummary) {
+        let dir = self.root.join("accepted_high_loss_combat");
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            let schema = if path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".capture.json"))
+            {
+                "CombatCaptureV1"
+            } else {
+                "accepted_high_loss_combat_evidence_v1"
+            };
+            summary.record_ref(ArtifactRef::new(
+                ArtifactKind::AcceptedCombatDiagnostic,
+                path,
+                schema,
+                "owner_audit_runtime",
+            ));
         }
     }
 

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::fs;
+use std::path::{Path, PathBuf};
 use sts_simulator::eval::combat_capture::{
-    capture_combat_position_from_auto_run_v1, CombatCaptureV1,
+    capture_combat_position_from_auto_run_v1, save_combat_capture_v1, CombatCaptureV1,
 };
 use sts_simulator::eval::run_control::{
     accepted_combat_line_evidence_v1, combat_automation_trajectories_v1,
@@ -32,6 +35,27 @@ pub(super) struct AcceptedHighLossDiagnosticDraft {
     pub(super) trajectory: CombatAutomationTrajectoryRecordV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) hard_hp_loss_limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WrittenAcceptedHighLossDiagnostic {
+    pub(super) capture_path: PathBuf,
+    pub(super) evidence_path: PathBuf,
+    pub(super) original_hp_loss: i32,
+    pub(super) selected_hp_loss: i32,
+    pub(super) hp_saved_by_selection: i32,
+}
+
+impl WrittenAcceptedHighLossDiagnostic {
+    pub(super) fn value(&self) -> Value {
+        json!({
+            "capture": self.capture_path.display().to_string(),
+            "evidence": self.evidence_path.display().to_string(),
+            "original_hp_loss": self.original_hp_loss,
+            "selected_hp_loss": self.selected_hp_loss,
+            "hp_saved_by_selection": self.hp_saved_by_selection,
+        })
+    }
 }
 
 pub(super) fn high_loss_trigger(max_hp: i32, original_hp_loss: i32, selected_hp_loss: i32) -> bool {
@@ -118,6 +142,69 @@ pub(super) fn extend_unique_diagnostics(
             continue;
         }
         target.push(diagnostic);
+    }
+}
+
+pub(super) fn write_diagnostic_pair(
+    dir: &Path,
+    seed: u64,
+    generation: usize,
+    branch_id: usize,
+    draft: &AcceptedHighLossDiagnosticDraft,
+) -> Result<WrittenAcceptedHighLossDiagnostic, String> {
+    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    let enemy_slug = slug(&draft.identity.enemies.join("_"));
+    let stem = format!(
+        "seed{seed}_g{generation:02}_b{branch_id:04}_a{}f{}t{}_{}",
+        draft.identity.act, draft.identity.floor, draft.identity.turn, enemy_slug
+    );
+    let capture_path = dir.join(format!("{stem}.capture.json"));
+    let evidence_path = dir.join(format!("{stem}.evidence.json"));
+    save_combat_capture_v1(&capture_path, &draft.capture)?;
+    let payload = json!({
+        "schema": "accepted_high_loss_combat_evidence_v1",
+        "label_role": "diagnostic_not_teacher_label",
+        "identity": &draft.identity,
+        "lane": &draft.lane,
+        "capture": capture_path.display().to_string(),
+        "start_hp": draft.capture.summary.player_hp,
+        "max_hp": draft.capture.summary.player_max_hp,
+        "hard_hp_loss_limit": draft.hard_hp_loss_limit,
+        "original_hp_loss": draft.evidence.original.hp_loss,
+        "selected_hp_loss": draft.evidence.selected.hp_loss,
+        "hp_saved_by_selection": draft.evidence.hp_saved_by_selection,
+        "accepted_line": &draft.evidence,
+        "search": &draft.search,
+        "trajectory": &draft.trajectory,
+    });
+    let encoded = serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())?;
+    fs::write(&evidence_path, encoded).map_err(|error| error.to_string())?;
+    Ok(WrittenAcceptedHighLossDiagnostic {
+        capture_path,
+        evidence_path,
+        original_hp_loss: draft.evidence.original.hp_loss,
+        selected_hp_loss: draft.evidence.selected.hp_loss,
+        hp_saved_by_selection: draft.evidence.hp_saved_by_selection,
+    })
+}
+
+fn slug(raw: &str) -> String {
+    let mut out = String::new();
+    let mut last_sep = false;
+    for ch in raw.chars().flat_map(char::to_lowercase) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_sep = false;
+        } else if !last_sep {
+            out.push('_');
+            last_sep = true;
+        }
+    }
+    let out = out.trim_matches('_');
+    if out.is_empty() {
+        "combat".to_string()
+    } else {
+        out.to_string()
     }
 }
 
@@ -227,5 +314,29 @@ mod tests {
         extend_unique_diagnostics(&mut diagnostics, vec![draft.clone(), draft]);
 
         assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn write_diagnostic_pair_emits_replayable_capture_and_evidence() {
+        let draft =
+            accepted_high_loss_diagnostic(capture(), "primary", &annotations(), true, Some(26))
+                .unwrap();
+        let root = std::env::temp_dir().join("accepted_high_loss_diagnostic_pair");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let written = write_diagnostic_pair(&root, 7, 22, 22, &draft).unwrap();
+
+        let replay =
+            sts_simulator::eval::combat_capture::load_combat_capture_v1(&written.capture_path)
+                .unwrap();
+        let evidence: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&written.evidence_path).unwrap())
+                .unwrap();
+        assert_eq!(replay.summary.player_max_hp, 80);
+        assert_eq!(evidence["original_hp_loss"], 24);
+        assert_eq!(evidence["selected_hp_loss"], 24);
+        assert_eq!(evidence["label_role"], "diagnostic_not_teacher_label");
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

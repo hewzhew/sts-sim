@@ -364,6 +364,7 @@ pub enum ArtifactKind {
     Summary,
     Terminal,
     CombatCase,
+    AcceptedCombatDiagnostic,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -390,6 +391,8 @@ pub struct ArtifactWriteSummary {
     pub summary_ref: Option<ArtifactRef>,
     pub terminal_ref: Option<ArtifactRef>,
     pub combat_case_ref: Option<ArtifactRef>,
+    #[serde(default)]
+    pub accepted_combat_diagnostic_refs: Vec<ArtifactRef>,
 }
 
 impl ArtifactWriteSummary {
@@ -408,6 +411,8 @@ impl ArtifactWriteSummary {
         self.summary_ref = other.summary_ref.or(self.summary_ref.take());
         self.terminal_ref = other.terminal_ref.or(self.terminal_ref.take());
         self.combat_case_ref = other.combat_case_ref.or(self.combat_case_ref.take());
+        self.accepted_combat_diagnostic_refs
+            .extend(other.accepted_combat_diagnostic_refs);
     }
 
     pub fn frontier_checkpoint_at(path: impl Into<PathBuf>) -> Self {
@@ -455,6 +460,9 @@ impl ArtifactWriteSummary {
                 self.combat_case_written = true;
                 self.combat_case_ref = Some(artifact);
             }
+            ArtifactKind::AcceptedCombatDiagnostic => {
+                self.accepted_combat_diagnostic_refs.push(artifact);
+            }
         }
     }
 
@@ -470,6 +478,7 @@ impl ArtifactWriteSummary {
         ]
         .into_iter()
         .flatten()
+        .chain(self.accepted_combat_diagnostic_refs.iter().cloned())
         .collect()
     }
 }
@@ -487,6 +496,31 @@ impl ArtifactRef {
             schema: schema.into(),
             created_by: created_by.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod accepted_combat_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn artifact_summary_retains_multiple_accepted_combat_diagnostic_refs() {
+        let mut summary = ArtifactWriteSummary::default();
+        summary.record_ref(ArtifactRef::new(
+            ArtifactKind::AcceptedCombatDiagnostic,
+            "one.capture.json",
+            "CombatCaptureV1",
+            "owner_audit_runtime",
+        ));
+        summary.record_ref(ArtifactRef::new(
+            ArtifactKind::AcceptedCombatDiagnostic,
+            "one.evidence.json",
+            "accepted_high_loss_combat_evidence_v1",
+            "owner_audit_runtime",
+        ));
+
+        assert_eq!(summary.accepted_combat_diagnostic_refs.len(), 2);
+        assert_eq!(summary.refs().len(), 2);
     }
 }
 

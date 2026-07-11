@@ -42,6 +42,7 @@ pub(super) fn branch_summary_value(
     generation: usize,
     branch: &Branch,
     combat_case: &Value,
+    accepted_high_loss_combat_diagnostics: &Value,
     capsule_status: &'static str,
     reason: Option<&'static str>,
     frontier: Option<Value>,
@@ -96,6 +97,7 @@ pub(super) fn branch_summary_value(
         "enemies": enemies,
         "capsule_path": capsule_path.display().to_string(),
         "combat_case": combat_case,
+        "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
         "combat_search": combat_search_telemetry_value(branch),
         "primary_search": super::primary_search_outcome::primary_search_outcome_value(
             &branch.combat_search,
@@ -213,7 +215,12 @@ fn branch_tiny_continue_command(capsule_path: &Path, wall_ms: u64) -> String {
     )
 }
 
-pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value {
+pub(super) fn result_value(
+    generation: usize,
+    branch: &Branch,
+    combat_case: Value,
+    accepted_high_loss_combat_diagnostics: Value,
+) -> Value {
     let run = &branch.session.run_state;
     json!({
         "schema": "branch_tiny_run_result",
@@ -240,6 +247,7 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
+        "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
         "combat_search_history": &branch.combat_search_history,
@@ -335,6 +343,7 @@ pub(super) fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
     fn sample_args() -> Args {
         Args {
@@ -357,6 +366,37 @@ mod tests {
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
+    }
+
+    fn sample_branch() -> Branch {
+        Branch {
+            id: 1,
+            parent_id: None,
+            path: Vec::new(),
+            session: RunControlSession::new(RunControlConfig::default()),
+            status: BranchStatus::AwaitingAuto {
+                boundary: "Combat".to_string(),
+                reason: "diagnostic".to_string(),
+            },
+            combat_portfolio: None,
+            auto_steps: Vec::new(),
+            combat_search: Vec::new(),
+            combat_search_history: Vec::new(),
+            accepted_high_loss_diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn result_exposes_accepted_high_loss_diagnostic_paths() {
+        let diagnostics = json!([{
+            "capture": "target/capture.json",
+            "evidence": "target/evidence.json"
+        }]);
+
+        let value = result_value(3, &sample_branch(), Value::Null, diagnostics.clone());
+
+        assert_eq!(value["accepted_high_loss_combat_diagnostics"], diagnostics);
+        assert!(value["combat_case"].is_null());
     }
 
     #[test]
