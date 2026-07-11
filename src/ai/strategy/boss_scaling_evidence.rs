@@ -4,7 +4,9 @@ use crate::ai::analysis::card_semantics::{
 };
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::package_transition::PackageKind;
-use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
+use crate::ai::strategy::reward_admission::{
+    RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 
@@ -54,7 +56,21 @@ pub fn assess_boss_scaling_evidence(
     if admission_provides(admission, Mechanic::Strength)
         || card_grants_strength(card_semantics.as_ref())
     {
-        return BossScalingEvidence::relevant("boss-scaling-source", 70);
+        if admission.class == RewardAdmissionClass::OpensUnsupportedPayoff {
+            return BossScalingEvidence::score_only("boss-unsupported-scaling-source", -35);
+        }
+
+        let existing_sources = deck
+            .roles
+            .strength_source_units
+            .saturating_add(deck.roles.conditional_strength_source_units);
+        if existing_sources == 0 {
+            return BossScalingEvidence::relevant("boss-scaling-source", 70);
+        }
+        if deck.repairs_strength_package_reliability(card) {
+            return BossScalingEvidence::relevant("boss-scaling-reliability", 70);
+        }
+        return BossScalingEvidence::score_only("boss-marginal-scaling-source", 0);
     }
     if admission_provides(admission, Mechanic::StrengthMultiplier) {
         return if deck.roles.strength_source_units > 0 {
@@ -271,6 +287,47 @@ mod tests {
 
         assert_eq!(evidence.label, "boss-strength-payoff");
         assert!(evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn unsupported_rupture_is_not_a_usable_boss_scaling_source() {
+        let (deck, plan) = deck_plan(&[CardId::Strike, CardId::Defend, CardId::Bash]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Rupture, 0);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 0)), &admission);
+
+        assert!(!evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn repeated_rupture_does_not_repeat_full_boss_scaling_credit() {
+        let (deck, plan) = deck_plan(&[CardId::Rupture, CardId::Hemokinesis]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Rupture, 1);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 1)), &admission);
+
+        assert!(!evidence.relevant_to_boss_plan);
+        assert_eq!(evidence.score_delta, 0);
+    }
+
+    #[test]
+    fn multiplier_with_one_stable_source_keeps_reliability_repair() {
+        let (deck, plan) = deck_plan(&[CardId::Inflame, CardId::LimitBreak]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::DemonForm, 0);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::DemonForm, 0)), &admission);
+
+        assert!(evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn conditional_source_does_not_masquerade_as_reliability_repair() {
+        let (deck, plan) = deck_plan(&[CardId::Inflame, CardId::LimitBreak]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::SpotWeakness, 1);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::SpotWeakness, 1)), &admission);
+
+        assert!(!evidence.relevant_to_boss_plan);
     }
 
     #[test]

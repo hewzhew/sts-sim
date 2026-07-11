@@ -1284,7 +1284,7 @@ fn heavy_burden_penalty_applies(
 ) -> bool {
     context.deck_plan.strategic_deficit.deck_burden == StrategicBurdenLevel::Heavy
         && ordinary_reward_addition(admission)
-        && !improves_strategic_gap(context, admission)
+        && !improves_strategic_gap(context, kind, admission)
         && !heavy_burden_exception(context, kind, admission)
 }
 
@@ -1306,7 +1306,11 @@ fn heavy_burden_exception(
             .any(|reason| matches!(reason, RewardAdmissionReason::RunReward(_)))
 }
 
-fn improves_strategic_gap(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+fn improves_strategic_gap(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: &RewardAdmission,
+) -> bool {
     let deficit = context.deck_plan.strategic_deficit;
     (needs(deficit.deck_access)
         && (admission_provides(admission, Mechanic::CardDraw)
@@ -1317,7 +1321,7 @@ fn improves_strategic_gap(context: DecisionPipelineContext, admission: &RewardAd
         || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
         || (needs(deficit.boss_scaling_plan)
-            && assess_boss_scaling_evidence(context.deck_plan, None, admission)
+            && assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
                 .relevant_to_boss_plan
             && !fragile_supported_payoff(context, admission))
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
@@ -2001,6 +2005,16 @@ mod tests {
             attack_potion.scores,
             block_potion.scores
         );
+    }
+
+    #[test]
+    fn unsupported_rupture_shop_purchase_is_not_mainline() {
+        let rupture = shop_card(
+            &[CardId::Strike, CardId::Defend, CardId::Bash],
+            CardId::Rupture,
+        );
+
+        assert_ne!(rupture.lane, CandidateLane::Mainline);
     }
 
     #[test]

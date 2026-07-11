@@ -3,7 +3,6 @@ use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
 use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_construction_pressure::candidate_improves_card_flow;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
-use crate::ai::strategy::deck_role_inventory::card_is_stable_strength_source;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::{get_card_definition, CardId};
@@ -156,8 +155,9 @@ pub fn assess_card_acquisition(
     let candidate = Some((card, upgrades));
     let improves_hard_gap = improves_hard_gap(context.deck_plan, candidate, admission);
     let improves_any_gap = improves_any_gap(context.deck_plan, candidate, admission);
-    let repairs_package_reliability =
-        repairs_strength_package_reliability(context.deck_plan, candidate);
+    let repairs_package_reliability = context
+        .deck_plan
+        .repairs_strength_package_reliability(candidate);
     let adds_deployability_debt =
         adds_deployability_debt(context.deck_plan, card, admission, improves_hard_gap);
     let strategic_delta = AcquisitionStrategicDelta {
@@ -489,16 +489,6 @@ fn needs(level: StrategicDeficitLevel) -> bool {
         level,
         StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
     )
-}
-
-fn repairs_strength_package_reliability(
-    deck_plan: DeckPlanSnapshot,
-    candidate: Option<(CardId, u8)>,
-) -> bool {
-    deck_plan.roles.strength_multiplier_units > 0
-        && deck_plan.roles.strength_source_units == 1
-        && needs(deck_plan.strategic_deficit.boss_scaling_plan)
-        && candidate.is_some_and(|(card, upgrades)| card_is_stable_strength_source(card, upgrades))
 }
 
 fn has_combat_upgrade(admission: &RewardAdmission) -> bool {

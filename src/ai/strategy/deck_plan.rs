@@ -5,12 +5,15 @@ use crate::ai::strategy::deck_construction_pressure::{
     assess_deck_construction_pressure, reward_construction_lane_adjustment,
     ConstructionLaneAdjustment, DeckConstructionContext, DeckConstructionPressure,
 };
-use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
+use crate::ai::strategy::deck_role_inventory::{
+    card_is_stable_strength_source, DeckRoleInventory,
+};
 use crate::ai::strategy::deck_strategic_deficit::{
-    assess_deck_strategic_deficit_summary, DeckStrategicDeficitSummary,
+    assess_deck_strategic_deficit_summary, DeckStrategicDeficitSummary, StrategicDeficitLevel,
 };
 use crate::ai::strategy::reward_admission::RewardAdmission;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
@@ -74,5 +77,20 @@ impl DeckPlanSnapshot {
 
     pub fn reward_lane_adjustment(self, admission: &RewardAdmission) -> ConstructionLaneAdjustment {
         reward_construction_lane_adjustment(self.construction, admission)
+    }
+
+    pub fn repairs_strength_package_reliability(
+        self,
+        candidate: Option<(CardId, u8)>,
+    ) -> bool {
+        self.roles.strength_multiplier_units > 0
+            && self.roles.strength_source_units == 1
+            && matches!(
+                self.strategic_deficit.boss_scaling_plan,
+                StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+            )
+            && candidate.is_some_and(|(card, upgrades)| {
+                card_is_stable_strength_source(card, upgrades)
+            })
     }
 }
