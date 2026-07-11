@@ -39,6 +39,7 @@ pub struct CombatSearchV2FrontierValueReport {
     pub phase_profile: CombatSearchV2PhaseProfileReport,
     pub sustained_mitigation: i32,
     pub hand: CombatSearchV2CardPileValueReport,
+    pub choker_capacity: CombatSearchV2ChokerCapacityReport,
     pub next_draw: CombatSearchV2CardPileValueReport,
     pub enemy_mechanics: CombatSearchV2EnemyMechanicsReport,
     pub potions_used: u32,
@@ -72,6 +73,16 @@ pub struct CombatSearchV2CardPileValueReport {
     pub block: i32,
     pub playable_cards: i32,
     pub low_cost: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2ChokerCapacityReport {
+    pub has_velvet_choker: bool,
+    pub cards_played_this_turn: u8,
+    pub remaining_slots: Option<u8>,
+    pub affordable_hand_cards: u8,
+    pub representable_affordable_cards: u8,
+    pub stranded_affordable_cards: u8,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -4,6 +4,7 @@ use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::state::core::EngineState;
 use crate::test_support::blank_test_combat;
@@ -165,6 +166,32 @@ fn core_value_facts_feed_state_value_and_report() {
             .enemy_mechanics
             .guardian_mode_shift_pending_count
     );
+}
+
+#[test]
+fn frontier_report_carries_choker_binding_facts_without_changing_ordering() {
+    let mut node = test_node();
+    node.combat
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::VelvetChoker));
+    node.combat.turn.energy = 3;
+    node.combat.turn.counters.cards_played_this_turn = 5;
+    node.combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Strike, 12),
+        CombatCard::new(CardId::Strike, 13),
+    ];
+
+    let before = combat_search_state_value(&node);
+    let report = combat_search_frontier_value_report(&node);
+    let after = combat_search_state_value(&node);
+
+    assert_eq!(before, after);
+    assert_eq!(report.choker_capacity.remaining_slots, Some(1));
+    assert_eq!(report.choker_capacity.affordable_hand_cards, 3);
+    assert_eq!(report.choker_capacity.representable_affordable_cards, 1);
+    assert_eq!(report.choker_capacity.stranded_affordable_cards, 2);
 }
 
 fn test_node() -> SearchNode {

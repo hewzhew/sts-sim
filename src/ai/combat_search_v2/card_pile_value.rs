@@ -9,12 +9,51 @@ pub(super) struct CardPileValueV1 {
     pub(super) low_cost: i32,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct ChokerCapacityV1 {
+    pub(super) has_velvet_choker: bool,
+    pub(super) cards_played_this_turn: u8,
+    pub(super) remaining_slots: Option<u8>,
+    pub(super) affordable_hand_cards: u8,
+    pub(super) representable_affordable_cards: u8,
+    pub(super) stranded_affordable_cards: u8,
+}
+
 pub(super) fn hand_value(combat: &CombatState) -> CardPileValueV1 {
     let mut value = card_pile_value(combat.zones.hand.iter(), combat.turn.energy as i32);
-    if let Some(capacity) = remaining_card_play_capacity(combat) {
-        value.playable_cards = value.playable_cards.min(capacity as i32);
-    }
+    value.playable_cards = choker_capacity(combat).representable_affordable_cards as i32;
     value
+}
+
+pub(super) fn choker_capacity(combat: &CombatState) -> ChokerCapacityV1 {
+    let has_velvet_choker = combat
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::VelvetChoker);
+    let cards_played_this_turn = combat.turn.counters.cards_played_this_turn;
+    let remaining_slots = has_velvet_choker.then(|| 6u8.saturating_sub(cards_played_this_turn));
+    let affordable_hand_cards = combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| {
+            let cost = card.cost_for_turn_java();
+            cost >= 0 && cost <= combat.turn.energy as i32
+        })
+        .count()
+        .min(u8::MAX as usize) as u8;
+    let representable_affordable_cards = remaining_slots.map_or(affordable_hand_cards, |slots| {
+        affordable_hand_cards.min(slots)
+    });
+    ChokerCapacityV1 {
+        has_velvet_choker,
+        cards_played_this_turn,
+        remaining_slots,
+        affordable_hand_cards,
+        representable_affordable_cards,
+        stranded_affordable_cards: affordable_hand_cards
+            .saturating_sub(representable_affordable_cards),
+    }
 }
 
 pub(super) fn next_draw_value(combat: &CombatState) -> CardPileValueV1 {
@@ -29,14 +68,6 @@ pub(super) fn next_draw_value(combat: &CombatState) -> CardPileValueV1 {
         combat.zones.draw_pile.iter().take(draw_count),
         combat.entities.player.energy_master as i32,
     )
-}
-
-fn remaining_card_play_capacity(combat: &CombatState) -> Option<usize> {
-    combat
-        .entities
-        .player
-        .has_relic(crate::content::relics::RelicId::VelvetChoker)
-        .then(|| 6usize.saturating_sub(combat.turn.counters.cards_played_this_turn as usize))
 }
 
 fn projected_retained_hand_count(combat: &CombatState) -> usize {
@@ -62,6 +93,19 @@ pub(super) fn card_pile_value_report(value: CardPileValueV1) -> CombatSearchV2Ca
         block: value.block,
         playable_cards: value.playable_cards,
         low_cost: value.low_cost,
+    }
+}
+
+pub(super) fn choker_capacity_report(
+    capacity: ChokerCapacityV1,
+) -> CombatSearchV2ChokerCapacityReport {
+    CombatSearchV2ChokerCapacityReport {
+        has_velvet_choker: capacity.has_velvet_choker,
+        cards_played_this_turn: capacity.cards_played_this_turn,
+        remaining_slots: capacity.remaining_slots,
+        affordable_hand_cards: capacity.affordable_hand_cards,
+        representable_affordable_cards: capacity.representable_affordable_cards,
+        stranded_affordable_cards: capacity.stranded_affordable_cards,
     }
 }
 
@@ -128,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn hand_playable_count_obeys_remaining_velvet_choker_slots() {
+    fn choker_capacity_reports_affordable_cards_stranded_by_the_cap() {
         let mut combat = blank_test_combat();
         combat
             .entities
@@ -140,12 +184,57 @@ mod tests {
             CombatCard::new(CardId::Strike, 12),
             CombatCard::new(CardId::Strike, 13),
         ];
-
         combat.turn.counters.cards_played_this_turn = 5;
-        assert_eq!(hand_value(&combat).playable_cards, 1);
 
-        combat.turn.counters.cards_played_this_turn = 6;
-        assert_eq!(hand_value(&combat).playable_cards, 0);
+        let capacity = choker_capacity(&combat);
+
+        assert!(capacity.has_velvet_choker);
+        assert_eq!(capacity.cards_played_this_turn, 5);
+        assert_eq!(capacity.remaining_slots, Some(1));
+        assert_eq!(capacity.affordable_hand_cards, 3);
+        assert_eq!(capacity.representable_affordable_cards, 1);
+        assert_eq!(capacity.stranded_affordable_cards, 2);
+        assert_eq!(hand_value(&combat).playable_cards, 1);
+    }
+
+    #[test]
+    fn choker_capacity_is_not_binding_below_remaining_slots() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::VelvetChoker));
+        combat.turn.energy = 1;
+        combat.turn.counters.cards_played_this_turn = 4;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Carnage, 12),
+        ];
+
+        let capacity = choker_capacity(&combat);
+
+        assert_eq!(capacity.remaining_slots, Some(2));
+        assert_eq!(capacity.affordable_hand_cards, 1);
+        assert_eq!(capacity.representable_affordable_cards, 1);
+        assert_eq!(capacity.stranded_affordable_cards, 0);
+    }
+
+    #[test]
+    fn absent_choker_reports_unbounded_capacity_without_stranding() {
+        let mut combat = blank_test_combat();
+        combat.turn.energy = 3;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Strike, 12),
+        ];
+
+        let capacity = choker_capacity(&combat);
+
+        assert!(!capacity.has_velvet_choker);
+        assert_eq!(capacity.remaining_slots, None);
+        assert_eq!(capacity.affordable_hand_cards, 2);
+        assert_eq!(capacity.representable_affordable_cards, 2);
+        assert_eq!(capacity.stranded_affordable_cards, 0);
     }
 
     #[test]

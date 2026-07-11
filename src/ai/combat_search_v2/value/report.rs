@@ -1,4 +1,4 @@
-use super::super::card_pile_value::card_pile_value_report;
+use super::super::card_pile_value::{card_pile_value_report, choker_capacity_report};
 use super::super::enemy_mechanics_profile::enemy_mechanics_profile_report;
 use super::super::frontier::SearchNode;
 use super::super::phase_profile::combat_search_phase_profile_report;
@@ -56,6 +56,7 @@ pub(in crate::ai::combat_search_v2) fn combat_search_frontier_value_report(
         phase_profile: combat_search_phase_profile_report(facts.phase_profile),
         sustained_mitigation: facts.sustained_mitigation,
         hand: card_pile_value_report(facts.hand),
+        choker_capacity: choker_capacity_report(facts.choker_capacity),
         next_draw: card_pile_value_report(facts.next_draw),
         enemy_mechanics: enemy_mechanics_profile_report(facts.phase_profile.enemy_mechanics),
         potions_used: node.potions_used,
