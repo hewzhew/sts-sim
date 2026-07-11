@@ -29,7 +29,7 @@ pub(super) fn combat_strategic_feedback(
     focus: Option<&CombatReviewFocus>,
     ladder: &[SearchReview],
 ) -> Option<CombatStrategicFeedbackReport> {
-    if ladder.is_empty() {
+    if !should_emit_strategic_feedback(classification.kind, !ladder.is_empty()) {
         return None;
     }
 
@@ -41,4 +41,29 @@ pub(super) fn combat_strategic_feedback(
         signals: strategic_signals(case, static_deficit, classification, progress, site, ladder),
         observations: feedback_observations(case, static_deficit, classification, progress),
     })
+}
+
+fn should_emit_strategic_feedback(classification_kind: &str, has_ladder: bool) -> bool {
+    has_ladder && classification_kind != "SavedCompleteWinRejectedByPolicy"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_policy_rejection_does_not_emit_deck_failure_feedback() {
+        assert!(!should_emit_strategic_feedback(
+            "SavedCompleteWinRejectedByPolicy",
+            true,
+        ));
+        assert!(should_emit_strategic_feedback(
+            "StillNoWinAfterReview",
+            true,
+        ));
+        assert!(!should_emit_strategic_feedback(
+            "StillNoWinAfterReview",
+            false,
+        ));
+    }
 }
