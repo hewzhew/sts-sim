@@ -44,7 +44,8 @@ pub(super) fn lane_options(
         .profile
         .map(|profile| profile.to_config().potion_policy);
     options.search.max_hp_loss = Some(match lane.kind() {
-        CombatSearchLaneKind::HallwaySurvivalFallback => RunControlHpLossLimit::Unlimited,
+        CombatSearchLaneKind::HallwaySurvivalFallback
+        | CombatSearchLaneKind::EliteSurvivalFallback => RunControlHpLossLimit::Unlimited,
         _ => owner_audit_hp_loss_limit(session),
     });
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
@@ -555,14 +556,35 @@ mod tests {
 
     #[test]
     fn elite_survival_fallback_uses_bounded_quality_profile() {
-        let session = session_with_combat_stakes(false, true);
+        let mut session = session_with_combat_stakes(false, true);
+        let player = &mut session
+            .active_combat
+            .as_mut()
+            .expect("active combat")
+            .combat_state
+            .entities
+            .player;
+        player.current_hp = 45;
+        player.max_hp = 74;
         let request = CombatSearchRequest::from_session(&session, test_args());
-        let options = lane_options(
-            CombatSearchLane::new(CombatSearchLaneKind::EliteSurvivalFallback),
-            &request,
-            &session,
+        let primary = lane_options(CombatSearchLane::primary(), &request, &session);
+        let lane = CombatSearchLane::new(CombatSearchLaneKind::EliteSurvivalFallback);
+        let fallback = lane_options(lane, &request, &session);
+        let config = fallback.search.profile.expect("profile").to_config();
+
+        assert_eq!(
+            primary.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Limit(27))
         );
-        let config = options.search.profile.expect("profile").to_config();
+        assert_eq!(
+            fallback.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
+        assert_eq!(
+            lane.acceptance_plugin(),
+            sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
+        );
+        assert!(lane.rejects_new_curses());
 
         assert_eq!(config.max_nodes, test_args().boss_search_nodes);
         assert_eq!(
