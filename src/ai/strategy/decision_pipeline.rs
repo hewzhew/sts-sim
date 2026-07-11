@@ -2431,4 +2431,65 @@ mod tests {
             Some("shop card has no acquisition policy support")
         );
     }
+
+    #[test]
+    fn act2_second_wind_sees_gap_behind_starter_defends() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Headbutt,
+            CardId::Cleave,
+            CardId::Offering,
+            CardId::Offering,
+        ];
+
+        let master_deck = test_deck(&deck);
+        let context = DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
+            &master_deck,
+            DeckAdmissionContext {
+                act: 2,
+                current_hp: 52,
+                max_hp: 74,
+            },
+            RunStrategicFacts {
+                entering_act: 3,
+                starter_basic_count: 7,
+                curse_count: 0,
+                has_energy_relic: false,
+            },
+        ));
+        let admission =
+            assess_reward_admission_from_master_deck(&master_deck, CardId::SecondWind, 0);
+        let second_wind = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::CardRewardPick {
+                card: CardId::SecondWind,
+                upgrades: 0,
+            },
+            Some(&admission),
+        );
+
+        assert!(
+            second_wind
+                .scores
+                .iter()
+                .any(|score| score.by == "strategic-survival-gap"),
+            "Second Wind should expose the real Act 2 defense gap: {:?}",
+            second_wind.scores
+        );
+        assert!(
+            !second_wind
+                .scores
+                .iter()
+                .any(|score| score.by == "strategic-burden-no-gap"),
+            "starter Defends must not suppress a survival repair: {:?}",
+            second_wind.scores
+        );
+    }
 }

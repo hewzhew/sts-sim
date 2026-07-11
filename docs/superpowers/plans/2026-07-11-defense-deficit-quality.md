@@ -4,7 +4,7 @@
 
 **Goal:** Prevent starter-quality Defends and Iron Waves from independently declaring Act 2 defense adequate, while preserving the existing strong-defense path to adequacy.
 
-**Architecture:** Keep the correction inside `deck_strategic_deficit`: reduce only the capped contribution from low-quality block, leaving role inventory, deficit levels, reward scoring, HP pressure, and combat-owner policy unchanged. Verify the shared semantic correction both at the deficit layer and at the reward scoring consumer.
+**Architecture:** Keep the correction inside `deck_strategic_deficit`: reduce the capped contribution from low-quality block and subtract only modeled Iron Wave units from role inventory. Leave role inventory, deficit levels, reward scoring, HP pressure, and combat-owner policy unchanged, and verify the shared semantic correction at both the deficit layer and its reward-scoring consumer.
 
 **Tech Stack:** Rust, built-in `#[test]` unit tests, Cargo, Git worktrees.
 
@@ -26,8 +26,8 @@
 - Modify: `src/ai/strategy/decision_pipeline.rs:1580-end` (tests only)
 
 **Interfaces:**
-- Consumes: `assess_deck_strategic_deficit(deck: &[CombatCard], facts: RunStrategicFacts) -> DeckStrategicDeficit` and the existing `reward_card_with_act_and_hp` test helper.
-- Produces: unchanged public types and signatures; only `block_or_mitigation_units` returns at most two units from Defend/Iron Wave copies alone.
+- Consumes: `assess_deck_strategic_deficit(deck: &[CombatCard], facts: RunStrategicFacts) -> DeckStrategicDeficit` and existing decision-pipeline constructors.
+- Produces: unchanged public types and signatures; `block_or_mitigation_units` returns at most two units from Defend/Iron Wave copies alone without subtracting unmodeled Defends from strong defense.
 
 - [ ] **Step 1: Add the failing starter-defense semantic test**
 
@@ -121,7 +121,34 @@ fn act2_second_wind_sees_gap_behind_starter_defends() {
         CardId::Offering,
     ];
 
-    let second_wind = reward_card_with_act_and_hp(&deck, CardId::SecondWind, 0, 2, 52, 74);
+    let master_deck = test_deck(&deck);
+    let context = DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
+        &master_deck,
+        DeckAdmissionContext {
+            act: 2,
+            current_hp: 52,
+            max_hp: 74,
+        },
+        RunStrategicFacts {
+            entering_act: 3,
+            starter_basic_count: 7,
+            curse_count: 0,
+            has_energy_relic: false,
+        },
+    ));
+    let admission = assess_reward_admission_from_master_deck(
+        &master_deck,
+        CardId::SecondWind,
+        0,
+    );
+    let second_wind = evaluate_decision_candidate(
+        context,
+        DecisionCandidateKind::CardRewardPick {
+            card: CardId::SecondWind,
+            upgrades: 0,
+        },
+        Some(&admission),
+    );
 
     assert!(
         second_wind
@@ -154,9 +181,12 @@ Expected: FAIL because the current static deficit is `Adequate`, so the evaluati
 
 - [ ] **Step 6: Implement the minimal semantic correction**
 
-In `block_or_mitigation_units`, change only the low-quality cap:
+In `block_or_mitigation_units`, subtract only Iron Wave (which is present in `DeckRoleInventory`)
+from raw defense before adding the shared low-quality cap. Defend is absent from the role inventory and
+must not erase strong cards such as Shrug It Off:
 
 ```rust
+let strong = raw_nonstarter.saturating_sub(counts.iron_wave_count);
 let low_quality_cap = counts
     .defend_count
     .saturating_add(counts.iron_wave_count)
@@ -187,12 +217,12 @@ Run:
 cargo fmt --check
 git diff --check
 git diff --stat
-git diff -- src/ai/strategy/deck_strategic_deficit.rs src/ai/strategy/decision_pipeline.rs
-git add src/ai/strategy/deck_strategic_deficit.rs src/ai/strategy/decision_pipeline.rs
+git diff -- docs/superpowers/plans/2026-07-11-defense-deficit-quality.md src/ai/strategy/deck_strategic_deficit.rs src/ai/strategy/decision_pipeline.rs
+git add docs/superpowers/plans/2026-07-11-defense-deficit-quality.md src/ai/strategy/deck_strategic_deficit.rs src/ai/strategy/decision_pipeline.rs
 git commit -m "fix: preserve defense gaps behind starter block"
 ```
 
-Expected: exactly the two test-bearing source files change, and the commit succeeds.
+Expected: the amended plan and exactly the two test-bearing source files change, and the commit succeeds.
 
 ### Task 2: Verify, merge locally, and rerun the bounded seed
 

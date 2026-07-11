@@ -384,12 +384,11 @@ fn block_or_mitigation_units(inventory: &DeckRoleInventory, counts: &StrategicCo
         .block_units
         .saturating_add(inventory.cycle_block_units)
         .saturating_add(inventory.mitigation_units);
-    let low_quality_block = counts.defend_count.saturating_add(counts.iron_wave_count);
-    let strong = raw_nonstarter.saturating_sub(low_quality_block);
+    let strong = raw_nonstarter.saturating_sub(counts.iron_wave_count);
     let low_quality_cap = counts
         .defend_count
         .saturating_add(counts.iron_wave_count)
-        .min(3);
+        .min(2);
     strong.saturating_add(low_quality_cap)
 }
 
@@ -620,5 +619,50 @@ mod tests {
         let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
 
         assert_eq!(deficit.deck_access, StrategicDeficitLevel::Adequate);
+    }
+
+    #[test]
+    fn act2_starter_defends_alone_remain_thin() {
+        let deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| card(id, index as u32 + 1))
+        .collect::<Vec<_>>();
+
+        let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
+
+        assert_eq!(deficit.block_or_mitigation, StrategicDeficitLevel::Thin);
+    }
+
+    #[test]
+    fn act2_real_block_access_can_close_starter_defense_gap() {
+        let deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::ShrugItOff,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| card(id, index as u32 + 1))
+        .collect::<Vec<_>>();
+
+        let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
+
+        assert_eq!(deficit.block_or_mitigation, StrategicDeficitLevel::Adequate);
     }
 }
