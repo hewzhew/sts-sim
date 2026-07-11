@@ -67,14 +67,15 @@ credit:
 - `TimingSensitive`: delayed access can materially change whether the upgrade works. This
   includes cost reduction, exhaust control or removal, Ethereal removal, and the existing core
   mechanic, engine, consistency, defensive-survival, scaling, phase-burst, debuff-coverage, or
-  transitional-power roles.
+  other explicit timing-critical roles.
 - `NoCombatCredit`: combat upgrading cannot reproduce the permanent value, or discounting the
   provider would be circular. Innate deltas, Armaments itself, and Apotheosis itself are in this
   class.
 
-`FrontloadDamage`, `LowMarginalRepeat`, and `Speculative` do not by themselves make a candidate
-timing-sensitive. This allows basic attacks and blocks to receive truthful coverage while a
-Whirlwind carrying phase-burst responsibility remains protected.
+`FrontloadDamage`, `TransitionalPower`, `LowMarginalRepeat`, and `Speculative` do not by
+themselves make a candidate timing-sensitive. This allows basic attacks, blocks, and ordinary
+two-cost transitional attacks to receive truthful coverage. A Whirlwind, Carnage, or Immolate
+that also carries phase-burst responsibility remains protected by that stronger role.
 
 Classification is fail-closed. If a future mechanical delta or role is not understood, the
 candidate receives no combat-upgrade credit and keeps its permanent priority.
@@ -145,9 +146,10 @@ Add only relationship tests that protect architectural truth:
    level, while selected-card coverage is limited to ordinary starter or low-marginal targets.
 3. Armaments itself, an Innate delta, and a Whirlwind carrying phase-burst debt receive no
    priority reduction.
-4. One campfire-policy boundary fixture shows that an ordinary Smith candidate no longer clears
-   the existing gate solely because combat-repairable value was overstated. The test asserts the
-   planner's typed verdict relationship and the policy action class, not exact aggregate scores.
+4. One campfire-policy boundary fixture uses an ordinary two-cost transitional attack to show
+   that Smith no longer clears the existing gate solely because combat-repairable value was
+   overstated. The test asserts the planner's typed verdict relationship and the policy action
+   class, not exact aggregate scores. Phase-burst attacks remain covered by the preceding test.
 
 Existing owner-policy delegation tests are sufficient to protect the run-control boundary. Do
 not duplicate the same behavior at owner, policy, and planner layers.
