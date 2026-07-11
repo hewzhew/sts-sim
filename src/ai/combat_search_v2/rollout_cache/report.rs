@@ -9,7 +9,7 @@ impl RolloutCache {
         CombatSearchV2RolloutReport {
             policy: CombatSearchV2RolloutPolicy::from(self.policy).label(),
             behavioral_effect:
-                "estimated_frontier_priority_only_no_terminal_outcome_no_baseline_claim",
+                "estimated_frontier_priority_with_single_exact_terminal_replay_no_estimated_terminal_claim",
             max_evaluations: self.max_evaluations,
             max_actions_per_rollout: self.max_actions,
             beam_width: self.beam_width,
@@ -61,14 +61,14 @@ impl RolloutCache {
             best_frontier_estimate: best_frontier
                 .and_then(|node| node.rollout_estimate.to_report()),
             notes: vec![
-                "rollout estimates are not terminal outcome records",
+                "rollout estimates are not terminal outcome records; one complete terminal-win witness may be promoted only after exact replay",
                 "conservative_no_potion uses only legal simulator actions and disables potion actions",
                 "rollout cache is keyed by exact combat runtime state",
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
-                "small pending choices may be followed by rollout, but their actions are still exact simulator inputs and never terminal outcome records",
+                "small pending choices may be followed by rollout, but their actions become a terminal outcome record only after exact replay",
                 "enemy_mechanics_adaptive_no_potion uses phase-aware rollout for typed Guardian/Bronze Automaton mechanics and otherwise falls back to conservative_no_potion",
-                "turn_beam_no_potion uses turn-plan end states as an estimate-only beam and still reports no terminal outcome record",
+                "turn_beam_no_potion uses turn-plan end states as an estimate-only beam; a complete terminal-win witness still requires exact replay",
             ],
         }
     }

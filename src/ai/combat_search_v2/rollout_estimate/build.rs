@@ -56,6 +56,7 @@ impl RolloutNodeEstimate {
                 .stopped_on_high_fanout_pending_choice,
             survival_margin: phase_profile.pressure.survival_margin,
             actions_simulated,
+            total_actions: node.actions.len(),
             action_preview: node
                 .actions
                 .iter()

@@ -735,6 +735,44 @@ fn terminal_children_skip_rollout_estimate() {
 }
 
 #[test]
+fn terminal_rollout_is_promoted_only_after_exact_replay() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(report.stats.nodes_expanded, 0);
+    assert_eq!(report.rollout.terminal_wins, 1);
+    assert!(
+        report.outcome.complete_trajectory_found,
+        "a complete terminal rollout should become evidence only after exact replay"
+    );
+    let trajectory = report
+        .best_complete_trajectory
+        .expect("exactly replayed rollout win");
+    assert_eq!(trajectory.terminal, SearchTerminalLabel::Win);
+    assert_eq!(trajectory.actions.len(), 1);
+    assert_eq!(trajectory.actions[0].action_id, 0);
+    assert_eq!(
+        trajectory.actions[0].input,
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }
+    );
+}
+
+#[test]
 fn terminal_turn_plan_seeds_skip_rollout_estimate() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];

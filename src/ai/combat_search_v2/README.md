@@ -239,8 +239,9 @@ this map and extend an existing boundary when one already exists.
    `phase_action_ordering.rs`.
 3. If the work is about pruning, identify the safe-pruning boundary first:
    `action_equivalence/`, `frontier/`, or `turn_local_dominance/`.
-4. If the work is about estimates, use `value/` or `rollout/`; do not let it
-   claim a terminal outcome.
+4. If the work is about estimates, use `value/` or `rollout/`; only the bounded
+   exact-replay bridge in `search/rollout_terminal_promotion.rs` may convert a
+   complete terminal witness into a terminal outcome.
 5. If the work only explains behavior, it belongs in diagnostics and needs a
    concrete consumer before adding more report fields.
 6. If the work changes the search-loop lifecycle, start in `search/` and place

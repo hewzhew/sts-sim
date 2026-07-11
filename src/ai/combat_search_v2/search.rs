@@ -27,6 +27,7 @@ mod node_expansion;
 mod node_preflight;
 mod node_pruning;
 mod node_terminal;
+mod rollout_terminal_promotion;
 mod rollout_timing;
 mod turn_plan_seed_gate;
 mod turn_plan_seeding;
@@ -39,6 +40,7 @@ use finish_diagnostics::finish_diagnostics_and_timing;
 use loop_state::SearchLoopState;
 use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
+use rollout_terminal_promotion::promote_replayable_terminal_rollout;
 #[cfg(test)]
 use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
 
@@ -120,6 +122,12 @@ pub fn run_combat_search_v2_with_stepper(
         }
     }
 
+    promote_replayable_terminal_rollout(
+        &mut loop_state,
+        &root_for_turn_plan_diagnostics,
+        stepper,
+        &config,
+    );
     finish_diagnostics_and_timing(
         &mut loop_state,
         started,

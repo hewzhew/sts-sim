@@ -48,6 +48,7 @@ pub(super) struct RolloutCache {
     pub(super) max_pending_choice_estimated_action_fanout: usize,
     pub(super) performance: RolloutPerformanceCounters,
     pub(super) cache: HashMap<CombatExactStateKey, RolloutNodeEstimate>,
+    pub(super) best_replayable_terminal_win: Option<RolloutNodeEstimate>,
 }
 
 impl RolloutCache {

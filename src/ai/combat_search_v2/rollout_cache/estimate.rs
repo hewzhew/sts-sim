@@ -154,6 +154,14 @@ impl RolloutCache {
     }
 
     fn observe_estimate(&mut self, estimate: &RolloutNodeEstimate) {
+        if estimate.is_replayable_terminal_win() {
+            self.best_replayable_terminal_win = Some(
+                self.best_replayable_terminal_win
+                    .take()
+                    .map(|current| better_rollout_estimate(estimate.clone(), current))
+                    .unwrap_or_else(|| estimate.clone()),
+            );
+        }
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);
         }

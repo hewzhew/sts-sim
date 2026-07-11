@@ -33,6 +33,7 @@ pub(in crate::ai::combat_search_v2) struct RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) stopped_on_high_fanout_pending_choice: bool,
     pub(in crate::ai::combat_search_v2) survival_margin: i32,
     pub(in crate::ai::combat_search_v2) actions_simulated: usize,
+    pub(in crate::ai::combat_search_v2) total_actions: usize,
     pub(in crate::ai::combat_search_v2) action_preview: Vec<CombatSearchV2ActionPreview>,
     pub(in crate::ai::combat_search_v2) truncated: bool,
     pub(in crate::ai::combat_search_v2) stop_reason: RolloutStopReason,
@@ -87,10 +88,47 @@ impl RolloutNodeEstimate {
             stopped_on_high_fanout_pending_choice: false,
             survival_margin: 0,
             actions_simulated: 0,
+            total_actions: 0,
             action_preview: Vec::new(),
             truncated: false,
             stop_reason: RolloutStopReason::NotEvaluated,
             last_action_reason: None,
         }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_replayable_terminal_win(&self) -> bool {
+        self.evaluated
+            && self.terminal == SearchTerminalLabel::Win
+            && self.stop_reason == RolloutStopReason::TerminalState
+            && !self.truncated
+            && self.total_actions == self.action_preview.len()
+            && self.total_actions <= ROLLOUT_ACTION_PREVIEW_LIMIT
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::state::core::ClientInput;
+
+    use super::*;
+
+    #[test]
+    fn replayable_terminal_win_requires_the_complete_action_preview() {
+        let mut estimate = RolloutNodeEstimate::unevaluated();
+        estimate.evaluated = true;
+        estimate.terminal = SearchTerminalLabel::Win;
+        estimate.stop_reason = RolloutStopReason::TerminalState;
+        estimate.total_actions = ROLLOUT_ACTION_PREVIEW_LIMIT + 1;
+        estimate.action_preview = (0..ROLLOUT_ACTION_PREVIEW_LIMIT)
+            .map(|index| CombatSearchV2ActionPreview {
+                action_key: format!("action/{index}"),
+                input: ClientInput::EndTurn,
+            })
+            .collect();
+
+        assert!(!estimate.is_replayable_terminal_win());
+
+        estimate.total_actions = estimate.action_preview.len();
+        assert!(estimate.is_replayable_terminal_win());
     }
 }
