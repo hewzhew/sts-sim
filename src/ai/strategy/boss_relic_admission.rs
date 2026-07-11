@@ -1,6 +1,7 @@
 use crate::ai::action_supply_v1::action_supply_profile_v1;
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, PyramidApparitionCoverageV1};
+use crate::ai::pandora_offer_profile_v1::{pandora_offer_profile_v1, PandoraOfferHorizonV1};
 use crate::ai::strategic::run_debt_projection_for_relic_v1;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
@@ -74,6 +75,14 @@ pub enum BossRelicAdmissionReason {
         additional_play_sources: u8,
         cost_or_resource_compression_sources: u8,
         potentially_recursive_sources: u8,
+    },
+    PandoraOfferFacts {
+        starter_strikes: usize,
+        starter_defends: usize,
+        transform_targets: usize,
+        transform_share_percent: u8,
+        horizon: PandoraOfferHorizonV1,
+        high_variance: bool,
     },
     Skip,
     Unknown,
@@ -226,6 +235,17 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
     let lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
     let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
     let projected_startup = projected_startup_profile(run_state, relic);
+    if relic == RelicId::PandorasBox {
+        let profile = pandora_offer_profile_v1(run_state);
+        reasons.push(BossRelicAdmissionReason::PandoraOfferFacts {
+            starter_strikes: profile.starter_strikes,
+            starter_defends: profile.starter_defends,
+            transform_targets: profile.transform_targets,
+            transform_share_percent: profile.transform_share_percent,
+            horizon: profile.horizon,
+            high_variance: profile.high_variance,
+        });
+    }
     if relic == RelicId::RunicPyramid {
         reasons.push(BossRelicAdmissionReason::PyramidApparitionCoverage(
             projected_startup.pyramid_apparition_coverage,
@@ -485,6 +505,16 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         } => format!(
             "action-supply:opening={opening_once_options},delayed={delayed_per_turn_sources},burst={same_turn_burst_sources},triggered={triggered_repeatable_sources},extra={additional_play_sources},compression={cost_or_resource_compression_sources},recursive={potentially_recursive_sources}"
         ),
+        BossRelicAdmissionReason::PandoraOfferFacts {
+            starter_strikes,
+            starter_defends,
+            transform_targets,
+            transform_share_percent,
+            horizon,
+            high_variance,
+        } => format!(
+            "pandora-offer:targets={transform_targets},strikes={starter_strikes},defends={starter_defends},share={transform_share_percent}%,horizon={horizon:?},high-variance={high_variance}"
+        ),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
@@ -685,6 +715,36 @@ mod tests {
                 cost_or_resource_compression_sources: 1,
                 potentially_recursive_sources: 1,
             }));
+    }
+
+    #[test]
+    fn pandora_offer_facts_do_not_change_admission_order_rank() {
+        let mut many = RunState::new(1, 0, false, "Ironclad");
+        many.act_num = 1;
+        many.master_deck = (0..4)
+            .map(|index| CombatCard::new(CardId::Strike, index + 1))
+            .chain((0..4).map(|index| CombatCard::new(CardId::Defend, index + 10)))
+            .collect();
+        let mut few = many.clone();
+        few.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+
+        let many_admission = assess_boss_relic_admission(&many, RelicId::PandorasBox);
+        let few_admission = assess_boss_relic_admission(&few, RelicId::PandorasBox);
+
+        assert!(many_admission.reasons.iter().any(|reason| matches!(
+            reason,
+            BossRelicAdmissionReason::PandoraOfferFacts {
+                transform_targets: 8,
+                ..
+            }
+        )));
+        assert_eq!(
+            boss_relic_admission_order_rank(&many_admission),
+            boss_relic_admission_order_rank(&few_admission),
+        );
     }
 
     #[test]

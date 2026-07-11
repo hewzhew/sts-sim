@@ -25,6 +25,7 @@ pub mod neow_policy_v1;
 pub mod noncombat_decision_v1;
 pub mod noncombat_strategy_v1;
 pub mod opening_hand_target_plan_v1;
+pub mod pandora_offer_profile_v1;
 pub mod random_upgrade_opportunity_v1;
 pub mod relic_trade_policy_v1;
 pub mod reward_policy_v1;
