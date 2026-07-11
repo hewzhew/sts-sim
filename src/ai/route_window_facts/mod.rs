@@ -200,9 +200,17 @@ pub enum RouteWindowProvenance {
     MapUnavailable,
 }
 
-#[derive(Clone, Debug)]
-struct ObservedPath {
-    nodes: Vec<RouteWindowNode>,
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteWindowPath {
+    pub nodes: Vec<RouteWindowNode>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteWindowPathFamily {
+    pub coverage: RouteWindowCoverage,
+    pub paths: Vec<RouteWindowPath>,
 }
 
 pub fn build_route_window_facts(
@@ -211,72 +219,26 @@ pub fn build_route_window_facts(
 ) -> RouteWindowFacts {
     let cursor = route_window_cursor(run_state);
     let mut facts = Vec::new();
+    let starts = cursor
+        .start_targets
+        .iter()
+        .map(|target| (target.x, target.y))
+        .collect::<Vec<_>>();
+    let family = build_route_path_family(run_state, &starts, config.clone());
+    let paths = &family.paths;
+    let coverage = &family.coverage;
 
-    if run_state.map.is_checkpoint_externalized_placeholder() || run_state.map.graph.is_empty() {
-        let coverage = RouteWindowCoverage {
-            kind: RouteWindowCoverageKind::UnavailableMap,
-            horizon_nodes: config.horizon_nodes,
-            path_budget: config.path_budget,
-            path_budget_exhausted: false,
-            limitations: vec![RouteWindowLimitation::MapPlaceholder],
-        };
+    if coverage.kind == RouteWindowCoverageKind::UnavailableMap {
         facts.push(coverage_fact(&coverage));
         return RouteWindowFacts {
             schema_name: ROUTE_WINDOW_FACTS_SCHEMA_NAME.to_string(),
             schema_version: ROUTE_WINDOW_FACTS_SCHEMA_VERSION,
             cursor,
-            coverage,
+            coverage: coverage.clone(),
             observed_path_count: 0,
             facts,
         };
     }
-
-    let mut paths = Vec::new();
-    let mut path_budget_exhausted = false;
-    for target in route_targets(run_state) {
-        collect_path_suffixes(
-            run_state,
-            target.x,
-            target.y,
-            Vec::new(),
-            config.horizon_nodes,
-            config.path_budget,
-            &mut paths,
-            &mut path_budget_exhausted,
-        );
-        if path_budget_exhausted {
-            break;
-        }
-    }
-
-    let has_unmodeled_future_mobility = wing_boots_charges(run_state) > 0;
-    let mut limitations = Vec::new();
-    if path_budget_exhausted {
-        limitations.push(RouteWindowLimitation::PathBudgetExhausted);
-    }
-    if has_unmodeled_future_mobility {
-        limitations.push(RouteWindowLimitation::FutureWingBootsJumpsNotEnumerated);
-    }
-    if paths.is_empty() {
-        limitations.push(RouteWindowLimitation::NoLegalFutureTargets);
-    }
-
-    let coverage_kind = if path_budget_exhausted {
-        RouteWindowCoverageKind::PartialPathBudget
-    } else if paths.is_empty() {
-        RouteWindowCoverageKind::NoVisibleContinuation
-    } else if has_unmodeled_future_mobility {
-        RouteWindowCoverageKind::PartialUnmodeledMobility
-    } else {
-        RouteWindowCoverageKind::CompleteWithinHorizon
-    };
-    let coverage = RouteWindowCoverage {
-        kind: coverage_kind,
-        horizon_nodes: config.horizon_nodes,
-        path_budget: config.path_budget,
-        path_budget_exhausted,
-        limitations,
-    };
 
     facts.push(coverage_fact(&coverage));
     facts.extend(derive_subject_facts(
@@ -302,9 +264,87 @@ pub fn build_route_window_facts(
         schema_name: ROUTE_WINDOW_FACTS_SCHEMA_NAME.to_string(),
         schema_version: ROUTE_WINDOW_FACTS_SCHEMA_VERSION,
         cursor,
-        coverage,
+        coverage: coverage.clone(),
         observed_path_count: paths.len(),
         facts,
+    }
+}
+
+pub fn build_route_path_family_from_target(
+    run_state: &RunState,
+    x: i32,
+    y: i32,
+    config: RouteWindowFactsConfig,
+) -> RouteWindowPathFamily {
+    build_route_path_family(run_state, &[(x, y)], config)
+}
+
+fn build_route_path_family(
+    run_state: &RunState,
+    starts: &[(i32, i32)],
+    config: RouteWindowFactsConfig,
+) -> RouteWindowPathFamily {
+    if run_state.map.is_checkpoint_externalized_placeholder() || run_state.map.graph.is_empty() {
+        return RouteWindowPathFamily {
+            coverage: RouteWindowCoverage {
+                kind: RouteWindowCoverageKind::UnavailableMap,
+                horizon_nodes: config.horizon_nodes,
+                path_budget: config.path_budget,
+                path_budget_exhausted: false,
+                limitations: vec![RouteWindowLimitation::MapPlaceholder],
+            },
+            paths: Vec::new(),
+        };
+    }
+
+    let mut paths = Vec::new();
+    let mut path_budget_exhausted = false;
+    for &(x, y) in starts {
+        collect_path_suffixes(
+            run_state,
+            x,
+            y,
+            Vec::new(),
+            config.horizon_nodes,
+            config.path_budget,
+            &mut paths,
+            &mut path_budget_exhausted,
+        );
+        if path_budget_exhausted {
+            break;
+        }
+    }
+
+    let has_unmodeled_future_mobility = wing_boots_charges(run_state) > 0;
+    let mut limitations = Vec::new();
+    if path_budget_exhausted {
+        limitations.push(RouteWindowLimitation::PathBudgetExhausted);
+    }
+    if has_unmodeled_future_mobility {
+        limitations.push(RouteWindowLimitation::FutureWingBootsJumpsNotEnumerated);
+    }
+    if paths.is_empty() {
+        limitations.push(RouteWindowLimitation::NoLegalFutureTargets);
+    }
+
+    let kind = if path_budget_exhausted {
+        RouteWindowCoverageKind::PartialPathBudget
+    } else if paths.is_empty() {
+        RouteWindowCoverageKind::NoVisibleContinuation
+    } else if has_unmodeled_future_mobility {
+        RouteWindowCoverageKind::PartialUnmodeledMobility
+    } else {
+        RouteWindowCoverageKind::CompleteWithinHorizon
+    };
+    RouteWindowPathFamily {
+        coverage: RouteWindowCoverage {
+            kind,
+            horizon_nodes: config.horizon_nodes,
+            path_budget: config.path_budget,
+            path_budget_exhausted,
+            limitations,
+        },
+        paths,
     }
 }
 
@@ -339,7 +379,7 @@ fn collect_path_suffixes(
     mut prefix: Vec<RouteWindowNode>,
     horizon_nodes: usize,
     path_budget: usize,
-    paths: &mut Vec<ObservedPath>,
+    paths: &mut Vec<RouteWindowPath>,
     path_budget_exhausted: &mut bool,
 ) {
     if paths.len() >= path_budget {
@@ -347,11 +387,11 @@ fn collect_path_suffixes(
         return;
     }
     if prefix.len() >= horizon_nodes {
-        paths.push(ObservedPath { nodes: prefix });
+        paths.push(RouteWindowPath { nodes: prefix });
         return;
     }
     let Some(node) = node_at(run_state, x, y) else {
-        paths.push(ObservedPath { nodes: prefix });
+        paths.push(RouteWindowPath { nodes: prefix });
         return;
     };
     prefix.push(RouteWindowNode {
@@ -360,7 +400,7 @@ fn collect_path_suffixes(
         room_type: node.class,
     });
     if prefix.len() >= horizon_nodes || node.edges.is_empty() || node.y >= 15 {
-        paths.push(ObservedPath { nodes: prefix });
+        paths.push(RouteWindowPath { nodes: prefix });
         return;
     }
     for edge in &node.edges {
@@ -427,7 +467,7 @@ fn coverage_fact(coverage: &RouteWindowCoverage) -> RouteWindowFact {
 }
 
 fn derive_subject_facts(
-    paths: &[ObservedPath],
+    paths: &[RouteWindowPath],
     coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
 ) -> Vec<RouteWindowFact> {
@@ -532,7 +572,7 @@ fn derive_subject_facts(
 }
 
 fn derive_before_facts(
-    paths: &[ObservedPath],
+    paths: &[RouteWindowPath],
     coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
 ) -> Vec<RouteWindowFact> {
@@ -569,7 +609,7 @@ fn derive_before_facts(
 }
 
 fn derive_coreachability_facts(
-    paths: &[ObservedPath],
+    paths: &[RouteWindowPath],
     coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
 ) -> Vec<RouteWindowFact> {
@@ -608,7 +648,7 @@ fn derive_coreachability_facts(
 }
 
 fn derive_unknown_opportunity_facts(
-    paths: &[ObservedPath],
+    paths: &[RouteWindowPath],
     coverage: &RouteWindowCoverage,
     horizon_nodes: usize,
 ) -> Vec<RouteWindowFact> {
@@ -711,14 +751,14 @@ fn subject_matches(subject: RouteWindowSubject, node: &RouteWindowNode) -> bool 
     }
 }
 
-fn first_subject_index(path: &ObservedPath, subject: RouteWindowSubject) -> Option<usize> {
+fn first_subject_index(path: &RouteWindowPath, subject: RouteWindowSubject) -> Option<usize> {
     path.nodes
         .iter()
         .position(|node| subject_matches(subject, node))
 }
 
 fn occurs_before(
-    path: &ObservedPath,
+    path: &RouteWindowPath,
     subject: RouteWindowSubject,
     before: RouteWindowSubject,
 ) -> bool {
@@ -955,5 +995,69 @@ mod tests {
             RouteWindowModality::Cannot,
             RouteWindowProvenance::NoCoveredPathComplete,
         ));
+    }
+
+    #[test]
+    fn candidate_path_family_preserves_ordered_visible_nodes() {
+        let mut combat = node(0, 0, RoomType::MonsterRoom);
+        combat.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut shop = node(0, 1, RoomType::ShopRoom);
+        shop.edges.insert(MapEdge::new(0, 1, 0, 2));
+        let elite = node(0, 2, RoomType::MonsterRoomElite);
+        let run_state = run_with_graph(vec![vec![combat], vec![shop], vec![elite]], -1, -1);
+
+        let family = build_route_path_family_from_target(
+            &run_state,
+            0,
+            0,
+            RouteWindowFactsConfig {
+                horizon_nodes: 3,
+                path_budget: 16,
+            },
+        );
+
+        assert_eq!(family.paths.len(), 1);
+        assert_eq!(
+            family.paths[0]
+                .nodes
+                .iter()
+                .map(|node| node.room_type)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(RoomType::MonsterRoom),
+                Some(RoomType::ShopRoom),
+                Some(RoomType::MonsterRoomElite),
+            ]
+        );
+        assert_eq!(
+            family.coverage.kind,
+            RouteWindowCoverageKind::CompleteWithinHorizon
+        );
+    }
+
+    #[test]
+    fn candidate_path_family_reports_partial_path_budget() {
+        let mut start = node(0, 0, RoomType::MonsterRoom);
+        start.edges.insert(MapEdge::new(0, 0, 0, 1));
+        start.edges.insert(MapEdge::new(0, 0, 1, 1));
+        let combat = node(0, 1, RoomType::MonsterRoom);
+        let shop = node(1, 1, RoomType::ShopRoom);
+        let run_state = run_with_graph(vec![vec![start], vec![combat, shop]], -1, -1);
+
+        let family = build_route_path_family_from_target(
+            &run_state,
+            0,
+            0,
+            RouteWindowFactsConfig {
+                horizon_nodes: 2,
+                path_budget: 1,
+            },
+        );
+
+        assert_eq!(family.paths.len(), 1);
+        assert_eq!(
+            family.coverage.kind,
+            RouteWindowCoverageKind::PartialPathBudget
+        );
     }
 }

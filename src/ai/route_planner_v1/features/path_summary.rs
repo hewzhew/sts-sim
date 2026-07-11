@@ -1,4 +1,8 @@
-use crate::state::map::node::{MapRoomNode, RoomType};
+use crate::ai::route_window_facts::{
+    build_route_path_family_from_target, RouteWindowFactsConfig, RouteWindowNode,
+    RouteWindowPathFamily,
+};
+use crate::state::map::node::RoomType;
 use crate::state::RunState;
 
 use super::super::types::{RouteFirstEliteSegmentV1, RoutePathSummaryV1, RoutePlannerConfigV1};
@@ -34,20 +38,34 @@ pub fn summarize_route_from(
         return empty_summary_with_path();
     }
 
-    let mut paths = Vec::new();
-    let mut path_budget_exhausted = false;
-    collect_path_stats(
+    let horizon_nodes = 15_usize.saturating_sub(y.max(0) as usize);
+    let family = build_route_path_family_from_target(
         run_state,
         x,
         y,
-        PathStats::default(),
-        &mut paths,
-        config.path_budget,
-        &mut path_budget_exhausted,
+        RouteWindowFactsConfig {
+            horizon_nodes,
+            path_budget: config.path_budget,
+        },
     );
+    summarize_route_path_family(&family)
+}
+
+pub(in crate::ai::route_planner_v1) fn summarize_route_path_family(
+    family: &RouteWindowPathFamily,
+) -> RoutePathSummaryV1 {
+    let paths = family
+        .paths
+        .iter()
+        .map(|path| {
+            path.nodes
+                .iter()
+                .fold(PathStats::default(), update_path_stats)
+        })
+        .collect::<Vec<_>>();
     if paths.is_empty() {
         return RoutePathSummaryV1 {
-            path_budget_exhausted,
+            path_budget_exhausted: family.coverage.path_budget_exhausted,
             ..empty_summary()
         };
     }
@@ -55,7 +73,7 @@ pub fn summarize_route_from(
     let max = |f: fn(&PathStats) -> usize| paths.iter().map(f).max().unwrap_or(0);
     RoutePathSummaryV1 {
         path_count: paths.len(),
-        path_budget_exhausted,
+        path_budget_exhausted: family.coverage.path_budget_exhausted,
         min_early_pressure: min(|stats| stats.early_pressure),
         max_early_pressure: max(|stats| stats.early_pressure),
         min_elites: min(|stats| stats.elites),
@@ -155,47 +173,8 @@ fn first_elite_segment(paths: &[PathStats]) -> RouteFirstEliteSegmentV1 {
     }
 }
 
-fn collect_path_stats(
-    run_state: &RunState,
-    x: i32,
-    y: i32,
-    current: PathStats,
-    paths: &mut Vec<PathStats>,
-    budget: usize,
-    path_budget_exhausted: &mut bool,
-) {
-    if paths.len() >= budget {
-        *path_budget_exhausted = true;
-        return;
-    }
-    let Some(node) = run_state
-        .map
-        .graph
-        .get(y.max(0) as usize)
-        .and_then(|row| row.get(x.max(0) as usize))
-    else {
-        return;
-    };
-    let current = update_path_stats(current, node);
-    if node.edges.is_empty() || y >= 14 {
-        paths.push(current);
-        return;
-    }
-    for edge in &node.edges {
-        collect_path_stats(
-            run_state,
-            edge.dst_x,
-            edge.dst_y,
-            current,
-            paths,
-            budget,
-            path_budget_exhausted,
-        );
-    }
-}
-
-fn update_path_stats(mut stats: PathStats, node: &MapRoomNode) -> PathStats {
-    match node.class {
+fn update_path_stats(mut stats: PathStats, node: &RouteWindowNode) -> PathStats {
+    match node.room_type {
         Some(RoomType::MonsterRoom) => {
             if node.y <= 3 {
                 stats.early_pressure += 1;
