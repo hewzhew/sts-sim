@@ -4,7 +4,7 @@
 
 **Goal:** Make boss-relic admission and ordering consume existing run-debt and startup-liability evidence before the narrow owner selects its first candidate.
 
-**Architecture:** Keep `boss_relic_owner` unchanged as the runtime owner. Enrich `BossRelicAdmission` with a categorical burden computed from `run_debt_projection_for_relic_v1` and an assessment-only projected `DeckStartupProfileV1`, then include that burden between lane and class in the existing order key.
+**Architecture:** Keep `boss_relic_owner` unchanged as the runtime owner. Enrich `BossRelicAdmission` with a categorical burden computed from `run_debt_projection_for_relic_v1` and an assessment-only projected `DeckStartupProfileV1`, then order by lane, the existing explicit Act 2 energy-gap priority, burden, and class.
 
 **Tech Stack:** Rust 2021, existing `RunState`, `DeckStartupProfileV1`, run-debt projection, and built-in Rust tests.
 
@@ -156,18 +156,30 @@ Append this exact field to `BossRelicAdmission`:
 pub burden: BossRelicAdmissionBurden,
 ```
 
-Make ordering lexicographic and initialize skip with no burden:
+Make ordering lexicographic while preserving the existing explicit Act 2 energy-gap priority,
+and initialize skip with no burden:
 
 ```rust
 pub fn boss_relic_admission_order_rank(admission: &BossRelicAdmission) -> u8 {
-    admission.lane.order_rank() * 64
-        + admission.burden.order_rank() * 16
+    admission.lane.order_rank() * 80
+        + explicit_priority_rank(admission) * 40
+        + admission.burden.order_rank() * 10
         + admission.class.order_rank()
 }
 
-// inside skip_boss_relic_admission
-burden: BossRelicAdmissionBurden::None,
+fn explicit_priority_rank(admission: &BossRelicAdmission) -> u8 {
+    if admission
+        .reasons
+        .contains(&BossRelicAdmissionReason::Act2EnergyGap)
+    {
+        0
+    } else {
+        1
+    }
+}
 ```
+
+Set `burden: BossRelicAdmissionBurden::None` in `skip_boss_relic_admission`.
 
 Compute the candidate burden after existing class/lane assessment:
 
@@ -235,7 +247,7 @@ Run:
 ```powershell
 cargo fmt --all -- --check
 cargo test --lib
-cargo test --test architecture
+cargo test --test architecture_runtime_boundaries
 git diff --check
 ```
 

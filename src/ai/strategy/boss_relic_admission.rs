@@ -1,8 +1,10 @@
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::deck_startup_profile_v1::deck_startup_profile_v1;
+use crate::ai::strategic::run_debt_projection_for_relic_v1;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::cards::CardId;
-use crate::content::relics::RelicId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +26,13 @@ pub enum BossRelicAdmissionLane {
     Mainline,
     Probe,
     Skip,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BossRelicAdmissionBurden {
+    None,
+    AddedRunDebt,
+    IntroducedStartupLiability,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +60,10 @@ pub enum BossRelicAdmissionReason {
     Act2EnergyGap,
     DoesNotSolveAct2EnergyGap,
     NoRestDebt,
+    AddsRunDebt {
+        contracts: usize,
+    },
+    IntroducesStartupLiability,
     Skip,
     Unknown,
 }
@@ -60,6 +73,7 @@ pub struct BossRelicAdmission {
     pub relic: Option<RelicId>,
     pub class: BossRelicAdmissionClass,
     pub lane: BossRelicAdmissionLane,
+    pub burden: BossRelicAdmissionBurden,
     pub reasons: Vec<BossRelicAdmissionReason>,
 }
 
@@ -90,8 +104,32 @@ impl BossRelicAdmissionLane {
     }
 }
 
+impl BossRelicAdmissionBurden {
+    fn order_rank(self) -> u8 {
+        match self {
+            BossRelicAdmissionBurden::None => 0,
+            BossRelicAdmissionBurden::AddedRunDebt => 1,
+            BossRelicAdmissionBurden::IntroducedStartupLiability => 2,
+        }
+    }
+}
+
 pub fn boss_relic_admission_order_rank(admission: &BossRelicAdmission) -> u8 {
-    admission.lane.order_rank() * 16 + admission.class.order_rank()
+    admission.lane.order_rank() * 80
+        + explicit_priority_rank(admission) * 40
+        + admission.burden.order_rank() * 10
+        + admission.class.order_rank()
+}
+
+fn explicit_priority_rank(admission: &BossRelicAdmission) -> u8 {
+    if admission
+        .reasons
+        .contains(&BossRelicAdmissionReason::Act2EnergyGap)
+    {
+        0
+    } else {
+        1
+    }
 }
 
 pub fn skip_boss_relic_admission() -> BossRelicAdmission {
@@ -99,6 +137,7 @@ pub fn skip_boss_relic_admission() -> BossRelicAdmission {
         relic: None,
         class: BossRelicAdmissionClass::Skip,
         lane: BossRelicAdmissionLane::Skip,
+        burden: BossRelicAdmissionBurden::None,
         reasons: vec![BossRelicAdmissionReason::Skip],
     }
 }
@@ -173,14 +212,40 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
-    let lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
+    let mut lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
+    let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
+    let introduces_startup_liability = introduces_known_startup_liability(run_state, relic);
+    let burden = if introduces_startup_liability {
+        reasons.push(BossRelicAdmissionReason::IntroducesStartupLiability);
+        lane = BossRelicAdmissionLane::Probe;
+        BossRelicAdmissionBurden::IntroducedStartupLiability
+    } else if debt_projection.added_contracts.is_empty() {
+        BossRelicAdmissionBurden::None
+    } else {
+        reasons.push(BossRelicAdmissionReason::AddsRunDebt {
+            contracts: debt_projection.added_contracts.len(),
+        });
+        BossRelicAdmissionBurden::AddedRunDebt
+    };
 
     BossRelicAdmission {
         relic: Some(relic),
         class,
         lane,
+        burden,
         reasons,
     }
+}
+
+fn introduces_known_startup_liability(run_state: &RunState, relic: RelicId) -> bool {
+    let current = deck_startup_profile_v1(run_state);
+    let mut projected_run = run_state.clone();
+    if !projected_run.relics.iter().any(|state| state.id == relic) {
+        projected_run.relics.push(RelicState::new(relic));
+    }
+    let projected = deck_startup_profile_v1(&projected_run);
+
+    !current.has_pyramid_unupgraded_apparition && projected.has_pyramid_unupgraded_apparition
 }
 
 fn lane_for_relic(
@@ -289,10 +354,10 @@ fn default_lane(class: BossRelicAdmissionClass) -> BossRelicAdmissionLane {
     match class {
         BossRelicAdmissionClass::StarterUpgrade
         | BossRelicAdmissionClass::LowDownsideValue
-        | BossRelicAdmissionClass::DeckCleanup
-        | BossRelicAdmissionClass::StrategicPower => BossRelicAdmissionLane::Mainline,
+        | BossRelicAdmissionClass::DeckCleanup => BossRelicAdmissionLane::Mainline,
         BossRelicAdmissionClass::RouteValue
         | BossRelicAdmissionClass::EnergyWithConstraint
+        | BossRelicAdmissionClass::StrategicPower
         | BossRelicAdmissionClass::CurseDebt
         | BossRelicAdmissionClass::TransformAgency
         | BossRelicAdmissionClass::Unknown => BossRelicAdmissionLane::Probe,
@@ -376,6 +441,10 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         BossRelicAdmissionReason::Act2EnergyGap => "act2-energy-gap".to_string(),
         BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap => "misses-act2-energy-gap".to_string(),
         BossRelicAdmissionReason::NoRestDebt => "no-rest-debt".to_string(),
+        BossRelicAdmissionReason::AddsRunDebt { contracts } => {
+            format!("adds-run-debt:{contracts}")
+        }
+        BossRelicAdmissionReason::IntroducesStartupLiability => "startup-liability".to_string(),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
@@ -469,5 +538,70 @@ mod tests {
                 "{synergy:?} should keep Sozu behind the unconstrained starter upgrade"
             );
         }
+    }
+
+    #[test]
+    fn strategic_power_defaults_to_probe() {
+        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+        run.act_num = 2;
+
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
+
+        assert_eq!(pyramid.lane, BossRelicAdmissionLane::Probe);
+    }
+
+    #[test]
+    fn pyramid_apparition_liability_is_projected_without_mutating_run() {
+        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.master_deck
+            .push(CombatCard::new(CardId::Apparition, 1001));
+        let relic_count = run.relics.len();
+
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
+
+        assert_eq!(pyramid.lane, BossRelicAdmissionLane::Probe);
+        assert_eq!(
+            pyramid.burden,
+            BossRelicAdmissionBurden::IntroducedStartupLiability
+        );
+        assert!(pyramid
+            .reasons
+            .contains(&BossRelicAdmissionReason::IntroducesStartupLiability));
+        assert_eq!(run.relics.len(), relic_count);
+        assert!(!run
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::RunicPyramid));
+    }
+
+    #[test]
+    fn same_lane_prefers_no_burden_then_run_debt_then_startup_liability() {
+        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.master_deck
+            .push(CombatCard::new(CardId::Apparition, 1001));
+
+        let bark = assess_boss_relic_admission(&run, RelicId::SacredBark);
+        let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+        let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
+
+        assert_eq!(bark.lane, BossRelicAdmissionLane::Probe);
+        assert_eq!(sozu.lane, BossRelicAdmissionLane::Probe);
+        assert_eq!(pyramid.lane, BossRelicAdmissionLane::Probe);
+        assert!(boss_relic_admission_order_rank(&bark) < boss_relic_admission_order_rank(&sozu));
+        assert!(boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&pyramid));
+    }
+
+    #[test]
+    fn energy_gap_mainline_stays_ahead_of_burden_free_probe() {
+        let run = RunState::new(1552225673, 0, false, "Ironclad");
+
+        let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+        let bark = assess_boss_relic_admission(&run, RelicId::SacredBark);
+
+        assert_eq!(sozu.lane, BossRelicAdmissionLane::Mainline);
+        assert_eq!(bark.lane, BossRelicAdmissionLane::Probe);
+        assert!(boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&bark));
     }
 }

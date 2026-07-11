@@ -34,12 +34,14 @@ Apparitions introduces startup liability and can no longer be unconditional main
 Candidate ordering is lexicographic:
 
 1. admission lane;
-2. categorical burden: no new burden, added run debt, then introduced startup liability; and
-3. the existing boss-relic class order.
+2. an explicit Act 2 energy-gap priority already established by admission;
+3. categorical burden: no new burden, added run debt, then introduced startup liability; and
+4. the existing boss-relic class order.
 
-An Act 2 energy-gap mainline remains ahead of probe candidates even when it adds a known debt.
-Within the same lane, however, a route-value candidate with no new burden may precede a
-constrained energy relic, and both precede a strategic relic that introduces startup liability.
+An Act 2 energy-gap mainline remains ahead of candidates that do not solve that gap even when
+it adds a known debt. Outside that explicit priority, a same-lane route-value candidate with no
+new burden may precede a constrained energy relic, and both precede a strategic relic that
+introduces startup liability.
 
 ### Remove unconditional strategic mainline status
 
@@ -58,8 +60,8 @@ owner contract. This pass changes their evidence and order, not branch fanout or
 4. A temporary projected run produces the candidate startup profile.
 5. Admission records categorical burden reasons and demotes an introduced startup liability to
    `Probe`.
-6. The owner sorts by lane, burden, and the existing class order before the narrow frontier
-   chooses its first expandable candidate.
+6. The owner sorts by lane, explicit energy-gap priority, burden, and the existing class order
+   before the narrow frontier chooses its first expandable candidate.
 
 ## Stable Tests
 
