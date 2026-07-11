@@ -94,6 +94,16 @@ pub struct NodeFeaturesV1 {
     pub is_question_mark: bool,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct RoutePathViabilityV1 {
+    pub cumulative_hp_loss_p90: f32,
+    pub projected_hp_after_segment: f32,
+    pub elite_included_before_recovery: bool,
+    pub campfire_reached_before_elite: bool,
+    pub shop_seen_before_segment_end: bool,
+    pub survives_projected_segment: bool,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RouteSafetyFlagV1 {
     Ok,

@@ -12,7 +12,7 @@ pub use context::{
 };
 pub use features::{
     MapRouteTargetV1, NodeFeaturesV1, RouteFirstEliteSegmentV1, RouteMoveKindV1,
-    RoutePathSummaryV1, RouteSafetyFlagV1,
+    RoutePathSummaryV1, RoutePathViabilityV1, RouteSafetyFlagV1,
 };
 pub use map_packet::{
     MapDecisionPacketV1, RouteCandidateOrderingV1, RouteCandidatePoolProvenanceV1,
