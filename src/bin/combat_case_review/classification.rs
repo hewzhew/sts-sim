@@ -161,10 +161,7 @@ mod tests {
         let classification = classify_gap_review(Some(&saved), &[], None);
 
         assert_eq!(classification.kind, "SavedCompleteWinRejectedByPolicy");
-        assert_eq!(
-            classification.reason,
-            "saved_complete_win_present_in_case"
-        );
+        assert_eq!(classification.reason, "saved_complete_win_present_in_case");
         assert_eq!(classification.basis_review, Some("saved_search"));
     }
 

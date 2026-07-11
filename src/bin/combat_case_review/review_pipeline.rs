@@ -38,11 +38,8 @@ pub(super) fn build_review(
     let ladder_run = run_review_ladder(&options, &case);
     let ladder = ladder_run.reviews;
     let review_focus = review_focus(&ladder);
-    let classification = classify_gap_review(
-        case.failed_search.as_ref(),
-        &ladder,
-        review_focus.as_ref(),
-    );
+    let classification =
+        classify_gap_review(case.failed_search.as_ref(), &ladder, review_focus.as_ref());
     let review_focus_replay = if options.replay_focus {
         review_focus.as_ref().map(|focus| {
             replay_combat_search_witness_line_v0(&case.position, &focus_witness_line(focus))
