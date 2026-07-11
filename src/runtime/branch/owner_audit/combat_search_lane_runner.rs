@@ -1,9 +1,12 @@
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, CombatSearchTraceSummary, RunControlAutoStopKind,
-    RunControlCommandOutcome, RunControlSession,
+    RunControlCommandOutcome, RunControlHpLossLimit, RunControlSession,
 };
 
+use super::accepted_high_loss_diagnostic::{
+    accepted_high_loss_diagnostic, capture_active_combat, AcceptedHighLossDiagnosticDraft,
+};
 use super::combat_search_dirty_win::reject_dirty_win_status;
 use super::combat_search_lane_commit::lane_commits;
 use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest};
@@ -27,6 +30,7 @@ pub(super) struct CombatSearchLaneAttempt {
     pub(super) committed: bool,
     pub(super) auto_stop_kind: Option<RunControlAutoStopKind>,
     pub(super) applied_operations: usize,
+    pub(super) accepted_high_loss_diagnostic: Option<AcceptedHighLossDiagnosticDraft>,
 }
 
 pub(super) fn run_lane_attempt(
@@ -35,8 +39,13 @@ pub(super) fn run_lane_attempt(
     lane: CombatSearchLane,
 ) -> Result<CombatSearchLaneAttempt, String> {
     let before_curses = master_deck_curse_count(session);
+    let combat_capture = capture_active_combat(session)?;
     let mut trial = session.clone();
     let options = lane.options(request, session);
+    let hard_hp_loss_limit = match options.search.max_hp_loss {
+        Some(RunControlHpLossLimit::Limit(limit)) => Some(limit),
+        Some(RunControlHpLossLimit::Unlimited) | None => None,
+    };
     let profile_config = options.search.profile.map(|profile| profile.to_config());
     let max_nodes = options
         .search
@@ -78,6 +87,7 @@ pub(super) fn run_lane_attempt(
                 committed: false,
                 auto_stop_kind: None,
                 applied_operations: 0,
+                accepted_high_loss_diagnostic: None,
             });
         }
     };
@@ -99,6 +109,15 @@ pub(super) fn run_lane_attempt(
     if committed {
         *session = trial;
     }
+    let accepted_high_loss_diagnostic = combat_capture.and_then(|capture| {
+        accepted_high_loss_diagnostic(
+            capture,
+            lane.label(),
+            &outcome.trace_annotations,
+            committed,
+            hard_hp_loss_limit,
+        )
+    });
     Ok(CombatSearchLaneAttempt {
         outcome: Some(outcome),
         status,
@@ -112,6 +131,7 @@ pub(super) fn run_lane_attempt(
         committed,
         auto_stop_kind,
         applied_operations,
+        accepted_high_loss_diagnostic,
     })
 }
 

@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+#[path = "owner_audit/accepted_high_loss_diagnostic.rs"]
+mod accepted_high_loss_diagnostic;
 #[path = "owner_audit/boss_relic_owner.rs"]
 mod boss_relic_owner;
 #[path = "owner_audit/boundary_router.rs"]

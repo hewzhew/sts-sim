@@ -2,6 +2,7 @@ use sts_simulator::eval::run_control::{
     CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlAutoStopKind,
 };
 
+use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::combat_search_lane_commit::primary_operation_budget_exhausted;
 use super::combat_search_portfolio_output::CombatSearchPortfolioOutput;
 use super::combat_search_report::CombatSearchPortfolioReport;
@@ -23,6 +24,7 @@ pub(super) struct CombatSearchPortfolioResult {
     pub(super) report: Option<CombatSearchPortfolioReport>,
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+    pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
     pub(super) applied_operations: usize,
 }
 
@@ -52,6 +54,7 @@ pub(super) fn combat_search_result(
         report,
         auto_steps: output.auto_steps,
         combat_search: output.combat_search,
+        accepted_high_loss_diagnostics: output.accepted_high_loss_diagnostics,
         applied_operations: output.applied_operations,
     }
 }
