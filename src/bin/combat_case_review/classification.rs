@@ -1,5 +1,6 @@
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+use sts_simulator::eval::run_control::CombatSearchTraceSummary;
 
 use super::focus::CombatReviewFocus;
 use super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
@@ -12,9 +13,17 @@ pub(super) struct CombatGapReviewClassification {
 }
 
 pub(super) fn classify_gap_review(
+    saved_search: Option<&CombatSearchTraceSummary>,
     ladder: &[SearchReview],
     focus: Option<&CombatReviewFocus>,
 ) -> CombatGapReviewClassification {
+    if saved_search.is_some_and(|search| search.complete_win_found || search.best_win.is_some()) {
+        return classification(
+            "SavedCompleteWinRejectedByPolicy",
+            "saved_complete_win_present_in_case",
+            Some("saved_search"),
+        );
+    }
     if ladder.is_empty() {
         return classification("NotReviewed", "ladder_not_requested", None);
     }
@@ -95,4 +104,86 @@ fn rollout_pct(review: &SearchReview) -> f64 {
         return 0.0;
     }
     100.0 * review.performance.rollout_us as f64 / review.performance.total_us as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use sts_simulator::eval::run_control::CombatSearchTraceSummary;
+
+    use super::*;
+
+    fn saved_search(complete_win_found: bool, include_best_win: bool) -> CombatSearchTraceSummary {
+        let best_win = include_best_win.then(|| {
+            json!({
+                "terminal": SearchTerminalLabel::Win,
+                "final_hp": 13,
+                "hp_loss": 32,
+                "turns": 6,
+                "cards_played": 23,
+                "potions_used": 1,
+                "potions_discarded": 0,
+                "action_count": 32
+            })
+        });
+        serde_json::from_value(json!({
+            "source": "search_combat_rejected",
+            "act": 2,
+            "floor": 23,
+            "turn": 0,
+            "combat_kind": "elite",
+            "enemies": ["Book of Stabbing"],
+            "coverage_status": "TimeBudgetLimited",
+            "complete_trajectory_found": true,
+            "complete_win_found": complete_win_found,
+            "best_win": best_win,
+            "deadline_hit": true,
+            "nodes_expanded": 3544,
+            "terminal_wins": 84,
+            "total_us": 5_067_038
+        }))
+        .expect("valid saved search summary")
+    }
+
+    #[test]
+    fn missing_ladder_is_not_reviewed() {
+        let classification = classify_gap_review(None, &[], None);
+
+        assert_eq!(classification.kind, "NotReviewed");
+        assert_eq!(classification.reason, "ladder_not_requested");
+        assert_eq!(classification.basis_review, None);
+    }
+
+    #[test]
+    fn saved_complete_win_precedes_missing_ladder_win() {
+        let saved = saved_search(true, true);
+
+        let classification = classify_gap_review(Some(&saved), &[], None);
+
+        assert_eq!(classification.kind, "SavedCompleteWinRejectedByPolicy");
+        assert_eq!(
+            classification.reason,
+            "saved_complete_win_present_in_case"
+        );
+        assert_eq!(classification.basis_review, Some("saved_search"));
+    }
+
+    #[test]
+    fn legacy_best_win_proves_saved_complete_win() {
+        let saved = saved_search(false, true);
+
+        let classification = classify_gap_review(Some(&saved), &[], None);
+
+        assert_eq!(classification.kind, "SavedCompleteWinRejectedByPolicy");
+    }
+
+    #[test]
+    fn saved_search_without_win_preserves_existing_classification() {
+        let saved = saved_search(false, false);
+
+        let classification = classify_gap_review(Some(&saved), &[], None);
+
+        assert_eq!(classification.kind, "NotReviewed");
+        assert_eq!(classification.reason, "ladder_not_requested");
+    }
 }
