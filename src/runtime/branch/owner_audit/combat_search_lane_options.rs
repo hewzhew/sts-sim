@@ -75,7 +75,7 @@ fn lane_profile(
             CombatSearchChildRolloutPluginId::Immediate,
         )
         .with_max_potions_used(0),
-        CombatSearchLaneKind::NonBossPotionRescue => quality_profile(
+        CombatSearchLaneKind::EliteSurvivalFallback => quality_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
@@ -554,11 +554,11 @@ mod tests {
     }
 
     #[test]
-    fn nonboss_potion_rescue_uses_bounded_quality_profile() {
+    fn elite_survival_fallback_uses_bounded_quality_profile() {
         let session = session_with_combat_stakes(false, true);
         let request = CombatSearchRequest::from_session(&session, test_args());
         let options = lane_options(
-            CombatSearchLane::new(CombatSearchLaneKind::NonBossPotionRescue),
+            CombatSearchLane::new(CombatSearchLaneKind::EliteSurvivalFallback),
             &request,
             &session,
         );

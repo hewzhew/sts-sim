@@ -23,7 +23,7 @@ impl CombatSearchPortfolioPlan {
                 lanes
             }
             CombatSearchStakes::Elite => vec![CombatSearchLane::new(
-                CombatSearchLaneKind::NonBossPotionRescue,
+                CombatSearchLaneKind::EliteSurvivalFallback,
             )],
             CombatSearchStakes::Boss => Vec::new(),
         };
@@ -68,17 +68,14 @@ mod tests {
     }
 
     #[test]
-    fn elite_plan_adds_one_bounded_quality_rescue() {
+    fn elite_plan_ends_with_one_survival_fallback() {
         let plan = CombatSearchPortfolioPlan::after_primary(CombatSearchPortfolioContext {
             stakes: CombatSearchStakes::Elite,
             time_eater_boss: false,
             nonboss_potion_rescue_signal: true,
         });
 
-        assert_eq!(
-            plan.lane_kinds(),
-            vec![CombatSearchLaneKind::NonBossPotionRescue]
-        );
+        assert_eq!(plan.lane_labels(), vec!["elite_survival_fallback"]);
         assert!(!plan.should_report());
     }
 

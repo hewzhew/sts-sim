@@ -18,7 +18,9 @@ pub(super) fn lane_spec(kind: CombatSearchLaneKind) -> CombatSearchLaneSpec {
         CombatSearchLaneKind::PrimaryImmediateEscalation => {
             rescue_spec("primary_immediate_escalation")
         }
-        CombatSearchLaneKind::NonBossPotionRescue => dirty_rejecting_spec("nonboss_potion_rescue"),
+        CombatSearchLaneKind::EliteSurvivalFallback => {
+            dirty_rejecting_spec("elite_survival_fallback")
+        }
         CombatSearchLaneKind::HallwayQualityPotionRescue => {
             dirty_rejecting_spec("hallway_quality_potion_rescue")
         }

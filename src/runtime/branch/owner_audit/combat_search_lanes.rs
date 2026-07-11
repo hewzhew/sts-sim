@@ -19,7 +19,7 @@ pub(super) enum CombatSearchLaneKind {
     Primary,
     DiagnosticRescue,
     PrimaryImmediateEscalation,
-    NonBossPotionRescue,
+    EliteSurvivalFallback,
     HallwayQualityPotionRescue,
     HallwaySurvivalFallback,
     BossNoPotion,
