@@ -1,8 +1,6 @@
 use super::*;
 use crate::runtime::combat::CombatCard;
 
-const BASE_TURN_DRAW_COUNT: i32 = 5;
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CardPileValueV1 {
     pub(super) damage: i32,
@@ -12,17 +10,50 @@ pub(super) struct CardPileValueV1 {
 }
 
 pub(super) fn hand_value(combat: &CombatState) -> CardPileValueV1 {
-    card_pile_value(combat.zones.hand.iter(), combat.turn.energy as i32)
+    let mut value = card_pile_value(combat.zones.hand.iter(), combat.turn.energy as i32);
+    if let Some(capacity) = remaining_card_play_capacity(combat) {
+        value.playable_cards = value.playable_cards.min(capacity as i32);
+    }
+    value
 }
 
 pub(super) fn next_draw_value(combat: &CombatState) -> CardPileValueV1 {
-    let draw_count = (BASE_TURN_DRAW_COUNT + combat.turn.turn_start_draw_modifier)
-        .max(0)
-        .min(combat.zones.draw_pile.len() as i32) as usize;
+    let requested =
+        crate::engine::core::compute_player_turn_start_draw_count(combat).max(0) as usize;
+    let retained = projected_retained_hand_count(combat);
+    let hand_capacity = 10usize.saturating_sub(retained);
+    let draw_count = requested
+        .min(hand_capacity)
+        .min(combat.zones.draw_pile.len());
     card_pile_value(
         combat.zones.draw_pile.iter().take(draw_count),
         combat.entities.player.energy_master as i32,
     )
+}
+
+fn remaining_card_play_capacity(combat: &CombatState) -> Option<usize> {
+    combat
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::VelvetChoker)
+        .then(|| 6usize.saturating_sub(combat.turn.counters.cards_played_this_turn as usize))
+}
+
+fn projected_retained_hand_count(combat: &CombatState) -> usize {
+    let has_pyramid = combat
+        .entities
+        .player
+        .has_relic(crate::content::relics::RelicId::RunicPyramid);
+    combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| {
+            let explicitly_retained =
+                card.retain_override == Some(true) || crate::content::cards::is_self_retain(card);
+            explicitly_retained || (has_pyramid && !crate::content::cards::is_ethereal(card))
+        })
+        .count()
 }
 
 pub(super) fn card_pile_value_report(value: CardPileValueV1) -> CombatSearchV2CardPileValueReport {
@@ -61,6 +92,7 @@ fn card_pile_value<'a>(
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::relics::{RelicId, RelicState};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -93,5 +125,67 @@ mod tests {
 
         assert_eq!(value.damage, 26);
         assert_eq!(value.playable_cards, 1);
+    }
+
+    #[test]
+    fn hand_playable_count_obeys_remaining_velvet_choker_slots() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::VelvetChoker));
+        combat.turn.energy = 3;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Strike, 12),
+            CombatCard::new(CardId::Strike, 13),
+        ];
+
+        combat.turn.counters.cards_played_this_turn = 5;
+        assert_eq!(hand_value(&combat).playable_cards, 1);
+
+        combat.turn.counters.cards_played_this_turn = 6;
+        assert_eq!(hand_value(&combat).playable_cards, 0);
+    }
+
+    #[test]
+    fn pyramid_retained_hand_caps_next_turn_draw() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicPyramid));
+        combat.zones.hand = (0..8)
+            .map(|index| CombatCard::new(CardId::Defend, 100 + index))
+            .collect();
+        combat.zones.draw_pile = (0..5)
+            .map(|index| CombatCard::new(CardId::Strike, 200 + index))
+            .collect();
+
+        let value = next_draw_value(&combat);
+
+        assert_eq!(value.playable_cards, 2);
+        assert_eq!(value.damage, 12);
+    }
+
+    #[test]
+    fn ethereal_apparitions_release_pyramid_draw_capacity_unless_explicitly_retained() {
+        let mut combat = blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::RunicPyramid));
+        combat.zones.hand = (0..5)
+            .map(|index| CombatCard::new(CardId::Defend, 100 + index))
+            .chain((0..3).map(|index| CombatCard::new(CardId::Apparition, 200 + index)))
+            .collect();
+        combat.zones.draw_pile = (0..5)
+            .map(|index| CombatCard::new(CardId::Strike, 300 + index))
+            .collect();
+
+        assert_eq!(next_draw_value(&combat).damage, 30);
+
+        combat.zones.hand[5].retain_override = Some(true);
+        assert_eq!(next_draw_value(&combat).damage, 24);
     }
 }
