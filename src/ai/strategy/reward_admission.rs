@@ -3,7 +3,9 @@ use crate::ai::analysis::card_semantics::{
     InstalledRule, Mechanic, PayoffRequirement, PlayEffect, RunRewardKind,
 };
 use crate::ai::strategy::package_state::{PackageMaturity, PackageStateReport};
-use crate::ai::strategy::package_transition::{assess_package_transition, PackageKind};
+use crate::ai::strategy::package_transition::{
+    assess_package_transition, PackageKind, PackageTransitionReport,
+};
 use crate::ai::strategy::reward_quality::{assess_reward_quality, RewardDuplicateConcern};
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
@@ -271,12 +273,7 @@ fn assess_reward_admission_from_definitions(
         supported_damage_payoff_package(&transition.before, effect).is_some()
             && !quality.suppresses_payoff_effect(effect)
     });
-    let engine_seed = !transition.candidate_installed_rules.is_empty()
-        || !transition.candidate_event_handlers.is_empty()
-        || transition
-            .candidate_play_effects
-            .iter()
-            .any(is_engine_seed_effect);
+    let engine_seed = establishes_engine_seed(&transition);
     let immediate = transition
         .candidate_play_effects
         .iter()
@@ -592,12 +589,20 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
     }
 }
 
-fn is_engine_seed_effect(effect: &PlayEffect) -> bool {
-    matches!(
-        effect,
-        PlayEffect::Provide(Mechanic::Strength | Mechanic::StrengthMultiplier)
-            | PlayEffect::PlayTopCardAndExhaust
-    )
+fn establishes_engine_seed(transition: &PackageTransitionReport) -> bool {
+    if !transition.newly_open_requirements.is_empty() {
+        return false;
+    }
+
+    !transition.new_installed_rules.is_empty()
+        || !transition.new_mechanics.is_empty()
+        || !transition.new_event_streams.is_empty()
+        || transition.package_changes.iter().any(|change| {
+            matches!(
+                change.to,
+                PackageMaturity::SourceOnly | PackageMaturity::Seeded
+            )
+        })
 }
 
 fn is_admission_burden(burden: &CardBurden) -> bool {
@@ -607,4 +612,48 @@ fn is_admission_burden(burden: &CardBurden) -> bool {
             | CardBurden::RandomExhaust
             | CardBurden::CardBlockLockoutUntilNextTurn
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_rupture_is_payoff_not_engine_seed() {
+        let admission = assess_reward_admission(
+            &[CardId::Strike, CardId::Defend, CardId::Bash],
+            CardId::Rupture,
+        );
+
+        assert_eq!(
+            admission.class,
+            RewardAdmissionClass::OpensUnsupportedPayoff
+        );
+        assert!(admission.reasons.iter().any(|reason| matches!(
+            reason,
+            RewardAdmissionReason::Opens(PayoffRequirement::WantsEventStream(
+                CombatEvent::CardSelfDamage
+            ))
+        )));
+    }
+
+    #[test]
+    fn repeated_supported_rupture_is_not_a_new_engine_seed() {
+        let admission = assess_reward_admission(
+            &[CardId::Rupture, CardId::Hemokinesis],
+            CardId::Rupture,
+        );
+
+        assert_ne!(admission.class, RewardAdmissionClass::EngineSeed);
+    }
+
+    #[test]
+    fn first_independent_installed_rule_remains_an_engine_seed() {
+        let admission = assess_reward_admission(
+            &[CardId::Strike, CardId::Defend, CardId::Bash],
+            CardId::Corruption,
+        );
+
+        assert_eq!(admission.class, RewardAdmissionClass::EngineSeed);
+    }
 }
