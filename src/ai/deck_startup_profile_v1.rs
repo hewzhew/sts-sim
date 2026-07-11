@@ -99,8 +99,10 @@ pub struct DeckStartupProfileV1 {
     pub opening_generated_zero_cost_this_turn_count: u8,
     #[serde(default)]
     pub has_velvet_choker: bool,
+    /// Deprecated compatibility fact. New decisions must consume ActionSupplyProfileV1 instead.
     #[serde(default)]
     pub has_choker_generated_opening_budget: bool,
+    /// Deprecated compatibility fact. Do not infer candidate-specific burden from this combination.
     #[serde(default)]
     pub has_pyramid_choker_generated_opening_tradeoff: bool,
 }

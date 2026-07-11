@@ -1,3 +1,4 @@
+use crate::ai::action_supply_v1::action_supply_profile_v1;
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, PyramidApparitionCoverageV1};
 use crate::ai::strategic::run_debt_projection_for_relic_v1;
@@ -65,8 +66,14 @@ pub enum BossRelicAdmissionReason {
     },
     IntroducesStartupLiability,
     PyramidApparitionCoverage(PyramidApparitionCoverageV1),
-    OpeningActionBudgetRequired {
-        generated_options: u8,
+    ActionSupplyFacts {
+        opening_once_options: u8,
+        delayed_per_turn_sources: u8,
+        same_turn_burst_sources: u8,
+        triggered_repeatable_sources: u8,
+        additional_play_sources: u8,
+        cost_or_resource_compression_sources: u8,
+        potentially_recursive_sources: u8,
     },
     Skip,
     Unknown,
@@ -223,9 +230,18 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
         reasons.push(BossRelicAdmissionReason::PyramidApparitionCoverage(
             projected_startup.pyramid_apparition_coverage,
         ));
-        if projected_startup.has_pyramid_choker_generated_opening_tradeoff {
-            reasons.push(BossRelicAdmissionReason::OpeningActionBudgetRequired {
-                generated_options: projected_startup.opening_generated_option_count,
+    }
+    if relic == RelicId::VelvetChoker {
+        let supply = action_supply_profile_v1(run_state);
+        if !supply.is_empty() {
+            reasons.push(BossRelicAdmissionReason::ActionSupplyFacts {
+                opening_once_options: supply.opening_once_options,
+                delayed_per_turn_sources: supply.delayed_per_turn_sources,
+                same_turn_burst_sources: supply.same_turn_burst_sources,
+                triggered_repeatable_sources: supply.triggered_repeatable_sources,
+                additional_play_sources: supply.additional_play_sources,
+                cost_or_resource_compression_sources: supply.cost_or_resource_compression_sources,
+                potentially_recursive_sources: supply.potentially_recursive_sources,
             });
         }
     }
@@ -458,9 +474,17 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         BossRelicAdmissionReason::PyramidApparitionCoverage(coverage) => {
             format!("apparition-coverage:{}", coverage.label())
         }
-        BossRelicAdmissionReason::OpeningActionBudgetRequired { generated_options } => {
-            format!("opening-action-budget:{generated_options}")
-        }
+        BossRelicAdmissionReason::ActionSupplyFacts {
+            opening_once_options,
+            delayed_per_turn_sources,
+            same_turn_burst_sources,
+            triggered_repeatable_sources,
+            additional_play_sources,
+            cost_or_resource_compression_sources,
+            potentially_recursive_sources,
+        } => format!(
+            "action-supply:opening={opening_once_options},delayed={delayed_per_turn_sources},burst={same_turn_burst_sources},triggered={triggered_repeatable_sources},extra={additional_play_sources},compression={cost_or_resource_compression_sources},recursive={potentially_recursive_sources}"
+        ),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
@@ -613,9 +637,59 @@ mod tests {
     }
 
     #[test]
-    fn pyramid_reports_choker_generated_opening_budget_as_evidence() {
-        let mut run = RunState::new(1552225673, 0, false, "Ironclad");
-        run.act_num = 2;
+    fn choker_reports_opening_once_supply_without_repeatable_exposure() {
+        let baseline = RunState::new(20260711002, 0, false, "Ironclad");
+        let mut with_enchiridion = baseline.clone();
+        with_enchiridion
+            .relics
+            .push(RelicState::new(RelicId::Enchiridion));
+
+        let baseline_choker = assess_boss_relic_admission(&baseline, RelicId::VelvetChoker);
+        let choker = assess_boss_relic_admission(&with_enchiridion, RelicId::VelvetChoker);
+
+        assert!(choker
+            .reasons
+            .contains(&BossRelicAdmissionReason::ActionSupplyFacts {
+                opening_once_options: 1,
+                delayed_per_turn_sources: 0,
+                same_turn_burst_sources: 0,
+                triggered_repeatable_sources: 0,
+                additional_play_sources: 0,
+                cost_or_resource_compression_sources: 0,
+                potentially_recursive_sources: 0,
+            }));
+        assert_eq!(choker.burden, BossRelicAdmissionBurden::AddedRunDebt);
+        assert_eq!(
+            boss_relic_admission_order_rank(&choker),
+            boss_relic_admission_order_rank(&baseline_choker),
+            "opening-once supply is evidence, not a new ordering penalty"
+        );
+    }
+
+    #[test]
+    fn choker_reports_repeatable_and_compressed_action_supply_as_facts() {
+        let mut run = RunState::new(20260711002, 0, false, "Ironclad");
+        run.relics.push(RelicState::new(RelicId::DeadBranch));
+        run.add_card_to_deck(CardId::Corruption);
+
+        let choker = assess_boss_relic_admission(&run, RelicId::VelvetChoker);
+
+        assert!(choker
+            .reasons
+            .contains(&BossRelicAdmissionReason::ActionSupplyFacts {
+                opening_once_options: 0,
+                delayed_per_turn_sources: 0,
+                same_turn_burst_sources: 0,
+                triggered_repeatable_sources: 1,
+                additional_play_sources: 0,
+                cost_or_resource_compression_sources: 1,
+                potentially_recursive_sources: 1,
+            }));
+    }
+
+    #[test]
+    fn pyramid_does_not_inherit_existing_choker_enchiridion_supply() {
+        let mut run = RunState::new(20260711002, 0, false, "Ironclad");
         run.relics = vec![
             RelicState::new(RelicId::VelvetChoker),
             RelicState::new(RelicId::Enchiridion),
@@ -623,11 +697,11 @@ mod tests {
 
         let pyramid = assess_boss_relic_admission(&run, RelicId::RunicPyramid);
 
-        assert!(pyramid
+        assert!(!pyramid
             .reasons
-            .contains(&BossRelicAdmissionReason::OpeningActionBudgetRequired {
-                generated_options: 1,
-            }));
+            .iter()
+            .any(|reason| matches!(reason, BossRelicAdmissionReason::ActionSupplyFacts { .. })));
+        assert!(!render_boss_relic_admission_compact(&pyramid).contains("opening-action-budget"));
         assert_eq!(pyramid.burden, BossRelicAdmissionBurden::None);
     }
 
