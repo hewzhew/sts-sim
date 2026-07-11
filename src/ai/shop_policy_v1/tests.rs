@@ -21,6 +21,70 @@ use crate::state::run::RunState;
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
 #[test]
+fn functional_repair_purge_is_visible_only_for_profile_approved_target() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.gold = 200;
+    run.master_deck = vec![
+        crate::runtime::combat::CombatCard::new(CardId::Flex, 1),
+        crate::runtime::combat::CombatCard::new(CardId::Flex, 2),
+        crate::runtime::combat::CombatCard::new(CardId::Barricade, 3),
+        crate::runtime::combat::CombatCard::new(CardId::Bash, 4),
+        crate::runtime::combat::CombatCard::new(CardId::ShrugItOff, 5),
+    ];
+
+    let context = build_shop_decision_context_v1(&run, &ShopState::new());
+
+    assert!(context.candidates.iter().any(|candidate| {
+        candidate.class == ShopPolicyClassV1::FunctionalRepairPurge
+            && candidate.card == Some(CardId::Flex)
+    }));
+    assert!(!context.candidates.iter().any(|candidate| {
+        candidate.class == ShopPolicyClassV1::FunctionalRepairPurge
+            && candidate.card == Some(CardId::Barricade)
+    }));
+
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+    assert!(compiled
+        .compat_selected_plan
+        .steps
+        .iter()
+        .any(|step| matches!(
+            step,
+            ShopPlanStepV1::RemoveCard {
+                card: CardId::Flex,
+                ..
+            }
+        )));
+}
+
+#[test]
+fn starter_cleanup_stays_ahead_of_functional_repair() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.gold = 200;
+    run.master_deck
+        .push(crate::runtime::combat::CombatCard::new(CardId::Flex, 100));
+    run.master_deck
+        .push(crate::runtime::combat::CombatCard::new(CardId::Flex, 101));
+
+    let context = build_shop_decision_context_v1(&run, &ShopState::new());
+
+    assert!(context.candidates.iter().any(|candidate| {
+        matches!(
+            candidate.class,
+            ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge
+        )
+    }));
+    assert!(!context
+        .candidates
+        .iter()
+        .any(|candidate| candidate.class == ShopPolicyClassV1::FunctionalRepairPurge));
+}
+
+#[test]
 fn shop_context_exposes_visible_curse_purge_candidate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 100;

@@ -90,6 +90,9 @@ fn evaluate_single_candidate_v1(
         ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
             evaluate_starter_purge_v1(candidate, config, strategic_trace)
         }
+        ShopPolicyClassV1::FunctionalRepairPurge => {
+            evaluate_functional_repair_purge_v1(candidate, config)
+        }
         ShopPolicyClassV1::PurchaseOpportunity => {
             evaluate_purchase_v1(candidate, config, strategic_trace)
         }
@@ -112,6 +115,38 @@ fn evaluate_curse_purge_v1(
         return ShopPlanEvaluationV1::block(None, "curse purge candidate lacks deck/card identity");
     }
     ShopPlanEvaluationV1::allow(400, 1000, 0.92, None, "shop evaluator: curse cleanup")
+}
+
+fn evaluate_functional_repair_purge_v1(
+    candidate: &ShopCandidateEvidenceV1,
+    config: &ShopPolicyConfigV1,
+) -> ShopPlanEvaluationV1 {
+    if !config.allow_functional_repair_purge {
+        return ShopPlanEvaluationV1::block(
+            None,
+            "functional repair purge disabled by shop policy config",
+        );
+    }
+    if candidate.support_gate != StrategyPlanSupportV1::Strong
+        || candidate.deck_index.is_none()
+        || candidate.card.is_none()
+        || !candidate
+            .evidence
+            .iter()
+            .any(|item| item == "deck_repair_profile=low_loss_redundant_functional")
+    {
+        return ShopPlanEvaluationV1::block(
+            None,
+            "functional purge lacks exact low-loss deck-repair evidence",
+        );
+    }
+    ShopPlanEvaluationV1::allow(
+        305,
+        450,
+        0.74,
+        None,
+        "shop evaluator: evidence-backed functional deck repair",
+    )
 }
 
 fn evaluate_purchase_v1(

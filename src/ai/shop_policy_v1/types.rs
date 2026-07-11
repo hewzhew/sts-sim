@@ -83,6 +83,7 @@ pub enum ShopPolicyClassV1 {
     CursePurge,
     StarterStrikePurge,
     StarterDefendPurge,
+    FunctionalRepairPurge,
     PurchaseOpportunity,
     Leave,
     Unknown,
@@ -92,6 +93,7 @@ pub enum ShopPolicyClassV1 {
 pub struct ShopPolicyConfigV1 {
     pub allow_curse_purge: bool,
     pub allow_starter_strike_purge_when_core_plan_protected: bool,
+    pub allow_functional_repair_purge: bool,
     pub allow_high_impact_purchase: bool,
     /// Legacy estimate thresholds for non-card purchases that do not yet have
     /// a richer strategic evaluator. These gates should shrink over time.
@@ -105,6 +107,7 @@ impl Default for ShopPolicyConfigV1 {
         Self {
             allow_curse_purge: true,
             allow_starter_strike_purge_when_core_plan_protected: true,
+            allow_functional_repair_purge: true,
             allow_high_impact_purchase: true,
             high_impact_card_legacy_estimate_threshold: 650,
             high_impact_relic_legacy_estimate_threshold: 900,

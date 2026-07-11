@@ -196,6 +196,10 @@ fn candidate_delta_from_shop_candidate(
                 });
             }
         }
+        ShopPolicyClassV1::FunctionalRepairPurge => {
+            delta.role = CandidateRole::DeckCleaning;
+            delta.verdict_hint = VerdictHint::ContextTake;
+        }
         ShopPolicyClassV1::Unknown => {
             delta.verdict_hint = VerdictHint::Speculative;
             delta.negative.push(LedgerDelta {

@@ -32,11 +32,15 @@ pub fn build_shop_decision_context_v1(
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
     let conversion_pressure =
         crate::ai::shop_policy_v1::shop_conversion_pressure_v1(run_state, shop);
+    let repair_profile = crate::ai::deck_repair_profile_v1::deck_repair_profile_v1(run_state);
     let mut candidates = Vec::new();
 
     if shop.purge_available && run_state.gold >= shop.purge_cost {
         candidates.extend(shop_purge_candidates_from_deck_mutation_compiler_v1(
-            run_state, shop, &strategy,
+            run_state,
+            shop,
+            &strategy,
+            &repair_profile,
         ));
     }
 
@@ -209,6 +213,8 @@ fn purge_candidate_evidence(
     plan: &DeckMutationPlanCandidateV1,
     purge_cost: i32,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    repair_profile: &crate::ai::deck_repair_profile_v1::DeckRepairProfileV1,
+    low_value_cleanup_available: bool,
 ) -> Option<ShopCandidateEvidenceV1> {
     if plan.step.kind != DeckMutationKindV1::Remove || plan.step.cards.len() != 1 {
         return None;
@@ -216,7 +222,11 @@ fn purge_candidate_evidence(
     let card_snapshot = plan.step.cards.first()?;
     let deck_index = card_snapshot.deck_index;
     let card = card_snapshot.card;
-    let class = purge_class_from_deck_mutation_target(card_snapshot.target_class);
+    let class = purge_class_from_deck_mutation_target(
+        card_snapshot,
+        repair_profile,
+        low_value_cleanup_available,
+    );
     let support_gate = purge_support_gate(class, plan, strategy);
     let card_name = get_card_definition(card).name;
     let mut evidence = vec![
@@ -276,6 +286,10 @@ fn purge_candidate_evidence(
                         .to_string(),
                 );
             }
+        }
+        ShopPolicyClassV1::FunctionalRepairPurge => {
+            evidence.push(TAG_DECK_CLEANING.to_string());
+            evidence.push("deck_repair_profile=low_loss_redundant_functional".to_string());
         }
         _ => {
             risks.push("shop policy has no purge executor for this card".to_string());
@@ -396,6 +410,7 @@ fn shop_purge_candidates_from_deck_mutation_compiler_v1(
     run_state: &RunState,
     shop: &ShopState,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    repair_profile: &crate::ai::deck_repair_profile_v1::DeckRepairProfileV1,
 ) -> Vec<ShopCandidateEvidenceV1> {
     let choice = RunPendingChoiceState {
         min_choices: 1,
@@ -409,21 +424,51 @@ fn shop_purge_candidates_from_deck_mutation_compiler_v1(
         &choice,
         DeckMutationCompilerRequestV1::optional_branch_top_k(usize::MAX),
     );
+    let low_value_cleanup_available = decision.candidate_plans.iter().any(|plan| {
+        plan.step.cards.iter().any(|card| {
+            matches!(
+                card.target_class,
+                DeckMutationTargetClassV1::Curse
+                    | DeckMutationTargetClassV1::StarterStrike
+                    | DeckMutationTargetClassV1::StarterDefend
+            )
+        })
+    });
 
     decision
         .candidate_plans
         .iter()
-        .filter_map(|plan| purge_candidate_evidence(plan, shop.purge_cost, strategy))
+        .filter_map(|plan| {
+            purge_candidate_evidence(
+                plan,
+                shop.purge_cost,
+                strategy,
+                repair_profile,
+                low_value_cleanup_available,
+            )
+        })
         .collect()
 }
 
 fn purge_class_from_deck_mutation_target(
-    target_class: DeckMutationTargetClassV1,
+    snapshot: &crate::ai::deck_mutation_compiler_v1::DeckMutationCardSnapshotV1,
+    repair_profile: &crate::ai::deck_repair_profile_v1::DeckRepairProfileV1,
+    low_value_cleanup_available: bool,
 ) -> ShopPolicyClassV1 {
-    match target_class {
+    match snapshot.target_class {
         DeckMutationTargetClassV1::Curse => ShopPolicyClassV1::CursePurge,
         DeckMutationTargetClassV1::StarterStrike => ShopPolicyClassV1::StarterStrikePurge,
         DeckMutationTargetClassV1::StarterDefend => ShopPolicyClassV1::StarterDefendPurge,
+        DeckMutationTargetClassV1::Functional
+            if !low_value_cleanup_available
+                && repair_profile.low_loss_removals.iter().any(|candidate| {
+                    candidate.deck_index == snapshot.deck_index
+                        && candidate.uuid == snapshot.uuid
+                        && candidate.card == snapshot.card
+                }) =>
+        {
+            ShopPolicyClassV1::FunctionalRepairPurge
+        }
         _ => ShopPolicyClassV1::Unknown,
     }
 }
@@ -435,6 +480,7 @@ fn purge_support_gate(
 ) -> StrategyPlanSupportV1 {
     match class {
         ShopPolicyClassV1::CursePurge => StrategyPlanSupportV1::Strong,
+        ShopPolicyClassV1::FunctionalRepairPurge => StrategyPlanSupportV1::Strong,
         ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
             if !plan.allowed_consumers.execute_autopilot {
                 return StrategyPlanSupportV1::Blocked;
