@@ -440,7 +440,7 @@ Add this test before the route helpers:
 fn combat_repairable_transitional_attack_no_longer_clears_smith_gate() {
     let mut baseline = RunState::new(1, 0, false, "Ironclad");
     baseline.current_hp = baseline.max_hp;
-    baseline.master_deck = vec![CombatCard::new(CardId::PerfectedStrike, 1001)];
+    baseline.master_deck = vec![CombatCard::new(CardId::SeverSoul, 1001)];
 
     let baseline_context = build_campfire_decision_context_v1(
         &baseline,
@@ -459,14 +459,14 @@ fn combat_repairable_transitional_attack_no_longer_clears_smith_gate() {
     covered.master_deck.insert(0, armaments_plus);
 
     let upgrade_plan = plan_upgrades_v1(&covered);
-    let perfected_strike = upgrade_plan
+    let sever_soul = upgrade_plan
         .candidates
         .iter()
-        .find(|candidate| candidate.card == CardId::PerfectedStrike)
-        .expect("Perfected Strike should remain an upgrade candidate");
-    assert_eq!(perfected_strike.verdict, UpgradeVerdictV1::Defer);
+        .find(|candidate| candidate.card == CardId::SeverSoul)
+        .expect("Sever Soul should remain an upgrade candidate");
+    assert_eq!(sever_soul.verdict, UpgradeVerdictV1::Defer);
     assert!(matches!(
-        perfected_strike.combat_upgrade_credit,
+        sever_soul.combat_upgrade_credit,
         CombatUpgradeCreditV1::PriorityReduced {
             scope: CombatUpgradeScopeV1::WholeHand,
             ..
@@ -788,7 +788,7 @@ cargo fmt --all -- --check
 git diff --check
 ```
 
-Expected: planner tests prove bounded credit and protected targets; campfire tests prove baseline Smith versus covered Stop for Perfected Strike. No exact score is asserted.
+Expected: planner tests prove bounded credit and protected targets; campfire tests prove baseline Smith versus covered Stop for Sever Soul. No exact score is asserted.
 
 - [ ] **Step 9: Commit planner and policy-boundary behavior**
 
