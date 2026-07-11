@@ -1,17 +1,22 @@
 use crate::state::map::node::RoomType;
 
-use super::types::{NeedVectorV1, NodeFeaturesV1, RoutePathSummaryV1, RouteSafetyFlagV1};
+use super::types::{
+    NeedVectorV1, NodeFeaturesV1, RoutePathSummaryV1, RoutePathViabilityV1, RouteSafetyFlagV1,
+};
 
 pub(super) fn safety_flag(
     features: &NodeFeaturesV1,
     path: &RoutePathSummaryV1,
     needs: &NeedVectorV1,
+    viability: &RoutePathViabilityV1,
 ) -> RouteSafetyFlagV1 {
+    if !viability.survives_projected_segment {
+        return RouteSafetyFlagV1::RejectUnlessNoAlternative;
+    }
     let forced_elite = path.min_elites > 0 || features.is_elite;
     let no_pre_elite_bailout = !path.first_elite.can_bail_to_rest_before
-        && !path.first_elite.can_bail_to_shop_before
         && !features.is_rest
-        && !features.is_shop;
+        && viability.elite_included_before_recovery;
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.45 {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }

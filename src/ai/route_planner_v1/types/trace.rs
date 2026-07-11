@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use super::context::RouteDecisionContextV1;
-use super::features::{MapRouteTargetV1, NodeFeaturesV1, RoutePathSummaryV1, RouteSafetyFlagV1};
+use super::features::{
+    MapRouteTargetV1, NodeFeaturesV1, RouteCandidateViabilityV1, RoutePathSummaryV1,
+    RouteSafetyFlagV1,
+};
 use super::score::{NeedVectorV1, RouteScoreTermsV1, RouteValueFactorsV1};
 
 pub const ROUTE_DECISION_TRACE_SCHEMA_NAME: &str = "RouteDecisionTraceV1";
@@ -37,6 +40,8 @@ pub struct RouteCandidateTraceV1 {
     pub target: MapRouteTargetV1,
     pub features: NodeFeaturesV1,
     pub path_summary: RoutePathSummaryV1,
+    #[serde(default)]
+    pub viability: RouteCandidateViabilityV1,
     pub needs: NeedVectorV1,
     #[serde(default)]
     pub value_factors: RouteValueFactorsV1,

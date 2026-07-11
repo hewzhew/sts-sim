@@ -104,6 +104,16 @@ pub struct RoutePathViabilityV1 {
     pub survives_projected_segment: bool,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct RouteCandidateViabilityV1 {
+    pub coverage_complete: bool,
+    pub observed_path_count: usize,
+    pub surviving_path_count: usize,
+    pub representative_path_index: Option<usize>,
+    pub representative: Option<RoutePathViabilityV1>,
+    pub representative_path_summary: Option<RoutePathSummaryV1>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RouteSafetyFlagV1 {
     Ok,

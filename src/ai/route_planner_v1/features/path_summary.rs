@@ -1,5 +1,5 @@
 use crate::ai::route_window_facts::{
-    build_route_path_family_from_target, RouteWindowFactsConfig, RouteWindowNode,
+    build_route_path_family_from_target, RouteWindowFactsConfig, RouteWindowNode, RouteWindowPath,
     RouteWindowPathFamily,
 };
 use crate::state::map::node::RoomType;
@@ -63,9 +63,23 @@ pub(in crate::ai::route_planner_v1) fn summarize_route_path_family(
                 .fold(PathStats::default(), update_path_stats)
         })
         .collect::<Vec<_>>();
+    summarize_path_stats(&paths, family.coverage.path_budget_exhausted)
+}
+
+pub(in crate::ai::route_planner_v1) fn summarize_route_path(
+    path: &RouteWindowPath,
+) -> RoutePathSummaryV1 {
+    let stats = path
+        .nodes
+        .iter()
+        .fold(PathStats::default(), update_path_stats);
+    summarize_path_stats(&[stats], false)
+}
+
+fn summarize_path_stats(paths: &[PathStats], path_budget_exhausted: bool) -> RoutePathSummaryV1 {
     if paths.is_empty() {
         return RoutePathSummaryV1 {
-            path_budget_exhausted: family.coverage.path_budget_exhausted,
+            path_budget_exhausted,
             ..empty_summary()
         };
     }
@@ -73,7 +87,7 @@ pub(in crate::ai::route_planner_v1) fn summarize_route_path_family(
     let max = |f: fn(&PathStats) -> usize| paths.iter().map(f).max().unwrap_or(0);
     RoutePathSummaryV1 {
         path_count: paths.len(),
-        path_budget_exhausted: family.coverage.path_budget_exhausted,
+        path_budget_exhausted,
         min_early_pressure: min(|stats| stats.early_pressure),
         max_early_pressure: max(|stats| stats.early_pressure),
         min_elites: min(|stats| stats.elites),

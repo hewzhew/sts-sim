@@ -9,6 +9,9 @@ use super::types::{
 pub(super) fn route_value_factors(
     features: &NodeFeaturesV1,
     path: &RoutePathSummaryV1,
+    family: &RoutePathSummaryV1,
+    family_path_count: usize,
+    cumulative_hp_loss_p90: f32,
     move_kind: RouteMoveKindV1,
     emerald_key_taken: bool,
     has_cursed_key: bool,
@@ -17,16 +20,16 @@ pub(super) fn route_value_factors(
     RouteValueFactorsV1 {
         card_reward_access: features.expected_card_rewards + path.max_early_pressure as f32 * 0.15,
         relic_access: features.expected_relics + path.max_elites as f32 * 0.45,
-        remove_access: shop_route_access_value(features, path),
+        remove_access: shop_route_access_value(features, path, family),
         upgrade_access: features.upgrade_access + path.max_fires as f32 * 0.10,
         heal_access: features.heal_access + path.max_fires as f32 * 0.16,
-        shop_access: shop_route_access_value(features, path),
+        shop_access: shop_route_access_value(features, path, family),
         event_access: features.event_access + path.max_unknowns as f32 * 0.08,
         potion_gain: features.expected_potion_gain,
         curse_debt: expected_cursed_key_chest_debt(features, path, has_cursed_key),
-        hp_loss_p90: features.expected_hp_loss_p90,
+        hp_loss_p90: cumulative_hp_loss_p90,
         death_risk: features.death_risk,
-        flexibility: flexibility_value(path),
+        flexibility: flexibility_value(path, family_path_count),
         first_elite_prep_signal: first_elite_preparation_signal(path),
         wing_boots_cost: if move_kind == RouteMoveKindV1::WingBootsJump {
             config.wing_boots_charge_cost
@@ -198,8 +201,8 @@ pub(super) fn route_reasons(
     (reasons, cautions)
 }
 
-fn flexibility_value(path: &RoutePathSummaryV1) -> f32 {
-    let branches = (path.path_count as f32).ln_1p().min(4.0) / 4.0;
+fn flexibility_value(path: &RoutePathSummaryV1, family_path_count: usize) -> f32 {
+    let branches = (family_path_count as f32).ln_1p().min(4.0) / 4.0;
     let room_variety = usize::from(path.max_fires > 0)
         + usize::from(path.max_shops > 0)
         + usize::from(path.max_unknowns > 0)
@@ -207,9 +210,13 @@ fn flexibility_value(path: &RoutePathSummaryV1) -> f32 {
     branches + room_variety as f32 * 0.12
 }
 
-fn shop_route_access_value(features: &NodeFeaturesV1, path: &RoutePathSummaryV1) -> f32 {
-    let guaranteed_shop_value = path.min_shops as f32 * 0.62;
-    let optional_shop_value = path.max_shops.saturating_sub(path.min_shops) as f32 * 0.08;
+fn shop_route_access_value(
+    features: &NodeFeaturesV1,
+    path: &RoutePathSummaryV1,
+    family: &RoutePathSummaryV1,
+) -> f32 {
+    let guaranteed_shop_value = family.min_shops as f32 * 0.62;
+    let optional_shop_value = path.max_shops.saturating_sub(family.min_shops) as f32 * 0.08;
     let early_shop_value = path
         .first_shop_floor
         .map(|floor| {

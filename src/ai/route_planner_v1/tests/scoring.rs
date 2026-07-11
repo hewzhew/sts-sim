@@ -526,6 +526,87 @@ fn act1_elite_need_rewards_frontload_and_sentries_coverage() {
     );
 }
 
+#[test]
+fn cumulative_hallway_and_elite_pressure_loses_to_campfire_route() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    run.act_num = 2;
+    run.floor_num = 20;
+    run.current_hp = 44;
+    run.max_hp = 74;
+    run.map = MapState::new(vec![
+        vec![
+            linked_node(0, 0, RoomType::MonsterRoom, &[(0, 1)]),
+            linked_node(1, 0, RoomType::RestRoom, &[(1, 1)]),
+        ],
+        vec![
+            linked_node(0, 1, RoomType::MonsterRoomElite, &[]),
+            linked_node(1, 1, RoomType::MonsterRoom, &[]),
+        ],
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let pressured = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include the hallway-to-elite route");
+
+    assert_eq!(pressured.viability.surviving_path_count, 0);
+    assert_eq!(
+        pressured
+            .viability
+            .representative
+            .as_ref()
+            .expect("candidate should preserve representative risk")
+            .cumulative_hp_loss_p90,
+        54.0
+    );
+    assert_eq!(
+        pressured.safety,
+        RouteSafetyFlagV1::RejectUnlessNoAlternative
+    );
+    assert_eq!(selected_candidate(&trace).target.x, 1);
+}
+
+#[test]
+fn route_value_uses_one_real_suffix_instead_of_cross_path_maxima() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    run.current_hp = run.max_hp;
+    run.map = MapState::new(vec![
+        vec![linked_node(0, 0, RoomType::MonsterRoom, &[(0, 1), (1, 1)])],
+        vec![
+            linked_node(0, 1, RoomType::MonsterRoomElite, &[]),
+            linked_node(1, 1, RoomType::RestRoom, &[]),
+        ],
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let candidate = selected_candidate(&trace);
+    let representative = candidate
+        .viability
+        .representative_path_summary
+        .as_ref()
+        .expect("candidate should identify its representative suffix");
+
+    assert_eq!(candidate.path_summary.max_elites, 1);
+    assert_eq!(candidate.path_summary.max_fires, 1);
+    assert_ne!(representative.max_elites > 0, representative.max_fires > 0);
+    assert!(
+        candidate.value_factors.relic_access == 0.0 || candidate.value_factors.heal_access == 0.0,
+        "elite and campfire access from different suffixes must not be combined"
+    );
+}
+
 fn replace_master_deck(run: &mut RunState, cards: &[CardId]) {
     run.master_deck = cards
         .iter()
