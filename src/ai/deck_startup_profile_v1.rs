@@ -1,6 +1,9 @@
 use crate::ai::card_analysis_v1::{
     card_analysis_profile_v1, CardAnalysisProfileV1, CardAnalysisStartupKeyV1,
 };
+use crate::ai::combat_upgrade_coverage_v1::{
+    combat_upgrade_coverage_profile_v1, CombatUpgradeScopeV1,
+};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
@@ -94,6 +97,8 @@ pub struct DeckStartupProfileV1 {
     #[serde(default)]
     pub combat_upgrade_hand_access_count: u8,
     #[serde(default)]
+    pub combat_upgrade_all_access_count: u8,
+    #[serde(default)]
     pub opening_generated_option_count: u8,
     #[serde(default)]
     pub opening_generated_zero_cost_this_turn_count: u8,
@@ -110,6 +115,7 @@ pub struct DeckStartupProfileV1 {
 pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
     let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
     let deck_shape = crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state);
+    let combat_upgrade_coverage = combat_upgrade_coverage_profile_v1(run_state);
     let mut profile = DeckStartupProfileV1 {
         has_runic_pyramid: run_state
             .relics
@@ -123,6 +129,12 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::VelvetChoker),
+        combat_upgrade_selected_access_count: combat_upgrade_coverage
+            .source_count(CombatUpgradeScopeV1::SelectedCardInHand),
+        combat_upgrade_hand_access_count: combat_upgrade_coverage
+            .source_count(CombatUpgradeScopeV1::WholeHand),
+        combat_upgrade_all_access_count: combat_upgrade_coverage
+            .source_count(CombatUpgradeScopeV1::AllCombatZones),
         ..Default::default()
     };
 
@@ -179,23 +191,6 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         }
         if analysis.is_startup_dual_wield_target {
             profile.dual_wield_target_count = profile.dual_wield_target_count.saturating_add(1);
-        }
-
-        match id {
-            CardId::Armaments if card.upgrades > 0 => {
-                profile.combat_upgrade_hand_access_count =
-                    profile.combat_upgrade_hand_access_count.saturating_add(1);
-            }
-            CardId::Armaments => {
-                profile.combat_upgrade_selected_access_count = profile
-                    .combat_upgrade_selected_access_count
-                    .saturating_add(1);
-            }
-            CardId::Apotheosis => {
-                profile.combat_upgrade_hand_access_count =
-                    profile.combat_upgrade_hand_access_count.saturating_add(1);
-            }
-            _ => {}
         }
 
         match analysis.startup_key {
@@ -321,6 +316,7 @@ fn pyramid_apparition_coverage_v1(
     } else if profile
         .combat_upgrade_selected_access_count
         .saturating_add(profile.combat_upgrade_hand_access_count)
+        .saturating_add(profile.combat_upgrade_all_access_count)
         > 0
     {
         PyramidApparitionCoverageV1::CombatRepairAvailable
@@ -731,6 +727,21 @@ mod tests {
     }
 
     #[test]
+    fn startup_profile_keeps_apotheosis_distinct_from_whole_hand_access() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.master_deck = vec![crate::runtime::combat::CombatCard::new(
+            CardId::Apotheosis,
+            1001,
+        )];
+
+        let profile = deck_startup_profile_v1(&run);
+
+        assert_eq!(profile.combat_upgrade_selected_access_count, 0);
+        assert_eq!(profile.combat_upgrade_hand_access_count, 0);
+        assert_eq!(profile.combat_upgrade_all_access_count, 1);
+    }
+
+    #[test]
     fn pyramid_apparition_coverage_distinguishes_ready_future_and_limited() {
         let mut ready = RunState::new(1, 0, false, "Ironclad");
         ready.relics.push(RelicState::new(RelicId::RunicPyramid));
@@ -788,6 +799,7 @@ mod tests {
             "pyramid_apparition_coverage",
             "combat_upgrade_selected_access_count",
             "combat_upgrade_hand_access_count",
+            "combat_upgrade_all_access_count",
             "opening_generated_option_count",
             "opening_generated_zero_cost_this_turn_count",
             "has_velvet_choker",
@@ -805,6 +817,7 @@ mod tests {
             PyramidApparitionCoverageV1::NotApplicable
         );
         assert_eq!(decoded.opening_generated_option_count, 0);
+        assert_eq!(decoded.combat_upgrade_all_access_count, 0);
         assert!(!decoded.has_choker_generated_opening_budget);
     }
 }
