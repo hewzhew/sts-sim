@@ -25,7 +25,9 @@ impl CombatSearchPortfolioPlan {
             CombatSearchStakes::Elite => vec![CombatSearchLane::new(
                 CombatSearchLaneKind::EliteSurvivalFallback,
             )],
-            CombatSearchStakes::Boss => Vec::new(),
+            CombatSearchStakes::Boss => vec![CombatSearchLane::new(
+                CombatSearchLaneKind::BossPotionRescue,
+            )],
         };
         Self { lanes }
     }
@@ -56,14 +58,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn boss_plan_disables_post_primary_lanes() {
+    fn boss_plan_schedules_only_potion_rescue_after_primary_gap() {
         let plan = CombatSearchPortfolioPlan::after_primary(CombatSearchPortfolioContext {
             stakes: CombatSearchStakes::Boss,
             time_eater_boss: false,
             nonboss_potion_rescue_signal: false,
         });
 
-        assert!(plan.lane_kinds().is_empty());
+        assert_eq!(
+            plan.lane_kinds(),
+            vec![CombatSearchLaneKind::BossPotionRescue]
+        );
         assert!(!plan.should_report());
     }
 
