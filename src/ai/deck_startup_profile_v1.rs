@@ -6,6 +6,22 @@ use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PyramidApparitionCoverageV1 {
+    NotApplicable,
+    Ready,
+    CombatRepairAvailable,
+    FutureUpgradeWindow,
+    Limited,
+}
+
+impl Default for PyramidApparitionCoverageV1 {
+    fn default() -> Self {
+        Self::NotApplicable
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeckStartupProfileV1 {
     pub setup_debt: u8,
@@ -59,6 +75,22 @@ pub struct DeckStartupProfileV1 {
     pub has_pyramid_unupgraded_apparition: bool,
     pub has_snecko_low_cost_volatility: bool,
     pub has_snecko_offering_reliability_debt: bool,
+    #[serde(default)]
+    pub pyramid_apparition_coverage: PyramidApparitionCoverageV1,
+    #[serde(default)]
+    pub combat_upgrade_selected_access_count: u8,
+    #[serde(default)]
+    pub combat_upgrade_hand_access_count: u8,
+    #[serde(default)]
+    pub opening_generated_option_count: u8,
+    #[serde(default)]
+    pub opening_generated_zero_cost_this_turn_count: u8,
+    #[serde(default)]
+    pub has_velvet_choker: bool,
+    #[serde(default)]
+    pub has_choker_generated_opening_budget: bool,
+    #[serde(default)]
+    pub has_pyramid_choker_generated_opening_tradeoff: bool,
 }
 
 pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
@@ -73,6 +105,10 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::SneckoEye),
+        has_velvet_choker: run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::VelvetChoker),
         ..Default::default()
     };
 
@@ -83,6 +119,17 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             }
             RelicId::MedicalKit => {
                 profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
+            }
+            RelicId::Enchiridion => {
+                profile.opening_generated_option_count =
+                    profile.opening_generated_option_count.saturating_add(1);
+                profile.opening_generated_zero_cost_this_turn_count = profile
+                    .opening_generated_zero_cost_this_turn_count
+                    .saturating_add(1);
+            }
+            RelicId::Toolbox => {
+                profile.opening_generated_option_count =
+                    profile.opening_generated_option_count.saturating_add(1);
             }
             _ => {}
         }
@@ -101,9 +148,7 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         if analysis.is_startup_immediate_survival {
             profile.immediate_survival = profile.immediate_survival.saturating_add(1);
         }
-        if analysis.is_startup_base_combat_shape_risk
-            || (profile.has_runic_pyramid && analysis.is_startup_unupgraded_apparition)
-        {
+        if analysis.is_startup_base_combat_shape_risk {
             profile.combat_shape_risk = profile.combat_shape_risk.saturating_add(1);
         }
         if analysis.is_startup_exhaust_engine {
@@ -120,6 +165,23 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         }
         if analysis.is_startup_dual_wield_target {
             profile.dual_wield_target_count = profile.dual_wield_target_count.saturating_add(1);
+        }
+
+        match id {
+            CardId::Armaments if card.upgrades > 0 => {
+                profile.combat_upgrade_hand_access_count =
+                    profile.combat_upgrade_hand_access_count.saturating_add(1);
+            }
+            CardId::Armaments => {
+                profile.combat_upgrade_selected_access_count = profile
+                    .combat_upgrade_selected_access_count
+                    .saturating_add(1);
+            }
+            CardId::Apotheosis => {
+                profile.combat_upgrade_hand_access_count =
+                    profile.combat_upgrade_hand_access_count.saturating_add(1);
+            }
+            _ => {}
         }
 
         match analysis.startup_key {
@@ -224,8 +286,35 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         profile.armaments_count >= 2 && profile.upgraded_armaments_count == 0;
     profile.has_pyramid_unupgraded_apparition =
         profile.has_runic_pyramid && profile.apparition_count > profile.upgraded_apparition_count;
+    profile.has_choker_generated_opening_budget =
+        profile.has_velvet_choker && profile.opening_generated_option_count > 0;
+    profile.has_pyramid_choker_generated_opening_tradeoff =
+        profile.has_runic_pyramid && profile.has_choker_generated_opening_budget;
+    profile.pyramid_apparition_coverage =
+        pyramid_apparition_coverage_v1(&profile, run_state.act_num);
 
     profile
+}
+
+fn pyramid_apparition_coverage_v1(
+    profile: &DeckStartupProfileV1,
+    act_num: u8,
+) -> PyramidApparitionCoverageV1 {
+    if !profile.has_runic_pyramid || profile.apparition_count == 0 {
+        PyramidApparitionCoverageV1::NotApplicable
+    } else if profile.apparition_count == profile.upgraded_apparition_count {
+        PyramidApparitionCoverageV1::Ready
+    } else if profile
+        .combat_upgrade_selected_access_count
+        .saturating_add(profile.combat_upgrade_hand_access_count)
+        > 0
+    {
+        PyramidApparitionCoverageV1::CombatRepairAvailable
+    } else if act_num <= 2 {
+        PyramidApparitionCoverageV1::FutureUpgradeWindow
+    } else {
+        PyramidApparitionCoverageV1::Limited
+    }
 }
 
 fn apply_relic_adjusted_startup_v1(profile: &mut DeckStartupProfileV1, run_state: &RunState) {
@@ -605,5 +694,103 @@ mod tests {
             startup_support_for_candidate_v1(&profile, CardId::Offering),
             None
         );
+    }
+
+    #[test]
+    fn pyramid_apparitions_report_live_whole_hand_repair_from_armaments_plus() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.relics.push(RelicState::new(RelicId::RunicPyramid));
+        run.add_card_to_deck(CardId::Apparition);
+        let mut armaments = crate::runtime::combat::CombatCard::new(CardId::Armaments, 1001);
+        armaments.upgrades = 1;
+        run.master_deck.push(armaments);
+
+        let profile = deck_startup_profile_v1(&run);
+
+        assert_eq!(
+            profile.pyramid_apparition_coverage,
+            PyramidApparitionCoverageV1::CombatRepairAvailable
+        );
+        assert_eq!(profile.combat_upgrade_hand_access_count, 1);
+        assert_eq!(profile.combat_upgrade_selected_access_count, 0);
+    }
+
+    #[test]
+    fn pyramid_apparition_coverage_distinguishes_ready_future_and_limited() {
+        let mut ready = RunState::new(1, 0, false, "Ironclad");
+        ready.relics.push(RelicState::new(RelicId::RunicPyramid));
+        let mut apparition = crate::runtime::combat::CombatCard::new(CardId::Apparition, 1001);
+        apparition.upgrades = 1;
+        ready.master_deck.push(apparition);
+        assert_eq!(
+            deck_startup_profile_v1(&ready).pyramid_apparition_coverage,
+            PyramidApparitionCoverageV1::Ready
+        );
+
+        let mut future = RunState::new(2, 0, false, "Ironclad");
+        future.act_num = 2;
+        future.relics.push(RelicState::new(RelicId::RunicPyramid));
+        future.add_card_to_deck(CardId::Apparition);
+        assert_eq!(
+            deck_startup_profile_v1(&future).pyramid_apparition_coverage,
+            PyramidApparitionCoverageV1::FutureUpgradeWindow
+        );
+
+        future.act_num = 3;
+        assert_eq!(
+            deck_startup_profile_v1(&future).pyramid_apparition_coverage,
+            PyramidApparitionCoverageV1::Limited
+        );
+    }
+
+    #[test]
+    fn generated_opening_options_are_budget_facts_not_shape_risk() {
+        let mut run = RunState::new(3, 0, false, "Ironclad");
+        run.relics = vec![
+            RelicState::new(RelicId::VelvetChoker),
+            RelicState::new(RelicId::RunicPyramid),
+            RelicState::new(RelicId::Enchiridion),
+            RelicState::new(RelicId::Toolbox),
+        ];
+        run.add_card_to_deck(CardId::Apparition);
+
+        let profile = deck_startup_profile_v1(&run);
+
+        assert_eq!(profile.opening_generated_option_count, 2);
+        assert_eq!(profile.opening_generated_zero_cost_this_turn_count, 1);
+        assert!(profile.has_choker_generated_opening_budget);
+        assert!(profile.has_pyramid_choker_generated_opening_tradeoff);
+        assert_eq!(profile.combat_shape_risk, 0);
+        assert!(profile.has_pyramid_unupgraded_apparition);
+    }
+
+    #[test]
+    fn older_serialized_startup_profiles_default_new_capacity_fields() {
+        let mut value = serde_json::to_value(DeckStartupProfileV1::default())
+            .expect("profile should serialize");
+        let object = value.as_object_mut().expect("profile should be an object");
+        for field in [
+            "pyramid_apparition_coverage",
+            "combat_upgrade_selected_access_count",
+            "combat_upgrade_hand_access_count",
+            "opening_generated_option_count",
+            "opening_generated_zero_cost_this_turn_count",
+            "has_velvet_choker",
+            "has_choker_generated_opening_budget",
+            "has_pyramid_choker_generated_opening_tradeoff",
+        ] {
+            object.remove(field);
+        }
+
+        let decoded: DeckStartupProfileV1 =
+            serde_json::from_value(value).expect("older profile should deserialize");
+
+        assert_eq!(
+            decoded.pyramid_apparition_coverage,
+            PyramidApparitionCoverageV1::NotApplicable
+        );
+        assert_eq!(decoded.opening_generated_option_count, 0);
+        assert!(!decoded.has_choker_generated_opening_budget);
     }
 }
