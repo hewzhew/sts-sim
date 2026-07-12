@@ -1,13 +1,8 @@
 use crate::ai::strategy::candidate_pressure_response::CandidatePressureResponse;
+use crate::ai::strategy::challenger_decision_context::open_inventory_pressure;
 use crate::ai::strategy::challenger_policy_state::ChallengerPolicyState;
 use crate::ai::strategy::decision_pipeline::CandidateLane;
-use crate::ai::strategy::deck_strategic_deficit::{
-    DeckStrategicDeficitSummary, StrategicDeficitLevel,
-};
-use crate::ai::strategy::pressure_assessment::{
-    EvidenceConfidence, PressureAxis, PressureCoverage, PressureEvidence, PressureEvidenceSource,
-    PressureHypothesis,
-};
+use crate::ai::strategy::deck_strategic_deficit::DeckStrategicDeficitSummary;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyCandidateView {
@@ -15,43 +10,6 @@ pub struct PolicyCandidateView {
     pub lane: CandidateLane,
     pub auto_allowed: bool,
     pub response: CandidatePressureResponse,
-}
-
-pub fn open_inventory_pressure(facts: DeckStrategicDeficitSummary) -> Vec<PressureHypothesis> {
-    let mut hypotheses = Vec::new();
-    push_if_open(
-        &mut hypotheses,
-        facts.frontload_damage,
-        PressureAxis::ResolutionTempo,
-        "frontload inventory is missing or thin",
-    );
-    push_if_open(
-        &mut hypotheses,
-        facts.aoe_or_minion_control,
-        PressureAxis::MultiTargetControl,
-        "multi-target inventory is missing or thin",
-    );
-    push_if_open(
-        &mut hypotheses,
-        facts.block_or_mitigation,
-        PressureAxis::DelayCapacity,
-        "delay inventory is missing or thin",
-    );
-    push_if_open(
-        &mut hypotheses,
-        facts.boss_scaling_plan,
-        PressureAxis::GrowthHorizon,
-        "scaling inventory is missing or thin",
-    );
-    if is_open(facts.deck_access) || is_open(facts.energy_or_playability) {
-        hypotheses.push(open_hypothesis(
-            PressureAxis::Deployability,
-            "access or playability inventory is missing or thin",
-        ));
-    }
-    hypotheses.sort_by_key(|item| item.axis);
-    hypotheses.dedup_by_key(|item| item.axis);
-    hypotheses
 }
 
 pub fn seed_challenger_policy(
@@ -94,37 +52,6 @@ pub fn select_challenger_choice(
             )
         })
         .map(|candidate| candidate.choice_index)
-}
-
-fn is_open(level: StrategicDeficitLevel) -> bool {
-    matches!(
-        level,
-        StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
-    )
-}
-
-fn push_if_open(
-    hypotheses: &mut Vec<PressureHypothesis>,
-    level: StrategicDeficitLevel,
-    axis: PressureAxis,
-    label: &'static str,
-) {
-    if is_open(level) {
-        hypotheses.push(open_hypothesis(axis, label));
-    }
-}
-
-fn open_hypothesis(axis: PressureAxis, label: &'static str) -> PressureHypothesis {
-    PressureHypothesis {
-        axis,
-        coverage: PressureCoverage::Open,
-        confidence: EvidenceConfidence::Low,
-        supporting_evidence: vec![PressureEvidence {
-            source: PressureEvidenceSource::DeckCapability,
-            label: label.to_string(),
-        }],
-        contradicting_evidence: Vec::new(),
-    }
 }
 
 fn candidate_is_eligible(candidate: &PolicyCandidateView) -> bool {
