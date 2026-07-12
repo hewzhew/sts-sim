@@ -29,6 +29,7 @@ mod action_facts;
 mod action_ordering;
 mod action_priority;
 mod action_resource_timing;
+mod attack_retaliation;
 mod expansion;
 mod target_fanout;
 
