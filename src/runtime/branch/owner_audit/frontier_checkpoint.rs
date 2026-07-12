@@ -108,6 +108,7 @@ impl BranchCheckpoint {
             path: self.path,
             session: self.session.into_session()?,
             status: self.status,
+            policy_lane: super::branch_policy_lane::BranchPolicyLane::default(),
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),

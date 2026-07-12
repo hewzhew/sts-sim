@@ -22,6 +22,8 @@ mod branch_model;
 mod branch_observer;
 #[path = "owner_audit/branch_path.rs"]
 mod branch_path;
+#[path = "owner_audit/branch_policy_lane.rs"]
+mod branch_policy_lane;
 #[path = "owner_audit/branch_runtime.rs"]
 mod branch_runtime;
 #[path = "owner_audit/branch_scheduler.rs"]

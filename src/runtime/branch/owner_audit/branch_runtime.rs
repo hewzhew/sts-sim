@@ -5,6 +5,7 @@ use sts_simulator::eval::run_control::{
     RewardAutomationConfig, RunControlConfig, RunControlSession,
 };
 
+use super::branch_policy_lane::BranchPolicyLane;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::RunSliceResult;
@@ -39,6 +40,7 @@ impl BranchRuntime {
                 path: Vec::new(),
                 session,
                 status: advance.status,
+                policy_lane: BranchPolicyLane::default(),
                 combat_portfolio: advance.combat_portfolio,
                 auto_steps: advance.auto_steps,
                 combat_search: combat_search.clone(),
@@ -89,6 +91,7 @@ mod tests {
 
         assert_eq!(frontier.len(), 1);
         assert_eq!(frontier.front().unwrap().id, 0);
+        assert_eq!(frontier.front().unwrap().policy_lane.label(), "baseline");
         assert!(frontier
             .front()
             .unwrap()

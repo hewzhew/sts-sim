@@ -787,6 +787,7 @@ mod tests {
                 owner: Owner::ShopTiny,
                 boundary: "Shop".to_string(),
             },
+            policy_lane: super::super::branch_policy_lane::BranchPolicyLane::default(),
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),

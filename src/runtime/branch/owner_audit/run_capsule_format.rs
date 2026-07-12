@@ -378,6 +378,7 @@ mod tests {
                 boundary: "Combat".to_string(),
                 reason: "diagnostic".to_string(),
             },
+            policy_lane: super::super::branch_policy_lane::BranchPolicyLane::default(),
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
