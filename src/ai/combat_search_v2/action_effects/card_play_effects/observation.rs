@@ -8,6 +8,7 @@ use crate::runtime::combat::{CombatCard, CombatState};
 pub(super) struct CardPlayEffectAccumulator {
     pub(super) direct: DirectCardPlayEffectAccumulator,
     pub(super) reactive: super::super::ReactiveCardPlayEffectFacts,
+    pub(super) retaliation_projection_state: Option<CombatState>,
 }
 
 #[derive(Default)]

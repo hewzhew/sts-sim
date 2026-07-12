@@ -107,21 +107,36 @@ fn observe_damage_info(
     accumulator: &mut CardPlayEffectAccumulator,
     info: &DamageInfo,
 ) {
-    let hp_loss =
-        super::super::super::attack_retaliation::attack_retaliation_player_hp_loss_for_event(
-            combat, info,
-        );
-    if hp_loss <= 0 {
+    let projection = super::super::super::attack_retaliation::attack_retaliation_for_event(
+        combat,
+        &mut accumulator.retaliation_projection_state,
+        info,
+    );
+    if projection.raw_player_damage <= 0 {
         return;
     }
     accumulator.reactive.attack_retaliation_trigger_count_hint = accumulator
         .reactive
         .attack_retaliation_trigger_count_hint
-        .saturating_add(1);
+        .saturating_add(projection.trigger_count);
+    accumulator
+        .reactive
+        .attack_retaliation_raw_player_damage_hint = accumulator
+        .reactive
+        .attack_retaliation_raw_player_damage_hint
+        .saturating_add(projection.raw_player_damage);
+    accumulator
+        .reactive
+        .attack_retaliation_player_block_loss_hint = accumulator
+        .reactive
+        .attack_retaliation_player_block_loss_hint
+        .saturating_add(projection.player_block_loss);
     accumulator.reactive.attack_retaliation_player_hp_loss_hint = accumulator
         .reactive
         .attack_retaliation_player_hp_loss_hint
-        .saturating_add(hp_loss);
-    accumulator.reactive.player_hp_loss =
-        accumulator.reactive.player_hp_loss.saturating_add(hp_loss);
+        .saturating_add(projection.player_hp_loss);
+    accumulator.reactive.player_hp_loss = accumulator
+        .reactive
+        .player_hp_loss
+        .saturating_add(projection.player_hp_loss);
 }

@@ -149,6 +149,34 @@ fn attack_retaliation_counts_explicit_damage_events_without_affecting_non_attack
 }
 
 #[test]
+fn attack_retaliation_consumes_current_block_sequentially_before_hp() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.block = 5;
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    combat.entities.monsters = vec![spiker];
+    insert_power(&mut combat, 1, PowerId::Thorns, 3);
+
+    let strike = card_play_effect_facts(&combat, &CombatCard::new(CardId::Strike, 9), Some(1));
+    let twin = card_play_effect_facts(&combat, &CombatCard::new(CardId::TwinStrike, 10), Some(1));
+
+    assert_eq!(strike.reactive.attack_retaliation_trigger_count_hint, 1);
+    assert_eq!(strike.reactive.attack_retaliation_raw_player_damage_hint, 3);
+    assert_eq!(strike.reactive.attack_retaliation_player_block_loss_hint, 3);
+    assert_eq!(strike.reactive.attack_retaliation_player_hp_loss_hint, 0);
+    assert_eq!(strike.reactive.player_hp_loss, 0);
+    assert_eq!(strike.reactive_risk_score(), 3);
+
+    assert_eq!(twin.reactive.attack_retaliation_trigger_count_hint, 2);
+    assert_eq!(twin.reactive.attack_retaliation_raw_player_damage_hint, 6);
+    assert_eq!(twin.reactive.attack_retaliation_player_block_loss_hint, 5);
+    assert_eq!(twin.reactive.attack_retaliation_player_hp_loss_hint, 1);
+    assert_eq!(twin.reactive.player_hp_loss, 1);
+    assert_eq!(twin.reactive_risk_score(), 6);
+    assert_eq!(combat.entities.player.block, 5);
+}
+
+#[test]
 fn after_image_reports_reactive_player_block() {
     let mut combat = blank_test_combat();
     insert_power(&mut combat, 0, PowerId::AfterImage, 1);

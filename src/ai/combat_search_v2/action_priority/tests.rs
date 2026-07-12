@@ -219,6 +219,7 @@ fn timed_threat_damage_progress_is_neutral_without_power() {
 #[test]
 fn damage_progress_prefers_fewer_attack_retaliation_triggers() {
     let mut combat = blank_test_combat();
+    combat.entities.player.block = 5;
     let mut spiker = test_monster(EnemyId::Spiker);
     spiker.id = 1;
     spiker.current_hp = 40;
@@ -267,15 +268,43 @@ fn damage_progress_prefers_fewer_attack_retaliation_triggers() {
         twin_strike
             .effects
             .reactive
-            .attack_retaliation_player_hp_loss_hint,
+            .attack_retaliation_raw_player_damage_hint,
         6
+    );
+    assert_eq!(
+        twin_strike
+            .effects
+            .reactive
+            .attack_retaliation_player_block_loss_hint,
+        5
+    );
+    assert_eq!(
+        twin_strike
+            .effects
+            .reactive
+            .attack_retaliation_player_hp_loss_hint,
+        1
+    );
+    assert_eq!(
+        strike
+            .effects
+            .reactive
+            .attack_retaliation_raw_player_damage_hint,
+        3
+    );
+    assert_eq!(
+        strike
+            .effects
+            .reactive
+            .attack_retaliation_player_block_loss_hint,
+        3
     );
     assert_eq!(
         strike
             .effects
             .reactive
             .attack_retaliation_player_hp_loss_hint,
-        3
+        0
     );
     assert!(strike > twin_strike);
 }

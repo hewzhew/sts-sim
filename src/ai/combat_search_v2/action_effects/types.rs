@@ -23,6 +23,8 @@ pub(in crate::ai::combat_search_v2) struct DirectCardPlayEffectFacts {
 pub(in crate::ai::combat_search_v2) struct ReactiveCardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) player_hp_loss: i32,
     pub(in crate::ai::combat_search_v2) attack_retaliation_trigger_count_hint: usize,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_raw_player_damage_hint: i32,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_player_block_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) attack_retaliation_player_hp_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) enemy_damage: i32,
@@ -67,6 +69,8 @@ pub(in crate::ai::combat_search_v2) struct CardPlayDirectEffectDiagnostics {
 pub(in crate::ai::combat_search_v2) struct CardPlayReactiveEffectDiagnostics {
     pub(in crate::ai::combat_search_v2) player_hp_loss: i32,
     pub(in crate::ai::combat_search_v2) attack_retaliation_trigger_count_hint: usize,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_raw_player_damage_hint: i32,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_player_block_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) attack_retaliation_player_hp_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) enemy_damage: i32,
@@ -104,6 +108,7 @@ impl CardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) fn reactive_risk_score(self) -> i32 {
         self.enemy_scaling_risk_score()
             .saturating_add(self.reactive.player_hp_loss)
+            .saturating_add(self.reactive.attack_retaliation_player_block_loss_hint)
             .saturating_add(self.reactive.bad_draw_cards)
             .saturating_add(i32::from(self.reactive.forced_turn_end))
     }
@@ -156,6 +161,12 @@ impl CardPlayEffectFacts {
                 attack_retaliation_trigger_count_hint: self
                     .reactive
                     .attack_retaliation_trigger_count_hint,
+                attack_retaliation_raw_player_damage_hint: self
+                    .reactive
+                    .attack_retaliation_raw_player_damage_hint,
+                attack_retaliation_player_block_loss_hint: self
+                    .reactive
+                    .attack_retaliation_player_block_loss_hint,
                 attack_retaliation_player_hp_loss_hint: self
                     .reactive
                     .attack_retaliation_player_hp_loss_hint,

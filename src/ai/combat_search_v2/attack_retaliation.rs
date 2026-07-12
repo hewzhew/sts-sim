@@ -5,6 +5,14 @@ use crate::runtime::monster_move::{MoveStep, MoveTarget};
 use crate::EntityId;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct AttackRetaliationEventProjectionV1 {
+    pub(super) trigger_count: usize,
+    pub(super) raw_player_damage: i32,
+    pub(super) player_block_loss: i32,
+    pub(super) player_hp_loss: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct AttackRetaliationTargetFactV1 {
     pub(super) source_entity_id: EntityId,
     pub(super) power_source_count: usize,
@@ -12,10 +20,11 @@ pub(super) struct AttackRetaliationTargetFactV1 {
     pub(super) visible_growth_amount: i32,
 }
 
-pub(super) fn attack_retaliation_player_hp_loss_for_event(
+pub(super) fn attack_retaliation_for_event(
     combat: &CombatState,
+    projection_state: &mut Option<CombatState>,
     info: &DamageInfo,
-) -> i32 {
+) -> AttackRetaliationEventProjectionV1 {
     if info.source != 0
         || !combat
             .entities
@@ -23,9 +32,9 @@ pub(super) fn attack_retaliation_player_hp_loss_for_event(
             .iter()
             .any(|monster| monster.id == info.target && monster.is_alive_for_action())
     {
-        return 0;
+        return AttackRetaliationEventProjectionV1::default();
     }
-    powers_snapshot_for(combat, info.target)
+    let actions = powers_snapshot_for(combat, info.target)
         .into_iter()
         .flat_map(|power| {
             resolve_power_on_attacked(
@@ -38,8 +47,8 @@ pub(super) fn attack_retaliation_player_hp_loss_for_event(
                 power.amount,
             )
         })
-        .map(player_hp_loss_from_action)
-        .sum()
+        .collect::<Vec<_>>();
+    project_player_retaliation_actions(combat, projection_state, actions)
 }
 
 pub(super) fn attack_retaliation_for_target(
@@ -52,9 +61,9 @@ pub(super) fn attack_retaliation_for_target(
         .iter()
         .find(|monster| monster.id == entity_id && monster.is_alive_for_action())?;
     let mut source_count = 0usize;
-    let mut player_loss = 0i32;
+    let mut actions = Vec::new();
     for power in powers_snapshot_for(combat, entity_id) {
-        let loss: i32 = resolve_power_on_attacked(
+        let power_actions = resolve_power_on_attacked(
             power.power_type,
             combat,
             entity_id,
@@ -62,19 +71,21 @@ pub(super) fn attack_retaliation_for_target(
             0,
             DamageType::Normal,
             power.amount,
-        )
-        .into_iter()
-        .map(player_hp_loss_from_action)
-        .sum();
-        if loss > 0 {
+        );
+        if power_actions
+            .iter()
+            .any(|action| raw_player_damage_from_action(action) > 0)
+        {
             source_count += 1;
-            player_loss = player_loss.saturating_add(loss);
+            actions.extend(power_actions);
         }
     }
-    (player_loss > 0).then_some(AttackRetaliationTargetFactV1 {
+    let mut projection_state = None;
+    let projection = project_player_retaliation_actions(combat, &mut projection_state, actions);
+    (projection.raw_player_damage > 0).then_some(AttackRetaliationTargetFactV1 {
         source_entity_id: entity_id,
         power_source_count: source_count,
-        player_hp_loss_per_damage_event: player_loss,
+        player_hp_loss_per_damage_event: projection.player_hp_loss,
         visible_growth_amount: owner
             .turn_plan()
             .steps
@@ -93,12 +104,53 @@ pub(super) fn attack_retaliation_for_target(
     })
 }
 
-fn player_hp_loss_from_action(action: Action) -> i32 {
+fn project_player_retaliation_actions(
+    combat: &CombatState,
+    projection_state: &mut Option<CombatState>,
+    actions: impl IntoIterator<Item = Action>,
+) -> AttackRetaliationEventProjectionV1 {
+    let mut projection = AttackRetaliationEventProjectionV1::default();
+    for action in actions {
+        match action {
+            Action::Damage(info) if info.target == 0 => {
+                let state = projection_state.get_or_insert_with(|| combat.clone());
+                let resolution =
+                    crate::engine::action_handlers::damage::resolve_player_damage(&info, state);
+                if resolution.raw_damage <= 0 {
+                    continue;
+                }
+                projection.trigger_count = projection.trigger_count.saturating_add(1);
+                projection.raw_player_damage = projection
+                    .raw_player_damage
+                    .saturating_add(resolution.raw_damage);
+                projection.player_block_loss = projection
+                    .player_block_loss
+                    .saturating_add(resolution.block_consumed);
+                projection.player_hp_loss =
+                    projection.player_hp_loss.saturating_add(resolution.hp_loss);
+            }
+            Action::LoseHp {
+                target: 0, amount, ..
+            } if amount > 0 => {
+                let state = projection_state.get_or_insert_with(|| combat.clone());
+                projection.trigger_count = projection.trigger_count.saturating_add(1);
+                projection.raw_player_damage = projection.raw_player_damage.saturating_add(amount);
+                projection.player_hp_loss = projection.player_hp_loss.saturating_add(
+                    crate::content::relics::hooks::on_lose_hp_last(state, amount).max(0),
+                );
+            }
+            _ => {}
+        }
+    }
+    projection
+}
+
+fn raw_player_damage_from_action(action: &Action) -> i32 {
     match action {
         Action::Damage(info) if info.target == 0 => info.output.max(info.base).max(0),
         Action::LoseHp {
             target: 0, amount, ..
-        } => amount.max(0),
+        } => (*amount).max(0),
         _ => 0,
     }
 }
@@ -166,18 +218,22 @@ mod tests {
             is_modified: false,
         };
 
+        let mut projection_state = None;
         assert_eq!(
-            attack_retaliation_player_hp_loss_for_event(&combat, &info),
+            attack_retaliation_for_event(&combat, &mut projection_state, &info).player_hp_loss,
             5
         );
+        let mut projection_state = None;
         assert_eq!(
-            attack_retaliation_player_hp_loss_for_event(
+            attack_retaliation_for_event(
                 &combat,
+                &mut projection_state,
                 &DamageInfo {
                     damage_type: DamageType::Thorns,
                     ..info
                 }
-            ),
+            )
+            .player_hp_loss,
             0
         );
     }
