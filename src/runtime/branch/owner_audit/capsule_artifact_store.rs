@@ -312,8 +312,11 @@ impl CapsuleArtifactStore {
             .iter()
             .filter(|branch| branch.status.is_resumable())
             .count();
-        let frontier_info =
-            run_capsule_format::frontier_summary_info_value(frontier.len(), running);
+        let frontier_info = run_capsule_format::frontier_trajectory_summary_value(
+            frontier.len(),
+            running,
+            frontier,
+        );
         if let Some(branch) = frontier
             .iter()
             .find(|branch| branch.status.is_resumable())
@@ -541,6 +544,96 @@ mod accepted_diagnostic_schema_tests {
             accepted_combat_diagnostic_schema(&v2),
             "accepted_high_loss_combat_evidence_v2"
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod trajectory_artifact_tests {
+    use super::*;
+    use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+
+    use crate::runtime::branch::owner_audit::branch_model::{BranchStatus, Owner};
+    use crate::runtime::branch::owner_audit::branch_policy_lane::BranchPolicyLane;
+
+    fn test_args() -> Args {
+        Args {
+            seed: 99,
+            ascension: 0,
+            objective: super::super::run_contract::RunObjective::FirstTerminal,
+            generations: 1,
+            max_branches: 2,
+            auto_ops: 1,
+            search_nodes: 1,
+            search_ms: 1,
+            rescue_search_nodes: 1,
+            rescue_search_ms: 1,
+            boss_search_nodes: 1,
+            boss_search_ms: 1,
+            wall_ms: Some(1_000),
+            checkpoint_before_combat_portfolio: true,
+            shop_boss_preview_bundle_limit: 0,
+            shop_boss_preview_target_floor: None,
+            wall_capped_search_budget: true,
+            wall_capped_boss_budget: true,
+        }
+    }
+
+    fn test_branch(id: usize, policy_lane: BranchPolicyLane) -> Branch {
+        Branch {
+            id,
+            parent_id: None,
+            path: Vec::new(),
+            session: RunControlSession::new(RunControlConfig::default()),
+            status: BranchStatus::Running {
+                boundary: "test".to_string(),
+                owner: Owner::CardReward,
+            },
+            policy_lane,
+            combat_portfolio: None,
+            auto_steps: Vec::new(),
+            combat_search: Vec::new(),
+            combat_search_history: Vec::new(),
+            accepted_high_loss_diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn written_frontier_summary_keeps_paired_trajectory_evidence() {
+        let root = std::env::temp_dir().join("frontier_trajectory_evidence");
+        let _ = std::fs::remove_dir_all(&root);
+        let store = CapsuleArtifactStore::new(root.clone());
+        let frontier = VecDeque::from([
+            test_branch(1, BranchPolicyLane::default()),
+            test_branch(
+                2,
+                BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+            ),
+        ]);
+
+        store
+            .write_frontier(test_args(), 0, 3, &frontier, "running", None)
+            .unwrap();
+
+        let summary: Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("summary.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            summary["frontier"]["trajectory_evaluation"]["snapshots"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            summary["frontier"]["trajectory_evaluation"]["comparisons"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
         let _ = std::fs::remove_dir_all(root);
     }
 }

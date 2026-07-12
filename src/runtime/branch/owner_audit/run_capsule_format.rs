@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -8,7 +9,9 @@ use sts_simulator::sim::combat::CombatPosition;
 use super::branch_path::BranchPathStep;
 use super::run_contract::RunContract;
 use super::run_identity::{RunIdentity, SourceIdentity};
-use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchStatus};
+use super::{
+    combat_portfolio_json, run_state_json, trajectory_snapshot, Args, Branch, BranchStatus,
+};
 
 pub(super) fn manifest_value(
     args: Args,
@@ -87,6 +90,7 @@ pub(super) fn branch_summary_value(
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
+        "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
         "status": status,
         "act": run.act_num,
         "floor": run.floor_num,
@@ -149,10 +153,15 @@ fn combat_search_telemetry_source(
     }
 }
 
-pub(super) fn frontier_summary_info_value(frontier_count: usize, running: usize) -> Value {
+pub(super) fn frontier_trajectory_summary_value(
+    frontier_count: usize,
+    running: usize,
+    frontier: &VecDeque<Branch>,
+) -> Value {
     json!({
         "frontier_count": frontier_count,
         "frontier_running_count": running,
+        "trajectory_evaluation": trajectory_snapshot::frontier_trajectory_evaluation(frontier),
     })
 }
 
@@ -229,6 +238,7 @@ pub(super) fn result_value(
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
+        "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
         "status": status_value(&branch.status),
         "state": {
             "act": run.act_num,
@@ -346,6 +356,8 @@ pub(super) fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
@@ -389,6 +401,39 @@ mod tests {
             combat_search_history: Vec::new(),
             accepted_high_loss_diagnostics: Vec::new(),
         }
+    }
+
+    fn challenger_sample_branch(lane_id: u8) -> Branch {
+        let mut branch = sample_branch();
+        branch.id = lane_id as usize + 1;
+        branch.policy_lane = super::super::branch_policy_lane::BranchPolicyLane::challenger(
+            sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState::new(
+                lane_id,
+            ),
+        );
+        branch
+    }
+
+    #[test]
+    fn frontier_summary_exposes_paired_trajectory_evaluation() {
+        let frontier = VecDeque::from([sample_branch(), challenger_sample_branch(1)]);
+        let value = frontier_trajectory_summary_value(2, 2, &frontier);
+
+        assert_eq!(value["frontier_count"], 2);
+        assert_eq!(
+            value["trajectory_evaluation"]["snapshots"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            value["trajectory_evaluation"]["comparisons"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
