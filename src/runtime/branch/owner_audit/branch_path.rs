@@ -15,6 +15,8 @@ use super::{branch_status_view, decision_delta, render, trace, Branch};
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct BranchPathStep {
+    #[serde(default)]
+    pub(super) policy_lane: String,
     pub(super) key: Option<DecisionKey>,
     pub(super) action_debug: String,
     pub(super) label: String,

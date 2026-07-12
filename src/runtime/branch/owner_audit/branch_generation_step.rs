@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use super::owner_model::OwnerChoice;
+use super::policy_expansion_plan::PolicyExpansion;
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
 use super::run_slice_result::ArtifactWriteSummary;
@@ -30,6 +31,7 @@ pub(super) fn advance_branch_work(
     expandable: bool,
     choices: Vec<OwnerChoice>,
     expanded_mask: Vec<bool>,
+    policy_expansions: Vec<PolicyExpansion>,
     args: Args,
     child_args: Args,
     generation: usize,
@@ -79,7 +81,7 @@ pub(super) fn advance_branch_work(
         child_args,
         deadline,
         &choices,
-        &expanded_mask,
+        &policy_expansions,
         next_branch_id,
     ) {
         let outcome = branch_observer::record_child_branch(
