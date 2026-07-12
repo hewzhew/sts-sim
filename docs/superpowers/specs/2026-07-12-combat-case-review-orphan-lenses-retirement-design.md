@@ -158,9 +158,10 @@ intentional breaking change to an unsupported portion of that schema. Retained k
 names and shapes.
 
 `tools/frozen_case_panel.py` and `tools/success_feedback_panel.py` must not be changed to compensate
-for the retirement. Their existing tests prove that the two supported nested contracts survive.
-Default ladder output must continue to contain the fast no-potion and slow all-potion rows in that
-order.
+for the retirement. The frozen panel's existing consumer tests must remain green; the success
+feedback tool receives CLI/help and Python compilation smoke checks because it currently has no
+dedicated test module. Default ladder output must continue to contain the fast no-potion and slow
+all-potion rows in that order.
 
 ## Documentation Contract
 
@@ -180,7 +181,9 @@ Layer 1 focused verification:
 ```powershell
 cargo fmt --all -- --check
 cargo test --bin combat_case_review
-python -m unittest tests.test_frozen_case_panel tests.test_success_feedback_panel
+python -m unittest tests.test_frozen_case_panel
+python -m py_compile tools/success_feedback_panel.py
+python tools/success_feedback_panel.py --help
 cargo check --bin combat_case_review
 ```
 
