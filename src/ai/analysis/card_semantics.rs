@@ -583,9 +583,7 @@ mod tests {
         assert!(definition
             .play_effects
             .contains(&PlayEffect::Provide(Mechanic::EnemyStrengthDown)));
-        assert!(definition
-            .play_effects
-            .contains(&PlayEffect::ExhaustsSelf));
+        assert!(definition.play_effects.contains(&PlayEffect::ExhaustsSelf));
     }
 
     #[test]
@@ -598,9 +596,7 @@ mod tests {
         assert!(definition
             .play_effects
             .contains(&PlayEffect::Provide(Mechanic::Vulnerable)));
-        assert!(definition
-            .play_effects
-            .contains(&PlayEffect::ExhaustsSelf));
+        assert!(definition.play_effects.contains(&PlayEffect::ExhaustsSelf));
         assert!(!definition
             .play_effects
             .contains(&PlayEffect::Provide(Mechanic::EnemyStrengthDown)));
