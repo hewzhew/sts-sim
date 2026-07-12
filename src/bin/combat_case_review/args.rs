@@ -33,8 +33,6 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) disable_rollout: bool,
     #[arg(long)]
-    pub(super) turn_plan_ladder: bool,
-    #[arg(long)]
     pub(super) rollout_max_actions: Option<usize>,
     #[arg(long)]
     pub(super) rollout_max_evaluations: Option<usize>,
@@ -48,18 +46,6 @@ pub(super) struct Args {
     pub(super) quality_lanes: bool,
     #[arg(long)]
     pub(super) frozen_panel_lanes: bool,
-    #[arg(long)]
-    pub(super) forced_potion_opening_lanes: bool,
-    #[arg(long)]
-    pub(super) boss_setup_lane: bool,
-    #[arg(long)]
-    pub(super) key_card_counterfactual: bool,
-    #[arg(long)]
-    pub(super) key_card_decision_microscope: bool,
-    #[arg(long)]
-    pub(super) root_action_role_duel: bool,
-    #[arg(long)]
-    pub(super) collector_tactic_lanes: bool,
     #[arg(long)]
     pub(super) quality_lane_total_nodes: Option<usize>,
     #[arg(long)]

@@ -11,23 +11,17 @@ use super::awakened_one_evidence::{
     awakened_one_failure_evidence, awakened_one_path_audit_v0, static_boss_matchup_audit_v0,
 };
 use super::boss_pressure_lens::boss_pressure_lens;
-use super::boss_setup_lane::run_boss_setup_lane;
 use super::case_payload::{
     assemble_combat_case_review, CombatCaseReview, CombatCaseReviewArtifacts,
 };
 use super::champ_phase::champ_phase_audit;
 use super::classification::classify_gap_review;
-use super::collector_tactic_lanes::run_collector_tactic_lanes;
 use super::counterfactual_hp::run_counterfactual_hp_probe;
 use super::focus::{focus_witness_line, review_focus, witness_prior_rerun};
-use super::forced_potion_opening::run_forced_potion_opening_lanes;
 use super::frozen_panel_lanes::run_frozen_panel_lanes;
-use super::key_card_counterfactual::run_key_card_counterfactual_probe;
-use super::key_card_decision_microscope::run_key_card_decision_microscope_probe;
 use super::line_lab::run_line_lab;
 use super::options::ReviewOptions;
 use super::quality_lanes::run_quality_lanes;
-use super::root_action_role_duel::run_root_action_role_duel_probe;
 use ladder::run_review_ladder;
 
 pub(super) fn build_review(
@@ -54,13 +48,7 @@ pub(super) fn build_review(
     let line_lab = run_line_lab(&options, &case, ladder_run.line_lab_parent.as_ref());
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
-    let boss_setup_lane = run_boss_setup_lane(&options, &case);
     let frozen_panel_lanes = run_frozen_panel_lanes(&options, &case);
-    let forced_potion_opening_lanes = run_forced_potion_opening_lanes(&options, &case);
-    let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
-    let key_card_decision_microscope = run_key_card_decision_microscope_probe(&options, &case);
-    let root_action_role_duel = run_root_action_role_duel_probe(&options, &case);
-    let collector_tactic_lanes = run_collector_tactic_lanes(&options, &case);
     let quality_lanes = if options.quality_lanes {
         Some(run_quality_lanes(&options, &case))
     } else {
@@ -98,13 +86,7 @@ pub(super) fn build_review(
             awakened_one_failure_evidence,
             awakened_one_path_audit_v0,
             boss_pressure_lens,
-            boss_setup_lane,
             frozen_panel_lanes,
-            forced_potion_opening_lanes,
-            key_card_counterfactual,
-            key_card_decision_microscope,
-            root_action_role_duel,
-            collector_tactic_lanes,
             champ_phase_audit,
         },
     )

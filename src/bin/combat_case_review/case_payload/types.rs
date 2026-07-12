@@ -14,19 +14,13 @@ use super::super::awakened_one_evidence::{
     AwakenedOneFailureEvidenceFrame, AwakenedOnePathAuditV0, StaticBossMatchupAuditV0,
 };
 use super::super::boss_pressure_lens::BossPressureLensReport;
-use super::super::boss_setup_lane::BossSetupLaneReview;
 use super::super::champ_phase::ChampPhaseAudit;
 use super::super::classification::CombatGapReviewClassification;
-use super::super::collector_tactic_lanes::CollectorTacticLaneReview;
 use super::super::counterfactual_hp::CounterfactualHpProbe;
 use super::super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
-use super::super::forced_potion_opening::ForcedPotionOpeningReview;
 use super::super::frozen_panel_lanes::FrozenPanelLaneReview;
-use super::super::key_card_counterfactual::KeyCardCounterfactualProbe;
-use super::super::key_card_decision_microscope::KeyCardDecisionMicroscopeProbe;
 use super::super::key_card_lifecycle::KeyCardLifecycleReport;
 use super::super::quality_lanes::CombatQualityLaneReview;
-use super::super::root_action_role_duel::RootActionRoleDuelProbe;
 use super::super::search_types::SearchReview;
 use super::super::strategic_feedback::CombatStrategicFeedbackReport;
 
@@ -59,13 +53,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(super) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
-    pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
-    pub(super) forced_potion_opening_lanes: Option<ForcedPotionOpeningReview>,
-    pub(super) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
-    pub(super) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
-    pub(super) root_action_role_duel: Option<RootActionRoleDuelProbe>,
-    pub(super) collector_tactic_lanes: Option<CollectorTacticLaneReview>,
     pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
     pub(super) key_card_lifecycle: Option<KeyCardLifecycleReport>,
 }
@@ -85,12 +73,6 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(crate) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
-    pub(crate) boss_setup_lane: Option<BossSetupLaneReview>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
-    pub(crate) forced_potion_opening_lanes: Option<ForcedPotionOpeningReview>,
-    pub(crate) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
-    pub(crate) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
-    pub(crate) root_action_role_duel: Option<RootActionRoleDuelProbe>,
-    pub(crate) collector_tactic_lanes: Option<CollectorTacticLaneReview>,
     pub(crate) champ_phase_audit: Option<ChampPhaseAudit>,
 }

@@ -31,13 +31,7 @@ pub(super) fn assemble_combat_case_review(
         awakened_one_failure_evidence,
         awakened_one_path_audit_v0,
         boss_pressure_lens,
-        boss_setup_lane,
         frozen_panel_lanes,
-        forced_potion_opening_lanes,
-        key_card_counterfactual,
-        key_card_decision_microscope,
-        root_action_role_duel,
-        collector_tactic_lanes,
         champ_phase_audit,
     } = artifacts;
     let derived = derived_payload_from_case(&case);
@@ -77,13 +71,7 @@ pub(super) fn assemble_combat_case_review(
         awakened_one_failure_evidence,
         awakened_one_path_audit_v0,
         boss_pressure_lens,
-        boss_setup_lane,
         frozen_panel_lanes,
-        forced_potion_opening_lanes,
-        key_card_counterfactual,
-        key_card_decision_microscope,
-        root_action_role_duel,
-        collector_tactic_lanes,
         champ_phase_audit,
         key_card_lifecycle,
     }

@@ -18,8 +18,7 @@ mod types;
 #[path = "key_card_lifecycle/zones.rs"]
 mod zones;
 
-pub(super) use targets::key_card_targets;
-pub(super) use types::{KeyCardLifecycleReport, KeyCardReason};
+pub(super) use types::KeyCardLifecycleReport;
 
 use report::{finish_lifecycles, report_without_focus};
 use tracking::{note_played_key_card, note_seen_zones, tracked_key_cards};

@@ -7,8 +7,9 @@ use sts_simulator::test_support::{blank_test_combat, test_monster};
 
 use super::super::focus::CombatReviewFocus;
 use super::super::search_types::SearchDiagnosticProgressFacts;
+use super::key_card_lifecycle;
 use super::types::CardZoneLabel;
-use super::{key_card_lifecycle, KeyCardReason};
+use super::types::KeyCardReason;
 
 fn focus_with_action(action_key: String, input: ClientInput) -> CombatReviewFocus {
     let full_action = CombatSearchV2ActionPreview {

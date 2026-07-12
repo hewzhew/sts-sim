@@ -1,8 +1,8 @@
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
-    CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchPluginStack,
-    CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId,
+    CombatSearchBudgetSpec, CombatSearchPluginStack, CombatSearchProfile,
+    CombatSearchRolloutPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2Report,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
@@ -52,16 +52,6 @@ pub(crate) fn review_all_potions_profile(
     review_search_profile(label, nodes, wall_ms, options)
         .with_potion_policy(CombatSearchV2PotionPolicy::All)
         .with_max_potions_used(options.diagnostic_potion_max)
-}
-
-pub(crate) fn review_key_setup_profile(
-    label: &'static str,
-    nodes: usize,
-    wall_ms: u64,
-    options: &ReviewOptions,
-) -> CombatSearchProfile {
-    review_all_potions_profile(label, nodes, wall_ms, options)
-        .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
 }
 
 pub(crate) fn review_rollout_plugin(options: &ReviewOptions) -> CombatSearchRolloutPluginId {

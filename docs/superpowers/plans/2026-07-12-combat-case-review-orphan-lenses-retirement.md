@@ -100,6 +100,7 @@ layer is independently compiled, tested, and committed.
 - Modify: `src/bin/combat_case_review/case_payload/types.rs`
 - Modify: `src/bin/combat_case_review/search_runner.rs`
 - Modify: `src/bin/combat_case_review/key_card_lifecycle.rs`
+- Modify: `src/bin/combat_case_review/key_card_lifecycle/tests.rs`
 - Test: `src/bin/combat_case_review/` retained Rust tests
 - Test: `tests/test_frozen_case_panel.py`
 - Smoke check: `tools/success_feedback_panel.py`
@@ -119,7 +120,7 @@ Run:
 ```powershell
 git status --short
 cargo test --bin combat_case_review
-python -m unittest tests.test_frozen_case_panel
+python tests/test_frozen_case_panel.py
 python -m py_compile tools/success_feedback_panel.py
 python tools/success_feedback_panel.py --help
 ```
@@ -274,7 +275,8 @@ pub(super) use types::KeyCardLifecycleReport;
 ```
 
 `targets::key_card_targets`, `KeyCardReason`, and `KeyCardTarget` remain internally owned by the
-retained lifecycle implementation.
+retained lifecycle implementation. Update `key_card_lifecycle/tests.rs` to import the retained enum
+directly with `use super::types::KeyCardReason;`.
 
 - [ ] **Step 6: Format and prove the public surface changed exactly once**
 
@@ -282,7 +284,7 @@ Run:
 
 ```powershell
 cargo fmt --all
-$help = cargo run --quiet --bin combat_case_review -- --help
+$help = (cargo run --quiet --bin combat_case_review -- --help | Out-String)
 $retired = @(
   '--turn-plan-ladder', '--boss-setup-lane', '--forced-potion-opening-lanes',
   '--key-card-counterfactual', '--key-card-decision-microscope',
@@ -306,7 +308,7 @@ Run:
 ```powershell
 cargo fmt --all -- --check
 cargo test --bin combat_case_review
-python -m unittest tests.test_frozen_case_panel
+python tests/test_frozen_case_panel.py
 python -m py_compile tools/success_feedback_panel.py
 python tools/success_feedback_panel.py --help
 cargo check --bin combat_case_review
@@ -593,7 +595,7 @@ cargo test --lib combat_search_v2::plugins::tests::plugin_ids_implement_their_ro
 cargo test --lib combat_search_v2::action_priority::tests::key_card_setup_bias_promotes_strength_scaling_power
 cargo test --lib combat_search_v2::frontier::tests::
 cargo test --bin combat_case_review
-python -m unittest tests.test_frozen_case_panel
+python tests/test_frozen_case_panel.py
 python -m py_compile tools/success_feedback_panel.py
 python tools/success_feedback_panel.py --help
 ```

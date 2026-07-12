@@ -181,7 +181,7 @@ Layer 1 focused verification:
 ```powershell
 cargo fmt --all -- --check
 cargo test --bin combat_case_review
-python -m unittest tests.test_frozen_case_panel
+python tests/test_frozen_case_panel.py
 python -m py_compile tools/success_feedback_panel.py
 python tools/success_feedback_panel.py --help
 cargo check --bin combat_case_review

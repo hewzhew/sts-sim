@@ -35,15 +35,6 @@ pub(crate) enum KeyCardReason {
     ExhaustEngine,
 }
 
-impl KeyCardReason {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::StrengthScaling => "strength_scaling",
-            Self::ExhaustEngine => "exhaust_engine",
-        }
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct KeyCardTarget {
     pub(crate) card: CombatCard,
