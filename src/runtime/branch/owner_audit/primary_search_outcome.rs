@@ -1,13 +1,14 @@
-use sts_simulator::eval::run_control::{CombatSearchTerminalLineSummary, CombatSearchTraceSummary};
+use sts_simulator::eval::run_control::{
+    CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatSearchTerminalLineSummary,
+    CombatSearchTraceSummary,
+};
 use sts_simulator::runtime::branch::{
     PrimarySearchLineSummary, PrimarySearchOutcomeSummary, PrimarySearchProfileSummary,
     PrimarySearchTelemetrySummary,
 };
 
 use super::branch_model::Branch;
-use super::combat_search_report::{
-    CombatSearchLaneReport, CombatSearchPortfolioReport, CombatSearchPortfolioStatus,
-};
+use super::combat_search_report::{CombatSearchLaneReport, CombatSearchPortfolioReport};
 
 pub(super) fn primary_search_outcome_from_branch(branch: &Branch) -> PrimarySearchOutcomeSummary {
     primary_search_outcome(&branch.combat_search, branch.combat_portfolio.as_ref())
@@ -27,8 +28,20 @@ fn primary_search_outcome(
 ) -> PrimarySearchOutcomeSummary {
     let primary_attempt = primary_attempt(attempts);
     let profile_attempt = primary_profile_attempt(portfolio);
+    let execution_adjudication =
+        primary_attempt.and_then(|attempt| attempt.execution_adjudication.clone());
+    let accepted_line = matches!(
+        &execution_adjudication,
+        Some(CombatLineAdjudicationV1::Accepted { .. })
+    )
+    .then(|| {
+        primary_attempt
+            .and_then(|attempt| attempt.best_win.as_ref())
+            .map(primary_line_summary)
+    })
+    .flatten();
     PrimarySearchOutcomeSummary {
-        status: primary_search_status(primary_attempt, portfolio).to_string(),
+        status: primary_search_status(primary_attempt).to_string(),
         profile: PrimarySearchProfileSummary {
             profile_id: profile_attempt
                 .map(|profile| profile.label.to_string())
@@ -57,14 +70,22 @@ fn primary_search_outcome(
                 .unwrap_or(false),
         },
         telemetry: primary_search_telemetry(primary_attempt, profile_attempt),
-        accepted_line: primary_attempt
-            .and_then(|attempt| attempt.best_win.as_ref())
-            .map(primary_line_summary),
+        accepted_line,
         best_complete_line: primary_attempt
             .and_then(|attempt| attempt.best_complete.as_ref())
             .map(primary_line_summary),
         best_partial_line: None,
+        execution_adjudication,
     }
+}
+
+pub(super) fn latest_execution_adjudication(
+    attempts: &[CombatSearchTraceSummary],
+) -> Option<CombatLineAdjudicationV1> {
+    attempts
+        .iter()
+        .rev()
+        .find_map(|attempt| attempt.execution_adjudication.clone())
 }
 
 fn primary_attempt(attempts: &[CombatSearchTraceSummary]) -> Option<&CombatSearchTraceSummary> {
@@ -90,20 +111,25 @@ fn primary_profile_attempt(
     })
 }
 
-fn primary_search_status(
-    attempt: Option<&CombatSearchTraceSummary>,
-    portfolio: Option<&CombatSearchPortfolioReport>,
-) -> &'static str {
-    if attempt
-        .and_then(|attempt| attempt.best_win.as_ref())
-        .is_some()
-    {
-        return "accepted_win";
-    }
-    match portfolio.map(|report| &report.status) {
-        Some(CombatSearchPortfolioStatus::Terminal(_)) => "accepted_win",
-        Some(CombatSearchPortfolioStatus::Advanced(_)) => "accepted_win",
-        Some(CombatSearchPortfolioStatus::Failed(_)) | None => "no_accepted_line",
+fn primary_search_status(attempt: Option<&CombatSearchTraceSummary>) -> &'static str {
+    match attempt.and_then(|attempt| attempt.execution_adjudication.as_ref()) {
+        Some(CombatLineAdjudicationV1::Accepted {
+            cleanliness: CombatLineCleanlinessV1::Clean,
+            ..
+        }) => "accepted_win",
+        Some(CombatLineAdjudicationV1::Accepted {
+            cleanliness: CombatLineCleanlinessV1::Dirty,
+            ..
+        }) => "accepted_dirty_win",
+        Some(CombatLineAdjudicationV1::Rejected { .. }) => "no_accepted_line",
+        Some(CombatLineAdjudicationV1::ReplayFailed { .. }) => "search_internal_error",
+        None if attempt
+            .and_then(|attempt| attempt.best_win.as_ref())
+            .is_some() =>
+        {
+            "legacy_unknown"
+        }
+        None => "no_accepted_line",
     }
 }
 
@@ -172,5 +198,82 @@ fn primary_line_summary(line: &CombatSearchTerminalLineSummary) -> PrimarySearch
         potions_used: line.potions_used,
         first_action_label: None,
         first_action_kind: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::ai::combat_search_v2::{
+        CombatSearchAcceptancePluginId, SearchTerminalLabel,
+    };
+    use sts_simulator::content::cards::CardId;
+    use sts_simulator::eval::run_control::{
+        CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
+        RunActionCardSnapshotV1,
+    };
+    use sts_simulator::sim::combat::CombatTerminal;
+
+    fn search_attempt_fixture() -> CombatSearchTraceSummary {
+        let line = CombatSearchTerminalLineSummary {
+            terminal: SearchTerminalLabel::Win,
+            final_hp: 44,
+            hp_loss: 0,
+            turns: 7,
+            cards_played: 25,
+            potions_used: 0,
+            potions_discarded: 0,
+            action_count: 32,
+        };
+        CombatSearchTraceSummary {
+            source: "search_combat".to_string(),
+            lane: Some("primary".to_string()),
+            profile_id: Some("primary".to_string()),
+            combat_kind: "hallway".to_string(),
+            complete_trajectory_found: true,
+            complete_win_found: true,
+            best_complete: Some(line.clone()),
+            best_win: Some(line),
+            ..CombatSearchTraceSummary::default()
+        }
+    }
+
+    fn dirty_accepted_adjudication() -> CombatLineAdjudicationV1 {
+        CombatLineAdjudicationV1::Accepted {
+            policy: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            cleanliness: CombatLineCleanlinessV1::Dirty,
+            observed_outcome: CombatLineObservedOutcomeV1 {
+                terminal: CombatTerminal::Win,
+                final_hp: 44,
+                hp_loss: 0,
+                potions_used: 0,
+                action_count: 32,
+                gold_delta: 0,
+                ritual_dagger_growth: 0,
+                gained_curses: vec![RunActionCardSnapshotV1 {
+                    id: CardId::Parasite,
+                    uuid: 9001,
+                    upgrades: 0,
+                }],
+            },
+        }
+    }
+
+    #[test]
+    fn primary_search_distinguishes_execution_acceptance_from_legacy_raw_win() {
+        let mut accepted = search_attempt_fixture();
+        accepted.execution_adjudication = Some(dirty_accepted_adjudication());
+        let accepted_value = primary_search_outcome_value(&[accepted], None);
+        assert_eq!(accepted_value["status"], "accepted_dirty_win");
+        assert_eq!(
+            accepted_value["execution_adjudication"]["observed_outcome"]["gained_curses"][0]["id"],
+            "Parasite"
+        );
+
+        let mut legacy = search_attempt_fixture();
+        legacy.execution_adjudication = None;
+        let legacy_value = primary_search_outcome_value(&[legacy], None);
+        assert_eq!(legacy_value["status"], "legacy_unknown");
+        assert!(legacy_value["accepted_line"].is_null());
     }
 }

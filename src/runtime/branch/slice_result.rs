@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::eval::run_control::CombatLineAdjudicationV1;
+
 use super::{Args, BoundarySite, BranchStatus, Owner, RunContract, TerminalOutcome};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -17,6 +19,8 @@ pub struct RunSliceResult {
     pub budget: SliceBudgetSummary,
     pub combat_search: CombatSearchTelemetrySummary,
     pub primary_search: PrimarySearchOutcomeSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_adjudication: Option<CombatLineAdjudicationV1>,
     pub artifacts: ArtifactWriteSummary,
 }
 
@@ -196,6 +200,8 @@ pub struct PrimarySearchOutcomeSummary {
     pub accepted_line: Option<PrimarySearchLineSummary>,
     pub best_complete_line: Option<PrimarySearchLineSummary>,
     pub best_partial_line: Option<PrimarySearchLineSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_adjudication: Option<CombatLineAdjudicationV1>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -570,6 +576,26 @@ mod trajectory_evidence_artifact_tests {
     }
 }
 
+#[cfg(test)]
+mod combat_line_adjudication_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_primary_search_outcome_without_adjudication_still_loads() {
+        let mut value = serde_json::to_value(PrimarySearchOutcomeSummary::default())
+            .expect("serialize default primary outcome");
+        value
+            .as_object_mut()
+            .expect("primary outcome object")
+            .remove("execution_adjudication");
+
+        let restored: PrimarySearchOutcomeSummary =
+            serde_json::from_value(value).expect("load legacy primary outcome");
+
+        assert_eq!(restored.execution_adjudication, None);
+    }
+}
+
 impl RunSliceResult {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -601,6 +627,7 @@ impl RunSliceResult {
             },
             combat_search: CombatSearchTelemetrySummary::default(),
             primary_search: PrimarySearchOutcomeSummary::default(),
+            execution_adjudication: None,
             artifacts: ArtifactWriteSummary::default(),
         }
     }
@@ -623,6 +650,14 @@ impl RunSliceResult {
         primary_search: PrimarySearchOutcomeSummary,
     ) -> Self {
         self.primary_search = primary_search;
+        self
+    }
+
+    pub fn with_execution_adjudication(
+        mut self,
+        adjudication: Option<CombatLineAdjudicationV1>,
+    ) -> Self {
+        self.execution_adjudication = adjudication;
         self
     }
 

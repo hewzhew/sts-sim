@@ -106,6 +106,9 @@ pub(super) fn branch_summary_value(
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
         "combat_search": combat_search_telemetry_value(branch),
+        "execution_adjudication": super::primary_search_outcome::latest_execution_adjudication(
+            &branch.combat_search
+        ),
         "primary_search": super::primary_search_outcome::primary_search_outcome_value(
             &branch.combat_search,
             branch.combat_portfolio.as_ref()
@@ -267,6 +270,9 @@ pub(super) fn result_value(
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
         "combat_search_history": &branch.combat_search_history,
+        "execution_adjudication": super::primary_search_outcome::latest_execution_adjudication(
+            &branch.combat_search
+        ),
         "primary_search": super::primary_search_outcome::primary_search_outcome_value(
             &branch.combat_search,
             branch.combat_portfolio.as_ref()
@@ -363,7 +369,13 @@ mod tests {
     use std::collections::VecDeque;
 
     use super::*;
-    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+    use sts_simulator::content::cards::CardId;
+    use sts_simulator::eval::run_control::{
+        CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
+        CombatSearchTraceSummary, RunActionCardSnapshotV1, RunControlConfig, RunControlSession,
+    };
+    use sts_simulator::sim::combat::CombatTerminal;
 
     fn sample_args() -> Args {
         Args {
@@ -416,6 +428,53 @@ mod tests {
             ),
         );
         branch
+    }
+
+    #[test]
+    fn capsule_projects_execution_adjudication() {
+        let adjudication = CombatLineAdjudicationV1::Accepted {
+            policy: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            cleanliness: CombatLineCleanlinessV1::Dirty,
+            observed_outcome: CombatLineObservedOutcomeV1 {
+                terminal: CombatTerminal::Win,
+                final_hp: 44,
+                hp_loss: 0,
+                potions_used: 0,
+                action_count: 32,
+                gold_delta: 0,
+                ritual_dagger_growth: 0,
+                gained_curses: vec![RunActionCardSnapshotV1 {
+                    id: CardId::Parasite,
+                    uuid: 9001,
+                    upgrades: 0,
+                }],
+            },
+        };
+        let mut branch = sample_branch();
+        branch.combat_search = vec![CombatSearchTraceSummary {
+            source: "search_combat".to_string(),
+            lane: Some("primary".to_string()),
+            execution_adjudication: Some(adjudication.clone()),
+            ..CombatSearchTraceSummary::default()
+        }];
+        let trajectory_evaluation = evaluation(vec![branch.clone()]);
+        let summary = branch_summary_value(
+            Path::new("target/test-capsule"),
+            sample_args(),
+            1,
+            &branch,
+            &Value::Null,
+            &json!([]),
+            &trajectory_evaluation,
+            "gap",
+            None,
+            None,
+        );
+        let result = result_value(1, &branch, Value::Null, json!([]), &trajectory_evaluation);
+        let expected = serde_json::to_value(adjudication).expect("serialize adjudication");
+
+        assert_eq!(summary["execution_adjudication"], expected);
+        assert_eq!(result["execution_adjudication"], expected);
     }
 
     fn evaluation(branches: Vec<Branch>) -> FrontierTrajectoryEvaluation {

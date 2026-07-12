@@ -1465,6 +1465,7 @@ mod tests {
                     accepted_line: None,
                     best_complete_line: None,
                     best_partial_line: None,
+                    execution_adjudication: None,
                 };
                 Ok(ok_slice_result(request.args)
                     .with_combat_search_telemetry(telemetry)

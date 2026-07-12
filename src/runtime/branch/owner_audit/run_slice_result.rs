@@ -62,6 +62,9 @@ pub(super) fn objective_satisfied_result(
     .with_primary_search_outcome(
         super::primary_search_outcome::primary_search_outcome_from_branch(branch),
     )
+    .with_execution_adjudication(
+        super::primary_search_outcome::latest_execution_adjudication(&branch.combat_search),
+    )
     .with_selected_branch(branch)
 }
 
@@ -94,6 +97,9 @@ pub(super) fn slice_result_from_summary(
         result = result.with_selected_branch(branch);
         result = result.with_primary_search_outcome(
             super::primary_search_outcome::primary_search_outcome_from_branch(branch),
+        );
+        result = result.with_execution_adjudication(
+            super::primary_search_outcome::latest_execution_adjudication(&branch.combat_search),
         );
     }
     result.with_artifacts(artifacts)
