@@ -18,6 +18,7 @@ pub(in crate::ai::combat_search_v2::frontier) struct NodePriority {
     collector_tactic_gate: CollectorTacticFrontierGate,
     rollout_value: CombatSearchRolloutValueV1,
     action_prior_rank: i32,
+    action_ordering_frontier_hint: i32,
     state_value: CombatSearchStateValueV1,
     potion_tactical_priority: i32,
     potion_conservation: i32,
@@ -32,6 +33,10 @@ impl Ord for NodePriority {
             .then_with(|| self.collector_tactic_gate.cmp(&other.collector_tactic_gate))
             .then_with(|| self.rollout_value.cmp(&other.rollout_value))
             .then_with(|| self.action_prior_rank.cmp(&other.action_prior_rank))
+            .then_with(|| {
+                self.action_ordering_frontier_hint
+                    .cmp(&other.action_ordering_frontier_hint)
+            })
             .then_with(|| self.state_value.cmp(&other.state_value))
             .then_with(|| {
                 self.potion_tactical_priority
@@ -99,6 +104,7 @@ pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node_with_action_p
         collector_tactic_gate: collector_tactic_frontier_gate(node, action_prior),
         rollout_value: rollout_priority_value(&node.rollout_estimate),
         action_prior_rank: action_prior_rank(node.action_prior_score),
+        action_ordering_frontier_hint: node.action_ordering_frontier_hint,
         state_value: combat_search_state_value(node),
         potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),

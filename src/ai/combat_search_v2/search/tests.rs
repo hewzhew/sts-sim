@@ -4,12 +4,71 @@ use crate::ai::combat_search_v2::{
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
+use crate::content::powers::PowerId;
 use crate::content::relics::{RelicId, RelicState};
-use crate::runtime::combat::CombatCard;
+use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[derive(Clone, Copy)]
 struct PotionWinStepper;
+
+#[test]
+fn node_ordering_carries_only_the_best_retaliation_protection_into_frontier() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 4;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 10),
+        CombatCard::new(CardId::HeavyBlade, 11),
+        {
+            let mut flame = CombatCard::new(CardId::FlameBarrier, 12);
+            flame.upgrades = 1;
+            flame
+        },
+    ];
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    spiker.current_hp = 100;
+    spiker.max_hp = 100;
+    combat.entities.monsters = vec![spiker];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Thorns,
+            instance_id: None,
+            amount: 13,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let node = SearchNode::root(EngineState::CombatPlayerTurn, combat.clone());
+    let position = CombatPosition::new(node.engine.clone(), combat);
+    let legal = EngineCombatStepper.legal_action_choices(&position);
+    let config = CombatSearchV2Config::default();
+    let mut loop_state = SearchLoopState::new(&config);
+
+    let ordered = super::node_action_ordering::order_node_actions(
+        &mut loop_state,
+        &node,
+        legal,
+        None,
+        &config,
+    );
+
+    assert!(matches!(
+        ordered.ordered_choices[0].choice.choice.input,
+        ClientInput::PlayCard {
+            card_index: 2,
+            target: None
+        }
+    ));
+    assert_eq!(ordered.ordered_choices[0].action_ordering_frontier_hint, 1);
+    assert!(ordered
+        .ordered_choices
+        .iter()
+        .skip(1)
+        .all(|choice| choice.action_ordering_frontier_hint == 0));
+}
 
 impl CombatStepper for PotionWinStepper {
     fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
@@ -1001,6 +1060,7 @@ fn test_search_node(combat: CombatState) -> SearchNode {
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
         action_prior_score: None,
+        action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     }
 }

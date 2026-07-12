@@ -49,6 +49,29 @@ fn frontier_priority_uses_action_prior_score_when_rollout_ties() {
 }
 
 #[test]
+fn frontier_priority_continues_retaliation_protection_before_raw_enemy_progress() {
+    let mut protected = test_node();
+    protected.action_ordering_frontier_hint = 1;
+
+    let mut raw_progress = test_node();
+    raw_progress.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    protected.combat.entities.monsters = raw_progress.combat.entities.monsters.clone();
+    raw_progress.combat.entities.monsters[0].current_hp -= 14;
+
+    assert!(priority_for_node(&protected) > priority_for_node(&raw_progress));
+}
+
+#[test]
+fn action_ordering_frontier_hint_expires_on_the_next_child_edge() {
+    let mut parent = test_node();
+    parent.action_ordering_frontier_hint = 1;
+
+    let child = parent.clone_for_child(parent.engine.clone(), parent.combat.clone());
+
+    assert_eq!(child.action_ordering_frontier_hint, 0);
+}
+
+#[test]
 fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
     let mut better_progress = test_node();
     let mut monster = test_monster(EnemyId::TheGuardian);
@@ -331,6 +354,7 @@ fn test_node() -> SearchNode {
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
         action_prior_score: None,
+        action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     }
 }

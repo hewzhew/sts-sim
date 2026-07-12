@@ -90,7 +90,7 @@ pub fn run_combat_search_v2_with_stepper(
             continue;
         };
 
-        for ordered_choice in expansion.ordered_choices {
+        for ordered_action in expansion.ordered_choices {
             let outcome = expand_ordered_child(
                 &mut loop_state,
                 &mut expansion.turn_branching,
@@ -98,7 +98,8 @@ pub fn run_combat_search_v2_with_stepper(
                 ChildExpansionInput {
                     parent: &node,
                     position: &expansion.position,
-                    ordered_choice,
+                    ordered_choice: ordered_action.choice,
+                    action_ordering_frontier_hint: ordered_action.action_ordering_frontier_hint,
                     action_prior_state_hash: expansion.action_prior_state_hash.as_deref(),
                     pending_choice: expansion.pending_choice.as_ref(),
                     stepper,

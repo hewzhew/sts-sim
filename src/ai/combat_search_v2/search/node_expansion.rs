@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::loop_state::SearchLoopState;
-use super::node_action_ordering::order_node_actions;
+use super::node_action_ordering::{order_node_actions, OrderedNodeAction};
 use super::node_action_surface::collect_node_action_surface;
 use super::node_child_observers::initialize_node_child_observers;
 
@@ -10,7 +10,7 @@ pub(super) struct PreparedNodeExpansion {
     pub(super) position: CombatPosition,
     pub(super) pending_choice: Option<PendingChoiceProfile>,
     pub(super) action_prior_state_hash: Option<String>,
-    pub(super) ordered_choices: Vec<IndexedActionChoice>,
+    pub(super) ordered_choices: Vec<OrderedNodeAction>,
     pub(super) turn_branching: TurnBranchingStateObservation,
     pub(super) turn_local_dominance: TurnLocalDominanceStateObservation,
 }

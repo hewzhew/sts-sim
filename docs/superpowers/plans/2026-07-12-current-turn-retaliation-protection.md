@@ -397,3 +397,25 @@ git log -8 --oneline
 ```
 
 Expected: tracked work is committed on local `master`, ignored evidence does not dirty the tree, and nothing is pushed.
+
+---
+
+### Task 5: Correct the action-ordering/frontier handoff exposed by frozen evidence
+
+**Files:**
+- Modify: `src/ai/combat_search_v2/search/node_action_ordering.rs`
+- Modify: `src/ai/combat_search_v2/search/child_expansion.rs`
+- Modify: `src/ai/combat_search_v2/search/child_node.rs`
+- Modify: `src/ai/combat_search_v2/frontier/node.rs`
+- Modify: `src/ai/combat_search_v2/frontier/priority.rs`
+- Test: `src/ai/combat_search_v2/frontier/tests.rs`
+- Test: `src/ai/combat_search_v2/search/tests.rs`
+- Create ignored evidence: `artifacts/runs/bounded-mainline-seed-20260712001-timed-enemy-threat/diagnostics/a3f42_lazy_all_8s_retaliation_frontier_continuation.json`
+
+- [x] Reproduce the real turn-6 state and prove Flame Barrier already orders before Heavy Blade locally.
+- [x] Disprove dominance/transposition merging as the cause; HP and block resource vectors are incomparable and dominance prunes are zero.
+- [x] Use a one-state external-prior probe to prove that carrying the local choice into the frontier changes the exact line to Flame-then-Heavy and preserves 56 HP.
+- [x] Add a one-step, non-persistent frontier continuation only for the best current-turn retaliation-protection child.
+- [x] Add focused regressions for the frontier comparison and search-ordering handoff.
+- [x] Rerun the same 8-second input without external hints; record the 86-HP complete win and zero external-prior counts.
+- [x] Run full repository verification and commit the corrected boundary.

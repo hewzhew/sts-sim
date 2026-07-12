@@ -12,6 +12,7 @@ pub(super) fn build_child_node(
     parent: &SearchNode,
     step: CombatStepResult,
     ordered_choice: IndexedActionChoice,
+    action_ordering_frontier_hint: i32,
     action_prior_state_hash: Option<&str>,
     potion_tactical_priority: Option<i32>,
     config: &CombatSearchV2Config,
@@ -35,6 +36,7 @@ pub(super) fn build_child_node(
             .as_ref()
             .and_then(|prior| prior.score(state_hash, &choice.action_key))
     }));
+    child.note_action_ordering_frontier_hint(action_ordering_frontier_hint);
     child.note_potion_tactical_priority(potion_tactical_priority);
     child.note_turn_branch_priority(turn_transition.frontier_priority_hint());
     child.actions.push(CombatSearchV2ActionTrace {

@@ -23,6 +23,7 @@ pub fn trajectory_from_state(
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
         action_prior_score: None,
+        action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     trajectory_report(&node, estimated)

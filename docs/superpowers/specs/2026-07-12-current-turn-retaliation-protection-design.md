@@ -2,7 +2,7 @@
 
 ## Goal
 
-Explore a payable defensive setup before an attack when changing only the order of those two cards reduces known same-turn retaliation HP loss. Keep the change generic, local to action ordering, and independent of enemy identity.
+Explore a payable defensive setup before an attack when changing only the order of those two cards reduces known same-turn retaliation HP loss. Keep the change generic, local to the current decision boundary, and independent of enemy identity.
 
 This slice does not solve cross-turn retaliation debt. It fixes the narrower, already reproduced ordering failure first and leaves broader search coverage work for later evidence.
 
@@ -128,7 +128,28 @@ This combined comparison is important. If visible incoming damage is large enoug
 
 Add an explicit `CurrentTurnRetaliationProtection` action role with a semantic label. Its rank sits with other current-turn preventive/setup roles: above `DamageProgress`, below lethal prevention and durable/key setup.
 
-The positive counterfactual score is used only as a tie-break among qualifying protection cards. The legal action set, original action identifiers, pruning, equivalence, rollout, frontier value, and exact state identity remain unchanged.
+The positive counterfactual score is used as a tie-break among qualifying protection cards. The legal action set, original action identifiers, pruning, equivalence, rollout, frontier value, and exact state identity remain unchanged.
+
+### Implementation-evidence correction: one-step frontier continuation
+
+The first frozen implementation exposed a boundary that the original design did not account for. The protection role correctly put Flame Barrier first at the real turn-6 state, but the selected line and 43 final HP were unchanged. Exact inspection showed why:
+
+- the action-ordering result is consumed only while generating sibling children;
+- once children enter the global frontier, the ordering role is discarded;
+- the Heavy Blade child has more enemy progress and therefore outranks the Flame Barrier child before the second action can complete the better permutation;
+- after both cards are played, existing state value correctly prefers `59 HP + 3 block` over `46 HP + 16 block`.
+
+A diagnostic-only root-action-prior probe at exactly that state carried the Flame Barrier child across this one boundary and produced the expected Flame-then-Heavy line at 56 HP. This proves that a persistent retaliation-debt model or a reordered global survival value is unnecessary for the reproduced failure.
+
+The corrected integration therefore adds a one-step frontier-continuation hint only to the first ordered child when its role is `CurrentTurnRetaliationProtection`:
+
+- the hint is compared after rollout/root external guidance and before ordinary state value;
+- it is reset when cloning the next child and must be explicitly earned again at that next state;
+- only the best qualifying protection action receives it, not every block card;
+- it does not alter rollout estimates, dominance resources, state keys, or terminal ranking;
+- diagnostics continue to expose the originating semantic role, and the search-policy label names the one-step continuation boundary.
+
+The no-external-prior frozen rerun produced a complete 86-HP win (1 HP lost), with six states choosing the protection role first. This is durable evidence rather than a permanent seed assertion.
 
 Diagnostics can identify the new behavior through the role label. This slice does not add another search-wide counter unless focused implementation evidence shows the role label is insufficient.
 
@@ -151,5 +172,6 @@ Repository completion requires formatting, the full library suite, and `architec
 - no global block-card promotion;
 - no fixed retaliation-to-progress coefficient;
 - no cross-turn path ledger or new frontier lane;
-- no change to action legality, pruning, merging, rollout, or state identity;
+- no change to action legality, pruning, merging, rollout, state identity, or frontier lanes;
+- no persistent/cross-turn retaliation hint; the continuation lives for one child edge only;
 - no permanent assertion for the frozen A3F42 trajectory.

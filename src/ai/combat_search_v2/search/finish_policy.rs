@@ -5,8 +5,7 @@ pub(super) fn search_policy_report(config: &CombatSearchV2Config) -> CombatSearc
     CombatSearchV2PolicyReport {
         kind: "best_first_atomic_action_graph_search_v2",
         terminal_policy: "whole_combat_terminal_only",
-        expansion_order:
-            "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_value_v1",
+        expansion_order: "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_with_one_step_retaliation_protection_frontier_continuation_then_frontier_value_v1",
         action_prior_policy: plugins.action_prior.label(),
         phase_guard_policy: plugins.phase_guard.label(),
         frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
