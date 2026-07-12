@@ -7,6 +7,7 @@ use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunControlSessi
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
+use super::branch_policy_lane::BranchPolicyLane;
 use super::run_contract::RunContract;
 use super::{Args, Branch, BranchStatus};
 
@@ -28,6 +29,8 @@ struct BranchCheckpoint {
     path: Vec<BranchPathStep>,
     session: RunControlSessionCheckpointV1,
     status: BranchStatus,
+    #[serde(default)]
+    policy_lane: BranchPolicyLane,
     #[serde(default)]
     combat_search_history: Vec<CombatSearchTraceSummary>,
     #[serde(default)]
@@ -96,6 +99,7 @@ impl BranchCheckpoint {
             path: branch.path.clone(),
             session,
             status: branch.status.clone(),
+            policy_lane: branch.policy_lane.clone(),
             combat_search_history: branch.combat_search_history.clone(),
             accepted_high_loss_diagnostics: branch.accepted_high_loss_diagnostics.clone(),
         }
@@ -108,7 +112,7 @@ impl BranchCheckpoint {
             path: self.path,
             session: self.session.into_session()?,
             status: self.status,
-            policy_lane: super::branch_policy_lane::BranchPolicyLane::default(),
+            policy_lane: self.policy_lane,
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
@@ -121,6 +125,9 @@ impl BranchCheckpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+    use sts_simulator::ai::strategy::candidate_pressure_response::CandidatePressureResponse;
+    use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
 
     fn legacy_checkpoint_json() -> String {
         serde_json::json!({
@@ -195,6 +202,52 @@ mod tests {
         assert_eq!(value["run_contract"]["game"]["seed"], 45);
         assert_eq!(value["run_contract"]["slice"]["slice_ms"], 10);
         assert_eq!(value["args"]["wall_ms"], 10);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn challenger_policy_survives_frontier_checkpoint_round_trip() {
+        let args = Args {
+            seed: 46,
+            ascension: 0,
+            objective: super::super::run_contract::RunObjective::FirstVictory,
+            generations: 2,
+            max_branches: 3,
+            auto_ops: 3,
+            search_nodes: 4,
+            search_ms: 5,
+            rescue_search_nodes: 6,
+            rescue_search_ms: 7,
+            boss_search_nodes: 8,
+            boss_search_ms: 9,
+            wall_ms: None,
+            checkpoint_before_combat_portfolio: false,
+            shop_boss_preview_bundle_limit: 0,
+            shop_boss_preview_target_floor: None,
+            wall_capped_search_budget: false,
+            wall_capped_boss_budget: false,
+        };
+        let path = std::env::temp_dir().join("branch_tiny_challenger_policy_round_trip.json");
+        let (mut frontier, next_branch_id) =
+            super::super::branch_runtime::BranchRuntime::initial_frontier(args, Instant::now());
+        let mut policy = ChallengerPolicyState::new(1);
+        policy.record_divergence("a1f5", &CandidatePressureResponse::default());
+        policy.record_divergence("a1f7", &CandidatePressureResponse::default());
+        frontier.front_mut().unwrap().policy_lane =
+            super::super::branch_policy_lane::BranchPolicyLane::challenger(policy);
+
+        save(&path, args, 2, next_branch_id, &frontier).unwrap();
+        let (restored, _) = load(&path).unwrap().into_frontier().unwrap();
+
+        let restored_policy = restored
+            .front()
+            .unwrap()
+            .policy_lane
+            .challenger_policy()
+            .expect("challenger lane should survive checkpoint");
+        assert_eq!(restored_policy.divergence_count, 2);
+        assert_eq!(restored_policy.last_checkpoint_ref.as_deref(), Some("a1f7"));
 
         let _ = fs::remove_file(path);
     }

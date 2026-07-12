@@ -86,6 +86,7 @@ pub(super) fn branch_summary_value(
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
+        "policy_lane": &branch.policy_lane,
         "status": status,
         "act": run.act_num,
         "floor": run.floor_num,
@@ -227,6 +228,7 @@ pub(super) fn result_value(
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
+        "policy_lane": &branch.policy_lane,
         "status": status_value(&branch.status),
         "state": {
             "act": run.act_num,
@@ -279,6 +281,7 @@ pub(super) fn path_value(branch: &Branch) -> Value {
     json!({
         "schema": "branch_tiny_run_path",
         "branch_id": branch.id,
+        "policy_lane": &branch.policy_lane,
         "steps": branch.path.iter().enumerate().map(path_step_value).collect::<Vec<_>>(),
     })
 }
@@ -286,6 +289,7 @@ pub(super) fn path_value(branch: &Branch) -> Value {
 fn path_step_value((index, step): (usize, &BranchPathStep)) -> Value {
     json!({
         "step": index,
+        "policy_lane": step.policy_lane,
         "state_before": step.state_before.as_ref(),
         "decision_delta": step.decision_delta.as_ref(),
         "key": serde_json::to_value(&step.key).unwrap_or(Value::Null),
@@ -398,6 +402,19 @@ mod tests {
 
         assert_eq!(value["accepted_high_loss_combat_diagnostics"], diagnostics);
         assert!(value["combat_case"].is_null());
+    }
+
+    #[test]
+    fn result_exposes_persistent_policy_lane_identity() {
+        let mut branch = sample_branch();
+        branch.policy_lane = super::super::branch_policy_lane::BranchPolicyLane::challenger(
+            sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState::new(2),
+        );
+
+        let value = result_value(3, &branch, Value::Null, Value::Null);
+
+        assert_eq!(value["policy_lane"]["kind"], "challenger");
+        assert_eq!(value["policy_lane"]["policy"]["lane_id"], 2);
     }
 
     #[test]
