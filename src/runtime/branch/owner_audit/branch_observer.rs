@@ -87,6 +87,11 @@ fn record_terminal_and_objective(
     human_output: bool,
 ) -> Result<BranchRecordOutcome, String> {
     let mut artifacts = ArtifactWriteSummary::default();
+    if !branch.status.is_resumable() {
+        if let Some(capsule) = capsule {
+            artifacts.merge(capsule.record_stopped_trajectory(generation, branch)?);
+        }
+    }
     if let Some(capsule) = capsule {
         artifacts.merge(capsule.save_terminal_result(args, generation, branch)?);
     }
@@ -134,4 +139,58 @@ fn finalize_objective_result(
         );
     }
     Ok(artifacts)
+}
+
+#[cfg(test)]
+mod tests {
+    use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+
+    use super::*;
+    use crate::runtime::branch::owner_audit::branch_model::BranchStatus;
+    use crate::runtime::branch::owner_audit::branch_policy_lane::BranchPolicyLane;
+
+    fn stopped_challenger() -> Branch {
+        Branch {
+            id: 2,
+            parent_id: Some(1),
+            path: Vec::new(),
+            session: RunControlSession::new(RunControlConfig::default()),
+            status: BranchStatus::CombatGap {
+                boundary: "boss".to_string(),
+                reason: "no win".to_string(),
+            },
+            policy_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+            combat_portfolio: None,
+            auto_steps: Vec::new(),
+            combat_search: Vec::new(),
+            combat_search_history: Vec::new(),
+            accepted_high_loss_diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn stopped_branch_records_trajectory_before_discard() {
+        let root = std::env::temp_dir().join("stopped_branch_trajectory_observation");
+        let _ = std::fs::remove_dir_all(&root);
+        let capsule = RunCapsule::new(root.clone());
+        let mut trace = None;
+
+        record_stopped_branch(
+            crate::runtime::branch::default_branch_args(7),
+            4,
+            &stopped_challenger(),
+            &mut trace,
+            Some(&capsule),
+            false,
+        )
+        .unwrap();
+
+        let state: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("trajectory_state.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state["observations"][0]["snapshot"]["lane"], "challenger-1");
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

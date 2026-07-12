@@ -13,7 +13,7 @@ use super::run_slice_result::{
 };
 use super::{
     accepted_high_loss_diagnostic, combat_gap_case, frontier_checkpoint, run_capsule_format,
-    run_capsule_io, Args, Branch, BranchStatus,
+    run_capsule_io, trajectory_evidence_store, Args, Branch, BranchStatus,
 };
 use run_capsule_io::{ensure_dir, read_terminal_entries, remove_if_exists, write_json};
 
@@ -51,6 +51,10 @@ impl CapsuleArtifactStore {
         self.root.join("terminal.json")
     }
 
+    pub(super) fn trajectory_state_path(&self) -> PathBuf {
+        self.root.join("trajectory_state.json")
+    }
+
     pub(super) fn running_manifest_summary(&self) -> ArtifactWriteSummary {
         ArtifactWriteSummary::single_ref(self.artifact_ref(
             ArtifactKind::Manifest,
@@ -76,6 +80,7 @@ impl CapsuleArtifactStore {
             "summary.json",
             "branch_tiny_capsule_summary",
         ));
+        summary.record_ref(self.trajectory_evidence_ref());
         summary
     }
 
@@ -101,8 +106,13 @@ impl CapsuleArtifactStore {
             "summary.json",
             "branch_tiny_capsule_summary",
         ));
+        summary.record_ref(self.trajectory_evidence_ref());
         self.record_accepted_combat_diagnostic_refs(&mut summary);
         summary
+    }
+
+    pub(super) fn trajectory_evidence_summary(&self) -> ArtifactWriteSummary {
+        ArtifactWriteSummary::single_ref(self.trajectory_evidence_ref())
     }
 
     pub(super) fn terminal_summary(&self) -> ArtifactWriteSummary {
@@ -111,6 +121,7 @@ impl CapsuleArtifactStore {
             "terminal.json",
             "branch_tiny_terminal_results",
         ));
+        summary.record_ref(self.trajectory_evidence_ref());
         self.record_accepted_combat_diagnostic_refs(&mut summary);
         summary
     }
@@ -160,6 +171,11 @@ impl CapsuleArtifactStore {
         if running == 0 {
             return Ok(None);
         }
+        trajectory_evidence_store::record_frontier(
+            &self.trajectory_state_path(),
+            generation,
+            frontier,
+        )?;
         frontier_checkpoint::save(
             &self.root.join("frontier.json"),
             args,
@@ -195,11 +211,18 @@ impl CapsuleArtifactStore {
         let combat_case = self.combat_case_value(args, generation, branch);
         let accepted_high_loss_combat_diagnostics =
             self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
+        trajectory_evidence_store::record_branch(
+            &self.trajectory_state_path(),
+            generation,
+            branch,
+        )?;
+        let trajectory_evaluation = self.current_trajectory_evaluation()?;
         entries.push(run_capsule_format::result_value(
             generation,
             branch,
             combat_case,
             accepted_high_loss_combat_diagnostics,
+            &trajectory_evaluation,
         ));
         write_json(&path, run_capsule_format::terminal_results_value(entries))?;
         Ok(true)
@@ -248,6 +271,12 @@ impl CapsuleArtifactStore {
         let combat_case = self.combat_case_value(args, generation, branch);
         let accepted_high_loss_combat_diagnostics =
             self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
+        trajectory_evidence_store::record_branch(
+            &self.trajectory_state_path(),
+            generation,
+            branch,
+        )?;
+        let trajectory_evaluation = self.current_trajectory_evaluation()?;
         write_json(
             &self.root.join("result.json"),
             run_capsule_format::result_value(
@@ -255,6 +284,7 @@ impl CapsuleArtifactStore {
                 branch,
                 combat_case.clone(),
                 accepted_high_loss_combat_diagnostics.clone(),
+                &trajectory_evaluation,
             ),
         )?;
         write_json(
@@ -269,6 +299,7 @@ impl CapsuleArtifactStore {
             branch,
             &combat_case,
             &accepted_high_loss_combat_diagnostics,
+            &trajectory_evaluation,
             capsule_status,
             reason,
         )
@@ -281,6 +312,7 @@ impl CapsuleArtifactStore {
         branch: &Branch,
         combat_case: &Value,
         accepted_high_loss_combat_diagnostics: &Value,
+        trajectory_evaluation: &super::trajectory_snapshot::FrontierTrajectoryEvaluation,
         capsule_status: &'static str,
         reason: Option<&'static str>,
     ) -> Result<(), String> {
@@ -293,6 +325,7 @@ impl CapsuleArtifactStore {
                 branch,
                 combat_case,
                 accepted_high_loss_combat_diagnostics,
+                trajectory_evaluation,
                 capsule_status,
                 reason,
                 None,
@@ -312,10 +345,11 @@ impl CapsuleArtifactStore {
             .iter()
             .filter(|branch| branch.status.is_resumable())
             .count();
+        let trajectory_evaluation = self.current_trajectory_evaluation()?;
         let frontier_info = run_capsule_format::frontier_trajectory_summary_value(
             frontier.len(),
             running,
-            frontier,
+            &trajectory_evaluation,
         );
         if let Some(branch) = frontier
             .iter()
@@ -331,6 +365,7 @@ impl CapsuleArtifactStore {
                     branch,
                     &Value::Null,
                     &Value::Array(Vec::new()),
+                    &trajectory_evaluation,
                     capsule_status,
                     reason,
                     Some(frontier_info),
@@ -438,6 +473,33 @@ impl CapsuleArtifactStore {
             schema,
             "owner_audit_runtime",
         )
+    }
+
+    fn trajectory_evidence_ref(&self) -> ArtifactRef {
+        self.artifact_ref(
+            ArtifactKind::TrajectoryEvidence,
+            "trajectory_state.json",
+            "branch_tiny_trajectory_state_v0",
+        )
+    }
+
+    fn current_trajectory_evaluation(
+        &self,
+    ) -> Result<super::trajectory_snapshot::FrontierTrajectoryEvaluation, String> {
+        Ok(trajectory_evidence_store::read_state(&self.trajectory_state_path())?.evaluation)
+    }
+
+    pub(super) fn record_stopped_trajectory(
+        &self,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        trajectory_evidence_store::record_branch(
+            &self.trajectory_state_path(),
+            generation,
+            branch,
+        )?;
+        Ok(())
     }
 }
 
@@ -633,6 +695,70 @@ mod trajectory_artifact_tests {
                 .len(),
             1
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn final_result_keeps_challenger_that_stopped_in_an_earlier_slice() {
+        let root = std::env::temp_dir().join("final_cross_lane_trajectory_evidence");
+        let _ = std::fs::remove_dir_all(&root);
+        let store = CapsuleArtifactStore::new(root.clone());
+        let baseline = test_branch(1, BranchPolicyLane::default());
+        let mut challenger = test_branch(
+            2,
+            BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+        );
+        let frontier = VecDeque::from([baseline.clone(), challenger.clone()]);
+        store
+            .write_frontier(
+                test_args(),
+                10,
+                3,
+                &frontier,
+                "paused",
+                Some("wall_deadline"),
+            )
+            .unwrap();
+
+        challenger.status = BranchStatus::CombatGap {
+            boundary: "boss".to_string(),
+            reason: "no win".to_string(),
+        };
+        challenger.session.run_state.current_hp = 47;
+        store.record_stopped_trajectory(40, &challenger).unwrap();
+
+        let mut final_baseline = baseline;
+        final_baseline.status = BranchStatus::CombatGap {
+            boundary: "boss".to_string(),
+            reason: "no win".to_string(),
+        };
+        final_baseline.session.run_state.current_hp = 42;
+        store
+            .write_result(test_args(), 42, &final_baseline)
+            .unwrap();
+
+        let result: Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("result.json")).unwrap())
+                .unwrap();
+        let summary: Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("summary.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            result["trajectory_evaluation"]["snapshots"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            summary["trajectory_evaluation"]["comparisons"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(root.join("trajectory_state.json").exists());
 
         let _ = std::fs::remove_dir_all(root);
     }

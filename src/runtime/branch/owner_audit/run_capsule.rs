@@ -131,6 +131,15 @@ impl RunCapsule {
         Ok(ArtifactWriteSummary::default())
     }
 
+    pub(super) fn record_stopped_trajectory(
+        &self,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<ArtifactWriteSummary, String> {
+        self.store.record_stopped_trajectory(generation, branch)?;
+        Ok(self.store.trajectory_evidence_summary())
+    }
+
     pub(super) fn append_slice_ledger(&self, result: &RunSliceResult) -> Result<(), String> {
         self.store.append_slice_ledger(result)
     }

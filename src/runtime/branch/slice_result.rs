@@ -364,6 +364,7 @@ pub enum ArtifactKind {
     Summary,
     Terminal,
     CombatCase,
+    TrajectoryEvidence,
     AcceptedCombatDiagnostic,
 }
 
@@ -384,6 +385,7 @@ pub struct ArtifactWriteSummary {
     pub summary_written: bool,
     pub terminal_written: bool,
     pub combat_case_written: bool,
+    pub trajectory_evidence_written: bool,
     pub manifest_ref: Option<ArtifactRef>,
     pub frontier_ref: Option<ArtifactRef>,
     pub result_ref: Option<ArtifactRef>,
@@ -391,6 +393,7 @@ pub struct ArtifactWriteSummary {
     pub summary_ref: Option<ArtifactRef>,
     pub terminal_ref: Option<ArtifactRef>,
     pub combat_case_ref: Option<ArtifactRef>,
+    pub trajectory_evidence_ref: Option<ArtifactRef>,
     #[serde(default)]
     pub accepted_combat_diagnostic_refs: Vec<ArtifactRef>,
 }
@@ -404,6 +407,7 @@ impl ArtifactWriteSummary {
         self.summary_written |= other.summary_written;
         self.terminal_written |= other.terminal_written;
         self.combat_case_written |= other.combat_case_written;
+        self.trajectory_evidence_written |= other.trajectory_evidence_written;
         self.manifest_ref = other.manifest_ref.or(self.manifest_ref.take());
         self.frontier_ref = other.frontier_ref.or(self.frontier_ref.take());
         self.result_ref = other.result_ref.or(self.result_ref.take());
@@ -411,6 +415,9 @@ impl ArtifactWriteSummary {
         self.summary_ref = other.summary_ref.or(self.summary_ref.take());
         self.terminal_ref = other.terminal_ref.or(self.terminal_ref.take());
         self.combat_case_ref = other.combat_case_ref.or(self.combat_case_ref.take());
+        self.trajectory_evidence_ref = other
+            .trajectory_evidence_ref
+            .or(self.trajectory_evidence_ref.take());
         self.accepted_combat_diagnostic_refs
             .extend(other.accepted_combat_diagnostic_refs);
     }
@@ -460,6 +467,10 @@ impl ArtifactWriteSummary {
                 self.combat_case_written = true;
                 self.combat_case_ref = Some(artifact);
             }
+            ArtifactKind::TrajectoryEvidence => {
+                self.trajectory_evidence_written = true;
+                self.trajectory_evidence_ref = Some(artifact);
+            }
             ArtifactKind::AcceptedCombatDiagnostic => {
                 self.accepted_combat_diagnostic_refs.push(artifact);
             }
@@ -475,6 +486,7 @@ impl ArtifactWriteSummary {
             self.summary_ref.clone(),
             self.terminal_ref.clone(),
             self.combat_case_ref.clone(),
+            self.trajectory_evidence_ref.clone(),
         ]
         .into_iter()
         .flatten()
@@ -535,6 +547,26 @@ mod accepted_combat_diagnostic_tests {
             summary.accepted_combat_diagnostic_refs[2].schema,
             "accepted_high_loss_combat_evidence_v2"
         );
+    }
+}
+
+#[cfg(test)]
+mod trajectory_evidence_artifact_tests {
+    use super::*;
+
+    #[test]
+    fn artifact_summary_tracks_trajectory_evidence() {
+        let artifact = ArtifactRef::new(
+            ArtifactKind::TrajectoryEvidence,
+            "target/trajectory_state.json",
+            "branch_tiny_trajectory_state_v0",
+            "owner_audit_runtime",
+        );
+        let summary = ArtifactWriteSummary::single_ref(artifact.clone());
+
+        assert!(summary.trajectory_evidence_written);
+        assert_eq!(summary.trajectory_evidence_ref, Some(artifact.clone()));
+        assert!(summary.refs().contains(&artifact));
     }
 }
 

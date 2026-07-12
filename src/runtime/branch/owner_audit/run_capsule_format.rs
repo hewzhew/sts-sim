@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -9,6 +8,7 @@ use sts_simulator::sim::combat::CombatPosition;
 use super::branch_path::BranchPathStep;
 use super::run_contract::RunContract;
 use super::run_identity::{RunIdentity, SourceIdentity};
+use super::trajectory_snapshot::FrontierTrajectoryEvaluation;
 use super::{
     combat_portfolio_json, run_state_json, trajectory_snapshot, Args, Branch, BranchStatus,
 };
@@ -46,6 +46,7 @@ pub(super) fn branch_summary_value(
     branch: &Branch,
     combat_case: &Value,
     accepted_high_loss_combat_diagnostics: &Value,
+    trajectory_evaluation: &FrontierTrajectoryEvaluation,
     capsule_status: &'static str,
     reason: Option<&'static str>,
     frontier: Option<Value>,
@@ -91,6 +92,7 @@ pub(super) fn branch_summary_value(
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
         "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
+        "trajectory_evaluation": trajectory_evaluation,
         "status": status,
         "act": run.act_num,
         "floor": run.floor_num,
@@ -156,12 +158,12 @@ fn combat_search_telemetry_source(
 pub(super) fn frontier_trajectory_summary_value(
     frontier_count: usize,
     running: usize,
-    frontier: &VecDeque<Branch>,
+    trajectory_evaluation: &FrontierTrajectoryEvaluation,
 ) -> Value {
     json!({
         "frontier_count": frontier_count,
         "frontier_running_count": running,
-        "trajectory_evaluation": trajectory_snapshot::frontier_trajectory_evaluation(frontier),
+        "trajectory_evaluation": trajectory_evaluation,
     })
 }
 
@@ -230,6 +232,7 @@ pub(super) fn result_value(
     branch: &Branch,
     combat_case: Value,
     accepted_high_loss_combat_diagnostics: Value,
+    trajectory_evaluation: &FrontierTrajectoryEvaluation,
 ) -> Value {
     let run = &branch.session.run_state;
     json!({
@@ -239,6 +242,7 @@ pub(super) fn result_value(
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
         "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
+        "trajectory_evaluation": trajectory_evaluation,
         "status": status_value(&branch.status),
         "state": {
             "act": run.act_num,
@@ -414,10 +418,15 @@ mod tests {
         branch
     }
 
+    fn evaluation(branches: Vec<Branch>) -> FrontierTrajectoryEvaluation {
+        trajectory_snapshot::frontier_trajectory_evaluation(&VecDeque::from(branches))
+    }
+
     #[test]
     fn frontier_summary_exposes_paired_trajectory_evaluation() {
         let frontier = VecDeque::from([sample_branch(), challenger_sample_branch(1)]);
-        let value = frontier_trajectory_summary_value(2, 2, &frontier);
+        let trajectory_evaluation = trajectory_snapshot::frontier_trajectory_evaluation(&frontier);
+        let value = frontier_trajectory_summary_value(2, 2, &trajectory_evaluation);
 
         assert_eq!(value["frontier_count"], 2);
         assert_eq!(
@@ -443,7 +452,15 @@ mod tests {
             "evidence": "target/evidence.json"
         }]);
 
-        let value = result_value(3, &sample_branch(), Value::Null, diagnostics.clone());
+        let branch = sample_branch();
+        let trajectory_evaluation = evaluation(vec![branch.clone()]);
+        let value = result_value(
+            3,
+            &branch,
+            Value::Null,
+            diagnostics.clone(),
+            &trajectory_evaluation,
+        );
 
         assert_eq!(value["accepted_high_loss_combat_diagnostics"], diagnostics);
         assert!(value["combat_case"].is_null());
@@ -456,7 +473,8 @@ mod tests {
             sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState::new(2),
         );
 
-        let value = result_value(3, &branch, Value::Null, Value::Null);
+        let trajectory_evaluation = evaluation(vec![branch.clone()]);
+        let value = result_value(3, &branch, Value::Null, Value::Null, &trajectory_evaluation);
 
         assert_eq!(value["policy_lane"]["kind"], "challenger");
         assert_eq!(value["policy_lane"]["policy"]["lane_id"], 2);
