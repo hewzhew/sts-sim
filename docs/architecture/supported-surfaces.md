@@ -56,6 +56,28 @@ The physical and nonblank-style line counts intentionally coexist: the earlier c
 the latter measurement, while physical lines are the less ambiguous baseline for future diffs.
 Neither count is a cleanup quota.
 
+## Post-Retirement Baseline
+
+Counts below describe the working tree after the three-layer legacy campaign retirement. The
+tracked-file and byte totals include the cleanup design and implementation plan, which were written
+after the frozen baseline above.
+
+| Measure | Value | Change evidence |
+| --- | ---: | --- |
+| Tracked files | 1,928 | 50 tracked production/tool files retired; later cleanup documents remain tracked |
+| Tracked bytes | 13,458,284 | Exact sum of existing working-tree files returned by `git ls-files` |
+| Rust files | 1,796 | 49 retired Rust files |
+| Physical Rust lines | 328,197 | 45,898 fewer than the frozen 374,095-line source tree |
+| `#[test]` markers | 2,720 | 251 campaign-only markers retired |
+| `#[cfg(test)]` markers | 424 | 76 campaign-only test modules retired |
+| Passing library tests | 2,642 | 169 campaign-only library tests retired from the 2,811-test suite |
+| Cargo binaries | 6 | `decision_records` and `branch_campaign_driver` retired |
+
+The physical-line reduction exceeds the 45,799 lines in the file-deletion closure by 99 lines:
+four removed `src/eval/mod.rs` declarations plus 95 lines of decision-axis composition helpers that
+became unreferenced when campaign learning datasets were removed. The two shared shop-axis key
+helpers remain because `branch_experiment_boundary::shop` still calls them.
+
 ## Status Vocabulary
 
 - `SupportedMainline`: required to build, execute, or protect the current mainline run workflow.
@@ -174,6 +196,18 @@ diagnostic adapter.
 - Recovery: `origin/backup/pre-cleanup-20260712` at
   `1ee108d0f53806f6b53c5169b74949b28e8648ce`.
 
+### `branch_campaign_driver` and campaign-only library
+
+- Application removal commit: `aed59982611d7db25aca8d36aea09956f323d8c7`
+  (`chore: retire legacy campaign application`).
+- Library closure: removed in the commit containing this record.
+- Removed contracts: `BranchCampaignV1`, `BranchCampaignCheckpointV2`, campaign journal,
+  campaign artifact pointers/manifests, targeted continuation, and campaign learning datasets.
+- Replacement: none; the product boundary was explicitly retired. `branch_tiny` and
+  `branch_panel` remain the supported mainline rather than compatibility readers.
+- Recovery: `origin/backup/pre-cleanup-20260712` at
+  `1ee108d0f53806f6b53c5169b74949b28e8648ce`.
+
 ## Test Retention Contract
 
 Keep game-mechanic and Java-parity tests, regressions for observed failures, serialized checkpoint
@@ -184,6 +218,6 @@ acceptance criteria.
 
 ## Next Cleanup Delivery
 
-Legacy campaign stack retirement is in progress under the approved layered plan. The completed
-decision-record layer will be recorded in retirement history with its commit ID during the next
-layer. Run-control consolidation, combat-review pruning, and disk/cache cleanup remain separate.
+The legacy campaign stack is retired. Future cleanup may separately address run-control
+consolidation, combat-review lens pruning, or disk/cache management; none is authorized by this
+retirement.
