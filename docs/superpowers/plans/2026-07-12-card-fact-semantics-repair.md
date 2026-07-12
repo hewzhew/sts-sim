@@ -176,6 +176,7 @@ git commit -m "fix: model Dark Shackles mitigation"
 **Files:**
 - Modify: `src/ai/analysis/card_semantics.rs:405`
 - Modify: `src/ai/card_reward_policy_v1/facts.rs:159`
+- Modify: `src/ai/card_reward_policy_v1/tests.rs:698`
 - Test: `src/ai/analysis/card_semantics.rs`
 - Test: `src/ai/card_reward_policy_v1/facts.rs`
 
@@ -286,6 +287,28 @@ git add src/ai/analysis/card_semantics.rs src/ai/card_reward_policy_v1/facts.rs
 git commit -m "fix: correct Shockwave mitigation semantics"
 ```
 
+- [ ] **Step 8: Update any pre-existing test that asserted the false fact**
+
+If the full library suite exposes the existing Shockwave control test, change:
+
+```rust
+    assert_eq!(shockwave.facts.enemy_strength_down, 3);
+```
+
+to:
+
+```rust
+    assert_eq!(shockwave.facts.enemy_strength_down, 0);
+```
+
+Run:
+
+```powershell
+cargo test --lib multi_debuff_control_exports_combat_control_but_uncalibrated_gate_stops
+```
+
+Expected: the existing control/gate test passes while continuing to assert Weak and Vulnerable values.
+
 ---
 
 ### Task 4: Verify the completed semantic slice
@@ -293,6 +316,7 @@ git commit -m "fix: correct Shockwave mitigation semantics"
 **Files:**
 - Verify: `src/ai/analysis/card_semantics.rs`
 - Verify: `src/ai/card_reward_policy_v1/facts.rs`
+- Verify: `src/ai/card_reward_policy_v1/tests.rs`
 
 **Interfaces:**
 - Consumes: all semantic changes and contracts from Tasks 1-3.
@@ -338,4 +362,4 @@ git show --stat --oneline HEAD~3..HEAD
 git status --short --branch
 ```
 
-Expected: the implementation commits only touch the two semantic source files, the current plan/spec commits remain present, and the tracked worktree is clean.
+Expected: implementation changes are limited to the two semantic fact sources and the pre-existing Shockwave fact assertion, the current plan/spec commits remain present, and the tracked worktree is clean.

@@ -715,7 +715,7 @@ fn multi_debuff_control_exports_combat_control_but_uncalibrated_gate_stops() {
         .expect("Shockwave candidate");
     assert_eq!(shockwave.facts.weak, 3);
     assert_eq!(shockwave.facts.vulnerable, 3);
-    assert_eq!(shockwave.facts.enemy_strength_down, 3);
+    assert_eq!(shockwave.facts.enemy_strength_down, 0);
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
 
