@@ -3,6 +3,7 @@ use crate::ai::analysis::card_semantics::{
     PayoffRequirement, TriggeredEffect,
 };
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::deck_role_inventory::card_is_stable_strength_source;
 use crate::ai::strategy::package_transition::PackageKind;
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
@@ -54,7 +55,9 @@ pub fn assess_boss_scaling_evidence(
         return evidence;
     }
     if admission_provides(admission, Mechanic::Strength)
-        || card_grants_strength(card_semantics.as_ref())
+        || card.is_some_and(|(id, upgrades)| {
+            card_is_stable_strength_source(id, upgrades, deck.roles.repeatable_self_damage_supply)
+        })
     {
         if admission.class == RewardAdmissionClass::OpensUnsupportedPayoff {
             return BossScalingEvidence::score_only("boss-unsupported-scaling-source", -35);
@@ -206,17 +209,6 @@ fn candidate_strength_payoff(admission: &RewardAdmission) -> bool {
         ))
 }
 
-fn card_grants_strength(
-    semantics: Option<&crate::ai::analysis::card_semantics::CardDefinition>,
-) -> bool {
-    semantics.is_some_and(|definition| {
-        definition
-            .event_handlers
-            .iter()
-            .any(|handler| handler.effect == TriggeredEffect::Provide(Mechanic::Strength))
-    })
-}
-
 fn candidate_exhaust_payoff(
     semantics: Option<&crate::ai::analysis::card_semantics::CardDefinition>,
 ) -> bool {
@@ -296,6 +288,16 @@ mod tests {
         let evidence = assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 0)), &admission);
 
         assert!(!evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn offering_backed_rupture_is_not_relevant_boss_scaling() {
+        let (deck, plan) = deck_plan(&[CardId::Offering]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::Rupture, 0);
+        let evidence = assess_boss_scaling_evidence(plan, Some((CardId::Rupture, 0)), &admission);
+
+        assert!(!evidence.relevant_to_boss_plan);
+        assert_ne!(evidence.label, "boss-scaling-source");
     }
 
     #[test]

@@ -84,7 +84,12 @@ impl DeckPlanSnapshot {
                 self.strategic_deficit.boss_scaling_plan,
                 StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
             )
-            && candidate
-                .is_some_and(|(card, upgrades)| card_is_stable_strength_source(card, upgrades))
+            && candidate.is_some_and(|(card, upgrades)| {
+                card_is_stable_strength_source(
+                    card,
+                    upgrades,
+                    self.roles.repeatable_self_damage_supply,
+                )
+            })
     }
 }

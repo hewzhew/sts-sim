@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CardBurden, CardDefinition, CombatEvent, DamageScalingAxis,
-    InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
+    DeckMechanicContext, InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::runtime::combat::CombatCard;
@@ -19,6 +19,7 @@ pub struct DeckRoleInventory {
     pub x_cost_payoff_units: u8,
     pub strength_source_units: u8,
     pub conditional_strength_source_units: u8,
+    pub repeatable_self_damage_supply: bool,
     pub strength_multiplier_units: u8,
     pub corruption_units: u8,
     pub exhaust_stream_units: u8,
@@ -31,11 +32,19 @@ pub struct DeckRoleInventory {
 impl DeckRoleInventory {
     pub fn from_deck(deck: &[CombatCard]) -> Self {
         let mut inventory = Self::default();
-        for card in deck {
+        let definitions = deck
+            .iter()
+            .map(|card| card_definition_with_upgrades(card.id, card.upgrades))
+            .collect::<Vec<_>>();
+        let context = DeckMechanicContext::from_definitions(&definitions);
+        inventory.repeatable_self_damage_supply = context
+            .repeatable_event_streams
+            .contains(&CombatEvent::CardSelfDamage);
+
+        for (card, definition) in deck.iter().zip(&definitions) {
             if get_card_definition(card.id).cost == -1 {
                 inventory.x_cost_payoff_units += 1;
             }
-            let definition = card_definition_with_upgrades(card.id, card.upgrades);
             let provides_block = definition
                 .play_effects
                 .contains(&PlayEffect::Provide(Mechanic::Block));
@@ -46,7 +55,7 @@ impl DeckRoleInventory {
                 inventory.cycle_block_units += 1;
             }
             let conditional_strength_provider =
-                definition_is_conditional_strength_source(&definition);
+                definition_is_conditional_strength_source(definition);
             if conditional_strength_provider {
                 inventory.conditional_strength_source_units += 1;
             }
@@ -106,6 +115,10 @@ impl DeckRoleInventory {
         if effect != TriggeredEffect::Provide(Mechanic::Strength) {
             return;
         }
+        if event == CombatEvent::CardSelfDamage && !self.repeatable_self_damage_supply {
+            self.conditional_strength_source_units += 1;
+            return;
+        }
         self.strength_source_units += match event {
             CombatEvent::TurnStart => 2,
             CombatEvent::CardSelfDamage => 1,
@@ -139,16 +152,20 @@ impl DeckRoleInventory {
     }
 }
 
-pub(super) fn card_is_stable_strength_source(card: CardId, upgrades: u8) -> bool {
+pub(super) fn card_is_stable_strength_source(
+    card: CardId,
+    upgrades: u8,
+    repeatable_self_damage_supply: bool,
+) -> bool {
     let definition = card_definition_with_upgrades(card, upgrades);
     (definition
         .play_effects
         .contains(&PlayEffect::Provide(Mechanic::Strength))
         && !definition_is_conditional_strength_source(&definition))
-        || definition
-            .event_handlers
-            .iter()
-            .any(|handler| handler.effect == TriggeredEffect::Provide(Mechanic::Strength))
+        || definition.event_handlers.iter().any(|handler| {
+            handler.effect == TriggeredEffect::Provide(Mechanic::Strength)
+                && (handler.on != CombatEvent::CardSelfDamage || repeatable_self_damage_supply)
+        })
 }
 
 fn definition_is_conditional_strength_source(definition: &CardDefinition) -> bool {
@@ -195,5 +212,26 @@ mod tests {
 
         assert_eq!(inventory.strength_source_units, 1);
         assert_eq!(inventory.strength_multiplier_units, 1);
+    }
+
+    #[test]
+    fn offering_backed_rupture_is_conditional_not_stable_strength() {
+        let inventory =
+            DeckRoleInventory::from_deck(&[card(CardId::Offering, 1), card(CardId::Rupture, 2)]);
+
+        assert!(!inventory.repeatable_self_damage_supply);
+        assert_eq!(inventory.strength_source_units, 0);
+        assert_eq!(inventory.conditional_strength_source_units, 1);
+    }
+
+    #[test]
+    fn repeatable_self_damage_makes_rupture_stable_strength() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::Bloodletting, 1),
+            card(CardId::Rupture, 2),
+        ]);
+
+        assert!(inventory.repeatable_self_damage_supply);
+        assert_eq!(inventory.strength_source_units, 1);
     }
 }
