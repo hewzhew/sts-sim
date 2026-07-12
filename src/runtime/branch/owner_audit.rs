@@ -162,6 +162,8 @@ mod shop_tiny_owner;
 mod trace;
 #[path = "owner_audit/trace_format.rs"]
 mod trace_format;
+#[path = "owner_audit/trajectory_snapshot.rs"]
+mod trajectory_snapshot;
 
 use branch_model::{BoundarySite, Branch, BranchStatus, Owner, TerminalOutcome};
 use cli_args::{Args, ArgsOverrides, ContinueCapsuleArgs, EventOwnerProbeArgs};
