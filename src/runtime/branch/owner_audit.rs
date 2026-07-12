@@ -38,6 +38,9 @@ mod candidate_ir_adapter;
 mod capsule_artifact_store;
 #[path = "owner_audit/card_reward_owner.rs"]
 mod card_reward_owner;
+#[cfg(test)]
+#[path = "owner_audit/challenger_execution_smoke.rs"]
+mod challenger_execution_smoke;
 #[path = "owner_audit/cli_args.rs"]
 mod cli_args;
 #[path = "owner_audit/combat_gap_case.rs"]
