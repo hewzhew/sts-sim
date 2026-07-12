@@ -7,7 +7,7 @@ use sts_simulator::eval::combat_case::CombatCase;
 #[path = "review_pipeline/ladder.rs"]
 mod ladder;
 
-use super::adjudication_probe::run_adjudication_probe;
+use super::adjudication_probe::{run_adjudication_probe, run_candidate_censuses};
 use super::awakened_one_evidence::{
     awakened_one_failure_evidence, awakened_one_path_audit_v0, static_boss_matchup_audit_v0,
 };
@@ -31,17 +31,27 @@ pub(super) fn build_review(
     case: CombatCase,
 ) -> CombatCaseReview {
     let ReviewLadderRun {
-        reviews: ladder,
+        reviews: mut ladder,
         line_lab_parent,
-        adjudication_candidates,
+        adjudication_runs,
     } = run_review_ladder(&options, &case);
     let review_focus = review_focus(&ladder);
     let adjudication_probe = run_adjudication_probe(
         options.adjudicate,
-        &adjudication_candidates,
+        &adjudication_runs,
         review_focus.as_ref().map(|focus| focus.selected_review),
         Some(&case),
     );
+    if let Some(censuses) =
+        run_candidate_censuses(options.adjudicate, &adjudication_runs, Some(&case))
+    {
+        for census in censuses {
+            let attached = ladder
+                .iter_mut()
+                .any(|review| review.attach_candidate_adjudication_census(census.clone()));
+            debug_assert!(attached, "candidate census must match one ladder row");
+        }
+    }
     let classification =
         classify_gap_review(case.failed_search.as_ref(), &ladder, review_focus.as_ref());
     let review_focus_replay = if options.replay_focus {

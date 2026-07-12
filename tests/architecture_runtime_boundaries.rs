@@ -134,9 +134,14 @@ fn combat_line_adjudication_has_one_production_owner() {
             .expect("read combat search lane runner");
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner audit module");
+    let review_probe = std::fs::read_to_string("src/bin/combat_case_review/adjudication_probe.rs")
+        .expect("read review adjudication probe");
 
     assert!(!selector.contains("CombatLineAcceptancePolicy::default()"));
     assert!(!lane_runner.contains("reject_dirty_win_status"));
     assert!(!lane_runner.contains("master_deck_curse_count"));
     assert!(!owner_audit.contains("combat_search_dirty_win.rs"));
+    assert!(!review_probe.contains("meta_changes"));
+    assert!(!review_probe.contains("CardType::Curse"));
+    assert!(!review_probe.contains("master_deck_curse_count"));
 }
