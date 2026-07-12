@@ -4,7 +4,9 @@ use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
 use super::combat_line_executor::apply_selected_combat_candidate_line;
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
-use super::combat_line_trace::{combat_candidate_line_summary, combat_search_line_summary};
+use super::combat_line_trace::{
+    attach_execution_adjudication, combat_candidate_line_summary, combat_search_line_summary,
+};
 use super::combat_no_win_fallback::{
     try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
 };
@@ -159,10 +161,11 @@ pub(super) fn apply_search_combat(
         summary,
         None,
     )?
-    .with_execution_adjudication(selected_adjudication);
+    .with_execution_adjudication(selected_adjudication.clone());
     outcome
         .trace_annotations
         .push(accepted_line_evidence.into_annotation());
+    attach_execution_adjudication(&mut outcome.trace_annotations, &selected_adjudication);
     Ok(outcome)
 }
 

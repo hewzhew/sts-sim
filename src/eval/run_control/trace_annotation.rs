@@ -10,6 +10,7 @@ use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::state::core::ClientInput;
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
+use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::transition_report::CardSnapshot;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -113,6 +114,8 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_adjudication: Option<CombatLineAdjudicationV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nodes_to_first_win: Option<u64>,
     #[serde(default)]
     pub deadline_hit: bool,
@@ -180,7 +183,7 @@ pub struct CombatSearchTerminalLineSummary {
     pub action_count: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchTraceSummary {
     pub source: String,
@@ -213,6 +216,8 @@ pub struct CombatSearchTraceSummary {
     pub best_win: Option<CombatSearchTerminalLineSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_adjudication: Option<CombatLineAdjudicationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nodes_to_first_win: Option<u64>,
     #[serde(default)]
@@ -475,6 +480,7 @@ pub fn combat_search_trace_summaries(
             best_complete: snapshot.best_complete.clone(),
             best_win: snapshot.best_win.clone(),
             best_hp_loss: snapshot.best_hp_loss,
+            execution_adjudication: snapshot.execution_adjudication.clone(),
             nodes_to_first_win: snapshot.nodes_to_first_win,
             deadline_hit: snapshot.deadline_hit,
             nodes_expanded: snapshot.nodes_expanded,

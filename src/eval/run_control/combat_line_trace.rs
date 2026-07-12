@@ -7,6 +7,7 @@ use crate::sim::combat::{CombatPosition, CombatTerminal};
 use crate::state::core::{EngineState, RunResult};
 
 use super::combat_candidate_line::CombatCandidateLine;
+use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::session::RunControlSession;
 use super::trace_annotation::{
     CombatAutomationMonsterStateV1, CombatAutomationStepStateV1, CombatSearchPerformanceSnapshotV1,
@@ -60,6 +61,22 @@ pub(super) fn combat_search_performance_trace_annotation(
 ) -> RunControlTraceAnnotationV1 {
     RunControlTraceAnnotationV1::CombatSearchPerformance {
         snapshot: combat_search_performance_snapshot(source.into(), session, start, report),
+    }
+}
+
+pub(super) fn attach_execution_adjudication(
+    annotations: &mut [RunControlTraceAnnotationV1],
+    adjudication: &CombatLineAdjudicationV1,
+) {
+    if let Some(snapshot) = annotations
+        .iter_mut()
+        .rev()
+        .find_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } => Some(snapshot),
+            _ => None,
+        })
+    {
+        snapshot.execution_adjudication = Some(adjudication.clone());
     }
 }
 
@@ -135,6 +152,7 @@ fn combat_search_performance_snapshot(
             .best_win_trajectory
             .as_ref()
             .map(|trajectory| trajectory.hp_loss),
+        execution_adjudication: None,
         nodes_to_first_win: report.stats.nodes_to_first_win,
         deadline_hit: report.stats.deadline_hit,
         nodes_expanded: report.stats.nodes_expanded,
@@ -332,5 +350,61 @@ mod tests {
 
         assert_eq!(snapshot.best_hp_loss, Some(15));
         assert_eq!(snapshot.nodes_expanded, report.stats.nodes_expanded);
+    }
+
+    #[test]
+    fn combat_search_trace_round_trips_dirty_adjudication() {
+        use crate::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+        use crate::content::cards::CardId;
+        use crate::eval::run_control::{
+            CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
+            RunActionCardSnapshotV1,
+        };
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters.clear();
+        let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let report = run_combat_search_v2(
+            &start.engine,
+            &start.combat,
+            CombatSearchV2Config {
+                max_nodes: 1,
+                ..CombatSearchV2Config::default()
+            },
+        );
+        let session = RunControlSession::new(Default::default());
+        let adjudication = CombatLineAdjudicationV1::Accepted {
+            policy: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            cleanliness: CombatLineCleanlinessV1::Dirty,
+            observed_outcome: CombatLineObservedOutcomeV1 {
+                terminal: CombatTerminal::Win,
+                final_hp: 44,
+                hp_loss: 0,
+                potions_used: 0,
+                action_count: 32,
+                gold_delta: 0,
+                ritual_dagger_growth: 0,
+                gained_curses: vec![RunActionCardSnapshotV1 {
+                    id: CardId::Parasite,
+                    uuid: 9001,
+                    upgrades: 0,
+                }],
+            },
+        };
+        let mut annotations = vec![combat_search_performance_trace_annotation(
+            "search_combat_rejected_dirty_win",
+            &session,
+            &start,
+            &report,
+        )];
+
+        attach_execution_adjudication(&mut annotations, &adjudication);
+
+        let json = serde_json::to_string(&annotations[0]).expect("serialize trace annotation");
+        let restored: RunControlTraceAnnotationV1 =
+            serde_json::from_str(&json).expect("deserialize trace annotation");
+        assert_eq!(restored, annotations[0]);
+        assert!(json.contains("Parasite"));
+        assert!(json.contains("accepted_line_only"));
     }
 }

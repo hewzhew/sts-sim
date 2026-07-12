@@ -526,6 +526,15 @@ impl RunControlCommandOutcome {
         mut self,
         trace_annotations: Vec<RunControlTraceAnnotationV1>,
     ) -> Self {
+        if let Some(adjudication) = trace_annotations.iter().rev().find_map(|annotation| {
+            let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation
+            else {
+                return None;
+            };
+            snapshot.execution_adjudication.clone()
+        }) {
+            self.execution_adjudication = Some(adjudication);
+        }
         self.trace_annotations.extend(trace_annotations);
         self
     }
