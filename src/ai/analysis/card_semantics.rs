@@ -309,9 +309,14 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
         LimitBreak => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Strength))
             .provides(StrengthMultiplier),
-        HeavyBlade | SwordBoomerang | Reaper => CardDefinition::new(card)
+        HeavyBlade | SwordBoomerang => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Strength))
             .effect(DamageUses(Strength)),
+        Reaper => CardDefinition::new(card)
+            .wants(PayoffRequirement::WantsMechanic(Strength))
+            .effect(DamageUses(Strength))
+            .effect(AreaDamage)
+            .effect(RecoverCurrentHp),
         Pummel => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Strength))
             .effect(DamageUses(Strength))
@@ -549,5 +554,23 @@ pub fn evaluate_candidate_definition(
 fn push_unique<T: Eq>(items: &mut Vec<T>, value: T) {
     if !items.contains(&value) {
         items.push(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reaper_semantics_include_aoe_sustain_and_strength_scaling() {
+        let definition = card_definition(CardId::Reaper);
+
+        assert!(definition
+            .play_effects
+            .contains(&PlayEffect::DamageUses(Mechanic::Strength)));
+        assert!(definition.play_effects.contains(&PlayEffect::AreaDamage));
+        assert!(definition
+            .play_effects
+            .contains(&PlayEffect::RecoverCurrentHp));
     }
 }
