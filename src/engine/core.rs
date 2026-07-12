@@ -350,6 +350,68 @@ mod tests {
     }
 
     #[test]
+    fn nonpositive_cost_relic_play_blue_candle_spends_zero_energy_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::BlueCandle));
+        combat_state.turn.energy = 4;
+        combat_state.zones.hand = vec![CombatCard::new(CardId::Writhe, 90_001)];
+        let mut engine_state = EngineState::CombatPlayerTurn;
+
+        let alive = super::tick_until_stable_turn(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(alive);
+        assert_eq!(combat_state.turn.energy, 4);
+        assert_eq!(combat_state.entities.player.current_hp, 79);
+        assert!(combat_state
+            .zones
+            .exhaust_pile
+            .iter()
+            .any(|card| card.id == CardId::Writhe));
+    }
+
+    #[test]
+    fn nonpositive_cost_relic_play_medical_kit_spends_zero_energy_like_java() {
+        let mut combat_state = blank_test_combat();
+        combat_state.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
+        combat_state
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::MedicalKit));
+        combat_state.turn.energy = 4;
+        combat_state.zones.hand = vec![CombatCard::new(CardId::Burn, 90_002)];
+        let mut engine_state = EngineState::CombatPlayerTurn;
+
+        let alive = super::tick_until_stable_turn(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(alive);
+        assert_eq!(combat_state.turn.energy, 4);
+        assert_eq!(combat_state.entities.player.current_hp, 80);
+        assert!(combat_state
+            .zones
+            .exhaust_pile
+            .iter()
+            .any(|card| card.id == CardId::Burn));
+    }
+
+    #[test]
     fn time_warp_power_card_trigger_forces_stable_turn_transition() {
         let mut combat_state = blank_test_combat();
         let mut monster = planned_monster(EnemyId::JawWorm, 1);

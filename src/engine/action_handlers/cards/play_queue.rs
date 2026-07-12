@@ -311,7 +311,7 @@ pub fn handle_play_card_from_hand(
     let energy_on_use = if is_x_cost {
         state.turn.energy as i32
     } else {
-        effective_cost
+        effective_cost.max(0)
     };
 
     if !is_x_cost && energy_on_use > state.turn.energy as i32 {
