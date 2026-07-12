@@ -19,6 +19,8 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingDiagnosticsCollector {
     pub(super) action_effect_actions: u64,
     pub(super) attack_retaliation_actions: u64,
     pub(super) attack_retaliation_trigger_count_hint: u64,
+    pub(super) attack_retaliation_raw_player_damage_hint: i64,
+    pub(super) attack_retaliation_player_block_loss_hint: i64,
     pub(super) attack_retaliation_player_hp_loss_hint: i64,
     pub(super) max_attack_retaliation_player_hp_loss_hint: i32,
     pub(super) phase_action_hint_actions: u64,
@@ -79,11 +81,21 @@ impl ActionOrderingDiagnosticsCollector {
         for sample in &summary.action_effect_samples {
             self.action_effect_actions = self.action_effect_actions.saturating_add(1);
             let retaliation = sample.effects.reactive;
-            if retaliation.attack_retaliation_player_hp_loss_hint > 0 {
+            if retaliation.attack_retaliation_raw_player_damage_hint > 0 {
                 self.attack_retaliation_actions = self.attack_retaliation_actions.saturating_add(1);
                 self.attack_retaliation_trigger_count_hint = self
                     .attack_retaliation_trigger_count_hint
                     .saturating_add(retaliation.attack_retaliation_trigger_count_hint as u64);
+                self.attack_retaliation_raw_player_damage_hint = self
+                    .attack_retaliation_raw_player_damage_hint
+                    .saturating_add(i64::from(
+                        retaliation.attack_retaliation_raw_player_damage_hint,
+                    ));
+                self.attack_retaliation_player_block_loss_hint = self
+                    .attack_retaliation_player_block_loss_hint
+                    .saturating_add(i64::from(
+                        retaliation.attack_retaliation_player_block_loss_hint,
+                    ));
                 self.attack_retaliation_player_hp_loss_hint = self
                     .attack_retaliation_player_hp_loss_hint
                     .saturating_add(i64::from(

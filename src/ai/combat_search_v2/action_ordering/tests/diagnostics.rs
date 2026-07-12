@@ -37,6 +37,8 @@ fn ordering_collector_reports_role_counts_without_action_tree() {
     assert_eq!(report.largest_reorders[0].first_role, "lethal_card");
     assert_eq!(report.attack_retaliation_actions, 0);
     assert_eq!(report.attack_retaliation_trigger_count_hint, 0);
+    assert_eq!(report.attack_retaliation_raw_player_damage_hint, 0);
+    assert_eq!(report.attack_retaliation_player_block_loss_hint, 0);
     assert_eq!(report.attack_retaliation_player_hp_loss_hint, 0);
     assert_eq!(report.max_attack_retaliation_player_hp_loss_hint, 0);
 }
@@ -44,6 +46,7 @@ fn ordering_collector_reports_role_counts_without_action_tree() {
 #[test]
 fn ordering_collector_reports_attack_retaliation_attribution_and_exposure() {
     let mut combat = blank_test_combat();
+    combat.entities.player.block = 5;
     let mut target = test_monster(EnemyId::Spiker);
     target.id = 1;
     target.current_hp = 40;
@@ -91,15 +94,19 @@ fn ordering_collector_reports_attack_retaliation_attribution_and_exposure() {
 
     assert_eq!(report.attack_retaliation_actions, 2);
     assert_eq!(report.attack_retaliation_trigger_count_hint, 3);
-    assert_eq!(report.attack_retaliation_player_hp_loss_hint, 9);
-    assert_eq!(report.max_attack_retaliation_player_hp_loss_hint, 6);
+    assert_eq!(report.attack_retaliation_raw_player_damage_hint, 9);
+    assert_eq!(report.attack_retaliation_player_block_loss_hint, 8);
+    assert_eq!(report.attack_retaliation_player_hp_loss_hint, 1);
+    assert_eq!(report.max_attack_retaliation_player_hp_loss_hint, 1);
     let twin = report
         .action_effect_samples
         .iter()
         .find(|sample| sample.action_key.contains("Twin Strike"))
         .expect("Twin Strike retaliation sample");
     assert_eq!(twin.reactive.attack_retaliation_trigger_count_hint, 2);
-    assert_eq!(twin.reactive.attack_retaliation_player_hp_loss_hint, 6);
+    assert_eq!(twin.reactive.attack_retaliation_raw_player_damage_hint, 6);
+    assert_eq!(twin.reactive.attack_retaliation_player_block_loss_hint, 5);
+    assert_eq!(twin.reactive.attack_retaliation_player_hp_loss_hint, 1);
 }
 
 #[test]

@@ -74,7 +74,7 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
             profile.attack_retaliation_target_count += 1;
             profile.attack_retaliation_total_per_event = profile
                 .attack_retaliation_total_per_event
-                .saturating_add(retaliation.player_hp_loss_per_damage_event);
+                .saturating_add(retaliation.raw_player_damage_per_damage_event);
             if retaliation.visible_growth_amount > 0 {
                 profile.attack_retaliation_visible_growth_target_count += 1;
                 profile.attack_retaliation_visible_growth_total = profile

@@ -19,6 +19,10 @@ impl ActionOrderingDiagnosticsCollector {
             action_effect_actions: self.action_effect_actions,
             attack_retaliation_actions: self.attack_retaliation_actions,
             attack_retaliation_trigger_count_hint: self.attack_retaliation_trigger_count_hint,
+            attack_retaliation_raw_player_damage_hint: self
+                .attack_retaliation_raw_player_damage_hint,
+            attack_retaliation_player_block_loss_hint: self
+                .attack_retaliation_player_block_loss_hint,
             attack_retaliation_player_hp_loss_hint: self
                 .attack_retaliation_player_hp_loss_hint,
             max_attack_retaliation_player_hp_loss_hint: self
@@ -41,7 +45,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "phase action hints reuse phase_profile and only add ordering tiebreaks",
                 "pending choice ordering uses typed selection facts and never drops alternatives",
                 "root action prior hints are opt-in child ordering hints; they never remove legal actions",
-                "attack retaliation totals count candidate observations, not unique paths or realized HP loss",
+                "attack retaliation totals separate raw damage, projected block loss, and projected HP loss across candidate observations; they are not unique paths or realized trajectory loss",
             ],
         }
     }
@@ -112,6 +116,14 @@ impl ActionOrderingDiagnosticsCollector {
                         .effects
                         .reactive
                         .attack_retaliation_trigger_count_hint,
+                    attack_retaliation_raw_player_damage_hint: sample
+                        .effects
+                        .reactive
+                        .attack_retaliation_raw_player_damage_hint,
+                    attack_retaliation_player_block_loss_hint: sample
+                        .effects
+                        .reactive
+                        .attack_retaliation_player_block_loss_hint,
                     attack_retaliation_player_hp_loss_hint: sample
                         .effects
                         .reactive

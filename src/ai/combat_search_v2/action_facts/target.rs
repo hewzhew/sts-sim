@@ -52,7 +52,11 @@ pub(super) fn target_facts(
         attack_retaliation: attack_retaliation_for_target(combat, monster.id).map(|retaliation| {
             CombatSearchV2AttackRetaliationTargetFacts {
                 power_source_count: retaliation.power_source_count,
-                player_hp_loss_per_damage_event: retaliation.player_hp_loss_per_damage_event,
+                raw_player_damage_per_damage_event: retaliation.raw_player_damage_per_damage_event,
+                projected_player_block_loss_for_next_damage_event: retaliation
+                    .projected_player_block_loss_for_next_damage_event,
+                projected_player_hp_loss_for_next_damage_event: retaliation
+                    .projected_player_hp_loss_for_next_damage_event,
                 visible_growth_amount: retaliation.visible_growth_amount,
             }
         }),

@@ -16,7 +16,9 @@ pub(super) struct AttackRetaliationEventProjectionV1 {
 pub(super) struct AttackRetaliationTargetFactV1 {
     pub(super) source_entity_id: EntityId,
     pub(super) power_source_count: usize,
-    pub(super) player_hp_loss_per_damage_event: i32,
+    pub(super) raw_player_damage_per_damage_event: i32,
+    pub(super) projected_player_block_loss_for_next_damage_event: i32,
+    pub(super) projected_player_hp_loss_for_next_damage_event: i32,
     pub(super) visible_growth_amount: i32,
 }
 
@@ -85,7 +87,9 @@ pub(super) fn attack_retaliation_for_target(
     (projection.raw_player_damage > 0).then_some(AttackRetaliationTargetFactV1 {
         source_entity_id: entity_id,
         power_source_count: source_count,
-        player_hp_loss_per_damage_event: projection.player_hp_loss,
+        raw_player_damage_per_damage_event: projection.raw_player_damage,
+        projected_player_block_loss_for_next_damage_event: projection.player_block_loss,
+        projected_player_hp_loss_for_next_damage_event: projection.player_hp_loss,
         visible_growth_amount: owner
             .turn_plan()
             .steps
@@ -200,7 +204,9 @@ mod tests {
             Some(AttackRetaliationTargetFactV1 {
                 source_entity_id: 7,
                 power_source_count: 1,
-                player_hp_loss_per_damage_event: 3,
+                raw_player_damage_per_damage_event: 3,
+                projected_player_block_loss_for_next_damage_event: 0,
+                projected_player_hp_loss_for_next_damage_event: 3,
                 visible_growth_amount: 2,
             })
         );

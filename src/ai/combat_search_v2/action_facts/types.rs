@@ -60,7 +60,9 @@ pub struct CombatSearchV2TimedEnemyThreatTargetFacts {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2AttackRetaliationTargetFacts {
     pub power_source_count: usize,
-    pub player_hp_loss_per_damage_event: i32,
+    pub raw_player_damage_per_damage_event: i32,
+    pub projected_player_block_loss_for_next_damage_event: i32,
+    pub projected_player_hp_loss_for_next_damage_event: i32,
     pub visible_growth_amount: i32,
 }
 
@@ -117,6 +119,8 @@ pub struct CombatSearchV2ActionDirectMechanicsFacts {
 pub struct CombatSearchV2ActionReactiveMechanicsFacts {
     pub player_hp_loss: i32,
     pub attack_retaliation_trigger_count_hint: usize,
+    pub attack_retaliation_raw_player_damage_hint: i32,
+    pub attack_retaliation_player_block_loss_hint: i32,
     pub attack_retaliation_player_hp_loss_hint: i32,
     pub player_block: i32,
     pub enemy_damage: i32,

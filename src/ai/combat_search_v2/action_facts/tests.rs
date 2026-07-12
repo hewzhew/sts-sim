@@ -77,6 +77,7 @@ fn facts_report_timed_enemy_threat_on_target() {
 #[test]
 fn facts_report_attack_retaliation_on_target() {
     let mut combat = blank_test_combat();
+    combat.entities.player.block = 2;
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
     let mut spiker = test_monster(EnemyId::Spiker);
     spiker.id = 1;
@@ -116,7 +117,15 @@ fn facts_report_attack_retaliation_on_target() {
         .and_then(|target| target.attack_retaliation)
         .expect("retaliating target should expose attack retaliation");
     assert_eq!(retaliation.power_source_count, 1);
-    assert_eq!(retaliation.player_hp_loss_per_damage_event, 3);
+    assert_eq!(retaliation.raw_player_damage_per_damage_event, 3);
+    assert_eq!(
+        retaliation.projected_player_block_loss_for_next_damage_event,
+        2
+    );
+    assert_eq!(
+        retaliation.projected_player_hp_loss_for_next_damage_event,
+        1
+    );
     assert_eq!(retaliation.visible_growth_amount, 2);
 }
 

@@ -129,6 +129,8 @@ pub struct CombatSearchV2DiagnosticsOrdering {
     pub action_effect_actions: u64,
     pub attack_retaliation_actions: u64,
     pub attack_retaliation_trigger_count_hint: u64,
+    pub attack_retaliation_raw_player_damage_hint: i64,
+    pub attack_retaliation_player_block_loss_hint: i64,
     pub attack_retaliation_player_hp_loss_hint: i64,
     pub max_attack_retaliation_player_hp_loss_hint: i32,
     pub phase_action_hint_actions: u64,
@@ -189,6 +191,8 @@ pub struct CombatSearchV2DiagnosticsActionEffectDirect {
 pub struct CombatSearchV2DiagnosticsActionEffectReactive {
     pub player_hp_loss: i32,
     pub attack_retaliation_trigger_count_hint: usize,
+    pub attack_retaliation_raw_player_damage_hint: i32,
+    pub attack_retaliation_player_block_loss_hint: i32,
     pub attack_retaliation_player_hp_loss_hint: i32,
     pub player_block: i32,
     pub enemy_damage: i32,

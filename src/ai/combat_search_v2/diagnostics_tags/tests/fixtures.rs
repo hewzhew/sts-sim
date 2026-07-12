@@ -75,6 +75,8 @@ pub(super) fn ordering() -> CombatSearchV2DiagnosticsOrdering {
         action_effect_actions: 0,
         attack_retaliation_actions: 0,
         attack_retaliation_trigger_count_hint: 0,
+        attack_retaliation_raw_player_damage_hint: 0,
+        attack_retaliation_player_block_loss_hint: 0,
         attack_retaliation_player_hp_loss_hint: 0,
         max_attack_retaliation_player_hp_loss_hint: 0,
         phase_action_hint_actions: 0,

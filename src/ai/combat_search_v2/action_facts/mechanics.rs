@@ -104,6 +104,12 @@ pub(super) fn immediate_and_mechanics_facts(
                 attack_retaliation_trigger_count_hint: effects
                     .reactive
                     .attack_retaliation_trigger_count_hint,
+                attack_retaliation_raw_player_damage_hint: effects
+                    .reactive
+                    .attack_retaliation_raw_player_damage_hint,
+                attack_retaliation_player_block_loss_hint: effects
+                    .reactive
+                    .attack_retaliation_player_block_loss_hint,
                 attack_retaliation_player_hp_loss_hint: effects
                     .reactive
                     .attack_retaliation_player_hp_loss_hint,
