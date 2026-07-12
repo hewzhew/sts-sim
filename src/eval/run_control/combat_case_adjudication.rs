@@ -81,7 +81,7 @@ pub fn adjudicate_combat_case_line_v1(
     }
 }
 
-fn project_combat_case_session(case: &CombatCase) -> Result<RunControlSession, String> {
+pub(super) fn project_combat_case_session(case: &CombatCase) -> Result<RunControlSession, String> {
     let player_class = canonical_player_class(&case.position.combat.meta.player_class)?;
     let mut session = RunControlSession::new(RunControlConfig {
         seed: case.source.seed,
@@ -120,7 +120,7 @@ fn projected_room_type(case: &CombatCase) -> RoomType {
     }
 }
 
-fn adjudicate_observed_outcome(
+pub(super) fn adjudicate_observed_outcome(
     outcome: CombatLineObservedOutcomeV1,
 ) -> Vec<CombatLineAdjudicationV1> {
     PROBE_POLICIES

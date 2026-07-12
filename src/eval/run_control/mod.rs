@@ -8,6 +8,7 @@ mod card_reward_auto;
 mod combat_auto_policy;
 mod combat_candidate_line;
 mod combat_case_adjudication;
+mod combat_case_candidate_census;
 mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;
@@ -69,6 +70,11 @@ pub use bookmarks::{
 };
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,
+};
+pub use combat_case_candidate_census::{
+    adjudicate_combat_case_candidates_v1, CombatCaseCandidateAdjudicationCensusV1,
+    CombatCaseCandidateCensusConclusionV1, CombatCaseCandidateOutcomeSummaryV1,
+    CombatCaseCandidateReplayFailureV1, CombatCaseGainedCurseCountV1,
 };
 pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,

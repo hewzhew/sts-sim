@@ -181,7 +181,7 @@ fn win_candidate_trajectories(
     trajectories
 }
 
-fn prefer_accepted_outcome(
+pub(super) fn prefer_accepted_outcome(
     left: &CombatLineObservedOutcomeV1,
     right: &CombatLineObservedOutcomeV1,
 ) -> bool {
