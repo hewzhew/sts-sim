@@ -30,6 +30,11 @@ pub(super) fn observe_card_play_effects(
 ) -> CardPlayEffectAccumulator {
     let mut accumulator = CardPlayEffectAccumulator::default();
     for action in actions {
+        super::attack_retaliation_observation::observe_attack_retaliation_action(
+            combat,
+            &mut accumulator,
+            &action,
+        );
         observe_direct_action(combat, &mut accumulator.direct, action);
     }
     super::reactive_observation::observe_card_play_reactive_actions(combat, card, &mut accumulator);

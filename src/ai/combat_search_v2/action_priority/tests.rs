@@ -217,6 +217,122 @@ fn timed_threat_damage_progress_is_neutral_without_power() {
 }
 
 #[test]
+fn damage_progress_prefers_fewer_attack_retaliation_triggers() {
+    let mut combat = blank_test_combat();
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    spiker.current_hp = 40;
+    spiker.max_hp = 40;
+    combat.entities.monsters = vec![spiker];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::TwinStrike, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    combat.entities.power_db.insert(
+        1,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::Thorns,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let twin_strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(twin_strike.role, ActionOrderingRole::DamageProgress);
+    assert_eq!(strike.role, ActionOrderingRole::DamageProgress);
+    assert_eq!(
+        twin_strike
+            .effects
+            .reactive
+            .attack_retaliation_player_hp_loss_hint,
+        6
+    );
+    assert_eq!(
+        strike
+            .effects
+            .reactive
+            .attack_retaliation_player_hp_loss_hint,
+        3
+    );
+    assert!(strike > twin_strike);
+}
+
+#[test]
+fn damage_progress_has_no_attack_retaliation_attribution_without_retaliation_power() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::Repulsor);
+    monster.id = 1;
+    monster.current_hp = 40;
+    monster.max_hp = 40;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::TwinStrike, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+
+    let twin_strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(
+        twin_strike
+            .effects
+            .reactive
+            .attack_retaliation_trigger_count_hint,
+        0
+    );
+    assert_eq!(
+        twin_strike
+            .effects
+            .reactive
+            .attack_retaliation_player_hp_loss_hint,
+        0
+    );
+    assert_eq!(twin_strike.role, ActionOrderingRole::DamageProgress);
+    assert_eq!(strike.role, ActionOrderingRole::DamageProgress);
+}
+
+#[test]
 fn pending_choice_priority_uses_structured_selection_role() {
     let mut combat = blank_test_combat();
     combat.zones.discard_pile = vec![CombatCard::new(CardId::Carnage, 20)];

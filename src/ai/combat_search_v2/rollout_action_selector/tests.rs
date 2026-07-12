@@ -234,6 +234,65 @@ fn conservative_rollout_reuses_timed_threat_ordering() {
     ));
 }
 
+#[test]
+fn conservative_rollout_reuses_attack_retaliation_ordering() {
+    let mut combat = blank_test_combat();
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    spiker.current_hp = 40;
+    spiker.max_hp = 40;
+    combat.entities.monsters = vec![spiker];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::TwinStrike, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Thorns,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ),
+    ];
+
+    let selection = choose_rollout_action(
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
+        &test_node(combat.clone()),
+        &ProbeWinStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal,
+        &mut RolloutPerformanceCounters::default(),
+    )
+    .expect("rollout should select an action");
+
+    assert!(matches!(
+        selection.choice.choice.input,
+        ClientInput::PlayCard { card_index: 1, .. }
+    ));
+}
+
 fn test_node(combat: CombatState) -> SearchNode {
     SearchNode {
         engine: EngineState::CombatPlayerTurn,

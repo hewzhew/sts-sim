@@ -101,6 +101,12 @@ pub(super) fn immediate_and_mechanics_facts(
             },
             reactive: CombatSearchV2ActionReactiveMechanicsFacts {
                 player_hp_loss: effects.reactive.player_hp_loss,
+                attack_retaliation_trigger_count_hint: effects
+                    .reactive
+                    .attack_retaliation_trigger_count_hint,
+                attack_retaliation_player_hp_loss_hint: effects
+                    .reactive
+                    .attack_retaliation_player_hp_loss_hint,
                 player_block: effects.reactive.player_block,
                 enemy_damage: effects.reactive.enemy_damage,
                 bad_draw_cards: effects.reactive.bad_draw_cards,

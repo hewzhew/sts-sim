@@ -2,6 +2,7 @@ use super::*;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatCard;
 
+mod attack_retaliation_observation;
 mod monster_signals;
 mod observation;
 mod reactive_observation;

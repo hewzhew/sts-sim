@@ -22,6 +22,8 @@ pub(in crate::ai::combat_search_v2) struct DirectCardPlayEffectFacts {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct ReactiveCardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) player_hp_loss: i32,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_trigger_count_hint: usize,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_player_hp_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) enemy_damage: i32,
     pub(in crate::ai::combat_search_v2) bad_draw_cards: i32,
@@ -64,6 +66,8 @@ pub(in crate::ai::combat_search_v2) struct CardPlayDirectEffectDiagnostics {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct CardPlayReactiveEffectDiagnostics {
     pub(in crate::ai::combat_search_v2) player_hp_loss: i32,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_trigger_count_hint: usize,
+    pub(in crate::ai::combat_search_v2) attack_retaliation_player_hp_loss_hint: i32,
     pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) enemy_damage: i32,
     pub(in crate::ai::combat_search_v2) bad_draw_cards: i32,
@@ -149,6 +153,12 @@ impl CardPlayEffectFacts {
             },
             reactive: CardPlayReactiveEffectDiagnostics {
                 player_hp_loss: self.reactive.player_hp_loss,
+                attack_retaliation_trigger_count_hint: self
+                    .reactive
+                    .attack_retaliation_trigger_count_hint,
+                attack_retaliation_player_hp_loss_hint: self
+                    .reactive
+                    .attack_retaliation_player_hp_loss_hint,
                 player_block: self.reactive.player_block,
                 enemy_damage: self.reactive.enemy_damage,
                 bad_draw_cards: self.reactive.bad_draw_cards,

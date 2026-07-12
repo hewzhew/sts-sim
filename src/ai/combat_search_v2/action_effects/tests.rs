@@ -88,6 +88,63 @@ fn sharp_hide_reports_reactive_player_hp_loss_for_attack() {
     let defend_facts = card_play_effect_facts(&combat, &defend, None);
 
     assert_eq!(strike_facts.reactive.player_hp_loss, 3);
+    assert_eq!(
+        strike_facts.reactive.attack_retaliation_trigger_count_hint,
+        0
+    );
+    assert_eq!(
+        strike_facts.reactive.attack_retaliation_player_hp_loss_hint,
+        0
+    );
+    assert_eq!(defend_facts.reactive.player_hp_loss, 0);
+}
+
+#[test]
+fn attack_retaliation_counts_explicit_damage_events_without_affecting_non_attacks() {
+    let mut combat = blank_test_combat();
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    combat.entities.monsters = vec![spiker];
+    insert_power(&mut combat, 1, PowerId::Thorns, 3);
+
+    let strike = CombatCard::new(CardId::Strike, 10);
+    let twin_strike = CombatCard::new(CardId::TwinStrike, 11);
+    let defend = CombatCard::new(CardId::Defend, 12);
+
+    let strike_facts = card_play_effect_facts(&combat, &strike, Some(1));
+    let twin_strike_facts = card_play_effect_facts(&combat, &twin_strike, Some(1));
+    let defend_facts = card_play_effect_facts(&combat, &defend, None);
+
+    assert_eq!(
+        strike_facts.reactive.attack_retaliation_trigger_count_hint,
+        1
+    );
+    assert_eq!(
+        strike_facts.reactive.attack_retaliation_player_hp_loss_hint,
+        3
+    );
+    assert_eq!(strike_facts.reactive.player_hp_loss, 3);
+    assert_eq!(
+        twin_strike_facts
+            .reactive
+            .attack_retaliation_trigger_count_hint,
+        2
+    );
+    assert_eq!(
+        twin_strike_facts
+            .reactive
+            .attack_retaliation_player_hp_loss_hint,
+        6
+    );
+    assert_eq!(twin_strike_facts.reactive.player_hp_loss, 6);
+    assert_eq!(
+        defend_facts.reactive.attack_retaliation_trigger_count_hint,
+        0
+    );
+    assert_eq!(
+        defend_facts.reactive.attack_retaliation_player_hp_loss_hint,
+        0
+    );
     assert_eq!(defend_facts.reactive.player_hp_loss, 0);
 }
 

@@ -108,6 +108,8 @@ pub struct CombatSearchV2ActionDirectMechanicsFacts {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CombatSearchV2ActionReactiveMechanicsFacts {
     pub player_hp_loss: i32,
+    pub attack_retaliation_trigger_count_hint: usize,
+    pub attack_retaliation_player_hp_loss_hint: i32,
     pub player_block: i32,
     pub enemy_damage: i32,
     pub bad_draw_cards: i32,
