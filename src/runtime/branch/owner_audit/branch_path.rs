@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sts_simulator::ai::strategy::candidate_pressure_response::assess_candidate_pressure_response;
 use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
+use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::ai::strategy::shop_boss_preview::{
     classify_shop_boss_preview_candidate, shop_boss_preview_bundles,
 };
@@ -317,6 +319,8 @@ pub(super) enum ChoiceAnnotationSnapshot {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         shop_boss_preview: Option<Value>,
         admission: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pressure_response: Option<Value>,
         detail: String,
     },
     BossRelic {
@@ -369,6 +373,10 @@ impl ChoiceAnnotationSnapshot {
                         "class": format!("{:?}", admission.class),
                     })
                 }),
+                pressure_response: pressure_response_value(
+                    decision.evaluation.candidate.kind,
+                    decision.admission.as_ref(),
+                ),
                 detail: render::render_candidate_decision_compact(decision),
             },
             ChoiceAnnotation::BossRelic(admission) => Self::BossRelic {
@@ -386,6 +394,26 @@ impl ChoiceAnnotationSnapshot {
             Self::Candidate { detail, .. } | Self::BossRelic { detail, .. } => Some(detail),
         }
     }
+}
+
+fn candidate_card_identity(kind: DecisionCandidateKind) -> Option<(CardId, u8)> {
+    match kind {
+        DecisionCandidateKind::CardRewardPick { card, upgrades }
+        | DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } => Some((card, upgrades)),
+        _ => None,
+    }
+}
+
+fn pressure_response_value(
+    kind: DecisionCandidateKind,
+    admission: Option<&RewardAdmission>,
+) -> Option<Value> {
+    let card = candidate_card_identity(kind)?;
+    let admission = admission?;
+    Some(json!(assess_candidate_pressure_response(
+        Some(card),
+        admission,
+    )))
 }
 
 fn shop_boss_preview_value(kind: DecisionCandidateKind) -> Option<Value> {
@@ -555,6 +583,46 @@ mod tests {
         let shop_boss_preview = shop_boss_preview.expect("Fiend Fire should be previewable");
         assert_eq!(shop_boss_preview["class"], "DeterministicBossRepair");
         assert_eq!(shop_boss_preview["include_in_v0"], true);
+    }
+
+    #[test]
+    fn card_candidate_snapshot_exposes_pressure_response_without_changing_lane() {
+        use sts_simulator::ai::strategy::reward_admission::assess_reward_admission;
+
+        let admission = assess_reward_admission(&[], CardId::Shockwave);
+        let annotation = ChoiceAnnotation::Candidate(OwnerCandidateDecision {
+            evaluation: CandidateEvaluation {
+                candidate: DecisionCandidateIr {
+                    kind: DecisionCandidateKind::CardRewardPick {
+                        card: CardId::Shockwave,
+                        upgrades: 0,
+                    },
+                },
+                lane: CandidateLane::Mainline,
+                adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
+                expansion: ExpansionPlan::Auto,
+                scores: Vec::new(),
+            },
+            admission: Some(admission),
+        });
+
+        let snapshot = ChoiceAnnotationSnapshot::from_annotation(&annotation);
+        let ChoiceAnnotationSnapshot::Candidate {
+            lane,
+            score,
+            pressure_response,
+            ..
+        } = snapshot
+        else {
+            panic!("expected candidate annotation snapshot");
+        };
+
+        assert_eq!(lane, "mainline");
+        assert_eq!(score, 0);
+        let response = pressure_response.expect("card candidate should expose pressure response");
+        assert!(response["axes"]
+            .as_array()
+            .is_some_and(|axes| !axes.is_empty()));
     }
 
     #[test]
