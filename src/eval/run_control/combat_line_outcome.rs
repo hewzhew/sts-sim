@@ -8,6 +8,7 @@ use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::sim::combat::{CombatPosition, CombatTerminal};
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
+use super::combat_line_adjudication::CombatLineObservedOutcomeV1;
 use super::session::RunControlSession;
 use super::transition_report::CardSnapshot;
 
@@ -38,7 +39,7 @@ impl Default for CombatLineAcceptancePolicy {
 }
 
 impl CombatLineAcceptancePolicy {
-    pub(super) fn classify(self, outcome: &CombatLineOutcome) -> CombatLineAcceptance {
+    pub(super) fn classify(self, outcome: &CombatLineObservedOutcomeV1) -> CombatLineAcceptance {
         if outcome.terminal != CombatTerminal::Win || outcome.final_hp <= 0 {
             return CombatLineAcceptance::NonWinning;
         }
@@ -52,27 +53,16 @@ impl CombatLineAcceptancePolicy {
 
 pub(super) struct CombatLineEvaluation {
     pub(super) line: CombatCandidateLine,
-    pub(super) outcome: CombatLineOutcome,
+    pub(super) outcome: CombatLineObservedOutcomeV1,
 }
 
 pub(super) struct CombatLineAlternative {
     pub(super) line: CombatCandidateLine,
-    pub(super) outcome: CombatLineOutcome,
+    pub(super) outcome: CombatLineObservedOutcomeV1,
     pub(super) report: CombatSearchV2Report,
 }
 
-pub(super) struct CombatLineOutcome {
-    terminal: CombatTerminal,
-    pub(super) final_hp: i32,
-    pub(super) hp_loss: i32,
-    potions_used: u32,
-    action_count: usize,
-    gold_delta: i32,
-    ritual_dagger_growth: i32,
-    gained_curses: Vec<CardSnapshot>,
-}
-
-impl CombatLineOutcome {
+impl CombatLineObservedOutcomeV1 {
     pub(super) fn gained_curse_count(&self) -> usize {
         self.gained_curses.len()
     }
@@ -167,7 +157,7 @@ pub(super) fn evaluate_combat_candidate_line_outcome(
                 .map(|before| (card.misc_value - before.misc_value).max(0))
         })
         .sum();
-    let outcome = CombatLineOutcome {
+    let outcome = CombatLineObservedOutcomeV1 {
         terminal: replay.line.terminal,
         final_hp: replay.line.final_hp,
         hp_loss: replay.line.hp_loss,
@@ -183,7 +173,7 @@ pub(super) fn evaluate_combat_candidate_line_outcome(
     })
 }
 
-pub(super) fn render_combat_line_outcome_detail(outcome: &CombatLineOutcome) -> String {
+pub(super) fn render_combat_line_outcome_detail(outcome: &CombatLineObservedOutcomeV1) -> String {
     let gained_curses = outcome
         .gained_curses
         .iter()
@@ -221,7 +211,10 @@ fn win_candidate_trajectories(
     trajectories
 }
 
-fn prefer_accepted_outcome(left: &CombatLineOutcome, right: &CombatLineOutcome) -> bool {
+fn prefer_accepted_outcome(
+    left: &CombatLineObservedOutcomeV1,
+    right: &CombatLineObservedOutcomeV1,
+) -> bool {
     left.final_hp > right.final_hp
         || (left.final_hp == right.final_hp
             && (

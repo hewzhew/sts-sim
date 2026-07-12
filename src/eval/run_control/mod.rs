@@ -11,6 +11,7 @@ mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;
 mod combat_complete_line_solver;
+mod combat_line_adjudication;
 mod combat_line_executor;
 mod combat_line_outcome;
 mod combat_line_repair;
@@ -64,6 +65,10 @@ pub use bookmarks::{
     render_bookmarks, resolve_goto_bookmark, validate_bookmark_name, GotoBookmarkPlan,
     RunPlayBookmarkRegistryV1, RunPlayBookmarkV1, BOOKMARK_REGISTRY_SCHEMA_NAME,
     BOOKMARK_REGISTRY_SCHEMA_VERSION,
+};
+pub use combat_line_adjudication::{
+    CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
+    CombatLineRejectionReasonV1,
 };
 pub use commands::{
     parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
