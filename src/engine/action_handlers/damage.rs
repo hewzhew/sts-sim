@@ -18,7 +18,10 @@ pub use card_effects::{
     handle_block_per_non_attack, handle_exhaust_all_non_attack, handle_exhaust_random_card,
     handle_limit_break,
 };
-pub use core::{apply_raw_damage_to_monster, deduct_block, handle_damage};
+pub use core::{
+    apply_raw_damage_to_monster, deduct_block, handle_damage, resolve_player_damage,
+    PlayerDamageResolution,
+};
 pub use gold::{handle_gain_gold, handle_steal_player_gold};
 pub use health::{
     handle_double_block, handle_gain_block, handle_gain_block_random_monster, handle_heal,

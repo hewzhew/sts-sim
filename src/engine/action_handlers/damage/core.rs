@@ -461,6 +461,60 @@ pub(super) fn calculate_damage_action_output(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlayerDamageResolution {
+    pub raw_damage: i32,
+    pub block_consumed: i32,
+    pub damage_before_hp_loss_hooks: i32,
+    pub hp_loss: i32,
+}
+
+pub fn resolve_player_damage(
+    info: &crate::runtime::action::DamageInfo,
+    state: &mut CombatState,
+) -> PlayerDamageResolution {
+    let (raw_damage, damage_already_includes_final_receive) =
+        calculate_damage_action_output(state, info);
+    let mut damage = raw_damage;
+
+    if !damage_already_includes_final_receive {
+        for power in &store::powers_snapshot_for(state, 0) {
+            damage = crate::content::powers::resolve_power_at_damage_final_receive(
+                power.power_type,
+                damage,
+                power.amount,
+                info.damage_type,
+            );
+        }
+    }
+
+    let block_before = state.entities.player.block.max(0);
+    damage = deduct_block(&mut state.entities.player.block, damage);
+    let block_consumed = block_before.saturating_sub(state.entities.player.block.max(0));
+
+    damage = crate::content::relics::hooks::on_attacked_to_change_damage(state, damage, info);
+    for power in &store::powers_snapshot_for(state, 0) {
+        damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
+            power.power_type,
+            state,
+            info,
+            damage,
+            power.amount,
+        );
+    }
+
+    let damage_before_hp_loss_hooks = damage.max(0);
+    let hp_loss =
+        crate::content::relics::hooks::on_lose_hp_last(state, damage_before_hp_loss_hooks).max(0);
+
+    PlayerDamageResolution {
+        raw_damage: raw_damage.max(0),
+        block_consumed,
+        damage_before_hp_loss_hooks,
+        hp_loss,
+    }
+}
+
 pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut CombatState) {
     if should_cancel_java_damage_action(state, &info) {
         return;
@@ -468,42 +522,10 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
 
     let target_id = info.target;
     let source_id = info.source;
-
-    let (calculated_output, damage_already_includes_final_receive) =
-        calculate_damage_action_output(state, &info);
-
-    let mut final_damage = calculated_output;
     let target_is_player = target_id == 0;
 
-    // 1. Final Receive / Intangible Pre-Check
-    if !damage_already_includes_final_receive {
-        for power in &store::powers_snapshot_for(state, target_id) {
-            final_damage = crate::content::powers::resolve_power_at_damage_final_receive(
-                power.power_type,
-                final_damage,
-                power.amount,
-                info.damage_type,
-            );
-        }
-    }
-
     if target_is_player {
-        // 2. Block Deduction
-        let _had_block = state.entities.player.block > 0;
-        final_damage = deduct_block(&mut state.entities.player.block, final_damage);
-
-        // 3. onAttackedToChangeDamage (Relics then Powers)
-        final_damage =
-            crate::content::relics::hooks::on_attacked_to_change_damage(state, final_damage, &info);
-        for power in &store::powers_snapshot_for(state, 0) {
-            final_damage = crate::content::powers::resolve_power_on_attacked_to_change_damage(
-                power.power_type,
-                state,
-                &info,
-                final_damage,
-                power.amount,
-            );
-        }
+        let resolution = resolve_player_damage(&info, state);
         // 4. on_attacked (Target Powers + Relics)
         if source_id != 0 || info.damage_type == DamageType::Normal {
             for power in &store::powers_snapshot_for(state, 0) {
@@ -511,7 +533,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
                     power.power_type,
                     state,
                     0,
-                    final_damage,
+                    resolution.damage_before_hp_loss_hooks,
                     source_id,
                     info.damage_type,
                     power.amount,
@@ -522,9 +544,7 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
             }
         }
 
-        // 5. onLoseHpLast (Tungsten Rod)
-        final_damage = crate::content::relics::hooks::on_lose_hp_last(state, final_damage);
-
+        let final_damage = resolution.hp_loss;
         if final_damage > 0 {
             let previous_hp = state.entities.player.current_hp;
             state.entities.player.current_hp =
@@ -546,6 +566,105 @@ pub fn handle_damage(info: crate::runtime::action::DamageInfo, state: &mut Comba
             }
         }
     } else {
+        let (calculated_output, damage_already_includes_final_receive) =
+            calculate_damage_action_output(state, &info);
+        let mut final_damage = calculated_output;
+        if !damage_already_includes_final_receive {
+            for power in &store::powers_snapshot_for(state, target_id) {
+                final_damage = crate::content::powers::resolve_power_at_damage_final_receive(
+                    power.power_type,
+                    final_damage,
+                    power.amount,
+                    info.damage_type,
+                );
+            }
+        }
         let _ = apply_damage_to_monster_via_pipeline(state, &info, final_damage);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::powers::PowerId;
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::action::{DamageInfo, DamageType};
+    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::test_support::blank_test_combat;
+
+    fn thorns_damage(amount: i32) -> DamageInfo {
+        DamageInfo {
+            source: 1,
+            target: 0,
+            base: amount,
+            output: amount,
+            damage_type: DamageType::Thorns,
+            is_modified: false,
+        }
+    }
+
+    #[test]
+    fn player_damage_resolution_reports_block_and_hp_loss_without_subtracting_hp() {
+        let mut projected = blank_test_combat();
+        projected.entities.player.current_hp = 20;
+        projected.entities.player.block = 2;
+        let info = thorns_damage(3);
+
+        let resolution = resolve_player_damage(&info, &mut projected);
+
+        assert_eq!(resolution.raw_damage, 3);
+        assert_eq!(resolution.block_consumed, 2);
+        assert_eq!(resolution.damage_before_hp_loss_hooks, 1);
+        assert_eq!(resolution.hp_loss, 1);
+        assert_eq!(projected.entities.player.block, 0);
+        assert_eq!(projected.entities.player.current_hp, 20);
+    }
+
+    #[test]
+    fn player_damage_resolution_matches_live_block_and_hp_deltas() {
+        let mut projected = blank_test_combat();
+        projected.entities.player.current_hp = 20;
+        projected.entities.player.block = 2;
+        let mut live = projected.clone();
+        let info = thorns_damage(3);
+
+        let resolution = resolve_player_damage(&info, &mut projected);
+        handle_damage(info, &mut live);
+
+        assert_eq!(live.entities.player.block, projected.entities.player.block);
+        assert_eq!(20 - live.entities.player.current_hp, resolution.hp_loss);
+    }
+
+    #[test]
+    fn player_damage_resolution_reuses_buffer_and_tungsten_hooks() {
+        let mut buffered = blank_test_combat();
+        buffered.entities.power_db.insert(
+            0,
+            vec![Power {
+                power_type: PowerId::Buffer,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        let buffered_resolution = resolve_player_damage(&thorns_damage(3), &mut buffered);
+
+        assert_eq!(buffered_resolution.raw_damage, 3);
+        assert_eq!(buffered_resolution.hp_loss, 0);
+        assert_eq!(buffered.get_power(0, PowerId::Buffer), 0);
+
+        let mut tungsten = blank_test_combat();
+        tungsten
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::TungstenRod));
+
+        let tungsten_resolution = resolve_player_damage(&thorns_damage(3), &mut tungsten);
+
+        assert_eq!(tungsten_resolution.damage_before_hp_loss_hooks, 3);
+        assert_eq!(tungsten_resolution.hp_loss, 2);
     }
 }
