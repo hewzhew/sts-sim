@@ -4,14 +4,16 @@ use sts_simulator::ai::strategy::candidate_pressure_response::{
     assess_candidate_pressure_response, CandidatePressureResponse, StrategyCommitmentKind,
 };
 use sts_simulator::ai::strategy::challenger_choice_policy::{
-    seed_challenger_policy, select_challenger_choice, PolicyCandidateView,
+    seed_challenger_repair_policy, select_challenger_repair_choice, PolicyChoiceSelection,
+    PolicyRepairCandidateView, PolicySelectionClass,
 };
+use sts_simulator::ai::strategy::challenger_decision_context::ChallengerDecisionContext;
 use sts_simulator::ai::strategy::challenger_policy_state::{
     ChallengerPolicyState, CommitmentStatus, PolicyProgress,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{CandidateLane, DecisionCandidateKind};
-use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficitSummary;
 use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
+use sts_simulator::ai::strategy::role_saturation::LaneCap;
 
 use super::branch_policy_lane::BranchPolicyLane;
 use super::owner_model::OwnerChoice;
@@ -20,11 +22,45 @@ use super::owner_model::OwnerChoice;
 pub(super) struct PolicyExpansion {
     pub(super) choice_index: usize,
     pub(super) child_lane: BranchPolicyLane,
+    pub(super) selection_evidence: PolicyExpansionEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PolicyExpansionClass {
+    Production,
+    OrdinaryChallenger,
+    PressureRepair,
+    CommitmentRepair,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PolicyExpansionEvidence {
+    pub(super) class: PolicyExpansionClass,
+    pub(super) matched_pressure_axes: Vec<PressureAxis>,
+    pub(super) matched_commitments: Vec<StrategyCommitmentKind>,
+    pub(super) original_lane: CandidateLane,
+    pub(super) original_inspect_only: Option<String>,
+    pub(super) overrode_reject: bool,
+    pub(super) checkpoint_ref: String,
+}
+
+impl PolicyExpansionEvidence {
+    pub(super) fn production(checkpoint_ref: impl Into<String>) -> Self {
+        Self {
+            class: PolicyExpansionClass::Production,
+            matched_pressure_axes: Vec::new(),
+            matched_commitments: Vec::new(),
+            original_lane: CandidateLane::Mainline,
+            original_inspect_only: None,
+            overrode_reject: false,
+            checkpoint_ref: checkpoint_ref.into(),
+        }
+    }
 }
 
 pub(super) fn plan_policy_expansions(
     lane: &BranchPolicyLane,
-    facts: DeckStrategicDeficitSummary,
+    context: &ChallengerDecisionContext,
     choices: &[OwnerChoice],
     lane_budget: usize,
     checkpoint_ref: &str,
@@ -37,7 +73,7 @@ pub(super) fn plan_policy_expansions(
     match lane {
         BranchPolicyLane::Baseline { .. } => plan_baseline_expansions(
             lane,
-            facts,
+            context,
             production_index,
             &candidate_views,
             lane_budget,
@@ -46,6 +82,7 @@ pub(super) fn plan_policy_expansions(
         BranchPolicyLane::Challenger { policy } => plan_existing_challenger(
             lane,
             policy,
+            context,
             production_index,
             &candidate_views,
             checkpoint_ref,
@@ -55,9 +92,9 @@ pub(super) fn plan_policy_expansions(
 
 fn plan_baseline_expansions(
     lane: &BranchPolicyLane,
-    facts: DeckStrategicDeficitSummary,
+    context: &ChallengerDecisionContext,
     production_index: Option<usize>,
-    candidates: &[PolicyCandidateView],
+    candidates: &[PolicyRepairCandidateView],
     lane_budget: usize,
     checkpoint_ref: &str,
 ) -> Vec<PolicyExpansion> {
@@ -65,24 +102,25 @@ fn plan_baseline_expansions(
         return Vec::new();
     };
     let mut baseline_lane = lane.clone();
+    let production_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.choice_index == production_index);
     let mut expansions = vec![PolicyExpansion {
         choice_index: production_index,
         child_lane: baseline_lane.clone(),
+        selection_evidence: production_evidence(production_candidate, checkpoint_ref),
     }];
     let mut signatures = BTreeSet::new();
     for candidate in candidates {
         if expansions.len() >= lane_budget || candidate.choice_index == production_index {
             continue;
         }
-        if !candidate_can_seed(candidate) {
-            continue;
-        }
         let mut issued_lane = baseline_lane.clone();
         let Some(lane_id) = issued_lane.issue_challenger_id() else {
             break;
         };
-        let Some(policy) =
-            seed_challenger_policy(lane_id, checkpoint_ref, facts, &candidate.response)
+        let Some((policy, selection)) =
+            seed_challenger_repair_policy(lane_id, checkpoint_ref, context, candidate)
         else {
             continue;
         };
@@ -93,6 +131,7 @@ fn plan_baseline_expansions(
         expansions.push(PolicyExpansion {
             choice_index: candidate.choice_index,
             child_lane: BranchPolicyLane::challenger(policy),
+            selection_evidence: selection_evidence(candidate, &selection, checkpoint_ref),
         });
     }
     expansions[0].child_lane = baseline_lane;
@@ -100,40 +139,48 @@ fn plan_baseline_expansions(
 }
 
 fn plan_existing_challenger(
-    lane: &BranchPolicyLane,
+    _lane: &BranchPolicyLane,
     policy: &ChallengerPolicyState,
+    context: &ChallengerDecisionContext,
     production_index: Option<usize>,
-    candidates: &[PolicyCandidateView],
+    candidates: &[PolicyRepairCandidateView],
     checkpoint_ref: &str,
 ) -> Vec<PolicyExpansion> {
-    let selected_index = select_challenger_choice(policy, candidates).or(production_index);
+    let mut contextual_policy = policy.clone();
+    contextual_policy.reconcile_context(context);
+    let selection = select_challenger_repair_choice(&contextual_policy, context, candidates);
+    let selected_index = selection
+        .as_ref()
+        .map(|selection| selection.choice_index)
+        .or(production_index);
     let Some(selected_index) = selected_index else {
         return Vec::new();
     };
-    let mut child_lane = lane.clone();
-    let BranchPolicyLane::Challenger {
-        policy: child_policy,
-    } = &mut child_lane
-    else {
-        unreachable!("challenger planner requires challenger lane")
-    };
-    if production_index != Some(selected_index) {
-        if let Some(response) = candidates
-            .iter()
-            .find(|candidate| candidate.choice_index == selected_index)
-            .map(|candidate| &candidate.response)
-        {
-            child_policy.record_divergence(checkpoint_ref, response);
+    let selected_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.choice_index == selected_index);
+    if let (Some(selection), Some(candidate)) = (&selection, selected_candidate) {
+        contextual_policy.merge_matched_pressure(&selection.matched_pressure);
+        if production_index != Some(selected_index) {
+            contextual_policy.record_divergence(checkpoint_ref, &candidate.response);
         }
+        contextual_policy.satisfy_supported_requirements(&candidate.response);
     }
-    child_policy.advance(PolicyProgress::DecisionBoundary);
+    contextual_policy.advance(PolicyProgress::DecisionBoundary);
+    let evidence = match (&selection, selected_candidate) {
+        (Some(selection), Some(candidate)) if production_index != Some(selected_index) => {
+            selection_evidence(candidate, selection, checkpoint_ref)
+        }
+        _ => production_evidence(selected_candidate, checkpoint_ref),
+    };
     vec![PolicyExpansion {
         choice_index: selected_index,
-        child_lane,
+        child_lane: BranchPolicyLane::challenger(contextual_policy),
+        selection_evidence: evidence,
     }]
 }
 
-fn policy_candidate_views(choices: &[OwnerChoice]) -> Vec<PolicyCandidateView> {
+fn policy_candidate_views(choices: &[OwnerChoice]) -> Vec<PolicyRepairCandidateView> {
     choices
         .iter()
         .enumerate()
@@ -144,10 +191,23 @@ fn policy_candidate_views(choices: &[OwnerChoice]) -> Vec<PolicyCandidateView> {
                 .zip(decision.admission.as_ref())
                 .map(|(card, admission)| assess_candidate_pressure_response(Some(card), admission))
                 .unwrap_or_else(CandidatePressureResponse::default);
-            Some(PolicyCandidateView {
+            let evaluation = &decision.evaluation;
+            let inspect_only_reason = evaluation.inspect_only_reason().map(str::to_string);
+            let hard_filtered = evaluation.lane == CandidateLane::Reject
+                && inspect_only_reason.as_deref() != Some("candidate score rejected");
+            let has_reject_cap = evaluation
+                .adjudication
+                .caps
+                .iter()
+                .any(|cap| cap.cap == LaneCap::Reject);
+            Some(PolicyRepairCandidateView {
                 choice_index,
-                lane: decision.evaluation.lane,
+                lane: evaluation.lane,
+                raw_lane: evaluation.adjudication.raw_lane,
                 auto_allowed: choice.auto_expand_allowed(),
+                hard_filtered,
+                has_reject_cap,
+                inspect_only_reason,
                 response,
             })
         })
@@ -164,13 +224,41 @@ fn candidate_card_identity(
     }
 }
 
-fn candidate_can_seed(candidate: &PolicyCandidateView) -> bool {
-    candidate.lane != CandidateLane::Reject
-        && (candidate.auto_allowed
-            || (candidate.lane == CandidateLane::Probe
-                && (!candidate.response.axes.is_empty()
-                    || !candidate.response.opens_commitments.is_empty()
-                    || !candidate.response.supports_commitments.is_empty())))
+fn production_evidence(
+    candidate: Option<&PolicyRepairCandidateView>,
+    checkpoint_ref: &str,
+) -> PolicyExpansionEvidence {
+    let mut evidence = PolicyExpansionEvidence::production(checkpoint_ref);
+    if let Some(candidate) = candidate {
+        evidence.original_lane = candidate.lane;
+        evidence.original_inspect_only = candidate.inspect_only_reason.clone();
+    }
+    evidence
+}
+
+fn selection_evidence(
+    candidate: &PolicyRepairCandidateView,
+    selection: &PolicyChoiceSelection,
+    checkpoint_ref: &str,
+) -> PolicyExpansionEvidence {
+    let class = match selection.class {
+        PolicySelectionClass::OrdinaryChallenger => PolicyExpansionClass::OrdinaryChallenger,
+        PolicySelectionClass::PressureRepair => PolicyExpansionClass::PressureRepair,
+        PolicySelectionClass::CommitmentRepair => PolicyExpansionClass::CommitmentRepair,
+    };
+    PolicyExpansionEvidence {
+        class,
+        matched_pressure_axes: selection
+            .matched_pressure
+            .iter()
+            .map(|hypothesis| hypothesis.axis)
+            .collect(),
+        matched_commitments: selection.matched_commitments.clone(),
+        original_lane: candidate.lane,
+        original_inspect_only: candidate.inspect_only_reason.clone(),
+        overrode_reject: selection.overrode_reject,
+        checkpoint_ref: checkpoint_ref.to_string(),
+    }
 }
 
 fn policy_signature(
@@ -199,14 +287,18 @@ mod tests {
     use super::*;
     use sts_simulator::ai::analysis::card_semantics::PayoffRequirement;
     use sts_simulator::ai::strategy::candidate_pressure_response::StrategyCommitmentKind;
+    use sts_simulator::ai::strategy::challenger_decision_context::{
+        challenger_decision_context, open_inventory_pressure, ChallengerDecisionContext,
+    };
     use sts_simulator::ai::strategy::challenger_policy_state::{
         ChallengerPolicyState, CommitmentHorizon, CommitmentRequirement, CommitmentStatus,
         StrategyCommitment,
     };
     use sts_simulator::ai::strategy::decision_pipeline::{
-        CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, DecisionCandidateIr,
-        DecisionCandidateKind, ExpansionPlan,
+        CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, CandidateLaneCap,
+        CandidateLaneCapSource, DecisionCandidateIr, DecisionCandidateKind, ExpansionPlan,
     };
+    use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
     use sts_simulator::ai::strategy::deck_strategic_deficit::{
         DeckStrategicDeficitSummary, StrategicBurdenLevel, StrategicDeficitLevel,
     };
@@ -214,8 +306,11 @@ mod tests {
     use sts_simulator::ai::strategy::reward_admission::{
         skip_reward_admission, RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
     };
+    use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::RunControlCommand;
+    use sts_simulator::runtime::combat::CombatCard;
+    use sts_simulator::state::run::RunState;
 
     use super::super::branch_policy_lane::BranchPolicyLane;
     use super::super::owner_model::{
@@ -274,6 +369,67 @@ mod tests {
         )
     }
 
+    fn shop_leave_choice() -> OwnerChoice {
+        OwnerChoice {
+            key: None,
+            action: RunControlCommand::Noop,
+            label: "Leave".to_string(),
+            annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
+                evaluation: CandidateEvaluation {
+                    candidate: DecisionCandidateIr {
+                        kind: DecisionCandidateKind::ShopLeave,
+                    },
+                    lane: CandidateLane::Mainline,
+                    adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
+                    expansion: ExpansionPlan::Auto,
+                    scores: Vec::new(),
+                },
+                admission: None,
+            }),
+            expansion: OwnerChoiceExpansion::AutoAllowed,
+        }
+    }
+
+    fn rejected_shop_card_choice(
+        card: CardId,
+        price: i32,
+        reasons: Vec<RewardAdmissionReason>,
+    ) -> OwnerChoice {
+        OwnerChoice {
+            key: None,
+            action: RunControlCommand::Noop,
+            label: format!("Buy {card:?}"),
+            annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
+                evaluation: CandidateEvaluation {
+                    candidate: DecisionCandidateIr {
+                        kind: DecisionCandidateKind::ShopBuyCard {
+                            card,
+                            upgrades: 0,
+                            price,
+                        },
+                    },
+                    lane: CandidateLane::Reject,
+                    adjudication: CandidateLaneAdjudication {
+                        raw_lane: CandidateLane::Probe,
+                        final_lane: CandidateLane::Reject,
+                        caps: vec![CandidateLaneCap {
+                            source: CandidateLaneCapSource::Acquisition,
+                            cap: LaneCap::Reject,
+                        }],
+                    },
+                    expansion: ExpansionPlan::InspectOnly("candidate score rejected"),
+                    scores: Vec::new(),
+                },
+                admission: Some(RewardAdmission {
+                    card: Some(card),
+                    class: RewardAdmissionClass::BuildsSupportedPackage,
+                    reasons,
+                }),
+            }),
+            expansion: OwnerChoiceExpansion::InspectOnly("candidate score rejected"),
+        }
+    }
+
     fn adequate_facts() -> DeckStrategicDeficitSummary {
         DeckStrategicDeficitSummary {
             frontload_damage: StrategicDeficitLevel::Adequate,
@@ -289,10 +445,21 @@ mod tests {
         }
     }
 
+    fn context_from_facts(facts: DeckStrategicDeficitSummary) -> ChallengerDecisionContext {
+        let run = RunState::new(21, 0, false, "Ironclad");
+        ChallengerDecisionContext {
+            deck_plan: DeckPlanSnapshot::from_run_state(&run),
+            gold: run.gold,
+            current_pressure: open_inventory_pressure(facts),
+            automatic_commitments: Vec::new(),
+        }
+    }
+
     #[test]
     fn baseline_keeps_production_choice_and_seeds_distinct_probe_challenger() {
         let mut facts = adequate_facts();
         facts.frontload_damage = StrategicDeficitLevel::Missing;
+        let context = context_from_facts(facts);
         let choices = vec![
             skip_choice(),
             probe_card_choice(
@@ -303,7 +470,7 @@ mod tests {
 
         let plan = plan_policy_expansions(
             &BranchPolicyLane::default(),
-            facts,
+            &context,
             &choices,
             3,
             "branch-0/step-0",
@@ -341,7 +508,7 @@ mod tests {
 
         let plan = plan_policy_expansions(
             &BranchPolicyLane::challenger(policy),
-            adequate_facts(),
+            &context_from_facts(adequate_facts()),
             &choices,
             3,
             "branch-2/step-4",
@@ -356,6 +523,7 @@ mod tests {
     fn semantically_equivalent_seed_candidates_do_not_consume_both_lanes() {
         let mut facts = adequate_facts();
         facts.frontload_damage = StrategicDeficitLevel::Missing;
+        let context = context_from_facts(facts);
         let choices = vec![
             skip_choice(),
             probe_card_choice(
@@ -370,7 +538,7 @@ mod tests {
 
         let plan = plan_policy_expansions(
             &BranchPolicyLane::default(),
-            facts,
+            &context,
             &choices,
             3,
             "branch-0/step-0",
@@ -382,5 +550,47 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn baseline_leaves_while_challenger_takes_rejected_exhaust_payoff() {
+        let mut run = RunState::new(22, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.gold = 200;
+        run.master_deck = vec![
+            CombatCard::new(CardId::TrueGrit, 80_001),
+            CombatCard::new(CardId::BurningPact, 80_002),
+        ];
+        let context = challenger_decision_context(&run);
+        let choices = vec![
+            shop_leave_choice(),
+            rejected_shop_card_choice(
+                CardId::FeelNoPain,
+                75,
+                vec![RewardAdmissionReason::Supports(PackageKind::Exhaust)],
+            ),
+        ];
+
+        let plan = plan_policy_expansions(
+            &BranchPolicyLane::default(),
+            &context,
+            &choices,
+            3,
+            "branch-0/step-0",
+        );
+
+        assert_eq!(plan[0].choice_index, 0);
+        assert_eq!(plan[0].child_lane.label(), "baseline");
+        assert_eq!(
+            plan[0].selection_evidence.class,
+            PolicyExpansionClass::Production
+        );
+        assert_eq!(plan[1].choice_index, 1);
+        assert_eq!(plan[1].child_lane.label(), "challenger-1");
+        assert_eq!(
+            plan[1].selection_evidence.class,
+            PolicyExpansionClass::CommitmentRepair
+        );
+        assert!(plan[1].selection_evidence.overrode_reject);
     }
 }

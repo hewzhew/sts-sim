@@ -1,9 +1,13 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use sts_simulator::ai::strategy::challenger_decision_context::{
+    open_inventory_pressure, ChallengerDecisionContext,
+};
 use sts_simulator::ai::strategy::decision_pipeline::{
     CandidateLane, CandidateLaneAdjudication, DecisionCandidateKind, ExpansionPlan,
 };
+use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::deck_strategic_deficit::{
     DeckStrategicDeficitSummary, StrategicBurdenLevel, StrategicDeficitLevel,
 };
@@ -65,8 +69,8 @@ fn forced_probe_choices(
     choices
 }
 
-fn growth_pressure_facts() -> DeckStrategicDeficitSummary {
-    DeckStrategicDeficitSummary {
+fn growth_pressure_context(session: &RunControlSession) -> ChallengerDecisionContext {
+    let facts = DeckStrategicDeficitSummary {
         frontload_damage: StrategicDeficitLevel::Adequate,
         aoe_or_minion_control: StrategicDeficitLevel::Adequate,
         block_or_mitigation: StrategicDeficitLevel::Adequate,
@@ -77,6 +81,12 @@ fn growth_pressure_facts() -> DeckStrategicDeficitSummary {
         too_many_low_impact_attacks: false,
         opening_hand_pollution: false,
         severe_curse_burden: false,
+    };
+    ChallengerDecisionContext {
+        deck_plan: DeckPlanSnapshot::from_run_state(&session.run_state),
+        gold: session.run_state.gold,
+        current_pressure: open_inventory_pressure(facts),
+        automatic_commitments: Vec::new(),
     }
 }
 
@@ -130,7 +140,7 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
     let first_choices = forced_probe_choices(&root.session, CardId::Corruption);
     let first_plans = plan_policy_expansions(
         &root.policy_lane,
-        growth_pressure_facts(),
+        &growth_pressure_context(&root.session),
         &first_choices,
         3,
         "branch-0/step-0",
@@ -170,7 +180,7 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
     let second_choices = forced_probe_choices(&challenger.session, CardId::DarkEmbrace);
     let second_plans = plan_policy_expansions(
         &challenger.policy_lane,
-        growth_pressure_facts(),
+        &growth_pressure_context(&challenger.session),
         &second_choices,
         3,
         "branch-1/step-1",

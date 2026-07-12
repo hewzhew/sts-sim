@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
+use sts_simulator::ai::strategy::challenger_decision_context::challenger_decision_context;
 
 use super::owner_model::OwnerChoice;
 use super::policy_expansion_plan::{plan_policy_expansions, PolicyExpansion};
@@ -83,12 +83,11 @@ fn policy_expansion_plans(
         let branch_plans = if branch_budget == 0 {
             Vec::new()
         } else {
-            let facts =
-                DeckPlanSnapshot::from_run_state(&branch.session.run_state).strategic_deficit;
+            let context = challenger_decision_context(&branch.session.run_state);
             let checkpoint_ref = format!("branch-{}/step-{}", branch.id, branch.path.len());
             plan_policy_expansions(
                 &branch.policy_lane,
-                facts,
+                &context,
                 choices,
                 branch_budget,
                 &checkpoint_ref,

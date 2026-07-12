@@ -6,16 +6,7 @@ use crate::ai::strategy::challenger_decision_context::{
 };
 use crate::ai::strategy::challenger_policy_state::{ChallengerPolicyState, CommitmentStatus};
 use crate::ai::strategy::decision_pipeline::CandidateLane;
-use crate::ai::strategy::deck_strategic_deficit::DeckStrategicDeficitSummary;
 use crate::ai::strategy::pressure_assessment::{PressureCoverage, PressureHypothesis};
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PolicyCandidateView {
-    pub choice_index: usize,
-    pub lane: CandidateLane,
-    pub auto_allowed: bool,
-    pub response: CandidatePressureResponse,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyRepairCandidateView {
@@ -43,48 +34,6 @@ pub struct PolicyChoiceSelection {
     pub matched_pressure: Vec<PressureHypothesis>,
     pub matched_commitments: Vec<StrategyCommitmentKind>,
     pub overrode_reject: bool,
-}
-
-pub fn seed_challenger_policy(
-    lane_id: u8,
-    checkpoint_ref: impl Into<String>,
-    facts: DeckStrategicDeficitSummary,
-    response: &CandidatePressureResponse,
-) -> Option<ChallengerPolicyState> {
-    let active_pressure = open_inventory_pressure(facts)
-        .into_iter()
-        .filter(|hypothesis| response.axes.contains(&hypothesis.axis))
-        .collect::<Vec<_>>();
-    if active_pressure.is_empty() {
-        return None;
-    }
-    let mut policy = ChallengerPolicyState::new(lane_id);
-    policy.active_pressure = active_pressure;
-    policy.record_divergence(checkpoint_ref, response);
-    Some(policy)
-}
-
-pub fn select_challenger_choice(
-    policy: &ChallengerPolicyState,
-    candidates: &[PolicyCandidateView],
-) -> Option<usize> {
-    candidates
-        .iter()
-        .filter(|candidate| candidate_is_eligible(candidate))
-        .min_by_key(|candidate| {
-            let supports_commitment =
-                policy.candidate_supports_active_commitment(&candidate.response);
-            let answers_pressure = policy
-                .active_pressure
-                .iter()
-                .any(|hypothesis| candidate.response.axes.contains(&hypothesis.axis));
-            (
-                u8::from(!supports_commitment),
-                u8::from(!answers_pressure),
-                candidate.choice_index,
-            )
-        })
-        .map(|candidate| candidate.choice_index)
 }
 
 pub fn select_challenger_candidate(
@@ -179,17 +128,6 @@ pub fn seed_challenger_repair_policy(
     Some((policy, selection))
 }
 
-fn candidate_is_eligible(candidate: &PolicyCandidateView) -> bool {
-    if candidate.lane == CandidateLane::Reject {
-        return false;
-    }
-    candidate.auto_allowed
-        || (candidate.lane == CandidateLane::Probe
-            && (!candidate.response.axes.is_empty()
-                || !candidate.response.supports_commitments.is_empty()
-                || !candidate.response.opens_commitments.is_empty()))
-}
-
 fn active_commitment_matches(
     policy: &ChallengerPolicyState,
     response: &CandidatePressureResponse,
@@ -250,10 +188,7 @@ mod tests {
     use crate::ai::strategy::candidate_pressure_response::{
         CandidatePressureResponse, StrategyCommitmentKind,
     };
-    use crate::ai::strategy::challenger_policy_state::{
-        ChallengerPolicyState, CommitmentHorizon, CommitmentRequirement, CommitmentStatus,
-        StrategyCommitment,
-    };
+    use crate::ai::strategy::challenger_policy_state::ChallengerPolicyState;
     use crate::ai::strategy::decision_pipeline::CandidateLane;
     use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
     use crate::ai::strategy::deck_strategic_deficit::{
@@ -382,37 +317,6 @@ mod tests {
         assert_eq!(state.active_pressure[0].axis, PressureAxis::DelayCapacity);
         assert_eq!(state.divergence_count, 1);
         assert_eq!(selection.class, PolicySelectionClass::PressureRepair);
-    }
-
-    #[test]
-    fn active_commitment_support_beats_baseline_order_on_later_boundary() {
-        let mut policy = ChallengerPolicyState::new(1);
-        policy.open_commitment(StrategyCommitment {
-            kind: StrategyCommitmentKind::ExhaustEngine,
-            status: CommitmentStatus::Active,
-            requirements: vec![CommitmentRequirement::Payoff],
-            horizon: CommitmentHorizon::CurrentActBoss,
-            burden_units: 1,
-        });
-        let candidates = vec![
-            PolicyCandidateView {
-                choice_index: 0,
-                lane: CandidateLane::Skip,
-                auto_allowed: true,
-                response: CandidatePressureResponse::default(),
-            },
-            PolicyCandidateView {
-                choice_index: 1,
-                lane: CandidateLane::Probe,
-                auto_allowed: false,
-                response: CandidatePressureResponse {
-                    supports_commitments: vec![StrategyCommitmentKind::ExhaustEngine],
-                    ..CandidatePressureResponse::default()
-                },
-            },
-        ];
-
-        assert_eq!(select_challenger_choice(&policy, &candidates), Some(1));
     }
 
     #[test]

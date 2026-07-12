@@ -255,7 +255,7 @@ mod tests {
     use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
 
     use super::super::branch_policy_lane::BranchPolicyLane;
-    use super::super::policy_expansion_plan::PolicyExpansion;
+    use super::super::policy_expansion_plan::{PolicyExpansion, PolicyExpansionEvidence};
     use super::super::run_contract::RunObjective;
     use super::super::{BranchStatus, Owner};
 
@@ -384,10 +384,12 @@ mod tests {
             PolicyExpansion {
                 choice_index: 0,
                 child_lane: BranchPolicyLane::default(),
+                selection_evidence: PolicyExpansionEvidence::production("branch-0/step-0"),
             },
             PolicyExpansion {
                 choice_index: 1,
                 child_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+                selection_evidence: PolicyExpansionEvidence::production("branch-0/step-0"),
             },
         ];
         let mut next_branch_id = 1;
