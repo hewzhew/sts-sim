@@ -35,6 +35,71 @@ fn ordering_collector_reports_role_counts_without_action_tree() {
     assert_eq!(report.max_position_shift, 1);
     assert_eq!(report.largest_reorders.len(), 1);
     assert_eq!(report.largest_reorders[0].first_role, "lethal_card");
+    assert_eq!(report.attack_retaliation_actions, 0);
+    assert_eq!(report.attack_retaliation_trigger_count_hint, 0);
+    assert_eq!(report.attack_retaliation_player_hp_loss_hint, 0);
+    assert_eq!(report.max_attack_retaliation_player_hp_loss_hint, 0);
+}
+
+#[test]
+fn ordering_collector_reports_attack_retaliation_attribution_and_exposure() {
+    let mut combat = blank_test_combat();
+    let mut target = test_monster(EnemyId::Spiker);
+    target.id = 1;
+    target.current_hp = 40;
+    target.max_hp = 40;
+    combat.entities.monsters = vec![target];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Thorns,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::TwinStrike, 11),
+    ];
+    let ordered = order_action_choices(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        vec![
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+            ),
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+            ),
+        ],
+    );
+    let mut collector = ActionOrderingDiagnosticsCollector::default();
+
+    collector.observe(&ordered.summary);
+    let report = collector.finish();
+
+    assert_eq!(report.attack_retaliation_actions, 2);
+    assert_eq!(report.attack_retaliation_trigger_count_hint, 3);
+    assert_eq!(report.attack_retaliation_player_hp_loss_hint, 9);
+    assert_eq!(report.max_attack_retaliation_player_hp_loss_hint, 6);
+    let twin = report
+        .action_effect_samples
+        .iter()
+        .find(|sample| sample.action_key.contains("Twin Strike"))
+        .expect("Twin Strike retaliation sample");
+    assert_eq!(twin.reactive.attack_retaliation_trigger_count_hint, 2);
+    assert_eq!(twin.reactive.attack_retaliation_player_hp_loss_hint, 6);
 }
 
 #[test]

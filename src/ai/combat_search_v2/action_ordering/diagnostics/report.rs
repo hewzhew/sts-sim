@@ -17,6 +17,12 @@ impl ActionOrderingDiagnosticsCollector {
             reordered_state_ratio: rounded_ratio(self.states_reordered, self.states_observed),
             total_actions_observed: self.total_actions_observed,
             action_effect_actions: self.action_effect_actions,
+            attack_retaliation_actions: self.attack_retaliation_actions,
+            attack_retaliation_trigger_count_hint: self.attack_retaliation_trigger_count_hint,
+            attack_retaliation_player_hp_loss_hint: self
+                .attack_retaliation_player_hp_loss_hint,
+            max_attack_retaliation_player_hp_loss_hint: self
+                .max_attack_retaliation_player_hp_loss_hint,
             phase_action_hint_actions: self.phase_action_hint_actions,
             root_action_prior_scored_states: self.root_action_prior_scored_states,
             root_action_prior_scored_actions: self.root_action_prior_scored_actions,
@@ -35,6 +41,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "phase action hints reuse phase_profile and only add ordering tiebreaks",
                 "pending choice ordering uses typed selection facts and never drops alternatives",
                 "root action prior hints are opt-in child ordering hints; they never remove legal actions",
+                "attack retaliation totals count candidate observations, not unique paths or realized HP loss",
             ],
         }
     }
@@ -101,6 +108,14 @@ impl ActionOrderingDiagnosticsCollector {
                 },
                 reactive: CombatSearchV2DiagnosticsActionEffectReactive {
                     player_hp_loss: sample.effects.reactive.player_hp_loss,
+                    attack_retaliation_trigger_count_hint: sample
+                        .effects
+                        .reactive
+                        .attack_retaliation_trigger_count_hint,
+                    attack_retaliation_player_hp_loss_hint: sample
+                        .effects
+                        .reactive
+                        .attack_retaliation_player_hp_loss_hint,
                     player_block: sample.effects.reactive.player_block,
                     enemy_damage: sample.effects.reactive.enemy_damage,
                     bad_draw_cards: sample.effects.reactive.bad_draw_cards,

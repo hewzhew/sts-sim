@@ -127,6 +127,10 @@ pub struct CombatSearchV2DiagnosticsOrdering {
     pub reordered_state_ratio: f64,
     pub total_actions_observed: u64,
     pub action_effect_actions: u64,
+    pub attack_retaliation_actions: u64,
+    pub attack_retaliation_trigger_count_hint: u64,
+    pub attack_retaliation_player_hp_loss_hint: i64,
+    pub max_attack_retaliation_player_hp_loss_hint: i32,
     pub phase_action_hint_actions: u64,
     pub root_action_prior_scored_states: u64,
     pub root_action_prior_scored_actions: u64,
@@ -184,6 +188,8 @@ pub struct CombatSearchV2DiagnosticsActionEffectDirect {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2DiagnosticsActionEffectReactive {
     pub player_hp_loss: i32,
+    pub attack_retaliation_trigger_count_hint: usize,
+    pub attack_retaliation_player_hp_loss_hint: i32,
     pub player_block: i32,
     pub enemy_damage: i32,
     pub bad_draw_cards: i32,
