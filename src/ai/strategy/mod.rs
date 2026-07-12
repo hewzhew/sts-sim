@@ -32,3 +32,4 @@ pub mod role_saturation;
 pub mod run_strategic_facts;
 pub mod shop_boss_preview;
 pub mod shop_purchase_bundle;
+pub mod trajectory_comparison;
