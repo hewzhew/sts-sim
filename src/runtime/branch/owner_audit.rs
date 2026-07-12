@@ -103,6 +103,8 @@ mod owner_orchestrator;
 mod owner_routines;
 #[path = "owner_audit/owners.rs"]
 mod owners;
+#[path = "owner_audit/policy_expansion_plan.rs"]
+mod policy_expansion_plan;
 #[path = "owner_audit/primary_search_outcome.rs"]
 mod primary_search_outcome;
 #[path = "owner_audit/render.rs"]
