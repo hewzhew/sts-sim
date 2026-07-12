@@ -1,9 +1,7 @@
 use crate::ai::strategy::candidate_pressure_response::{
     CandidatePressureResponse, StrategyCommitmentKind,
 };
-use crate::ai::strategy::challenger_decision_context::{
-    open_inventory_pressure, ChallengerDecisionContext,
-};
+use crate::ai::strategy::challenger_decision_context::ChallengerDecisionContext;
 use crate::ai::strategy::challenger_policy_state::{ChallengerPolicyState, CommitmentStatus};
 use crate::ai::strategy::decision_pipeline::CandidateLane;
 use crate::ai::strategy::pressure_assessment::{PressureCoverage, PressureHypothesis};
@@ -188,6 +186,7 @@ mod tests {
     use crate::ai::strategy::candidate_pressure_response::{
         CandidatePressureResponse, StrategyCommitmentKind,
     };
+    use crate::ai::strategy::challenger_decision_context::open_inventory_pressure;
     use crate::ai::strategy::challenger_policy_state::ChallengerPolicyState;
     use crate::ai::strategy::decision_pipeline::CandidateLane;
     use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
