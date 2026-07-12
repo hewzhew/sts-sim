@@ -19,7 +19,7 @@ pub use types::{
     CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
     CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
     CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionResourceTimingFacts,
-    CombatSearchV2ActionTargetFacts,
+    CombatSearchV2ActionTargetFacts, CombatSearchV2TimedEnemyThreatTargetFacts,
 };
 
 #[cfg(test)]

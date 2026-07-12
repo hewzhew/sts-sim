@@ -13,6 +13,9 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) mitigation: i32,
     pub(in crate::ai::combat_search_v2) reactive_risk: i32,
     pub(in crate::ai::combat_search_v2) collector_tactic: i32,
+    pub(in crate::ai::combat_search_v2) targets_timed_threat: i32,
+    pub(in crate::ai::combat_search_v2) timed_threat_urgency: i32,
+    pub(in crate::ai::combat_search_v2) timed_threat_raw_damage: i32,
     pub(in crate::ai::combat_search_v2) target_progress: i32,
     pub(in crate::ai::combat_search_v2) block: i32,
     pub(in crate::ai::combat_search_v2) damage: i32,
@@ -37,6 +40,9 @@ impl ActionOrderingPriority {
             mitigation: 0,
             reactive_risk: 0,
             collector_tactic: 0,
+            targets_timed_threat: 0,
+            timed_threat_urgency: 0,
+            timed_threat_raw_damage: 0,
             target_progress: 0,
             block: 0,
             damage: 0,
@@ -62,6 +68,12 @@ impl Ord for ActionOrderingPriority {
             .then_with(|| self.mitigation.cmp(&other.mitigation))
             .then_with(|| self.reactive_risk.cmp(&other.reactive_risk))
             .then_with(|| self.collector_tactic.cmp(&other.collector_tactic))
+            .then_with(|| self.targets_timed_threat.cmp(&other.targets_timed_threat))
+            .then_with(|| self.timed_threat_urgency.cmp(&other.timed_threat_urgency))
+            .then_with(|| {
+                self.timed_threat_raw_damage
+                    .cmp(&other.timed_threat_raw_damage)
+            })
             .then_with(|| self.phase_setup.cmp(&other.phase_setup))
             .then_with(|| self.phase_survival.cmp(&other.phase_survival))
             .then_with(|| {

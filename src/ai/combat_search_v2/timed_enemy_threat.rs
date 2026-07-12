@@ -10,6 +10,14 @@ pub(super) enum TimedEnemyThreatKind {
     ForcedPlayerDamage,
 }
 
+impl TimedEnemyThreatKind {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::ForcedPlayerDamage => "forced_player_damage",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(super) struct TimedEnemyThreatV1 {
     pub(super) source_entity_id: EntityId,

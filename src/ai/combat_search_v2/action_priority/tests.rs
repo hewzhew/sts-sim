@@ -14,6 +14,22 @@ fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
     ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
 }
 
+fn add_explosive(combat: &mut crate::runtime::combat::CombatState, entity_id: usize, amount: i32) {
+    combat
+        .entities
+        .power_db
+        .entry(entity_id)
+        .or_default()
+        .push(crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::Explosive,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        });
+}
+
 fn priority_for_input(
     engine: &EngineState,
     combat: &crate::runtime::combat::CombatState,
@@ -69,6 +85,135 @@ fn lethal_play_card_gets_lethal_role() {
     );
 
     assert_eq!(priority.role, ActionOrderingRole::LethalCard);
+}
+
+#[test]
+fn timed_threat_damage_progress_orders_before_neutral_target() {
+    let mut combat = blank_test_combat();
+    let mut neutral = test_monster(EnemyId::Repulsor);
+    neutral.id = 1;
+    neutral.current_hp = 40;
+    neutral.max_hp = 40;
+    let mut timed = test_monster(EnemyId::Exploder);
+    timed.id = 2;
+    timed.current_hp = 40;
+    timed.max_hp = 40;
+    combat.entities.monsters = vec![neutral, timed];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    add_explosive(&mut combat, 2, 3);
+
+    let neutral = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let timed = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(neutral.targets_timed_threat, 0);
+    assert_eq!(timed.targets_timed_threat, 1);
+    assert_eq!(timed.timed_threat_urgency, -3);
+    assert_eq!(timed.timed_threat_raw_damage, 30);
+    assert!(timed > neutral);
+}
+
+#[test]
+fn timed_threat_damage_progress_prefers_shorter_countdown() {
+    let mut combat = blank_test_combat();
+    let mut slower = test_monster(EnemyId::Exploder);
+    slower.id = 1;
+    slower.current_hp = 40;
+    slower.max_hp = 40;
+    let mut sooner = test_monster(EnemyId::Exploder);
+    sooner.id = 2;
+    sooner.current_hp = 40;
+    sooner.max_hp = 40;
+    combat.entities.monsters = vec![slower, sooner];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    add_explosive(&mut combat, 1, 3);
+    add_explosive(&mut combat, 2, 1);
+
+    let slower = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let sooner = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(slower.timed_threat_urgency, -3);
+    assert_eq!(sooner.timed_threat_urgency, -1);
+    assert!(sooner > slower);
+}
+
+#[test]
+fn timed_threat_damage_progress_is_neutral_without_power() {
+    let mut combat = blank_test_combat();
+    let mut first = test_monster(EnemyId::Repulsor);
+    first.id = 1;
+    first.current_hp = 40;
+    first.max_hp = 40;
+    let mut second = test_monster(EnemyId::Exploder);
+    second.id = 2;
+    second.current_hp = 40;
+    second.max_hp = 40;
+    combat.entities.monsters = vec![first, second];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+
+    let first = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let second = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(first.targets_timed_threat, 0);
+    assert_eq!(second.targets_timed_threat, 0);
+    assert_eq!(first.timed_threat_urgency, 0);
+    assert_eq!(second.timed_threat_urgency, 0);
+    assert_eq!(first.timed_threat_raw_damage, 0);
+    assert_eq!(second.timed_threat_raw_damage, 0);
+    assert_eq!(first, second);
 }
 
 #[test]

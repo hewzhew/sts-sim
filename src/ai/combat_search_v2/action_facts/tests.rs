@@ -32,6 +32,48 @@ fn facts_report_card_definition_and_exact_delta_for_strike() {
 }
 
 #[test]
+fn facts_report_timed_enemy_threat_on_target() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    let mut exploder = test_monster(EnemyId::Exploder);
+    exploder.id = 1;
+    exploder.current_hp = 30;
+    exploder.max_hp = 30;
+    combat.entities.monsters = vec![exploder];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Explosive,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let facts = summarize_action_facts(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        &EngineCombatStepper,
+        250,
+    );
+
+    let threat = facts
+        .target
+        .and_then(|target| target.timed_enemy_threat)
+        .expect("Explosive target should expose a timed threat");
+    assert_eq!(threat.kind, "forced_player_damage");
+    assert_eq!(threat.owner_turns_until_trigger, 3);
+    assert_eq!(threat.raw_player_damage, 30);
+    assert!(threat.canceled_by_owner_death);
+}
+
+#[test]
 fn facts_report_action_payload_damage_for_multi_hit_card() {
     let mut combat = blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::TwinStrike, 10)];

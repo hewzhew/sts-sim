@@ -28,6 +28,36 @@ fn guardian_profile_reports_mode_shift_remaining() {
 }
 
 #[test]
+fn profile_reports_timed_enemy_threat_aggregates() {
+    let mut combat = blank_test_combat();
+    let mut exploder = test_monster(EnemyId::Exploder);
+    exploder.id = 7;
+    combat.entities.monsters = vec![exploder];
+    combat.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Explosive,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let profile = enemy_mechanics_profile(&combat);
+    let report = enemy_mechanics_profile_report(profile);
+
+    assert_eq!(profile.timed_threat_count, 1);
+    assert_eq!(profile.timed_threat_min_owner_turns, Some(3));
+    assert_eq!(profile.timed_threat_total_raw_damage, 30);
+    assert_eq!(
+        report.profiling_policy,
+        "typed_enemy_mechanics_fact_profile_no_direct_score"
+    );
+}
+
+#[test]
 fn gremlin_nob_profile_reports_anger_amount() {
     let mut combat = blank_test_combat();
     let mut nob = test_monster(EnemyId::GremlinNob);

@@ -5,7 +5,8 @@ use crate::runtime::combat::CombatState;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::ClientInput;
 
-use super::types::CombatSearchV2ActionTargetFacts;
+use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
+use super::types::{CombatSearchV2ActionTargetFacts, CombatSearchV2TimedEnemyThreatTargetFacts};
 
 pub(super) fn target_facts(
     combat: &CombatState,
@@ -36,6 +37,14 @@ pub(super) fn target_facts(
         vulnerable: combat.get_power(monster.id, PowerId::Vulnerable),
         weak: combat.get_power(monster.id, PowerId::Weak),
         strength: combat.get_power(monster.id, PowerId::Strength),
+        timed_enemy_threat: timed_enemy_threat_for_target(combat, monster.id).map(|threat| {
+            CombatSearchV2TimedEnemyThreatTargetFacts {
+                kind: threat.kind.label(),
+                owner_turns_until_trigger: threat.owner_turns_until_trigger,
+                raw_player_damage: threat.raw_player_damage,
+                canceled_by_owner_death: threat.canceled_by_owner_death,
+            }
+        }),
     })
 }
 

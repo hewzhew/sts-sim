@@ -45,6 +45,15 @@ pub struct CombatSearchV2ActionTargetFacts {
     pub vulnerable: i32,
     pub weak: i32,
     pub strength: i32,
+    pub timed_enemy_threat: Option<CombatSearchV2TimedEnemyThreatTargetFacts>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TimedEnemyThreatTargetFacts {
+    pub kind: &'static str,
+    pub owner_turns_until_trigger: u32,
+    pub raw_player_damage: i32,
+    pub canceled_by_owner_death: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

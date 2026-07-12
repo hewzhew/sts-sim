@@ -89,6 +89,9 @@ pub struct CombatSearchV2ChokerCapacityReport {
 pub struct CombatSearchV2EnemyMechanicsReport {
     pub profiling_policy: &'static str,
     pub tracked_monsters: usize,
+    pub timed_threat_count: usize,
+    pub timed_threat_min_owner_turns: Option<u32>,
+    pub timed_threat_total_raw_damage: i32,
     pub split_pending_count: usize,
     pub guardian_open_count: usize,
     pub guardian_defensive_count: usize,

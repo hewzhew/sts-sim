@@ -1,3 +1,4 @@
+use super::timed_enemy_threat::timed_enemy_threats;
 use super::*;
 use crate::content::powers::{store, PowerId};
 
@@ -12,6 +13,9 @@ const BRONZE_ORB_STASIS_MOVE_ID: u8 = 3;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) tracked_monsters: usize,
+    pub(super) timed_threat_count: usize,
+    pub(super) timed_threat_min_owner_turns: Option<u32>,
+    pub(super) timed_threat_total_raw_damage: i32,
     pub(super) split_pending_count: usize,
     pub(super) guardian_open_count: usize,
     pub(super) guardian_defensive_count: usize,
@@ -42,7 +46,19 @@ pub(super) struct EnemyMechanicsProfileV1 {
 }
 
 pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsProfileV1 {
-    let mut profile = EnemyMechanicsProfileV1::default();
+    let timed_threats = timed_enemy_threats(combat);
+    let mut profile = EnemyMechanicsProfileV1 {
+        timed_threat_count: timed_threats.len(),
+        timed_threat_min_owner_turns: timed_threats
+            .iter()
+            .map(|threat| threat.owner_turns_until_trigger)
+            .min(),
+        timed_threat_total_raw_damage: timed_threats
+            .iter()
+            .map(|threat| threat.raw_player_damage)
+            .sum(),
+        ..EnemyMechanicsProfileV1::default()
+    };
     for monster in combat
         .entities
         .monsters
@@ -177,8 +193,11 @@ pub(super) fn enemy_mechanics_profile_report(
     profile: EnemyMechanicsProfileV1,
 ) -> CombatSearchV2EnemyMechanicsReport {
     CombatSearchV2EnemyMechanicsReport {
-        profiling_policy: "typed_act1_enemy_mechanics_fact_profile_no_direct_score",
+        profiling_policy: "typed_enemy_mechanics_fact_profile_no_direct_score",
         tracked_monsters: profile.tracked_monsters,
+        timed_threat_count: profile.timed_threat_count,
+        timed_threat_min_owner_turns: profile.timed_threat_min_owner_turns,
+        timed_threat_total_raw_damage: profile.timed_threat_total_raw_damage,
         split_pending_count: profile.split_pending_count,
         guardian_open_count: profile.guardian_open_count,
         guardian_defensive_count: profile.guardian_defensive_count,

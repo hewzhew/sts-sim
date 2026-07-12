@@ -8,6 +8,7 @@ use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
 };
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
+use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
 use super::super::CombatSearchActionPriorPluginId;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
 use super::constants::*;
@@ -49,6 +50,9 @@ pub(super) fn priority_for_play_card(
         .saturating_add(effects.reactive.player_block);
     let target_progress = target_progress_hint(combat, target_kind, target, damage)
         .saturating_add(effects.reactive.enemy_damage);
+    let timed_threat = (target_progress > 0)
+        .then(|| target.and_then(|entity_id| timed_enemy_threat_for_target(combat, entity_id)))
+        .flatten();
     let mitigation = effects.net_mitigation_ordering_score().max(0);
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = target_progress_kills(combat, target_kind, target, damage);
@@ -144,6 +148,15 @@ pub(super) fn priority_for_play_card(
         mitigation,
         reactive_risk: -reactive_risk,
         collector_tactic,
+        targets_timed_threat: i32::from(
+            timed_threat.is_some_and(|fact| fact.canceled_by_owner_death),
+        ),
+        timed_threat_urgency: timed_threat
+            .map(|fact| -(fact.owner_turns_until_trigger.min(i32::MAX as u32) as i32))
+            .unwrap_or_default(),
+        timed_threat_raw_damage: timed_threat
+            .map(|fact| fact.raw_player_damage)
+            .unwrap_or_default(),
         target_progress,
         block,
         damage,

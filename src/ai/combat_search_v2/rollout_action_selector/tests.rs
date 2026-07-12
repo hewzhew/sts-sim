@@ -1,6 +1,9 @@
 use super::*;
 use crate::ai::combat_search_v2::rollout_profile::RolloutPerformanceCounters;
+use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
+use crate::content::powers::PowerId;
+use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::sim::combat::{CombatPosition, CombatStepLimits};
 use crate::test_support::{blank_test_combat, test_monster};
 
@@ -166,6 +169,69 @@ fn conservative_rollout_probe_does_not_rescore_fallback_candidate() {
     assert!(selection.cached_step.is_some());
     assert_eq!(performance.no_potion_probe_score_calls, 2);
     assert_eq!(performance.no_potion_probe_actions_evaluated, 2);
+}
+
+#[test]
+fn conservative_rollout_reuses_timed_threat_ordering() {
+    let mut combat = blank_test_combat();
+    let mut neutral = test_monster(EnemyId::Repulsor);
+    neutral.id = 1;
+    neutral.current_hp = 40;
+    neutral.max_hp = 40;
+    let mut timed = test_monster(EnemyId::Exploder);
+    timed.id = 2;
+    timed.current_hp = 40;
+    timed.max_hp = 40;
+    combat.entities.monsters = vec![neutral, timed];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    combat.entities.power_db.insert(
+        2,
+        vec![Power {
+            power_type: PowerId::Explosive,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(2),
+            },
+        ),
+    ];
+
+    let selection = choose_rollout_action(
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
+        &test_node(combat.clone()),
+        &ProbeWinStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal,
+        &mut RolloutPerformanceCounters::default(),
+    )
+    .expect("rollout should select an action");
+
+    assert!(matches!(
+        selection.choice.choice.input,
+        ClientInput::PlayCard {
+            target: Some(2),
+            ..
+        }
+    ));
 }
 
 fn test_node(combat: CombatState) -> SearchNode {

@@ -228,6 +228,53 @@ fn block_that_prevents_visible_lethal_is_ordered_before_damage() {
 }
 
 #[test]
+fn visible_lethal_still_precedes_timed_threat_damage_progress() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 5;
+    let mut exploder = test_monster(EnemyId::Exploder);
+    exploder.id = 1;
+    exploder.current_hp = 30;
+    exploder.max_hp = 30;
+    exploder.set_planned_move_id(1);
+    combat.entities.monsters = vec![exploder];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Explosive,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Defend, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ),
+    ];
+
+    let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+}
+
+#[test]
 fn persistent_enemy_strength_down_is_ordered_before_plain_damage() {
     let mut combat = blank_test_combat();
     let mut monster = test_monster(EnemyId::Cultist);
