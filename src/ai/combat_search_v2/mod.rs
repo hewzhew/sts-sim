@@ -36,7 +36,6 @@ mod target_fanout;
 // Evaluation, value, and outcome comparison.
 mod baseline;
 mod card_pile_value;
-mod collector_tactic;
 mod enemy_phase_value;
 mod pressure_value;
 mod rollout_value;

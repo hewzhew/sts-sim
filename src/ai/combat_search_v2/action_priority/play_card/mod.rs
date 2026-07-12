@@ -3,13 +3,11 @@ mod target;
 
 use super::super::action_effects::card_play_effect_facts;
 use super::super::action_resource_timing::resource_timing_facts_for_play;
-use super::super::collector_tactic::collector_tactic_target_rank;
 use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
 };
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
-use super::super::CombatSearchActionPriorPluginId;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
 use super::constants::*;
 use super::*;
@@ -117,12 +115,7 @@ pub(super) fn priority_for_play_card(
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
     let key_setup_card = plugins.action_prior.prioritizes_key_card_online()
         && key_setup_card_online_candidate(card.id, card.upgrades);
-    let collector_tactic = collector_tactic_target_rank(combat, target, plugins.action_prior);
-    let preserves_last_collector_head = matches!(
-        plugins.action_prior,
-        CombatSearchActionPriorPluginId::CollectorSingleHeadControl
-    ) && collector_tactic < 0;
-    let (role, role_rank) = if target_lethal && !preserves_last_collector_head {
+    let (role, role_rank) = if target_lethal {
         (ActionOrderingRole::LethalCard, ROLE_LETHAL_CARD)
     } else if prevents_visible_lethal {
         (
@@ -170,7 +163,6 @@ pub(super) fn priority_for_play_card(
             .saturating_add(resource_timing.role_rank_adjustment),
         mitigation,
         reactive_risk: -reactive_risk,
-        collector_tactic,
         targets_timed_threat: i32::from(
             timed_threat.is_some_and(|fact| fact.canceled_by_owner_death),
         ),

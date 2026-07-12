@@ -1,6 +1,7 @@
 # Frozen Case Panel V0a Review Draft
 
-Status: review draft, not final architecture
+Status: historical review draft. Frozen Panel V0a remains supported; the manual key-card and
+root-action probes described as interventions were retired on 2026-07-12.
 
 Purpose: 给外援评审第一把实验尺子。上一版同时描述了 Frozen Case Panel 和 Fresh Run Panel，作为路线图可以，但第一版实现仍偏大。本版收窄为：
 

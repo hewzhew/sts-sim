@@ -44,7 +44,7 @@ impl SearchLoopState {
                 config.rollout_beam_width,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
-            frontier: FrontierQueue::new_with_action_prior(plugins.frontier, plugins.action_prior),
+            frontier: FrontierQueue::new(plugins.frontier),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),
             unresolved_leaf_count: 0,

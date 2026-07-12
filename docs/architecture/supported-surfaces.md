@@ -78,6 +78,25 @@ four removed `src/eval/mod.rs` declarations plus 95 lines of decision-axis compo
 became unreferenced when campaign learning datasets were removed. The two shared shop-axis key
 helpers remain because `branch_experiment_boundary::shop` still calls them.
 
+## Post-Lens-Retirement Baseline
+
+Counts below describe the working tree after retiring the orphan `combat_case_review` experiment
+families and their Collector-only search policy. Two cleanup documents added after the campaign
+baseline remain tracked, so tracked-file and byte changes are cumulative tree measurements rather
+than the raw size of deleted source alone.
+
+| Measure | Value | Change from post-campaign baseline |
+| --- | ---: | --- |
+| Tracked files | 1,910 | 20 Rust files retired and two cleanup documents added |
+| Tracked bytes | 13,417,421 | 40,863 fewer bytes after including the new design and plan |
+| Rust files | 1,776 | 20 retired Rust files |
+| Physical Rust lines | 325,864 | 2,333 fewer lines |
+| `#[test]` markers | 2,704 | 16 experiment-only markers retired |
+| `#[cfg(test)]` markers | 419 | 5 experiment-only test modules retired |
+| Passing library tests | 2,631 | 11 Collector-policy library tests retired |
+| Passing `combat_case_review` tests | 20 | 5 adapter-only binary tests retired |
+| Cargo binaries | 6 | Binary target set unchanged |
+
 ## Status Vocabulary
 
 - `SupportedMainline`: required to build, execute, or protect the current mainline run workflow.
@@ -96,10 +115,10 @@ artifact writers and readers, focused tests, and recent Git history. Searches ex
 `docs/superpowers` plans when deciding whether a caller is active. Historical plans remain useful
 design evidence but cannot establish current support by themselves.
 
-As an audit smoke check, `branch_campaign_driver`, `combat_search_v2_driver`, `decision_records`,
-`rl_dataset_export`, and `run_play_driver` each executed their current `--help` path with exit code
-0 after compilation. This establishes that the inspected CLI boundaries start; it does not by
-itself prove support or retirement.
+The cleanup foundation used CLI `--help` smoke checks as one input to classification. Later
+retirement deliveries removed `branch_campaign_driver` and `decision_records`; neither remains a
+Cargo target. Help output establishes only that a retained CLI boundary starts, not that every
+nested diagnostic is supported.
 
 File size, modification date, reference count, and `v1`/`v2` naming are never sufficient to mark a
 surface `CandidateRetire`. Human-invoked CLIs may legitimately have no source caller. An artifact
@@ -109,12 +128,12 @@ with an unresolved external consumer keeps its writer `Unknown`.
 
 | Cargo surface | Entry point | Owned purpose | Active callers | Written artifacts/schemas | Artifact consumers | Overlap/replacement | Evidence | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `sts_simulator` library | `src/lib.rs` | Owns game content, state transitions, simulation, AI, evaluation, and reusable run-time APIs. | All eight binaries, Rust tests, and downstream code using crate modules. | Typed modules own run capsules, panels, combat cases, datasets, and other JSON/JSONL contracts; the crate root itself performs no IO. | Maintained binaries, repository tests and tools, and human diagnostics. | None; binaries are adapters over this surface. | Cargo metadata plus public module exports in `src/lib.rs`. | `SupportedMainline` | Keep; consolidate internals only through later architecture deliveries. |
+| `sts_simulator` library | `src/lib.rs` | Owns game content, state transitions, simulation, AI, evaluation, and reusable run-time APIs. | All six binaries, Rust tests, and downstream code using crate modules. | Typed modules own run capsules, panels, combat cases, datasets, and other JSON/JSONL contracts; the crate root itself performs no IO. | Maintained binaries, repository tests and tools, and human diagnostics. | None; binaries are adapters over this surface. | Cargo metadata plus public module exports in `src/lib.rs`. | `SupportedMainline` | Keep; consolidate internals only through later architecture deliveries. |
 | Custom build script | `build.rs` (`build-script-build`) | Converts the compiled protocol schema into Rust enum-name adapters during every build. | Cargo automatically; watches `build.rs` and `tools/compiled_protocol_schema.json`. | `$OUT_DIR/generated_schema.rs`. | `src/testing/combat_start_spec.rs` includes the generated Rust source. | No replacement observed. | Direct writer/reader trace and architecture test `build_script_only_watches_consumed_inputs`. | `SupportedMainline` | Keep the input/watch boundary narrow. |
 | `architecture_runtime_boundaries` | `tests/architecture_runtime_boundaries.rs` | Protects seven source-ownership and persistence delegation boundaries. | Completion verification and developer test runs. | None observed; assertions read source files only. | Developers and future cleanup/refactor work. | No replacement observed. | Cargo metadata and seven passing named tests. | `SupportedMainline` | Keep; revise individual assertions only with an approved ownership change. |
 | `branch_panel` | `src/bin/branch_panel.rs` | Inspects and schedules bounded multi-seed smoke, continuation, drain, and compare work over durable owner-audit capsules. | Root README, `docs/RUNBOOK.md`, `tools/README.md`, current durable-panel design, and human CLI use. | `panel_summary.json` (`branch_panel_summary_v0`), `panel_ledger.jsonl` (`branch_panel_ledger_event_v0`), profile capsule trees, and the underlying `branch_tiny` capsule set. | Humans, panel continuation/inspection, Rust panel tests, and follow-on diagnostics. | Replaces the retired Python `gap_panel.py`; shares `BranchRuntime` with `branch_tiny` without replacing the single-run CLI. | CLI source, `BranchArtifactStore`, current runbook, and active runtime tests. | `SupportedDiagnostic` | Keep as the supported bounded panel scheduler; do not move policy into it. |
 | `branch_tiny` | `src/bin/branch_tiny.rs` | Thin mainline CLI adapter over `OwnerAuditRuntime` for a bounded owner-audit run or continuation. | Root README, `docs/RUNBOOK.md`, `tools/README.md`, capsule next-command generation, and direct human runs. | Capsule manifest/summary/result/path/terminal/chain/ledger, frontier checkpoint, trace, trajectory evidence, combat cases, and accepted-high-loss evidence; schemas include `branch_tiny_run_capsule`, `branch_tiny_capsule_summary`, `branch_tiny_run_result`, `branch_tiny_run_path`, `branch_tiny_terminal_results`, `branch_tiny_run_chain`, `branch_tiny_frontier_checkpoint`, `branch_tiny_trace_v1`, and `branch_tiny_trajectory_state_v0`. | `branch_panel`, continuation logic, `combat_case_review`, `tools/path_review.py`, dataset exporters, tests, and humans. | `BranchRuntime` is the reusable API, not a CLI replacement; `branch_panel` adds multi-seed scheduling. | Eight-line entry point, current runbook, generated next commands, schema readers, and recent bounded-mainline use. | `SupportedMainline` | Keep thin; future run-control work belongs in library ownership. |
-| `combat_case_review` | `src/bin/combat_case_review.rs` and `src/bin/combat_case_review/` | Replays a saved `CombatCase` through review-only search ladders, counterfactuals, and tactical lenses. | Capsule next-command generation, root README, `docs/RUNBOOK.md`, `tools/frozen_case_panel.py`, `tools/success_feedback_panel.py`, and humans. | Standard output or `--write-review` JSON with root schema `combat_case_review`, plus nested review-only schemas such as quality, frozen-panel, Collector tactic, and strategic-feedback evidence. | Frozen-case panel, success-feedback panel, their tests, and human combat diagnosis. | `combat_search_v2_driver` starts broader whole-combat scenarios; it does not replace saved-case review. | CLI and case loader, active Python consumers, tests, runbook, and recent Collector review-lane history. | `SupportedDiagnostic` | Keep review-only; never let its lanes silently become runner policy. |
+| `combat_case_review` | `src/bin/combat_case_review.rs` and `src/bin/combat_case_review/` | Replays a saved `CombatCase` through the supported review ladder, named panels, counterfactual HP, and boss evidence. | Capsule next-command generation, root README, `docs/RUNBOOK.md`, `tools/frozen_case_panel.py`, `tools/success_feedback_panel.py`, and humans. | Standard output or `--write-review` JSON with root schema `combat_case_review`, plus nested quality, frozen-panel, line-lab, HP, boss, lifecycle, and strategic-feedback evidence. | Frozen-case panel, success-feedback panel, frozen-panel tests, and human combat diagnosis. | `combat_search_v2_driver` starts broader whole-combat scenarios; it does not replace saved-case review. | CLI and case loader, active Python consumers, retained binary tests, and current runbook. | `SupportedDiagnostic` | Keep review-only; never let its lanes silently become runner policy. |
 | `combat_search_v2_driver` | `src/bin/combat_search_v2_driver/main.rs` | Runs exact whole-combat starts, captures, benchmark gates, policy comparisons, explanations, and guidance labs. | Current `docs/RUNBOOK.md`, root READMEs, `tools/ml/run_turn_plan_policy_compare.ps1`, `tools/ml/run_tactical_trace_batch.ps1`, and humans. | Standard output or `--output` JSON reports, including input validation, benchmark runs/gates, comparison reports, decision microscopes, and turn-plan guidance harnesses. | ML batch scripts, benchmark/guidance analysis, and human combat diagnosis. | `combat_case_review` specializes in saved branch-gap cases; neither replaces the driver's benchmark and guidance-lab modes. | Active scripts and runbook, CLI mode validation, and recent authoritative-search/guidance commits. | `SupportedDiagnostic` | Keep as the fixed-input combat laboratory; keep non-combat policy out. |
 | `rl_dataset_export` | `src/bin/rl_dataset_export.rs` | Converts one branch path, capsule, frontier, or panel tree into behavior-policy RLDS-style episodes. | Root READMEs and the active offline-ML tool chain. | `rlds_episode_dataset_v0` JSON with `observation_features_v0`, `action_features_v0`, and `candidate_group_features_v0`. | `tools/build_rl_dataset_manifest.py`, `tools/label_rl_outcomes.py`, `tools/train_imitation_candidate_ranker.py`, and downstream analysis tools. | Campaign learning datasets target observed sibling outcomes; they do not replace RLDS-style per-step episodes. | Direct writer/consumer trace, active ML help text, and recent frontier/imitation feature commits. | `SupportedDiagnostic` | Keep the behavior-policy warning and versioned feature contracts explicit. |
 | `run_play_driver` | `src/bin/run_play_driver/main.rs`, `terminal.rs`, and `trace_cli.rs` | Provides the manual/semi-automatic simulator REPL, deterministic trace replay/branching, bookmarks, captures, baselines, and calibration experiments. | Current `docs/RUNBOOK.md`, root READMEs, run-control diagnostic source labels, and humans. | `SessionTraceV1`, `RunPlayBookmarkRegistryV1`, `CombatCaptureV1`, `sts_simulator.run_decision_case`, `CombatBaselineOutcomeV1`, and benchmark case files. | The same REPL's replay/goto flow, `combat_search_v2_driver`, run-control calibration extraction, benchmark tooling, and humans. | Campaign and owner-audit CLIs automate different workflows; neither replaces interactive command execution and trace branching. | Active runbook examples, schema loaders/writers, terminal tests, and recent run-control boundary maintenance. | `SupportedDiagnostic` | Keep the CLI thin over `eval::run_control`; narrow that kernel in a separate architecture delivery. |
@@ -156,8 +175,9 @@ subtrees. Current documentation explicitly says the retired Python `gap_panel.py
 The binary loads the library's `combat_case`/legacy `combat_gap_case` input and emits a typed review
 payload. Owner-audit capsule summaries generate this CLI as the next recommended command for combat
 gaps. `tools/frozen_case_panel.py` and `tools/success_feedback_panel.py` invoke or parse its output,
-with Python tests protecting the root schema. Recent Git history adds Collector and Awakened One
-review evidence, showing current diagnostic maintenance rather than historical-only references.
+with frozen-panel tests protecting the active nested schema and success-feedback receiving a CLI
+smoke check. The generic ladder, quality/frozen lanes, line-lab, HP probe, and boss/lifecycle
+evidence remain; the one-off setup, potion, key-card, root-action, and Collector lenses do not.
 
 ### `combat_search_v2_driver`
 
@@ -200,11 +220,26 @@ diagnostic adapter.
 
 - Application removal commit: `aed59982611d7db25aca8d36aea09956f323d8c7`
   (`chore: retire legacy campaign application`).
-- Library closure: removed in the commit containing this record.
+- Library closure: `008326e63cb8b9e471e409dfa9d9ba8d6f941b81`
+  (`chore: remove legacy campaign library stack`).
 - Removed contracts: `BranchCampaignV1`, `BranchCampaignCheckpointV2`, campaign journal,
   campaign artifact pointers/manifests, targeted continuation, and campaign learning datasets.
 - Replacement: none; the product boundary was explicitly retired. `branch_tiny` and
   `branch_panel` remain the supported mainline rather than compatibility readers.
+- Recovery: `origin/backup/pre-cleanup-20260712` at
+  `1ee108d0f53806f6b53c5169b74949b28e8648ce`.
+
+### Orphan `combat_case_review` lenses and Collector policy
+
+- Adapter removal commit: `a1f71d4b` (`chore: retire orphan combat review lenses`).
+- Collector policy closure: removed in the commit containing this record.
+- Removed flags and payloads: Boss setup, forced potion opening, key-card counterfactual,
+  key-card decision microscope, root-action role duel, Collector tactic lanes, and the optional
+  turn-plan ladder row.
+- Removed library policy: `collector_single_head_control` and `collector_boss_race` action priors,
+  their action/frontier ranking, and their experiment-only tests.
+- Replacement: none. The generic ladder, Frozen/Quality panels, line-lab, HP probe, key-card
+  lifecycle, and boss evidence remain the supported saved-case review boundary.
 - Recovery: `origin/backup/pre-cleanup-20260712` at
   `1ee108d0f53806f6b53c5169b74949b28e8648ce`.
 
