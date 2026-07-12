@@ -1091,9 +1091,10 @@ fn pressure_response_value(
     kind: DecisionCandidateKind,
     admission: Option<&RewardAdmission>,
 ) -> Option<Value> {
+    let card = candidate_card_identity(kind)?;
     let admission = admission?;
     Some(json!(assess_candidate_pressure_response(
-        candidate_card_identity(kind),
+        Some(card),
         admission,
     )))
 }
