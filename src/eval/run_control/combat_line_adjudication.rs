@@ -89,6 +89,14 @@ impl CombatLineAcceptancePolicy {
             observed_outcome: outcome,
         }
     }
+
+    pub(super) fn requires_clean_line(self) -> bool {
+        self.reject_gained_curses
+    }
+
+    pub(super) fn plugin(self) -> CombatSearchAcceptancePluginId {
+        self.plugin
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use crate::ai::combat_search_v2::run_combat_search_v2;
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
+use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
 use super::combat_line_executor::apply_selected_combat_candidate_line;
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
 use super::combat_line_trace::{combat_candidate_line_summary, combat_search_line_summary};
@@ -24,6 +25,7 @@ pub(super) fn apply_search_combat(
     options: RunControlSearchCombatOptions,
 ) -> Result<RunControlCommandOutcome, String> {
     let prepared = prepare_search_combat(session, options)?;
+    let effective_profile = prepared.effective_profile;
     let options = prepared.options;
     let start = prepared.start;
     let config = prepared.config;
@@ -38,6 +40,7 @@ pub(super) fn apply_search_combat(
                 detail: None,
                 rejection: RunControlCombatSearchRejection::InvalidCardIdentity,
                 trace_source: "search_combat_rejected",
+                execution_adjudication: None,
             },
         ));
     }
@@ -63,26 +66,44 @@ pub(super) fn apply_search_combat(
                 detail: None,
                 rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
                 trace_source: "search_combat_rejected",
+                execution_adjudication: None,
             },
         ));
     };
-    let selected =
-        match select_accepted_search_combat_line(session, &start, &config, &report, trajectory)? {
-            CombatLineSelection::Selected(selected) => selected,
-            CombatLineSelection::DirtyRejected { detail } => {
-                return Ok(build_combat_search_rejection_outcome(
-                    session,
-                    &start,
-                    &report,
-                    CombatSearchRejectionOutcome {
-                        result: "dirty_winning_candidate_rejected",
-                        detail: Some(detail),
-                        rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
-                        trace_source: "search_combat_rejected_dirty_win",
-                    },
-                ));
-            }
-        };
+    let acceptance_policy = CombatLineAcceptancePolicy::from_plugin(effective_profile.acceptance);
+    let selected = match select_accepted_search_combat_line(
+        session,
+        &start,
+        &config,
+        &report,
+        trajectory,
+        acceptance_policy,
+    ) {
+        CombatLineSelection::Selected(selected) => selected,
+        CombatLineSelection::Rejected {
+            adjudication,
+            detail,
+        } => {
+            return Ok(build_combat_search_rejection_outcome(
+                session,
+                &start,
+                &report,
+                CombatSearchRejectionOutcome {
+                    result: "dirty_winning_candidate_rejected",
+                    detail: Some(detail),
+                    rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+                    trace_source: "search_combat_rejected_dirty_win",
+                    execution_adjudication: Some(adjudication),
+                },
+            ));
+        }
+        CombatLineSelection::ReplayFailed { adjudication } => {
+            let CombatLineAdjudicationV1::ReplayFailed { error, .. } = adjudication else {
+                unreachable!("replay-failed selection must carry replay-failed adjudication")
+            };
+            return Err(format!("combat line replay failed: {error}"));
+        }
+    };
 
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
         if selected.line.hp_loss > max_hp_loss as i32 {
@@ -108,14 +129,16 @@ pub(super) fn apply_search_combat(
                     )),
                     rejection: RunControlCombatSearchRejection::HpLossLimitExceeded,
                     trace_source: "search_combat_rejected",
+                    execution_adjudication: None,
                 },
             ));
         }
     }
 
     let mut summary = format!(
-        "search-combat applied {} actions",
-        selected.line.actions.len()
+        "search-combat applied {} actions profile={}",
+        selected.line.actions.len(),
+        effective_profile.profile_id
     );
     if let Some(repair_summary) = selected.summary.as_ref() {
         summary.push_str(&format!(" {repair_summary}"));
@@ -125,6 +148,7 @@ pub(super) fn apply_search_combat(
         combat_candidate_line_summary(&selected.line),
         selected.summary.clone(),
     );
+    let selected_adjudication = selected.adjudication;
     let mut outcome = apply_selected_combat_candidate_line(
         session,
         &start,
@@ -134,7 +158,8 @@ pub(super) fn apply_search_combat(
         CombatAutomationTrajectorySource::SearchCombat,
         summary,
         None,
-    )?;
+    )?
+    .with_execution_adjudication(selected_adjudication);
     outcome
         .trace_annotations
         .push(accepted_line_evidence.into_annotation());

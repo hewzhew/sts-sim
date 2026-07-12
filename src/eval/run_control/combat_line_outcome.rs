@@ -5,51 +5,15 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2TrajectoryReport,
 };
 use crate::content::cards::{get_card_definition, CardId, CardType};
-use crate::sim::combat::{CombatPosition, CombatTerminal};
+use crate::sim::combat::CombatPosition;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
-use super::combat_line_adjudication::CombatLineObservedOutcomeV1;
+use super::combat_line_adjudication::{
+    CombatLineAcceptancePolicy, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
+    CombatLineObservedOutcomeV1,
+};
 use super::session::RunControlSession;
 use super::transition_report::CardSnapshot;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CombatLineAcceptance {
-    CleanWin,
-    DirtyWin,
-    NonWinning,
-}
-
-impl CombatLineAcceptance {
-    pub(super) fn is_rejected(self) -> bool {
-        matches!(self, Self::DirtyWin)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct CombatLineAcceptancePolicy {
-    reject_gained_curses: bool,
-}
-
-impl Default for CombatLineAcceptancePolicy {
-    fn default() -> Self {
-        Self {
-            reject_gained_curses: true,
-        }
-    }
-}
-
-impl CombatLineAcceptancePolicy {
-    pub(super) fn classify(self, outcome: &CombatLineObservedOutcomeV1) -> CombatLineAcceptance {
-        if outcome.terminal != CombatTerminal::Win || outcome.final_hp <= 0 {
-            return CombatLineAcceptance::NonWinning;
-        }
-        if self.reject_gained_curses && !outcome.gained_curses.is_empty() {
-            CombatLineAcceptance::DirtyWin
-        } else {
-            CombatLineAcceptance::CleanWin
-        }
-    }
-}
 
 pub(super) struct CombatLineEvaluation {
     pub(super) line: CombatCandidateLine,
@@ -102,7 +66,13 @@ pub(super) fn find_accepted_alternative_in_report(
     for trajectory in win_candidate_trajectories(report) {
         let line = CombatCandidateLine::from_search_trajectory(trajectory);
         let evaluation = evaluate_combat_candidate_line_outcome(session, start, config, line)?;
-        if policy.classify(&evaluation.outcome) != CombatLineAcceptance::CleanWin {
+        if !matches!(
+            policy.adjudicate(evaluation.outcome.clone()),
+            CombatLineAdjudicationV1::Accepted {
+                cleanliness: CombatLineCleanlinessV1::Clean,
+                ..
+            }
+        ) {
             continue;
         }
         let replace = best_clean

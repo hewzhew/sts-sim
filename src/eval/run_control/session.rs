@@ -16,6 +16,7 @@ use crate::state::run::{RunState, RunStateCheckpointV1, RunStateScheduleCheckpoi
 use crate::state::selection::DomainEvent;
 
 use super::auto_capture::AutoCombatCaptureConfig;
+use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::outcome::CombatOutcomeTracker;
 use super::reward_auto::RewardAutomationConfig;
 use super::trace_annotation::{CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1};
@@ -413,6 +414,7 @@ pub struct RunControlCommandOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub combat_search_rejection: Option<RunControlCombatSearchRejection>,
+    pub execution_adjudication: Option<CombatLineAdjudicationV1>,
     pub auto_stop: Option<RunControlAutoStopV1>,
     pub auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
@@ -473,6 +475,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             combat_search_rejection: None,
+            execution_adjudication: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -486,6 +489,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             combat_search_rejection: None,
+            execution_adjudication: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -502,6 +506,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: Some(action_result),
             combat_search_rejection: None,
+            execution_adjudication: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -546,6 +551,14 @@ impl RunControlCommandOutcome {
         rejection: RunControlCombatSearchRejection,
     ) -> Self {
         self.combat_search_rejection = Some(rejection);
+        self
+    }
+
+    pub(in crate::eval::run_control) fn with_execution_adjudication(
+        mut self,
+        adjudication: CombatLineAdjudicationV1,
+    ) -> Self {
+        self.execution_adjudication = Some(adjudication);
         self
     }
 }

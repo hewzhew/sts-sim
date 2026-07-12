@@ -1,5 +1,5 @@
 use crate::ai::combat_search_v2::{
-    CombatSearchProfile, CombatSearchV2Config, CombatSearchV2Report,
+    CombatSearchAcceptancePluginId, CombatSearchProfile, CombatSearchV2Config, CombatSearchV2Report,
 };
 use crate::sim::combat::CombatPosition;
 
@@ -10,6 +10,13 @@ pub(super) struct PreparedCombatSearch {
     pub(super) options: RunControlSearchCombatOptions,
     pub(super) start: CombatPosition,
     pub(super) config: CombatSearchV2Config,
+    pub(super) effective_profile: EffectiveCombatSearchProfile,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct EffectiveCombatSearchProfile {
+    pub(super) profile_id: &'static str,
+    pub(super) acceptance: CombatSearchAcceptancePluginId,
 }
 
 pub(super) fn prepare_search_combat(
@@ -19,11 +26,28 @@ pub(super) fn prepare_search_combat(
     let options = high_stakes_search_options(session, options);
     let start = session.current_active_combat_position()?;
     let config = search_config(session, options.clone());
+    let effective_profile = effective_combat_search_profile(&options);
     Ok(PreparedCombatSearch {
         options,
         start,
         config,
+        effective_profile,
     })
+}
+
+fn effective_combat_search_profile(
+    options: &RunControlSearchCombatOptions,
+) -> EffectiveCombatSearchProfile {
+    options.profile.as_ref().map_or(
+        EffectiveCombatSearchProfile {
+            profile_id: "manual_default",
+            acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
+        },
+        |profile| EffectiveCombatSearchProfile {
+            profile_id: profile.label,
+            acceptance: profile.acceptance,
+        },
+    )
 }
 
 pub(super) fn effective_hp_loss_limit(
@@ -132,5 +156,64 @@ pub(super) fn search_config(
         turn_plan_probe_per_bucket_limit: defaults.turn_plan_probe_per_bucket_limit,
         root_action_prior: None,
         turn_plan_prior: None,
+    }
+}
+
+#[cfg(test)]
+mod adjudication_tests {
+    use super::*;
+    use crate::ai::combat_search_v2::{
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
+        CombatSearchPluginStack, CombatSearchProfile,
+    };
+    use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
+    use crate::state::map::node::RoomType;
+
+    fn active_session() -> RunControlSession {
+        let mut session = RunControlSession::new(Default::default());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            crate::test_support::blank_test_combat(),
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+        session
+    }
+
+    #[test]
+    fn prepared_search_always_carries_named_acceptance() {
+        let session = active_session();
+        let manual = prepare_search_combat(&session, RunControlSearchCombatOptions::default())
+            .expect("manual search should prepare");
+        assert_eq!(manual.effective_profile.profile_id, "manual_default");
+        assert_eq!(
+            manual.effective_profile.acceptance,
+            CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
+        );
+
+        let profile = CombatSearchProfile {
+            label: "primary",
+            budget: CombatSearchBudgetSpec {
+                max_nodes: 10,
+                wall_ms: 20,
+            },
+            plugins: CombatSearchPluginStack::default(),
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::None,
+        };
+        let prepared = prepare_search_combat(
+            &session,
+            RunControlSearchCombatOptions {
+                profile: Some(profile),
+                ..RunControlSearchCombatOptions::default()
+            },
+        )
+        .expect("profile search should prepare");
+        assert_eq!(prepared.effective_profile.profile_id, "primary");
+        assert_eq!(
+            prepared.effective_profile.acceptance,
+            CombatSearchAcceptancePluginId::AcceptedLineOnly
+        );
     }
 }
