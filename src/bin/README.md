@@ -17,7 +17,6 @@ file only records binary ownership and boundaries.
 | `combat_search_v2_driver` | Whole-combat search from start specs, combat captures, and benchmark suites. |
 | `run_play_driver` | Manual and semi-automatic REPL over `eval::run_control`: traces, bookmarks, captures, baselines, and interactive panels. |
 | `branch_campaign_driver` | Rust-owned campaign application: run, inspect, dataset, continuation, and self-check commands. |
-| `decision_records` | Decision-record inspection utility; reports typed decision artifacts without owning policy. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments; exported labels are behavior-policy data, not truth. |
 
 ## Ownership Rules

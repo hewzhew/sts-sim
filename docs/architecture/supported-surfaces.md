@@ -95,7 +95,6 @@ with an unresolved external consumer keeps its writer `Unknown`.
 | `branch_tiny` | `src/bin/branch_tiny.rs` | Thin mainline CLI adapter over `OwnerAuditRuntime` for a bounded owner-audit run or continuation. | Root README, `docs/RUNBOOK.md`, `tools/README.md`, capsule next-command generation, and direct human runs. | Capsule manifest/summary/result/path/terminal/chain/ledger, frontier checkpoint, trace, trajectory evidence, combat cases, and accepted-high-loss evidence; schemas include `branch_tiny_run_capsule`, `branch_tiny_capsule_summary`, `branch_tiny_run_result`, `branch_tiny_run_path`, `branch_tiny_terminal_results`, `branch_tiny_run_chain`, `branch_tiny_frontier_checkpoint`, `branch_tiny_trace_v1`, and `branch_tiny_trajectory_state_v0`. | `branch_panel`, continuation logic, `combat_case_review`, `tools/path_review.py`, dataset exporters, tests, and humans. | `BranchRuntime` is the reusable API, not a CLI replacement; `branch_panel` adds multi-seed scheduling. | Eight-line entry point, current runbook, generated next commands, schema readers, and recent bounded-mainline use. | `SupportedMainline` | Keep thin; future run-control work belongs in library ownership. |
 | `combat_case_review` | `src/bin/combat_case_review.rs` and `src/bin/combat_case_review/` | Replays a saved `CombatCase` through review-only search ladders, counterfactuals, and tactical lenses. | Capsule next-command generation, root README, `docs/RUNBOOK.md`, `tools/frozen_case_panel.py`, `tools/success_feedback_panel.py`, and humans. | Standard output or `--write-review` JSON with root schema `combat_case_review`, plus nested review-only schemas such as quality, frozen-panel, Collector tactic, and strategic-feedback evidence. | Frozen-case panel, success-feedback panel, their tests, and human combat diagnosis. | `combat_search_v2_driver` starts broader whole-combat scenarios; it does not replace saved-case review. | CLI and case loader, active Python consumers, tests, runbook, and recent Collector review-lane history. | `SupportedDiagnostic` | Keep review-only; never let its lanes silently become runner policy. |
 | `combat_search_v2_driver` | `src/bin/combat_search_v2_driver/main.rs` | Runs exact whole-combat starts, captures, benchmark gates, policy comparisons, explanations, and guidance labs. | Current `docs/RUNBOOK.md`, root READMEs, `tools/ml/run_turn_plan_policy_compare.ps1`, `tools/ml/run_tactical_trace_batch.ps1`, and humans. | Standard output or `--output` JSON reports, including input validation, benchmark runs/gates, comparison reports, decision microscopes, and turn-plan guidance harnesses. | ML batch scripts, benchmark/guidance analysis, and human combat diagnosis. | `combat_case_review` specializes in saved branch-gap cases; neither replaces the driver's benchmark and guidance-lab modes. | Active scripts and runbook, CLI mode validation, and recent authoritative-search/guidance commits. | `SupportedDiagnostic` | Keep as the fixed-input combat laboratory; keep non-combat policy out. |
-| `decision_records` | `src/bin/decision_records.rs` | Parses `branch_tiny` paths into an ad hoc learning JSONL projection or path-facts summary. | Root English/Chinese binary lists only; no active command, script, source caller, or current runbook invocation observed. | `learning_decision_record_v0` JSONL or `path_observable_facts_v0` JSON. | No active schema consumer observed outside the binary after repository-wide searches excluding historical plans and generated artifacts. | `rl_dataset_export` owns supported per-step ML export; `tools/path_review.py` owns human path inspection; campaign learning datasets own outcome/sibling analysis. | Exact schema/call searches, only two historical implementation commits, no dedicated tests, and no current RUNBOOK entry. | `CandidateRetire` | Write one bounded retirement specification; do not delete it as part of this foundation. |
 | `rl_dataset_export` | `src/bin/rl_dataset_export.rs` | Converts one branch path, capsule, frontier, or panel tree into behavior-policy RLDS-style episodes. | Root READMEs and the active offline-ML tool chain. | `rlds_episode_dataset_v0` JSON with `observation_features_v0`, `action_features_v0`, and `candidate_group_features_v0`. | `tools/build_rl_dataset_manifest.py`, `tools/label_rl_outcomes.py`, `tools/train_imitation_candidate_ranker.py`, and downstream analysis tools. | Campaign learning datasets target observed sibling outcomes; they do not replace RLDS-style per-step episodes. | Direct writer/consumer trace, active ML help text, and recent frontier/imitation feature commits. | `SupportedDiagnostic` | Keep the behavior-policy warning and versioned feature contracts explicit. |
 | `run_play_driver` | `src/bin/run_play_driver/main.rs`, `terminal.rs`, and `trace_cli.rs` | Provides the manual/semi-automatic simulator REPL, deterministic trace replay/branching, bookmarks, captures, baselines, and calibration experiments. | Current `docs/RUNBOOK.md`, root READMEs, run-control diagnostic source labels, and humans. | `SessionTraceV1`, `RunPlayBookmarkRegistryV1`, `CombatCaptureV1`, `sts_simulator.run_decision_case`, `CombatBaselineOutcomeV1`, and benchmark case files. | The same REPL's replay/goto flow, `combat_search_v2_driver`, run-control calibration extraction, benchmark tooling, and humans. | Campaign and owner-audit CLIs automate different workflows; neither replaces interactive command execution and trace branching. | Active runbook examples, schema loaders/writers, terminal tests, and recent run-control boundary maintenance. | `SupportedDiagnostic` | Keep the CLI thin over `eval::run_control`; narrow that kernel in a separate architecture delivery. |
 
@@ -178,57 +177,6 @@ Its REPL is unique among current Cargo targets. Although the underlying run-cont
 separate narrowing pass, that architecture concern is not evidence for deleting its supported
 diagnostic adapter.
 
-### `decision_records`
-
-The binary reads owner-audit `result.json`/`path.json` plus an optional capsule summary, then emits
-either one `learning_decision_record_v0` row per path decision or one
-`path_observable_facts_v0` aggregate. Repository-wide exact-schema searches found no reader for
-either output. Exact command searches found no invocation outside binary-list documentation; the
-current runbook has none. The file has no dedicated tests, and its history consists of the initial
-observable export plus a later combat-history field addition.
-
-Supported replacements cover its two audiences: `rl_dataset_export` supplies the maintained
-per-step behavior-policy dataset, `tools/path_review.py` supplies human path inspection, and the
-campaign learning dataset supplies sibling/outcome analysis. Whether the two old projections can
-be declared unneeded is evaluated explicitly below rather than inferred from low reference count.
-
-## First Retirement Recommendation
-
-### Recommended: `decision_records`
-
-Status: `CandidateRetire`.
-
-This is the only retirement recommendation from the foundation. It satisfies the proof rules as
-follows:
-
-1. **No active caller.** Exact command and target-name searches across source, tests, tools,
-   current architecture documents, runbooks, and both root READMEs found only the English/Chinese
-   binary-list rows. Historical `docs/superpowers` plans were excluded from active-caller proof.
-2. **Unique capabilities are disposed.** `learning_decision_record_v0` is an unconsumed, ad hoc
-   projection of the same owner-audit steps that `rl_dataset_export` exposes through the maintained
-   `rlds_episode_dataset_v0` pipeline. `path_observable_facts_v0` has no consumer and is explicitly
-   declared no longer required: supported human path diagnosis uses `tools/path_review.py`, while
-   outcome/sibling analysis uses the campaign learning dataset. If a future aggregate is needed,
-   it should be derived from supported typed capsule data rather than preserving this untested
-   schema by inertia.
-3. **Artifact consumers are resolved.** Repository-wide exact searches for
-   `learning_decision_record_v0` and `path_observable_facts_v0` found no reader outside their writer.
-   No external-consumer claim or documented export workflow was found. In contrast, the supported
-   RLDS schema has named manifest, labeling, and training consumers.
-4. **No compatibility shell is required.** Nothing invokes the command and nothing reads either
-   schema, so a stub executable or schema alias would preserve no active contract.
-5. **Tests and documents have a bounded disposition.** The binary contains no `#[test]` or
-   `#[cfg(test)]` block and no external test names it. A retirement delivery removes only
-   `src/bin/decision_records.rs` and the three maintained binary-list/inventory rows in `README.md`,
-   `README.zh-CN.md`, and `src/bin/README.md`; historical plans remain history.
-6. **Post-removal verification is named.** The retirement specification must run focused
-   `rl_dataset_export` binary tests and `tests/test_path_review.py`, followed by `cargo test --lib`,
-   `cargo check --bins`, `cargo test --test architecture_runtime_boundaries`, formatting, and diff
-   checks. Cargo metadata must then show seven binaries and no `decision_records` target.
-
-The recommendation does not authorize deletion in this foundation. It defines a small, revertible
-next delivery whose source scope is one 822-line binary plus current documentation.
-
 ## Test Retention Contract
 
 Keep game-mechanic and Java-parity tests, regressions for observed failures, serialized checkpoint
@@ -239,10 +187,6 @@ acceptance criteria.
 
 ## Next Cleanup Delivery
 
-Write the `decision_records` retirement design and implementation plan. Limit it to the implicit
-Cargo target, both unconsumed schemas, their current documentation rows, and the named replacement
-verification. Do not bundle `rl_dataset_export`, campaign cleanup, or run-control changes into that
-delivery.
-
-Test-contract cleanup, run-control architecture consolidation, and disk/cache cleanup remain
-separate deliveries with independent design, verification, and rollback boundaries.
+Legacy campaign stack retirement is in progress under the approved layered plan. The completed
+decision-record layer will be recorded in retirement history with its commit ID during the next
+layer. Run-control consolidation, combat-review pruning, and disk/cache cleanup remain separate.

@@ -65,7 +65,6 @@ examples, combat search drivers, manual REPL usage, and verification.
 | `run_play_driver` | manual and semi-automatic simulator REPL |
 | `branch_campaign_driver` | older Rust campaign application surface for campaign artifacts and continuation experiments |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
-| `decision_records` | decision-record inspection utility |
 
 See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.
 
