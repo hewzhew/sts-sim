@@ -11,6 +11,7 @@ pub mod boss_scaling_evidence;
 pub mod boss_survival_evidence;
 pub mod campfire_upgrade_quality;
 pub mod candidate_pressure_response;
+pub mod challenger_policy_state;
 pub mod decision_pipeline;
 pub mod deck_admission;
 pub mod deck_construction_pressure;
