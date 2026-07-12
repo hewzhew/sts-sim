@@ -8,52 +8,7 @@ use sts_simulator::ai::strategy::deck_strategic_deficit::{
     StrategicBurdenLevel, StrategicDeficitLevel,
 };
 
-use super::owner_model::{DecisionKey, OwnerChoice};
 use super::{Branch, BranchStatus, TerminalOutcome};
-
-pub(super) fn expansion_masks(
-    work: &[(Branch, bool, Vec<OwnerChoice>)],
-    max_branches: usize,
-    recent_expanded_keys: &mut Vec<DecisionKey>,
-) -> Vec<Vec<bool>> {
-    let mut expanded = work
-        .iter()
-        .map(|(_, _, choices)| vec![false; choices.len()])
-        .collect::<Vec<_>>();
-    let mut remaining = max_branches;
-    let mut prefer_unused_keys = false;
-    while remaining > 0 {
-        let mut progressed = false;
-        for (branch_index, (_, expandable, choices)) in work.iter().enumerate() {
-            if !*expandable {
-                continue;
-            }
-            let Some(choice_index) = next_expansion_choice(
-                choices,
-                &expanded[branch_index],
-                recent_expanded_keys,
-                prefer_unused_keys,
-            ) else {
-                continue;
-            };
-            expanded[branch_index][choice_index] = true;
-            if let Some(key) = choices[choice_index].key.clone() {
-                recent_expanded_keys.push(key);
-            }
-            remaining -= 1;
-            progressed = true;
-            if remaining == 0 {
-                break;
-            }
-        }
-        if !progressed {
-            break;
-        }
-        prefer_unused_keys = true;
-    }
-    trim_recent_expanded_keys(recent_expanded_keys);
-    expanded
-}
 
 pub(super) fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
     if limit == 0 {
@@ -130,36 +85,6 @@ fn stronger_frontier_branch(candidate: &Branch, existing: &Branch) -> bool {
     frontier_retention_key(candidate) > frontier_retention_key(existing)
         || (frontier_retention_key(candidate) == frontier_retention_key(existing)
             && candidate.id < existing.id)
-}
-
-fn trim_recent_expanded_keys(keys: &mut Vec<DecisionKey>) {
-    const RECENT_KEY_LIMIT: usize = 64;
-    if keys.len() > RECENT_KEY_LIMIT {
-        keys.drain(0..keys.len() - RECENT_KEY_LIMIT);
-    }
-}
-
-fn next_expansion_choice(
-    choices: &[OwnerChoice],
-    expanded: &[bool],
-    used_keys: &[DecisionKey],
-    prefer_unused_keys: bool,
-) -> Option<usize> {
-    let candidates = choices
-        .iter()
-        .enumerate()
-        .filter(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index]);
-    if prefer_unused_keys {
-        if let Some((index, _)) = candidates.clone().find(|(_, choice)| {
-            choice
-                .key
-                .as_ref()
-                .is_some_and(|key| !used_keys.contains(key))
-        }) {
-            return Some(index);
-        }
-    }
-    candidates.map(|(index, _)| index).next()
 }
 
 fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {

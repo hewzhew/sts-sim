@@ -36,7 +36,6 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         .map(|path| trace::TraceWriter::create(path))
         .transpose()?;
     let deadline = RunDeadline::new(started, args.wall_ms);
-    let mut recent_expanded_keys = Vec::new();
 
     if human_output {
         print_header(args, resume_frontier.is_some());
@@ -64,13 +63,8 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             }));
             break;
         }
-        let prepared = branch_generation::prepare_generation(
-            &mut frontier,
-            args,
-            generation,
-            deadline,
-            &mut recent_expanded_keys,
-        );
+        let prepared =
+            branch_generation::prepare_generation(&mut frontier, args, generation, deadline);
         if prepared.total_expanded > 0
             && deadline.would_cap_core_search(args, prepared.total_expanded)
         {

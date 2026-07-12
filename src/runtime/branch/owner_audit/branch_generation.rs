@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 
-use super::owner_model::{DecisionKey, OwnerChoice};
+use super::owner_model::OwnerChoice;
 use super::policy_expansion_plan::{plan_policy_expansions, PolicyExpansion};
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
@@ -42,7 +42,6 @@ pub(super) fn prepare_generation(
     args: Args,
     generation: usize,
     deadline: RunDeadline,
-    _recent_expanded_keys: &mut Vec<DecisionKey>,
 ) -> PreparedGeneration {
     let mut work = Vec::new();
     while let Some(branch) = frontier.pop_front() {
