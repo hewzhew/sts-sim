@@ -8,6 +8,11 @@ pub(super) struct Args {
     pub(super) case: PathBuf,
     #[arg(long)]
     pub(super) ladder: bool,
+    #[arg(
+        long,
+        help = "Replay one bounded complete line through ordinary and clean-only run-control adjudication"
+    )]
+    pub(super) adjudicate: bool,
     #[arg(long, default_value_t = 200_000)]
     pub(super) fast_nodes: usize,
     #[arg(long, default_value_t = 2_000)]
@@ -54,4 +59,17 @@ pub(super) struct Args {
     pub(super) counterfactual_hp_probe: bool,
     #[arg(long, default_value = "real,half,full")]
     pub(super) counterfactual_hp_levels: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adjudicate_flag_parses() {
+        let args =
+            Args::try_parse_from(["combat_case_review", "--case", "case.json", "--adjudicate"])
+                .expect("parse adjudicate flag");
+        assert!(args.adjudicate);
+    }
 }

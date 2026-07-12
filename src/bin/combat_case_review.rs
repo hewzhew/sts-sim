@@ -1,4 +1,6 @@
 use clap::Parser;
+#[path = "combat_case_review/adjudication_probe.rs"]
+mod adjudication_probe;
 #[path = "combat_case_review/args.rs"]
 mod args;
 #[path = "combat_case_review/awakened_one_evidence.rs"]

@@ -7,6 +7,7 @@ use sts_simulator::eval::combat_case::CombatCase;
 #[path = "review_pipeline/ladder.rs"]
 mod ladder;
 
+use super::adjudication_probe::run_adjudication_probe;
 use super::awakened_one_evidence::{
     awakened_one_failure_evidence, awakened_one_path_audit_v0, static_boss_matchup_audit_v0,
 };
@@ -22,16 +23,25 @@ use super::frozen_panel_lanes::run_frozen_panel_lanes;
 use super::line_lab::run_line_lab;
 use super::options::ReviewOptions;
 use super::quality_lanes::run_quality_lanes;
-use ladder::run_review_ladder;
+use ladder::{run_review_ladder, ReviewLadderRun};
 
 pub(super) fn build_review(
     case_path: String,
     options: ReviewOptions,
     case: CombatCase,
 ) -> CombatCaseReview {
-    let ladder_run = run_review_ladder(&options, &case);
-    let ladder = ladder_run.reviews;
+    let ReviewLadderRun {
+        reviews: ladder,
+        line_lab_parent,
+        adjudication_candidates,
+    } = run_review_ladder(&options, &case);
     let review_focus = review_focus(&ladder);
+    let adjudication_probe = run_adjudication_probe(
+        options.adjudicate,
+        &adjudication_candidates,
+        review_focus.as_ref().map(|focus| focus.selected_review),
+        Some(&case),
+    );
     let classification =
         classify_gap_review(case.failed_search.as_ref(), &ladder, review_focus.as_ref());
     let review_focus_replay = if options.replay_focus {
@@ -45,7 +55,7 @@ pub(super) fn build_review(
         .as_ref()
         .zip(review_focus_replay.as_ref())
         .and_then(|(focus, replay)| witness_prior_rerun(&options, &case, focus, replay));
-    let line_lab = run_line_lab(&options, &case, ladder_run.line_lab_parent.as_ref());
+    let line_lab = run_line_lab(&options, &case, line_lab_parent.as_ref());
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
     let frozen_panel_lanes = run_frozen_panel_lanes(&options, &case);
@@ -88,6 +98,7 @@ pub(super) fn build_review(
             boss_pressure_lens,
             frozen_panel_lanes,
             champ_phase_audit,
+            adjudication_probe,
         },
     )
 }

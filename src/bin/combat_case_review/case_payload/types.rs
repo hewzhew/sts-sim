@@ -8,7 +8,7 @@ use sts_simulator::eval::combat_case::{
     CombatCaseCardSummary, CombatCaseCombatSummary, CombatCaseGap, CombatCasePathStep,
     CombatCaseRunSummary, CombatCaseSource,
 };
-use sts_simulator::eval::run_control::CombatSearchTraceSummary;
+use sts_simulator::eval::run_control::{CombatCaseAdjudicationProbeV1, CombatSearchTraceSummary};
 
 use super::super::awakened_one_evidence::{
     AwakenedOneFailureEvidenceFrame, AwakenedOnePathAuditV0, StaticBossMatchupAuditV0,
@@ -38,6 +38,8 @@ pub(crate) struct CombatCaseReview {
     pub(super) potions: Vec<Option<String>>,
     pub(super) path_tail: Vec<CombatCasePathStep>,
     pub(super) saved_search: Option<CombatSearchTraceSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) adjudication_probe: Option<CombatCaseAdjudicationProbeV1>,
     pub(super) ladder: Vec<SearchReview>,
     pub(super) classification: CombatGapReviewClassification,
     pub(super) review_focus: Option<CombatReviewFocus>,
@@ -75,4 +77,5 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(crate) champ_phase_audit: Option<ChampPhaseAudit>,
+    pub(crate) adjudication_probe: Option<CombatCaseAdjudicationProbeV1>,
 }

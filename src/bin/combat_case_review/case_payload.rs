@@ -33,6 +33,7 @@ pub(super) fn assemble_combat_case_review(
         boss_pressure_lens,
         frozen_panel_lanes,
         champ_phase_audit,
+        adjudication_probe,
     } = artifacts;
     let derived = derived_payload_from_case(&case);
     let combat_strategic_feedback = combat_strategic_feedback(
@@ -52,6 +53,7 @@ pub(super) fn assemble_combat_case_review(
         potions: derived.potions,
         path_tail: derived.path_tail,
         saved_search: case.failed_search.clone(),
+        adjudication_probe,
         source: case.source,
         gap: case.gap,
         run: case.run,

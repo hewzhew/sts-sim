@@ -4,6 +4,7 @@ use super::args::Args;
 
 pub(super) struct ReviewOptions {
     pub(super) ladder: bool,
+    pub(super) adjudicate: bool,
     pub(super) fast_nodes: usize,
     pub(super) fast_ms: u64,
     pub(super) slow_nodes: usize,
@@ -30,7 +31,8 @@ pub(super) struct ReviewOptions {
 impl ReviewOptions {
     pub(super) fn from_args(args: &Args) -> Self {
         Self {
-            ladder: args.ladder,
+            ladder: args.ladder || args.adjudicate,
+            adjudicate: args.adjudicate,
             fast_nodes: args.fast_nodes,
             fast_ms: args.fast_ms,
             slow_nodes: args.slow_nodes,

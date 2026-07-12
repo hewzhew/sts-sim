@@ -3,6 +3,7 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
+use super::super::adjudication_probe::ReviewAdjudicationCandidate;
 use super::super::options::ReviewOptions;
 use super::super::search_runner::{
     review_all_potions_profile, review_no_potion_profile, run_config_search,
@@ -12,6 +13,13 @@ use super::super::search_types::SearchReview;
 pub(super) struct ReviewLadderRun {
     pub(super) reviews: Vec<SearchReview>,
     pub(super) line_lab_parent: Option<CombatSearchV2TrajectoryReport>,
+    pub(super) adjudication_candidates: Vec<ReviewAdjudicationCandidate>,
+}
+
+struct LadderProfileRun {
+    review: SearchReview,
+    report: CombatSearchV2Report,
+    adjudication_candidate: Option<ReviewAdjudicationCandidate>,
 }
 
 pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> ReviewLadderRun {
@@ -19,6 +27,7 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         return ReviewLadderRun {
             reviews: Vec::new(),
             line_lab_parent: None,
+            adjudication_candidates: Vec::new(),
         };
     }
 
@@ -28,7 +37,7 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         options.fast_ms,
         options,
     );
-    let (fast_review, _) = run_ladder_profile(case, fast_profile, options);
+    let fast = run_ladder_profile(case, fast_profile, options);
 
     let slow_profile = review_all_potions_profile(
         "slow_potion_diagnostic",
@@ -36,13 +45,20 @@ pub(super) fn run_review_ladder(options: &ReviewOptions, case: &CombatCase) -> R
         options.slow_ms,
         options,
     );
-    let (slow_review, slow_report) = run_ladder_profile(case, slow_profile, options);
+    let slow = run_ladder_profile(case, slow_profile, options);
 
-    let reviews = vec![fast_review, slow_review];
+    let line_lab_parent = slow.report.best_complete_trajectory.clone();
+    let reviews = vec![fast.review, slow.review];
+    let adjudication_candidates = fast
+        .adjudication_candidate
+        .into_iter()
+        .chain(slow.adjudication_candidate)
+        .collect();
 
     ReviewLadderRun {
         reviews,
-        line_lab_parent: slow_report.best_complete_trajectory,
+        line_lab_parent,
+        adjudication_candidates,
     }
 }
 
@@ -50,7 +66,7 @@ fn run_ladder_profile(
     case: &CombatCase,
     profile: CombatSearchProfile,
     options: &ReviewOptions,
-) -> (SearchReview, CombatSearchV2Report) {
+) -> LadderProfileRun {
     let label = profile.label;
     let mut config = profile.to_config();
     if let Some(max_actions) = options.rollout_max_actions {
@@ -59,5 +75,20 @@ fn run_ladder_profile(
     if let Some(max_evaluations) = options.rollout_max_evaluations {
         config.rollout_max_evaluations = max_evaluations;
     }
-    run_config_search(label, case, config, options.action_preview_limit)
+    let (review, report) =
+        run_config_search(label, case, config.clone(), options.action_preview_limit);
+    let adjudication_candidate =
+        report
+            .best_win_trajectory
+            .clone()
+            .map(|trajectory| ReviewAdjudicationCandidate {
+                source_review: label,
+                config,
+                trajectory,
+            });
+    LadderProfileRun {
+        review,
+        report,
+        adjudication_candidate,
+    }
 }
