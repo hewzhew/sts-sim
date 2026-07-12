@@ -158,7 +158,7 @@ fn strength_gain(card_id: CardId, magic: i32) -> i32 {
 
 fn enemy_strength_down(card_id: CardId, magic: i32) -> i32 {
     match card_id {
-        CardId::Disarm | CardId::Shockwave | CardId::DarkShackles | CardId::PiercingWail => magic,
+        CardId::Disarm | CardId::DarkShackles | CardId::PiercingWail => magic,
         _ => 0,
     }
 }
@@ -273,5 +273,14 @@ mod tests {
         let facts = card_facts(&RewardCard::new(CardId::SeeingRed, 0));
 
         assert_eq!(facts.energy_gain, 2);
+    }
+
+    #[test]
+    fn shockwave_facts_do_not_claim_direct_strength_reduction() {
+        let facts = card_facts(&RewardCard::new(CardId::Shockwave, 0));
+
+        assert!(facts.weak > 0);
+        assert!(facts.vulnerable > 0);
+        assert_eq!(facts.enemy_strength_down, 0);
     }
 }

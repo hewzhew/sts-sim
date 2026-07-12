@@ -410,7 +410,6 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
         Shockwave => CardDefinition::new(card)
             .provides(Vulnerable)
             .provides(Weak)
-            .provides(EnemyStrengthDown)
             .effect(ExhaustsSelf),
         Uppercut => CardDefinition::new(card)
             .effect(FrontloadDamage)
@@ -587,5 +586,23 @@ mod tests {
         assert!(definition
             .play_effects
             .contains(&PlayEffect::ExhaustsSelf));
+    }
+
+    #[test]
+    fn shockwave_semantics_do_not_claim_direct_strength_reduction() {
+        let definition = card_definition(CardId::Shockwave);
+
+        assert!(definition
+            .play_effects
+            .contains(&PlayEffect::Provide(Mechanic::Weak)));
+        assert!(definition
+            .play_effects
+            .contains(&PlayEffect::Provide(Mechanic::Vulnerable)));
+        assert!(definition
+            .play_effects
+            .contains(&PlayEffect::ExhaustsSelf));
+        assert!(!definition
+            .play_effects
+            .contains(&PlayEffect::Provide(Mechanic::EnemyStrengthDown)));
     }
 }
