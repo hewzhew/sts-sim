@@ -96,6 +96,7 @@ fn path_step(step: &BranchPathStep) -> CombatCasePathStep {
             .and_then(|state| to_value(state).ok()),
         decision_evidence: Some(json!({
             "policy_lane": step.policy_lane,
+            "policy_selection": &step.policy_selection,
             "annotation": &step.annotation,
             "decision_delta": &step.decision_delta,
             "candidate_pool": &step.candidate_pool,
@@ -152,26 +153,43 @@ fn slug(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use sts_simulator::ai::strategy::candidate_pressure_response::StrategyCommitmentKind;
     use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
+    use sts_simulator::ai::strategy::decision_pipeline::CandidateLane;
+    use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
     use sts_simulator::eval::run_control::RunControlCommand;
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
     use super::*;
     use crate::runtime::branch::owner_audit::branch_model::BranchStatus;
     use crate::runtime::branch::owner_audit::branch_path::{
-        BranchPathCandidateSnapshot, BranchPathShopBossPreviewBundleItemSnapshot,
-        BranchPathShopBossPreviewBundleSnapshot, BranchPathShopBossPreviewSnapshot, BranchPathStep,
-        ChoiceAnnotationSnapshot,
+        BranchPathCandidateSnapshot, BranchPathPolicySelectionSnapshot,
+        BranchPathShopBossPreviewBundleItemSnapshot, BranchPathShopBossPreviewBundleSnapshot,
+        BranchPathShopBossPreviewSnapshot, BranchPathStep, ChoiceAnnotationSnapshot,
     };
     use crate::runtime::branch::owner_audit::branch_policy_lane::BranchPolicyLane;
     use crate::runtime::branch::owner_audit::decision_delta::DecisionDeltaSnapshot;
     use crate::runtime::branch::owner_audit::owner_model::{
         ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion,
     };
+    use crate::runtime::branch::owner_audit::policy_expansion_plan::{
+        PolicyExpansionClass, PolicyExpansionEvidence,
+    };
 
     fn branch_path_step_with_all_evidence() -> BranchPathStep {
         BranchPathStep {
             policy_lane: "challenger-1".to_string(),
+            policy_selection: Some(BranchPathPolicySelectionSnapshot::from_evidence(
+                &PolicyExpansionEvidence {
+                    class: PolicyExpansionClass::CommitmentRepair,
+                    matched_pressure_axes: vec![PressureAxis::GrowthHorizon],
+                    matched_commitments: vec![StrategyCommitmentKind::ExhaustEngine],
+                    original_lane: CandidateLane::Reject,
+                    original_inspect_only: Some("candidate score rejected".to_string()),
+                    overrode_reject: true,
+                    checkpoint_ref: "branch-0/step-0".to_string(),
+                },
+            )),
             key: None,
             action_debug: "Noop".to_string(),
             label: "candidate".to_string(),
@@ -265,6 +283,8 @@ mod tests {
         );
         assert!(!evidence["annotation"].is_null());
         assert!(!evidence["decision_delta"].is_null());
+        assert_eq!(evidence["policy_selection"]["class"], "commitment_repair");
+        assert_eq!(evidence["policy_selection"]["overrode_reject"], true);
     }
 
     #[test]

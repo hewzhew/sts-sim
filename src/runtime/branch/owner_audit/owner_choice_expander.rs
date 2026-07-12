@@ -3,8 +3,9 @@ use sts_simulator::ai::strategy::shop_boss_preview::shop_boss_preview_bundles;
 
 use super::accepted_high_loss_diagnostic::extend_unique_diagnostics;
 use super::branch_path::{
-    BranchPathCandidateSnapshot, BranchPathShopBossPreviewBundleSnapshot,
-    BranchPathShopBossPreviewSnapshot, BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot,
+    BranchPathCandidateSnapshot, BranchPathPolicySelectionSnapshot,
+    BranchPathShopBossPreviewBundleSnapshot, BranchPathShopBossPreviewSnapshot, BranchPathState,
+    BranchPathStep, ChoiceAnnotationSnapshot,
 };
 use super::candidate_ir_adapter::shop_tiny_kind;
 use super::owner_model::OwnerChoice;
@@ -28,6 +29,8 @@ pub(super) fn expand_registered_owner(
         let Some(choice) = choices.get(choice_index).cloned() else {
             continue;
         };
+        let policy_selection =
+            BranchPathPolicySelectionSnapshot::from_evidence(&expansion.selection_evidence);
         let policy_lane_label = expansion.child_lane.label();
         let mut session = branch.session.clone();
         let (advance, decision_delta) = match session.apply_command(choice.action.clone()) {
@@ -61,6 +64,7 @@ pub(super) fn expand_registered_owner(
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             policy_lane: policy_lane_label,
+            policy_selection: Some(policy_selection),
             key: choice.key,
             action_debug: format!("{:?}", choice.action),
             label: choice.label,
@@ -179,6 +183,7 @@ fn expand_shop_boss_preview_bundle_children(
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             policy_lane: branch.policy_lane.label(),
+            policy_selection: None,
             key: None,
             action_debug: format!("ShopBossPreviewBundle({:?})", bundle.items),
             label: format!(
@@ -407,6 +412,15 @@ mod tests {
         assert_eq!(children[0].policy_lane.label(), "baseline");
         assert_eq!(children[1].policy_lane.label(), "challenger-1");
         assert_eq!(children[1].path[0].policy_lane, "challenger-1");
+        let selection = serde_json::to_value(
+            children[1].path[0]
+                .policy_selection
+                .as_ref()
+                .expect("planned child should retain policy selection evidence"),
+        )
+        .unwrap();
+        assert_eq!(selection["class"], "production");
+        assert_eq!(selection["checkpoint_ref"], "branch-0/step-0");
     }
 
     #[test]

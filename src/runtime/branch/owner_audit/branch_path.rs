@@ -11,12 +11,15 @@ use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::ShopVisitContextV1;
 
 use super::owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice};
+use super::policy_expansion_plan::{PolicyExpansionClass, PolicyExpansionEvidence};
 use super::{branch_status_view, decision_delta, render, trace, Branch};
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct BranchPathStep {
     #[serde(default)]
     pub(super) policy_lane: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) policy_selection: Option<BranchPathPolicySelectionSnapshot>,
     pub(super) key: Option<DecisionKey>,
     pub(super) action_debug: String,
     pub(super) label: String,
@@ -32,6 +35,59 @@ pub(super) struct BranchPathStep {
     pub(super) shop_boss_preview_candidates: Vec<BranchPathShopBossPreviewSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) shop_boss_preview_bundles: Vec<BranchPathShopBossPreviewBundleSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathPolicySelectionSnapshot {
+    class: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    matched_pressure_axes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    matched_commitments: Vec<String>,
+    original_lane: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    original_inspect_only: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    overrode_reject: bool,
+    checkpoint_ref: String,
+}
+
+impl BranchPathPolicySelectionSnapshot {
+    pub(super) fn from_evidence(evidence: &PolicyExpansionEvidence) -> Self {
+        Self {
+            class: policy_expansion_class_label(evidence.class).to_string(),
+            matched_pressure_axes: evidence
+                .matched_pressure_axes
+                .iter()
+                .map(serialized_enum_label)
+                .collect(),
+            matched_commitments: evidence
+                .matched_commitments
+                .iter()
+                .map(serialized_enum_label)
+                .collect(),
+            original_lane: candidate_lane_label(evidence.original_lane).to_string(),
+            original_inspect_only: evidence.original_inspect_only.clone(),
+            overrode_reject: evidence.overrode_reject,
+            checkpoint_ref: evidence.checkpoint_ref.clone(),
+        }
+    }
+}
+
+fn policy_expansion_class_label(class: PolicyExpansionClass) -> &'static str {
+    match class {
+        PolicyExpansionClass::Production => "production",
+        PolicyExpansionClass::OrdinaryChallenger => "ordinary_challenger",
+        PolicyExpansionClass::PressureRepair => "pressure_repair",
+        PolicyExpansionClass::CommitmentRepair => "commitment_repair",
+    }
+}
+
+fn serialized_enum_label<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -517,10 +573,12 @@ fn is_default_counter(value: &i32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use sts_simulator::ai::strategy::candidate_pressure_response::StrategyCommitmentKind;
     use sts_simulator::ai::strategy::decision_pipeline::{
         CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, CandidateLaneCap,
         CandidateLaneCapSource, DecisionCandidateIr, DecisionCandidateKind, ExpansionPlan,
     };
+    use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
     use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::RunControlCommand;
@@ -807,5 +865,41 @@ mod tests {
         assert_eq!(state["relics"][1]["used_up"], true);
         assert_eq!(state["maw_bank"]["owned"], true);
         assert_eq!(state["maw_bank"]["active"], false);
+    }
+
+    #[test]
+    fn policy_selection_snapshot_keeps_repair_authorization() {
+        let evidence = PolicyExpansionEvidence {
+            class: PolicyExpansionClass::CommitmentRepair,
+            matched_pressure_axes: vec![PressureAxis::GrowthHorizon],
+            matched_commitments: vec![StrategyCommitmentKind::ExhaustEngine],
+            original_lane: CandidateLane::Reject,
+            original_inspect_only: Some("candidate score rejected".to_string()),
+            overrode_reject: true,
+            checkpoint_ref: "branch-0/step-0".to_string(),
+        };
+
+        let value =
+            serde_json::to_value(BranchPathPolicySelectionSnapshot::from_evidence(&evidence))
+                .expect("policy selection should serialize");
+
+        assert_eq!(value["class"], "commitment_repair");
+        assert_eq!(value["matched_pressure_axes"][0], "growth_horizon");
+        assert_eq!(value["matched_commitments"][0], "exhaust_engine");
+        assert_eq!(value["original_lane"], "reject");
+        assert_eq!(value["overrode_reject"], true);
+        assert_eq!(value["checkpoint_ref"], "branch-0/step-0");
+    }
+
+    #[test]
+    fn legacy_path_step_without_policy_selection_remains_readable() {
+        let step: BranchPathStep = serde_json::from_value(json!({
+            "key": null,
+            "action_debug": "Noop",
+            "label": "legacy"
+        }))
+        .expect("legacy branch path should remain readable");
+
+        assert!(step.policy_selection.is_none());
     }
 }
