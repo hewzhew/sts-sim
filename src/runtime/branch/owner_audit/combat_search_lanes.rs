@@ -103,13 +103,6 @@ impl CombatSearchLane {
         }
     }
 
-    pub(super) fn rejects_new_curses(self) -> bool {
-        matches!(
-            self.acceptance_plugin(),
-            CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
-        )
-    }
-
     pub(super) fn acceptance_plugin(self) -> CombatSearchAcceptancePluginId {
         lane_spec(self.kind).acceptance
     }
@@ -136,7 +129,6 @@ mod tests {
             lane.acceptance_plugin(),
             CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
         );
-        assert!(lane.rejects_new_curses());
         assert_eq!(
             lane.commit_policy(),
             CombatSearchLaneCommitPolicy::AcceptedLineOnly

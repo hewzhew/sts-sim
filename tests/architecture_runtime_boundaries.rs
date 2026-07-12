@@ -125,3 +125,18 @@ fn build_script_only_watches_consumed_inputs() {
         );
     }
 }
+#[test]
+fn combat_line_adjudication_has_one_production_owner() {
+    let selector = std::fs::read_to_string("src/eval/run_control/combat_line_selector.rs")
+        .expect("read combat line selector");
+    let lane_runner =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_lane_runner.rs")
+            .expect("read combat search lane runner");
+    let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
+        .expect("read owner audit module");
+
+    assert!(!selector.contains("CombatLineAcceptancePolicy::default()"));
+    assert!(!lane_runner.contains("reject_dirty_win_status"));
+    assert!(!lane_runner.contains("master_deck_curse_count"));
+    assert!(!owner_audit.contains("combat_search_dirty_win.rs"));
+}

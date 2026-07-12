@@ -1,4 +1,3 @@
-use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, CombatSearchTraceSummary, RunControlAutoStopKind,
     RunControlCommandOutcome, RunControlHpLossLimit, RunControlSession,
@@ -7,7 +6,6 @@ use sts_simulator::eval::run_control::{
 use super::accepted_high_loss_diagnostic::{
     accepted_high_loss_diagnostic, capture_active_combat, AcceptedHighLossDiagnosticDraft,
 };
-use super::combat_search_dirty_win::reject_dirty_win_status;
 use super::combat_search_lane_commit::lane_commits;
 use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest};
 use super::combat_search_report::{
@@ -38,7 +36,6 @@ pub(super) fn run_lane_attempt(
     request: &CombatSearchRequest,
     lane: CombatSearchLane,
 ) -> Result<CombatSearchLaneAttempt, String> {
-    let before_curses = master_deck_curse_count(session);
     let combat_capture = capture_active_combat(session)?;
     let mut trial = session.clone();
     let options = lane.options(request, session);
@@ -91,13 +88,7 @@ pub(super) fn run_lane_attempt(
             });
         }
     };
-    let status = reject_dirty_win_status(
-        lane.rejects_new_curses(),
-        lane.label(),
-        lane_status(&trial, &outcome),
-        before_curses,
-        master_deck_curse_count(&trial),
-    );
+    let status = lane_status(&trial, &outcome);
     let auto_stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
     let applied_operations = outcome
         .auto_stop
@@ -176,15 +167,6 @@ fn lane_status(session: &RunControlSession, outcome: &RunControlCommandOutcome) 
     } else {
         boundary_router::classify_auto_outcome(session, outcome)
     }
-}
-
-fn master_deck_curse_count(session: &RunControlSession) -> usize {
-    session
-        .run_state
-        .master_deck
-        .iter()
-        .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
-        .count()
 }
 
 fn potion_policy_label(

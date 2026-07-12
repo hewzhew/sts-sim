@@ -604,8 +604,6 @@ mod tests {
             lane.acceptance_plugin(),
             sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
         );
-        assert!(lane.rejects_new_curses());
-
         assert_eq!(config.max_nodes, test_args().boss_search_nodes);
         assert_eq!(
             config.wall_time.map(|duration| duration.as_millis() as u64),
