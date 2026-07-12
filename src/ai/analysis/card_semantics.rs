@@ -171,6 +171,7 @@ impl CardDefinition {
 pub struct DeckMechanicContext {
     pub mechanics: Vec<Mechanic>,
     pub event_streams: Vec<CombatEvent>,
+    pub repeatable_event_streams: Vec<CombatEvent>,
     pub installed_rules: Vec<InstalledRule>,
     pub event_handlers: Vec<EventHandler>,
     pub burdens: Vec<CardBurden>,
@@ -207,10 +208,16 @@ impl DeckMechanicContext {
     }
 
     fn add_direct_definition_facts(&mut self, definition: &CardDefinition) {
+        let exhausts_self = definition.play_effects.contains(&PlayEffect::ExhaustsSelf);
         for effect in &definition.play_effects {
             match effect {
                 PlayEffect::Provide(mechanic) => push_unique(&mut self.mechanics, *mechanic),
-                PlayEffect::EmitEvent(event) => push_unique(&mut self.event_streams, *event),
+                PlayEffect::EmitEvent(event) => {
+                    push_unique(&mut self.event_streams, *event);
+                    if !exhausts_self {
+                        push_unique(&mut self.repeatable_event_streams, *event);
+                    }
+                }
                 PlayEffect::PlayTopCardAndExhaust => {
                     push_unique(&mut self.event_streams, CombatEvent::CardExhausted);
                 }
@@ -253,6 +260,10 @@ impl DeckMechanicContext {
                 TriggeredEffect::Provide(mechanic) => push_unique(&mut self.mechanics, mechanic),
                 TriggeredEffect::LoseHpFromCard => {
                     push_unique(&mut self.event_streams, CombatEvent::CardSelfDamage);
+                    push_unique(
+                        &mut self.repeatable_event_streams,
+                        CombatEvent::CardSelfDamage,
+                    );
                 }
                 TriggeredEffect::DealAllDamage => {}
             }
@@ -326,6 +337,7 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             .provides(CardDraw)
             .provides(Energy)
             .effect(EmitEvent(CardSelfDamage))
+            .effect(ExhaustsSelf)
             .burden(HpCost),
         SeeingRed => CardDefinition::new(card).provides(Energy),
         Bloodletting => CardDefinition::new(card)
@@ -600,5 +612,37 @@ mod tests {
         assert!(!definition
             .play_effects
             .contains(&PlayEffect::Provide(Mechanic::EnemyStrengthDown)));
+    }
+
+    #[test]
+    fn offering_self_damage_is_available_but_not_repeatable() {
+        let context = DeckMechanicContext::from_definitions(&[card_definition(CardId::Offering)]);
+
+        assert!(context.event_streams.contains(&CombatEvent::CardSelfDamage));
+        assert!(!context
+            .repeatable_event_streams
+            .contains(&CombatEvent::CardSelfDamage));
+    }
+
+    #[test]
+    fn non_exhausting_direct_self_damage_is_repeatable() {
+        for card in [CardId::Bloodletting, CardId::Hemokinesis] {
+            let context = DeckMechanicContext::from_definitions(&[card_definition(card)]);
+
+            assert!(context
+                .repeatable_event_streams
+                .contains(&CombatEvent::CardSelfDamage));
+        }
+    }
+
+    #[test]
+    fn recurring_power_self_damage_is_repeatable() {
+        for card in [CardId::Combust, CardId::Brutality] {
+            let context = DeckMechanicContext::from_definitions(&[card_definition(card)]);
+
+            assert!(context
+                .repeatable_event_streams
+                .contains(&CombatEvent::CardSelfDamage));
+        }
     }
 }
