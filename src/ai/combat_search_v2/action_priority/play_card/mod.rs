@@ -17,7 +17,10 @@ use crate::content::cards::{self, CardType};
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
 
-use setup::{current_turn_attack_setup_score, key_setup_card_online_candidate};
+use setup::{
+    current_turn_attack_setup_score, current_turn_retaliation_protection_score,
+    key_setup_card_online_candidate,
+};
 use target::{
     target_enemy_id, target_has_stasis_card, target_progress_hint, target_progress_kills,
 };
@@ -64,6 +67,22 @@ pub(super) fn priority_for_play_card(
     );
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);
+    let visible_damage = visible_incoming_damage(combat);
+    let current_turn_retaliation_protection = if def.card_type == CardType::Skill
+        && block > 0
+        && resource_timing.hand_exhaust_target_count == 0
+        && !effects.reactive.forced_turn_end
+    {
+        current_turn_retaliation_protection_score(
+            combat,
+            card_index,
+            block,
+            card.cost_for_turn_java(),
+            visible_damage,
+        )
+    } else {
+        0
+    };
     let phase_hint = phase_action_ordering_hint(
         phase_profile,
         plugins.phase_guard,
@@ -86,7 +105,6 @@ pub(super) fn priority_for_play_card(
             phase_transition,
         },
     );
-    let visible_damage = visible_incoming_damage(combat);
     let current_block = combat.entities.player.block;
     let current_hp = combat.entities.player.current_hp;
     let visible_loss_now = (visible_damage - current_block).max(0);
@@ -118,6 +136,11 @@ pub(super) fn priority_for_play_card(
         )
     } else if key_setup_card {
         (ActionOrderingRole::KeySetupCard, ROLE_KEY_SETUP_CARD)
+    } else if current_turn_retaliation_protection > 0 {
+        (
+            ActionOrderingRole::CurrentTurnRetaliationProtection,
+            ROLE_CURRENT_TURN_RETALIATION_PROTECTION,
+        )
     } else if current_turn_attack_setup > 0 {
         (
             ActionOrderingRole::CurrentTurnAttackSetup,
@@ -163,7 +186,8 @@ pub(super) fn priority_for_play_card(
         cheaper_cost: -card.cost_for_turn_java().max(0),
         phase_setup: phase_hint
             .phase_setup
-            .saturating_add(current_turn_attack_setup),
+            .saturating_add(current_turn_attack_setup)
+            .saturating_add(current_turn_retaliation_protection),
         phase_survival: phase_hint.phase_survival,
         phase_transition_safety: phase_hint.phase_transition_safety,
         resource_timing: resource_timing.ordering_score,

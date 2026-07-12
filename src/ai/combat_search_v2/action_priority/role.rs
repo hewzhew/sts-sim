@@ -6,6 +6,7 @@ pub(in crate::ai::combat_search_v2) enum ActionOrderingRole {
     KeySetupCard,
     TacticalPotion,
     PreventHpLoss,
+    CurrentTurnRetaliationProtection,
     CurrentTurnAttackSetup,
     DeferredSetup,
     DamageProgress,
@@ -30,6 +31,9 @@ impl ActionOrderingRole {
             ActionOrderingRole::KeySetupCard => "key_setup_card",
             ActionOrderingRole::TacticalPotion => "tactical_potion",
             ActionOrderingRole::PreventHpLoss => "prevent_hp_loss",
+            ActionOrderingRole::CurrentTurnRetaliationProtection => {
+                "current_turn_retaliation_protection"
+            }
             ActionOrderingRole::CurrentTurnAttackSetup => "current_turn_attack_setup",
             ActionOrderingRole::DeferredSetup => "deferred_setup",
             ActionOrderingRole::DamageProgress => "damage_progress",
