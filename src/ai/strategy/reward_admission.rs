@@ -646,6 +646,16 @@ mod tests {
     }
 
     #[test]
+    fn offering_backed_rupture_is_an_engine_seed_not_a_supported_package() {
+        let admission = assess_reward_admission(&[CardId::Offering], CardId::Rupture);
+
+        assert_eq!(admission.class, RewardAdmissionClass::EngineSeed);
+        assert!(!admission
+            .reasons
+            .contains(&RewardAdmissionReason::Supports(PackageKind::SelfDamage)));
+    }
+
+    #[test]
     fn first_independent_installed_rule_remains_an_engine_seed() {
         let admission = assess_reward_admission(
             &[CardId::Strike, CardId::Defend, CardId::Bash],

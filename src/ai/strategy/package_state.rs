@@ -53,12 +53,22 @@ fn assess_exhaust_package(ctx: &DeckMechanicContext) -> PackageMaturity {
 
 fn assess_self_damage_package(ctx: &DeckMechanicContext) -> PackageMaturity {
     let has_source = ctx.event_streams.contains(&CombatEvent::CardSelfDamage);
+    let has_repeatable_source = ctx
+        .repeatable_event_streams
+        .contains(&CombatEvent::CardSelfDamage);
     let has_payoff = ctx
         .payoff_requirements
         .contains(&PayoffRequirement::WantsEventStream(
             CombatEvent::CardSelfDamage,
         ));
-    maturity_from_source_and_payoff(has_source, has_payoff, false)
+
+    match (has_source, has_repeatable_source, has_payoff) {
+        (_, true, true) => PackageMaturity::Supported,
+        (true, false, true) => PackageMaturity::Seeded,
+        (true, _, false) => PackageMaturity::SourceOnly,
+        (false, _, true) => PackageMaturity::PayoffOnly,
+        (false, _, false) => PackageMaturity::None,
+    }
 }
 
 fn assess_block_package(ctx: &DeckMechanicContext) -> PackageMaturity {
@@ -81,5 +91,37 @@ fn maturity_from_source_and_payoff(
         (false, true, false) => PackageMaturity::PayoffOnly,
         (false, false, true) => PackageMaturity::SourceOnly,
         (false, false, false) => PackageMaturity::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::analysis::card_semantics::card_definition;
+    use crate::content::cards::CardId;
+
+    fn state(cards: &[CardId]) -> PackageStateReport {
+        let definitions = cards
+            .iter()
+            .copied()
+            .map(card_definition)
+            .collect::<Vec<_>>();
+        assess_package_state(&DeckMechanicContext::from_definitions(&definitions))
+    }
+
+    #[test]
+    fn limited_self_damage_with_rupture_is_seeded() {
+        assert_eq!(
+            state(&[CardId::Offering, CardId::Rupture]).self_damage,
+            PackageMaturity::Seeded
+        );
+    }
+
+    #[test]
+    fn repeatable_self_damage_with_rupture_is_supported() {
+        assert_eq!(
+            state(&[CardId::Bloodletting, CardId::Rupture]).self_damage,
+            PackageMaturity::Supported
+        );
     }
 }
