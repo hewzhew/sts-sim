@@ -46,6 +46,7 @@ pub struct CombatSearchV2ActionTargetFacts {
     pub weak: i32,
     pub strength: i32,
     pub timed_enemy_threat: Option<CombatSearchV2TimedEnemyThreatTargetFacts>,
+    pub attack_retaliation: Option<CombatSearchV2AttackRetaliationTargetFacts>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -54,6 +55,13 @@ pub struct CombatSearchV2TimedEnemyThreatTargetFacts {
     pub owner_turns_until_trigger: u32,
     pub raw_player_damage: i32,
     pub canceled_by_owner_death: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2AttackRetaliationTargetFacts {
+    pub power_source_count: usize,
+    pub player_hp_loss_per_damage_event: i32,
+    pub visible_growth_amount: i32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

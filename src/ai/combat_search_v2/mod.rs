@@ -155,7 +155,8 @@ pub use action_facts::{
     CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
     CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
     CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionResourceTimingFacts,
-    CombatSearchV2ActionTargetFacts, CombatSearchV2TimedEnemyThreatTargetFacts,
+    CombatSearchV2ActionTargetFacts, CombatSearchV2AttackRetaliationTargetFacts,
+    CombatSearchV2TimedEnemyThreatTargetFacts,
 };
 pub use baseline::{
     compare_outcome_metrics, CombatSearchV2OutcomeMetrics, WHOLE_COMBAT_OUTCOME_CRITERIA,

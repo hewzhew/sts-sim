@@ -2,6 +2,7 @@ use crate::content::cards::{CardId, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
+use crate::runtime::monster_move::{BuffSpec, MonsterMoveSpec};
 use crate::sim::combat::EngineCombatStepper;
 use crate::test_support::{blank_test_combat, planned_monster, test_monster};
 
@@ -71,6 +72,52 @@ fn facts_report_timed_enemy_threat_on_target() {
     assert_eq!(threat.owner_turns_until_trigger, 3);
     assert_eq!(threat.raw_player_damage, 30);
     assert!(threat.canceled_by_owner_death);
+}
+
+#[test]
+fn facts_report_attack_retaliation_on_target() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 1;
+    spiker.set_planned_steps(
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Thorns,
+            amount: 2,
+        })
+        .to_steps(),
+    );
+    combat.entities.monsters = vec![spiker];
+    combat.entities.power_db.insert(
+        1,
+        vec![Power {
+            power_type: PowerId::Thorns,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let facts = summarize_action_facts(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        &EngineCombatStepper,
+        250,
+    );
+
+    let retaliation = facts
+        .target
+        .and_then(|target| target.attack_retaliation)
+        .expect("retaliating target should expose attack retaliation");
+    assert_eq!(retaliation.power_source_count, 1);
+    assert_eq!(retaliation.player_hp_loss_per_damage_event, 3);
+    assert_eq!(retaliation.visible_growth_amount, 2);
 }
 
 #[test]

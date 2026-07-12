@@ -1790,6 +1790,7 @@ mod tests {
                     weak: 0,
                     strength: 0,
                     timed_enemy_threat: None,
+                    attack_retaliation: None,
                 }),
                 immediate: CombatSearchV2ActionImmediateFacts::default(),
                 mechanics,

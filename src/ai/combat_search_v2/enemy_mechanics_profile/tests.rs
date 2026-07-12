@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::combat::{Power, PowerPayload};
+use crate::runtime::monster_move::{BuffSpec, MonsterMoveSpec};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[test]
@@ -55,6 +56,44 @@ fn profile_reports_timed_enemy_threat_aggregates() {
         report.profiling_policy,
         "typed_enemy_mechanics_fact_profile_no_direct_score"
     );
+}
+
+#[test]
+fn profile_reports_attack_retaliation_aggregates() {
+    let mut combat = blank_test_combat();
+    let mut spiker = test_monster(EnemyId::Spiker);
+    spiker.id = 7;
+    spiker.set_planned_steps(
+        MonsterMoveSpec::Buff(BuffSpec {
+            power_id: PowerId::Thorns,
+            amount: 2,
+        })
+        .to_steps(),
+    );
+    combat.entities.monsters = vec![spiker];
+    combat.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Thorns,
+            instance_id: None,
+            amount: 3,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let profile = enemy_mechanics_profile(&combat);
+    let report = enemy_mechanics_profile_report(profile);
+
+    assert_eq!(profile.attack_retaliation_target_count, 1);
+    assert_eq!(profile.attack_retaliation_total_per_event, 3);
+    assert_eq!(profile.attack_retaliation_visible_growth_target_count, 1);
+    assert_eq!(profile.attack_retaliation_visible_growth_total, 2);
+    assert_eq!(report.attack_retaliation_target_count, 1);
+    assert_eq!(report.attack_retaliation_total_per_event, 3);
+    assert_eq!(report.attack_retaliation_visible_growth_target_count, 1);
+    assert_eq!(report.attack_retaliation_visible_growth_total, 2);
 }
 
 #[test]

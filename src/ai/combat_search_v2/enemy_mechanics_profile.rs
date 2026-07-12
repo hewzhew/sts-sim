@@ -1,3 +1,4 @@
+use super::attack_retaliation::attack_retaliation_for_target;
 use super::timed_enemy_threat::timed_enemy_threats;
 use super::*;
 use crate::content::powers::{store, PowerId};
@@ -16,6 +17,10 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) timed_threat_count: usize,
     pub(super) timed_threat_min_owner_turns: Option<u32>,
     pub(super) timed_threat_total_raw_damage: i32,
+    pub(super) attack_retaliation_target_count: usize,
+    pub(super) attack_retaliation_total_per_event: i32,
+    pub(super) attack_retaliation_visible_growth_target_count: usize,
+    pub(super) attack_retaliation_visible_growth_total: i32,
     pub(super) split_pending_count: usize,
     pub(super) guardian_open_count: usize,
     pub(super) guardian_defensive_count: usize,
@@ -65,6 +70,18 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
         .iter()
         .filter(|monster| monster.is_alive_for_action())
     {
+        if let Some(retaliation) = attack_retaliation_for_target(combat, monster.id) {
+            profile.attack_retaliation_target_count += 1;
+            profile.attack_retaliation_total_per_event = profile
+                .attack_retaliation_total_per_event
+                .saturating_add(retaliation.player_hp_loss_per_damage_event);
+            if retaliation.visible_growth_amount > 0 {
+                profile.attack_retaliation_visible_growth_target_count += 1;
+                profile.attack_retaliation_visible_growth_total = profile
+                    .attack_retaliation_visible_growth_total
+                    .saturating_add(retaliation.visible_growth_amount);
+            }
+        }
         let Some(enemy_id) = EnemyId::from_id(monster.monster_type) else {
             continue;
         };
@@ -198,6 +215,11 @@ pub(super) fn enemy_mechanics_profile_report(
         timed_threat_count: profile.timed_threat_count,
         timed_threat_min_owner_turns: profile.timed_threat_min_owner_turns,
         timed_threat_total_raw_damage: profile.timed_threat_total_raw_damage,
+        attack_retaliation_target_count: profile.attack_retaliation_target_count,
+        attack_retaliation_total_per_event: profile.attack_retaliation_total_per_event,
+        attack_retaliation_visible_growth_target_count: profile
+            .attack_retaliation_visible_growth_target_count,
+        attack_retaliation_visible_growth_total: profile.attack_retaliation_visible_growth_total,
         split_pending_count: profile.split_pending_count,
         guardian_open_count: profile.guardian_open_count,
         guardian_defensive_count: profile.guardian_defensive_count,
