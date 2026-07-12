@@ -162,6 +162,8 @@ mod shop_tiny_owner;
 mod trace;
 #[path = "owner_audit/trace_format.rs"]
 mod trace_format;
+#[path = "owner_audit/trajectory_evidence_store.rs"]
+mod trajectory_evidence_store;
 #[path = "owner_audit/trajectory_snapshot.rs"]
 mod trajectory_snapshot;
 

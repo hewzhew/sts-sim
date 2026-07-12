@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sts_simulator::ai::strategy::challenger_policy_state::CommitmentStatus;
 use sts_simulator::ai::strategy::challenger_signature::DeckBurdenBand;
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -13,7 +13,7 @@ use sts_simulator::ai::strategy::trajectory_comparison::{
 
 use super::branch_model::{Branch, BranchStatus, TerminalOutcome};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct FrontierTrajectoryEvaluation {
     pub(super) snapshots: Vec<TrajectorySnapshot>,
     pub(super) comparisons: Vec<TrajectoryComparison>,
@@ -76,26 +76,22 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
 pub(super) fn frontier_trajectory_evaluation(
     frontier: &VecDeque<Branch>,
 ) -> FrontierTrajectoryEvaluation {
-    let baseline = frontier
-        .iter()
-        .find(|branch| branch.policy_lane.challenger_policy().is_none())
-        .map(trajectory_snapshot);
-    let challengers = frontier
-        .iter()
-        .filter(|branch| branch.policy_lane.challenger_policy().is_some())
-        .map(trajectory_snapshot)
-        .collect::<Vec<_>>();
+    trajectory_evaluation_from_snapshots(frontier.iter().map(trajectory_snapshot).collect())
+}
 
-    let mut snapshots = Vec::with_capacity(frontier.len());
-    if let Some(baseline) = baseline.as_ref() {
-        snapshots.push(baseline.clone());
-    }
-    snapshots.extend(challengers.iter().cloned());
+pub(super) fn trajectory_evaluation_from_snapshots(
+    mut snapshots: Vec<TrajectorySnapshot>,
+) -> FrontierTrajectoryEvaluation {
+    snapshots.sort_by(|left, right| lane_sort_key(&left.lane).cmp(&lane_sort_key(&right.lane)));
+    let baseline = snapshots
+        .iter()
+        .find(|snapshot| snapshot.lane == "baseline");
+
     let comparisons = baseline
-        .as_ref()
         .map(|baseline| {
-            challengers
+            snapshots
                 .iter()
+                .filter(|snapshot| snapshot.lane != "baseline")
                 .map(|challenger| compare_trajectories(baseline, challenger))
                 .collect()
         })
@@ -105,6 +101,17 @@ pub(super) fn frontier_trajectory_evaluation(
         snapshots,
         comparisons,
     }
+}
+
+fn lane_sort_key(lane: &str) -> (u8, u16, &str) {
+    if lane == "baseline" {
+        return (0, 0, lane);
+    }
+    let number = lane
+        .strip_prefix("challenger-")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(u16::MAX);
+    (1, number, lane)
 }
 
 fn terminal_state(status: &BranchStatus) -> TrajectoryTerminal {
@@ -216,5 +223,21 @@ mod tests {
             .comparisons
             .iter()
             .all(|item| item.baseline_lane == "baseline"));
+    }
+
+    #[test]
+    fn snapshot_evaluation_pairs_latest_lanes_without_live_branches() {
+        let baseline = trajectory_snapshot(&test_branch(BranchPolicyLane::default()));
+        let challenger = trajectory_snapshot(&test_branch(BranchPolicyLane::challenger(
+            ChallengerPolicyState::new(1),
+        )));
+
+        let evaluation =
+            trajectory_evaluation_from_snapshots(vec![challenger.clone(), baseline.clone()]);
+
+        assert_eq!(evaluation.snapshots[0].lane, "baseline");
+        assert_eq!(evaluation.snapshots[1].lane, "challenger-1");
+        assert_eq!(evaluation.comparisons.len(), 1);
+        assert_eq!(evaluation.comparisons[0].baseline_lane, "baseline");
     }
 }
