@@ -1,3 +1,6 @@
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades, CombatEvent, DeckMechanicContext,
+};
 use crate::ai::card_semantics_v1::{
     card_mechanics_profile_v1, potion_mechanics_profile_v1, relic_mechanics_profile_v1,
     StrengthConversionMechanicV1,
@@ -35,10 +38,18 @@ pub struct StrengthProfileV1 {
 pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
     let mut profile = StrengthProfileV1::default();
     let mut rupture_count = 0u8;
-    let mut self_damage_sources = 0u8;
     let mut has_amplifier = false;
     let mut has_debuff_prevention = false;
     let mut has_debuff_cleanse = false;
+    let definitions = run_state
+        .master_deck
+        .iter()
+        .map(|card| card_definition_with_upgrades(card.id, card.upgrades))
+        .collect::<Vec<_>>();
+    let mechanic_context = DeckMechanicContext::from_definitions(&definitions);
+    let has_repeatable_self_damage = mechanic_context
+        .repeatable_event_streams
+        .contains(&CombatEvent::CardSelfDamage);
 
     for relic in &run_state.relics {
         let mechanics = relic_mechanics_profile_v1(relic.id);
@@ -75,9 +86,6 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
         if card.id == CardId::Rupture {
             rupture_count = rupture_count.saturating_add(1);
         }
-        if mechanics.self_damage_source {
-            self_damage_sources = self_damage_sources.saturating_add(1);
-        }
         if mechanics.strength_payoff {
             profile.payoffs = profile.payoffs.saturating_add(1);
         }
@@ -97,7 +105,7 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
         );
     }
 
-    if rupture_count > 0 && self_damage_sources > 0 {
+    if rupture_count > 0 && has_repeatable_self_damage {
         profile.stable_sources = profile.stable_sources.saturating_add(rupture_count);
     }
     if profile.temporary_bursts > 0 {
@@ -263,5 +271,23 @@ mod tests {
 
         assert_eq!(profile.stable_sources, 1);
         assert_eq!(profile.temporary_bursts, 0);
+    }
+
+    #[test]
+    fn offering_does_not_make_rupture_a_stable_strength_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Offering);
+        run_state.add_card_to_deck(CardId::Rupture);
+
+        assert_eq!(strength_profile_v1(&run_state).stable_sources, 0);
+    }
+
+    #[test]
+    fn repeatable_self_damage_makes_rupture_a_stable_strength_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Bloodletting);
+        run_state.add_card_to_deck(CardId::Rupture);
+
+        assert_eq!(strength_profile_v1(&run_state).stable_sources, 1);
     }
 }

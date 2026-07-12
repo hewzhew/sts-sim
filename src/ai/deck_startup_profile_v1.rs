@@ -589,6 +589,18 @@ mod tests {
     }
 
     #[test]
+    fn offering_backed_rupture_remains_non_persistent_at_startup() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Offering);
+        run_state.add_card_to_deck(CardId::Rupture);
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.self_damage_source_count, 1);
+        assert_eq!(profile.persistent_strength_source_count, 0);
+    }
+
+    #[test]
     fn flex_is_temporary_burst_not_persistent_strength() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         run_state.add_card_to_deck(CardId::Flex);
