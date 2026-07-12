@@ -90,7 +90,6 @@ with an unresolved external consumer keeps its writer `Unknown`.
 | `sts_simulator` library | `src/lib.rs` | Owns game content, state transitions, simulation, AI, evaluation, and reusable run-time APIs. | All eight binaries, Rust tests, and downstream code using crate modules. | Typed modules own run capsules, panels, combat cases, datasets, and other JSON/JSONL contracts; the crate root itself performs no IO. | Maintained binaries, repository tests and tools, and human diagnostics. | None; binaries are adapters over this surface. | Cargo metadata plus public module exports in `src/lib.rs`. | `SupportedMainline` | Keep; consolidate internals only through later architecture deliveries. |
 | Custom build script | `build.rs` (`build-script-build`) | Converts the compiled protocol schema into Rust enum-name adapters during every build. | Cargo automatically; watches `build.rs` and `tools/compiled_protocol_schema.json`. | `$OUT_DIR/generated_schema.rs`. | `src/testing/combat_start_spec.rs` includes the generated Rust source. | No replacement observed. | Direct writer/reader trace and architecture test `build_script_only_watches_consumed_inputs`. | `SupportedMainline` | Keep the input/watch boundary narrow. |
 | `architecture_runtime_boundaries` | `tests/architecture_runtime_boundaries.rs` | Protects seven source-ownership and persistence delegation boundaries. | Completion verification and developer test runs. | None observed; assertions read source files only. | Developers and future cleanup/refactor work. | No replacement observed. | Cargo metadata and seven passing named tests. | `SupportedMainline` | Keep; revise individual assertions only with an approved ownership change. |
-| `branch_campaign_driver` | `src/bin/branch_campaign_driver/main.rs` and 19 sibling modules | Runs the older Rust campaign application, artifact store, inspection, dataset, and targeted-continuation experiments. | Current `docs/RUNBOOK.md`, `tools/campaign.ps1`, `tools/README.md`, root READMEs, and humans. | Campaign report/checkpoint/state/journal JSON or JSON.GZ, manifests, command/log sidecars, latest pointers, and outcome/learning/decision JSONL; principal schemas include `BranchCampaignV1`, `BranchCampaignCheckpointV2`, `CampaignArtifactManifestV1`, and `CampaignLatestPointerV1`. | The same binary's inspect/continue/dataset commands, `tools/campaign.ps1`, and human campaign experiments. | `branch_tiny` is the newer mainline owner-audit runner, but it does not read campaign artifacts or replace targeted campaign continuation. | Active launcher and runbook commands, typed request enum, artifact store, and recent maintenance. | `SupportedDiagnostic` | Keep as a legacy diagnostic application; do not expand it into the mainline runner. |
 | `branch_panel` | `src/bin/branch_panel.rs` | Inspects and schedules bounded multi-seed smoke, continuation, drain, and compare work over durable owner-audit capsules. | Root README, `docs/RUNBOOK.md`, `tools/README.md`, current durable-panel design, and human CLI use. | `panel_summary.json` (`branch_panel_summary_v0`), `panel_ledger.jsonl` (`branch_panel_ledger_event_v0`), profile capsule trees, and the underlying `branch_tiny` capsule set. | Humans, panel continuation/inspection, Rust panel tests, and follow-on diagnostics. | Replaces the retired Python `gap_panel.py`; shares `BranchRuntime` with `branch_tiny` without replacing the single-run CLI. | CLI source, `BranchArtifactStore`, current runbook, and active runtime tests. | `SupportedDiagnostic` | Keep as the supported bounded panel scheduler; do not move policy into it. |
 | `branch_tiny` | `src/bin/branch_tiny.rs` | Thin mainline CLI adapter over `OwnerAuditRuntime` for a bounded owner-audit run or continuation. | Root README, `docs/RUNBOOK.md`, `tools/README.md`, capsule next-command generation, and direct human runs. | Capsule manifest/summary/result/path/terminal/chain/ledger, frontier checkpoint, trace, trajectory evidence, combat cases, and accepted-high-loss evidence; schemas include `branch_tiny_run_capsule`, `branch_tiny_capsule_summary`, `branch_tiny_run_result`, `branch_tiny_run_path`, `branch_tiny_terminal_results`, `branch_tiny_run_chain`, `branch_tiny_frontier_checkpoint`, `branch_tiny_trace_v1`, and `branch_tiny_trajectory_state_v0`. | `branch_panel`, continuation logic, `combat_case_review`, `tools/path_review.py`, dataset exporters, tests, and humans. | `BranchRuntime` is the reusable API, not a CLI replacement; `branch_panel` adds multi-seed scheduling. | Eight-line entry point, current runbook, generated next commands, schema readers, and recent bounded-mainline use. | `SupportedMainline` | Keep thin; future run-control work belongs in library ownership. |
 | `combat_case_review` | `src/bin/combat_case_review.rs` and `src/bin/combat_case_review/` | Replays a saved `CombatCase` through review-only search ladders, counterfactuals, and tactical lenses. | Capsule next-command generation, root README, `docs/RUNBOOK.md`, `tools/frozen_case_panel.py`, `tools/success_feedback_panel.py`, and humans. | Standard output or `--write-review` JSON with root schema `combat_case_review`, plus nested review-only schemas such as quality, frozen-panel, Collector tactic, and strategic-feedback evidence. | Frozen-case panel, success-feedback panel, their tests, and human combat diagnosis. | `combat_search_v2_driver` starts broader whole-combat scenarios; it does not replace saved-case review. | CLI and case loader, active Python consumers, tests, runbook, and recent Collector review-lane history. | `SupportedDiagnostic` | Keep review-only; never let its lanes silently become runner policy. |
@@ -138,20 +137,6 @@ gaps. `tools/frozen_case_panel.py` and `tools/success_feedback_panel.py` invoke 
 with Python tests protecting the root schema. Recent Git history adds Collector and Awakened One
 review evidence, showing current diagnostic maintenance rather than historical-only references.
 
-### `branch_campaign_driver`
-
-The current root README labels this as an older campaign application rather than the mainline
-runner, but it is not abandoned. `docs/RUNBOOK.md` still gives campaign run and artifact-resolve
-commands, while `tools/campaign.ps1` builds and invokes the executable. Its request enum covers
-campaign run/continue, checkpoint and journal inspection, dataset analysis/export, targeted sibling
-continuation, coverage-gap continuation, artifact management, and an ancestor-replay self-check.
-
-Its artifact store is a distinct compatibility surface: run and scratch directories contain
-campaign report, checkpoint, state, journal, manifest, command, and log files, with latest-pointer
-resolution and guarded pruning. The owner-audit capsule tools do not currently consume or replace
-those schemas. This makes the binary intentionally supported for diagnostics and experiments, but
-not a model for new mainline functionality.
-
 ### `combat_search_v2_driver`
 
 The driver accepts exactly one start spec, combat capture/snapshot, or benchmark suite. It can
@@ -176,6 +161,18 @@ save decision cases and combat baselines, and derive runtime card-reward calibra
 Its REPL is unique among current Cargo targets. Although the underlying run-control kernel needs a
 separate narrowing pass, that architecture concern is not evidence for deleting its supported
 diagnostic adapter.
+
+## Retirement History
+
+### `decision_records`
+
+- Removal commit: `bd69e90afeb30a90c5b6c93de77e96640a0d6dc2`
+  (`chore: retire decision records exporter`).
+- Removed contracts: `learning_decision_record_v0` and `path_observable_facts_v0`.
+- Replacements: `rl_dataset_export` for per-step behavior-policy data and
+  `tools/path_review.py` for human path inspection.
+- Recovery: `origin/backup/pre-cleanup-20260712` at
+  `1ee108d0f53806f6b53c5169b74949b28e8648ce`.
 
 ## Test Retention Contract
 

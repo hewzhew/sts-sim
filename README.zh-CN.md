@@ -58,7 +58,6 @@ cargo run --bin combat_case_review -- --case <case.json> --ladder
 | `combat_case_review` | saved combat case 的诊断 review ladder |
 | `combat_search_v2_driver` | 从 start spec、capture 或 benchmark suite 跑固定战斗搜索 |
 | `run_play_driver` | 手动和半自动模拟器 REPL |
-| `branch_campaign_driver` | 较旧但仍保留的 Rust campaign application surface，用于 campaign artifact 和 continuation 实验 |
 | `rl_dataset_export` | 离线 decision sample 导出，用于 imitation/RL 实验 |
 
 Binary 边界见 [src/bin/README.md](src/bin/README.md)。

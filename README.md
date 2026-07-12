@@ -63,7 +63,6 @@ examples, combat search drivers, manual REPL usage, and verification.
 | `combat_case_review` | diagnostic review ladder for saved combat cases |
 | `combat_search_v2_driver` | fixed combat search from start specs, captures, or benchmark suites |
 | `run_play_driver` | manual and semi-automatic simulator REPL |
-| `branch_campaign_driver` | older Rust campaign application surface for campaign artifacts and continuation experiments |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
 
 See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.

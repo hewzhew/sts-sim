@@ -57,27 +57,6 @@ cargo run --bin combat_case_review -- --case <case.json> --ladder
 Review output is diagnostic. It does not mutate runner policy and does not
 prove a deck is good or bad by itself.
 
-## Campaign Launcher
-
-The Rust campaign namespace owns campaign behavior:
-
-```powershell
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
-```
-
-`tools/campaign.ps1` is a local launcher for source selection, output
-allocation, and small continuation runs:
-
-```powershell
-.\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
-.\tools\campaign.ps1 -From latest -Inspect
-```
-
-The wrapper must not own manifests, milestone loops, coverage-gap policy,
-report shaping, or artifact schema semantics.
-
 ## Manual Run Play Driver
 
 Use `run_play_driver` for manual or semi-automatic inspection of one simulator
@@ -148,7 +127,6 @@ For core code changes:
 cargo fmt --check
 cargo check --all-targets
 cargo check --release --all-targets
-cargo build --profile fast-run --bin branch_campaign_driver
 cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check

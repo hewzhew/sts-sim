@@ -8,7 +8,6 @@ or analyze artifacts.
 
 | Tool | Purpose |
 | --- | --- |
-| `campaign.ps1` | Small local launcher for `branch_campaign_driver`; it does not own campaign semantics. |
 | `path_review.py` | Render `branch_tiny` capsule paths with selected choices and candidate pools. |
 | `success_feedback_panel.py` | Compare branch/capsule outcomes for feedback-oriented inspection. |
 | `frozen_case_panel.py` | Run fixed combat/search cases for review panels. |
@@ -57,19 +56,3 @@ python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --
 python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --contains "purge reserve" --summary
 python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --boundary Shop --inspect-summary
 ```
-
-## Campaign Launcher Boundary
-
-The campaign architecture belongs to the Rust `branch_campaign_driver`
-campaign application. `tools/campaign.ps1` is a minimal launcher. It owns only
-source selection, output allocation, and small continuation invocations:
-
-```powershell
-.\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
-.\tools\campaign.ps1 -From latest -Inspect
-```
-
-It must not own manifest, milestone, coverage-gap, report-shaping, or artifact
-schema semantics. See `docs/RUNBOOK.md` for maintained commands and
-`docs/ARCHITECTURE.md` for the launcher ownership boundary.

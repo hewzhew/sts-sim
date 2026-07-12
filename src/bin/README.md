@@ -16,14 +16,10 @@ file only records binary ownership and boundaries.
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
 | `combat_search_v2_driver` | Whole-combat search from start specs, combat captures, and benchmark suites. |
 | `run_play_driver` | Manual and semi-automatic REPL over `eval::run_control`: traces, bookmarks, captures, baselines, and interactive panels. |
-| `branch_campaign_driver` | Rust-owned campaign application: run, inspect, dataset, continuation, and self-check commands. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments; exported labels are behavior-policy data, not truth. |
 
 ## Ownership Rules
 
-- `branch_campaign_driver` subcommands are the campaign application surface.
-  Top-level compatibility flags may parse, but new tooling should call explicit
-  subcommands.
 - `branch_tiny` owner modules produce typed decisions. The runner applies those
   decisions without parsing rendered labels.
 - `branch_panel` schedules and resumes `branch_tiny` capsules. It should not
