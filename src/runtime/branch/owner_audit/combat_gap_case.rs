@@ -1,17 +1,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{to_value, Value};
+use serde_json::{json, to_value, Value};
 use sts_simulator::eval::combat_case::{
-    living_enemy_names, save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep,
-    CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    living_enemy_names, save_combat_case, CombatCase, CombatCaseBranchEvidence, CombatCaseGap,
+    CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
 use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::core::EngineState;
 
 use super::branch_path::BranchPathStep;
-use super::{Args, Branch, BranchStatus};
+use super::{trajectory_snapshot, Args, Branch, BranchStatus};
 
 pub(super) fn save_combat_gap_case(
     dir: &Path,
@@ -35,7 +35,7 @@ pub(super) fn save_combat_gap_case(
         branch,
         &position.combat,
     ));
-    let case = CombatCase::new(
+    let mut case = CombatCase::new(
         CombatCaseSource {
             seed: args.seed,
             ascension: args.ascension,
@@ -67,6 +67,7 @@ pub(super) fn save_combat_gap_case(
         CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
         position,
     );
+    case.branch_evidence = Some(branch_evidence(branch));
     save_combat_case(&path, &case)?;
     Ok(Some(path))
 }
@@ -93,6 +94,22 @@ fn path_step(step: &BranchPathStep) -> CombatCasePathStep {
             .state_before
             .as_ref()
             .and_then(|state| to_value(state).ok()),
+        decision_evidence: Some(json!({
+            "policy_lane": step.policy_lane,
+            "annotation": &step.annotation,
+            "decision_delta": &step.decision_delta,
+            "candidate_pool": &step.candidate_pool,
+            "shop_boss_preview_candidates": &step.shop_boss_preview_candidates,
+            "shop_boss_preview_bundles": &step.shop_boss_preview_bundles,
+        })),
+    }
+}
+
+fn branch_evidence(branch: &Branch) -> CombatCaseBranchEvidence {
+    CombatCaseBranchEvidence {
+        schema: "branch_policy_combat_evidence_v0".to_string(),
+        policy_lane: to_value(&branch.policy_lane).unwrap_or(Value::Null),
+        trajectory_snapshot: trajectory_snapshot::trajectory_snapshot(branch),
     }
 }
 
@@ -130,4 +147,132 @@ fn slug(raw: &str) -> String {
         }
     }
     out.trim_matches('_').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
+    use sts_simulator::eval::run_control::RunControlCommand;
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+
+    use super::*;
+    use crate::runtime::branch::owner_audit::branch_model::BranchStatus;
+    use crate::runtime::branch::owner_audit::branch_path::{
+        BranchPathCandidateSnapshot, BranchPathShopBossPreviewBundleItemSnapshot,
+        BranchPathShopBossPreviewBundleSnapshot, BranchPathShopBossPreviewSnapshot, BranchPathStep,
+        ChoiceAnnotationSnapshot,
+    };
+    use crate::runtime::branch::owner_audit::branch_policy_lane::BranchPolicyLane;
+    use crate::runtime::branch::owner_audit::decision_delta::DecisionDeltaSnapshot;
+    use crate::runtime::branch::owner_audit::owner_model::{
+        ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion,
+    };
+
+    fn branch_path_step_with_all_evidence() -> BranchPathStep {
+        BranchPathStep {
+            policy_lane: "challenger-1".to_string(),
+            key: None,
+            action_debug: "Noop".to_string(),
+            label: "candidate".to_string(),
+            annotation: ChoiceAnnotationSnapshot::none(),
+            state_before: None,
+            decision_delta: Some(DecisionDeltaSnapshot {
+                deck_size_before: 10,
+                deck_size_after: 11,
+                gold_before: 100,
+                gold_after: 100,
+                changes: Vec::new(),
+                improved_fields: vec!["block_or_mitigation".to_string()],
+                worsened_fields: Vec::new(),
+                saturated_fields: Vec::new(),
+                adds_card_without_gap_improvement: false,
+                burden_worsened: false,
+            }),
+            candidate_pool: BranchPathCandidateSnapshot::from_choices(
+                &[OwnerChoice {
+                    key: None,
+                    action: RunControlCommand::Noop,
+                    label: "candidate".to_string(),
+                    annotation: ChoiceAnnotation::None,
+                    expansion: OwnerChoiceExpansion::AutoAllowed,
+                }],
+                0,
+            ),
+            shop_boss_preview_candidates: vec![BranchPathShopBossPreviewSnapshot {
+                rank: 1,
+                label: "preview".to_string(),
+                candidate: json!({"kind": "shop_leave"}),
+                class: "safe".to_string(),
+                reason: "fixture".to_string(),
+            }],
+            shop_boss_preview_bundles: vec![BranchPathShopBossPreviewBundleSnapshot {
+                rank: 1,
+                label: "bundle".to_string(),
+                total_cost: 0,
+                gold_after: 100,
+                reason: "fixture".to_string(),
+                items: vec![BranchPathShopBossPreviewBundleItemSnapshot {
+                    label: "leave".to_string(),
+                    candidate: json!({"kind": "shop_leave"}),
+                    cost: 0,
+                    auto_expand: true,
+                    blocked_reason: None,
+                }],
+            }],
+        }
+    }
+
+    fn challenger_branch() -> Branch {
+        Branch {
+            id: 2,
+            parent_id: Some(1),
+            path: Vec::new(),
+            session: RunControlSession::new(RunControlConfig::default()),
+            status: BranchStatus::CombatGap {
+                boundary: "boss".to_string(),
+                reason: "no win".to_string(),
+            },
+            policy_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+            combat_portfolio: None,
+            auto_steps: Vec::new(),
+            combat_search: Vec::new(),
+            combat_search_history: Vec::new(),
+            accepted_high_loss_diagnostics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn path_projection_keeps_complete_recorded_decision_evidence() {
+        let projected = path_step(&branch_path_step_with_all_evidence());
+        let evidence = projected.decision_evidence.unwrap();
+
+        assert_eq!(evidence["policy_lane"], "challenger-1");
+        assert_eq!(evidence["candidate_pool"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            evidence["shop_boss_preview_candidates"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            evidence["shop_boss_preview_bundles"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(!evidence["annotation"].is_null());
+        assert!(!evidence["decision_delta"].is_null());
+    }
+
+    #[test]
+    fn challenger_branch_evidence_keeps_policy_and_trajectory_identity() {
+        let evidence = branch_evidence(&challenger_branch());
+
+        assert_eq!(evidence.policy_lane["kind"], "challenger");
+        assert_eq!(evidence.policy_lane["policy"]["lane_id"], 1);
+        assert_eq!(evidence.trajectory_snapshot.lane, "challenger-1");
+    }
 }

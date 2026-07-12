@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::ai::strategy::trajectory_comparison::TrajectorySnapshot;
 use crate::content::monsters::EnemyId;
 use crate::eval::run_control::CombatSearchTraceSummary;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -20,6 +21,8 @@ pub struct CombatCase {
     pub gap: CombatCaseGap,
     pub run: CombatCaseRunSummary,
     pub combat: CombatCaseCombatSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_evidence: Option<CombatCaseBranchEvidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_search_attempts: Vec<CombatSearchTraceSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,6 +96,15 @@ pub struct CombatCasePathStep {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_before: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_evidence: Option<Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombatCaseBranchEvidence {
+    pub schema: String,
+    pub policy_lane: Value,
+    pub trajectory_snapshot: TrajectorySnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -129,6 +141,7 @@ impl CombatCase {
             gap,
             run,
             combat: combat_summary(&position),
+            branch_evidence: None,
             combat_search_attempts,
             failed_search,
             path,
@@ -214,4 +227,141 @@ pub fn card_summary(card: &CombatCard) -> CombatCaseCardSummary {
 
 fn is_zero_u8(value: &u8) -> bool {
     *value == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::ai::strategy::challenger_signature::DeckBurdenBand;
+    use crate::ai::strategy::trajectory_comparison::{
+        TrajectoryConstruction, TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence,
+        TrajectoryProgress, TrajectoryResources, TrajectorySnapshot, TrajectoryTerminal,
+    };
+    use crate::state::core::EngineState;
+
+    fn sample_snapshot() -> TrajectorySnapshot {
+        TrajectorySnapshot {
+            lane: "challenger-1".to_string(),
+            terminal: TrajectoryTerminal::CoverageLimited,
+            progress: TrajectoryProgress { act: 3, floor: 48 },
+            pressure: TrajectoryPressureEvidence::Unknown,
+            deployability: TrajectoryDeployabilityEvidence::Unknown,
+            resources: TrajectoryResources {
+                hp: 47,
+                max_hp: 81,
+                gold: 595,
+                potion_count: 2,
+            },
+            construction: TrajectoryConstruction {
+                burden: DeckBurdenBand::Clean,
+                completed_commitments: 0,
+                active_commitments: 0,
+                failed_commitments: 0,
+            },
+        }
+    }
+
+    fn sample_case() -> CombatCase {
+        let run = crate::state::run::RunState::new(7, 0, false, "IRONCLAD");
+        let position = CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            crate::test_support::blank_test_combat(),
+        );
+        CombatCase::new(
+            CombatCaseSource {
+                seed: 7,
+                ascension: 0,
+                generation: 4,
+                branch_id: 2,
+                parent_id: Some(1),
+            },
+            CombatCaseGap {
+                boundary: "Combat".to_string(),
+                reason: "no win".to_string(),
+                search_nodes: 100,
+                search_ms: 10,
+                rescue_search_nodes: 200,
+                rescue_search_ms: 20,
+            },
+            CombatCaseRunSummary {
+                act: 3,
+                floor: 48,
+                hp: 47,
+                max_hp: 81,
+                gold: 595,
+                deck_size: 14,
+                relic_count: 11,
+                potion_slots: 3,
+            },
+            Vec::new(),
+            None,
+            vec![CombatCasePathStep {
+                key: Value::Null,
+                label: "Skip card reward".to_string(),
+                state_before: None,
+                decision_evidence: None,
+            }],
+            CombatCaseRngSummary::from_pool(&run.rng_pool),
+            position,
+        )
+    }
+
+    fn sample_branch_evidence() -> CombatCaseBranchEvidence {
+        CombatCaseBranchEvidence {
+            schema: "branch_policy_combat_evidence_v0".to_string(),
+            policy_lane: json!({"kind": "challenger", "policy": {"lane_id": 1}}),
+            trajectory_snapshot: sample_snapshot(),
+        }
+    }
+
+    #[test]
+    fn legacy_case_without_branch_evidence_still_deserializes() {
+        let value = serde_json::to_value(sample_case()).unwrap();
+        let mut object = value.as_object().unwrap().clone();
+        object.remove("branch_evidence");
+        for step in object["path"].as_array_mut().unwrap() {
+            step.as_object_mut().unwrap().remove("decision_evidence");
+        }
+
+        let restored: CombatCase = serde_json::from_value(Value::Object(object)).unwrap();
+
+        assert!(restored.branch_evidence.is_none());
+        assert!(restored
+            .path
+            .iter()
+            .all(|step| step.decision_evidence.is_none()));
+    }
+
+    #[test]
+    fn branch_and_decision_evidence_round_trip_without_changing_position() {
+        let mut case = sample_case();
+        let original_position = serde_json::to_value(&case.position).unwrap();
+        case.branch_evidence = Some(sample_branch_evidence());
+        case.path[0].decision_evidence = Some(json!({
+            "policy_lane": "challenger-1",
+            "candidate_pool": [{"rank": 1, "selected": true}],
+            "annotation": {"kind": "candidate"},
+            "decision_delta": {"gold_delta": -50},
+            "shop_boss_preview_candidates": [{"rank": 1}],
+            "shop_boss_preview_bundles": [{"rank": 1}]
+        }));
+
+        let restored: CombatCase =
+            serde_json::from_value(serde_json::to_value(&case).unwrap()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&restored.position).unwrap(),
+            original_position
+        );
+        assert_eq!(
+            restored.branch_evidence.unwrap().trajectory_snapshot.lane,
+            "challenger-1"
+        );
+        assert_eq!(
+            restored.path[0].decision_evidence.as_ref().unwrap()["candidate_pool"][0]["selected"],
+            true
+        );
+    }
 }
