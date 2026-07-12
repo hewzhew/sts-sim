@@ -65,6 +65,7 @@ mod enemy_phase_transition;
 mod external_payoff;
 mod phase_action_ordering;
 mod phase_profile;
+mod timed_enemy_threat;
 
 // Pending choice and potion boundaries.
 mod pending_choice_fanout;

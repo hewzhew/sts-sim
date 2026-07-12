@@ -2,6 +2,8 @@ use crate::content::powers::PowerId;
 use crate::runtime::action::{Action, DamageInfo, DamageType};
 use crate::EntityId;
 
+pub const EXPLOSION_DAMAGE: i32 = 30;
+
 pub fn during_turn(owner: EntityId, power_amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];
 
@@ -13,8 +15,8 @@ pub fn during_turn(owner: EntityId, power_amount: i32) -> smallvec::SmallVec<[Ac
         actions.push(Action::Damage(DamageInfo {
             source: owner,
             target: 0,
-            base: 30,
-            output: 30,
+            base: EXPLOSION_DAMAGE,
+            output: EXPLOSION_DAMAGE,
             damage_type: DamageType::Thorns,
             is_modified: false,
         }));
