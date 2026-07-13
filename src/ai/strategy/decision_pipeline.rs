@@ -1,4 +1,5 @@
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBurden, Mechanic};
+use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisBlockChunkV1};
 use crate::ai::strategy::acquisition::{
     assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionContext,
     AcquisitionPolicyVerdict,
@@ -1084,7 +1085,7 @@ fn shop_potion_score(
 
 fn survival_pressure_score(
     context: DecisionPipelineContext,
-    _candidate: DecisionCandidateIr,
+    candidate: DecisionCandidateIr,
     admission: Option<&RewardAdmission>,
     scores: &mut Vec<ScoreComponent>,
 ) {
@@ -1114,6 +1115,17 @@ fn survival_pressure_score(
             0
         },
     ));
+    let block_density = candidate_card(candidate.kind)
+        .map(|(card, upgrades)| card_analysis_profile_v1(card, upgrades).block_chunk)
+        .map(|chunk| match chunk {
+            CardAnalysisBlockChunkV1::Burst => 25,
+            CardAnalysisBlockChunkV1::Solid => 10,
+            CardAnalysisBlockChunkV1::None | CardAnalysisBlockChunkV1::Low => 0,
+        })
+        .unwrap_or(0);
+    if block_density > 0 {
+        scores.push(score("acute-survival-block-density", block_density));
+    }
 }
 
 fn lane_for_candidate(kind: DecisionCandidateKind, score: i32) -> CandidateLane {
@@ -1944,6 +1956,33 @@ mod tests {
         ]
     }
 
+    fn seed_20260713003_act3_floor42_deck() -> Vec<CardId> {
+        vec![
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Clothesline,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::FlameBarrier,
+            CardId::Cleave,
+            CardId::PowerThrough,
+            CardId::FlameBarrier,
+            CardId::Brutality,
+            CardId::GhostlyArmor,
+            CardId::DemonForm,
+            CardId::BodySlam,
+            CardId::Headbutt,
+            CardId::ShrugItOff,
+            CardId::SeeingRed,
+            CardId::HeavyBlade,
+            CardId::Flex,
+            CardId::IronWave,
+        ]
+    }
+
     #[test]
     fn reward_low_margin_filler_cannot_enter_mainline_after_basic_roles_exist() {
         let deck = act1_low_margin_reward_deck();
@@ -2388,6 +2427,34 @@ mod tests {
             .caps
             .iter()
             .any(|cap| cap.source == CandidateLaneCapSource::Strategic));
+    }
+
+    #[test]
+    fn acute_survival_prefers_deterministic_burst_block_over_dynamic_low_block() {
+        let deck = seed_20260713003_act3_floor42_deck();
+
+        let impervious = reward_card_with_act_and_hp(&deck, CardId::Impervious, 1, 3, 22, 82);
+        let second_wind = reward_card_with_act_and_hp(&deck, CardId::SecondWind, 1, 3, 22, 82);
+        let healthy_impervious =
+            reward_card_with_act_and_hp(&deck, CardId::Impervious, 1, 3, 70, 82);
+
+        assert_eq!(
+            impervious.lane,
+            CandidateLane::Mainline,
+            "a deterministic 40-block reward must be executable at 22/82 HP: {impervious:#?}"
+        );
+        assert!(impervious.scores.iter().any(|component| {
+            component.by == "acute-survival-block-density" && component.value > 0
+        }));
+        assert_ne!(
+            second_wind.lane,
+            CandidateLane::Mainline,
+            "dynamic mass exhaust must not inherit deterministic burst-block credit: {second_wind:#?}"
+        );
+        assert!(!healthy_impervious
+            .scores
+            .iter()
+            .any(|component| component.by == "acute-survival-block-density"));
     }
 
     #[test]
