@@ -199,8 +199,9 @@ pub use turn_pool_rescue::{find_combat_turn_pool_rescue_win_v0, CombatTurnPoolRe
 pub use types::*;
 pub use witness_guidance::{
     compile_combat_search_witness_prior_v0, replay_combat_search_witness_line_v0,
-    CombatSearchV2WitnessLine, CombatSearchV2WitnessPrior, CombatSearchV2WitnessReplay,
-    CombatSearchV2WitnessReplayStep,
+    replay_combat_search_witness_line_v1, CombatSearchV2WitnessLine, CombatSearchV2WitnessPrior,
+    CombatSearchV2WitnessReplay, CombatSearchV2WitnessReplayStep,
+    CombatSearchV2WitnessReplayStepV1, CombatSearchV2WitnessReplayV1,
 };
 
 pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
@@ -244,4 +245,17 @@ pub(crate) fn filter_combat_search_legal_actions(
     combat: &CombatState,
 ) -> Vec<CombatActionChoice> {
     transition::filtered_legal_actions(choices, potion_policy, combat)
+}
+
+#[cfg(test)]
+mod witness_v1_reexport_tests {
+    #[test]
+    fn witness_replay_v1_api_is_reexported() {
+        let _: fn(
+            &crate::sim::combat::CombatPosition,
+            &super::CombatSearchV2WitnessLine,
+            usize,
+        ) -> Result<super::CombatSearchV2WitnessReplayV1, String> =
+            super::replay_combat_search_witness_line_v1;
+    }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::state::DomainCardSnapshot;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum MetaChange {
@@ -385,6 +386,18 @@ impl CombatState {
             .retain(|event| !matches!(event, DomainEvent::CardDrawn { .. }));
     }
 
+    pub fn take_card_draw_observation_events_v1(&mut self) -> Vec<DomainCardSnapshot> {
+        let mut drawn_cards = Vec::new();
+        self.runtime.emitted_events.retain(|event| match event {
+            DomainEvent::CardDrawn { card, .. } => {
+                drawn_cards.push(*card);
+                false
+            }
+            _ => true,
+        });
+        drawn_cards
+    }
+
     pub fn emit_diagnostic(&mut self, diagnostic: EngineDiagnostic) {
         self.runtime.engine_diagnostics.push(diagnostic);
     }
@@ -618,5 +631,46 @@ impl EngineRuntime {
                 AddTo::Bottom => self.push_back(a.action),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{DomainCardSnapshot, DomainEventSource};
+
+    #[test]
+    fn take_card_draw_observation_events_v1_preserves_non_draw_events() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let first = DomainCardSnapshot {
+            id: CardId::Defend,
+            upgrades: 0,
+            uuid: 10,
+        };
+        let second = DomainCardSnapshot {
+            id: CardId::Strike,
+            upgrades: 1,
+            uuid: 11,
+        };
+        let preserved = DomainEvent::CardObtained {
+            card: first,
+            source: DomainEventSource::DeckMutation,
+        };
+        combat.runtime.emitted_events = vec![
+            DomainEvent::CardDrawn {
+                card: first,
+                source: DomainEventSource::CombatDraw,
+            },
+            preserved.clone(),
+            DomainEvent::CardDrawn {
+                card: second,
+                source: DomainEventSource::CombatDraw,
+            },
+        ];
+
+        let observed = combat.take_card_draw_observation_events_v1();
+
+        assert_eq!(observed, vec![first, second]);
+        assert_eq!(combat.runtime.emitted_events, vec![preserved]);
     }
 }

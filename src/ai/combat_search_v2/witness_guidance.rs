@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::runtime::combat::CombatState;
 use crate::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+    apply_combat_input_to_stable_observed_v1, CombatPosition, CombatStepLimits, CombatStepper,
+    CombatTerminal, EngineCombatStepper,
 };
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::DomainCardSnapshot;
 
 use super::{
     combat_exact_state_hash_v1, living_enemy_count, CombatSearchV2ActionPreview,
@@ -53,6 +55,22 @@ pub struct CombatSearchV2WitnessReplayStep {
     pub final_hp: i32,
     pub total_enemy_hp: i32,
     pub living_enemy_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombatSearchV2WitnessReplayV1 {
+    pub terminal: CombatTerminal,
+    pub replayed_actions: usize,
+    pub steps: Vec<CombatSearchV2WitnessReplayStepV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombatSearchV2WitnessReplayStepV1 {
+    pub action_index: usize,
+    pub action: ClientInput,
+    pub drawn_cards: Vec<DomainCardSnapshot>,
+    pub terminal: CombatTerminal,
+    pub player_hp: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +130,73 @@ pub fn replay_combat_search_witness_line_v0(
         matched_witness_enemy_hp: final_enemy_hp == witness.total_enemy_hp,
         steps,
     }
+}
+
+pub fn replay_combat_search_witness_line_v1(
+    start: &CombatPosition,
+    line: &CombatSearchV2WitnessLine,
+    max_engine_steps_per_action: usize,
+) -> Result<CombatSearchV2WitnessReplayV1, String> {
+    if let Some(expected) = line.action_count {
+        if expected != line.actions.len() {
+            return Err(format!(
+                "witness action preview incomplete: expected {expected}, found {}",
+                line.actions.len()
+            ));
+        }
+    }
+
+    let mut position = start.clone();
+    let mut steps = Vec::with_capacity(line.actions.len());
+
+    for (action_index, action) in line.actions.iter().enumerate() {
+        if !EngineCombatStepper
+            .legal_actions(&position)
+            .contains(&action.input)
+        {
+            return Err(format!(
+                "illegal witness action at index {action_index}: {:?}",
+                action.input
+            ));
+        }
+        let observed = apply_combat_input_to_stable_observed_v1(
+            &position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_action,
+                deadline: None,
+            },
+        );
+        if observed.step.timed_out {
+            return Err(format!("timed-out witness step at index {action_index}"));
+        }
+        if observed.step.truncated {
+            return Err(format!("truncated witness step at index {action_index}"));
+        }
+        let player_hp = observed.step.position.combat.entities.player.current_hp;
+        steps.push(CombatSearchV2WitnessReplayStepV1 {
+            action_index,
+            action: action.input.clone(),
+            drawn_cards: observed.drawn_cards,
+            terminal: observed.step.terminal,
+            player_hp,
+        });
+        position = observed.step.position;
+    }
+
+    let terminal = EngineCombatStepper.terminal(&position);
+    if !terminal_matches(terminal, line.terminal) {
+        return Err(format!(
+            "witness terminal mismatch: expected {:?}, replayed {terminal:?}",
+            line.terminal
+        ));
+    }
+
+    Ok(CombatSearchV2WitnessReplayV1 {
+        terminal,
+        replayed_actions: steps.len(),
+        steps,
+    })
 }
 
 pub fn compile_combat_search_witness_prior_v0(
@@ -203,4 +288,138 @@ fn total_enemy_hp(combat: &CombatState) -> i32 {
         .filter(|monster| monster.is_alive_for_action())
         .map(|monster| monster.current_hp.max(0) + monster.block.max(0))
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::DomainCardSnapshot;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    fn draw_witness_fixture() -> (CombatPosition, CombatSearchV2WitnessLine) {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Defend, 20),
+            CombatCard::new(CardId::Strike, 21),
+            CombatCard::new(CardId::Bash, 22),
+        ];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let line = CombatSearchV2WitnessLine {
+            source: "test",
+            terminal: SearchTerminalLabel::Unresolved,
+            final_hp: 80,
+            total_enemy_hp: 20,
+            action_count: Some(1),
+            actions: vec![CombatSearchV2ActionPreview {
+                action_key: "battle_trance".to_string(),
+                input: ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None,
+                },
+            }],
+        };
+        (position, line)
+    }
+
+    #[test]
+    fn witness_replay_v1_records_draw_history() {
+        let (position, line) = draw_witness_fixture();
+
+        let replay = super::replay_combat_search_witness_line_v1(&position, &line, 20)
+            .expect("legal witness should replay exactly");
+
+        assert_eq!(replay.replayed_actions, 1);
+        assert_eq!(replay.terminal, CombatTerminal::Unresolved);
+        assert_eq!(replay.steps[0].action_index, 0);
+        assert_eq!(
+            replay.steps[0].drawn_cards,
+            vec![
+                DomainCardSnapshot {
+                    id: CardId::Defend,
+                    upgrades: 0,
+                    uuid: 20,
+                },
+                DomainCardSnapshot {
+                    id: CardId::Strike,
+                    upgrades: 0,
+                    uuid: 21,
+                },
+                DomainCardSnapshot {
+                    id: CardId::Bash,
+                    upgrades: 0,
+                    uuid: 22,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn witness_replay_v1_rejects_illegal_divergence() {
+        let (position, mut line) = draw_witness_fixture();
+        line.actions[0].input = ClientInput::Proceed;
+
+        let error = super::replay_combat_search_witness_line_v1(&position, &line, 20)
+            .expect_err("illegal witness action must be rejected");
+
+        assert!(
+            error.contains("illegal witness action at index 0"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn witness_replay_v1_rejects_truncated_step() {
+        let (position, line) = draw_witness_fixture();
+
+        let error = super::replay_combat_search_witness_line_v1(&position, &line, 1)
+            .expect_err("truncated witness step must be rejected");
+
+        assert!(
+            error.contains("truncated witness step at index 0"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn witness_replay_v1_rejects_terminal_mismatch() {
+        let (position, mut line) = draw_witness_fixture();
+        line.terminal = SearchTerminalLabel::Win;
+
+        let error = super::replay_combat_search_witness_line_v1(&position, &line, 20)
+            .expect_err("terminal mismatch must be rejected");
+
+        assert!(
+            error.contains("witness terminal mismatch: expected Win, replayed Unresolved"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn witness_replay_v1_rejects_incomplete_action_preview() {
+        let (position, mut line) = draw_witness_fixture();
+        line.action_count = Some(2);
+
+        let error = super::replay_combat_search_witness_line_v1(&position, &line, 20)
+            .expect_err("incomplete witness preview must be rejected");
+
+        assert!(
+            error.contains("witness action preview incomplete: expected 2, found 1"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn witness_replay_v0_json_shape_is_unchanged() {
+        let (position, line) = draw_witness_fixture();
+        let replay = replay_combat_search_witness_line_v0(&position, &line);
+
+        let json = serde_json::to_string(&(line, replay)).expect("V0 witness should serialize");
+
+        assert!(!json.contains("drawn_cards"), "unexpected V1 field: {json}");
+    }
 }
