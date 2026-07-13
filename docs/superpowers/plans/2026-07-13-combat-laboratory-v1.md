@@ -1036,14 +1036,24 @@ Update the existing Combat Search V2 driver row in supported surfaces; do not de
 
 If the existing architecture test cannot detect a future forbidden live dependency, add a narrow assertion that files under run-control/route/acquisition do not reference `combat_lab_v1`. Do not add broad source-text assertions for incidental implementation names.
 
-- [ ] **Step 3: Commit the maintained pilot surface**
+- [ ] **Step 3: Run focused and completion verification**
 
-Commit fixtures, docs, and the optional architecture assertion before creating the durable pilot artifact. This is required because resume freezes Git commit and dirty state.
+Verify the real fixture and the entire completion boundary before the final maintained-source commit:
 
 ```powershell
 cargo test --lib combat_lab_v1::tests::seed006_derived_fixture_resolves
+cargo fmt --all -- --check
+cargo test --lib
 cargo test --test architecture_runtime_boundaries
+cargo test --bin combat_search_v2_driver
 git diff --check
+```
+
+- [ ] **Step 4: Commit the maintained surface and run the accepted pilot**
+
+Commit fixtures, docs, and the optional architecture assertion only after Step 3 is green. This ordering satisfies the repository completion gate and is also required because resume freezes Git commit and dirty state.
+
+```powershell
 git add fixtures/combat_lab docs/RUNBOOK.md docs/architecture/supported-surfaces.md src/bin/README.md src/eval/combat_lab_v1/tests.rs
 git add tests/architecture_runtime_boundaries.rs
 git commit -m "docs: add combat laboratory pilot workflow"
@@ -1051,18 +1061,6 @@ git status --short
 ```
 
 Run the second `git add` only if the architecture test changed. Require an empty status before starting the durable experiment.
-
-- [ ] **Step 4: Run completion verification and the accepted pilot**
-
-Run fresh, in this order:
-
-```powershell
-cargo fmt --all -- --check
-cargo test --lib
-cargo test --test architecture_runtime_boundaries
-cargo test --bin combat_search_v2_driver
-git diff --check
-```
 
 Start with one sample to inspect the artifact contract:
 
