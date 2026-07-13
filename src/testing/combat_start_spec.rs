@@ -4,6 +4,7 @@ use crate::content::cards::{get_card_definition, upgraded_base_cost_override, Ca
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::rng::StsRng;
 use crate::sim::combat_start::{
     build_natural_combat_start, encounter_id_from_input, room_type_from_input,
 };
@@ -65,12 +66,28 @@ pub struct StartSpecRelicEntry {
 pub fn compile_combat_start_spec(
     spec: &CombatStartSpec,
 ) -> Result<(EngineState, CombatState), String> {
-    compile_combat_start_spec_with_seed(spec, spec.seed)
+    compile_combat_start_spec_with_rng_overrides(spec, spec.seed, None)
 }
 
 pub fn compile_combat_start_spec_with_seed(
     spec: &CombatStartSpec,
     seed: u64,
+) -> Result<(EngineState, CombatState), String> {
+    compile_combat_start_spec_with_rng_overrides(spec, seed, None)
+}
+
+pub fn compile_combat_start_spec_with_rng_overrides(
+    spec: &CombatStartSpec,
+    seed: u64,
+    shuffle_seed: Option<u64>,
+) -> Result<(EngineState, CombatState), String> {
+    compile_combat_start_spec_inner(spec, seed, shuffle_seed)
+}
+
+fn compile_combat_start_spec_inner(
+    spec: &CombatStartSpec,
+    seed: u64,
+    shuffle_seed: Option<u64>,
 ) -> Result<(EngineState, CombatState), String> {
     let player_class = canonical_player_class(&spec.player_class)?;
     let ascension_level = u8::try_from(spec.ascension_level)
@@ -79,6 +96,9 @@ pub fn compile_combat_start_spec_with_seed(
     let room_type = room_type_from_spec(&spec.room_type)?;
 
     let mut run_state = RunState::new(seed, ascension_level, false, player_class);
+    if let Some(shuffle_seed) = shuffle_seed {
+        run_state.rng_pool.shuffle_rng = StsRng::new(shuffle_seed);
+    }
     run_state.current_hp = spec.player_current_hp;
     run_state.max_hp = spec.player_max_hp;
     run_state.master_deck = compile_master_deck(&spec.master_deck)?;
@@ -254,5 +274,118 @@ mod input_ids {
             .filter(|c| c.is_ascii_alphanumeric())
             .map(|c| c.to_ascii_lowercase())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        compile_combat_start_spec, compile_combat_start_spec_with_rng_overrides, CombatStartSpec,
+        StartSpecCardEntry, StartSpecCardSpec,
+    };
+
+    #[test]
+    fn shuffle_override_changes_only_shuffle_rng_before_natural_start() {
+        let spec = deterministic_start_spec();
+        let (default_engine, default_combat) =
+            compile_combat_start_spec(&spec).expect("default combat start should compile");
+        let (overridden_engine, overridden_combat) =
+            compile_combat_start_spec_with_rng_overrides(&spec, spec.seed, Some(5_678))
+                .expect("overridden combat start should compile");
+
+        assert_eq!(default_engine, overridden_engine, "engine boundary");
+        assert_eq!(
+            default_combat.entities.monsters.len(),
+            overridden_combat.entities.monsters.len()
+        );
+        for (default_monster, overridden_monster) in default_combat
+            .entities
+            .monsters
+            .iter()
+            .zip(&overridden_combat.entities.monsters)
+        {
+            assert_eq!(
+                (default_monster.id, default_monster.monster_type),
+                (overridden_monster.id, overridden_monster.monster_type),
+                "monster identity"
+            );
+            assert_eq!(
+                (default_monster.current_hp, default_monster.max_hp),
+                (overridden_monster.current_hp, overridden_monster.max_hp),
+                "monster HP"
+            );
+            assert_eq!(
+                default_monster.turn_plan(),
+                overridden_monster.turn_plan(),
+                "initial monster intention"
+            );
+        }
+        assert_eq!(
+            default_combat.entities.player, overridden_combat.entities.player,
+            "player resources"
+        );
+        assert_eq!(
+            default_combat.entities.potions, overridden_combat.entities.potions,
+            "player potions"
+        );
+        assert_eq!(
+            default_combat.turn.energy, overridden_combat.turn.energy,
+            "player energy"
+        );
+
+        let default_rngs = default_combat.rng.pool.clone();
+        let mut overridden_rngs = overridden_combat.rng.pool.clone();
+        assert_ne!(default_rngs.shuffle_rng, overridden_rngs.shuffle_rng);
+        overridden_rngs.shuffle_rng = default_rngs.shuffle_rng.clone();
+        assert_eq!(
+            default_rngs, overridden_rngs,
+            "every RNG stream except shuffle_rng"
+        );
+        assert!(
+            default_combat.zones.hand != overridden_combat.zones.hand
+                || default_combat.zones.draw_pile != overridden_combat.zones.draw_pile,
+            "shuffle override should change the opening hand or draw-pile order"
+        );
+    }
+
+    #[test]
+    fn same_shuffle_override_reproduces_identical_start() {
+        let spec = deterministic_start_spec();
+        let first = compile_combat_start_spec_with_rng_overrides(&spec, spec.seed, Some(5_678))
+            .expect("first overridden combat start should compile");
+        let second = compile_combat_start_spec_with_rng_overrides(&spec, spec.seed, Some(5_678))
+            .expect("second overridden combat start should compile");
+
+        assert_eq!(first, second);
+    }
+
+    fn deterministic_start_spec() -> CombatStartSpec {
+        CombatStartSpec {
+            name: "shuffle_override_isolation".to_string(),
+            player_class: "Ironclad".to_string(),
+            ascension_level: 0,
+            encounter_id: "JawWorm".to_string(),
+            room_type: "monster".to_string(),
+            seed: 1_234,
+            player_current_hp: 72,
+            player_max_hp: 80,
+            relics: Vec::new(),
+            potions: Vec::new(),
+            master_deck: vec![
+                counted_card("Strike_R", 5),
+                counted_card("Defend_R", 4),
+                StartSpecCardSpec::Simple("Bash".to_string()),
+            ],
+        }
+    }
+
+    fn counted_card(id: &str, count: usize) -> StartSpecCardSpec {
+        StartSpecCardSpec::Detailed(StartSpecCardEntry {
+            id: id.to_string(),
+            upgrades: 0,
+            cost: None,
+            misc: None,
+            count,
+        })
     }
 }
