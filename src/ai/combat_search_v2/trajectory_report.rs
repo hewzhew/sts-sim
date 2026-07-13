@@ -36,6 +36,7 @@ pub(super) fn trajectory_report(
     CombatSearchV2TrajectoryReport {
         terminal: terminal_label(&node.engine, &node.combat),
         estimated,
+        outcome_order_key: CombatOutcomeScore::from_node(node).to_report_key(),
         actions: node.actions.clone(),
         final_hp: node.combat.entities.player.current_hp,
         final_max_hp: node.combat.entities.player.max_hp,

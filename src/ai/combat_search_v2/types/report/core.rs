@@ -8,7 +8,7 @@ use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 11;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {

@@ -36,6 +36,21 @@ impl CombatOutcomeScore {
             shorter_line: -(node.actions.len() as i32),
         }
     }
+
+    pub(super) fn to_report_key(self) -> CombatSearchV2OutcomeOrderKeyReport {
+        CombatSearchV2OutcomeOrderKeyReport {
+            terminal_rank: self.terminal_rank,
+            run_hygiene: self.run_hygiene,
+            persistent_adjusted_hp: self.persistent_adjusted_hp,
+            final_hp: self.final_hp,
+            persistent_run_value: self.persistent_run_value,
+            potion_conservation: self.potion_conservation,
+            faster_turns: self.faster_turns,
+            fewer_cards_played: self.fewer_cards_played,
+            enemy_progress: self.enemy_progress,
+            shorter_line: self.shorter_line,
+        }
+    }
 }
 
 impl Ord for CombatOutcomeScore {
@@ -86,6 +101,74 @@ mod tests {
         let high = SearchNode::test_node_with_hp(20);
 
         assert!(CombatOutcomeScore::from_node(&high) > CombatOutcomeScore::from_node(&low));
+    }
+
+    #[test]
+    fn outcome_order_report_key_compares_identically_to_internal_score() {
+        let zero = CombatOutcomeScore {
+            terminal_rank: 0,
+            run_hygiene: 0,
+            persistent_adjusted_hp: 0,
+            final_hp: 0,
+            persistent_run_value: 0,
+            potion_conservation: 0,
+            faster_turns: 0,
+            fewer_cards_played: 0,
+            enemy_progress: 0,
+            shorter_line: 0,
+        };
+        let scores = [
+            zero,
+            CombatOutcomeScore {
+                terminal_rank: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                run_hygiene: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                persistent_adjusted_hp: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                final_hp: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                persistent_run_value: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                potion_conservation: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                faster_turns: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                fewer_cards_played: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                enemy_progress: 1,
+                ..zero
+            },
+            CombatOutcomeScore {
+                shorter_line: 1,
+                ..zero
+            },
+        ];
+
+        for left in scores {
+            for right in scores {
+                assert_eq!(
+                    left.cmp(&right),
+                    left.to_report_key().cmp(&right.to_report_key())
+                );
+            }
+        }
     }
 
     impl SearchNode {

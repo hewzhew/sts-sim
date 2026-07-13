@@ -1,6 +1,6 @@
 use crate::ai::combat_search_v2::{
-    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2StateSummary,
-    CombatSearchV2TrajectoryReport, SearchTerminalLabel,
+    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2OutcomeOrderKeyReport,
+    CombatSearchV2StateSummary, CombatSearchV2TrajectoryReport, SearchTerminalLabel,
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
@@ -64,9 +64,22 @@ fn planned_jaw_worm() -> MonsterEntity {
 }
 
 fn trajectory(actions: Vec<CombatSearchV2ActionTrace>) -> CombatSearchV2TrajectoryReport {
+    let shorter_line = -(actions.len() as i32);
     CombatSearchV2TrajectoryReport {
         terminal: SearchTerminalLabel::Win,
         estimated: false,
+        outcome_order_key: CombatSearchV2OutcomeOrderKeyReport {
+            terminal_rank: 2,
+            run_hygiene: 0,
+            persistent_adjusted_hp: 80,
+            final_hp: 80,
+            persistent_run_value: 0,
+            potion_conservation: 0,
+            faster_turns: -1,
+            fewer_cards_played: 0,
+            enemy_progress: 0,
+            shorter_line,
+        },
         actions,
         final_hp: 80,
         final_max_hp: 80,

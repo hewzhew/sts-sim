@@ -1,9 +1,199 @@
 use super::{
-    derive_shuffle_seed_v1, load_and_resolve_combat_lab_spec_v1, profile_config_v1,
-    CombatLabShuffleGeneratorV1, CombatLabShuffleScheduleV1, CombatLabSpecV1,
+    derive_shuffle_seed_v1, load_and_resolve_combat_lab_spec_v1, preflight_combat_lab_scenario_v1,
+    profile_config_v1, CombatLabShuffleGeneratorV1, CombatLabShuffleScheduleV1, CombatLabSpecV1,
 };
+use crate::eval::fingerprint::combat_state_fingerprint_v1;
+use crate::fixtures::combat_start_spec::compile_combat_start_spec;
 use serde_json::json;
 use std::fs;
+
+#[test]
+fn sample_is_shared_across_profiles() {
+    let directory = test_directory("sample_is_shared_across_profiles");
+    fs::create_dir_all(&directory).expect("create test directory");
+    let mut lab = valid_lab_spec_value();
+    let mut second_profile = lab["profiles"][0].clone();
+    second_profile["id"] = json!("comparison");
+    second_profile["label"] = json!("Comparison");
+    lab["profiles"] = json!([lab["profiles"][0].clone(), second_profile]);
+    write_json(&directory.join("start.json"), &valid_start_spec_value());
+    write_json(&directory.join("lab.json"), &lab);
+    let resolved = load_and_resolve_combat_lab_spec_v1(&directory.join("lab.json"))
+        .expect("resolve laboratory spec");
+    let compiler = preflight_combat_lab_scenario_v1(&resolved).expect("preflight scenario");
+
+    let sample = compiler.compile_sample(0).expect("compile sample once");
+    let mut profile_starts = resolved
+        .profiles
+        .iter()
+        .map(|_| sample.start.clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(profile_starts.len(), 2);
+    assert_eq!(profile_starts[0], profile_starts[1]);
+    profile_starts[0].combat.entities.player.current_hp = 1;
+    assert_eq!(profile_starts[1], sample.start);
+
+    let baseline = compile_combat_start_spec(&resolved.start_spec_snapshot)
+        .map(|(engine, combat)| crate::sim::combat::CombatPosition::new(engine, combat))
+        .expect("compile no-override baseline");
+    let baseline_fingerprint = combat_state_fingerprint_v1(&baseline);
+    let changed_rng_streams = baseline_fingerprint
+        .rng_boundary
+        .streams
+        .iter()
+        .zip(&sample.state_fingerprint.rng_boundary.streams)
+        .filter_map(|(baseline, sampled)| (baseline != sampled).then_some(baseline.name.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(changed_rng_streams, vec!["shuffle_rng"]);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn sample_invariant_error_names_first_field() {
+    let spec: crate::fixtures::combat_start_spec::CombatStartSpec =
+        serde_json::from_value(valid_start_spec_value()).expect("parse start spec");
+    let baseline = compile_combat_start_spec(&spec)
+        .map(|(engine, combat)| crate::sim::combat::CombatPosition::new(engine, combat))
+        .expect("compile baseline");
+    let mut sampled = baseline.clone();
+    sampled.combat.entities.monsters[0].monster_type += 1;
+    sampled.combat.entities.monsters[0].current_hp += 1;
+
+    let error = super::scenario::validate_combat_lab_sample_invariants_v1(&baseline, &sampled)
+        .expect_err("changed monster identity must fail the invariant check");
+
+    assert!(error.contains("monsters[0].monster_type"), "{error}");
+}
+
+#[test]
+fn cell_coverage_limits_are_never_resolved_losses() {
+    use crate::ai::combat_search_v2::{SearchCoverageStatus, SearchTerminalLabel};
+
+    for coverage in [
+        SearchCoverageStatus::NodeBudgetLimited,
+        SearchCoverageStatus::TimeBudgetLimited,
+        SearchCoverageStatus::FrontierOpen,
+    ] {
+        for terminal in [SearchTerminalLabel::Unresolved, SearchTerminalLabel::Loss] {
+            assert_eq!(
+                super::replay::classify_combat_lab_outcome_v1(coverage, Some(terminal), false,),
+                super::CombatLabOutcomeClassV1::CoverageLimited
+            );
+        }
+    }
+    assert_eq!(
+        super::replay::classify_combat_lab_outcome_v1(
+            SearchCoverageStatus::Exhaustive,
+            Some(SearchTerminalLabel::Loss),
+            false,
+        ),
+        super::CombatLabOutcomeClassV1::ResolvedLoss
+    );
+}
+
+#[test]
+fn cell_replayed_win_carries_metrics_actions_and_draws() {
+    use crate::ai::combat_search_v2::{replay_combat_search_witness_line_v1, SearchCoverageStatus};
+
+    let (directory, resolved) = resolved_lab_fixture("cell_replayed_win");
+    let (sample, trajectory) = replayable_win_sample();
+    let mut stats = crate::ai::combat_search_v2::CombatSearchV2Stats::default();
+    stats.nodes_expanded = 11;
+    stats.nodes_generated = 17;
+    stats.nodes_to_first_win = Some(9);
+
+    let record = super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::AcceptedCompleteCandidate,
+        Some(&trajectory),
+        &stats,
+        replay_combat_search_witness_line_v1,
+    );
+
+    assert_eq!(
+        record.outcome_class,
+        super::CombatLabOutcomeClassV1::ResolvedWin
+    );
+    assert!(record.replay_validated);
+    assert_eq!(record.final_hp, Some(80));
+    assert_eq!(record.hp_loss, Some(0));
+    assert_eq!(record.actions, Some(2));
+    assert_eq!(record.action_history.len(), 2);
+    assert!(!record.draw_history.is_empty());
+    assert!(record.outcome_order_key.is_some());
+    assert_eq!(record.expanded_nodes, 11);
+    assert_eq!(record.generated_nodes, 17);
+    assert_eq!(record.nodes_to_first_win, Some(9));
+    assert!(record.search_terminal.is_some());
+    assert!(record.coverage_status.is_some());
+    assert!(record.error.is_none());
+    let trajectory_json = serde_json::to_value(&trajectory).expect("serialize trajectory report");
+    assert!(trajectory_json.get("outcome_order_key").is_some());
+    assert_eq!(
+        crate::ai::combat_search_v2::COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
+        12
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn cell_replay_mismatch_is_halting_execution_error() {
+    use crate::ai::combat_search_v2::SearchCoverageStatus;
+
+    let (directory, resolved) = resolved_lab_fixture("cell_replay_mismatch");
+    let (sample, trajectory) = replayable_win_sample();
+    let stats = crate::ai::combat_search_v2::CombatSearchV2Stats::default();
+
+    let record = super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::NodeBudgetLimited,
+        Some(&trajectory),
+        &stats,
+        |_, _, _| Err("forced replay mismatch".to_string()),
+    );
+
+    assert_eq!(
+        record.outcome_class,
+        super::CombatLabOutcomeClassV1::ExecutionError
+    );
+    assert!(!record.replay_validated);
+    assert!(record.search_terminal.is_some());
+    assert!(record.coverage_status.is_some());
+    assert!(record.outcome_order_key.is_none());
+    let error = record.error.expect("replay mismatch should be recorded");
+    assert_eq!(error.stage, super::CombatLabCellErrorStageV1::ExactReplay);
+    assert_eq!(error.code, "exact_replay_invariant_mismatch");
+    assert!(error.halt_experiment);
+    assert!(error.message.contains("forced replay mismatch"));
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn cell_key_is_stable_and_commits_every_identity_input() {
+    let baseline = super::combat_lab_cell_key_v1("experiment", 3, 5, "profile", "p-hash", "b-hash");
+    assert_eq!(
+        baseline,
+        super::combat_lab_cell_key_v1("experiment", 3, 5, "profile", "p-hash", "b-hash")
+    );
+    for changed in [
+        super::combat_lab_cell_key_v1("other", 3, 5, "profile", "p-hash", "b-hash"),
+        super::combat_lab_cell_key_v1("experiment", 4, 5, "profile", "p-hash", "b-hash"),
+        super::combat_lab_cell_key_v1("experiment", 3, 6, "profile", "p-hash", "b-hash"),
+        super::combat_lab_cell_key_v1("experiment", 3, 5, "other", "p-hash", "b-hash"),
+        super::combat_lab_cell_key_v1("experiment", 3, 5, "profile", "other", "b-hash"),
+        super::combat_lab_cell_key_v1("experiment", 3, 5, "profile", "p-hash", "other"),
+    ] {
+        assert_ne!(baseline, changed);
+    }
+}
 
 #[test]
 fn schedule_is_frozen() {
@@ -511,6 +701,103 @@ fn valid_start_spec_value() -> serde_json::Value {
         "potions": [],
         "master_deck": ["Bash"]
     })
+}
+
+fn resolved_lab_fixture(label: &str) -> (std::path::PathBuf, super::ResolvedCombatLabSpecV1) {
+    let directory = test_directory(label);
+    fs::create_dir_all(&directory).expect("create test directory");
+    write_json(&directory.join("start.json"), &valid_start_spec_value());
+    write_json(&directory.join("lab.json"), &valid_lab_spec_value());
+    let resolved = load_and_resolve_combat_lab_spec_v1(&directory.join("lab.json"))
+        .expect("resolve laboratory fixture");
+    (directory, resolved)
+}
+
+fn replayable_win_sample() -> (
+    super::CombatLabCompiledSampleV1,
+    crate::ai::combat_search_v2::CombatSearchV2TrajectoryReport,
+) {
+    use crate::ai::combat_search_v2::{trajectory_from_state, CombatSearchV2ActionTrace};
+    use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
+    use crate::runtime::combat::CombatCard;
+    use crate::sim::combat::{
+        apply_combat_input_to_stable_observed_v1, CombatPosition, CombatStepLimits, CombatTerminal,
+    };
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.current_hp = 1;
+    monster.max_hp = 1;
+    let target = monster.id;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::BattleTrance, 1),
+        CombatCard::new(CardId::Strike, 2),
+    ];
+    combat.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 3)];
+    let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+    let inputs = vec![
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(target),
+        },
+    ];
+    let mut final_position = start.clone();
+    for input in &inputs {
+        let observed = apply_combat_input_to_stable_observed_v1(
+            &final_position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: 100,
+                deadline: None,
+            },
+        );
+        assert!(!observed.step.truncated);
+        assert!(!observed.step.timed_out);
+        final_position = observed.step.position;
+    }
+    assert_eq!(
+        crate::sim::combat::combat_terminal(&final_position.engine, &final_position.combat),
+        CombatTerminal::Win
+    );
+    let actions = inputs
+        .iter()
+        .enumerate()
+        .map(|(index, input)| CombatSearchV2ActionTrace {
+            step_index: index,
+            action_id: index,
+            action_key: format!("action-{index}"),
+            action_debug: format!("{input:?}"),
+            input: input.clone(),
+        })
+        .collect();
+    let trajectory = trajectory_from_state(
+        final_position.engine,
+        final_position.combat,
+        start.combat.entities.player.current_hp,
+        actions,
+        0,
+        0,
+        2,
+        false,
+    );
+    let sample = super::CombatLabCompiledSampleV1 {
+        sample_index: 7,
+        shuffle_seed: 99,
+        state_fingerprint: combat_state_fingerprint_v1(&start),
+        start,
+        non_shuffle_rng_hash: "non-shuffle".to_string(),
+        shuffle_rng_hash: "shuffle".to_string(),
+        monster_snapshot_hash: "monsters".to_string(),
+    };
+    (sample, trajectory)
 }
 
 fn json_with_reversed_object_keys(value: &serde_json::Value) -> String {

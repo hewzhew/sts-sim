@@ -53,8 +53,8 @@ fn unique_action_trace_indices(retained: &[&CombatSearchV2TrajectoryReport]) -> 
 #[cfg(test)]
 mod tests {
     use crate::ai::combat_search_v2::{
-        CombatSearchV2ActionTrace, CombatSearchV2StateSummary, CombatSearchV2TrajectoryReport,
-        SearchTerminalLabel,
+        CombatSearchV2ActionTrace, CombatSearchV2OutcomeOrderKeyReport, CombatSearchV2StateSummary,
+        CombatSearchV2TrajectoryReport, SearchTerminalLabel,
     };
     use crate::state::core::ClientInput;
 
@@ -64,6 +64,18 @@ mod tests {
         CombatSearchV2TrajectoryReport {
             terminal: SearchTerminalLabel::Win,
             estimated: false,
+            outcome_order_key: CombatSearchV2OutcomeOrderKeyReport {
+                terminal_rank: 2,
+                run_hygiene: 0,
+                persistent_adjusted_hp: 30,
+                final_hp: 30,
+                persistent_run_value: 0,
+                potion_conservation: 0,
+                faster_turns: -2,
+                fewer_cards_played: -1,
+                enemy_progress: 0,
+                shorter_line: -(keys.len() as i32),
+            },
             actions: keys
                 .iter()
                 .enumerate()

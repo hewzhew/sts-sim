@@ -1,13 +1,28 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::state::core::ClientInput;
 
 use super::SearchTerminalLabel;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct CombatSearchV2OutcomeOrderKeyReport {
+    pub terminal_rank: i32,
+    pub run_hygiene: i32,
+    pub persistent_adjusted_hp: i32,
+    pub final_hp: i32,
+    pub persistent_run_value: i32,
+    pub potion_conservation: i32,
+    pub faster_turns: i32,
+    pub fewer_cards_played: i32,
+    pub enemy_progress: i32,
+    pub shorter_line: i32,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2TrajectoryReport {
     pub terminal: SearchTerminalLabel,
     pub estimated: bool,
+    pub outcome_order_key: CombatSearchV2OutcomeOrderKeyReport,
     pub actions: Vec<CombatSearchV2ActionTrace>,
     pub final_hp: i32,
     pub final_max_hp: i32,
