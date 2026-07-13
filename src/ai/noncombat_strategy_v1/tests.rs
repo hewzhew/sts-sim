@@ -1177,6 +1177,26 @@ fn run_strategy_snapshot_v2_exposes_boss_threat_tags() {
 }
 
 #[test]
+fn run_strategy_snapshot_v2_exposes_collector_minion_control_threat() {
+    let mut run_state = RunState::new(522, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 21;
+    run_state.boss_key = Some(EncounterId::Collector);
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert!(snapshot
+        .threats
+        .tags
+        .contains(&StrategyThreatTagV1::AoEValuable));
+    assert!(snapshot.threats.sources.iter().any(|source| {
+        source.tag == StrategyThreatTagV1::AoEValuable
+            && source.source == StrategyThreatSourceV1::ActBoss
+            && source.subject == "Collector"
+    }));
+}
+
+#[test]
 fn run_strategy_snapshot_v2_expands_elite_pool_into_specific_encounter_threats() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 1;

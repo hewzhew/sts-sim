@@ -94,6 +94,22 @@ fn add_boss_threats(boss: EncounterId, profile: &mut StrategyThreatProfileV1) {
             );
             profile.evidence.push(evidence.to_string());
         }
+        EncounterId::Collector => {
+            let evidence =
+                "Act boss Collector: repeated minion summons and long-fight pressure reward reliable multi-target control";
+            push_tags(
+                profile,
+                StrategyThreatSourceV1::ActBoss,
+                "Collector",
+                &[
+                    StrategyThreatTagV1::AoEValuable,
+                    StrategyThreatTagV1::HighIncomingDamage,
+                    StrategyThreatTagV1::LongFightScaling,
+                ],
+                evidence,
+            );
+            profile.evidence.push(evidence.to_string());
+        }
         EncounterId::TheChamp => {
             let evidence =
                 "Act boss Champ: long fight and execute phase reward strength down, weak, and scaling";

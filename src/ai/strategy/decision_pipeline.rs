@@ -2218,6 +2218,37 @@ mod tests {
     }
 
     #[test]
+    fn known_collector_minion_control_outranks_first_real_draw() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+            CardId::Feed,
+            CardId::Cleave,
+            CardId::Corruption,
+        ];
+
+        let cleave =
+            reward_card_with_act_boss(&cards, CardId::Cleave, 0, 2, EncounterId::Collector);
+        let battle_trance =
+            reward_card_with_act_boss(&cards, CardId::BattleTrance, 1, 2, EncounterId::Collector);
+
+        assert_eq!(cleave.lane, CandidateLane::Mainline);
+        assert_eq!(battle_trance.lane, CandidateLane::Mainline);
+        assert!(
+            cleave.order_key(true) < battle_trance.order_key(true),
+            "known Collector minion control should win this comparison: cleave={cleave:#?} battle_trance={battle_trance:#?}"
+        );
+    }
+
+    #[test]
     fn reward_automaton_context_keeps_shockwave_as_boss_support() {
         let cards = vec![
             CardId::Strike,

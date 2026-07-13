@@ -1,5 +1,6 @@
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
-use crate::ai::strategy::reward_admission::RewardAdmission;
+use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
+use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 
@@ -39,14 +40,34 @@ impl BossSurvivalEvidence {
 pub fn assess_boss_survival_evidence(
     deck: DeckPlanSnapshot,
     card: Option<(CardId, u8)>,
-    _admission: &RewardAdmission,
+    admission: &RewardAdmission,
 ) -> BossSurvivalEvidence {
     let Some((card, upgrades)) = card else {
         return BossSurvivalEvidence::none();
     };
     match deck.boss_key {
         Some(EncounterId::AwakenedOne) => awakened_one_survival_evidence(deck, card, upgrades),
+        Some(EncounterId::Collector) => collector_minion_control_evidence(deck, admission),
         _ => BossSurvivalEvidence::none(),
+    }
+}
+
+fn collector_minion_control_evidence(
+    deck: DeckPlanSnapshot,
+    admission: &RewardAdmission,
+) -> BossSurvivalEvidence {
+    let control_gap_open = matches!(
+        deck.strategic_deficit.aoe_or_minion_control,
+        StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+    );
+    if control_gap_open
+        && admission
+            .reasons
+            .contains(&RewardAdmissionReason::AreaDamage)
+    {
+        BossSurvivalEvidence::relevant("collector-minion-control", 100)
+    } else {
+        BossSurvivalEvidence::none()
     }
 }
 
@@ -176,5 +197,33 @@ mod tests {
 
         assert_eq!(evidence.label, "awakened-one-generic-block-access");
         assert!(!evidence.relevant_to_boss_survival_plan);
+    }
+
+    #[test]
+    fn collector_area_damage_repairs_thin_minion_control() {
+        let plan = deck_plan(
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::PommelStrike,
+                CardId::ShrugItOff,
+                CardId::Cleave,
+            ],
+            Some(EncounterId::Collector),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::Cleave),
+            class: crate::ai::strategy::reward_admission::RewardAdmissionClass::ImmediateWork,
+            reasons: vec![RewardAdmissionReason::AreaDamage],
+        };
+
+        let evidence = assess_boss_survival_evidence(plan, Some((CardId::Cleave, 0)), &admission);
+
+        assert_eq!(evidence.label, "collector-minion-control");
+        assert!(evidence.relevant_to_boss_survival_plan);
+        assert!(evidence.score_delta >= 100);
     }
 }
