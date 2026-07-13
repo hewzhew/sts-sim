@@ -9,6 +9,7 @@ mod combat_auto_policy;
 mod combat_candidate_line;
 mod combat_case_adjudication;
 mod combat_case_candidate_census;
+mod combat_case_retained_candidates;
 mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;

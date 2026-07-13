@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2TrajectoryReport,
 };
 use crate::content::cards::{get_card_definition, CardId, CardType};
+use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
+use super::combat_case_retained_candidates::unique_retained_win_trajectories;
 use super::combat_line_adjudication::{
     CombatLineAcceptancePolicy, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
     CombatLineObservedOutcomeV1,
@@ -63,8 +64,8 @@ pub(super) fn find_accepted_alternative_in_report(
     policy: CombatLineAcceptancePolicy,
 ) -> Result<Option<CombatLineEvaluation>, String> {
     let mut best_clean: Option<CombatLineEvaluation> = None;
-    for trajectory in win_candidate_trajectories(report) {
-        let line = CombatCandidateLine::from_search_trajectory(trajectory);
+    for retained in unique_retained_win_trajectories(report).trajectories {
+        let line = CombatCandidateLine::from_search_trajectory(retained.trajectory);
         let evaluation = evaluate_combat_candidate_line_outcome(session, start, config, line)?;
         if !matches!(
             policy.adjudicate(evaluation.outcome.clone()),
@@ -92,29 +93,16 @@ pub(super) fn evaluate_combat_candidate_line_outcome(
     config: &CombatSearchV2Config,
     line: CombatCandidateLine,
 ) -> Result<CombatLineEvaluation, String> {
-    let replay = replay_candidate_line(start, line.source, &line.actions, config)?;
-    let before_deck_uuids = master_deck_uuids(session);
+    let before_master_deck = session.run_state.master_deck.clone();
     let before_deck_cards = master_deck_cards_by_uuid(session);
     let before_gold = session.run_state.gold;
+    let replay = replay_candidate_line(start, line.source, &line.actions, config)?;
     let mut trial = session.clone();
     trial.mark_current_combat_search_resolved();
     for action in &replay.line.actions {
         trial.apply_input(action.input.clone())?;
     }
-    let gained_curses = trial
-        .run_state
-        .master_deck
-        .iter()
-        .filter(|card| {
-            !before_deck_uuids.contains(&card.uuid)
-                && get_card_definition(card.id).card_type == CardType::Curse
-        })
-        .map(|card| CardSnapshot {
-            id: card.id,
-            uuid: card.uuid,
-            upgrades: card.upgrades,
-        })
-        .collect();
+    let gained_curses = newly_gained_curses(&before_master_deck, &trial.run_state.master_deck);
     let ritual_dagger_growth = trial
         .run_state
         .master_deck
@@ -163,24 +151,6 @@ pub(super) fn render_combat_line_outcome_detail(outcome: &CombatLineObservedOutc
     )
 }
 
-fn win_candidate_trajectories(
-    report: &CombatSearchV2Report,
-) -> Vec<&CombatSearchV2TrajectoryReport> {
-    let mut trajectories = Vec::new();
-    if let Some(best) = report.best_win_trajectory.as_ref() {
-        trajectories.push(best);
-    }
-    for candidate in &report.win_candidate_trajectories {
-        if !trajectories
-            .iter()
-            .any(|existing| same_action_trace(existing, candidate))
-        {
-            trajectories.push(candidate);
-        }
-    }
-    trajectories
-}
-
 pub(super) fn prefer_accepted_outcome(
     left: &CombatLineObservedOutcomeV1,
     right: &CombatLineObservedOutcomeV1,
@@ -200,24 +170,22 @@ pub(super) fn prefer_accepted_outcome(
             ))
 }
 
-fn same_action_trace(
-    left: &CombatSearchV2TrajectoryReport,
-    right: &CombatSearchV2TrajectoryReport,
-) -> bool {
-    left.actions.len() == right.actions.len()
-        && left
-            .actions
-            .iter()
-            .zip(&right.actions)
-            .all(|(left, right)| left.action_key == right.action_key)
-}
-
-fn master_deck_uuids(session: &RunControlSession) -> HashSet<u32> {
-    session
-        .run_state
-        .master_deck
+pub(super) fn newly_gained_curses(
+    before: &[CombatCard],
+    after: &[CombatCard],
+) -> Vec<CardSnapshot> {
+    let before_uuids = before.iter().map(|card| card.uuid).collect::<HashSet<_>>();
+    after
         .iter()
-        .map(|card| card.uuid)
+        .filter(|card| {
+            !before_uuids.contains(&card.uuid)
+                && get_card_definition(card.id).card_type == CardType::Curse
+        })
+        .map(|card| CardSnapshot {
+            id: card.id,
+            uuid: card.uuid,
+            upgrades: card.upgrades,
+        })
         .collect()
 }
 
@@ -241,4 +209,29 @@ fn master_deck_cards_by_uuid(session: &RunControlSession) -> HashMap<u32, DeckCa
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+
+    use super::newly_gained_curses;
+
+    #[test]
+    fn newly_gained_curses_uses_uuid_and_ignores_preexisting_curses() {
+        let before = vec![
+            CombatCard::new(CardId::Parasite, 7),
+            CombatCard::new(CardId::Strike, 8),
+        ];
+        let after = vec![
+            CombatCard::new(CardId::Parasite, 7),
+            CombatCard::new(CardId::Strike, 8),
+            CombatCard::new(CardId::Parasite, 9),
+            CombatCard::new(CardId::Defend, 10),
+        ];
+
+        assert_eq!(newly_gained_curses(&before, &after).len(), 1);
+        assert_eq!(newly_gained_curses(&before, &after)[0].uuid, 9);
+    }
 }

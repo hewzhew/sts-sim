@@ -2,9 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::combat_search_v2::{
-    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
-};
+use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
 use crate::content::cards::CardId;
 use crate::eval::combat_case::CombatCase;
 
@@ -12,6 +10,7 @@ use super::combat_candidate_line::CombatCandidateLine;
 use super::combat_case_adjudication::{
     adjudicate_observed_outcome, project_combat_case_session, COMBAT_CASE_PROJECTION_TRUST_V1,
 };
+use super::combat_case_retained_candidates::unique_retained_win_trajectories;
 use super::combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
     CombatLineRejectionReasonV1,
@@ -92,15 +91,12 @@ pub fn adjudicate_combat_case_candidates_v1(
     report: &CombatSearchV2Report,
 ) -> CombatCaseCandidateAdjudicationCensusV1 {
     let source_review = source_review.into();
-    let retained = report
-        .best_win_trajectory
-        .iter()
-        .chain(&report.win_candidate_trajectories)
-        .collect::<Vec<_>>();
-    let retained_candidate_count = retained.len();
+    let retained = unique_retained_win_trajectories(report);
+    let retained_candidate_count = retained.retained_candidate_count;
     if retained_candidate_count == 0 {
         return empty_census(source_review);
     }
+    let unique_candidate_count = retained.trajectories.len();
     let session = match project_combat_case_session(case) {
         Ok(session) => session,
         Err(error) => {
@@ -112,19 +108,15 @@ pub fn adjudicate_combat_case_candidates_v1(
         }
     };
 
-    let mut seen = HashSet::new();
     let mut evaluations = Vec::new();
-    for (retained_index, trajectory) in retained.into_iter().enumerate() {
-        if !seen.insert(action_trace_fingerprint(&trajectory.actions)) {
-            continue;
-        }
-        let action_count = trajectory.actions.len();
-        let line = CombatCandidateLine::from_search_trajectory(trajectory);
+    for retained in retained.trajectories {
+        let action_count = retained.trajectory.actions.len();
+        let line = CombatCandidateLine::from_search_trajectory(retained.trajectory);
         let evaluation =
             evaluate_combat_candidate_line_outcome(&session, &case.position, config, line)
-                .map(|evaluation| (retained_index, evaluation.outcome))
+                .map(|evaluation| (retained.retained_index, evaluation.outcome))
                 .map_err(|error| CombatCaseCandidateReplayFailureV1 {
-                    retained_index,
+                    retained_index: retained.retained_index,
                     action_count,
                     error,
                 });
@@ -134,16 +126,9 @@ pub fn adjudicate_combat_case_candidates_v1(
     summarize_evaluations(
         source_review,
         retained_candidate_count,
-        seen.len(),
+        unique_candidate_count,
         evaluations,
     )
-}
-
-fn action_trace_fingerprint(actions: &[CombatSearchV2ActionTrace]) -> Vec<String> {
-    actions
-        .iter()
-        .map(|action| action.action_key.clone())
-        .collect()
 }
 
 fn empty_census(source_review: String) -> CombatCaseCandidateAdjudicationCensusV1 {
@@ -261,17 +246,14 @@ fn summarize_evaluations(
 
 #[cfg(test)]
 mod tests {
-    use crate::ai::combat_search_v2::CombatSearchV2ActionTrace;
     use crate::content::cards::CardId;
     use crate::eval::run_control::combat_line_adjudication::CombatLineObservedOutcomeV1;
     use crate::eval::run_control::transition_report::CardSnapshot;
     use crate::sim::combat::CombatTerminal;
-    use crate::state::core::ClientInput;
 
     use super::{
-        action_trace_fingerprint, empty_census, summarize_evaluations,
-        CombatCaseCandidateAdjudicationCensusV1, CombatCaseCandidateCensusConclusionV1,
-        CombatCaseCandidateReplayFailureV1,
+        empty_census, summarize_evaluations, CombatCaseCandidateAdjudicationCensusV1,
+        CombatCaseCandidateCensusConclusionV1, CombatCaseCandidateReplayFailureV1,
     };
 
     fn clean_outcome(final_hp: i32) -> CombatLineObservedOutcomeV1 {
@@ -376,35 +358,5 @@ mod tests {
                 retained_candidate_count: 0,
             } if source_review == "lane"
         ));
-    }
-
-    #[test]
-    fn action_trace_fingerprint_preserves_order_and_target() {
-        let strike = |step_index, target| CombatSearchV2ActionTrace {
-            step_index,
-            action_id: step_index,
-            action_key: format!("combat/play_card/strike/target:{target}"),
-            action_debug: "Strike".to_string(),
-            input: ClientInput::PlayCard {
-                card_index: 0,
-                target: Some(target),
-            },
-        };
-        let left = vec![strike(0, 1), strike(1, 2)];
-        let reordered = vec![strike(0, 2), strike(1, 1)];
-        let retargeted = vec![strike(0, 1), strike(1, 3)];
-
-        assert_ne!(
-            action_trace_fingerprint(&left),
-            action_trace_fingerprint(&reordered)
-        );
-        assert_ne!(
-            action_trace_fingerprint(&left),
-            action_trace_fingerprint(&retargeted)
-        );
-        assert_eq!(
-            action_trace_fingerprint(&left),
-            action_trace_fingerprint(&left)
-        );
     }
 }
