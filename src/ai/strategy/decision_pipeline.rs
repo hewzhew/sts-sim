@@ -1115,16 +1115,28 @@ fn survival_pressure_score(
             0
         },
     ));
-    let block_density = candidate_card(candidate.kind)
-        .map(|(card, upgrades)| card_analysis_profile_v1(card, upgrades).block_chunk)
-        .map(|chunk| match chunk {
-            CardAnalysisBlockChunkV1::Burst => 25,
-            CardAnalysisBlockChunkV1::Solid => 10,
-            CardAnalysisBlockChunkV1::None | CardAnalysisBlockChunkV1::Low => 0,
-        })
-        .unwrap_or(0);
+    let block_density = if provides_block {
+        candidate_card(candidate.kind)
+            .map(|(card, upgrades)| acute_survival_block_density(card, upgrades))
+            .unwrap_or(0)
+    } else {
+        0
+    };
     if block_density > 0 {
         scores.push(score("acute-survival-block-density", block_density));
+    }
+}
+
+fn acute_survival_block_density(card: CardId, upgrades: u8) -> i32 {
+    let analysis = card_analysis_profile_v1(card, upgrades);
+    if analysis.is_second_wind_source {
+        return 0;
+    }
+    match analysis.block_chunk {
+        CardAnalysisBlockChunkV1::Burst => 25,
+        CardAnalysisBlockChunkV1::None
+        | CardAnalysisBlockChunkV1::Low
+        | CardAnalysisBlockChunkV1::Solid => 0,
     }
 }
 
@@ -1956,7 +1968,7 @@ mod tests {
         ]
     }
 
-    fn seed_20260713003_act3_floor42_deck() -> Vec<CardId> {
+    fn seed_20260713003_act3_floor42_card_ids() -> Vec<CardId> {
         vec![
             CardId::Defend,
             CardId::Defend,
@@ -2431,10 +2443,11 @@ mod tests {
 
     #[test]
     fn acute_survival_prefers_deterministic_burst_block_over_dynamic_low_block() {
-        let deck = seed_20260713003_act3_floor42_deck();
+        let deck = seed_20260713003_act3_floor42_card_ids();
 
         let impervious = reward_card_with_act_and_hp(&deck, CardId::Impervious, 1, 3, 22, 82);
         let second_wind = reward_card_with_act_and_hp(&deck, CardId::SecondWind, 1, 3, 22, 82);
+        let ghostly_armor = reward_card_with_act_and_hp(&deck, CardId::GhostlyArmor, 0, 3, 22, 82);
         let healthy_impervious =
             reward_card_with_act_and_hp(&deck, CardId::Impervious, 1, 3, 70, 82);
 
@@ -2446,11 +2459,25 @@ mod tests {
         assert!(impervious.scores.iter().any(|component| {
             component.by == "acute-survival-block-density" && component.value > 0
         }));
+        assert_eq!(acute_survival_block_density(CardId::Impervious, 1), 25);
+        assert_eq!(acute_survival_block_density(CardId::SecondWind, 1), 0);
+        assert_eq!(acute_survival_block_density(CardId::GhostlyArmor, 0), 0);
+        assert_eq!(acute_survival_block_density(CardId::PowerThrough, 0), 0);
+        assert_eq!(acute_survival_block_density(CardId::PowerThrough, 1), 25);
         assert_ne!(
             second_wind.lane,
             CandidateLane::Mainline,
             "dynamic mass exhaust must not inherit deterministic burst-block credit: {second_wind:#?}"
         );
+        assert_ne!(
+            ghostly_armor.lane,
+            CandidateLane::Mainline,
+            "ordinary solid block must not inherit burst-block credit: {ghostly_armor:#?}"
+        );
+        assert!(!ghostly_armor
+            .scores
+            .iter()
+            .any(|component| component.by == "acute-survival-block-density"));
         assert!(!healthy_impervious
             .scores
             .iter()
