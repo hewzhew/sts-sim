@@ -8,6 +8,7 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
+use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
 use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
     compare_combat_search_v2_turn_plan_policies, load_combat_root_action_prior_hints_jsonl_v0,
@@ -26,7 +27,7 @@ use sts_simulator::eval::fingerprint::StateFingerprintV1;
         ArgGroup::new("input")
             .required(true)
             .multiple(false)
-            .args(["start_spec", "combat_snapshot", "benchmark_spec"])
+            .args(["start_spec", "combat_snapshot", "benchmark_spec", "lab_spec"])
     )
 )]
 struct Args {
@@ -38,6 +39,52 @@ struct Args {
 
     #[arg(long)]
     benchmark_spec: Option<PathBuf>,
+
+    #[arg(
+        long,
+        requires_all = ["lab_output", "lab_samples"],
+        conflicts_with_all = [
+            "max_nodes",
+            "max_actions_per_line",
+            "max_engine_steps_per_action",
+            "wall_ms",
+            "max_hp_loss",
+            "potion_policy",
+            "max_potions_used",
+            "rollout_policy",
+            "child_rollout_policy",
+            "compare_rollout",
+            "compare_turn_plan",
+            "compare_frontier",
+            "explain_case",
+            "rollout_max_evaluations",
+            "rollout_max_actions",
+            "rollout_beam_width",
+            "turn_plan_policy",
+            "frontier_policy",
+            "validate_only",
+            "gate_only",
+            "guidance_lab",
+            "turn_plan_guidance_lab",
+            "guidance_lab_max_cases",
+            "probe_max_nodes",
+            "probe_wall_ms",
+            "turn_plan_probe_max_inner_nodes",
+            "turn_plan_probe_max_end_states",
+            "turn_plan_probe_per_bucket_limit",
+            "root_action_prior_hints",
+            "turn_plan_prior_hints",
+            "compact",
+            "output"
+        ]
+    )]
+    lab_spec: Option<PathBuf>,
+
+    #[arg(long, requires = "lab_spec")]
+    lab_output: Option<PathBuf>,
+
+    #[arg(long, requires = "lab_spec", value_parser = parse_nonzero_lab_samples)]
+    lab_samples: Option<u64>,
 
     #[arg(long)]
     max_nodes: Option<usize>,
@@ -137,7 +184,24 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    run(Args::parse())
+}
+
+fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(lab_spec_path) = args.lab_spec.as_ref() {
+        let report = run_combat_lab_v1(&CombatLabRunRequestV1 {
+            lab_spec_path: lab_spec_path.clone(),
+            output_dir: args
+                .lab_output
+                .clone()
+                .expect("clap requires --lab-output with --lab-spec"),
+            requested_samples: args
+                .lab_samples
+                .expect("clap requires --lab-samples with --lab-spec"),
+        })?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
     if args.gate_only && args.benchmark_spec.is_none() {
         return Err("--gate-only requires --benchmark-spec".into());
     }
@@ -394,6 +458,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn parse_nonzero_lab_samples(value: &str) -> Result<u64, String> {
+    let samples = value
+        .parse::<u64>()
+        .map_err(|_| format!("invalid combat laboratory sample target '{value}'"))?;
+    if samples == 0 {
+        return Err("combat laboratory sample target must be nonzero".to_string());
+    }
+    Ok(samples)
+}
+
 fn parse_rollout_policy_pair(
     value: &str,
 ) -> Result<(CombatSearchV2RolloutPolicy, CombatSearchV2RolloutPolicy), String> {
@@ -578,6 +652,144 @@ fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lab_mode_parser_accepts_complete_request() {
+        let args = Args::try_parse_from([
+            "combat_search_v2_driver",
+            "--lab-spec",
+            "lab.json",
+            "--lab-output",
+            "artifacts/runs/lab-test",
+            "--lab-samples",
+            "8",
+        ])
+        .expect("complete lab request should parse");
+
+        assert_eq!(args.lab_spec, Some(PathBuf::from("lab.json")));
+        assert_eq!(
+            args.lab_output,
+            Some(PathBuf::from("artifacts/runs/lab-test"))
+        );
+        assert_eq!(args.lab_samples, Some(8));
+    }
+
+    #[test]
+    fn lab_mode_parser_rejects_missing_arguments_and_zero_target() {
+        for argv in [
+            vec!["driver", "--lab-spec", "lab.json"],
+            vec![
+                "driver",
+                "--lab-spec",
+                "lab.json",
+                "--lab-output",
+                "artifacts/runs/lab-test",
+            ],
+            vec!["driver", "--lab-spec", "lab.json", "--lab-samples", "8"],
+            vec![
+                "driver",
+                "--lab-spec",
+                "lab.json",
+                "--lab-output",
+                "artifacts/runs/lab-test",
+                "--lab-samples",
+                "0",
+            ],
+        ] {
+            assert!(Args::try_parse_from(argv).is_err());
+        }
+    }
+
+    #[test]
+    fn lab_mode_parser_rejects_every_legacy_input_or_override() {
+        let conflicts = [
+            ("--start-spec", Some("start.json")),
+            ("--combat-snapshot", Some("snapshot.json")),
+            ("--benchmark-spec", Some("benchmark.json")),
+            ("--max-nodes", Some("1")),
+            ("--max-actions-per-line", Some("1")),
+            ("--max-engine-steps-per-action", Some("1")),
+            ("--wall-ms", Some("1")),
+            ("--max-hp-loss", Some("1")),
+            ("--potion-policy", Some("semantic")),
+            ("--max-potions-used", Some("1")),
+            ("--rollout-policy", Some("enemy_mechanics_adaptive")),
+            ("--child-rollout-policy", Some("lazy_on_pop")),
+            ("--compare-rollout", Some("none,enemy_mechanics_adaptive")),
+            ("--compare-turn-plan", Some("disabled,diagnostic_only")),
+            (
+                "--compare-frontier",
+                Some("single_queue,round_robin_eval_buckets"),
+            ),
+            ("--explain-case", Some("case")),
+            ("--rollout-max-evaluations", Some("1")),
+            ("--rollout-max-actions", Some("1")),
+            ("--rollout-beam-width", Some("1")),
+            ("--turn-plan-policy", Some("disabled")),
+            ("--frontier-policy", Some("single_queue")),
+            ("--validate-only", None),
+            ("--gate-only", None),
+            ("--guidance-lab", None),
+            ("--turn-plan-guidance-lab", None),
+            ("--guidance-lab-max-cases", Some("1")),
+            ("--probe-max-nodes", Some("1")),
+            ("--probe-wall-ms", Some("1")),
+            ("--turn-plan-probe-max-inner-nodes", Some("1")),
+            ("--turn-plan-probe-max-end-states", Some("1")),
+            ("--turn-plan-probe-per-bucket-limit", Some("1")),
+            ("--root-action-prior-hints", Some("root.jsonl")),
+            ("--turn-plan-prior-hints", Some("turn.jsonl")),
+            ("--compact", None),
+            ("--output", Some("report.json")),
+        ];
+
+        for (flag, value) in conflicts {
+            let mut argv = vec![
+                "driver",
+                "--lab-spec",
+                "lab.json",
+                "--lab-output",
+                "artifacts/runs/lab-test",
+                "--lab-samples",
+                "8",
+                flag,
+            ];
+            if let Some(value) = value {
+                argv.push(value);
+            }
+            assert!(
+                Args::try_parse_from(argv).is_err(),
+                "lab mode accepted conflicting flag {flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn lab_mode_rejects_output_outside_artifact_root_before_writes() {
+        let output =
+            std::env::temp_dir().join(format!("combat-lab-outside-root-{}", std::process::id()));
+        if output.exists() {
+            fs::remove_dir_all(&output).expect("remove stale outside output");
+        }
+        let args = Args::try_parse_from([
+            std::ffi::OsString::from("driver"),
+            std::ffi::OsString::from("--lab-spec"),
+            std::ffi::OsString::from("missing-lab.json"),
+            std::ffi::OsString::from("--lab-output"),
+            output.as_os_str().to_os_string(),
+            std::ffi::OsString::from("--lab-samples"),
+            std::ffi::OsString::from("1"),
+        ])
+        .expect("syntactically valid lab request");
+
+        let error = run(args).expect_err("outside artifact output must fail");
+
+        assert!(
+            error.to_string().contains("must be a descendant"),
+            "{error}"
+        );
+        assert!(!output.exists());
+    }
 
     #[test]
     fn parse_turn_plan_policy_pair_accepts_diagnostic_and_seed() {

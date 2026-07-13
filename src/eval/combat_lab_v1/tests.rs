@@ -513,6 +513,275 @@ fn sample_invariant_error_names_first_field() {
 }
 
 #[test]
+fn runner_resumes_sample_major_and_bounds_smaller_requests() {
+    let (fixture_directory, lab_spec_path, output_dir) =
+        runner_fixture("runner_resumes_sample_major");
+    let executor = RecordingCellExecutor::default();
+    let mut request = super::CombatLabRunRequestV1 {
+        lab_spec_path,
+        output_dir: output_dir.clone(),
+        requested_samples: 1,
+    };
+
+    let first = super::runner::run_combat_lab_v1_with_executor(&request, &executor)
+        .expect("run first sample");
+    assert_eq!(first.cells_present, 2);
+    assert_eq!(first.cells_appended, 2);
+    assert_eq!(
+        executor.calls.borrow().as_slice(),
+        &[(0, "baseline"), (0, "comparison")]
+    );
+    let first_journal = fs::read(output_dir.join("cells.jsonl")).expect("read first journal");
+    let first_keys = journal_cell_keys(&first_journal);
+    assert_eq!(first_keys.len(), 2);
+    assert!(read_journal_cells(&output_dir).iter().all(|cell| {
+        cell.initial_state_fingerprint.is_some()
+            && cell.non_shuffle_rng_hash.is_some()
+            && cell.shuffle_rng_hash.is_some()
+            && cell.start_hp.is_some()
+    }));
+
+    request.requested_samples = 2;
+    let second = super::runner::run_combat_lab_v1_with_executor(&request, &executor)
+        .expect("extend to second sample");
+    assert_eq!(second.cells_present, 4);
+    assert_eq!(second.cells_appended, 2);
+    assert_eq!(
+        executor.calls.borrow().as_slice(),
+        &[
+            (0, "baseline"),
+            (0, "comparison"),
+            (1, "baseline"),
+            (1, "comparison"),
+        ]
+    );
+    let extended_journal = fs::read(output_dir.join("cells.jsonl")).expect("read extended journal");
+    assert!(extended_journal.starts_with(&first_journal));
+    let extended_keys = journal_cell_keys(&extended_journal);
+    assert_eq!(extended_keys.len(), 4);
+    assert!(first_keys.is_subset(&extended_keys));
+    let extended_summary = fs::read(output_dir.join("summary.json")).expect("read summary");
+
+    let third = super::runner::run_combat_lab_v1_with_executor(&request, &executor)
+        .expect("resume completed target");
+    assert_eq!(third.cells_appended, 0);
+    assert_eq!(executor.calls.borrow().len(), 4);
+    assert_eq!(
+        fs::read(output_dir.join("summary.json")).expect("read regenerated summary"),
+        extended_summary
+    );
+
+    let manifest_before_smaller =
+        fs::read(output_dir.join("manifest.json")).expect("read manifest before smaller target");
+    let checkpoint_before_smaller = fs::read(output_dir.join("checkpoint.json"))
+        .expect("read checkpoint before smaller target");
+    request.requested_samples = 1;
+    let smaller = super::runner::run_combat_lab_v1_with_executor(&request, &executor)
+        .expect("accept smaller positive target");
+    assert_eq!(smaller.cells_present, 4);
+    assert_eq!(smaller.cells_appended, 0);
+    assert_eq!(smaller.summary.completed_cells, 2);
+    assert!(smaller
+        .summary
+        .profiles
+        .iter()
+        .all(|profile| profile.completed_cells == 1));
+    assert_eq!(executor.calls.borrow().len(), 4);
+    assert_eq!(
+        fs::read(output_dir.join("manifest.json")).expect("read preserved manifest"),
+        manifest_before_smaller
+    );
+    assert_eq!(
+        fs::read(output_dir.join("cells.jsonl")).expect("read preserved journal"),
+        extended_journal
+    );
+    assert_eq!(
+        fs::read(output_dir.join("checkpoint.json")).expect("read preserved checkpoint"),
+        checkpoint_before_smaller
+    );
+    assert_eq!(
+        journal_cell_keys(&fs::read(output_dir.join("cells.jsonl")).expect("read final journal")),
+        extended_keys
+    );
+    for file_name in [
+        "manifest.json",
+        "cells.jsonl",
+        "checkpoint.json",
+        "summary.json",
+    ] {
+        assert!(output_dir.join(file_name).is_file(), "missing {file_name}");
+    }
+
+    fs::remove_dir_all(output_dir).expect("remove runner output");
+    fs::remove_dir_all(fixture_directory).expect("remove runner fixture");
+}
+
+#[test]
+fn runner_skips_existing_cells_individually_and_checkpoints_completed_row() {
+    let (fixture_directory, lab_spec_path, output_dir) = runner_fixture("runner_partial_row");
+    let resolved = load_and_resolve_combat_lab_spec_v1(&lab_spec_path).expect("resolve lab spec");
+    let compiler = preflight_combat_lab_scenario_v1(&resolved).expect("preflight scenario");
+    let sample = compiler.compile_sample(0).expect("compile sample zero");
+    let setup_executor = RecordingCellExecutor::default();
+    let first_cell = super::runner::CombatLabCellExecutorV1::execute_cell(
+        &setup_executor,
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+    );
+    let manifest = CombatLabManifestV1::from_resolved_v1(
+        resolved,
+        crate::runtime::branch::current_source_identity(),
+        1,
+    );
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output_dir, manifest)
+        .expect("create partial artifact");
+    store
+        .append_cell(&first_cell)
+        .expect("append first profile only");
+    drop(store);
+
+    let executor = RecordingCellExecutor::default();
+    let report = super::runner::run_combat_lab_v1_with_executor(
+        &super::CombatLabRunRequestV1 {
+            lab_spec_path,
+            output_dir: output_dir.clone(),
+            requested_samples: 1,
+        },
+        &executor,
+    )
+    .expect("resume partial row");
+
+    assert_eq!(report.cells_present, 2);
+    assert_eq!(report.cells_appended, 1);
+    assert_eq!(executor.calls.borrow().as_slice(), &[(0, "comparison")]);
+    let checkpoint: super::CombatLabCheckpointV1 = serde_json::from_slice(
+        &fs::read(output_dir.join("checkpoint.json")).expect("read checkpoint"),
+    )
+    .expect("parse checkpoint");
+    assert_eq!(checkpoint.next_sample_hint, 1);
+    assert_eq!(checkpoint.completed_cell_keys.len(), 2);
+
+    fs::remove_dir_all(output_dir).expect("remove runner output");
+    fs::remove_dir_all(fixture_directory).expect("remove runner fixture");
+}
+
+#[test]
+fn runner_flushes_replay_error_and_halts_every_later_cell() {
+    let (fixture_directory, lab_spec_path, output_dir) =
+        runner_fixture("runner_replay_error_halts");
+    let executor = HaltingReplayExecutor::default();
+    let report = super::runner::run_combat_lab_v1_with_executor(
+        &super::CombatLabRunRequestV1 {
+            lab_spec_path,
+            output_dir: output_dir.clone(),
+            requested_samples: 2,
+        },
+        &executor,
+    )
+    .expect("record halting replay error");
+
+    assert_eq!(report.cells_present, 1);
+    assert_eq!(report.cells_appended, 1);
+    assert_eq!(executor.calls.borrow().as_slice(), &[(0, "baseline")]);
+    let journal = read_journal_cells(&output_dir);
+    assert_eq!(journal.len(), 1);
+    assert_eq!(
+        journal[0].outcome_class,
+        CombatLabOutcomeClassV1::ExecutionError
+    );
+    assert!(journal[0]
+        .error
+        .as_ref()
+        .is_some_and(|error| error.halt_experiment));
+    assert!(!output_dir.join("checkpoint.json").exists());
+
+    fs::remove_dir_all(output_dir).expect("remove runner output");
+    fs::remove_dir_all(fixture_directory).expect("remove runner fixture");
+}
+
+#[test]
+fn runner_records_construction_error_without_fabricated_start_evidence() {
+    let (fixture_directory, lab_spec_path, output_dir) =
+        runner_fixture("runner_construction_error");
+    let executor = RecordingCellExecutor::default();
+    let compiled_samples = std::cell::RefCell::new(Vec::new());
+    let report = super::runner::run_combat_lab_v1_with_executor_and_sample_compiler(
+        &super::CombatLabRunRequestV1 {
+            lab_spec_path,
+            output_dir: output_dir.clone(),
+            requested_samples: 3,
+        },
+        &executor,
+        |compiler, sample_index| {
+            compiled_samples.borrow_mut().push(sample_index);
+            if sample_index == 1 {
+                Err("injected sample isolation failure".to_string())
+            } else {
+                compiler.compile_sample(sample_index)
+            }
+        },
+    )
+    .expect("record construction error and stop");
+
+    assert_eq!(compiled_samples.borrow().as_slice(), &[0, 1]);
+    assert_eq!(
+        executor.calls.borrow().as_slice(),
+        &[(0, "baseline"), (0, "comparison")]
+    );
+    assert_eq!(report.cells_present, 3);
+    assert_eq!(report.cells_appended, 3);
+    let journal = read_journal_cells(&output_dir);
+    let error_cell = journal.last().expect("construction error cell");
+    assert_eq!(error_cell.sample_index, 1);
+    assert_eq!(error_cell.profile_id, "baseline");
+    assert_eq!(
+        error_cell.outcome_class,
+        CombatLabOutcomeClassV1::ExecutionError
+    );
+    assert!(error_cell.initial_state_fingerprint.is_none());
+    assert!(error_cell.non_shuffle_rng_hash.is_none());
+    assert!(error_cell.shuffle_rng_hash.is_none());
+    assert!(error_cell.start_hp.is_none());
+    assert!(error_cell.search_terminal.is_none());
+    assert!(error_cell.coverage_status.is_none());
+    assert!(error_cell.outcome_order_key.is_none());
+    assert!(!error_cell.replay_validated);
+    assert!(error_cell.final_hp.is_none());
+    assert!(error_cell.hp_loss.is_none());
+    assert!(error_cell.turns.is_none());
+    assert!(error_cell.actions.is_none());
+    assert!(error_cell.cards_played.is_none());
+    assert!(error_cell.potions_used.is_none());
+    assert_eq!(error_cell.expanded_nodes, 0);
+    assert_eq!(error_cell.generated_nodes, 0);
+    assert!(error_cell.nodes_to_first_win.is_none());
+    assert!(!error_cell.node_budget_exhausted);
+    assert!(!error_cell.deadline_exhausted);
+    assert!(error_cell.action_history.is_empty());
+    assert!(error_cell.draw_history.is_empty());
+    let error = error_cell
+        .error
+        .as_ref()
+        .expect("structured construction error");
+    assert_eq!(
+        error.stage,
+        super::CombatLabCellErrorStageV1::SampleConstruction
+    );
+    assert_eq!(error.code, "sample_construction_or_isolation_failure");
+    assert!(error.halt_experiment);
+    assert!(error.message.contains("injected sample isolation failure"));
+    let checkpoint: super::CombatLabCheckpointV1 = serde_json::from_slice(
+        &fs::read(output_dir.join("checkpoint.json")).expect("read last complete checkpoint"),
+    )
+    .expect("parse checkpoint");
+    assert_eq!(checkpoint.next_sample_hint, 1);
+
+    fs::remove_dir_all(output_dir).expect("remove runner output");
+    fs::remove_dir_all(fixture_directory).expect("remove runner fixture");
+}
+
+#[test]
 fn cell_coverage_limits_are_never_resolved_losses() {
     use crate::ai::combat_search_v2::{SearchCoverageStatus, SearchTerminalLabel};
 
@@ -564,6 +833,10 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
         super::CombatLabOutcomeClassV1::ResolvedWin
     );
     assert!(record.replay_validated);
+    assert!(record.initial_state_fingerprint.is_some());
+    assert_eq!(record.non_shuffle_rng_hash.as_deref(), Some("non-shuffle"));
+    assert_eq!(record.shuffle_rng_hash.as_deref(), Some("shuffle"));
+    assert_eq!(record.start_hp, Some(80));
     assert_eq!(record.final_hp, Some(80));
     assert_eq!(record.hp_loss, Some(0));
     assert_eq!(record.actions, Some(2));
@@ -1957,15 +2230,15 @@ fn summary_cell(
         profile_id: profile_id.to_string(),
         profile_hash: profile.profile_hash.clone(),
         budget_hash: manifest.resolved_spec.budget_hash.clone(),
-        initial_state_fingerprint: fingerprint.clone(),
-        non_shuffle_rng_hash: "non-shuffle".to_string(),
-        shuffle_rng_hash: format!("shuffle-{sample_index}"),
+        initial_state_fingerprint: Some(fingerprint.clone()),
+        non_shuffle_rng_hash: Some("non-shuffle".to_string()),
+        shuffle_rng_hash: Some(format!("shuffle-{sample_index}")),
         search_terminal: None,
         coverage_status: None,
         outcome_class,
         outcome_order_key: resolved.then(|| summary_outcome_key(final_hp.unwrap_or_default())),
         replay_validated: resolved,
-        start_hp: 20,
+        start_hp: Some(20),
         final_hp,
         hp_loss,
         turns: None,
@@ -2021,6 +2294,149 @@ fn assert_approx_eq(actual: Option<f64>, expected: f64) {
 
 fn fail_journal_sync_after_write(_: &std::fs::File) -> std::io::Result<()> {
     Err(std::io::Error::other("injected sync failure"))
+}
+
+#[derive(Default)]
+struct RecordingCellExecutor {
+    calls: std::cell::RefCell<Vec<(u64, &'static str)>>,
+}
+
+impl super::runner::CombatLabCellExecutorV1 for RecordingCellExecutor {
+    fn execute_cell(
+        &self,
+        resolved: &super::ResolvedCombatLabSpecV1,
+        sample: &super::CombatLabCompiledSampleV1,
+        profile: &super::ResolvedCombatLabProfileV1,
+    ) -> CombatLabCellRecordV1 {
+        let profile_name = match profile.spec.id.as_str() {
+            "baseline" => "baseline",
+            "comparison" => "comparison",
+            other => panic!("unexpected test profile {other}"),
+        };
+        self.calls
+            .borrow_mut()
+            .push((sample.sample_index, profile_name));
+        CombatLabCellRecordV1 {
+            schema_version: super::COMBAT_LAB_CELL_SCHEMA_VERSION,
+            cell_key: super::combat_lab_cell_key_v1(
+                &resolved.experiment_hash,
+                sample.sample_index,
+                sample.shuffle_seed,
+                &profile.spec.id,
+                &profile.profile_hash,
+                &resolved.budget_hash,
+            ),
+            experiment_hash: resolved.experiment_hash.clone(),
+            sample_index: sample.sample_index,
+            shuffle_seed: sample.shuffle_seed,
+            profile_id: profile.spec.id.clone(),
+            profile_hash: profile.profile_hash.clone(),
+            budget_hash: resolved.budget_hash.clone(),
+            initial_state_fingerprint: Some(sample.state_fingerprint.clone()),
+            non_shuffle_rng_hash: Some(sample.non_shuffle_rng_hash.clone()),
+            shuffle_rng_hash: Some(sample.shuffle_rng_hash.clone()),
+            search_terminal: Some(crate::ai::combat_search_v2::SearchTerminalLabel::Unresolved),
+            coverage_status: Some(crate::ai::combat_search_v2::SearchCoverageStatus::FrontierOpen),
+            outcome_class: CombatLabOutcomeClassV1::CoverageLimited,
+            outcome_order_key: None,
+            replay_validated: false,
+            start_hp: Some(sample.start.combat.entities.player.current_hp),
+            final_hp: None,
+            hp_loss: None,
+            turns: None,
+            actions: None,
+            cards_played: None,
+            potions_used: None,
+            draw_history: Vec::new(),
+            action_history: Vec::new(),
+            expanded_nodes: 1,
+            generated_nodes: 1,
+            nodes_to_first_win: None,
+            node_budget_exhausted: true,
+            deadline_exhausted: false,
+            error: None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct HaltingReplayExecutor {
+    calls: std::cell::RefCell<Vec<(u64, &'static str)>>,
+}
+
+impl super::runner::CombatLabCellExecutorV1 for HaltingReplayExecutor {
+    fn execute_cell(
+        &self,
+        resolved: &super::ResolvedCombatLabSpecV1,
+        sample: &super::CombatLabCompiledSampleV1,
+        profile: &super::ResolvedCombatLabProfileV1,
+    ) -> CombatLabCellRecordV1 {
+        let recording = RecordingCellExecutor::default();
+        let mut cell = super::runner::CombatLabCellExecutorV1::execute_cell(
+            &recording, resolved, sample, profile,
+        );
+        self.calls.borrow_mut().extend(recording.calls.into_inner());
+        cell.outcome_class = CombatLabOutcomeClassV1::ExecutionError;
+        cell.error = Some(super::CombatLabCellErrorV1 {
+            stage: super::CombatLabCellErrorStageV1::ExactReplay,
+            code: "injected_exact_replay_failure".to_string(),
+            message: "injected deterministic replay invariant failure".to_string(),
+            halt_experiment: true,
+        });
+        cell
+    }
+}
+
+fn runner_fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    let fixture_directory = test_directory(label);
+    fs::create_dir_all(&fixture_directory).expect("create runner fixture directory");
+    let mut lab = valid_lab_spec_value();
+    let mut comparison = lab["profiles"][0].clone();
+    comparison["id"] = json!("comparison");
+    comparison["label"] = json!("Comparison");
+    lab["profiles"] = json!([lab["profiles"][0].clone(), comparison]);
+    lab["common_budget"]["max_nodes"] = json!(1);
+    lab["common_budget"]["max_actions_per_line"] = json!(1);
+    lab["common_budget"]["max_engine_steps_per_action"] = json!(8);
+    lab["common_budget"]["rollout_max_evaluations"] = json!(1);
+    lab["common_budget"]["rollout_max_actions"] = json!(1);
+    lab["common_budget"]["rollout_beam_width"] = json!(1);
+    let lab_spec_path = fixture_directory.join("lab.json");
+    write_json(
+        &fixture_directory.join("start.json"),
+        &valid_start_spec_value(),
+    );
+    write_json(&lab_spec_path, &lab);
+
+    let output_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("artifacts")
+        .join("runs")
+        .join(format!("combat-lab-test-{label}-{}", std::process::id()));
+    if output_dir.exists() {
+        fs::remove_dir_all(&output_dir).expect("remove stale runner output");
+    }
+    (fixture_directory, lab_spec_path, output_dir)
+}
+
+fn journal_cell_keys(bytes: &[u8]) -> BTreeSet<String> {
+    std::str::from_utf8(bytes)
+        .expect("journal is utf8")
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<CombatLabCellRecordV1>(line)
+                .expect("parse journal cell")
+                .cell_key
+        })
+        .collect()
+}
+
+fn read_journal_cells(output_dir: &std::path::Path) -> Vec<CombatLabCellRecordV1> {
+    let bytes = fs::read(output_dir.join("cells.jsonl")).expect("read journal");
+    std::str::from_utf8(&bytes)
+        .expect("journal is utf8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("parse journal cell"))
+        .collect()
 }
 
 fn test_directory(label: &str) -> std::path::PathBuf {
