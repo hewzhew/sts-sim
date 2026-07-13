@@ -667,6 +667,44 @@ fn runner_skips_existing_cells_individually_and_checkpoints_completed_row() {
 }
 
 #[test]
+fn runner_recovers_missing_checkpoint_from_complete_journal_without_rerunning_cells() {
+    let (fixture_directory, lab_spec_path, output_dir) =
+        runner_fixture("runner_recovers_missing_checkpoint");
+    let request = super::CombatLabRunRequestV1 {
+        lab_spec_path,
+        output_dir: output_dir.clone(),
+        requested_samples: 1,
+    };
+    let initial_executor = RecordingCellExecutor::default();
+    let initial = super::runner::run_combat_lab_v1_with_executor(&request, &initial_executor)
+        .expect("produce one complete sample row");
+    assert_eq!(initial.cells_appended, 2);
+    let journal_before = fs::read(output_dir.join("cells.jsonl")).expect("read complete journal");
+    let keys_before = journal_cell_keys(&journal_before);
+    fs::remove_file(output_dir.join("checkpoint.json"))
+        .expect("model crash after cell sync and before checkpoint replacement");
+
+    let resume_executor = RecordingCellExecutor::default();
+    let resumed = super::runner::run_combat_lab_v1_with_executor(&request, &resume_executor)
+        .expect("resume complete row after checkpoint loss");
+
+    assert_eq!(resumed.cells_appended, 0);
+    assert!(resume_executor.calls.borrow().is_empty());
+    let journal_after = fs::read(output_dir.join("cells.jsonl")).expect("read preserved journal");
+    assert_eq!(journal_after, journal_before);
+    assert_eq!(journal_cell_keys(&journal_after), keys_before);
+    let checkpoint: super::CombatLabCheckpointV1 = serde_json::from_slice(
+        &fs::read(output_dir.join("checkpoint.json")).expect("read recovered checkpoint"),
+    )
+    .expect("parse recovered checkpoint");
+    assert_eq!(checkpoint.next_sample_hint, 1);
+    assert_eq!(checkpoint.completed_cell_keys, keys_before);
+
+    fs::remove_dir_all(output_dir).expect("remove runner output");
+    fs::remove_dir_all(fixture_directory).expect("remove runner fixture");
+}
+
+#[test]
 fn runner_flushes_replay_error_and_halts_every_later_cell() {
     let (fixture_directory, lab_spec_path, output_dir) =
         runner_fixture("runner_replay_error_halts");

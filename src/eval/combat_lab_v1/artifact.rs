@@ -436,8 +436,19 @@ fn repair_checkpoint_if_needed(
     valid_journal_bytes: &[u8],
 ) -> Result<(), String> {
     let path = output_dir.join("checkpoint.json");
+    let digest = journal_digest(valid_journal_bytes);
+    let next_sample_hint = conservative_next_sample_hint(manifest, cells, completed_cell_keys);
     if !path.exists() {
-        return Ok(());
+        if cells.is_empty() {
+            return Ok(());
+        }
+        let recovered = CombatLabCheckpointV1 {
+            schema_version: COMBAT_LAB_ARTIFACT_SCHEMA_VERSION,
+            journal_digest: digest,
+            completed_cell_keys: completed_cell_keys.clone(),
+            next_sample_hint,
+        };
+        return atomic_write_json(&path, &recovered);
     }
     let bytes = fs::read(&path).map_err(|error| {
         format!(
@@ -445,8 +456,6 @@ fn repair_checkpoint_if_needed(
             path.display()
         )
     })?;
-    let digest = journal_digest(valid_journal_bytes);
-    let next_sample_hint = conservative_next_sample_hint(manifest, cells, completed_cell_keys);
     let checkpoint = serde_json::from_slice::<CombatLabCheckpointV1>(&bytes).ok();
     let agrees = checkpoint.as_ref().is_some_and(|checkpoint| {
         checkpoint.schema_version == COMBAT_LAB_ARTIFACT_SCHEMA_VERSION
