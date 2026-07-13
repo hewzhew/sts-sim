@@ -1,5 +1,7 @@
 use crate::ai::analysis::card_semantics::{CardBurden, InstalledRule, Mechanic};
-use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
+use crate::ai::strategy::boss_scaling_evidence::{
+    admission_is_strength_payoff, assess_boss_scaling_evidence,
+};
 use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_construction_pressure::candidate_improves_card_flow;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -72,6 +74,7 @@ pub enum MarginalAcquisitionQuality {
 pub enum AcquisitionConstructionRole {
     HardStrategicGap,
     PackageReliability,
+    SupportedPackagePayoff,
     SoftStrategicGap,
     EngineOrScaling,
     UpgradeAccess,
@@ -109,6 +112,7 @@ pub enum AcquisitionPolicyReason {
     PremiumCard,
     UpgradedShopCard,
     PackageReliabilityRepair,
+    SupportedPackagePayoff,
     HardGapWithAcceptableOpportunityCost,
     BossScalingRepair,
     ConstructionRoleAccepted,
@@ -258,12 +262,6 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
                 AcquisitionPolicyReason::PremiumCard,
             )
         }
-        AcquisitionSource::Reward if report.strategic_delta.adds_deployability_debt => {
-            acquisition_policy(
-                AcquisitionPolicyVerdict::Speculative,
-                AcquisitionPolicyReason::DeployabilityDebt,
-            )
-        }
         AcquisitionSource::Reward
             if report.construction_role
                 == Some(AcquisitionConstructionRole::SurvivalStabilizer) =>
@@ -279,6 +277,21 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
             acquisition_policy(
                 AcquisitionPolicyVerdict::Speculative,
                 AcquisitionPolicyReason::LowMarginLacksHardGap,
+            )
+        }
+        AcquisitionSource::Reward
+            if report.construction_role
+                == Some(AcquisitionConstructionRole::SupportedPackagePayoff) =>
+        {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::ContextTake,
+                AcquisitionPolicyReason::SupportedPackagePayoff,
+            )
+        }
+        AcquisitionSource::Reward if report.strategic_delta.adds_deployability_debt => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::Speculative,
+                AcquisitionPolicyReason::DeployabilityDebt,
             )
         }
         AcquisitionSource::Reward if report.construction_role.is_some() => acquisition_policy(
@@ -356,6 +369,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
             "shop card repairs the open boss scaling plan"
         }
         AcquisitionPolicyReason::NoPolicySupport => "shop card has no acquisition policy support",
+        AcquisitionPolicyReason::SupportedPackagePayoff => {
+            "card fills the first payoff slot of a stable package"
+        }
         AcquisitionPolicyReason::LowMarginLacksHardGap => {
             "low-margin card does not improve a hard strategic gap"
         }
@@ -495,13 +511,27 @@ fn construction_role(
     if strategic_delta.repairs_package_reliability {
         return Some(AcquisitionConstructionRole::PackageReliability);
     }
+    if admission.class
+        == crate::ai::strategy::reward_admission::RewardAdmissionClass::BuildsSupportedPackage
+        && admission_is_strength_payoff(admission)
+        && deck_plan.has_open_stable_strength_payoff_slot()
+        && !deck_plan.survival_pressure()
+        && (!strategic_delta.adds_deployability_debt || deck_plan.roles.energy_units > 0)
+    {
+        return Some(AcquisitionConstructionRole::SupportedPackagePayoff);
+    }
     if has_run_reward(admission) {
         return Some(AcquisitionConstructionRole::RunReward);
     }
     if has_combat_upgrade(admission) && deck_plan.roles.upgrade_access_units == 0 {
         return Some(AcquisitionConstructionRole::UpgradeAccess);
     }
-    if admission_scaling_or_engine(admission) && !fragile_supported_payoff(deck_plan, admission) {
+    if admission_scaling_or_engine(admission)
+        && !fragile_supported_payoff(deck_plan, admission)
+        && !(admission.class
+            == crate::ai::strategy::reward_admission::RewardAdmissionClass::BuildsSupportedPackage
+            && admission_is_strength_payoff(admission))
+    {
         return Some(AcquisitionConstructionRole::EngineOrScaling);
     }
     if deck_plan.survival_pressure() && admission_survival_tool(admission) {
@@ -557,8 +587,8 @@ fn fragile_supported_payoff(deck_plan: DeckPlanSnapshot, admission: &RewardAdmis
     {
         return false;
     }
-    if admission_damage_uses(admission, Mechanic::Strength) {
-        return deck_plan.roles.strength_source_units < 2;
+    if admission_is_strength_payoff(admission) {
+        return !deck_plan.has_open_stable_strength_payoff_slot();
     }
     if admission_damage_uses(admission, Mechanic::Block) {
         let roles = deck_plan.roles;
@@ -816,6 +846,129 @@ mod tests {
             AcquisitionPolicyReason::PackageReliabilityRepair
         );
         assert!(!policy.allows_acquisition());
+    }
+
+    #[test]
+    fn reward_accepts_first_strength_payoff_with_one_stable_source() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::DemonForm,
+            CardId::BattleTrance,
+            CardId::FlameBarrier,
+            CardId::Cleave,
+        ];
+        let master_deck = deck(&cards);
+        let plan = DeckPlanSnapshot::from_deck(
+            &master_deck,
+            DeckAdmissionContext {
+                act: 3,
+                current_hp: 70,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 3,
+                starter_basic_count: 3,
+                curse_count: 0,
+                has_energy_relic: true,
+            },
+        );
+        let admission =
+            assess_reward_admission_from_master_deck(&master_deck, CardId::HeavyBlade, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(plan),
+            CardId::HeavyBlade,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(plan.roles.strength_source_units > 0);
+        assert_eq!(plan.roles.strength_payoff_units, 0);
+        assert_eq!(
+            report.construction_role,
+            Some(AcquisitionConstructionRole::SupportedPackagePayoff)
+        );
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
+        assert!(policy.allows_acquisition());
+    }
+
+    #[test]
+    fn reward_does_not_repeat_strength_payoff_or_trust_conditional_source() {
+        for cards in [
+            vec![CardId::DemonForm, CardId::HeavyBlade],
+            vec![CardId::SpotWeakness, CardId::SpotWeakness],
+        ] {
+            let master_deck = deck(&cards);
+            let plan = act2_access_saturated_plan(&cards);
+            let admission =
+                assess_reward_admission_from_master_deck(&master_deck, CardId::HeavyBlade, 0);
+            let report = assess_card_acquisition(
+                AcquisitionContext::reward(plan),
+                CardId::HeavyBlade,
+                0,
+                &admission,
+            );
+            let policy = evaluate_deck_construction_contract(&report);
+
+            assert!(
+                !policy.allows_acquisition(),
+                "unsupported or repeated payoff should remain speculative: cards={cards:?} report={report:?} policy={policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn supported_payoff_does_not_override_energy_low_margin_or_low_hp_guards() {
+        let cases = [
+            (
+                vec![CardId::DemonForm, CardId::FlameBarrier],
+                CardId::HeavyBlade,
+                70,
+                80,
+            ),
+            (
+                vec![CardId::DemonForm, CardId::SeeingRed],
+                CardId::SwordBoomerang,
+                70,
+                80,
+            ),
+            (
+                vec![CardId::DemonForm, CardId::SeeingRed],
+                CardId::HeavyBlade,
+                20,
+                80,
+            ),
+        ];
+
+        for (cards, candidate, current_hp, max_hp) in cases {
+            let master_deck = deck(&cards);
+            let plan = DeckPlanSnapshot::from_deck(
+                &master_deck,
+                DeckAdmissionContext {
+                    act: 3,
+                    current_hp,
+                    max_hp,
+                },
+                RunStrategicFacts {
+                    entering_act: 3,
+                    starter_basic_count: 0,
+                    curse_count: 0,
+                    has_energy_relic: false,
+                },
+            );
+            let admission = assess_reward_admission_from_master_deck(&master_deck, candidate, 0);
+            let report =
+                assess_card_acquisition(AcquisitionContext::reward(plan), candidate, 0, &admission);
+            let policy = evaluate_deck_construction_contract(&report);
+
+            assert!(
+                !policy.allows_acquisition(),
+                "guarded payoff must remain speculative: cards={cards:?} candidate={candidate:?} hp={current_hp}/{max_hp} report={report:?} policy={policy:?}"
+            );
+        }
     }
 
     #[test]

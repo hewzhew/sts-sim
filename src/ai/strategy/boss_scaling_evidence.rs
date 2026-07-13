@@ -102,7 +102,7 @@ pub fn assess_boss_scaling_evidence(
             BossScalingEvidence::score_only("boss-speculative-payoff", -35)
         };
     }
-    if candidate_strength_payoff(admission) {
+    if admission_is_strength_payoff(admission) {
         return if deck.roles.strength_source_units > 0 && deck.roles.strength_payoff_units == 0 {
             BossScalingEvidence::relevant("boss-strength-payoff", 40)
         } else {
@@ -192,7 +192,7 @@ fn candidate_block_payoff(admission: &RewardAdmission) -> bool {
         ))
 }
 
-fn candidate_strength_payoff(admission: &RewardAdmission) -> bool {
+pub fn admission_is_strength_payoff(admission: &RewardAdmission) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::DamageUses(Mechanic::Strength))

@@ -6,7 +6,9 @@ use crate::ai::strategy::acquisition::{
 use crate::ai::strategy::boss_relic_admission::{
     boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
 };
-use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
+use crate::ai::strategy::boss_scaling_evidence::{
+    admission_is_strength_payoff, assess_boss_scaling_evidence,
+};
 use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
@@ -1487,8 +1489,8 @@ fn fragile_supported_payoff(context: DecisionPipelineContext, admission: &Reward
     {
         return false;
     }
-    if admission_damage_uses(admission, Mechanic::Strength) {
-        return context.deck_plan.roles.strength_source_units < 2;
+    if admission_is_strength_payoff(admission) {
+        return !context.deck_plan.has_open_stable_strength_payoff_slot();
     }
     if admission_damage_uses(admission, Mechanic::Block) {
         let roles = context.deck_plan.roles;
@@ -2648,6 +2650,54 @@ mod tests {
             )),
             "Shrug+ should not masquerade as a boss survival repair: {:?}",
             shrug.scores
+        );
+    }
+
+    #[test]
+    fn reward_awakened_one_context_admits_first_supported_strength_payoff() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Clothesline,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::FlameBarrier,
+            CardId::Cleave,
+            CardId::PowerThrough,
+            CardId::FlameBarrier,
+            CardId::Brutality,
+            CardId::GhostlyArmor,
+            CardId::DemonForm,
+            CardId::BodySlam,
+            CardId::Headbutt,
+            CardId::ShrugItOff,
+            CardId::SeeingRed,
+        ];
+
+        let heavy_blade =
+            reward_card_with_act_boss(&cards, CardId::HeavyBlade, 0, 3, EncounterId::AwakenedOne);
+        let sword_boomerang = reward_card_with_act_boss(
+            &cards,
+            CardId::SwordBoomerang,
+            0,
+            3,
+            EncounterId::AwakenedOne,
+        );
+
+        assert_eq!(heavy_blade.lane, CandidateLane::Mainline);
+        assert!(heavy_blade.auto_expands(), "heavy_blade={heavy_blade:#?}");
+        assert!(!heavy_blade.adjudication.caps.iter().any(|cap| {
+            cap.source == CandidateLaneCapSource::Acquisition && cap.cap == LaneCap::ProbeOnly
+        }));
+        assert_ne!(
+            sword_boomerang.lane,
+            CandidateLane::Mainline,
+            "low-margin payoff should remain disciplined: {sword_boomerang:#?}"
         );
     }
 

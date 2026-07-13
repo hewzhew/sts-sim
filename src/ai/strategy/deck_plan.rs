@@ -95,6 +95,10 @@ impl DeckPlanSnapshot {
             })
     }
 
+    pub fn has_open_stable_strength_payoff_slot(self) -> bool {
+        self.roles.strength_source_units > 0 && self.roles.strength_payoff_units == 0
+    }
+
     pub fn candidate_improves_aoe_gap(
         self,
         candidate: Option<(CardId, u8)>,
