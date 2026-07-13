@@ -5,11 +5,13 @@ use crate::ai::strategy::deck_construction_pressure::{
     assess_deck_construction_pressure, reward_construction_lane_adjustment,
     ConstructionLaneAdjustment, DeckConstructionContext, DeckConstructionPressure,
 };
-use crate::ai::strategy::deck_role_inventory::{card_is_stable_strength_source, DeckRoleInventory};
+use crate::ai::strategy::deck_role_inventory::{
+    card_is_stable_strength_source, card_is_strong_aoe, DeckRoleInventory,
+};
 use crate::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit_summary, DeckStrategicDeficitSummary, StrategicDeficitLevel,
 };
-use crate::ai::strategy::reward_admission::RewardAdmission;
+use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
@@ -91,5 +93,32 @@ impl DeckPlanSnapshot {
                     self.roles.repeatable_self_damage_supply,
                 )
             })
+    }
+
+    pub fn candidate_improves_aoe_gap(
+        self,
+        candidate: Option<(CardId, u8)>,
+        admission: &RewardAdmission,
+    ) -> bool {
+        if !admission
+            .reasons
+            .contains(&RewardAdmissionReason::AreaDamage)
+        {
+            return false;
+        }
+        match self.strategic_deficit.aoe_or_minion_control {
+            StrategicDeficitLevel::Missing => true,
+            StrategicDeficitLevel::Thin => {
+                let Some((card, upgrades)) = candidate else {
+                    return false;
+                };
+                if self.roles.strong_aoe_units == 0 {
+                    card_is_strong_aoe(card, upgrades)
+                } else {
+                    self.roles.aoe_units < 2
+                }
+            }
+            StrategicDeficitLevel::Adequate | StrategicDeficitLevel::Surplus => false,
+        }
     }
 }

@@ -2,6 +2,7 @@ use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CardBurden, CardDefinition, CombatEvent, DamageScalingAxis,
     DeckMechanicContext, InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
+use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisAoeSupportV1};
 use crate::content::cards::{get_card_definition, CardId};
 use crate::runtime::combat::CombatCard;
 
@@ -9,6 +10,7 @@ use crate::runtime::combat::CombatCard;
 pub struct DeckRoleInventory {
     pub frontload_units: u8,
     pub aoe_units: u8,
+    pub strong_aoe_units: u8,
     pub block_units: u8,
     pub cycle_block_units: u8,
     pub mitigation_units: u8,
@@ -42,6 +44,9 @@ impl DeckRoleInventory {
             .contains(&CombatEvent::CardSelfDamage);
 
         for (card, definition) in deck.iter().zip(&definitions) {
+            if card_is_strong_aoe(card.id, card.upgrades) {
+                inventory.strong_aoe_units += 1;
+            }
             if get_card_definition(card.id).cost == -1 {
                 inventory.x_cost_payoff_units += 1;
             }
@@ -152,6 +157,11 @@ impl DeckRoleInventory {
     }
 }
 
+pub(super) fn card_is_strong_aoe(card: CardId, upgrades: u8) -> bool {
+    card == CardId::Combust
+        || card_analysis_profile_v1(card, upgrades).aoe_support == CardAnalysisAoeSupportV1::Strong
+}
+
 pub(super) fn card_is_stable_strength_source(
     card: CardId,
     upgrades: u8,
@@ -233,5 +243,17 @@ mod tests {
 
         assert!(inventory.repeatable_self_damage_supply);
         assert_eq!(inventory.strength_source_units, 1);
+    }
+
+    #[test]
+    fn role_inventory_distinguishes_weak_and_strong_aoe() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::Cleave, 1),
+            card(CardId::Cleave, 2),
+            card(CardId::Whirlwind, 3),
+        ]);
+
+        assert_eq!(inventory.aoe_units, 3);
+        assert_eq!(inventory.strong_aoe_units, 1);
     }
 }

@@ -786,7 +786,10 @@ fn strategic_deficit_score(
         improves = true;
         scores.push(score("strategic-energy-gap", 50));
     }
-    if needs(deficit.aoe_or_minion_control) && admission_aoe(admission) {
+    if context
+        .deck_plan
+        .candidate_improves_aoe_gap(candidate_card(candidate.kind), admission)
+    {
         improves = true;
         scores.push(score("strategic-aoe-gap", 50));
     }
@@ -2215,6 +2218,37 @@ mod tests {
             battle_trance.order_key(true) < cleave.order_key(true),
             "first real draw should outrank another Cleave: battle_trance={battle_trance:#?} cleave={cleave:#?}"
         );
+    }
+
+    #[test]
+    fn repeated_weak_aoe_cannot_enter_mainline_as_act2_gap_repair() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::Cleave,
+            CardId::Cleave,
+        ];
+
+        let cleave = reward_card_with_act(&cards, CardId::Cleave, 0, 2);
+        let whirlwind = reward_card_with_act(&cards, CardId::Whirlwind, 0, 2);
+
+        assert_ne!(cleave.lane, CandidateLane::Mainline, "cleave={cleave:#?}");
+        assert!(!cleave.auto_expands(), "cleave={cleave:#?}");
+        assert!(
+            !cleave
+                .scores
+                .iter()
+                .any(|score| score.by == "strategic-aoe-gap"),
+            "cleave={cleave:#?}"
+        );
+        assert_eq!(whirlwind.lane, CandidateLane::Mainline);
+        assert!(whirlwind.auto_expands(), "whirlwind={whirlwind:#?}");
     }
 
     #[test]

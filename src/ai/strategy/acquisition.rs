@@ -423,7 +423,7 @@ fn improves_hard_gap(
             .contains(&RewardAdmissionReason::CombatUpgrade)))
         || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
         || (deficit.aoe_or_minion_control == StrategicDeficitLevel::Missing
-            && admission_aoe(admission))
+            && deck_plan.candidate_improves_aoe_gap(candidate, admission))
         || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
@@ -446,7 +446,7 @@ fn improves_any_gap(
             .reasons
             .contains(&RewardAdmissionReason::CombatUpgrade)))
         || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
-        || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
+        || deck_plan.candidate_improves_aoe_gap(candidate, admission)
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
         || (needs(deficit.boss_scaling_plan)
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
@@ -549,12 +549,6 @@ fn admission_frontloads(admission: &RewardAdmission) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::FrontloadDamage)
-}
-
-fn admission_aoe(admission: &RewardAdmission) -> bool {
-    admission
-        .reasons
-        .contains(&RewardAdmissionReason::AreaDamage)
 }
 
 fn admission_survival_tool(admission: &RewardAdmission) -> bool {
@@ -908,6 +902,71 @@ mod tests {
             report.construction_role,
             Some(AcquisitionConstructionRole::SoftStrategicGap)
         );
+    }
+
+    #[test]
+    fn repeated_weak_aoe_does_not_claim_to_repair_shallow_act2_package() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::Cleave,
+            CardId::Cleave,
+        ];
+        let master_deck = deck(&cards);
+        let plan = act1_shop_plan(&cards);
+        assert_eq!(
+            plan.strategic_deficit.aoe_or_minion_control,
+            crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel::Thin
+        );
+        let admission = assess_reward_admission_from_master_deck(&master_deck, CardId::Cleave, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(plan),
+            CardId::Cleave,
+            0,
+            &admission,
+        );
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(!report.strategic_delta.improves_any_gap);
+        assert!(report.strategic_delta.adds_card_without_gap_improvement);
+        assert_eq!(report.construction_role, None);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Speculative);
+    }
+
+    #[test]
+    fn strong_aoe_repairs_shallow_weak_aoe_package() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::Cleave,
+            CardId::Cleave,
+        ];
+        let master_deck = deck(&cards);
+        let admission =
+            assess_reward_admission_from_master_deck(&master_deck, CardId::Whirlwind, 0);
+
+        let report = assess_card_acquisition(
+            AcquisitionContext::reward(act1_shop_plan(&cards)),
+            CardId::Whirlwind,
+            0,
+            &admission,
+        );
+
+        assert!(report.strategic_delta.improves_any_gap);
+        assert!(report.construction_role.is_some(), "report={report:#?}");
     }
 
     #[test]

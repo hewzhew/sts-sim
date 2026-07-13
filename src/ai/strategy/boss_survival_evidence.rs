@@ -65,7 +65,10 @@ fn collector_minion_control_evidence(
             .reasons
             .contains(&RewardAdmissionReason::AreaDamage)
     {
-        BossSurvivalEvidence::relevant("collector-minion-control", 100)
+        // Keep the known-boss authority explicit here. Generic shallow-AoE
+        // credit no longer rewards duplicate weak attacks, so Collector's
+        // concrete two-minion requirement owns the full comparison weight.
+        BossSurvivalEvidence::relevant("collector-minion-control", 150)
     } else {
         BossSurvivalEvidence::none()
     }

@@ -168,7 +168,6 @@ struct StrategicCounts {
     has_corruption: bool,
     has_dark_embrace: bool,
     has_ritual_dagger: bool,
-    strong_aoe_count: u8,
 }
 
 impl StrategicCounts {
@@ -224,9 +223,6 @@ impl StrategicCounts {
         }
         if card.id == CardId::RitualDagger {
             self.has_ritual_dagger = true;
-        }
-        if is_strong_aoe(card.id) {
-            self.strong_aoe_count += 1;
         }
         let semantics = card_definition_with_upgrades(card.id, card.upgrades);
         for effect in semantics.play_effects {
@@ -298,7 +294,7 @@ fn risks(
     if counts.low_impact_attacks >= 4 && counts.act >= 2 {
         risks.push(StrategicRisk::ApparentFrontloadLowQuality);
     }
-    if counts.act >= 2 && inventory.aoe_units == 2 && counts.strong_aoe_count == 0 {
+    if counts.act >= 2 && inventory.aoe_units >= 2 && inventory.strong_aoe_units == 0 {
         risks.push(StrategicRisk::ShallowAoEForMultiEnemy);
     }
     if high_starter_burden(counts) {
@@ -363,7 +359,7 @@ fn aoe_or_minion_level(
     inventory: &DeckRoleInventory,
     counts: &StrategicCounts,
 ) -> StrategicDeficitLevel {
-    if counts.act >= 2 && inventory.aoe_units == 2 && counts.strong_aoe_count == 0 {
+    if counts.act >= 2 && inventory.aoe_units >= 2 && inventory.strong_aoe_units == 0 {
         StrategicDeficitLevel::Thin
     } else {
         unit_level(inventory.aoe_units, 1, 4)
@@ -507,10 +503,6 @@ fn is_low_impact_attack(card: CardId) -> bool {
     )
 }
 
-fn is_strong_aoe(card: CardId) -> bool {
-    matches!(card, CardId::Immolate | CardId::Whirlwind | CardId::Combust)
-}
-
 fn is_conditional_payoff(card: CardId) -> bool {
     matches!(
         card,
@@ -619,6 +611,22 @@ mod tests {
         let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
 
         assert_eq!(deficit.deck_access, StrategicDeficitLevel::Adequate);
+    }
+
+    #[test]
+    fn repeated_weak_aoe_remains_thin_for_act2_multi_enemy_pressure() {
+        let deck = [CardId::Cleave, CardId::Cleave, CardId::Cleave]
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| card(id, index as u32 + 1))
+            .collect::<Vec<_>>();
+
+        let deficit = assess_deck_strategic_deficit(&deck, act2_facts());
+
+        assert_eq!(deficit.aoe_or_minion_control, StrategicDeficitLevel::Thin);
+        assert!(deficit
+            .risks
+            .contains(&StrategicRisk::ShallowAoEForMultiEnemy));
     }
 
     #[test]
