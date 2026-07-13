@@ -10,7 +10,6 @@ use super::combat_case_adjudication::{
     project_combat_case_session, COMBAT_CASE_PROJECTION_TRUST_V1,
 };
 use super::combat_case_candidate_census::CombatCaseCandidateReplayFailureV1;
-use super::transition_report::CardSnapshot;
 use cutpoint::locate_and_group_cutpoints;
 use outcomes::probe_grouped_cutpoint;
 
@@ -63,7 +62,7 @@ pub struct PersistentBurdenCutpointInputOutcomeV1 {
     pub input: ClientInput,
     pub kind: PersistentBurdenCutpointInputOutcomeKindV1,
     pub terminal: CombatTerminal,
-    pub gained_curses: Vec<CardSnapshot>,
+    pub gained_curse_counts: Vec<PersistentBurdenGainedCurseCountV1>,
     pub living_enemy_plan_changes: Vec<PersistentBurdenEnemyPlanChangeV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -86,6 +85,7 @@ pub struct PersistentBurdenCutpointSummaryV1 {
     pub trigger_step_index: usize,
     pub trigger_action_key: String,
     pub trigger_input: ClientInput,
+    pub trigger_gained_curse_counts: Vec<PersistentBurdenGainedCurseCountV1>,
     pub player_hp: i32,
     pub player_block: i32,
     pub enemy_hp: Vec<i32>,

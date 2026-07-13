@@ -11,14 +11,16 @@ use crate::state::core::ClientInput;
 use super::super::combat_candidate_line::enforce_replay_potion_budget;
 use super::super::combat_case_candidate_census::CombatCaseCandidateReplayFailureV1;
 use super::super::combat_case_retained_candidates::unique_retained_win_trajectories;
-use super::super::combat_line_outcome::newly_gained_curses;
 use super::super::session::RunControlSession;
+use super::burden::{newly_gained_persistent_curses, PersistentCurseBurdenSnapshot};
+use super::PersistentBurdenGainedCurseCountV1;
 
 pub(super) struct LocatedBurdenCutpoint {
     pub(super) retained_index: usize,
     pub(super) trigger_step_index: usize,
     pub(super) trigger_action_key: String,
     pub(super) trigger_input: ClientInput,
+    pub(super) trigger_gained_curse_counts: Vec<PersistentBurdenGainedCurseCountV1>,
     pub(super) potions_used_before: u32,
     pub(super) identity: BurdenCutpointIdentity,
     pub(super) session: RunControlSession,
@@ -62,10 +64,11 @@ pub(super) fn locate_candidate_cutpoint(
             ));
         };
 
-        let before = trial.run_state.master_deck.clone();
+        let before = PersistentCurseBurdenSnapshot::capture(&trial);
         let clean_session = trial.clone();
         trial.apply_input(choice.input.clone())?;
-        let gained = newly_gained_curses(&before, &trial.run_state.master_deck);
+        let after = PersistentCurseBurdenSnapshot::capture(&trial);
+        let gained = newly_gained_persistent_curses(&before, &after);
         if !gained.is_empty() {
             let identity = cutpoint_identity(&clean_session, &position);
             return Ok(Some(LocatedBurdenCutpoint {
@@ -73,6 +76,7 @@ pub(super) fn locate_candidate_cutpoint(
                 trigger_step_index: action.step_index,
                 trigger_action_key: action.action_key.clone(),
                 trigger_input: action.input.clone(),
+                trigger_gained_curse_counts: gained,
                 potions_used_before: potions_used,
                 identity,
                 session: clean_session,

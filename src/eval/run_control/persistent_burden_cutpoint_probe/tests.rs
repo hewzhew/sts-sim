@@ -7,7 +7,7 @@ use crate::content::monsters::EnemyId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::{CombatCard, MetaChange, MonsterEntity};
 use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
-use crate::sim::combat::CombatPosition;
+use crate::sim::combat::{CombatPosition, CombatTerminal};
 use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::{
     ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
@@ -123,15 +123,15 @@ fn fixture_line_with_neutral_then_curse_input() -> (
     let monster = planned_jaw_worm();
     let monster_id = monster.id;
     combat.entities.monsters = vec![monster];
+    combat.queue_action_back(Action::AddCardToMasterDeck {
+        card_id: CardId::Parasite,
+    });
     combat.queue_action_back(Action::SuspendForHandSelect {
         min: 1,
         max: 1,
         can_cancel: false,
         filter: HandSelectFilter::Any,
         reason: HandSelectReason::Exhaust,
-    });
-    combat.queue_action_back(Action::AddCardToMasterDeck {
-        card_id: CardId::Parasite,
     });
     combat.queue_action_back(Action::InstantKill { target: monster_id });
 
@@ -207,6 +207,7 @@ fn fixture_located_cutpoint(retained_index: usize, label: &str) -> LocatedBurden
         trigger_step_index: 4,
         trigger_action_key: "combat/end_turn".to_string(),
         trigger_input: ClientInput::EndTurn,
+        trigger_gained_curse_counts: Vec::new(),
         potions_used_before: 0,
         identity,
         session,
@@ -253,6 +254,7 @@ fn fixture_writhing_mass_reactive_cutpoint() -> LocatedBurdenCutpoint {
         trigger_step_index: 2,
         trigger_action_key: "combat/end_turn".to_string(),
         trigger_input: ClientInput::EndTurn,
+        trigger_gained_curse_counts: Vec::new(),
         potions_used_before: 0,
         identity: cutpoint_identity(&session, &position),
         session,
@@ -278,18 +280,24 @@ fn conclude_probe(
 }
 
 #[test]
-fn first_gained_curse_captures_pre_trigger_session() {
+fn pending_curse_is_located_before_later_combat_completion() {
     let (session, config, trajectory) = fixture_line_with_neutral_then_curse_input();
     let located = locate_candidate_cutpoint(&session, &config, 0, &trajectory)
         .expect("replay")
         .expect("burden cutpoint");
 
-    assert_eq!(located.trigger_step_index, 1);
-    assert_eq!(located.trigger_action_key, trajectory.actions[1].action_key);
+    assert_eq!(located.trigger_step_index, 0);
+    assert_eq!(located.trigger_action_key, trajectory.actions[0].action_key);
+    assert_eq!(located.trigger_gained_curse_counts.len(), 1);
+    assert_eq!(
+        located.trigger_gained_curse_counts[0].card,
+        CardId::Parasite
+    );
+    assert_eq!(located.trigger_gained_curse_counts[0].count, 1);
     assert_eq!(located.potions_used_before, 0);
     assert!(matches!(
         located.position.engine,
-        EngineState::PendingChoice(_)
+        EngineState::CombatPlayerTurn
     ));
     assert!(newly_gained_curses(
         &session.run_state.master_deck,
@@ -300,14 +308,41 @@ fn first_gained_curse_captures_pre_trigger_session() {
     triggered
         .apply_input(located.trigger_input.clone())
         .expect("trigger");
+    assert!(newly_gained_curses(
+        &located.session.run_state.master_deck,
+        &triggered.run_state.master_deck,
+    )
+    .is_empty());
+    assert!(triggered
+        .active_combat
+        .as_ref()
+        .expect("combat remains active")
+        .combat_state
+        .meta
+        .meta_changes
+        .iter()
+        .any(|change| matches!(change, MetaChange::AddCardToMasterDeck(CardId::Parasite))));
+}
+
+#[test]
+fn unresolved_pending_curse_action_is_classified_as_new_curse() {
+    let (session, config, trajectory) = fixture_line_with_neutral_then_curse_input();
+    let located = locate_candidate_cutpoint(&session, &config, 0, &trajectory)
+        .expect("replay")
+        .expect("burden cutpoint");
+    let outcome = probe_cutpoint_actions(&located, &config)
+        .into_iter()
+        .find(|outcome| outcome.input == trajectory.actions[0].input)
+        .expect("trigger outcome");
+
+    assert_eq!(outcome.terminal, CombatTerminal::Unresolved);
     assert_eq!(
-        newly_gained_curses(
-            &located.session.run_state.master_deck,
-            &triggered.run_state.master_deck,
-        )
-        .len(),
-        1
+        outcome.kind,
+        PersistentBurdenCutpointInputOutcomeKindV1::NewCurse
     );
+    assert_eq!(outcome.gained_curse_counts.len(), 1);
+    assert_eq!(outcome.gained_curse_counts[0].card, CardId::Parasite);
+    assert_eq!(outcome.gained_curse_counts[0].count, 1);
 }
 
 #[test]
@@ -368,7 +403,7 @@ fn writhing_mass_reactive_attack_is_a_clean_plan_change() {
     assert!(outcomes.iter().any(|outcome| {
         outcome.kind == PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged
             && matches!(outcome.input, ClientInput::PlayCard { .. })
-            && outcome.gained_curses.is_empty()
+            && outcome.gained_curse_counts.is_empty()
     }));
 }
 

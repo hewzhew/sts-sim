@@ -3,13 +3,13 @@ use crate::runtime::combat::CombatState;
 use crate::sim::combat::{CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper};
 use crate::sim::combat_action::CombatActionChoice;
 
+use super::burden::{newly_gained_persistent_curses, PersistentCurseBurdenSnapshot};
 use super::cutpoint::{GroupedBurdenCutpoint, LocatedBurdenCutpoint};
 use super::{
     PersistentBurdenCutpointInputOutcomeKindV1, PersistentBurdenCutpointInputOutcomeV1,
     PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
 };
 use crate::eval::run_control::combat_candidate_line::enforce_replay_potion_budget;
-use crate::eval::run_control::combat_line_outcome::newly_gained_curses;
 
 pub(super) fn probe_cutpoint_actions(
     cutpoint: &LocatedBurdenCutpoint,
@@ -52,16 +52,17 @@ fn probe_one_action(
         );
     }
 
-    let before_deck = cutpoint.session.run_state.master_deck.clone();
+    let before = PersistentCurseBurdenSnapshot::capture(&cutpoint.session);
     let mut trial = cutpoint.session.clone();
     if let Err(error) = trial.apply_input(choice.input.clone()) {
         return failed_outcome(choice, error);
     }
-    let gained_curses = newly_gained_curses(&before_deck, &trial.run_state.master_deck);
+    let after = PersistentCurseBurdenSnapshot::capture(&trial);
+    let gained_curse_counts = newly_gained_persistent_curses(&before, &after);
     let plan_changes = living_enemy_plan_changes(&cutpoint.position.combat, &step.position.combat);
-    let kind = if step.terminal == CombatTerminal::Win && gained_curses.is_empty() {
+    let kind = if step.terminal == CombatTerminal::Win && gained_curse_counts.is_empty() {
         PersistentBurdenCutpointInputOutcomeKindV1::CleanCombatVictory
-    } else if !gained_curses.is_empty() {
+    } else if !gained_curse_counts.is_empty() {
         PersistentBurdenCutpointInputOutcomeKindV1::NewCurse
     } else if !plan_changes.is_empty() {
         PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged
@@ -73,7 +74,7 @@ fn probe_one_action(
         input: choice.input,
         kind,
         terminal: step.terminal,
-        gained_curses,
+        gained_curse_counts,
         living_enemy_plan_changes: plan_changes,
         error: None,
     }
@@ -88,7 +89,7 @@ fn failed_outcome(
         input: choice.input,
         kind: PersistentBurdenCutpointInputOutcomeKindV1::ApplyFailed,
         terminal: CombatTerminal::Unresolved,
-        gained_curses: Vec::new(),
+        gained_curse_counts: Vec::new(),
         living_enemy_plan_changes: Vec::new(),
         error: Some(error),
     }
@@ -136,6 +137,7 @@ pub(super) fn probe_grouped_cutpoint(
         trigger_step_index: cutpoint.representative.trigger_step_index,
         trigger_action_key: cutpoint.representative.trigger_action_key.clone(),
         trigger_input: cutpoint.representative.trigger_input.clone(),
+        trigger_gained_curse_counts: cutpoint.representative.trigger_gained_curse_counts.clone(),
         player_hp: cutpoint
             .representative
             .position
