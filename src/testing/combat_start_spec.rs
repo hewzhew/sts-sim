@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::potions::Potion;
@@ -11,7 +11,7 @@ use crate::sim::combat_start::{
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatStartSpec {
     pub name: String,
@@ -29,14 +29,15 @@ pub struct CombatStartSpec {
     pub master_deck: Vec<StartSpecCardSpec>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum StartSpecCardSpec {
     Simple(String),
     Detailed(StartSpecCardEntry),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartSpecCardEntry {
     pub id: String,
     #[serde(default)]
@@ -49,14 +50,15 @@ pub struct StartSpecCardEntry {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum StartSpecRelicSpec {
     Simple(String),
     Detailed(StartSpecRelicEntry),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartSpecRelicEntry {
     pub id: String,
     #[serde(default = "default_relic_counter")]
@@ -281,8 +283,31 @@ mod input_ids {
 mod tests {
     use super::{
         compile_combat_start_spec, compile_combat_start_spec_with_rng_overrides, CombatStartSpec,
-        StartSpecCardEntry, StartSpecCardSpec,
+        StartSpecCardEntry, StartSpecCardSpec, StartSpecRelicEntry,
     };
+    use serde_json::json;
+
+    #[test]
+    fn detailed_card_rejects_unknown_fields() {
+        let error = serde_json::from_value::<StartSpecCardEntry>(json!({
+            "id": "Bash",
+            "unsupported": true
+        }))
+        .expect_err("unknown detailed card fields must fail preflight");
+
+        assert!(error.to_string().contains("unknown field `unsupported`"));
+    }
+
+    #[test]
+    fn detailed_relic_rejects_unknown_fields() {
+        let error = serde_json::from_value::<StartSpecRelicEntry>(json!({
+            "id": "Burning Blood",
+            "unsupported": true
+        }))
+        .expect_err("unknown detailed relic fields must fail preflight");
+
+        assert!(error.to_string().contains("unknown field `unsupported`"));
+    }
 
     #[test]
     fn shuffle_override_changes_only_shuffle_rng_before_natural_start() {
