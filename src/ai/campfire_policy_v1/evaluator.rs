@@ -27,6 +27,11 @@ pub(crate) fn candidate_autopilot_action(
                     "Rest favored by rest-vs-smith plan: effective_heal={} hp={}/{}",
                     context.rest_vs_smith.effective_rest_heal, context.current_hp, context.max_hp
                 )
+            } else if imminent_boss_recovery_is_required(context, config) {
+                format!(
+                    "Known boss is next and recovery is required: effective_heal={} hp={}/{}",
+                    context.rest_vs_smith.effective_rest_heal, context.current_hp, context.max_hp
+                )
             } else {
                 "RecoveryPressure Strong and Rest is available while HP is missing".to_string()
             };
@@ -75,6 +80,9 @@ fn smith_is_autopilot_allowed(
         return false;
     }
     if context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored {
+        return false;
+    }
+    if imminent_boss_recovery_is_required(context, config) {
         return false;
     }
 
@@ -131,6 +139,17 @@ fn hp_percent(current_hp: i32, max_hp: i32) -> i32 {
     current_hp.saturating_mul(100) / max_hp
 }
 
+fn imminent_boss_recovery_is_required(
+    context: &CampfireDecisionContextV1,
+    config: &CampfirePolicyConfigV1,
+) -> bool {
+    context.known_boss_is_next
+        && context.current_hp < context.max_hp
+        && context.rest_vs_smith.effective_rest_heal > 0
+        && hp_percent(context.current_hp, context.max_hp)
+            <= config.imminent_boss_rest_max_hp_percent
+}
+
 fn rest_is_routine_exit_allowed(
     context: &CampfireDecisionContextV1,
     candidate: &CampfireCandidateEvidenceV1,
@@ -154,6 +173,7 @@ fn rest_is_autopilot_allowed(
             .iter()
             .any(|candidate| candidate.choice == CampfireChoice::Rest)
         && (context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored
+            || imminent_boss_recovery_is_required(context, config)
             || context
                 .strategy
                 .support(StrategyPackageIdV2::RecoveryPressure)

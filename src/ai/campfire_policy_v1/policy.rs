@@ -43,6 +43,7 @@ pub fn build_campfire_decision_context_v1(
         rest_vs_smith: upgrade_plan.rest_vs_smith,
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
+        known_boss_is_next: run_state.map.boss_node_available_now(),
         candidates,
     }
 }

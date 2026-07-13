@@ -18,6 +18,7 @@ pub struct CampfireDecisionContextV1 {
     pub rest_vs_smith: RestVsSmithPlanV1,
     pub current_hp: i32,
     pub max_hp: i32,
+    pub known_boss_is_next: bool,
     pub candidates: Vec<CampfireCandidateEvidenceV1>,
 }
 
@@ -57,6 +58,7 @@ pub struct CampfirePolicyConfigV1 {
     pub clear_core_smith_priority_threshold: i32,
     pub combat_patch_smith_priority_threshold: i32,
     pub combat_patch_smith_min_hp_percent: i32,
+    pub imminent_boss_rest_max_hp_percent: i32,
 }
 
 impl Default for CampfirePolicyConfigV1 {
@@ -68,6 +70,7 @@ impl Default for CampfirePolicyConfigV1 {
             clear_core_smith_priority_threshold: 180,
             combat_patch_smith_priority_threshold: 180,
             combat_patch_smith_min_hp_percent: 70,
+            imminent_boss_rest_max_hp_percent: 60,
         }
     }
 }

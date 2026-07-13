@@ -157,6 +157,27 @@ fn campfire_policy_consumes_rest_vs_smith_rest_favored_verdict() {
 }
 
 #[test]
+fn campfire_policy_rests_at_low_hp_when_known_boss_is_next() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 42;
+    run_state.max_hp = 80;
+    run_state.master_deck = vec![CombatCard::new(CardId::BattleTrance, 1001)];
+    install_imminent_boss_campfire(&mut run_state);
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(
+        matches!(decision.action, CampfirePolicyActionV1::Rest { .. }),
+        "the last campfire must realize survival before the known boss: {:?}",
+        decision.action
+    );
+}
+
+#[test]
 fn campfire_policy_respects_deck_mutation_execute_gate_for_smith_targets() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = run_state.max_hp;
@@ -362,6 +383,16 @@ fn install_current_room_route(
     run_state.map = MapState::new(graph);
     run_state.map.current_x = 0;
     run_state.map.current_y = 0;
+}
+
+fn install_imminent_boss_campfire(run_state: &mut RunState) {
+    let mut graph = (0..14)
+        .map(|_| Vec::<MapRoomNode>::new())
+        .collect::<Vec<_>>();
+    graph.push(vec![map_node(0, 14, RoomType::RestRoom)]);
+    run_state.map = MapState::new(graph);
+    run_state.map.current_x = 0;
+    run_state.map.current_y = 14;
 }
 
 fn map_node(x: i32, y: i32, room_type: RoomType) -> MapRoomNode {
