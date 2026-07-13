@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -12,6 +12,8 @@ use super::{
 };
 
 pub const COMBAT_LAB_ARTIFACT_SCHEMA_VERSION: u32 = 1;
+
+pub(super) type JournalSync = fn(&File) -> std::io::Result<()>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CombatLabManifestV1 {
@@ -44,6 +46,8 @@ pub struct CombatLabArtifactStoreV1 {
     cells: Vec<CombatLabCellRecordV1>,
     completed_cell_keys: BTreeSet<String>,
     valid_journal_bytes: Vec<u8>,
+    journal_sync: JournalSync,
+    mutation_poisoned: bool,
 }
 
 impl CombatLabManifestV1 {
@@ -72,6 +76,14 @@ impl CombatLabArtifactStoreV1 {
         output_dir: &Path,
         expected_manifest: CombatLabManifestV1,
     ) -> Result<Self, String> {
+        Self::create_or_resume_with_journal_sync(output_dir, expected_manifest, File::sync_data)
+    }
+
+    pub(super) fn create_or_resume_with_journal_sync(
+        output_dir: &Path,
+        expected_manifest: CombatLabManifestV1,
+        journal_sync: JournalSync,
+    ) -> Result<Self, String> {
         fs::create_dir_all(output_dir).map_err(|error| {
             format!(
                 "failed to create combat laboratory artifact directory '{}': {error}",
@@ -96,6 +108,14 @@ impl CombatLabArtifactStoreV1 {
             validate_resume_identity(&existing, &expected_manifest)?;
             existing
         } else {
+            let orphan = ["cells.jsonl", "checkpoint.json", "summary.json"]
+                .into_iter()
+                .find(|file_name| output_dir.join(file_name).exists());
+            if let Some(file_name) = orphan {
+                return Err(format!(
+                    "refusing to create combat laboratory manifest: orphan canonical artifact '{file_name}' exists without manifest.json"
+                ));
+            }
             atomic_write_json(&manifest_path, &expected_manifest)?;
             expected_manifest
         };
@@ -144,6 +164,8 @@ impl CombatLabArtifactStoreV1 {
             cells,
             completed_cell_keys,
             valid_journal_bytes,
+            journal_sync,
+            mutation_poisoned: false,
         })
     }
 
@@ -160,6 +182,7 @@ impl CombatLabArtifactStoreV1 {
     }
 
     pub fn append_cell(&mut self, cell: &CombatLabCellRecordV1) -> Result<(), String> {
+        self.ensure_mutations_allowed()?;
         if self.contains_cell(&cell.cell_key) {
             return Err(format!(
                 "duplicate cell key '{}': journal unchanged",
@@ -180,18 +203,20 @@ impl CombatLabArtifactStoreV1 {
                     path.display()
                 )
             })?;
-        file.write_all(&encoded).map_err(|error| {
-            format!(
+        if let Err(error) = file.write_all(&encoded) {
+            self.mutation_poisoned = true;
+            return Err(format!(
                 "failed to append combat laboratory journal '{}': {error}",
                 path.display()
-            )
-        })?;
-        file.sync_data().map_err(|error| {
-            format!(
+            ));
+        }
+        if let Err(error) = (self.journal_sync)(&file) {
+            self.mutation_poisoned = true;
+            return Err(format!(
                 "failed to sync combat laboratory journal '{}': {error}",
                 path.display()
-            )
-        })?;
+            ));
+        }
         self.valid_journal_bytes.extend_from_slice(&encoded);
         self.completed_cell_keys.insert(cell.cell_key.clone());
         self.cells.push(cell.clone());
@@ -199,17 +224,36 @@ impl CombatLabArtifactStoreV1 {
     }
 
     pub fn checkpoint_sample_boundary(&self, next_sample_hint: u64) -> Result<(), String> {
+        self.ensure_mutations_allowed()?;
+        let derived_next_sample_hint =
+            conservative_next_sample_hint(&self.manifest, &self.cells, &self.completed_cell_keys);
+        if next_sample_hint != derived_next_sample_hint {
+            return Err(format!(
+                "combat laboratory checkpoint next_sample_hint {next_sample_hint} disagrees with journal-derived {derived_next_sample_hint}"
+            ));
+        }
         let checkpoint = CombatLabCheckpointV1 {
             schema_version: COMBAT_LAB_ARTIFACT_SCHEMA_VERSION,
             journal_digest: journal_digest(&self.valid_journal_bytes),
             completed_cell_keys: self.completed_cell_keys.clone(),
-            next_sample_hint,
+            next_sample_hint: derived_next_sample_hint,
         };
         atomic_write_json(&self.root.join("checkpoint.json"), &checkpoint)
     }
 
     pub fn write_summary<T: Serialize>(&self, summary: &T) -> Result<(), String> {
+        self.ensure_mutations_allowed()?;
         atomic_write_json(&self.root.join("summary.json"), summary)
+    }
+
+    fn ensure_mutations_allowed(&self) -> Result<(), String> {
+        if self.mutation_poisoned {
+            return Err(
+                "combat laboratory artifact store mutation refused after journal persistence failure; reopen required"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -402,11 +446,13 @@ fn repair_checkpoint_if_needed(
         )
     })?;
     let digest = journal_digest(valid_journal_bytes);
+    let next_sample_hint = conservative_next_sample_hint(manifest, cells, completed_cell_keys);
     let checkpoint = serde_json::from_slice::<CombatLabCheckpointV1>(&bytes).ok();
     let agrees = checkpoint.as_ref().is_some_and(|checkpoint| {
         checkpoint.schema_version == COMBAT_LAB_ARTIFACT_SCHEMA_VERSION
             && checkpoint.journal_digest == digest
             && checkpoint.completed_cell_keys == *completed_cell_keys
+            && checkpoint.next_sample_hint == next_sample_hint
     });
     if agrees {
         return Ok(());
@@ -415,7 +461,7 @@ fn repair_checkpoint_if_needed(
         schema_version: COMBAT_LAB_ARTIFACT_SCHEMA_VERSION,
         journal_digest: digest,
         completed_cell_keys: completed_cell_keys.clone(),
-        next_sample_hint: conservative_next_sample_hint(manifest, cells, completed_cell_keys),
+        next_sample_hint,
     };
     atomic_write_json(&path, &repaired)
 }

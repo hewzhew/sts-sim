@@ -27,6 +27,32 @@ fn artifact_new_run_writes_manifest_before_cells() {
 }
 
 #[test]
+fn artifact_new_run_refuses_canonical_orphan_files() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_canonical_orphans");
+    for file_name in ["cells.jsonl", "checkpoint.json", "summary.json"] {
+        let output = directory.join(file_name.replace('.', "_"));
+        fs::create_dir_all(&output).expect("create orphan artifact directory");
+        let orphan_path = output.join(file_name);
+        fs::write(&orphan_path, b"orphan-evidence").expect("write orphan artifact");
+
+        let error = CombatLabArtifactStoreV1::create_or_resume(
+            &output,
+            artifact_manifest(resolved.clone(), 100),
+        )
+        .err()
+        .expect("canonical orphan must prevent new-run creation");
+        assert!(error.contains("orphan"), "{error}");
+        assert!(error.contains(file_name), "{error}");
+        assert!(!output.join("manifest.json").exists());
+        assert_eq!(
+            fs::read(orphan_path).expect("read untouched orphan"),
+            b"orphan-evidence"
+        );
+    }
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn resume_does_not_duplicate_cells() {
     let (directory, resolved) = resolved_lab_fixture("resume_does_not_duplicate_cells");
     let output = directory.join("run");
@@ -89,6 +115,58 @@ fn artifact_truncated_final_line_is_ignored_and_pending_cell_can_append() {
         .expect("reopen repaired journal");
     assert_eq!(reopened.cells().len(), 2);
     assert!(reopened.contains_cell(&pending.cell_key));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_journal_persistence_failure_poisons_store_until_reopen() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_journal_failure_poison");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let cell = artifact_cell(&resolved, 0);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume_with_journal_sync(
+        &output,
+        manifest.clone(),
+        fail_journal_sync_after_write,
+    )
+    .expect("create artifact store with deterministic journal sync seam");
+
+    let persistence_error = store
+        .append_cell(&cell)
+        .expect_err("injected sync failure must fail append");
+    assert!(persistence_error.contains("injected sync failure"));
+    let mut expected_journal = serde_json::to_vec(&cell).expect("serialize expected cell");
+    expected_journal.push(b'\n');
+    assert_eq!(
+        fs::read(output.join("cells.jsonl")).expect("read journal after failed persistence"),
+        expected_journal
+    );
+    assert!(!store.contains_cell(&cell.cell_key));
+
+    for error in [
+        store
+            .append_cell(&cell)
+            .expect_err("same-store append retry must be poisoned"),
+        store
+            .checkpoint_sample_boundary(0)
+            .expect_err("same-store checkpoint must be poisoned"),
+        store
+            .write_summary(&json!({"must_not_write": true}))
+            .expect_err("same-store summary must be poisoned"),
+    ] {
+        assert!(error.contains("reopen required"), "{error}");
+    }
+    assert!(!output.join("checkpoint.json").exists());
+    assert!(!output.join("summary.json").exists());
+    drop(store);
+
+    let reopened = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("reopen reconciles authoritative journal");
+    assert_eq!(reopened.cells().len(), 1);
+    assert!(reopened.contains_cell(&cell.cell_key));
+    reopened
+        .checkpoint_sample_boundary(1)
+        .expect("reopened store can checkpoint reconciled evidence");
     fs::remove_dir_all(directory).expect("remove test directory");
 }
 
@@ -173,6 +251,61 @@ fn artifact_checkpoint_disagreement_is_repaired_from_journal() {
         artifact_journal_digest(&fs::read(output.join("cells.jsonl")).expect("read journal"))
     );
     assert_ne!(repaired.next_sample_hint, 99);
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_checkpoint_writer_rejects_nonconservative_hint() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_checkpoint_writer_hint");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let cell = artifact_cell(&resolved, 0);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("create artifact store");
+    store.append_cell(&cell).expect("append sample zero");
+
+    let error = store
+        .checkpoint_sample_boundary(99)
+        .expect_err("caller hint cannot exceed journal-derived boundary");
+    assert!(error.contains("next_sample_hint"), "{error}");
+    assert!(error.contains("journal-derived 1"), "{error}");
+    assert!(!output.join("checkpoint.json").exists());
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_checkpoint_forged_high_hint_is_repaired_from_journal() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_checkpoint_forged_hint");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let cell = artifact_cell(&resolved, 0);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    store.append_cell(&cell).expect("append sample zero");
+    store
+        .checkpoint_sample_boundary(1)
+        .expect("write conservative checkpoint");
+    drop(store);
+
+    let checkpoint_path = output.join("checkpoint.json");
+    let mut forged: super::CombatLabCheckpointV1 =
+        serde_json::from_slice(&fs::read(&checkpoint_path).expect("read checkpoint"))
+            .expect("parse checkpoint");
+    forged.next_sample_hint = 99;
+    fs::write(
+        &checkpoint_path,
+        serde_json::to_vec(&forged).expect("serialize forged checkpoint"),
+    )
+    .expect("write forged checkpoint");
+
+    drop(
+        CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+            .expect("repair forged checkpoint hint"),
+    );
+    let repaired: super::CombatLabCheckpointV1 =
+        serde_json::from_slice(&fs::read(checkpoint_path).expect("read repaired checkpoint"))
+            .expect("parse repaired checkpoint");
+    assert_eq!(repaired.next_sample_hint, 1);
     fs::remove_dir_all(directory).expect("remove test directory");
 }
 
@@ -1201,6 +1334,10 @@ fn artifact_journal_digest(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn fail_journal_sync_after_write(_: &std::fs::File) -> std::io::Result<()> {
+    Err(std::io::Error::other("injected sync failure"))
 }
 
 fn test_directory(label: &str) -> std::path::PathBuf {
