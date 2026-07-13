@@ -30,6 +30,7 @@ pub enum ShopPurchaseBundleKind {
 pub enum ShopPurchaseBundleVerdict {
     HardSurvivalBuy,
     HardBossAnswerBuy,
+    StrategicBossRepairBuy,
     EfficientBundleBuy,
     ContextBuy,
     PreserveGoldPreferred,
@@ -47,7 +48,13 @@ pub struct ShopPurchaseBundleFacts {
     pub preserves_next_shop_option: bool,
     pub solves_next_fight: bool,
     pub solves_boss_gap: bool,
+    pub repairs_boss_scaling_plan: bool,
     pub adds_deck_burden: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ShopPurchaseCandidateEvidence {
+    pub repairs_boss_scaling_plan: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,7 +70,19 @@ pub fn evaluate_shop_purchase_bundle(
     opportunity: ShopGoldOpportunity,
     candidate: &CandidateEvaluation,
 ) -> ShopPurchaseBundleDecision {
-    let facts = bundle_facts(opportunity, candidate.candidate.kind);
+    evaluate_shop_purchase_bundle_with_evidence(
+        opportunity,
+        candidate,
+        ShopPurchaseCandidateEvidence::default(),
+    )
+}
+
+pub fn evaluate_shop_purchase_bundle_with_evidence(
+    opportunity: ShopGoldOpportunity,
+    candidate: &CandidateEvaluation,
+    evidence: ShopPurchaseCandidateEvidence,
+) -> ShopPurchaseBundleDecision {
+    let facts = bundle_facts(opportunity, candidate.candidate.kind, evidence);
     let (verdict, reason) = bundle_verdict(opportunity, candidate, facts);
     ShopPurchaseBundleDecision {
         candidate: candidate.candidate,
@@ -79,10 +98,11 @@ pub fn shop_purchase_bundle_order_key(decision: &ShopPurchaseBundleDecision) -> 
         match decision.verdict {
             ShopPurchaseBundleVerdict::HardSurvivalBuy => 0,
             ShopPurchaseBundleVerdict::HardBossAnswerBuy => 1,
-            ShopPurchaseBundleVerdict::EfficientBundleBuy => 2,
-            ShopPurchaseBundleVerdict::ContextBuy => 3,
-            ShopPurchaseBundleVerdict::PreserveGoldPreferred => 4,
-            ShopPurchaseBundleVerdict::Reject => 5,
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy => 2,
+            ShopPurchaseBundleVerdict::EfficientBundleBuy => 3,
+            ShopPurchaseBundleVerdict::ContextBuy => 4,
+            ShopPurchaseBundleVerdict::PreserveGoldPreferred => 5,
+            ShopPurchaseBundleVerdict::Reject => 6,
         },
         -decision_score(decision),
     )
@@ -91,6 +111,7 @@ pub fn shop_purchase_bundle_order_key(decision: &ShopPurchaseBundleDecision) -> 
 fn bundle_facts(
     opportunity: ShopGoldOpportunity,
     kind: DecisionCandidateKind,
+    evidence: ShopPurchaseCandidateEvidence,
 ) -> ShopPurchaseBundleFacts {
     let (bundle_kind, total_cost, adds_deck_burden, solves_next_fight, solves_boss_gap) = match kind
     {
@@ -160,6 +181,9 @@ fn bundle_facts(
         preserves_next_shop_option: gold_after >= 120,
         solves_next_fight,
         solves_boss_gap,
+        repairs_boss_scaling_plan: opportunity.boss_answer_needed
+            && !opportunity.survival_purchase_needed
+            && evidence.repairs_boss_scaling_plan,
         adds_deck_burden,
     }
 }
@@ -197,6 +221,12 @@ fn bundle_verdict(
         return (
             ShopPurchaseBundleVerdict::Reject,
             "BreaksMawBankWithoutHardNeed",
+        );
+    }
+    if facts.repairs_boss_scaling_plan {
+        return (
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy,
+            "StrategicBossScalingRepair",
         );
     }
     if spends_future_shop_liquidity_without_hard_need(opportunity, facts, candidate) {
@@ -245,6 +275,7 @@ fn decision_score(decision: &ShopPurchaseBundleDecision) -> i32 {
     match decision.verdict {
         ShopPurchaseBundleVerdict::HardSurvivalBuy => 400 + decision.candidate_score,
         ShopPurchaseBundleVerdict::HardBossAnswerBuy => 360 + decision.candidate_score,
+        ShopPurchaseBundleVerdict::StrategicBossRepairBuy => 320 + decision.candidate_score,
         ShopPurchaseBundleVerdict::EfficientBundleBuy => 260 + decision.candidate_score,
         ShopPurchaseBundleVerdict::ContextBuy => 160 + decision.candidate_score,
         ShopPurchaseBundleVerdict::PreserveGoldPreferred => {
@@ -659,6 +690,76 @@ mod tests {
 
         assert_eq!(bundle.verdict, ShopPurchaseBundleVerdict::Reject);
         assert_eq!(bundle.reason, "SpendsFutureShopLiquidityWithoutHardNeed");
+    }
+
+    #[test]
+    fn semantic_boss_scaling_repair_can_spend_future_shop_liquidity() {
+        let demon_form = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::DemonForm,
+                upgrades: 0,
+                price: 139,
+            },
+            160,
+        );
+        let opportunity = ShopGoldOpportunity {
+            boss_answer_needed: true,
+            ..visible_future_shop_opportunity(213)
+        };
+
+        let ordinary = evaluate_shop_purchase_bundle(opportunity, &demon_form);
+        let repair = evaluate_shop_purchase_bundle_with_evidence(
+            opportunity,
+            &demon_form,
+            ShopPurchaseCandidateEvidence {
+                repairs_boss_scaling_plan: true,
+            },
+        );
+
+        assert_eq!(ordinary.verdict, ShopPurchaseBundleVerdict::Reject);
+        assert_eq!(ordinary.reason, "SpendsFutureShopLiquidityWithoutHardNeed");
+        assert_eq!(
+            repair.verdict,
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy
+        );
+        assert_eq!(repair.reason, "StrategicBossScalingRepair");
+    }
+
+    #[test]
+    fn strategic_boss_scaling_repair_does_not_override_maw_bank_or_survival_emergency() {
+        let demon_form = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::DemonForm,
+                upgrades: 0,
+                price: 139,
+            },
+            160,
+        );
+        let evidence = ShopPurchaseCandidateEvidence {
+            repairs_boss_scaling_plan: true,
+        };
+        let maw_bank = ShopGoldOpportunity {
+            boss_answer_needed: true,
+            ..maw_bank_opportunity(213)
+        };
+        let survival_emergency = ShopGoldOpportunity {
+            boss_answer_needed: true,
+            survival_purchase_needed: true,
+            ..visible_future_shop_opportunity(213)
+        };
+
+        let maw_bank_repair =
+            evaluate_shop_purchase_bundle_with_evidence(maw_bank, &demon_form, evidence);
+        let survival_repair =
+            evaluate_shop_purchase_bundle_with_evidence(survival_emergency, &demon_form, evidence);
+
+        assert_eq!(maw_bank_repair.verdict, ShopPurchaseBundleVerdict::Reject);
+        assert_eq!(maw_bank_repair.reason, "BreaksMawBankWithoutHardNeed");
+        assert_eq!(survival_repair.verdict, ShopPurchaseBundleVerdict::Reject);
+        assert_eq!(
+            survival_repair.reason,
+            "SpendsFutureShopLiquidityWithoutHardNeed"
+        );
     }
 
     #[test]

@@ -83,6 +83,7 @@ pub enum AcquisitionConstructionRole {
 pub struct AcquisitionStrategicDelta {
     pub improves_hard_gap: bool,
     pub improves_any_gap: bool,
+    pub repairs_boss_scaling_plan: bool,
     pub repairs_package_reliability: bool,
     pub adds_card_without_gap_improvement: bool,
     pub adds_deployability_debt: bool,
@@ -109,6 +110,7 @@ pub enum AcquisitionPolicyReason {
     UpgradedShopCard,
     PackageReliabilityRepair,
     HardGapWithAcceptableOpportunityCost,
+    BossScalingRepair,
     ConstructionRoleAccepted,
     SurvivalPressureStabilizer,
     HpCostAccessDebt,
@@ -156,6 +158,9 @@ pub fn assess_card_acquisition(
     let candidate = Some((card, upgrades));
     let improves_hard_gap = improves_hard_gap(context.deck_plan, candidate, admission);
     let improves_any_gap = improves_any_gap(context.deck_plan, candidate, admission);
+    let repairs_boss_scaling_plan = needs(context.deck_plan.strategic_deficit.boss_scaling_plan)
+        && assess_boss_scaling_evidence(context.deck_plan, candidate, admission)
+            .relevant_to_boss_plan;
     let repairs_package_reliability = context
         .deck_plan
         .repairs_strength_package_reliability(candidate);
@@ -164,6 +169,7 @@ pub fn assess_card_acquisition(
     let strategic_delta = AcquisitionStrategicDelta {
         improves_hard_gap,
         improves_any_gap,
+        repairs_boss_scaling_plan,
         repairs_package_reliability,
         adds_card_without_gap_improvement: admission.card.is_some()
             && !improves_any_gap
@@ -308,6 +314,12 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
                 AcquisitionPolicyReason::PackageReliabilityRepair,
             )
         }
+        AcquisitionSource::Shop if report.strategic_delta.repairs_boss_scaling_plan => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::ContextTake,
+                AcquisitionPolicyReason::BossScalingRepair,
+            )
+        }
         AcquisitionSource::Shop
             if report.strategic_delta.improves_hard_gap
                 && report.opportunity_cost != AcquisitionOpportunityCost::SpendsPurgeReserve =>
@@ -339,6 +351,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
     match reason {
         AcquisitionPolicyReason::PurgeReserveBlocksHardGap => {
             "shop card would spend purge reserve despite hard gap"
+        }
+        AcquisitionPolicyReason::BossScalingRepair => {
+            "shop card repairs the open boss scaling plan"
         }
         AcquisitionPolicyReason::NoPolicySupport => "shop card has no acquisition policy support",
         AcquisitionPolicyReason::LowMarginLacksHardGap => {

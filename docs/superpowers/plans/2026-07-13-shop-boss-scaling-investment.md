@@ -29,6 +29,7 @@ The shop bundle contract will give that candidate a distinct
 - ranks above efficient cleanup, so the scarce repair is purchased before a
   generic purge can make it unaffordable;
 - remains below immediate survival purchases and hard imminent-boss answers;
+- does not override an active Maw Bank or an acute survival-purchase need;
 - does not bypass acquisition, setup-risk, duplicate, or survival-pressure
   filters.
 
@@ -57,4 +58,3 @@ contextual semantic evidence rather than the static allow-list alone.
 3. Add a preview classification test for Demon Form.
 4. Run focused strategy and owner tests, then rerun seed `20260713003` from the
    beginning and inspect the new first blocker.
-

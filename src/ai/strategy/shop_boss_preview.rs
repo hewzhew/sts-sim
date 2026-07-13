@@ -109,6 +109,11 @@ pub fn classify_shop_boss_preview_candidate(
             ),
         },
         DecisionCandidateKind::ShopBuyCard { card, .. } => match card {
+            CardId::DemonForm => (
+                ShopBossPreviewClass::DeterministicBossRepair,
+                true,
+                "DeterministicBossScalingRepair",
+            ),
             CardId::FiendFire | CardId::Bludgeon | CardId::Immolate | CardId::Reaper => (
                 ShopBossPreviewClass::DeterministicBossRepair,
                 true,
@@ -295,7 +300,11 @@ fn preview_slot(kind: DecisionCandidateKind) -> ShopBossPreviewSlot {
         DecisionCandidateKind::ShopBuyCard { card, .. }
             if matches!(
                 card,
-                CardId::FiendFire | CardId::Bludgeon | CardId::Immolate | CardId::Reaper
+                CardId::DemonForm
+                    | CardId::FiendFire
+                    | CardId::Bludgeon
+                    | CardId::Immolate
+                    | CardId::Reaper
             ) =>
         {
             ShopBossPreviewSlot::BossDamageCard
@@ -563,6 +572,22 @@ mod tests {
                     price: 51,
                 })
         }));
+    }
+
+    #[test]
+    fn classifies_demon_form_as_deterministic_boss_scaling_repair() {
+        let demon_form = classify_shop_boss_preview_candidate(DecisionCandidateKind::ShopBuyCard {
+            card: CardId::DemonForm,
+            upgrades: 0,
+            price: 139,
+        });
+
+        assert_eq!(
+            demon_form.class,
+            ShopBossPreviewClass::DeterministicBossRepair
+        );
+        assert!(demon_form.include_in_v0);
+        assert_eq!(demon_form.reason, "DeterministicBossScalingRepair");
     }
 
     #[test]
