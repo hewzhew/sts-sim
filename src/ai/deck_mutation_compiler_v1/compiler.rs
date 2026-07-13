@@ -4,6 +4,7 @@ use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewa
 use crate::ai::opening_hand_target_plan_v1::{
     opening_hand_target_profile_for_card_v1, OpeningHandDebtTierV1,
 };
+use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
 use crate::ai::upgrade_planner_v1::{
     plan_upgrades_v1, upgrade_candidate_score_hint_v1, UpgradeCandidateV1,
 };
@@ -226,7 +227,7 @@ fn compare_deck_mutation_candidates_v1(
     deck_mutation_role_rank(left.role)
         .cmp(&deck_mutation_role_rank(right.role))
         .then_with(|| right.score_hint.cmp(&left.score_hint))
-        .then_with(|| left.step.command.cmp(&right.step.command))
+        .then_with(|| left.step.deck_indices.cmp(&right.step.deck_indices))
 }
 
 fn deck_mutation_role_rank(role: DeckMutationPlanRoleV1) -> u8 {
@@ -328,7 +329,7 @@ fn plan_candidates(
                 right
                     .score_hint
                     .cmp(&left.score_hint)
-                    .then_with(|| left.step.command.cmp(&right.step.command))
+                    .then_with(|| left.step.deck_indices.cmp(&right.step.deck_indices))
             });
             let limit = match output {
                 DeckMutationCompilerOutputV1::BranchTopK { max_active } => {
@@ -1382,6 +1383,11 @@ fn target_loss_for_card_mutation(
             }
         }
     }
+    if removal_breaks_live_strength_package(run_state, card.uuid) {
+        loss.signals
+            .push("breaks_live_strength_package".to_string());
+        has_core_signal = true;
+    }
     if card.upgrades > 0 {
         loss.signals.push("upgraded_target".to_string());
     }
@@ -1400,6 +1406,27 @@ fn target_loss_for_card_mutation(
         DeckMutationTargetLossTierV1::Functional
     };
     loss
+}
+
+fn removal_breaks_live_strength_package(run_state: &RunState, removed_uuid: u32) -> bool {
+    let before = DeckRoleInventory::from_deck(&run_state.master_deck);
+    let before_has_source =
+        before.strength_source_units > 0 || before.conditional_strength_source_units > 0;
+    let before_live = before_has_source && before.strength_multiplier_units > 0;
+    if !before_live {
+        return false;
+    }
+
+    let remaining = run_state
+        .master_deck
+        .iter()
+        .filter(|card| card.uuid != removed_uuid)
+        .cloned()
+        .collect::<Vec<_>>();
+    let after = DeckRoleInventory::from_deck(&remaining);
+    let after_has_source =
+        after.strength_source_units > 0 || after.conditional_strength_source_units > 0;
+    !(after_has_source && after.strength_multiplier_units > 0)
 }
 
 fn opening_hand_profile_for_card_mutation(

@@ -227,9 +227,9 @@ impl StrategicCounts {
         let semantics = card_definition_with_upgrades(card.id, card.upgrades);
         for effect in semantics.play_effects {
             match effect {
-                PlayEffect::Provide(
-                    Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier,
-                ) => self.strength_sources += 1,
+                PlayEffect::Provide(Mechanic::Strength | Mechanic::TemporaryStrength) => {
+                    self.strength_sources += 1
+                }
                 PlayEffect::AddCombatDeckClutter => self.status_clutter_sources += 1,
                 _ => {}
             }
@@ -237,9 +237,7 @@ impl StrategicCounts {
         for handler in semantics.event_handlers {
             if matches!(
                 handler.effect,
-                TriggeredEffect::Provide(
-                    Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
-                )
+                TriggeredEffect::Provide(Mechanic::Strength | Mechanic::TemporaryStrength)
             ) {
                 self.strength_sources += 1;
             }
@@ -592,6 +590,19 @@ mod tests {
 
         assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Thin);
         assert!(deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::StrengthScaling));
+    }
+
+    #[test]
+    fn strength_multiplier_alone_is_not_a_strength_source_package() {
+        let deficit = assess_deck_strategic_deficit(
+            &[card(CardId::LimitBreak, 1), card(CardId::Pummel, 2)],
+            act3_facts(),
+        );
+
+        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Missing);
+        assert!(!deficit
             .package_evidence
             .contains(&StrategicPackageEvidence::StrengthScaling));
     }

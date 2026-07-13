@@ -277,6 +277,99 @@ fn compiler_exposes_target_loss_for_functional_mutation_targets() {
 }
 
 #[test]
+fn forced_purge_preserves_the_last_multiplier_of_a_live_strength_package() {
+    let mut run_state = RunState::new(20260713004, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.master_deck = [
+        (CardId::Bash, 1),
+        (CardId::Reaper, 1),
+        (CardId::Headbutt, 0),
+        (CardId::Disarm, 0),
+        (CardId::Bloodletting, 0),
+        (CardId::SpotWeakness, 1),
+        (CardId::Clothesline, 1),
+        (CardId::Offering, 0),
+        (CardId::Barricade, 0),
+        (CardId::SearingBlow, 1),
+        (CardId::SecondWind, 0),
+        (CardId::WildStrike, 1),
+        (CardId::LimitBreak, 0),
+        (CardId::Reaper, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (id, upgrades))| {
+        let mut card = CombatCard::new(id, index as u32 + 1);
+        card.upgrades = upgrades;
+        card
+    })
+    .collect();
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice(RunPendingChoiceReason::PurgeNonBottled, 1),
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+
+    let limit_break = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::LimitBreak)
+        .expect("Limit Break purge candidate");
+    assert_eq!(
+        limit_break.step.cards[0].target_loss.tier,
+        DeckMutationTargetLossTierV1::CoreFunctional,
+        "the last multiplier paired with a real strength source is a live package component"
+    );
+    assert!(limit_break.step.cards[0]
+        .target_loss
+        .signals
+        .iter()
+        .any(|signal| signal == "breaks_live_strength_package"));
+    assert_ne!(
+        decision.selected_plan.unwrap().step.cards[0].card,
+        CardId::LimitBreak,
+        "a forced purge should sacrifice an ordinary functional card before breaking live scaling"
+    );
+}
+
+#[test]
+fn equal_mutation_candidates_use_numeric_deck_index_not_command_text() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.master_deck = (0..12)
+        .map(|index| {
+            let id = match index {
+                2 => CardId::Headbutt,
+                11 => CardId::LimitBreak,
+                _ => CardId::BurningPact,
+            };
+            CombatCard::new(id, index as u32 + 1)
+        })
+        .collect();
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice(RunPendingChoiceReason::PurgeNonBottled, 1),
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+    let headbutt_rank = decision
+        .candidate_plans
+        .iter()
+        .position(|plan| plan.step.cards[0].card == CardId::Headbutt)
+        .expect("Headbutt candidate");
+    let limit_break_rank = decision
+        .candidate_plans
+        .iter()
+        .position(|plan| plan.step.cards[0].card == CardId::LimitBreak)
+        .expect("Limit Break candidate");
+
+    assert!(
+        headbutt_rank < limit_break_rank,
+        "index 2 must sort before index 11 when the semantic scores are equal"
+    );
+}
+
+#[test]
 fn upgrade_compiler_scores_targets_from_upgrade_planner() {
     let run_state = RunState::new(1, 0, false, "Ironclad");
     let bash_index = run_state

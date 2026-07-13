@@ -176,7 +176,7 @@ fn has_strength_source(run_state: &RunState) -> bool {
     run_state.master_deck.iter().any(|card| {
         matches!(
             card.id,
-            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm | CardId::LimitBreak
+            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
         )
     })
 }
@@ -257,5 +257,14 @@ mod tests {
                 > falling_removal_harm(&shrug, &run_state),
             "unique Demon Form should be harder for Falling to sacrifice than a generic access card"
         );
+    }
+
+    #[test]
+    fn limit_break_does_not_count_itself_as_a_strength_source() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        run_state.master_deck = vec![CombatCard::new(CardId::LimitBreak, 1)];
+
+        assert!(!has_strength_source(&run_state));
+        assert!(!is_critical_card(CardId::LimitBreak, &run_state));
     }
 }
