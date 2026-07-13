@@ -130,7 +130,8 @@ pub fn summarize_combat_lab_v1(
                 &manifest.resolved_spec.profiles[left_index].spec.id,
                 &manifest.resolved_spec.profiles[right_index].spec.id,
                 &sorted_cells,
-            ));
+                requested_samples,
+            )?);
         }
     }
     let (interaction, eligible_interaction_samples) =
@@ -256,7 +257,8 @@ fn summarize_pair(
     left_profile_id: &str,
     right_profile_id: &str,
     cells: &[&CombatLabCellRecordV1],
-) -> CombatLabPairSummaryV1 {
+    requested_samples: u64,
+) -> Result<CombatLabPairSummaryV1, String> {
     let left = cells
         .iter()
         .copied()
@@ -269,14 +271,6 @@ fn summarize_pair(
         .filter(|cell| cell.profile_id == right_profile_id)
         .map(|cell| (cell.sample_index, cell))
         .collect::<BTreeMap<_, _>>();
-    let incomplete_pair_samples = left
-        .keys()
-        .filter(|sample_index| !right.contains_key(sample_index))
-        .count()
-        + right
-            .keys()
-            .filter(|sample_index| !left.contains_key(sample_index))
-            .count();
     let shared = left
         .iter()
         .filter_map(|(sample_index, left)| {
@@ -285,6 +279,22 @@ fn summarize_pair(
                 .map(|right| (*sample_index, *left, *right))
         })
         .collect::<Vec<_>>();
+    let requested_sample_count = usize::try_from(requested_samples).map_err(|_| {
+        format!(
+            "requested sample target {requested_samples} cannot be represented as a pair count on this platform"
+        )
+    })?;
+    let shared_requested_samples = shared
+        .iter()
+        .filter(|(sample_index, _, _)| *sample_index < requested_samples)
+        .count();
+    let incomplete_pair_samples = requested_sample_count
+        .checked_sub(shared_requested_samples)
+        .ok_or_else(|| {
+            format!(
+                "shared requested sample count {shared_requested_samples} exceeds requested target {requested_sample_count}"
+            )
+        })?;
 
     let mut both_win = 0;
     let mut left_only_win = 0;
@@ -349,7 +359,7 @@ fn summarize_pair(
         }
     }
 
-    CombatLabPairSummaryV1 {
+    Ok(CombatLabPairSummaryV1 {
         left_profile_id: left_profile_id.to_string(),
         right_profile_id: right_profile_id.to_string(),
         shared_samples: shared.len(),
@@ -366,7 +376,7 @@ fn summarize_pair(
         right_strictly_better,
         tied,
         divergences,
-    }
+    })
 }
 
 fn resolved(cell: &CombatLabCellRecordV1) -> bool {

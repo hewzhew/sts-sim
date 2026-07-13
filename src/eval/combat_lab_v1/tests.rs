@@ -898,6 +898,8 @@ fn summary_pairs_use_only_shared_samples_and_report_divergences() {
     let pair = &summary.pairs[0];
     assert_eq!(pair.shared_samples, 5);
     assert_eq!(pair.incomplete_pair_samples, 2);
+    assert_eq!(summary.pairs[1].incomplete_pair_samples, 7);
+    assert_eq!(summary.pairs[2].incomplete_pair_samples, 7);
     assert_eq!(pair.both_win, 1);
     assert_eq!(pair.left_only_win, 1);
     assert_eq!(pair.right_only_win, 1);
@@ -928,6 +930,32 @@ fn summary_pairs_use_only_shared_samples_and_report_divergences() {
     assert_eq!(pair.divergences[1].sample_index, 1);
     assert_eq!(pair.divergences[1].first_action_divergence, Some(1));
     assert_eq!(pair.divergences[1].first_draw_divergence, None);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn summary_pairs_count_requested_samples_missing_from_both_profiles() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_pairs_both_missing", &["left", "right"]);
+    let cells = ["left", "right"]
+        .into_iter()
+        .map(|profile_id| {
+            summary_cell(
+                &manifest,
+                &fingerprint,
+                0,
+                profile_id,
+                CombatLabOutcomeClassV1::ResolvedWin,
+                Some(20),
+                Some(0),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let summary = summarize_combat_lab_v1(&manifest, &cells, 3).expect("summarize pair gaps");
+    assert_eq!(summary.pairs[0].shared_samples, 1);
+    assert_eq!(summary.pairs[0].incomplete_pair_samples, 2);
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }
