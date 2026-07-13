@@ -391,6 +391,8 @@ git commit -m "feat: capture combat replay draw evidence"
 - Modify: `src/ai/combat_search_v2/trajectory_report.rs`
 - Modify: `src/ai/combat_search_v2/types/summary.rs`
 - Modify: `src/ai/combat_search_v2/types/report/core.rs`
+- Modify: `src/eval/run_control/combat_case_retained_candidates.rs` (test-only trajectory literal compatibility)
+- Modify: `src/eval/run_control/persistent_burden_cutpoint_probe/tests.rs` (test-only trajectory literal compatibility)
 
 **Interfaces:**
 
