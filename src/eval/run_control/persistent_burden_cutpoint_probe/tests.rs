@@ -5,7 +5,7 @@ use crate::ai::combat_search_v2::{
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::action::Action;
-use crate::runtime::combat::{CombatCard, MonsterEntity};
+use crate::runtime::combat::{CombatCard, MetaChange, MonsterEntity};
 use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::CombatPosition;
 use crate::sim::combat_action::CombatActionChoice;
@@ -16,6 +16,7 @@ use crate::state::map::node::RoomType;
 use crate::state::{HandSelectFilter, HandSelectReason};
 use crate::state::{SelectionResolution, SelectionScope};
 
+use super::burden::{newly_gained_persistent_curses, PersistentCurseBurdenSnapshot};
 use super::cutpoint::{
     cutpoint_identity, group_cutpoints, locate_candidate_cutpoint, LocatedBurdenCutpoint,
 };
@@ -169,6 +170,30 @@ fn fixture_cutpoint_session() -> (RunControlSession, CombatPosition) {
         .current_active_combat_position()
         .expect("combat position");
     (session, position)
+}
+
+#[test]
+fn persistent_curse_burden_does_not_double_count_materialization() {
+    let (mut pending, _) = fixture_cutpoint_session();
+    pending
+        .active_combat
+        .as_mut()
+        .expect("active combat")
+        .combat_state
+        .meta
+        .meta_changes
+        .push(MetaChange::AddCardToMasterDeck(CardId::Parasite));
+    let pending_snapshot = PersistentCurseBurdenSnapshot::capture(&pending);
+
+    let mut materialized = pending.clone();
+    materialized.active_combat = None;
+    materialized
+        .run_state
+        .master_deck
+        .push(CombatCard::new(CardId::Parasite, 99));
+    let materialized_snapshot = PersistentCurseBurdenSnapshot::capture(&materialized);
+
+    assert!(newly_gained_persistent_curses(&pending_snapshot, &materialized_snapshot).is_empty());
 }
 
 fn fixture_located_cutpoint(retained_index: usize, label: &str) -> LocatedBurdenCutpoint {

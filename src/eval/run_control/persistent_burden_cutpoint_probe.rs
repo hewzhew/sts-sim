@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
+use crate::content::cards::CardId;
 use crate::eval::combat_case::CombatCase;
 use crate::sim::combat::CombatTerminal;
 use crate::state::core::ClientInput;
@@ -13,6 +14,7 @@ use super::transition_report::CardSnapshot;
 use cutpoint::locate_and_group_cutpoints;
 use outcomes::probe_grouped_cutpoint;
 
+mod burden;
 mod cutpoint;
 mod outcomes;
 
@@ -20,6 +22,12 @@ mod outcomes;
 mod tests;
 
 pub const PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1: usize = 16;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PersistentBurdenGainedCurseCountV1 {
+    pub card: CardId,
+    pub count: usize,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
