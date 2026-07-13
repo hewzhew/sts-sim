@@ -485,6 +485,8 @@ pub(super) fn candidate_improves_card_flow(
         ..DeckConstructionCounts::default()
     };
     let before = card_flow_level(projected);
+    let real_draw_before = projected.real_draw;
+    let energy_access_before = projected.energy_access;
     for effect in &card_definition_with_upgrades(card, upgrades).play_effects {
         match effect {
             PlayEffect::Provide(Mechanic::CardDraw) if real_draw_card(card) => {
@@ -500,6 +502,8 @@ pub(super) fn candidate_improves_card_flow(
         }
     }
     pressure_rank(card_flow_level(projected)) > pressure_rank(before)
+        || (real_draw_before == 0 && projected.real_draw > 0)
+        || (energy_access_before == 0 && projected.energy_access > 0)
 }
 
 fn pressure_rank(level: PressureLevel) -> u8 {
@@ -574,4 +578,46 @@ fn low_margin_frontload_card(card: CardId) -> bool {
             | CardId::Anger
             | CardId::SwiftStrike
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn thin_small_cantrip_flow() -> AxisPressure {
+        AxisPressure {
+            level: PressureLevel::Thin,
+            evidence: AxisEvidence {
+                small_cantrip_count: 2,
+                ..AxisEvidence::default()
+            },
+        }
+    }
+
+    #[test]
+    fn first_real_draw_is_progress_inside_thin_card_flow() {
+        assert!(candidate_improves_card_flow(
+            thin_small_cantrip_flow(),
+            CardId::BattleTrance,
+            0
+        ));
+    }
+
+    #[test]
+    fn first_energy_access_is_progress_inside_thin_card_flow() {
+        assert!(candidate_improves_card_flow(
+            thin_small_cantrip_flow(),
+            CardId::SeeingRed,
+            0
+        ));
+    }
+
+    #[test]
+    fn another_small_cantrip_does_not_improve_thin_card_flow() {
+        assert!(!candidate_improves_card_flow(
+            thin_small_cantrip_flow(),
+            CardId::FlashOfSteel,
+            0
+        ));
+    }
 }

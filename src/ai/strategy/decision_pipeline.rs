@@ -2188,6 +2188,36 @@ mod tests {
     }
 
     #[test]
+    fn first_real_draw_stays_mainline_in_thin_cantrip_deck() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+            CardId::Feed,
+            CardId::Corruption,
+            CardId::Cleave,
+            CardId::Cleave,
+        ];
+
+        let battle_trance = reward_card_with_act(&cards, CardId::BattleTrance, 0, 3);
+        let cleave = reward_card_with_act(&cards, CardId::Cleave, 0, 3);
+
+        assert_eq!(battle_trance.lane, CandidateLane::Mainline);
+        assert!(battle_trance.auto_expands());
+        assert!(
+            battle_trance.order_key(true) < cleave.order_key(true),
+            "first real draw should outrank another Cleave: battle_trance={battle_trance:#?} cleave={cleave:#?}"
+        );
+    }
+
+    #[test]
     fn reward_automaton_context_keeps_shockwave_as_boss_support() {
         let cards = vec![
             CardId::Strike,
