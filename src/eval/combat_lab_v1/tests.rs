@@ -1,6 +1,7 @@
 use super::{
     derive_shuffle_seed_v1, load_and_resolve_combat_lab_spec_v1, preflight_combat_lab_scenario_v1,
-    profile_config_v1, CombatLabArtifactStoreV1, CombatLabManifestV1, CombatLabShuffleGeneratorV1,
+    profile_config_v1, summarize_combat_lab_v1, CombatLabArtifactStoreV1, CombatLabCellRecordV1,
+    CombatLabManifestV1, CombatLabOutcomeClassV1, CombatLabShuffleGeneratorV1,
     CombatLabShuffleScheduleV1, CombatLabSpecV1,
 };
 use crate::eval::fingerprint::combat_state_fingerprint_v1;
@@ -637,6 +638,543 @@ fn cell_key_is_stable_and_commits_every_identity_input() {
     ] {
         assert_ne!(baseline, changed);
     }
+}
+
+#[test]
+fn summary_separates_coverage_from_loss() {
+    let (directory, manifest, fingerprint) = summary_manifest("summary_profile", &["baseline"]);
+    let mut cells = vec![
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            0,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(20),
+            Some(0),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            1,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(18),
+            Some(2),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            2,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(16),
+            Some(4),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            3,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(10),
+            Some(10),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            4,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedLoss,
+            Some(0),
+            Some(20),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            5,
+            "baseline",
+            CombatLabOutcomeClassV1::CoverageLimited,
+            Some(999),
+            Some(999),
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            6,
+            "baseline",
+            CombatLabOutcomeClassV1::ExecutionError,
+            Some(999),
+            Some(999),
+        ),
+    ];
+    for (index, cell) in cells.iter_mut().enumerate() {
+        cell.turns = (index < 5).then_some((index + 1) as u32);
+        cell.potions_used = (index < 5).then_some((index % 2) as u32);
+        cell.expanded_nodes = (index + 1) as u64;
+    }
+    cells[5].node_budget_exhausted = true;
+    cells[6].deadline_exhausted = true;
+
+    let summary = summarize_combat_lab_v1(&manifest, &cells, 7).expect("summarize cells");
+    assert_eq!(summary.schema_version, 1);
+    assert_eq!(summary.experiment_hash, manifest.experiment_hash);
+    assert_eq!(summary.requested_samples, 7);
+    assert_eq!(summary.completed_cells, 7);
+    assert_eq!(summary.profiles.len(), 1);
+
+    let profile = &summary.profiles[0];
+    assert_eq!(profile.profile_id, "baseline");
+    assert_eq!(profile.requested_cells, 7);
+    assert_eq!(profile.completed_cells, 7);
+    assert_eq!(profile.resolved_cells, 5);
+    assert_eq!(profile.wins, 4);
+    assert_eq!(profile.losses, 1);
+    assert_eq!(profile.coverage_limited, 1);
+    assert_eq!(profile.errors, 1);
+    assert_eq!(profile.win_rate_all_non_error_denominator, 6);
+    assert_approx_eq(profile.win_rate_all_non_error, 4.0 / 6.0);
+    assert_eq!(profile.win_rate_resolved_denominator, 5);
+    assert_approx_eq(profile.win_rate_resolved, 4.0 / 5.0);
+
+    assert_approx_eq(profile.hp_loss_mean, 4.0);
+    assert_approx_eq(profile.hp_loss_stddev_population, 14.0_f64.sqrt());
+    assert_approx_eq(profile.hp_loss_median, 3.0);
+    assert_eq!(profile.hp_loss_p90_nearest_rank, Some(10));
+    assert_approx_eq(profile.terminal_hp_mean, 12.8);
+    assert_approx_eq(profile.terminal_hp_stddev_population, 52.16_f64.sqrt());
+    assert_approx_eq(profile.terminal_hp_median, 16.0);
+    assert_eq!(profile.terminal_hp_p10_nearest_rank, Some(0));
+
+    assert_eq!(profile.turns.count, 5);
+    assert_approx_eq(profile.turns.mean, 3.0);
+    assert_approx_eq(profile.turns.stddev_population, 2.0_f64.sqrt());
+    assert_approx_eq(profile.turns.median, 3.0);
+    assert_eq!(profile.potions_used.count, 5);
+    assert_approx_eq(profile.potions_used.mean, 0.4);
+    assert_approx_eq(profile.potions_used.stddev_population, 0.24_f64.sqrt());
+    assert_approx_eq(profile.potions_used.median, 0.0);
+    assert_eq!(profile.expanded_nodes.count, 7);
+    assert_approx_eq(profile.expanded_nodes.mean, 4.0);
+    assert_approx_eq(profile.expanded_nodes.stddev_population, 4.0_f64.sqrt());
+    assert_approx_eq(profile.expanded_nodes.median, 4.0);
+    assert_approx_eq(profile.deadline_exhaustion_rate, 1.0 / 7.0);
+    assert_approx_eq(profile.node_budget_exhaustion_rate, 1.0 / 7.0);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn summary_pairs_use_only_shared_samples_and_report_divergences() {
+    use crate::content::cards::CardId;
+    use crate::state::core::ClientInput;
+    use crate::state::DomainCardSnapshot;
+
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_pairs", &["zeta", "alpha", "mid"]);
+    let mut cells = Vec::new();
+    for (sample_index, left_outcome, left_hp, right_outcome, right_hp) in [
+        (
+            0,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            20,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            18,
+        ),
+        (
+            1,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            15,
+            CombatLabOutcomeClassV1::ResolvedLoss,
+            0,
+        ),
+        (
+            2,
+            CombatLabOutcomeClassV1::ResolvedLoss,
+            0,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            12,
+        ),
+        (
+            3,
+            CombatLabOutcomeClassV1::ResolvedLoss,
+            0,
+            CombatLabOutcomeClassV1::ResolvedLoss,
+            0,
+        ),
+        (
+            4,
+            CombatLabOutcomeClassV1::CoverageLimited,
+            999,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            10,
+        ),
+    ] {
+        cells.push(summary_cell(
+            &manifest,
+            &fingerprint,
+            sample_index,
+            "zeta",
+            left_outcome,
+            Some(left_hp),
+            Some(20 - left_hp),
+        ));
+        cells.push(summary_cell(
+            &manifest,
+            &fingerprint,
+            sample_index,
+            "alpha",
+            right_outcome,
+            Some(right_hp),
+            Some(20 - right_hp),
+        ));
+    }
+    cells.push(summary_cell(
+        &manifest,
+        &fingerprint,
+        5,
+        "zeta",
+        CombatLabOutcomeClassV1::ResolvedWin,
+        Some(11),
+        Some(9),
+    ));
+    cells.push(summary_cell(
+        &manifest,
+        &fingerprint,
+        6,
+        "alpha",
+        CombatLabOutcomeClassV1::ResolvedWin,
+        Some(13),
+        Some(7),
+    ));
+
+    summary_cell_mut(&mut cells, 0, "zeta").action_history =
+        vec![ClientInput::EndTurn, ClientInput::Proceed];
+    summary_cell_mut(&mut cells, 0, "alpha").action_history =
+        vec![ClientInput::EndTurn, ClientInput::DiscardPotion(0)];
+    summary_cell_mut(&mut cells, 0, "zeta").draw_history = vec![DomainCardSnapshot {
+        id: CardId::Bash,
+        upgrades: 0,
+        uuid: 1,
+    }];
+    summary_cell_mut(&mut cells, 0, "alpha").draw_history = vec![DomainCardSnapshot {
+        id: CardId::Defend,
+        upgrades: 0,
+        uuid: 2,
+    }];
+    summary_cell_mut(&mut cells, 1, "zeta").action_history = vec![ClientInput::EndTurn];
+    summary_cell_mut(&mut cells, 1, "alpha").action_history =
+        vec![ClientInput::EndTurn, ClientInput::Proceed];
+    summary_cell_mut(&mut cells, 2, "zeta").action_history = vec![ClientInput::EndTurn];
+    summary_cell_mut(&mut cells, 2, "alpha").action_history = vec![ClientInput::EndTurn];
+    summary_cell_mut(&mut cells, 3, "zeta").action_history = vec![ClientInput::EndTurn];
+    summary_cell_mut(&mut cells, 3, "alpha").action_history = vec![ClientInput::Proceed];
+    summary_cell_mut(&mut cells, 3, "zeta").replay_validated = false;
+    summary_cell_mut(&mut cells, 4, "zeta").action_history = vec![ClientInput::EndTurn];
+    summary_cell_mut(&mut cells, 4, "alpha").action_history = vec![ClientInput::Proceed];
+    cells.reverse();
+
+    let summary = summarize_combat_lab_v1(&manifest, &cells, 7).expect("summarize pairs");
+    assert_eq!(
+        summary
+            .profiles
+            .iter()
+            .map(|profile| profile.profile_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["zeta", "alpha", "mid"]
+    );
+    assert_eq!(
+        summary
+            .pairs
+            .iter()
+            .map(|pair| (
+                pair.left_profile_id.as_str(),
+                pair.right_profile_id.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![("zeta", "alpha"), ("zeta", "mid"), ("alpha", "mid")]
+    );
+
+    let pair = &summary.pairs[0];
+    assert_eq!(pair.shared_samples, 5);
+    assert_eq!(pair.incomplete_pair_samples, 2);
+    assert_eq!(pair.both_win, 1);
+    assert_eq!(pair.left_only_win, 1);
+    assert_eq!(pair.right_only_win, 1);
+    assert_eq!(pair.both_loss, 1);
+    assert_eq!(pair.unresolved_or_error, 1);
+    assert_eq!(pair.comparable_resolved_samples, 4);
+    assert_eq!(pair.final_hp_delta_left_minus_right.count, 4);
+    assert_approx_eq(pair.final_hp_delta_left_minus_right.mean, 1.25);
+    assert_approx_eq(
+        pair.final_hp_delta_left_minus_right.stddev_population,
+        91.6875_f64.sqrt(),
+    );
+    assert_approx_eq(pair.final_hp_delta_left_minus_right.median, 1.0);
+    assert_eq!(pair.hp_loss_delta_left_minus_right.count, 4);
+    assert_approx_eq(pair.hp_loss_delta_left_minus_right.mean, -1.25);
+    assert_approx_eq(
+        pair.hp_loss_delta_left_minus_right.stddev_population,
+        91.6875_f64.sqrt(),
+    );
+    assert_approx_eq(pair.hp_loss_delta_left_minus_right.median, -1.0);
+    assert_eq!(pair.left_strictly_better, 2);
+    assert_eq!(pair.right_strictly_better, 1);
+    assert_eq!(pair.tied, 1);
+    assert_eq!(pair.divergences.len(), 2);
+    assert_eq!(pair.divergences[0].sample_index, 0);
+    assert_eq!(pair.divergences[0].first_action_divergence, Some(1));
+    assert_eq!(pair.divergences[0].first_draw_divergence, Some(0));
+    assert_eq!(pair.divergences[1].sample_index, 1);
+    assert_eq!(pair.divergences[1].first_action_divergence, Some(1));
+    assert_eq!(pair.divergences[1].first_draw_divergence, None);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn interaction_decomposes_balanced_terminal_hp() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("interaction_balanced", &["left", "right"]);
+    let cells = [
+        (0, "left", 10),
+        (0, "right", 20),
+        (1, "left", 30),
+        (1, "right", 20),
+    ]
+    .into_iter()
+    .map(|(sample_index, profile_id, final_hp)| {
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            sample_index,
+            profile_id,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(final_hp),
+            Some(30 - final_hp),
+        )
+    })
+    .collect::<Vec<_>>();
+
+    let summary = summarize_combat_lab_v1(&manifest, &cells, 2).expect("summarize interaction");
+    assert_eq!(summary.interaction_omitted_reason, None);
+    let interaction = summary.interaction.expect("balanced decomposition");
+    assert_eq!(interaction.eligible_samples, 2);
+    assert_eq!(interaction.profile_count, 2);
+    assert_eq!(interaction.total_sum_squares, 200.0);
+    assert_eq!(interaction.shuffle_sum_squares, 100.0);
+    assert_eq!(interaction.profile_sum_squares, 0.0);
+    assert_eq!(interaction.interaction_sum_squares, 100.0);
+    assert_approx_eq(interaction.shuffle_share, 0.5);
+    assert_approx_eq(interaction.profile_share, 0.0);
+    assert_approx_eq(interaction.interaction_share, 0.5);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn interaction_omits_unbalanced_matrices_with_precise_reasons() {
+    let (one_directory, one_manifest, _one_fingerprint) =
+        summary_manifest("interaction_one_profile", &["only"]);
+    let one_profile =
+        summarize_combat_lab_v1(&one_manifest, &[], 2).expect("summarize one-profile interaction");
+    assert!(one_profile.interaction.is_none());
+    assert_eq!(
+        one_profile.interaction_omitted_reason.as_deref(),
+        Some("interaction requires at least two profiles")
+    );
+
+    let (zero_directory, zero_manifest, zero_fingerprint) =
+        summary_manifest("interaction_zero_balanced", &["left", "right"]);
+    let zero_cells = vec![
+        summary_cell(
+            &zero_manifest,
+            &zero_fingerprint,
+            0,
+            "left",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(10),
+            Some(10),
+        ),
+        summary_cell(
+            &zero_manifest,
+            &zero_fingerprint,
+            0,
+            "right",
+            CombatLabOutcomeClassV1::CoverageLimited,
+            None,
+            None,
+        ),
+    ];
+    let zero_balanced = summarize_combat_lab_v1(&zero_manifest, &zero_cells, 2)
+        .expect("summarize zero-balanced interaction");
+    assert!(zero_balanced.interaction.is_none());
+    assert_eq!(
+        zero_balanced.interaction_omitted_reason.as_deref(),
+        Some(
+            "interaction requires a balanced resolved matrix; found 0 fully resolved shared samples"
+        )
+    );
+
+    let (one_sample_directory, one_sample_manifest, one_sample_fingerprint) =
+        summary_manifest("interaction_one_balanced", &["left", "right"]);
+    let one_sample_cells = ["left", "right"]
+        .into_iter()
+        .map(|profile_id| {
+            summary_cell(
+                &one_sample_manifest,
+                &one_sample_fingerprint,
+                0,
+                profile_id,
+                CombatLabOutcomeClassV1::ResolvedWin,
+                Some(10),
+                Some(10),
+            )
+        })
+        .collect::<Vec<_>>();
+    let one_balanced = summarize_combat_lab_v1(&one_sample_manifest, &one_sample_cells, 2)
+        .expect("summarize one-balanced interaction");
+    assert!(one_balanced.interaction.is_none());
+    assert_eq!(
+        one_balanced.interaction_omitted_reason.as_deref(),
+        Some("interaction requires at least two balanced resolved samples; found 1")
+    );
+
+    for directory in [one_directory, zero_directory, one_sample_directory] {
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}
+
+#[test]
+fn summary_rejects_cells_from_another_experiment() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_foreign_experiment", &["baseline"]);
+    let mut foreign = summary_cell(
+        &manifest,
+        &fingerprint,
+        0,
+        "baseline",
+        CombatLabOutcomeClassV1::ResolvedWin,
+        Some(20),
+        Some(0),
+    );
+    foreign.experiment_hash = "foreign-experiment".to_string();
+
+    let error = summarize_combat_lab_v1(&manifest, &[foreign], 1)
+        .expect_err("foreign cell must be rejected");
+    assert!(error.contains("foreign experiment hash"), "{error}");
+    assert!(error.contains("foreign-experiment"), "{error}");
+    assert!(error.contains(&manifest.experiment_hash), "{error}");
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn summary_json_is_byte_identical_across_regeneration() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_deterministic_json", &["left", "right"]);
+    let cells = [
+        (1, "right", 18),
+        (0, "left", 20),
+        (1, "left", 16),
+        (0, "right", 14),
+    ]
+    .into_iter()
+    .map(|(sample_index, profile_id, final_hp)| {
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            sample_index,
+            profile_id,
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(final_hp),
+            Some(20 - final_hp),
+        )
+    })
+    .collect::<Vec<_>>();
+
+    let first = summarize_combat_lab_v1(&manifest, &cells, 2).expect("first regeneration");
+    let second = summarize_combat_lab_v1(&manifest, &cells, 2).expect("second regeneration");
+    let first_json = serde_json::to_vec(&first).expect("serialize first compact summary");
+    let second_json = serde_json::to_vec(&second).expect("serialize second compact summary");
+    assert_eq!(first_json, second_json);
+    assert!(!first_json
+        .windows(b"created_at".len())
+        .any(|window| window == b"created_at"));
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn interaction_zero_variation_has_no_shares() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("interaction_zero_variation", &["left", "right"]);
+    let cells = [(0, "left"), (0, "right"), (1, "left"), (1, "right")]
+        .into_iter()
+        .map(|(sample_index, profile_id)| {
+            summary_cell(
+                &manifest,
+                &fingerprint,
+                sample_index,
+                profile_id,
+                CombatLabOutcomeClassV1::ResolvedWin,
+                Some(10),
+                Some(10),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let interaction = summarize_combat_lab_v1(&manifest, &cells, 2)
+        .expect("summarize zero variation")
+        .interaction
+        .expect("zero-variation decomposition");
+    assert_eq!(interaction.total_sum_squares, 0.0);
+    assert_eq!(interaction.shuffle_sum_squares, 0.0);
+    assert_eq!(interaction.profile_sum_squares, 0.0);
+    assert_eq!(interaction.interaction_sum_squares, 0.0);
+    assert_eq!(interaction.shuffle_share, None);
+    assert_eq!(interaction.profile_share, None);
+    assert_eq!(interaction.interaction_share, None);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn summary_empty_distributions_expose_zero_denominators() {
+    let (directory, manifest, _fingerprint) =
+        summary_manifest("summary_empty_distributions", &["empty"]);
+
+    let summary = summarize_combat_lab_v1(&manifest, &[], 3).expect("summarize empty profile");
+    assert_eq!(summary.completed_cells, 0);
+    let profile = &summary.profiles[0];
+    assert_eq!(profile.requested_cells, 3);
+    assert_eq!(profile.completed_cells, 0);
+    assert_eq!(profile.win_rate_all_non_error_denominator, 0);
+    assert_eq!(profile.win_rate_all_non_error, None);
+    assert_eq!(profile.win_rate_resolved_denominator, 0);
+    assert_eq!(profile.win_rate_resolved, None);
+    assert_eq!(profile.hp_loss_mean, None);
+    assert_eq!(profile.hp_loss_stddev_population, None);
+    assert_eq!(profile.hp_loss_median, None);
+    assert_eq!(profile.hp_loss_p90_nearest_rank, None);
+    assert_eq!(profile.terminal_hp_mean, None);
+    assert_eq!(profile.terminal_hp_stddev_population, None);
+    assert_eq!(profile.terminal_hp_median, None);
+    assert_eq!(profile.terminal_hp_p10_nearest_rank, None);
+    for numeric in [
+        &profile.turns,
+        &profile.potions_used,
+        &profile.expanded_nodes,
+    ] {
+        assert_eq!(numeric.count, 0);
+        assert_eq!(numeric.mean, None);
+        assert_eq!(numeric.stddev_population, None);
+        assert_eq!(numeric.median, None);
+    }
+    assert_eq!(profile.deadline_exhaustion_rate, None);
+    assert_eq!(profile.node_budget_exhaustion_rate, None);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
@@ -1334,6 +1872,123 @@ fn artifact_journal_digest(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn summary_manifest(
+    label: &str,
+    profile_ids: &[&str],
+) -> (
+    std::path::PathBuf,
+    CombatLabManifestV1,
+    crate::eval::fingerprint::StateFingerprintV1,
+) {
+    let (directory, mut resolved) = resolved_lab_fixture(label);
+    let prototype = resolved.profiles[0].clone();
+    resolved.profiles = profile_ids
+        .iter()
+        .map(|profile_id| {
+            let mut profile = prototype.clone();
+            profile.spec.id = (*profile_id).to_string();
+            profile.spec.label = (*profile_id).to_string();
+            profile.profile_hash = format!("profile-hash-{profile_id}");
+            profile
+        })
+        .collect();
+    let (engine, combat) = compile_combat_start_spec(&resolved.start_spec_snapshot)
+        .expect("compile summary start state");
+    let fingerprint =
+        combat_state_fingerprint_v1(&crate::sim::combat::CombatPosition::new(engine, combat));
+    (directory, artifact_manifest(resolved, 123), fingerprint)
+}
+
+fn summary_cell(
+    manifest: &CombatLabManifestV1,
+    fingerprint: &crate::eval::fingerprint::StateFingerprintV1,
+    sample_index: u64,
+    profile_id: &str,
+    outcome_class: CombatLabOutcomeClassV1,
+    final_hp: Option<i32>,
+    hp_loss: Option<i32>,
+) -> CombatLabCellRecordV1 {
+    let profile = manifest
+        .resolved_spec
+        .profiles
+        .iter()
+        .find(|profile| profile.spec.id == profile_id)
+        .expect("summary profile");
+    let resolved = matches!(
+        outcome_class,
+        CombatLabOutcomeClassV1::ResolvedWin | CombatLabOutcomeClassV1::ResolvedLoss
+    );
+    CombatLabCellRecordV1 {
+        schema_version: 1,
+        cell_key: format!("summary-cell-{sample_index}-{profile_id}"),
+        experiment_hash: manifest.experiment_hash.clone(),
+        sample_index,
+        shuffle_seed: sample_index + 100,
+        profile_id: profile_id.to_string(),
+        profile_hash: profile.profile_hash.clone(),
+        budget_hash: manifest.resolved_spec.budget_hash.clone(),
+        initial_state_fingerprint: fingerprint.clone(),
+        non_shuffle_rng_hash: "non-shuffle".to_string(),
+        shuffle_rng_hash: format!("shuffle-{sample_index}"),
+        search_terminal: None,
+        coverage_status: None,
+        outcome_class,
+        outcome_order_key: resolved.then(|| summary_outcome_key(final_hp.unwrap_or_default())),
+        replay_validated: resolved,
+        start_hp: 20,
+        final_hp,
+        hp_loss,
+        turns: None,
+        actions: None,
+        cards_played: None,
+        potions_used: None,
+        draw_history: Vec::new(),
+        action_history: Vec::new(),
+        expanded_nodes: 0,
+        generated_nodes: 0,
+        nodes_to_first_win: None,
+        node_budget_exhausted: false,
+        deadline_exhausted: false,
+        error: None,
+    }
+}
+
+fn summary_outcome_key(
+    final_hp: i32,
+) -> crate::ai::combat_search_v2::CombatSearchV2OutcomeOrderKeyReport {
+    crate::ai::combat_search_v2::CombatSearchV2OutcomeOrderKeyReport {
+        terminal_rank: 0,
+        run_hygiene: 0,
+        persistent_adjusted_hp: 0,
+        final_hp,
+        persistent_run_value: 0,
+        potion_conservation: 0,
+        faster_turns: 0,
+        fewer_cards_played: 0,
+        enemy_progress: 0,
+        shorter_line: 0,
+    }
+}
+
+fn summary_cell_mut<'a>(
+    cells: &'a mut [CombatLabCellRecordV1],
+    sample_index: u64,
+    profile_id: &str,
+) -> &'a mut CombatLabCellRecordV1 {
+    cells
+        .iter_mut()
+        .find(|cell| cell.sample_index == sample_index && cell.profile_id == profile_id)
+        .expect("pair fixture cell")
+}
+
+fn assert_approx_eq(actual: Option<f64>, expected: f64) {
+    let actual = actual.expect("expected numeric summary");
+    assert!(
+        (actual - expected).abs() < 1.0e-12,
+        "expected {expected}, got {actual}"
+    );
 }
 
 fn fail_journal_sync_after_write(_: &std::fs::File) -> std::io::Result<()> {
