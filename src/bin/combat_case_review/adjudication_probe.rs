@@ -2,7 +2,8 @@ use sts_simulator::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Re
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::eval::run_control::{
     adjudicate_combat_case_candidates_v1, adjudicate_combat_case_line_v1,
-    CombatCaseAdjudicationProbeV1, CombatCaseCandidateAdjudicationCensusV1,
+    probe_combat_case_persistent_burden_cutpoints_v1, CombatCaseAdjudicationProbeV1,
+    CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
 };
 
 pub(super) struct ReviewAdjudicationRun {
@@ -32,6 +33,32 @@ pub(super) fn run_candidate_censuses(
                     source_review: run.source_review.to_string(),
                     retained_candidate_count: run.report.best_win_trajectory.iter().count()
                         + run.report.win_candidate_trajectories.len(),
+                    error: "combat case unavailable".to_string(),
+                },
+            })
+            .collect(),
+    )
+}
+
+pub(super) fn run_persistent_burden_cutpoint_probes(
+    enabled: bool,
+    runs: &[ReviewAdjudicationRun],
+    case: Option<&CombatCase>,
+) -> Option<Vec<CombatCasePersistentBurdenCutpointProbeV1>> {
+    if !enabled {
+        return None;
+    }
+    Some(
+        runs.iter()
+            .map(|run| match case {
+                Some(case) => probe_combat_case_persistent_burden_cutpoints_v1(
+                    run.source_review,
+                    case,
+                    &run.config,
+                    &run.report,
+                ),
+                None => CombatCasePersistentBurdenCutpointProbeV1::ProjectionFailed {
+                    source_review: run.source_review.to_string(),
                     error: "combat case unavailable".to_string(),
                 },
             })
@@ -91,5 +118,13 @@ mod tests {
     #[test]
     fn disabled_candidate_census_is_absent() {
         assert_eq!(super::run_candidate_censuses(false, &[], None), None);
+    }
+
+    #[test]
+    fn disabled_persistent_burden_probe_is_absent() {
+        assert_eq!(
+            super::run_persistent_burden_cutpoint_probes(false, &[], None),
+            None
+        );
     }
 }

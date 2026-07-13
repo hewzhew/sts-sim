@@ -7,7 +7,9 @@ use sts_simulator::eval::combat_case::CombatCase;
 #[path = "review_pipeline/ladder.rs"]
 mod ladder;
 
-use super::adjudication_probe::{run_adjudication_probe, run_candidate_censuses};
+use super::adjudication_probe::{
+    run_adjudication_probe, run_candidate_censuses, run_persistent_burden_cutpoint_probes,
+};
 use super::awakened_one_evidence::{
     awakened_one_failure_evidence, awakened_one_path_audit_v0, static_boss_matchup_audit_v0,
 };
@@ -50,6 +52,19 @@ pub(super) fn build_review(
                 .iter_mut()
                 .any(|review| review.attach_candidate_adjudication_census(census.clone()));
             debug_assert!(attached, "candidate census must match one ladder row");
+        }
+    }
+    if let Some(probes) =
+        run_persistent_burden_cutpoint_probes(options.adjudicate, &adjudication_runs, Some(&case))
+    {
+        for probe in probes {
+            let attached = ladder
+                .iter_mut()
+                .any(|review| review.attach_persistent_burden_cutpoint_probe(probe.clone()));
+            debug_assert!(
+                attached,
+                "persistent burden probe must match one ladder row"
+            );
         }
     }
     let classification =

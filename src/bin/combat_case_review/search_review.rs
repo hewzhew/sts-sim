@@ -50,5 +50,6 @@ pub(super) fn search_review(
             diagnostic_progress: diagnostic_progress_facts(report, action_preview_limit),
         },
         candidate_adjudication_census: None,
+        persistent_burden_cutpoint_probe: None,
     }
 }

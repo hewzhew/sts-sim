@@ -1,6 +1,8 @@
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
-use sts_simulator::eval::run_control::CombatCaseCandidateAdjudicationCensusV1;
+use sts_simulator::eval::run_control::{
+    CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
+};
 use sts_simulator::state::core::ClientInput;
 
 #[path = "search_types/performance.rs"]
@@ -36,6 +38,8 @@ pub(super) struct SearchReview {
     pub(super) facts: SearchReviewFacts,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) candidate_adjudication_census: Option<CombatCaseCandidateAdjudicationCensusV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) persistent_burden_cutpoint_probe: Option<CombatCasePersistentBurdenCutpointProbeV1>,
 }
 
 impl SearchReview {
@@ -47,6 +51,17 @@ impl SearchReview {
             return false;
         }
         self.candidate_adjudication_census = Some(census);
+        true
+    }
+
+    pub(super) fn attach_persistent_burden_cutpoint_probe(
+        &mut self,
+        probe: CombatCasePersistentBurdenCutpointProbeV1,
+    ) -> bool {
+        if self.label != probe.source_review() {
+            return false;
+        }
+        self.persistent_burden_cutpoint_probe = Some(probe);
         true
     }
 }
@@ -81,7 +96,11 @@ pub(super) struct SearchDiagnosticProgressFacts {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
-    use sts_simulator::eval::run_control::CombatCaseCandidateAdjudicationCensusV1;
+    use sts_simulator::eval::run_control::{
+        CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
+        PersistentBurdenCutpointAggregateV1, PersistentBurdenCutpointConclusionV1,
+        PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
+    };
 
     use super::*;
 
@@ -133,6 +152,7 @@ mod tests {
 
     fn review(
         candidate_adjudication_census: Option<CombatCaseCandidateAdjudicationCensusV1>,
+        persistent_burden_cutpoint_probe: Option<CombatCasePersistentBurdenCutpointProbeV1>,
     ) -> SearchReview {
         SearchReview {
             label: "lane",
@@ -162,20 +182,24 @@ mod tests {
                 diagnostic_progress: None,
             },
             candidate_adjudication_census,
+            persistent_burden_cutpoint_probe,
         }
     }
 
     #[test]
     fn candidate_adjudication_census_serialization() {
-        let absent = serde_json::to_value(review(None)).expect("serialize absent census");
+        let absent = serde_json::to_value(review(None, None)).expect("serialize absent census");
         assert!(absent.get("candidate_adjudication_census").is_none());
 
-        let present = serde_json::to_value(review(Some(
-            CombatCaseCandidateAdjudicationCensusV1::NoRetainedCandidates {
-                source_review: "lane".to_string(),
-                retained_candidate_count: 0,
-            },
-        )))
+        let present = serde_json::to_value(review(
+            Some(
+                CombatCaseCandidateAdjudicationCensusV1::NoRetainedCandidates {
+                    source_review: "lane".to_string(),
+                    retained_candidate_count: 0,
+                },
+            ),
+            None,
+        ))
         .expect("serialize present census");
         assert_eq!(
             present["candidate_adjudication_census"]["status"],
@@ -185,8 +209,8 @@ mod tests {
 
     #[test]
     fn census_attaches_only_to_matching_review_label() {
-        let mut matching = review(None);
-        let mut other = review(None);
+        let mut matching = review(None, None);
+        let mut other = review(None, None);
         other.label = "other";
         let census = CombatCaseCandidateAdjudicationCensusV1::NoRetainedCandidates {
             source_review: "lane".to_string(),
@@ -197,5 +221,69 @@ mod tests {
         assert!(!other.attach_candidate_adjudication_census(census));
         assert!(matching.candidate_adjudication_census.is_some());
         assert!(other.candidate_adjudication_census.is_none());
+    }
+
+    #[test]
+    fn persistent_burden_probe_is_omitted_when_absent() {
+        let value = serde_json::to_value(review(None, None)).expect("serialize review");
+        assert!(value.get("persistent_burden_cutpoint_probe").is_none());
+    }
+
+    #[test]
+    fn persistent_burden_probe_serializes_cap_and_typed_conclusion() {
+        let probe = CombatCasePersistentBurdenCutpointProbeV1::Probed {
+            source_review: "lane".to_string(),
+            projection_trust: "combat_case_projection_v1".to_string(),
+            retained_candidate_count: 17,
+            unique_candidate_count: 17,
+            dirty_candidate_count: 17,
+            candidates_with_cutpoint: 17,
+            unique_cutpoint_count: 17,
+            examined_cutpoint_count: 16,
+            cutpoint_limit: PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
+            cutpoint_limit_hit: true,
+            omitted_cutpoint_count: 1,
+            replay_failures: Vec::new(),
+            aggregate: PersistentBurdenCutpointAggregateV1::default(),
+            cutpoints: Vec::new(),
+            conclusion: PersistentBurdenCutpointConclusionV1::NoOneActionEscapeObserved,
+        };
+        let value = serde_json::to_value(review(None, Some(probe))).expect("serialize review");
+        assert_eq!(
+            value["persistent_burden_cutpoint_probe"]["status"],
+            "probed"
+        );
+        assert_eq!(
+            value["persistent_burden_cutpoint_probe"]["conclusion"],
+            "no_one_action_escape_observed"
+        );
+        assert_eq!(
+            value["persistent_burden_cutpoint_probe"]["cutpoint_limit"],
+            16
+        );
+        assert_eq!(
+            value["persistent_burden_cutpoint_probe"]["cutpoint_limit_hit"],
+            true
+        );
+        assert_eq!(
+            value["persistent_burden_cutpoint_probe"]["omitted_cutpoint_count"],
+            1
+        );
+    }
+
+    #[test]
+    fn persistent_burden_probe_attaches_only_to_matching_review_label() {
+        let mut matching = review(None, None);
+        let mut other = review(None, None);
+        other.label = "other";
+        let probe = CombatCasePersistentBurdenCutpointProbeV1::ProjectionFailed {
+            source_review: "lane".to_string(),
+            error: "fixture".to_string(),
+        };
+
+        assert!(matching.attach_persistent_burden_cutpoint_probe(probe.clone()));
+        assert!(!other.attach_persistent_burden_cutpoint_probe(probe));
+        assert!(matching.persistent_burden_cutpoint_probe.is_some());
+        assert!(other.persistent_burden_cutpoint_probe.is_none());
     }
 }

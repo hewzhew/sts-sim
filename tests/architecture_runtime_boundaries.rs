@@ -134,14 +134,32 @@ fn combat_line_adjudication_has_one_production_owner() {
             .expect("read combat search lane runner");
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner audit module");
-    let review_probe = std::fs::read_to_string("src/bin/combat_case_review/adjudication_probe.rs")
-        .expect("read review adjudication probe");
+    let review_adapter = [
+        "src/bin/combat_case_review/adjudication_probe.rs",
+        "src/bin/combat_case_review/review_pipeline.rs",
+        "src/bin/combat_case_review/search_types.rs",
+    ]
+    .into_iter()
+    .map(|path| std::fs::read_to_string(path).expect("read combat review adapter"))
+    .collect::<Vec<_>>()
+    .join("\n");
 
     assert!(!selector.contains("CombatLineAcceptancePolicy::default()"));
     assert!(!lane_runner.contains("reject_dirty_win_status"));
     assert!(!lane_runner.contains("master_deck_curse_count"));
     assert!(!owner_audit.contains("combat_search_dirty_win.rs"));
-    assert!(!review_probe.contains("meta_changes"));
-    assert!(!review_probe.contains("CardType::Curse"));
-    assert!(!review_probe.contains("master_deck_curse_count"));
+    for forbidden in [
+        "meta_changes",
+        "CardType::Curse",
+        "master_deck_curse_count",
+        "WrithingMass",
+        "Parasite",
+        "planned_move_id",
+        "run_combat_search_v2",
+    ] {
+        assert!(
+            !review_adapter.contains(forbidden),
+            "combat_case_review adapters must not own `{forbidden}` semantics"
+        );
+    }
 }
