@@ -54,7 +54,6 @@ fn should_try_nonboss_potion_rescue(session: &RunControlSession) -> bool {
         return false;
     };
     let meta = &active.combat_state.meta;
-    let player = &active.combat_state.entities.player;
     let has_usable_potion = active
         .combat_state
         .entities
@@ -62,9 +61,35 @@ fn should_try_nonboss_potion_rescue(session: &RunControlSession) -> bool {
         .iter()
         .flatten()
         .any(|potion| potion.can_use);
-    !meta.is_boss_fight
-        && has_usable_potion
-        && (meta.is_elite_fight
-            || session.run_state.act_num >= 3
-            || player.current_hp * 2 <= player.max_hp)
+    !meta.is_boss_fight && has_usable_potion
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::content::potions::{Potion, PotionId};
+    use sts_simulator::eval::run_control::RunControlConfig;
+    use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
+    use sts_simulator::state::map::node::RoomType;
+
+    #[test]
+    fn healthy_hallway_keeps_post_gap_rescue_when_a_potion_is_usable() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 75;
+        combat.entities.player.max_hp = 80;
+        combat.entities.potions = vec![Some(Potion::new(PotionId::LiquidMemories, 1))];
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        assert!(
+            should_try_nonboss_potion_rescue(&session),
+            "once primary search has a gap, starting HP must not hide a usable potion rescue"
+        );
+    }
 }
