@@ -32,6 +32,14 @@ pub(crate) fn candidate_autopilot_action(
                     "Known boss is next and recovery is required: effective_heal={} hp={}/{}",
                     context.rest_vs_smith.effective_rest_heal, context.current_hp, context.max_hp
                 )
+            } else if ordinary_smith_health_floor_requires_rest(context, config) {
+                format!(
+                    "HP is below the ordinary Smith health floor: effective_heal={} hp={}/{} floor={}pct",
+                    context.rest_vs_smith.effective_rest_heal,
+                    context.current_hp,
+                    context.max_hp,
+                    config.ordinary_smith_min_hp_percent
+                )
             } else {
                 "RecoveryPressure Strong and Rest is available while HP is missing".to_string()
             };
@@ -70,6 +78,9 @@ fn smith_is_autopilot_allowed(
         return false;
     }
     if candidate.deck_mutation_execute_allowed == Some(false) {
+        return false;
+    }
+    if ordinary_smith_health_floor_requires_rest(context, config) {
         return false;
     }
     if context
@@ -174,8 +185,22 @@ fn rest_is_autopilot_allowed(
             .any(|candidate| candidate.choice == CampfireChoice::Rest)
         && (context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored
             || imminent_boss_recovery_is_required(context, config)
+            || ordinary_smith_health_floor_requires_rest(context, config)
             || context
                 .strategy
                 .support(StrategyPackageIdV2::RecoveryPressure)
                 == StrategyPlanSupportV1::Strong)
+}
+
+fn ordinary_smith_health_floor_requires_rest(
+    context: &CampfireDecisionContextV1,
+    config: &CampfirePolicyConfigV1,
+) -> bool {
+    context.current_hp < context.max_hp
+        && context.rest_vs_smith.effective_rest_heal > 0
+        && context
+            .candidates
+            .iter()
+            .any(|candidate| candidate.choice == CampfireChoice::Rest)
+        && hp_percent(context.current_hp, context.max_hp) < config.ordinary_smith_min_hp_percent
 }

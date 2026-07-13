@@ -157,6 +157,59 @@ fn campfire_policy_consumes_rest_vs_smith_rest_favored_verdict() {
 }
 
 #[test]
+fn campfire_policy_rests_below_ordinary_smith_health_floor() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 47;
+    run_state.max_hp = 85;
+    run_state.master_deck = vec![CombatCard::new(CardId::BattleTrance, 1001)];
+    install_current_room_route(
+        &mut run_state,
+        RoomType::RestRoom,
+        &[RoomType::MonsterRoom, RoomType::MonsterRoom],
+    );
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(
+        matches!(decision.action, CampfirePolicyActionV1::Rest { .. }),
+        "wounded ordinary smith must realize recovery first: {:?}",
+        decision.action
+    );
+    assert!(decision.candidate_plans.iter().all(|candidate| {
+        !matches!(candidate.choice, Some(CampfireChoice::Smith(_))) || !candidate.execute_autopilot
+    }));
+}
+
+#[test]
+fn campfire_policy_keeps_clear_core_smith_at_health_floor() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 51;
+    run_state.max_hp = 85;
+    run_state.master_deck = vec![CombatCard::new(CardId::BattleTrance, 1001)];
+    install_current_room_route(
+        &mut run_state,
+        RoomType::RestRoom,
+        &[RoomType::MonsterRoom, RoomType::MonsterRoom],
+    );
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(
+        matches!(decision.action, CampfirePolicyActionV1::Smith { .. }),
+        "the health-floor boundary must preserve an admitted clear-core smith: {:?}",
+        decision.action
+    );
+}
+
+#[test]
 fn campfire_policy_rests_at_low_hp_when_known_boss_is_next() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = 42;
