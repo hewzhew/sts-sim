@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::Mechanic;
+use crate::ai::strategy::boss_scaling_evidence::admission_is_strength_payoff;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
-use crate::ai::strategy::package_transition::PackageKind;
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
@@ -85,7 +85,7 @@ pub fn assess_role_saturation(
         }
     }
 
-    if is_strength_payoff(admission)
+    if admission_is_strength_payoff(admission)
         && deck.roles.strength_payoff_units >= strength_payoff_capacity(deck)
     {
         assessment.add(
@@ -196,13 +196,6 @@ fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> boo
     admission
         .reasons
         .contains(&RewardAdmissionReason::DamageUses(mechanic))
-}
-
-fn is_strength_payoff(admission: &RewardAdmission) -> bool {
-    admission_damage_uses(admission, Mechanic::Strength)
-        || admission
-            .reasons
-            .contains(&RewardAdmissionReason::Supports(PackageKind::Strength))
 }
 
 fn has_duplicate_access_copy(admission: &RewardAdmission) -> bool {

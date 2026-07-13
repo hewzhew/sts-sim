@@ -201,12 +201,6 @@ pub fn admission_is_strength_payoff(admission: &RewardAdmission) -> bool {
             .contains(&RewardAdmissionReason::DamageScalesWith(
                 DamageScalingAxis::PerHitStrength,
             ))
-        || admission
-            .reasons
-            .contains(&RewardAdmissionReason::Supports(PackageKind::Strength))
-        || admission.reasons.contains(&RewardAdmissionReason::Closes(
-            PayoffRequirement::WantsMechanic(Mechanic::Strength),
-        ))
 }
 
 fn candidate_exhaust_payoff(

@@ -2894,6 +2894,27 @@ mod tests {
     }
 
     #[test]
+    fn reward_keeps_first_stable_strength_source_out_of_payoff_saturation() {
+        let cards = vec![
+            CardId::HeavyBlade,
+            CardId::Reaper,
+            CardId::BattleTrance,
+            CardId::FlameBarrier,
+        ];
+
+        let inflame = reward_card_with_act(&cards, CardId::Inflame, 1, 3);
+
+        assert_eq!(inflame.lane, CandidateLane::Mainline, "inflame={inflame:?}");
+        assert!(
+            !inflame.adjudication.caps.iter().any(|cap| matches!(
+                cap.source,
+                CandidateLaneCapSource::RoleSaturation | CandidateLaneCapSource::Acquisition
+            )),
+            "inflame={inflame:?}"
+        );
+    }
+
+    #[test]
     fn shop_rejects_act2_ordinary_cards_that_only_pad_adequate_roles() {
         let deck = act2_collector_pressure_deck();
 
