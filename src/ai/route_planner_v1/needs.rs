@@ -1,5 +1,7 @@
 use super::types::{NeedVectorV1, RouteDecisionContextV1, RoutePlannerConfigV1};
 
+const FINAL_SHOP_SEARCH_WINDOW_FLOORS: i32 = 7;
+
 pub(super) fn estimate_needs(
     ctx: &RouteDecisionContextV1,
     config: &RoutePlannerConfigV1,
@@ -11,8 +13,9 @@ pub(super) fn estimate_needs(
     let low_block = ctx.deck.block_score < 24;
     let has_empty_potion_slot = ctx.potions.filled < ctx.potions.slots;
     let gold_conversion_pressure = route_gold_conversion_pressure(ctx, config);
-    let near_boss_with_unconverted_gold =
-        floors_to_act_boss(ctx.act, ctx.floor) <= 5 && ctx.gold >= config.early_shop_good_gold * 2;
+    let near_boss_with_unconverted_gold = floors_to_act_boss(ctx.act, ctx.floor)
+        <= FINAL_SHOP_SEARCH_WINDOW_FLOORS
+        && ctx.gold >= config.early_shop_good_gold * 2;
     let elite_deck_adjustment = elite_readiness_adjustment(ctx, weak_frontload);
 
     NeedVectorV1 {

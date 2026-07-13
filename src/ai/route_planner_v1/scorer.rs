@@ -50,12 +50,13 @@ pub(super) fn score_route_candidate(
     needs: &NeedVectorV1,
     config: &RoutePlannerConfigV1,
 ) -> RouteScoreTermsV1 {
+    let (upgrade, heal) = realized_campfire_terms(factors, needs);
     RouteScoreTermsV1 {
         card_reward: needs.need_card_rewards * factors.card_reward_access,
         relic: needs.need_relics * factors.relic_access,
         remove: needs.need_remove * needs.need_shop * factors.remove_access,
-        upgrade: needs.need_upgrade * factors.upgrade_access,
-        heal: needs.need_heal * factors.heal_access,
+        upgrade,
+        heal,
         shop: needs.need_shop * factors.shop_access,
         event: needs.need_event * factors.event_access,
         potion: needs.need_potion * factors.potion_gain,
@@ -69,6 +70,21 @@ pub(super) fn score_route_candidate(
         wing_boots_cost: -factors.wing_boots_cost,
         forced_path_penalty: forced_path_penalty(factors, needs),
         burning_elite_key_value: factors.burning_elite_key_value,
+    }
+}
+
+fn realized_campfire_terms(factors: &RouteValueFactorsV1, needs: &NeedVectorV1) -> (f32, f32) {
+    let shared_access = factors.upgrade_access.min(factors.heal_access);
+    if needs.need_heal >= needs.need_upgrade {
+        (
+            needs.need_upgrade * (factors.upgrade_access - shared_access).max(0.0),
+            needs.need_heal * factors.heal_access,
+        )
+    } else {
+        (
+            needs.need_upgrade * factors.upgrade_access,
+            needs.need_heal * (factors.heal_access - shared_access).max(0.0),
+        )
     }
 }
 
@@ -215,8 +231,9 @@ fn shop_route_access_value(
     path: &RoutePathSummaryV1,
     family: &RoutePathSummaryV1,
 ) -> f32 {
-    let guaranteed_shop_value = family.min_shops as f32 * 0.62;
-    let optional_shop_value = path.max_shops.saturating_sub(family.min_shops) as f32 * 0.08;
+    let controllable_shop_value = path.min_shops as f32 * 0.62;
+    let family_guarantee_bonus = family.min_shops as f32 * 0.30;
+    let optional_shop_value = path.max_shops.saturating_sub(path.min_shops) as f32 * 0.08;
     let early_shop_value = path
         .first_shop_floor
         .map(|floor| {
@@ -230,7 +247,11 @@ fn shop_route_access_value(
         })
         .unwrap_or(0.0);
 
-    features.shop_access + guaranteed_shop_value + optional_shop_value + early_shop_value
+    features.shop_access
+        + controllable_shop_value
+        + family_guarantee_bonus
+        + optional_shop_value
+        + early_shop_value
 }
 
 fn first_elite_preparation_signal(path: &RoutePathSummaryV1) -> f32 {

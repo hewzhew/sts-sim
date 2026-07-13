@@ -172,6 +172,102 @@ fn high_unconverted_gold_prefers_guaranteed_shop_route_over_optional_shop_access
 }
 
 #[test]
+fn campfire_score_does_not_claim_full_heal_and_upgrade_from_same_access() {
+    let mut run = run_with_start_paths(&[&[RoomType::RestRoom, RoomType::MonsterRoom]]);
+    run.current_hp = 48;
+    run.max_hp = 80;
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let fire = selected_candidate(&trace);
+    let independently_additive_value = fire.needs.need_upgrade * fire.value_factors.upgrade_access
+        + fire.needs.need_heal * fire.value_factors.heal_access;
+    let realized_value = fire.score_terms.upgrade + fire.score_terms.heal;
+
+    assert!(fire.value_factors.upgrade_access > 0.0);
+    assert!(fire.value_factors.heal_access > 0.0);
+    assert!(
+        realized_value < independently_additive_value,
+        "one campfire action cannot realize both the full heal and full upgrade value"
+    );
+}
+
+#[test]
+fn late_act_high_gold_prefers_controllable_shop_path_over_no_shop_fire_path() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.act_num = 3;
+    run.floor_num = 41;
+    run.current_hp = 86;
+    run.max_hp = 101;
+    run.gold = 405;
+    run.event_state = None;
+    replace_master_deck(
+        &mut run,
+        &[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Armaments,
+            CardId::PommelStrike,
+            CardId::ShrugItOff,
+            CardId::Feed,
+            CardId::Corruption,
+            CardId::Cleave,
+            CardId::Cleave,
+            CardId::BattleTrance,
+        ],
+    );
+    for card_id in [CardId::Bash, CardId::Armaments, CardId::Corruption] {
+        run.master_deck
+            .iter_mut()
+            .find(|card| card.id == card_id)
+            .expect("fixture should contain upgraded card")
+            .upgrades = 1;
+    }
+    run.map = MapState::new(vec![
+        vec![
+            linked_node(0, 0, RoomType::RestRoom, &[(0, 1)]),
+            linked_node(1, 0, RoomType::EventRoom, &[(1, 1)]),
+        ],
+        vec![
+            linked_node(0, 1, RoomType::MonsterRoomElite, &[(0, 2)]),
+            linked_node(1, 1, RoomType::ShopRoom, &[(1, 2)]),
+        ],
+        vec![
+            linked_node(0, 2, RoomType::RestRoom, &[]),
+            linked_node(1, 2, RoomType::MonsterRoomElite, &[(1, 3)]),
+        ],
+        vec![linked_node(1, 3, RoomType::RestRoom, &[])],
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let shop_path = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 1)
+        .expect("trace should include the controllable shop path");
+
+    assert_eq!(shop_path.path_summary.min_shops, 1);
+    assert_eq!(shop_path.path_summary.max_shops, 1);
+    assert_eq!(
+        selected_candidate(&trace).target.x,
+        1,
+        "healthy late-act high-gold routing should preserve a controllable shop before the boss"
+    );
+}
+
+#[test]
 fn route_planner_question_room_uses_mixed_unknown_belief() {
     let mut run = run_with_start_nodes(&[RoomType::EventRoom], Some(RoomType::RestRoom));
     run.event_generator.monster_chance = 0.25;
