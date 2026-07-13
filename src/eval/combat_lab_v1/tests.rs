@@ -1,11 +1,322 @@
 use super::{
     derive_shuffle_seed_v1, load_and_resolve_combat_lab_spec_v1, preflight_combat_lab_scenario_v1,
-    profile_config_v1, CombatLabShuffleGeneratorV1, CombatLabShuffleScheduleV1, CombatLabSpecV1,
+    profile_config_v1, CombatLabArtifactStoreV1, CombatLabManifestV1, CombatLabShuffleGeneratorV1,
+    CombatLabShuffleScheduleV1, CombatLabSpecV1,
 };
 use crate::eval::fingerprint::combat_state_fingerprint_v1;
 use crate::fixtures::combat_start_spec::compile_combat_start_spec;
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::fs;
+use std::io::Write;
+
+#[test]
+fn artifact_new_run_writes_manifest_before_cells() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_new_run_manifest_first");
+    let output = directory.join("run");
+    let expected = artifact_manifest(resolved, 123);
+
+    let store = CombatLabArtifactStoreV1::create_or_resume(&output, expected)
+        .expect("create artifact store");
+
+    assert!(output.join("manifest.json").is_file());
+    assert!(!output.join("cells.jsonl").exists());
+    assert!(store.cells().is_empty());
+    assert_eq!(store.manifest().created_at_unix_ms, 123);
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn resume_does_not_duplicate_cells() {
+    let (directory, resolved) = resolved_lab_fixture("resume_does_not_duplicate_cells");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    let cell = artifact_cell(&resolved, 0);
+
+    store.append_cell(&cell).expect("append first cell");
+    let duplicate = store
+        .append_cell(&cell)
+        .expect_err("duplicate cell key must be rejected");
+    assert!(duplicate.contains("duplicate cell key"), "{duplicate}");
+    drop(store);
+
+    let reopened =
+        CombatLabArtifactStoreV1::create_or_resume(&output, artifact_manifest(resolved, 200))
+            .expect("resume artifact store");
+    assert_eq!(reopened.cells().len(), 1);
+    assert!(reopened.contains_cell(&cell.cell_key));
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_truncated_final_line_is_ignored_and_pending_cell_can_append() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_truncated_final_line");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let first = artifact_cell(&resolved, 0);
+    let pending = artifact_cell(&resolved, 1);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    store.append_cell(&first).expect("append first cell");
+    drop(store);
+
+    let pending_bytes = serde_json::to_vec(&pending).expect("serialize pending cell");
+    let partial_len = pending_bytes.len() / 2;
+    let mut journal = fs::OpenOptions::new()
+        .append(true)
+        .open(output.join("cells.jsonl"))
+        .expect("open journal for interrupted append");
+    journal
+        .write_all(&pending_bytes[..partial_len])
+        .expect("write partial final line");
+    journal.sync_data().expect("sync partial final line");
+    drop(journal);
+
+    let mut resumed = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("ignore partial final line");
+    assert_eq!(resumed.cells().len(), 1);
+    assert!(resumed.contains_cell(&first.cell_key));
+    assert!(!resumed.contains_cell(&pending.cell_key));
+    resumed
+        .append_cell(&pending)
+        .expect("append exact pending cell after tail repair");
+    drop(resumed);
+
+    let reopened = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("reopen repaired journal");
+    assert_eq!(reopened.cells().len(), 2);
+    assert!(reopened.contains_cell(&pending.cell_key));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_malformed_newline_terminated_journal_entry_is_error() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_malformed_terminated_line");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved, 100);
+    drop(
+        CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+            .expect("create artifact store"),
+    );
+    fs::write(output.join("cells.jsonl"), b"{not-json}\n")
+        .expect("write malformed terminated entry");
+
+    let error = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .err()
+        .expect("terminated malformed entry must fail resume");
+    assert!(error.contains("line 1"), "{error}");
+    assert!(error.contains("malformed"), "{error}");
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_empty_newline_terminated_journal_entry_is_error() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_empty_terminated_line");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved, 100);
+    drop(
+        CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+            .expect("create artifact store"),
+    );
+    fs::write(output.join("cells.jsonl"), b"\n").expect("write empty terminated entry");
+
+    let error = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .err()
+        .expect("empty terminated entry must fail resume");
+    assert!(error.contains("line 1"), "{error}");
+    assert!(error.contains("malformed"), "{error}");
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_checkpoint_disagreement_is_repaired_from_journal() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_checkpoint_repair");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let cell = artifact_cell(&resolved, 0);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    store.append_cell(&cell).expect("append cell");
+    store
+        .checkpoint_sample_boundary(1)
+        .expect("write checkpoint");
+    drop(store);
+
+    let bad_checkpoint = super::CombatLabCheckpointV1 {
+        schema_version: 1,
+        journal_digest: "invented".to_string(),
+        completed_cell_keys: BTreeSet::from(["ghost-cell".to_string()]),
+        next_sample_hint: 99,
+    };
+    fs::write(
+        output.join("checkpoint.json"),
+        serde_json::to_vec(&bad_checkpoint).expect("serialize bad checkpoint"),
+    )
+    .expect("replace checkpoint with disagreement");
+
+    let resumed = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("repair checkpoint from journal");
+    assert!(resumed.contains_cell(&cell.cell_key));
+    let repaired: super::CombatLabCheckpointV1 = serde_json::from_slice(
+        &fs::read(output.join("checkpoint.json")).expect("read repaired checkpoint"),
+    )
+    .expect("parse repaired checkpoint");
+    assert_eq!(
+        repaired.completed_cell_keys,
+        BTreeSet::from([cell.cell_key])
+    );
+    assert_eq!(
+        repaired.journal_digest,
+        artifact_journal_digest(&fs::read(output.join("cells.jsonl")).expect("read journal"))
+    );
+    assert_ne!(repaired.next_sample_hint, 99);
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn resume_mismatch_reports_profile_budget_scenario_and_code_fields() {
+    let (directory, resolved) = resolved_lab_fixture("resume_field_mismatch");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved, 100);
+    drop(
+        CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+            .expect("create artifact store"),
+    );
+
+    let mut profile = manifest.clone();
+    profile.resolved_spec.profiles[0].profile_hash = "changed-profile".to_string();
+    profile.resolved_spec.experiment_hash = "changed-experiment".to_string();
+    profile.experiment_hash = "changed-experiment".to_string();
+    assert_resume_mismatch(&output, profile, "resolved_spec.profiles[0].profile_hash");
+
+    let mut budget = manifest.clone();
+    budget.resolved_spec.budget_hash = "changed-budget".to_string();
+    budget.resolved_spec.experiment_hash = "changed-experiment".to_string();
+    budget.experiment_hash = "changed-experiment".to_string();
+    assert_resume_mismatch(&output, budget, "resolved_spec.budget_hash");
+
+    let mut scenario = manifest.clone();
+    scenario.resolved_spec.scenario_hash = "changed-scenario".to_string();
+    scenario.resolved_spec.experiment_hash = "changed-experiment".to_string();
+    scenario.experiment_hash = "changed-experiment".to_string();
+    assert_resume_mismatch(&output, scenario, "resolved_spec.scenario_hash");
+
+    let mut commit = manifest.clone();
+    commit.source_identity.git_commit = Some("changed-commit".to_string());
+    assert_resume_mismatch(&output, commit, "source_identity.git_commit");
+
+    let mut dirty = manifest.clone();
+    dirty.source_identity.git_dirty = Some(true);
+    assert_resume_mismatch(&output, dirty, "source_identity.git_dirty");
+
+    for (field, mut environment) in [
+        ("environment.package_version", manifest.clone()),
+        ("environment.target_os", manifest.clone()),
+        ("environment.target_arch", manifest.clone()),
+    ] {
+        match field {
+            "environment.package_version" => {
+                environment.environment.package_version = "changed".to_string()
+            }
+            "environment.target_os" => environment.environment.target_os = "changed".to_string(),
+            "environment.target_arch" => {
+                environment.environment.target_arch = "changed".to_string()
+            }
+            _ => unreachable!(),
+        }
+        assert_resume_mismatch(&output, environment, field);
+    }
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn resume_target_extension_returns_only_new_or_missing_cells() {
+    let (directory, resolved) = resolved_lab_fixture("resume_target_extension");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let requested = (0..3)
+        .map(|sample_index| artifact_cell(&resolved, sample_index))
+        .collect::<Vec<_>>();
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    store.append_cell(&requested[0]).expect("append old cell");
+    drop(store);
+
+    let resumed = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("resume for larger requested target");
+    let missing = requested
+        .iter()
+        .filter(|cell| !resumed.contains_cell(&cell.cell_key))
+        .map(|cell| cell.sample_index)
+        .collect::<Vec<_>>();
+    assert_eq!(missing, vec![1, 2]);
+    assert!(resumed.contains_cell(&requested[0].cell_key));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn resume_target_decrease_deletes_no_journal_cells() {
+    let (directory, resolved) = resolved_lab_fixture("resume_target_decrease");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let cells = (0..3)
+        .map(|sample_index| artifact_cell(&resolved, sample_index))
+        .collect::<Vec<_>>();
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create artifact store");
+    for cell in &cells {
+        store.append_cell(cell).expect("append cell");
+    }
+    drop(store);
+
+    let resumed = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("resume for smaller requested target");
+    let requested_sample_count = 1_u64;
+    let pending_within_decreased_target = cells
+        .iter()
+        .filter(|cell| cell.sample_index < requested_sample_count)
+        .filter(|cell| !resumed.contains_cell(&cell.cell_key))
+        .count();
+    assert_eq!(pending_within_decreased_target, 0);
+    assert_eq!(resumed.cells().len(), 3);
+    assert!(cells
+        .iter()
+        .all(|cell| resumed.contains_cell(&cell.cell_key)));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_atomic_json_replacement_overwrites_existing_destination_on_windows() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_replace_existing");
+    let output = directory.join("run");
+    let store =
+        CombatLabArtifactStoreV1::create_or_resume(&output, artifact_manifest(resolved, 100))
+            .expect("create artifact store");
+    store
+        .write_summary(&json!({"generation": 1}))
+        .expect("write first summary");
+    store
+        .write_summary(&json!({"generation": 2}))
+        .expect("replace existing summary");
+
+    let summary: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("summary.json")).expect("read replaced summary"),
+    )
+    .expect("parse replaced summary");
+    assert_eq!(summary["generation"], 2);
+    assert!(fs::read_dir(&output)
+        .expect("list artifact directory")
+        .all(|entry| !entry
+            .expect("read artifact entry")
+            .file_name()
+            .to_string_lossy()
+            .contains(".tmp-")));
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
 
 #[test]
 fn sample_is_shared_across_profiles() {
@@ -834,6 +1145,62 @@ fn write_json(path: &std::path::Path, value: &serde_json::Value) {
         serde_json::to_vec(value).expect("serialize fixture JSON"),
     )
     .expect("write fixture JSON");
+}
+
+fn artifact_manifest(
+    resolved: super::ResolvedCombatLabSpecV1,
+    created_at_unix_ms: u64,
+) -> CombatLabManifestV1 {
+    CombatLabManifestV1::from_resolved_v1(
+        resolved,
+        crate::runtime::branch::SourceIdentity {
+            git_commit: Some("test-commit".to_string()),
+            git_dirty: Some(false),
+        },
+        created_at_unix_ms,
+    )
+}
+
+fn artifact_cell(
+    resolved: &super::ResolvedCombatLabSpecV1,
+    sample_index: u64,
+) -> super::CombatLabCellRecordV1 {
+    use crate::ai::combat_search_v2::SearchCoverageStatus;
+
+    let (mut sample, trajectory) = replayable_win_sample();
+    sample.sample_index = sample_index;
+    sample.shuffle_seed = derive_shuffle_seed_v1(&resolved.schedule, sample_index);
+    super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::AcceptedCompleteCandidate,
+        Some(&trajectory),
+        &crate::ai::combat_search_v2::CombatSearchV2Stats::default(),
+        crate::ai::combat_search_v2::replay_combat_search_witness_line_v1,
+    )
+}
+
+fn assert_resume_mismatch(
+    output: &std::path::Path,
+    manifest: CombatLabManifestV1,
+    differing_field: &str,
+) {
+    let error = CombatLabArtifactStoreV1::create_or_resume(output, manifest)
+        .err()
+        .expect("resume identity mismatch must be rejected");
+    assert!(error.contains(differing_field), "{error}");
+}
+
+fn artifact_journal_digest(bytes: &[u8]) -> String {
+    use blake2::{Blake2b512, Digest};
+
+    let mut hasher = Blake2b512::new();
+    hasher.update(bytes);
+    hasher.finalize()[..32]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn test_directory(label: &str) -> std::path::PathBuf {
