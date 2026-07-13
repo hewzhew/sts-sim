@@ -19,6 +19,11 @@ use crate::state::{SelectionResolution, SelectionScope};
 use super::cutpoint::{
     cutpoint_identity, group_cutpoints, locate_candidate_cutpoint, LocatedBurdenCutpoint,
 };
+use super::outcomes::probe_cutpoint_actions;
+use super::{
+    conclusion_from_aggregate, PersistentBurdenCutpointAggregateV1,
+    PersistentBurdenCutpointConclusionV1, PersistentBurdenCutpointInputOutcomeKindV1,
+};
 use crate::eval::run_control::combat_line_outcome::newly_gained_curses;
 use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
 
@@ -184,6 +189,69 @@ fn fixture_located_cutpoint(retained_index: usize, label: &str) -> LocatedBurden
     }
 }
 
+fn fixture_writhing_mass_reactive_cutpoint() -> LocatedBurdenCutpoint {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 31)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 31)];
+    combat.update_hand_cards();
+
+    let mut mass = crate::test_support::test_monster(EnemyId::WrithingMass);
+    mass.current_hp = 50;
+    mass.max_hp = 50;
+    mass.writhing_mass.first_move = false;
+    let attack = MonsterMoveSpec::Attack(AttackSpec {
+        base_damage: 32,
+        hits: 1,
+        damage_kind: DamageKind::Normal,
+    });
+    mass.set_planned_move_id(0);
+    mass.set_planned_steps(attack.to_steps());
+    mass.set_planned_visible_spec(Some(attack));
+    mass.move_history_mut().push_back(0);
+    combat.entities.monsters = vec![mass];
+    let mass_snapshot = combat.entities.monsters[0].clone();
+    for action in crate::content::monsters::resolve_pre_battle_actions(
+        &mut combat,
+        EnemyId::WrithingMass,
+        &mass_snapshot,
+        crate::content::monsters::PreBattleLegacyRng::MonsterHp,
+    ) {
+        crate::engine::action_handlers::execute_action(action, &mut combat);
+    }
+
+    let session = session_with_combat(combat);
+    let position = session
+        .current_active_combat_position()
+        .expect("combat position");
+    LocatedBurdenCutpoint {
+        retained_index: 0,
+        trigger_step_index: 2,
+        trigger_action_key: "combat/end_turn".to_string(),
+        trigger_input: ClientInput::EndTurn,
+        potions_used_before: 0,
+        identity: cutpoint_identity(&session, &position),
+        session,
+        position,
+    }
+}
+
+fn conclude_probe(
+    clean_wins: usize,
+    plan_changes: usize,
+    input_failures: usize,
+    replay_failures: usize,
+) -> PersistentBurdenCutpointConclusionV1 {
+    conclusion_from_aggregate(
+        &PersistentBurdenCutpointAggregateV1 {
+            clean_terminal_win_count: clean_wins,
+            living_enemy_plan_change_count: plan_changes,
+            input_failure_count: input_failures,
+            ..PersistentBurdenCutpointAggregateV1::default()
+        },
+        replay_failures,
+    )
+}
+
 #[test]
 fn first_gained_curse_captures_pre_trigger_session() {
     let (session, config, trajectory) = fixture_line_with_neutral_then_curse_input();
@@ -265,4 +333,51 @@ fn equivalent_cutpoints_group_and_keep_first_report_order() {
     assert_eq!(grouped[0].candidate_frequency, 2);
     assert_eq!(grouped[0].retained_indices, vec![3, 8]);
     assert_eq!(grouped[1].retained_indices, vec![9]);
+}
+
+#[test]
+fn writhing_mass_reactive_attack_is_a_clean_plan_change() {
+    let cutpoint = fixture_writhing_mass_reactive_cutpoint();
+    let outcomes = probe_cutpoint_actions(&cutpoint, &CombatSearchV2Config::default());
+
+    assert!(outcomes.iter().any(|outcome| {
+        outcome.kind == PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged
+            && matches!(outcome.input, ClientInput::PlayCard { .. })
+            && outcome.gained_curses.is_empty()
+    }));
+}
+
+#[test]
+fn clean_win_then_plan_change_then_failures_define_conclusion_precedence() {
+    assert_eq!(
+        conclude_probe(1, 1, 1, 1),
+        PersistentBurdenCutpointConclusionV1::CleanTerminalWinAvailable
+    );
+    assert_eq!(
+        conclude_probe(0, 1, 1, 1),
+        PersistentBurdenCutpointConclusionV1::BurdenTriggerPlanChangeAvailable
+    );
+    assert_eq!(
+        conclude_probe(0, 0, 1, 1),
+        PersistentBurdenCutpointConclusionV1::IncompleteDueToProbeFailures
+    );
+    assert_eq!(
+        conclude_probe(0, 0, 0, 0),
+        PersistentBurdenCutpointConclusionV1::NoOneActionEscapeObserved
+    );
+}
+
+#[test]
+fn input_failure_cannot_report_no_one_action_escape() {
+    let aggregate = PersistentBurdenCutpointAggregateV1 {
+        clean_terminal_win_count: 0,
+        burden_trigger_count: 2,
+        living_enemy_plan_change_count: 0,
+        neutral_count: 4,
+        input_failure_count: 1,
+    };
+    assert_eq!(
+        conclusion_from_aggregate(&aggregate, 0),
+        PersistentBurdenCutpointConclusionV1::IncompleteDueToProbeFailures
+    );
 }

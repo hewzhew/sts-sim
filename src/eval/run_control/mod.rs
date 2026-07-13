@@ -96,6 +96,13 @@ pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
     COMBAT_BASELINE_OUTCOME_SCHEMA_NAME, COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
 };
+pub use persistent_burden_cutpoint_probe::{
+    probe_combat_case_persistent_burden_cutpoints_v1, CombatCasePersistentBurdenCutpointProbeV1,
+    PersistentBurdenCutpointAggregateV1, PersistentBurdenCutpointConclusionV1,
+    PersistentBurdenCutpointInputOutcomeKindV1, PersistentBurdenCutpointInputOutcomeV1,
+    PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
+    PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
+};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{
     render_auto_applied_step_compact_v1, render_combat_actions, render_run_control_details,

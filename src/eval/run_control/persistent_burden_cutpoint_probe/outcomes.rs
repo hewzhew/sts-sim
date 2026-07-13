@@ -1,0 +1,164 @@
+use crate::ai::combat_search_v2::{filter_combat_search_legal_actions, CombatSearchV2Config};
+use crate::runtime::combat::CombatState;
+use crate::sim::combat::{CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper};
+use crate::sim::combat_action::CombatActionChoice;
+
+use super::cutpoint::{GroupedBurdenCutpoint, LocatedBurdenCutpoint};
+use super::{
+    PersistentBurdenCutpointInputOutcomeKindV1, PersistentBurdenCutpointInputOutcomeV1,
+    PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
+};
+use crate::eval::run_control::combat_candidate_line::enforce_replay_potion_budget;
+use crate::eval::run_control::combat_line_outcome::newly_gained_curses;
+
+pub(super) fn probe_cutpoint_actions(
+    cutpoint: &LocatedBurdenCutpoint,
+    config: &CombatSearchV2Config,
+) -> Vec<PersistentBurdenCutpointInputOutcomeV1> {
+    enforce_replay_potion_budget(
+        filter_combat_search_legal_actions(
+            EngineCombatStepper.legal_action_choices(&cutpoint.position),
+            config.potion_policy,
+            &cutpoint.position.combat,
+        ),
+        config,
+        cutpoint.potions_used_before,
+    )
+    .into_iter()
+    .map(|choice| probe_one_action(cutpoint, config, choice))
+    .collect()
+}
+
+fn probe_one_action(
+    cutpoint: &LocatedBurdenCutpoint,
+    config: &CombatSearchV2Config,
+    choice: CombatActionChoice,
+) -> PersistentBurdenCutpointInputOutcomeV1 {
+    let step = EngineCombatStepper.apply_to_stable(
+        &cutpoint.position,
+        choice.input.clone(),
+        CombatStepLimits {
+            max_engine_steps: config.max_engine_steps_per_action,
+            deadline: None,
+        },
+    );
+    if step.truncated || step.timed_out {
+        return failed_outcome(
+            choice,
+            format!(
+                "one-action step truncated={} timed_out={} engine_steps={}",
+                step.truncated, step.timed_out, step.engine_steps
+            ),
+        );
+    }
+
+    let before_deck = cutpoint.session.run_state.master_deck.clone();
+    let mut trial = cutpoint.session.clone();
+    if let Err(error) = trial.apply_input(choice.input.clone()) {
+        return failed_outcome(choice, error);
+    }
+    let gained_curses = newly_gained_curses(&before_deck, &trial.run_state.master_deck);
+    let plan_changes = living_enemy_plan_changes(&cutpoint.position.combat, &step.position.combat);
+    let kind = if step.terminal == CombatTerminal::Win && gained_curses.is_empty() {
+        PersistentBurdenCutpointInputOutcomeKindV1::CleanCombatVictory
+    } else if !gained_curses.is_empty() {
+        PersistentBurdenCutpointInputOutcomeKindV1::NewCurse
+    } else if !plan_changes.is_empty() {
+        PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged
+    } else {
+        PersistentBurdenCutpointInputOutcomeKindV1::Neutral
+    };
+    PersistentBurdenCutpointInputOutcomeV1 {
+        action_key: choice.action_key,
+        input: choice.input,
+        kind,
+        terminal: step.terminal,
+        gained_curses,
+        living_enemy_plan_changes: plan_changes,
+        error: None,
+    }
+}
+
+fn failed_outcome(
+    choice: CombatActionChoice,
+    error: String,
+) -> PersistentBurdenCutpointInputOutcomeV1 {
+    PersistentBurdenCutpointInputOutcomeV1 {
+        action_key: choice.action_key,
+        input: choice.input,
+        kind: PersistentBurdenCutpointInputOutcomeKindV1::ApplyFailed,
+        terminal: CombatTerminal::Unresolved,
+        gained_curses: Vec::new(),
+        living_enemy_plan_changes: Vec::new(),
+        error: Some(error),
+    }
+}
+
+fn living_enemy_plan_changes(
+    before: &CombatState,
+    after: &CombatState,
+) -> Vec<PersistentBurdenEnemyPlanChangeV1> {
+    before
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .filter_map(|before_monster| {
+            let after_monster = after
+                .entities
+                .monsters
+                .iter()
+                .find(|monster| monster.id == before_monster.id)?;
+            if !after_monster.is_alive_for_action()
+                || before_monster.planned_move_id() == after_monster.planned_move_id()
+            {
+                return None;
+            }
+            Some(PersistentBurdenEnemyPlanChangeV1 {
+                entity_id: before_monster.id,
+                enemy: before_monster.monster_type.to_string(),
+                before_plan_id: before_monster.planned_move_id(),
+                after_plan_id: after_monster.planned_move_id(),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn probe_grouped_cutpoint(
+    cutpoint: GroupedBurdenCutpoint,
+    config: &CombatSearchV2Config,
+) -> PersistentBurdenCutpointSummaryV1 {
+    let outcomes = probe_cutpoint_actions(&cutpoint.representative, config);
+    PersistentBurdenCutpointSummaryV1 {
+        cutpoint_state_hash: cutpoint.representative.identity.state_hash.clone(),
+        candidate_frequency: cutpoint.candidate_frequency,
+        retained_indices: cutpoint.retained_indices,
+        trigger_step_index: cutpoint.representative.trigger_step_index,
+        trigger_action_key: cutpoint.representative.trigger_action_key.clone(),
+        trigger_input: cutpoint.representative.trigger_input.clone(),
+        player_hp: cutpoint
+            .representative
+            .position
+            .combat
+            .entities
+            .player
+            .current_hp,
+        player_block: cutpoint
+            .representative
+            .position
+            .combat
+            .entities
+            .player
+            .block,
+        enemy_hp: cutpoint
+            .representative
+            .position
+            .combat
+            .entities
+            .monsters
+            .iter()
+            .map(|monster| monster.current_hp)
+            .collect(),
+        outcomes,
+    }
+}
