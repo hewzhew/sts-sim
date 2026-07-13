@@ -58,6 +58,15 @@ pub(super) fn apply_search_combat(
             )? {
                 return Ok(outcome);
             }
+        } else if options.allow_smoke_bomb_survival_fallback {
+            if let Some(outcome) =
+                super::combat_no_win_fallback::try_apply_smoke_bomb_survival_fallback_after_rejection(
+                    session,
+                    "no_complete_winning_candidate",
+                )?
+            {
+                return Ok(outcome);
+            }
         }
         return Ok(build_combat_search_rejection_outcome(
             session,
@@ -174,9 +183,7 @@ mod tests {
     use std::time::Duration;
 
     use super::super::combat_line_trace::combat_automation_step_state_v1;
-    use super::super::combat_no_win_fallback::{
-        segment_mode_allows_turn_segment, try_apply_smoke_bomb_survival_fallback_after_rejection,
-    };
+    use super::super::combat_no_win_fallback::segment_mode_allows_turn_segment;
     use super::super::combat_search_setup::{
         effective_hp_loss_limit, high_stakes_search_options, search_config,
     };
@@ -307,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn search_combat_uses_smoke_bomb_as_survival_fallback_when_no_win_exists() {
+    fn search_combat_can_use_only_smoke_bomb_fallback_when_full_rescue_is_disabled() {
         let mut combat = crate::test_support::blank_test_combat();
         combat.entities.player.current_hp = 1;
         combat.entities.player.max_hp = 80;
@@ -317,15 +324,17 @@ mod tests {
             crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
         jaw_worm.current_hp = 40;
         jaw_worm.max_hp = 40;
-        let attack = crate::runtime::monster_move::MonsterMoveSpec::Attack(
-            crate::runtime::monster_move::AttackSpec {
-                base_damage: 10,
-                hits: 1,
-                damage_kind: crate::runtime::monster_move::DamageKind::Normal,
-            },
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &jaw_worm,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&jaw_worm),
+            &[],
         );
-        jaw_worm.set_planned_steps(attack.to_steps());
-        jaw_worm.set_planned_visible_spec(Some(attack));
+        jaw_worm.set_planned_move_id(plan.move_id);
+        jaw_worm.set_planned_steps(plan.steps);
+        jaw_worm.set_planned_visible_spec(plan.visible_spec);
         combat.entities.monsters = vec![jaw_worm];
         combat.zones.hand = vec![CombatCard::new(crate::content::cards::CardId::Defend, 1)];
         combat.update_hand_cards();
@@ -340,12 +349,17 @@ mod tests {
             }),
         ));
 
-        let outcome = try_apply_smoke_bomb_survival_fallback_after_rejection(
+        let outcome = super::apply_search_combat(
             &mut session,
-            "no_complete_winning_candidate",
+            RunControlSearchCombatOptions {
+                max_nodes: Some(1),
+                wall_ms: Some(1),
+                disable_no_win_rescue: true,
+                allow_smoke_bomb_survival_fallback: true,
+                ..RunControlSearchCombatOptions::default()
+            },
         )
-        .expect("fallback should not error")
-        .expect("search combat should allow smoke bomb survival fallback");
+        .expect("search fallback should not error");
 
         let EngineState::RewardScreen(rewards) = &session.engine_state else {
             panic!(

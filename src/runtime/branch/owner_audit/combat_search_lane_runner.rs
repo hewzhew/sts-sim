@@ -67,7 +67,8 @@ pub(super) fn run_lane_attempt(
             .as_ref()
             .and_then(|config| config.max_potions_used)
     });
-    let internal_no_win_rescue_enabled = !options.search.disable_no_win_rescue;
+    let internal_no_win_rescue_enabled =
+        !options.search.disable_no_win_rescue || options.search.allow_smoke_bomb_survival_fallback;
     let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
         Ok(outcome) => outcome,
         Err(err) => {

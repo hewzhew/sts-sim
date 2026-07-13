@@ -104,6 +104,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 setup_bias_policy: Some(CombatSearchV2SetupBiasPolicy::KeyCardOnline),
                 segment_mode: None,
                 disable_no_win_rescue: false,
+                allow_smoke_bomb_survival_fallback: false,
             })
         );
     assert_eq!(
@@ -197,6 +198,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 setup_bias_policy: None,
                 segment_mode: None,
                 disable_no_win_rescue: false,
+                allow_smoke_bomb_survival_fallback: false,
             },
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Manual,

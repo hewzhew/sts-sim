@@ -49,11 +49,20 @@ pub(super) fn lane_options(
         _ => owner_audit_hp_loss_limit(session),
     });
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
+    options.search.allow_smoke_bomb_survival_fallback =
+        lane_allows_smoke_bomb_survival_fallback(lane);
     options
 }
 
 fn lane_allows_internal_no_win_rescue(lane: CombatSearchLane) -> bool {
     matches!(lane.kind(), CombatSearchLaneKind::DiagnosticRescue)
+}
+
+fn lane_allows_smoke_bomb_survival_fallback(lane: CombatSearchLane) -> bool {
+    matches!(
+        lane.kind(),
+        CombatSearchLaneKind::EliteSurvivalFallback | CombatSearchLaneKind::HallwaySurvivalFallback
+    )
 }
 
 fn lane_profile(
@@ -629,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn only_explicit_rescue_lane_allows_internal_no_win_rescue() {
+    fn only_survival_lanes_allow_escape_only_fallback() {
         assert!(!lane_allows_internal_no_win_rescue(
             CombatSearchLane::primary()
         ));
@@ -639,5 +648,21 @@ mod tests {
         assert!(!lane_allows_internal_no_win_rescue(CombatSearchLane::new(
             CombatSearchLaneKind::BossNoPotion
         )));
+
+        assert!(!lane_allows_smoke_bomb_survival_fallback(
+            CombatSearchLane::primary()
+        ));
+        assert!(lane_allows_smoke_bomb_survival_fallback(
+            CombatSearchLane::new(CombatSearchLaneKind::EliteSurvivalFallback)
+        ));
+        assert!(lane_allows_smoke_bomb_survival_fallback(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback)
+        ));
+        assert!(!lane_allows_smoke_bomb_survival_fallback(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue)
+        ));
+        assert!(!lane_allows_smoke_bomb_survival_fallback(
+            CombatSearchLane::new(CombatSearchLaneKind::BossPotionRescue)
+        ));
     }
 }

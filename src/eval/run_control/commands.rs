@@ -128,6 +128,7 @@ pub struct RunControlSearchCombatOptions {
     pub setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
     pub segment_mode: Option<RunControlCombatSegmentMode>,
     pub disable_no_win_rescue: bool,
+    pub allow_smoke_bomb_survival_fallback: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
