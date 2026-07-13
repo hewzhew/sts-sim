@@ -163,3 +163,42 @@ fn combat_line_adjudication_has_one_production_owner() {
         );
     }
 }
+
+#[test]
+fn live_decision_layers_do_not_depend_on_combat_laboratory() {
+    fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) {
+        if root.is_file() {
+            if root.extension().is_some_and(|extension| extension == "rs") {
+                paths.push(root.to_path_buf());
+            }
+            return;
+        }
+
+        for entry in std::fs::read_dir(root).expect("read live decision-layer directory") {
+            let path = entry.expect("read live decision-layer entry").path();
+            if path.is_dir() {
+                collect_rust_sources(&path, paths);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                paths.push(path);
+            }
+        }
+    }
+
+    let mut sources = Vec::new();
+    for root in [
+        "src/eval/run_control",
+        "src/ai/route_planner_v1",
+        "src/ai/strategy/acquisition.rs",
+    ] {
+        collect_rust_sources(std::path::Path::new(root), &mut sources);
+    }
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read live decision-layer source");
+        assert!(
+            !source.contains("combat_lab_v1"),
+            "live decision layer '{}' must not import or read the offline combat laboratory",
+            path.display()
+        );
+    }
+}

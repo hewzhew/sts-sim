@@ -119,6 +119,51 @@ Common investigation switches include:
 If combat search reports unresolved, it only failed to find an executable
 complete win under the current contract. It did not prove the fight unwinnable.
 
+### Combat Laboratory V1
+
+The Combat Laboratory is an offline mode of `combat_search_v2_driver`, not a
+new binary or a live run-control component. Run the maintained seed006-derived
+Reptomancer `8 x 2` pilot with:
+
+```powershell
+cargo run --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
+```
+
+Rerun the same command and output directory to resume without repeating journaled
+cells. To extend the deterministic schedule, increase only `--lab-samples` (for
+example, from 8 to 16 or 32). A smaller requested target does not delete existing
+evidence. Resume rejects changes to the scenario, schedule, profiles, common
+budget, schema, or source identity.
+
+Each laboratory directory contains four contract/evidence files:
+
+- `manifest.json`: the immutable resolved experiment and source provenance;
+- `cells.jsonl`: the append-only raw evidence journal and evidence authority;
+- `checkpoint.json`: a rebuildable resume accelerator derived from the journal;
+- `summary.json`: a reproducible aggregate derived from the manifest and journal.
+
+`resolved_win` and `resolved_loss` are exact-replayed outcomes. A deadline, node
+cap, or missing complete replay is `coverage_limited`, not a proven loss;
+infrastructure errors are separate again. Read outcome rates together with the
+reported coverage denominators.
+
+V1 runs sequentially in one process: it compiles each shuffle sample once,
+clones that position across the two profiles, gives both profiles the same
+resource limits, records the row, and then advances. It does not invoke Cargo or
+relink per cell. Results are descriptive offline evidence only; they do not
+automatically update combat policy, route planning, card acquisition, or any
+other live decision.
+
+The pilot preserves the selected seed006 deck, resources, encounter, and a fresh
+laboratory base seed. It is explicitly `seed006_derived`: it does not infer the
+campaign RNG history that had already been consumed before the original combat.
+Both profiles are `exact_state_oracle` searches that may inspect hidden state,
+not human-visible-information policies.
+
+Historical artifacts remain readable and valid when a profile implementation is
+later removed. Rerunning that historical profile requires the Git commit recorded
+in its manifest; the current tree must not silently substitute a newer profile.
+
 ## Verification
 
 For core code changes:

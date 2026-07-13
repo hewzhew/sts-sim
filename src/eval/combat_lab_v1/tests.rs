@@ -12,6 +12,64 @@ use std::fs;
 use std::io::Write;
 
 #[test]
+fn seed006_derived_fixture_resolves() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/combat_lab/seed006_reptomancer_8x2.lab.json");
+
+    let resolved = load_and_resolve_combat_lab_spec_v1(&fixture)
+        .expect("seed006-derived laboratory fixture should resolve");
+    preflight_combat_lab_scenario_v1(&resolved)
+        .expect("seed006-derived start fixture should compile without approximation");
+
+    assert_eq!(resolved.scenario_id, "seed006_derived_reptomancer");
+    assert_eq!(resolved.experiment_id, "seed006_reptomancer_8x2");
+    assert_eq!(
+        resolved.start_spec_snapshot.name,
+        "seed006_derived_reptomancer"
+    );
+    assert_eq!(resolved.schedule.seed, 20_260_713_006);
+    assert_eq!(
+        resolved.schedule.generator,
+        CombatLabShuffleGeneratorV1::SplitMix64V1
+    );
+    assert_eq!(resolved.profiles.len(), 2);
+    assert!(resolved.profiles.iter().all(|profile| {
+        profile.spec.information_scope == super::CombatLabInformationScopeV1::ExactStateOracle
+    }));
+    assert_eq!(
+        resolved
+            .profiles
+            .iter()
+            .map(|profile| profile.spec.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lazy_on_pop", "immediate"]
+    );
+    assert_eq!(
+        resolved
+            .profiles
+            .iter()
+            .map(|profile| profile.spec.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Lazy on pop", "Immediate"]
+    );
+
+    let budget = &resolved.common_budget;
+    assert_eq!(budget.max_nodes, 200_000);
+    assert_eq!(budget.max_actions_per_line, 200);
+    assert_eq!(budget.max_engine_steps_per_action, 250);
+    assert_eq!(budget.wall_ms, Some(3_000));
+    assert_eq!(budget.stop_on_win_hp_loss_at_most, None);
+    assert_eq!(budget.min_win_candidates_before_stop, 1);
+    assert_eq!(budget.max_potions_used, Some(1));
+    assert_eq!(budget.rollout_max_evaluations, 384);
+    assert_eq!(budget.rollout_max_actions, 80);
+    assert_eq!(budget.rollout_beam_width, 3);
+    assert_eq!(budget.turn_plan_probe_max_inner_nodes, None);
+    assert_eq!(budget.turn_plan_probe_max_end_states, None);
+    assert_eq!(budget.turn_plan_probe_per_bucket_limit, None);
+}
+
+#[test]
 fn artifact_new_run_writes_manifest_before_cells() {
     let (directory, resolved) = resolved_lab_fixture("artifact_new_run_manifest_first");
     let output = directory.join("run");
