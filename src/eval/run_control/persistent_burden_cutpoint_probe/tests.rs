@@ -1,0 +1,268 @@
+use crate::ai::combat_search_v2::{
+    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2StateSummary,
+    CombatSearchV2TrajectoryReport, SearchTerminalLabel,
+};
+use crate::content::cards::CardId;
+use crate::content::monsters::EnemyId;
+use crate::runtime::action::Action;
+use crate::runtime::combat::{CombatCard, MonsterEntity};
+use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
+use crate::sim::combat::CombatPosition;
+use crate::sim::combat_action::CombatActionChoice;
+use crate::state::core::{
+    ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
+};
+use crate::state::map::node::RoomType;
+use crate::state::{HandSelectFilter, HandSelectReason};
+use crate::state::{SelectionResolution, SelectionScope};
+
+use super::cutpoint::{
+    cutpoint_identity, group_cutpoints, locate_candidate_cutpoint, LocatedBurdenCutpoint,
+};
+use crate::eval::run_control::combat_line_outcome::newly_gained_curses;
+use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
+
+fn session_with_combat(mut combat: crate::runtime::combat::CombatState) -> RunControlSession {
+    let engine = EngineState::CombatPlayerTurn;
+    combat.meta.player_class = "Ironclad".to_string();
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.current_hp = combat.entities.player.current_hp;
+    session.run_state.max_hp = combat.entities.player.max_hp;
+    session.run_state.gold = combat.entities.player.gold;
+    session.run_state.master_deck = combat.meta.master_deck_snapshot.clone();
+    session.run_state.relics = combat.entities.player.relics.clone();
+    session.run_state.potions = combat.entities.potions.clone();
+    session.run_state.rng_pool = combat.rng.pool.clone();
+    session.engine_state = engine.clone();
+    session.active_combat = Some(ActiveCombat::new(
+        engine,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoom,
+        }),
+    ));
+    session
+}
+
+fn planned_jaw_worm() -> MonsterEntity {
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    let attack = MonsterMoveSpec::Attack(AttackSpec {
+        base_damage: 5,
+        hits: 1,
+        damage_kind: DamageKind::Normal,
+    });
+    monster.set_planned_move_id(0);
+    monster.set_planned_steps(attack.to_steps());
+    monster.set_planned_visible_spec(Some(attack));
+    monster
+}
+
+fn trajectory(actions: Vec<CombatSearchV2ActionTrace>) -> CombatSearchV2TrajectoryReport {
+    CombatSearchV2TrajectoryReport {
+        terminal: SearchTerminalLabel::Win,
+        estimated: false,
+        actions,
+        final_hp: 80,
+        final_max_hp: 80,
+        persistent_run_value: 0,
+        final_block: 0,
+        hp_loss: 0,
+        turns: 1,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        enemy_final_state: Vec::new(),
+        final_state: CombatSearchV2StateSummary {
+            engine_state: "RewardScreen".to_string(),
+            terminal: SearchTerminalLabel::Win,
+            player_hp: 80,
+            player_block: 0,
+            energy: 0,
+            turn_count: 1,
+            living_enemy_count: 0,
+            total_enemy_hp: 0,
+            visible_incoming_damage: 0,
+            enemy_slots: Vec::new(),
+            hand_count: 0,
+            draw_count: 0,
+            discard_count: 0,
+            exhaust_count: 0,
+            limbo_count: 0,
+            queued_cards_count: 0,
+        },
+    }
+}
+
+fn trace(step_index: usize, choice: CombatActionChoice) -> CombatSearchV2ActionTrace {
+    CombatSearchV2ActionTrace {
+        step_index,
+        action_id: step_index,
+        action_key: choice.action_key,
+        action_debug: choice.action_debug,
+        input: choice.input,
+    }
+}
+
+fn fixture_line_with_neutral_then_curse_input() -> (
+    RunControlSession,
+    CombatSearchV2Config,
+    CombatSearchV2TrajectoryReport,
+) {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 7)];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Defend, 11),
+        CombatCard::new(CardId::Strike, 12),
+    ];
+    let monster = planned_jaw_worm();
+    let monster_id = monster.id;
+    combat.entities.monsters = vec![monster];
+    combat.queue_action_back(Action::SuspendForHandSelect {
+        min: 1,
+        max: 1,
+        can_cancel: false,
+        filter: HandSelectFilter::Any,
+        reason: HandSelectReason::Exhaust,
+    });
+    combat.queue_action_back(Action::AddCardToMasterDeck {
+        card_id: CardId::Parasite,
+    });
+    combat.queue_action_back(Action::InstantKill { target: monster_id });
+
+    let session = session_with_combat(combat);
+    let first_input = ClientInput::EndTurn;
+    let first_position = session
+        .current_active_combat_position()
+        .expect("combat position");
+    let first_choice = CombatActionChoice::from_input(&first_position.combat, first_input.clone());
+
+    let mut after_first = session.clone();
+    after_first.apply_input(first_input).expect("first input");
+    let second_position = after_first
+        .current_active_combat_position()
+        .expect("pending choice position");
+    let second_input =
+        ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Hand, [11]));
+    let second_choice =
+        CombatActionChoice::from_input(&second_position.combat, second_input.clone());
+
+    (
+        session,
+        CombatSearchV2Config::default(),
+        trajectory(vec![trace(0, first_choice), trace(1, second_choice)]),
+    )
+}
+
+fn fixture_cutpoint_session() -> (RunControlSession, CombatPosition) {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut card = CombatCard::new(CardId::RitualDagger, 21);
+    card.misc_value = 15;
+    combat.meta.master_deck_snapshot = vec![card];
+    combat.entities.monsters = vec![planned_jaw_worm()];
+    let session = session_with_combat(combat);
+    let position = session
+        .current_active_combat_position()
+        .expect("combat position");
+    (session, position)
+}
+
+fn fixture_located_cutpoint(retained_index: usize, label: &str) -> LocatedBurdenCutpoint {
+    let (mut session, position) = fixture_cutpoint_session();
+    if label == "different" {
+        session.run_state.gold += 1;
+    }
+    let identity = cutpoint_identity(&session, &position);
+    LocatedBurdenCutpoint {
+        retained_index,
+        trigger_step_index: 4,
+        trigger_action_key: "combat/end_turn".to_string(),
+        trigger_input: ClientInput::EndTurn,
+        potions_used_before: 0,
+        identity,
+        session,
+        position,
+    }
+}
+
+#[test]
+fn first_gained_curse_captures_pre_trigger_session() {
+    let (session, config, trajectory) = fixture_line_with_neutral_then_curse_input();
+    let located = locate_candidate_cutpoint(&session, &config, 0, &trajectory)
+        .expect("replay")
+        .expect("burden cutpoint");
+
+    assert_eq!(located.trigger_step_index, 1);
+    assert_eq!(located.trigger_action_key, trajectory.actions[1].action_key);
+    assert_eq!(located.potions_used_before, 0);
+    assert!(matches!(
+        located.position.engine,
+        EngineState::PendingChoice(_)
+    ));
+    assert!(newly_gained_curses(
+        &session.run_state.master_deck,
+        &located.session.run_state.master_deck,
+    )
+    .is_empty());
+    let mut triggered = located.session.clone();
+    triggered
+        .apply_input(located.trigger_input.clone())
+        .expect("trigger");
+    assert_eq!(
+        newly_gained_curses(
+            &located.session.run_state.master_deck,
+            &triggered.run_state.master_deck,
+        )
+        .len(),
+        1
+    );
+}
+
+#[test]
+fn cutpoint_identity_includes_persistent_context_not_only_combat_hash() {
+    let (session, position) = fixture_cutpoint_session();
+    let base = cutpoint_identity(&session, &position);
+
+    let mut changed_gold = session.clone();
+    changed_gold.run_state.gold += 1;
+    assert_ne!(
+        base.canonical,
+        cutpoint_identity(&changed_gold, &position).canonical
+    );
+
+    let mut changed_growth = session.clone();
+    changed_growth.run_state.master_deck[0].misc_value += 1;
+    assert_ne!(
+        base.canonical,
+        cutpoint_identity(&changed_growth, &position).canonical
+    );
+
+    let mut changed_rng = session.clone();
+    changed_rng.run_state.rng_pool.card_rng.counter += 1;
+    assert_ne!(
+        base.canonical,
+        cutpoint_identity(&changed_rng, &position).canonical
+    );
+
+    let mut changed_plan = position.clone();
+    let next = changed_plan.combat.entities.monsters[0]
+        .planned_move_id()
+        .wrapping_add(1);
+    changed_plan.combat.entities.monsters[0].set_planned_move_id(next);
+    assert_ne!(
+        base.canonical,
+        cutpoint_identity(&session, &changed_plan).canonical
+    );
+}
+
+#[test]
+fn equivalent_cutpoints_group_and_keep_first_report_order() {
+    let first = fixture_located_cutpoint(3, "same");
+    let equivalent = fixture_located_cutpoint(8, "same");
+    let distinct = fixture_located_cutpoint(9, "different");
+    let grouped = group_cutpoints(vec![first, equivalent, distinct]);
+
+    assert_eq!(grouped.len(), 2);
+    assert_eq!(grouped[0].candidate_frequency, 2);
+    assert_eq!(grouped[0].retained_indices, vec![3, 8]);
+    assert_eq!(grouped[1].retained_indices, vec![9]);
+}

@@ -41,6 +41,7 @@ pub mod outcome;
 mod panels;
 #[cfg(test)]
 mod pending_choice_card_contract_tests;
+mod persistent_burden_cutpoint_probe;
 pub mod registry;
 mod render;
 mod reward_auto;

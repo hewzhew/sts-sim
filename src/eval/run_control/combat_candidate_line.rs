@@ -169,7 +169,7 @@ pub(super) fn replay_candidate_line(
     })
 }
 
-fn enforce_replay_potion_budget(
+pub(super) fn enforce_replay_potion_budget(
     choices: Vec<crate::sim::combat_action::CombatActionChoice>,
     config: &CombatSearchV2Config,
     potions_used: u32,
