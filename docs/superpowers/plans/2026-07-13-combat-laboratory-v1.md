@@ -257,6 +257,7 @@ pub fn load_and_resolve_combat_lab_spec_v1(
 ) -> Result<ResolvedCombatLabSpecV1, String>;
 
 pub fn profile_config_v1(
+    experiment_id: &str,
     profile: &CombatLabProfileSpecV1,
     budget: &CombatLabCommonBudgetV1,
 ) -> CombatSearchV2Config;
@@ -937,7 +938,7 @@ regenerate summary from manifest + journal
 atomically write summary
 ```
 
-Preflight validates profile IDs/hashes and budgets, compiles the no-override baseline once, and compiles sample 0 once before creating the artifact store. Retain that sample for the loop so preflight does not duplicate compilation. For each profile the normal executor calls `run_combat_search_v2(&sample.start.engine, &sample.start.combat, profile_config_v1(&profile.spec, &resolved.common_budget))`, converts the selected complete trajectory into a full witness line, and passes it through replay V1 before constructing the cell. It never shells out to Cargo or recursively calls the binary.
+Preflight validates profile IDs/hashes and budgets, compiles the no-override baseline once, and compiles sample 0 once before creating the artifact store. Retain that sample for the loop so preflight does not duplicate compilation. For each profile the normal executor calls `run_combat_search_v2(&sample.start.engine, &sample.start.combat, profile_config_v1(&resolved.experiment_id, &profile.spec, &resolved.common_budget))`, converts the selected complete trajectory into a full witness line, and passes it through replay V1 before constructing the cell. It never shells out to Cargo or recursively calls the binary.
 
 - [ ] **Step 3: Add CLI dispatch without duplicating orchestration**
 
