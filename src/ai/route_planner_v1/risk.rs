@@ -9,6 +9,7 @@ pub(super) fn safety_flag(
     path: &RoutePathSummaryV1,
     needs: &NeedVectorV1,
     viability: &RoutePathViabilityV1,
+    max_hp: i32,
 ) -> RouteSafetyFlagV1 {
     if !viability.survives_projected_segment {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
@@ -26,6 +27,9 @@ pub(super) fn safety_flag(
     if very_low_hp_forced_damage_before_recovery(path, needs) {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }
+    if projected_survival_reserve_is_thin(viability, max_hp) {
+        return RouteSafetyFlagV1::RiskyButAllowed;
+    }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
@@ -36,6 +40,10 @@ pub(super) fn safety_flag(
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
     RouteSafetyFlagV1::Ok
+}
+
+fn projected_survival_reserve_is_thin(viability: &RoutePathViabilityV1, max_hp: i32) -> bool {
+    max_hp > 0 && viability.projected_hp_after_segment <= max_hp as f32 * 0.25
 }
 
 pub(super) fn first_elite_is_underprepared(path: &RoutePathSummaryV1) -> bool {

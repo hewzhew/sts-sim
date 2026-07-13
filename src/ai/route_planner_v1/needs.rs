@@ -1,6 +1,7 @@
 use super::types::{NeedVectorV1, RouteDecisionContextV1, RoutePlannerConfigV1};
 
 const FINAL_SHOP_SEARCH_WINDOW_FLOORS: i32 = 7;
+const MIN_HP_CONSERVATION_PRESSURE: f32 = 0.15;
 
 pub(super) fn estimate_needs(
     ctx: &RouteDecisionContextV1,
@@ -45,7 +46,8 @@ pub(super) fn estimate_needs(
                 }
                 + elite_deck_adjustment,
         ),
-        avoid_damage: clamp01(1.0 - hp_ratio + if low_block { 0.10 } else { 0.0 }),
+        avoid_damage: clamp01(1.0 - hp_ratio + if low_block { 0.10 } else { 0.0 })
+            .max(MIN_HP_CONSERVATION_PRESSURE),
         value_flexibility: clamp01(
             0.30 + if hp_ratio < config.low_hp_ratio {
                 0.25

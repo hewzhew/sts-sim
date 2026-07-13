@@ -670,6 +670,101 @@ fn cumulative_hallway_and_elite_pressure_loses_to_campfire_route() {
 }
 
 #[test]
+fn full_health_route_still_prices_projected_hp_loss() {
+    let mut run = run_with_start_paths(&[&[RoomType::MonsterRoom, RoomType::RestRoom]]);
+    run.current_hp = 85;
+    run.max_hp = 85;
+    replace_master_deck(
+        &mut run,
+        &[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ],
+    );
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let candidate = selected_candidate(&trace);
+
+    assert!(candidate.value_factors.hp_loss_p90 > 0.0);
+    assert!(
+        candidate.needs.avoid_damage > 0.0,
+        "full health should reduce HP conservation pressure, not erase it"
+    );
+    assert!(candidate.score_terms.hp_loss < 0.0);
+}
+
+#[test]
+fn near_exhausted_projected_hp_path_is_not_labeled_ok() {
+    let mut run = run_with_start_paths(&[
+        &[
+            RoomType::MonsterRoom,
+            RoomType::MonsterRoom,
+            RoomType::MonsterRoom,
+            RoomType::MonsterRoomElite,
+        ],
+        &[
+            RoomType::EventRoom,
+            RoomType::RestRoom,
+            RoomType::RestRoom,
+            RoomType::RestRoom,
+        ],
+    ]);
+    run.act_num = 2;
+    run.floor_num = 17;
+    run.current_hp = 85;
+    run.max_hp = 85;
+    replace_master_deck(
+        &mut run,
+        &[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Cleave,
+            CardId::PommelStrike,
+        ],
+    );
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let dangerous = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include the hallway-to-elite path");
+    let viability = dangerous
+        .viability
+        .representative
+        .as_ref()
+        .expect("candidate should retain its p90 projection");
+
+    assert_eq!(viability.cumulative_hp_loss_p90, 82.0);
+    assert_eq!(viability.projected_hp_after_segment, 3.0);
+    assert_ne!(
+        dangerous.safety,
+        RouteSafetyFlagV1::Ok,
+        "a p90 suffix that consumes nearly all HP must remain visibly risky"
+    );
+}
+
+#[test]
 fn route_value_uses_one_real_suffix_instead_of_cross_path_maxima() {
     let mut run = RunState::new(521, 0, false, "Ironclad");
     run.event_state = None;

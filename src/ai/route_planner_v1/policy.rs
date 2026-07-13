@@ -229,7 +229,7 @@ fn evaluate_route_path(
     );
     let score_terms = score_route_candidate(&value_factors, needs, config);
     let total_score = score_terms.total();
-    let safety = safety_flag(features, &path_summary, needs, &viability);
+    let safety = safety_flag(features, &path_summary, needs, &viability, context.max_hp);
     RoutePathEvaluation {
         path_index,
         path_summary,
