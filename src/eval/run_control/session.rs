@@ -434,6 +434,7 @@ pub struct RunControlAutoAppliedStepV1 {
     pub kind: RunControlAutoAppliedKindV1,
     pub label: String,
     pub action_result: Option<ActionResult>,
+    pub route_decision_packet: Option<crate::ai::route_planner_v1::MapDecisionPacketV1>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

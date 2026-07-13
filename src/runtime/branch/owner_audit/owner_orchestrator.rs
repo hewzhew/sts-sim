@@ -44,6 +44,7 @@ pub(super) fn orchestrate_owner_boundary(
                     kind: RunControlAutoAppliedKindV1::OwnerRoutine,
                     label: format!("owner routine {owner:?}"),
                     action_result: outcome.action_result,
+                    route_decision_packet: None,
                 }),
                 Err(err) => OwnerOrchestration::Stop(BranchStatus::AdvanceFailed(format!(
                     "owner routine {owner:?} failed: {err}"

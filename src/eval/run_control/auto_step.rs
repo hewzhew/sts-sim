@@ -63,6 +63,7 @@ impl AutoAppliedLog {
             kind,
             label,
             action_result,
+            route_decision_packet: None,
         });
     }
 
@@ -72,7 +73,12 @@ impl AutoAppliedLog {
         label: impl Into<String>,
         outcome: &RunControlCommandOutcome,
     ) {
-        self.push_step(kind, label, outcome.action_result.clone());
+        self.steps.push(RunControlAutoAppliedStepV1 {
+            kind,
+            label: label.into(),
+            action_result: outcome.action_result.clone(),
+            route_decision_packet: route_decision_packet(&outcome.trace_annotations),
+        });
     }
 
     fn extend(&mut self, labels: Vec<String>) {
@@ -88,6 +94,25 @@ impl AutoAppliedLog {
     fn len(&self) -> usize {
         self.steps.len()
     }
+}
+
+fn route_decision_packet(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> Option<crate::ai::route_planner_v1::MapDecisionPacketV1> {
+    annotations
+        .iter()
+        .rev()
+        .find_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::RoutePlannerSelection {
+                map_decision_packet,
+                ..
+            }
+            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+                map_decision_packet,
+                ..
+            } => map_decision_packet.clone(),
+            _ => None,
+        })
 }
 
 pub(super) fn apply_guarded_auto_step(

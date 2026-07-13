@@ -91,11 +91,21 @@ fn auto_step_value(step: &RunControlAutoAppliedStepV1) -> Value {
     let Some(result) = step.action_result.as_ref() else {
         return json!({"kind": auto_step_kind_value(step.kind)});
     };
-    json!({
+    let mut value = json!({
         "kind": auto_step_kind_value(step.kind),
         "status": result.status,
         "changes": result.changes,
-    })
+    });
+    if let Some(packet) = step.route_decision_packet.as_ref() {
+        value
+            .as_object_mut()
+            .expect("auto step trace value must be an object")
+            .insert(
+                "map_decision_packet".to_string(),
+                serde_json::to_value(packet).expect("map decision packet must serialize"),
+            );
+    }
+    value
 }
 
 fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
@@ -317,6 +327,10 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::run_control::{
+        apply_owner_audit_auto_run, RunControlAutoStepOptions, RunControlConfig, RunControlSession,
+    };
+    use sts_simulator::state::core::EngineState;
 
     #[test]
     fn branch_experiment_policy_uses_precise_trace_json_label() {
@@ -324,5 +338,48 @@ mod tests {
             auto_step_kind_value(RunControlAutoAppliedKindV1::BranchExperimentPolicy),
             "branch_experiment_policy"
         );
+        let step = RunControlAutoAppliedStepV1 {
+            kind: RunControlAutoAppliedKindV1::BranchExperimentPolicy,
+            label: "test policy".to_string(),
+            action_result: None,
+            route_decision_packet: None,
+        };
+        assert!(auto_step_value(&step).get("map_decision_packet").is_none());
+    }
+
+    #[test]
+    fn route_auto_step_trace_retains_typed_map_decision_packet() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.engine_state = EngineState::MapNavigation;
+
+        let outcome = apply_owner_audit_auto_run(
+            &mut session,
+            RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..RunControlAutoStepOptions::default()
+            },
+        )
+        .expect("owner auto-run should select one route");
+        let route_step = outcome
+            .auto_applied_steps
+            .iter()
+            .find(|step| step.kind == RunControlAutoAppliedKindV1::RoutePlanner)
+            .expect("auto-run should record the route step");
+
+        let packet = route_step
+            .route_decision_packet
+            .as_ref()
+            .expect("route auto step should retain its typed map decision packet");
+        assert_eq!(packet.selected_index, Some(0));
+
+        let value = auto_step_value(route_step);
+        assert_eq!(
+            value["map_decision_packet"]["schema_name"],
+            serde_json::json!("MapDecisionPacketV1")
+        );
+        assert!(value["map_decision_packet"]["candidates"]
+            .as_array()
+            .is_some_and(|candidates| !candidates.is_empty()));
     }
 }

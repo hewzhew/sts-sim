@@ -475,6 +475,7 @@ mod tests {
             kind: RunControlAutoAppliedKindV1::BranchExperimentPolicy,
             label: "event policy: Match and Keep".to_string(),
             action_result: None,
+            route_decision_packet: None,
         };
 
         assert_eq!(
