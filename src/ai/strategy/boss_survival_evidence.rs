@@ -46,8 +46,21 @@ pub fn assess_boss_survival_evidence(
         return BossSurvivalEvidence::none();
     };
     match deck.boss_key {
+        Some(EncounterId::TheGuardian) => guardian_survival_evidence(deck, card),
         Some(EncounterId::AwakenedOne) => awakened_one_survival_evidence(deck, card, upgrades),
         Some(EncounterId::Collector) => collector_minion_control_evidence(deck, admission),
+        _ => BossSurvivalEvidence::none(),
+    }
+}
+
+fn guardian_survival_evidence(deck: DeckPlanSnapshot, card: CardId) -> BossSurvivalEvidence {
+    match card {
+        CardId::Clothesline if deck.roles.mitigation_units == 0 => {
+            BossSurvivalEvidence::relevant("guardian-first-weak-answer", 70)
+        }
+        CardId::FlameBarrier if deck.roles.block_units <= 5 => {
+            BossSurvivalEvidence::relevant("guardian-first-substantial-block", 70)
+        }
         _ => BossSurvivalEvidence::none(),
     }
 }

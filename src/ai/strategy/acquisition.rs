@@ -110,6 +110,7 @@ pub enum AcquisitionPolicyReason {
     PackageReliabilityRepair,
     HardGapWithAcceptableOpportunityCost,
     ConstructionRoleAccepted,
+    SurvivalPressureStabilizer,
     HpCostAccessDebt,
     DeployabilityDebt,
     LowMarginLacksHardGap,
@@ -258,6 +259,15 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
             )
         }
         AcquisitionSource::Reward
+            if report.construction_role
+                == Some(AcquisitionConstructionRole::SurvivalStabilizer) =>
+        {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::ContextTake,
+                AcquisitionPolicyReason::SurvivalPressureStabilizer,
+            )
+        }
+        AcquisitionSource::Reward
             if report.low_margin_filler && !report.strategic_delta.improves_hard_gap =>
         {
             acquisition_policy(
@@ -342,6 +352,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         }
         AcquisitionPolicyReason::NoOpenConstructionRole => {
             "card does not satisfy deck construction contract"
+        }
+        AcquisitionPolicyReason::SurvivalPressureStabilizer => {
+            "card stabilizes immediate survival pressure"
         }
         AcquisitionPolicyReason::PremiumCard
         | AcquisitionPolicyReason::UpgradedShopCard
@@ -476,11 +489,11 @@ fn construction_role(
     if admission_scaling_or_engine(admission) && !fragile_supported_payoff(deck_plan, admission) {
         return Some(AcquisitionConstructionRole::EngineOrScaling);
     }
-    if strategic_delta.improves_any_gap {
-        return Some(AcquisitionConstructionRole::SoftStrategicGap);
-    }
     if deck_plan.survival_pressure() && admission_survival_tool(admission) {
         return Some(AcquisitionConstructionRole::SurvivalStabilizer);
+    }
+    if strategic_delta.improves_any_gap {
+        return Some(AcquisitionConstructionRole::SoftStrategicGap);
     }
     None
 }

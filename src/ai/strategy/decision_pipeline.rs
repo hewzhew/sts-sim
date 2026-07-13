@@ -1931,6 +1931,90 @@ mod tests {
     }
 
     #[test]
+    fn guardian_clothesline_can_clear_acquisition_cap_as_first_weak_answer() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ];
+
+        let clothesline =
+            reward_card_with_act_boss(&deck, CardId::Clothesline, 0, 1, EncounterId::TheGuardian);
+
+        assert_eq!(clothesline.adjudication.raw_lane, CandidateLane::Mainline);
+        assert_eq!(
+            clothesline.adjudication.final_lane,
+            CandidateLane::Mainline,
+            "known Guardian survival evidence must not be discarded by the generic filler cap: {:?}",
+            clothesline
+        );
+    }
+
+    #[test]
+    fn guardian_flame_barrier_can_clear_acquisition_cap_as_first_substantial_block() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BattleTrance,
+            CardId::Armaments,
+        ];
+
+        let flame_barrier =
+            reward_card_with_act_boss(&deck, CardId::FlameBarrier, 0, 1, EncounterId::TheGuardian);
+
+        assert_eq!(flame_barrier.adjudication.raw_lane, CandidateLane::Mainline);
+        assert_eq!(
+            flame_barrier.adjudication.final_lane,
+            CandidateLane::Mainline,
+            "the first substantial Guardian block answer must remain executable: {:?}",
+            flame_barrier
+        );
+    }
+
+    #[test]
+    fn low_hp_survival_stabilizer_can_clear_low_margin_acquisition_cap() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::Cleave,
+            CardId::Headbutt,
+        ];
+
+        let iron_wave = reward_card_with_act_and_hp(&deck, CardId::IronWave, 0, 2, 42, 80);
+
+        assert_eq!(iron_wave.adjudication.raw_lane, CandidateLane::Mainline);
+        assert_eq!(
+            iron_wave.adjudication.final_lane,
+            CandidateLane::Mainline,
+            "actual HP pressure must make an immediate survival stabilizer executable: {:?}",
+            iron_wave
+        );
+    }
+
+    #[test]
     fn reward_skip_sorts_before_probe_when_no_mainline_take_exists() {
         let deck = act1_low_margin_reward_deck();
         let iron_wave = reward_card_with_act(&deck, CardId::IronWave, 0, 1);
