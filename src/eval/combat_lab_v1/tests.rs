@@ -1563,6 +1563,58 @@ fn summary_reports_replayed_candidates_without_promoting_coverage() {
 }
 
 #[test]
+fn summary_historical_cell_without_candidate_field_contributes_zero_candidate_evidence() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_historical_candidate", &["baseline"]);
+    let mut historical = summary_cell(
+        &manifest,
+        &fingerprint,
+        0,
+        "baseline",
+        CombatLabOutcomeClassV1::CoverageLimited,
+        None,
+        None,
+    );
+    historical.search_terminal = Some(crate::ai::combat_search_v2::SearchTerminalLabel::Win);
+    historical.coverage_status =
+        Some(crate::ai::combat_search_v2::SearchCoverageStatus::TimeBudgetLimited);
+    historical.replay_validated = true;
+    let encoded = serde_json::to_value(&historical).expect("serialize historical cell shape");
+    assert!(encoded.get("replayed_candidate").is_none());
+    let decoded: CombatLabCellRecordV1 =
+        serde_json::from_value(encoded).expect("historical cell should remain readable");
+    assert!(decoded.replayed_candidate.is_none());
+
+    let summary = summarize_combat_lab_v1(&manifest, &[decoded], 1)
+        .expect("summarize historical candidate-less cell");
+    let profile = &summary.profiles[0];
+    assert_eq!(profile.coverage_limited, 1);
+    assert_eq!(profile.resolved_cells, 0);
+    assert_eq!(profile.candidates.replayed_complete_candidates, 0);
+    assert_eq!(profile.candidates.replayed_win_candidates, 0);
+    assert_eq!(profile.candidates.replayed_loss_candidates, 0);
+    assert_eq!(
+        profile
+            .candidates
+            .replayed_win_rate_all_non_error_denominator,
+        1
+    );
+    assert_approx_eq(profile.candidates.replayed_win_rate_all_non_error, 0.0);
+    for numeric in [
+        &profile.candidates.win_hp_loss,
+        &profile.candidates.terminal_hp,
+        &profile.candidates.turns,
+        &profile.candidates.potions_used,
+        &profile.candidates.nodes_to_first_win,
+    ] {
+        assert_eq!(numeric.count, 0);
+        assert_eq!(numeric.mean, None);
+    }
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn summary_pairs_use_only_shared_samples_and_report_divergences() {
     use crate::content::cards::CardId;
     use crate::state::core::ClientInput;
