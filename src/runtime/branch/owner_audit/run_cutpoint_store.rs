@@ -113,12 +113,16 @@ impl RunCutpointStore {
         frontier_path: &Path,
         frontier: &VecDeque<Branch>,
     ) -> Result<(), String> {
-        let manifest_path = manifest_path_for_frontier(frontier_path)?;
+        let is_cutpoint = frontier_path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "cutpoints");
+        let manifest_path = match manifest_path_for_frontier(frontier_path) {
+            Ok(path) => path,
+            Err(error) if is_cutpoint => return Err(error),
+            Err(_) => return Ok(()),
+        };
         if !manifest_path.exists() {
-            let is_cutpoint = frontier_path
-                .parent()
-                .and_then(Path::file_name)
-                .is_some_and(|name| name == "cutpoints");
             return if is_cutpoint {
                 Err(format!(
                     "cutpoint manifest missing: {}",

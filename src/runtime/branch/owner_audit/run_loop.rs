@@ -63,8 +63,14 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             }));
             break;
         }
-        let prepared =
-            branch_generation::prepare_generation(&mut frontier, args, generation, deadline);
+        let prepared = branch_generation::prepare_generation(
+            &mut frontier,
+            args,
+            generation,
+            deadline,
+            None,
+            next_branch_id,
+        );
         if prepared.total_expanded > 0
             && deadline.would_cap_core_search(args, prepared.total_expanded)
         {

@@ -6,6 +6,7 @@ use sts_simulator::ai::strategy::challenger_decision_context::challenger_decisio
 use super::owner_model::OwnerChoice;
 use super::policy_expansion_plan::{plan_policy_expansions, PolicyExpansion};
 use super::run_capsule::RunCapsule;
+use super::run_cutpoint_store::RunCutpointStore;
 use super::run_deadline::RunDeadline;
 use super::run_slice_result::ArtifactWriteSummary;
 use super::{branch_generation_step, branch_scheduler, trace, Args, Branch};
@@ -42,11 +43,18 @@ pub(super) fn prepare_generation(
     args: Args,
     generation: usize,
     deadline: RunDeadline,
+    cutpoint_store: Option<&RunCutpointStore>,
+    next_branch_id: usize,
 ) -> PreparedGeneration {
     let mut work = Vec::new();
     while let Some(branch) = frontier.pop_front() {
         work.push(branch_scheduler::prepare_branch_work(
-            branch, args, generation, deadline,
+            branch,
+            args,
+            generation,
+            deadline,
+            cutpoint_store,
+            next_branch_id,
         ));
     }
     let (policy_expansions, expanded_masks) = policy_expansion_plans(&work, args.max_branches);

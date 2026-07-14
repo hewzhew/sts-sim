@@ -2,7 +2,7 @@ use sts_simulator::eval::run_control::RunControlSession;
 
 use super::run_cutpoint::{RunCutpointKind, RunCutpointSnapshot};
 use super::run_cutpoint_store::{RunCutpointHandle, RunCutpointStore};
-use super::{Args, Branch, BranchStatus};
+use super::{Args, Branch, BranchStatus, Owner};
 
 pub(super) struct RunCutpointRecorder<'a> {
     store: Option<&'a RunCutpointStore>,
@@ -81,6 +81,23 @@ impl<'a> RunCutpointRecorder<'a> {
         self.store
             .expect("a cutpoint handle requires a store")
             .retain_pre_combat_gap(handle)
+    }
+
+    pub(super) fn capture_owner_boundary(&self, branch: &Branch) -> Result<(), String> {
+        let BranchStatus::Running {
+            owner: Owner::BossRelic,
+            ..
+        } = branch.status
+        else {
+            return Ok(());
+        };
+        let Some(store) = self.store else {
+            return Ok(());
+        };
+        let snapshot =
+            RunCutpointSnapshot::capture(RunCutpointKind::OwnerDecision, self.generation, branch)?;
+        store.write_boss_relic(self.args, self.next_branch_id, snapshot)?;
+        Ok(())
     }
 }
 
@@ -169,8 +186,10 @@ mod tests {
     }
 
     fn unique_root(label: &str) -> PathBuf {
+        static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let ordinal = NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "sts_run_cutpoint_recorder_{label}_{}_{}",
+            "sts_run_cutpoint_recorder_{label}_{}_{}_{ordinal}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

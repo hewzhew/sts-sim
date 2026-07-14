@@ -11,7 +11,7 @@ use super::branch_policy_lane::BranchPolicyLane;
 use super::run_contract::RunContract;
 use super::{Args, Branch, BranchStatus};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
     schema: String,
     pub(super) args: Args,
@@ -22,7 +22,7 @@ pub(super) struct FrontierCheckpoint {
     frontier: Vec<BranchCheckpoint>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 struct BranchCheckpoint {
     id: usize,
     parent_id: Option<usize>,
