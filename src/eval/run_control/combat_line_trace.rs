@@ -364,12 +364,8 @@ mod tests {
         );
         report.stats.node_budget_hit = true;
         let session = RunControlSession::new(Default::default());
-        let annotation = combat_search_performance_trace_annotation(
-            "legacy",
-            &session,
-            &start,
-            &report,
-        );
+        let annotation =
+            combat_search_performance_trace_annotation("legacy", &session, &start, &report);
         let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation else {
             panic!("expected combat search performance annotation")
         };
