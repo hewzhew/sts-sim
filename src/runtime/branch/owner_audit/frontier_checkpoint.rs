@@ -44,12 +44,6 @@ pub(super) fn save(
     next_branch_id: usize,
     frontier: &VecDeque<Branch>,
 ) -> Result<(), String> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
     let checkpoint = FrontierCheckpoint {
         schema: "branch_tiny_frontier_checkpoint".to_string(),
         args,
@@ -62,8 +56,8 @@ pub(super) fn save(
             .map(BranchCheckpoint::from_branch)
             .collect(),
     };
-    let payload = serde_json::to_string_pretty(&checkpoint).map_err(|err| err.to_string())?;
-    fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))
+    let value = serde_json::to_value(&checkpoint).map_err(|error| error.to_string())?;
+    super::run_capsule_io::write_json(path, value)
 }
 
 pub(super) fn load(path: &Path) -> Result<FrontierCheckpoint, String> {

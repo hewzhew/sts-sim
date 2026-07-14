@@ -130,6 +130,8 @@ mod run_choice_owner;
 mod run_contract;
 #[path = "owner_audit/run_cutpoint.rs"]
 mod run_cutpoint;
+#[path = "owner_audit/run_cutpoint_store.rs"]
+mod run_cutpoint_store;
 #[path = "owner_audit/run_deadline.rs"]
 mod run_deadline;
 #[path = "owner_audit/run_identity.rs"]
