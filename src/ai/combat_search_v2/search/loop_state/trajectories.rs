@@ -19,9 +19,19 @@ impl SearchLoopState {
         node: SearchNode,
         config: &CombatSearchV2Config,
     ) -> bool {
+        let nodes_generated_at_discovery = self.stats.nodes_generated;
+        self.remember_win_observed_at(node, config, nodes_generated_at_discovery)
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn remember_win_observed_at(
+        &mut self,
+        node: SearchNode,
+        config: &CombatSearchV2Config,
+        nodes_generated_at_discovery: u64,
+    ) -> bool {
         self.stats.terminal_wins = self.stats.terminal_wins.saturating_add(1);
         if self.stats.nodes_to_first_win.is_none() {
-            self.stats.nodes_to_first_win = Some(self.stats.nodes_generated);
+            self.stats.nodes_to_first_win = Some(nodes_generated_at_discovery);
         }
         self.trajectories.remember_win(node, config)
     }

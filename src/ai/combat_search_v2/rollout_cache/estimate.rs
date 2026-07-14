@@ -5,7 +5,7 @@ use crate::sim::combat::CombatStepper;
 
 use super::super::*;
 use super::policy::{adaptive_no_potion_rollout_plugin, better_rollout_estimate};
-use super::RolloutCache;
+use super::{ReplayableTerminalWinWitness, RolloutCache};
 
 impl RolloutCache {
     pub(in crate::ai::combat_search_v2) fn estimate(
@@ -14,6 +14,7 @@ impl RolloutCache {
         stepper: &impl CombatStepper,
         config: &CombatSearchV2Config,
         deadline: Option<Instant>,
+        nodes_generated_at_discovery: u64,
     ) -> RolloutNodeEstimate {
         if self.policy == CombatSearchRolloutPluginId::Disabled {
             return RolloutNodeEstimate::unevaluated();
@@ -147,20 +148,31 @@ impl RolloutCache {
             .performance
             .policy_dispatch_elapsed_us
             .saturating_add(policy_dispatch_started.elapsed().as_micros());
-        self.observe_estimate(&estimate);
+        self.observe_estimate(&estimate, nodes_generated_at_discovery);
         self.cache.insert(key, estimate.clone());
         self.cache_inserts = self.cache_inserts.saturating_add(1);
         estimate
     }
 
-    fn observe_estimate(&mut self, estimate: &RolloutNodeEstimate) {
+    fn observe_estimate(
+        &mut self,
+        estimate: &RolloutNodeEstimate,
+        nodes_generated_at_discovery: u64,
+    ) {
         if estimate.is_replayable_terminal_win() {
-            self.best_replayable_terminal_win = Some(
-                self.best_replayable_terminal_win
-                    .take()
-                    .map(|current| better_rollout_estimate(estimate.clone(), current))
-                    .unwrap_or_else(|| estimate.clone()),
-            );
+            let replace = self
+                .best_replayable_terminal_win
+                .as_ref()
+                .map(|current| {
+                    better_rollout_estimate(estimate.clone(), current.estimate.clone()) == *estimate
+                })
+                .unwrap_or(true);
+            if replace {
+                self.best_replayable_terminal_win = Some(ReplayableTerminalWinWitness {
+                    estimate: estimate.clone(),
+                    nodes_generated_at_discovery,
+                });
+            }
         }
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);

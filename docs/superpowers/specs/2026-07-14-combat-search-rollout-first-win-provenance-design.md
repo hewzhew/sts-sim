@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make `CombatSearchV2Stats::nodes_to_first_win` report the main-search node count at which the rollout witness that is later accepted by exact replay was first observed. A root rollout witness is therefore observed at node count `0`; a child or deferred rollout witness uses the current generated-node count.
+Make `CombatSearchV2Stats::nodes_to_first_win` report the main-search node count at which the rollout witness that is later accepted by exact replay was first observed. A root rollout witness is therefore observed at node count `0`; a child or deferred rollout witness uses the current generated-node count; a turn-plan seed uses the count including that generated seed.
 
 ## Reliability Boundary
 

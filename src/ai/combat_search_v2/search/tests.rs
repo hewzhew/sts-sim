@@ -865,6 +865,35 @@ fn exact_replayed_terminal_rollout_honors_hp_loss_acceptance_threshold() {
 }
 
 #[test]
+fn exact_replayed_rollout_reports_when_its_witness_was_discovered() {
+    let mut combat = blank_test_combat();
+    combat.turn.turn_count = 0;
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            ..CombatSearchV2Config::default()
+        },
+        &TwoTurnWinStepper,
+    );
+
+    assert_eq!(report.stats.nodes_expanded, 1);
+    assert_eq!(report.stats.nodes_generated, 1);
+    assert!(report.stats.node_budget_hit);
+    assert!(report.outcome.complete_win_found);
+    assert_eq!(
+        report.stats.nodes_to_first_win,
+        Some(0),
+        "the exact-replayed root rollout witness was discovered before the main search generated a node"
+    );
+}
+
+#[test]
 fn terminal_turn_plan_seeds_skip_rollout_estimate() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];

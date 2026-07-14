@@ -22,6 +22,7 @@ pub(super) fn initialize_root_frontier(
         deadline,
         &mut loop_state.performance,
         RolloutEstimateSource::Root,
+        0,
     );
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         loop_state.stats.nodes_to_first_win = Some(0);

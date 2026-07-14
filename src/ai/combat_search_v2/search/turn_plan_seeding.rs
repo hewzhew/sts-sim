@@ -46,8 +46,15 @@ pub(super) fn seed_turn_plan_frontier(
         .diagnostics
         .observe_turn_plan_prior_scored_plans(seeded_nodes.turn_plan_prior_scored_plans);
     for mut seed in seeded_nodes.nodes.drain(..) {
-        seed.rollout_estimate =
-            turn_plan_seed_rollout_estimate(loop_state, &seed, stepper, config, deadline);
+        let nodes_generated_at_discovery = loop_state.stats.nodes_generated.saturating_add(1);
+        seed.rollout_estimate = turn_plan_seed_rollout_estimate(
+            loop_state,
+            &seed,
+            stepper,
+            config,
+            deadline,
+            nodes_generated_at_discovery,
+        );
         loop_state.record_node_generated();
         loop_state.record_first_generated_win_if_needed(&seed);
         loop_state.push_frontier(seed);
@@ -60,6 +67,7 @@ fn turn_plan_seed_rollout_estimate(
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
+    nodes_generated_at_discovery: u64,
 ) -> RolloutNodeEstimate {
     if terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Unresolved {
         timed_rollout_estimate(
@@ -70,6 +78,7 @@ fn turn_plan_seed_rollout_estimate(
             deadline,
             &mut loop_state.performance,
             RolloutEstimateSource::TurnPlanSeed,
+            nodes_generated_at_discovery,
         )
     } else {
         loop_state.performance.terminal_turn_plan_seed_rollout_skips = loop_state

@@ -29,6 +29,7 @@ pub(super) fn apply_deferred_child_rollout(
     );
     observe_deferred_rollout_admission(admission, &mut loop_state.performance);
     if admission.admitted() {
+        let nodes_generated_at_discovery = loop_state.stats.nodes_generated;
         node.rollout_estimate = timed_rollout_estimate(
             &mut loop_state.rollout_cache,
             &node,
@@ -37,6 +38,7 @@ pub(super) fn apply_deferred_child_rollout(
             deadline,
             &mut loop_state.performance,
             RolloutEstimateSource::DeferredChild,
+            nodes_generated_at_discovery,
         );
         if node.rollout_estimate.is_evaluated() {
             loop_state.performance.deferred_child_rollout_requeues = loop_state

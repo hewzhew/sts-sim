@@ -23,6 +23,7 @@
 - Modify: `src/ai/combat_search_v2/search/tests.rs`
 - Modify: `src/ai/combat_search_v2/rollout_cache/mod.rs`
 - Modify: `src/ai/combat_search_v2/rollout_cache/estimate.rs`
+- Modify: `src/ai/combat_search_v2/rollout/tests.rs`
 - Modify: `src/ai/combat_search_v2/search/rollout_timing.rs`
 - Modify: `src/ai/combat_search_v2/search/bootstrap.rs`
 - Modify: `src/ai/combat_search_v2/search/child_rollout.rs`
@@ -43,6 +44,7 @@ Add this test beside the existing rollout-promotion tests in `search/tests.rs`:
 #[test]
 fn exact_replayed_rollout_reports_when_its_witness_was_discovered() {
     let mut combat = blank_test_combat();
+    combat.turn.turn_count = 0;
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
 
@@ -156,6 +158,8 @@ let nodes_generated_at_discovery = loop_state.stats.nodes_generated.saturating_a
 
 Keep the current rollout execution order and all policy inputs unchanged.
 
+Update the four direct `RolloutCache::estimate` calls in `rollout/tests.rs` with a discovery snapshot of `0`; those cache-focused tests do not construct a main-search loop.
+
 - [ ] **Step 5: Publish provenance only after exact replay**
 
 In `search/loop_state/trajectories.rs`, preserve the ordinary API while adding an explicit observation-count variant:
@@ -228,7 +232,7 @@ Expected: 0 failures, formatting clean, and no whitespace errors.
 Confirm the diff contains only the listed search/rollout-cache files and the regression, then run:
 
 ```powershell
-git add -- src/ai/combat_search_v2/search/tests.rs src/ai/combat_search_v2/rollout_cache/mod.rs src/ai/combat_search_v2/rollout_cache/estimate.rs src/ai/combat_search_v2/search/rollout_timing.rs src/ai/combat_search_v2/search/bootstrap.rs src/ai/combat_search_v2/search/child_rollout.rs src/ai/combat_search_v2/search/node_deferred_rollout.rs src/ai/combat_search_v2/search/turn_plan_seeding.rs src/ai/combat_search_v2/search/loop_state/trajectories.rs src/ai/combat_search_v2/search/rollout_terminal_promotion.rs
+git add -- src/ai/combat_search_v2/search/tests.rs src/ai/combat_search_v2/rollout_cache/mod.rs src/ai/combat_search_v2/rollout_cache/estimate.rs src/ai/combat_search_v2/rollout/tests.rs src/ai/combat_search_v2/search/rollout_timing.rs src/ai/combat_search_v2/search/bootstrap.rs src/ai/combat_search_v2/search/child_rollout.rs src/ai/combat_search_v2/search/node_deferred_rollout.rs src/ai/combat_search_v2/search/turn_plan_seeding.rs src/ai/combat_search_v2/search/loop_state/trajectories.rs src/ai/combat_search_v2/search/rollout_terminal_promotion.rs
 git commit -m "fix: preserve rollout win discovery count"
 ```
 

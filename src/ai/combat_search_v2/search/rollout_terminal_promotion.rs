@@ -17,11 +17,11 @@ pub(super) fn promote_replayable_terminal_rollout(
     else {
         return;
     };
-    let Some(node) = replay_terminal_witness(root, &witness, stepper, config) else {
+    let Some(node) = replay_terminal_witness(root, &witness.estimate, stepper, config) else {
         return;
     };
 
-    if loop_state.remember_win(node, config) {
+    if loop_state.remember_win_observed_at(node, config, witness.nodes_generated_at_discovery) {
         loop_state.mark_accepted_complete_candidate();
     }
 }

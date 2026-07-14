@@ -33,6 +33,7 @@ pub(super) fn child_rollout_estimate(
             .saturating_add(1);
         return RolloutNodeEstimate::unevaluated();
     }
+    let nodes_generated_at_discovery = loop_state.stats.nodes_generated;
     timed_rollout_estimate(
         &mut loop_state.rollout_cache,
         child,
@@ -41,5 +42,6 @@ pub(super) fn child_rollout_estimate(
         deadline,
         &mut loop_state.performance,
         RolloutEstimateSource::Child,
+        nodes_generated_at_discovery,
     )
 }

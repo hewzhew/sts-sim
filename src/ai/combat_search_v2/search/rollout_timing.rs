@@ -19,9 +19,16 @@ pub(super) fn timed_rollout_estimate(
     deadline: Option<Instant>,
     performance: &mut CombatSearchV2PerformanceReport,
     source: RolloutEstimateSource,
+    nodes_generated_at_discovery: u64,
 ) -> RolloutNodeEstimate {
     let started = Instant::now();
-    let estimate = rollout_cache.estimate(node, stepper, config, deadline);
+    let estimate = rollout_cache.estimate(
+        node,
+        stepper,
+        config,
+        deadline,
+        nodes_generated_at_discovery,
+    );
     performance.rollout_estimate_calls = performance.rollout_estimate_calls.saturating_add(1);
     match source {
         RolloutEstimateSource::Root => {

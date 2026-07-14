@@ -166,8 +166,8 @@ fn rollout_cache_reuses_exact_state_estimate() {
     };
     let config = CombatSearchV2Config::default();
 
-    let first = cache.estimate(&node, &FirstActionWinsStepper, &config, None);
-    let second = cache.estimate(&node, &FirstActionWinsStepper, &config, None);
+    let first = cache.estimate(&node, &FirstActionWinsStepper, &config, None, 0);
+    let second = cache.estimate(&node, &FirstActionWinsStepper, &config, None, 0);
 
     assert_eq!(first, second);
     assert_eq!(cache.evaluations, 1);
@@ -199,7 +199,7 @@ fn rollout_report_includes_turn_beam_anchor_attribution() {
         ..CombatSearchV2Config::default()
     };
 
-    let estimate = cache.estimate(&node, &FirstActionWinsStepper, &config, None);
+    let estimate = cache.estimate(&node, &FirstActionWinsStepper, &config, None, 0);
     let report = cache.finish(None);
 
     assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
@@ -241,7 +241,7 @@ fn rollout_report_includes_turn_beam_extension_attribution() {
         ..CombatSearchV2Config::default()
     };
 
-    let estimate = cache.estimate(&node, &StalledEndTurnStepper, &config, None);
+    let estimate = cache.estimate(&node, &StalledEndTurnStepper, &config, None, 0);
     let report = cache.finish(None);
 
     assert_eq!(estimate.terminal, SearchTerminalLabel::Unresolved);
