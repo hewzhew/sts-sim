@@ -116,6 +116,7 @@ pub fn assess_boss_scaling_evidence(
     }
     if admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::EnemyStrengthDown)
+        || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
         || admission_provides(admission, Mechanic::Vulnerable)
     {
         return BossScalingEvidence::score_only("boss-support-only", 30);
@@ -248,6 +249,7 @@ mod tests {
                 starter_basic_count: 0,
                 curse_count: 0,
                 has_energy_relic: false,
+                has_runic_pyramid: false,
             },
         );
         (deck, plan)

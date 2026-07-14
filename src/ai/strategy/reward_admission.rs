@@ -442,7 +442,10 @@ fn admission_reason_priority(admission: &RewardAdmission) -> u8 {
         matches!(
             reason,
             RewardAdmissionReason::Provides(
-                Mechanic::Weak | Mechanic::Vulnerable | Mechanic::EnemyStrengthDown
+                Mechanic::Weak
+                    | Mechanic::Vulnerable
+                    | Mechanic::EnemyStrengthDown
+                    | Mechanic::TemporaryEnemyStrengthDown
             )
         )
     }) {
@@ -468,6 +471,7 @@ fn mechanic_tag(mechanic: Mechanic) -> &'static str {
         Mechanic::Weak => "weak",
         Mechanic::Vulnerable => "vuln",
         Mechanic::EnemyStrengthDown => "str-down",
+        Mechanic::TemporaryEnemyStrengthDown => "temp-str-down",
         Mechanic::TopdeckControl => "topdeck",
     }
 }
@@ -573,7 +577,8 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
             | Mechanic::Block
             | Mechanic::Weak
             | Mechanic::Vulnerable
-            | Mechanic::EnemyStrengthDown,
+            | Mechanic::EnemyStrengthDown
+            | Mechanic::TemporaryEnemyStrengthDown,
         ) => true,
         PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll => true,
         PlayEffect::RecoverCurrentHp => true,

@@ -158,6 +158,7 @@ mod tests {
                 starter_basic_count: 2,
                 curse_count: 0,
                 has_energy_relic: true,
+                has_runic_pyramid: false,
             },
         )
         .with_boss_key(boss)

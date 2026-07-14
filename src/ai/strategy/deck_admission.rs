@@ -88,7 +88,10 @@ fn survival_relevant(admission: &RewardAdmission) -> bool {
         matches!(
             reason,
             RewardAdmissionReason::Provides(
-                Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown
+                Mechanic::Block
+                    | Mechanic::Weak
+                    | Mechanic::EnemyStrengthDown
+                    | Mechanic::TemporaryEnemyStrengthDown
             )
         )
     })
@@ -178,6 +181,7 @@ fn admission_debuffs(admission: &RewardAdmission) -> bool {
     admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::Vulnerable)
         || admission_provides(admission, Mechanic::EnemyStrengthDown)
+        || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
 }
 
 fn admission_emits_exhaust(admission: &RewardAdmission) -> bool {

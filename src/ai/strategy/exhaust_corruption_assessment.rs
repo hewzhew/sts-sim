@@ -101,7 +101,10 @@ impl ExhaustCorruptionCounts {
                     self.access_count = self.access_count.saturating_add(1)
                 }
                 PlayEffect::Provide(
-                    Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown,
+                    Mechanic::Block
+                    | Mechanic::Weak
+                    | Mechanic::EnemyStrengthDown
+                    | Mechanic::TemporaryEnemyStrengthDown,
                 ) => self.stabilizer_count = self.stabilizer_count.saturating_add(1),
                 PlayEffect::FrontloadDamage
                 | PlayEffect::AreaDamage

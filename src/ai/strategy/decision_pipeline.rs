@@ -955,7 +955,10 @@ fn reward_reason_score(
                 scores.push(score("access", 45))
             }
             RewardAdmissionReason::Provides(
-                Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown,
+                Mechanic::Block
+                | Mechanic::Weak
+                | Mechanic::EnemyStrengthDown
+                | Mechanic::TemporaryEnemyStrengthDown,
             ) => scores.push(score("survival-tool", 35)),
             RewardAdmissionReason::Provides(Mechanic::Strength | Mechanic::StrengthMultiplier) => {
                 scores.push(score("scaling-tool", 30))
@@ -1098,7 +1101,8 @@ fn survival_pressure_score(
     let provides_block = admission_provides(admission, Mechanic::Block);
     let provides_draw = admission_provides(admission, Mechanic::CardDraw);
     let mitigates = admission_provides(admission, Mechanic::Weak)
-        || admission_provides(admission, Mechanic::EnemyStrengthDown);
+        || admission_provides(admission, Mechanic::EnemyStrengthDown)
+        || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown);
     scores.push(score(
         "survival-pressure",
         if provides_block && provides_draw {
@@ -1399,6 +1403,7 @@ fn survival_pressure_exception(
     context.deck_plan.survival_pressure()
         && (admission_provides(admission, Mechanic::Block)
             || admission_provides(admission, Mechanic::EnemyStrengthDown)
+            || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
             || admission_provides(admission, Mechanic::Weak))
 }
 
@@ -1488,6 +1493,7 @@ fn admission_survival_tool(admission: &RewardAdmission) -> bool {
     admission_provides(admission, Mechanic::Block)
         || admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::EnemyStrengthDown)
+        || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
 }
 
 fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
@@ -1684,6 +1690,7 @@ mod tests {
                     starter_basic_count: 0,
                     curse_count: 0,
                     has_energy_relic: false,
+                    has_runic_pyramid: false,
                 },
             ),
             gold,
@@ -1746,6 +1753,7 @@ mod tests {
                     .count(),
                 curse_count: 0,
                 has_energy_relic: false,
+                has_runic_pyramid: false,
             },
         ))
     }
@@ -1772,6 +1780,7 @@ mod tests {
                         .count(),
                     curse_count: 0,
                     has_energy_relic: false,
+                    has_runic_pyramid: false,
                 },
             )
             .with_boss_key(Some(boss)),
@@ -2269,6 +2278,7 @@ mod tests {
                     starter_basic_count: 6,
                     curse_count: 0,
                     has_energy_relic: false,
+                    has_runic_pyramid: false,
                 },
             )
             .with_boss_key(Some(EncounterId::TheChamp)),
@@ -2351,6 +2361,7 @@ mod tests {
                     starter_basic_count: 7,
                     curse_count: 0,
                     has_energy_relic: false,
+                    has_runic_pyramid: false,
                 },
             )
             .with_boss_key(Some(EncounterId::TheChamp)),
@@ -2980,6 +2991,7 @@ mod tests {
                 starter_basic_count: 7,
                 curse_count: 0,
                 has_energy_relic: false,
+                has_runic_pyramid: false,
             },
         ));
         let admission =

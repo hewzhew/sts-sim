@@ -42,7 +42,10 @@ pub fn assess_candidate_pressure_response(
                 push_unique(&mut response.axes, PressureAxis::MultiTargetControl)
             }
             RewardAdmissionReason::Provides(
-                Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown,
+                Mechanic::Block
+                | Mechanic::Weak
+                | Mechanic::EnemyStrengthDown
+                | Mechanic::TemporaryEnemyStrengthDown,
             ) => push_unique(&mut response.axes, PressureAxis::DelayCapacity),
             RewardAdmissionReason::Provides(Mechanic::CardDraw | Mechanic::Energy)
             | RewardAdmissionReason::CombatUpgrade => {

@@ -171,6 +171,7 @@ fn generic_immediate_work(admission: &RewardAdmission) -> bool {
         && !admission_provides(admission, Mechanic::Weak)
         && !admission_provides(admission, Mechanic::Vulnerable)
         && !admission_provides(admission, Mechanic::EnemyStrengthDown)
+        && !admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
         && !admission_provides(admission, Mechanic::Strength)
         && !admission.reasons.iter().any(|reason| {
             matches!(

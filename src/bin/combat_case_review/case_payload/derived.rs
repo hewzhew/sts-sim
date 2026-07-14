@@ -3,7 +3,7 @@ use sts_simulator::ai::strategy::deck_strategic_deficit::{
 };
 use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardType};
-use sts_simulator::content::relics::energy_master_delta;
+use sts_simulator::content::relics::{energy_master_delta, RelicId};
 use sts_simulator::eval::combat_case::{
     card_summary, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
@@ -73,5 +73,13 @@ fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
             .relics
             .iter()
             .any(|relic| energy_master_delta(relic.id) > 0),
+        has_runic_pyramid: case
+            .position
+            .combat
+            .entities
+            .player
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::RunicPyramid),
     }
 }

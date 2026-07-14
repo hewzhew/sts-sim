@@ -14,6 +14,9 @@ pub struct DeckRoleInventory {
     pub block_units: u8,
     pub cycle_block_units: u8,
     pub mitigation_units: u8,
+    pub weak_units: u8,
+    pub persistent_enemy_strength_down_units: u8,
+    pub temporary_enemy_strength_down_units: u8,
     pub debuff_units: u8,
     pub vulnerable_units: u8,
     pub draw_units: u8,
@@ -140,7 +143,18 @@ impl DeckRoleInventory {
     fn add_mechanic(&mut self, mechanic: Mechanic) {
         match mechanic {
             Mechanic::Block => self.block_units += 1,
-            Mechanic::Weak | Mechanic::EnemyStrengthDown => {
+            Mechanic::Weak => {
+                self.weak_units += 1;
+                self.mitigation_units += 1;
+                self.debuff_units += 1;
+            }
+            Mechanic::EnemyStrengthDown => {
+                self.persistent_enemy_strength_down_units += 1;
+                self.mitigation_units += 1;
+                self.debuff_units += 1;
+            }
+            Mechanic::TemporaryEnemyStrengthDown => {
+                self.temporary_enemy_strength_down_units += 1;
                 self.mitigation_units += 1;
                 self.debuff_units += 1;
             }
@@ -193,6 +207,21 @@ mod tests {
 
     fn card(id: CardId, uuid: u32) -> CombatCard {
         CombatCard::new(id, uuid)
+    }
+
+    #[test]
+    fn role_inventory_separates_weak_persistent_and_temporary_mitigation() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::Clothesline, 1),
+            card(CardId::Disarm, 2),
+            card(CardId::DarkShackles, 3),
+        ]);
+
+        assert_eq!(inventory.weak_units, 1);
+        assert_eq!(inventory.persistent_enemy_strength_down_units, 1);
+        assert_eq!(inventory.temporary_enemy_strength_down_units, 1);
+        assert_eq!(inventory.mitigation_units, 3);
+        assert_eq!(inventory.debuff_units, 3);
     }
 
     #[test]

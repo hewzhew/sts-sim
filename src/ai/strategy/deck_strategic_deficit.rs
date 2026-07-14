@@ -537,6 +537,7 @@ mod tests {
             starter_basic_count: 0,
             curse_count: 0,
             has_energy_relic: false,
+            has_runic_pyramid: false,
         }
     }
 
@@ -546,6 +547,7 @@ mod tests {
             starter_basic_count: 7,
             curse_count: 0,
             has_energy_relic: false,
+            has_runic_pyramid: false,
         }
     }
 

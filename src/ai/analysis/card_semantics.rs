@@ -11,6 +11,7 @@ pub enum Mechanic {
     Weak,
     Vulnerable,
     EnemyStrengthDown,
+    TemporaryEnemyStrengthDown,
     TopdeckControl,
 }
 
@@ -513,7 +514,7 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             .provides(Weak)
             .effect(ExhaustsSelf),
         DarkShackles => CardDefinition::new(card)
-            .provides(EnemyStrengthDown)
+            .provides(TemporaryEnemyStrengthDown)
             .effect(ExhaustsSelf),
         BandageUp => CardDefinition::new(card)
             .effect(RecoverCurrentHp)
@@ -589,10 +590,13 @@ mod tests {
     }
 
     #[test]
-    fn dark_shackles_semantics_include_strength_down_and_self_exhaust() {
+    fn dark_shackles_semantics_distinguish_temporary_enemy_strength_down() {
         let definition = card_definition(CardId::DarkShackles);
 
         assert!(definition
+            .play_effects
+            .contains(&PlayEffect::Provide(Mechanic::TemporaryEnemyStrengthDown)));
+        assert!(!definition
             .play_effects
             .contains(&PlayEffect::Provide(Mechanic::EnemyStrengthDown)));
         assert!(definition.play_effects.contains(&PlayEffect::ExhaustsSelf));

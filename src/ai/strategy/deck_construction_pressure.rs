@@ -193,7 +193,10 @@ pub fn assess_candidate_construction_fit(admission: &RewardAdmission) -> Candida
                 fit.card_flow = fit.card_flow.max(FitLevel::Supports)
             }
             RewardAdmissionReason::Provides(
-                Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown,
+                Mechanic::Block
+                | Mechanic::Weak
+                | Mechanic::EnemyStrengthDown
+                | Mechanic::TemporaryEnemyStrengthDown,
             ) => fit.defense = fit.defense.max(FitLevel::Supports),
             RewardAdmissionReason::FrontloadDamage | RewardAdmissionReason::AreaDamage => {
                 fit.reliable_frontload = true
@@ -361,9 +364,11 @@ fn deck_counts(deck: &[CombatCard]) -> DeckConstructionCounts {
                 PlayEffect::Provide(Mechanic::Block) => {
                     counts.block_sources = counts.block_sources.saturating_add(1)
                 }
-                PlayEffect::Provide(Mechanic::Weak | Mechanic::EnemyStrengthDown) => {
-                    counts.mitigation = counts.mitigation.saturating_add(1)
-                }
+                PlayEffect::Provide(
+                    Mechanic::Weak
+                    | Mechanic::EnemyStrengthDown
+                    | Mechanic::TemporaryEnemyStrengthDown,
+                ) => counts.mitigation = counts.mitigation.saturating_add(1),
                 PlayEffect::Provide(Mechanic::CardDraw) if real_draw_card(card.id) => {
                     counts.real_draw = counts.real_draw.saturating_add(1)
                 }

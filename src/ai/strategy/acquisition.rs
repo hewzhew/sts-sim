@@ -613,6 +613,7 @@ fn admission_survival_tool(admission: &RewardAdmission) -> bool {
     admission_provides(admission, Mechanic::Block)
         || admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::EnemyStrengthDown)
+        || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
 }
 
 fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
@@ -670,6 +671,7 @@ mod tests {
                 starter_basic_count: 0,
                 curse_count: 0,
                 has_energy_relic: false,
+                has_runic_pyramid: false,
             },
         )
     }
@@ -723,6 +725,7 @@ mod tests {
                 starter_basic_count: 0,
                 curse_count: 0,
                 has_energy_relic: true,
+                has_runic_pyramid: false,
             },
         )
     }
@@ -740,6 +743,7 @@ mod tests {
                 starter_basic_count: 4,
                 curse_count: 0,
                 has_energy_relic: false,
+                has_runic_pyramid: false,
             },
         )
     }
@@ -872,6 +876,7 @@ mod tests {
                 starter_basic_count: 3,
                 curse_count: 0,
                 has_energy_relic: true,
+                has_runic_pyramid: false,
             },
         );
         let admission =
@@ -957,6 +962,7 @@ mod tests {
                     starter_basic_count: 0,
                     curse_count: 0,
                     has_energy_relic: false,
+                    has_runic_pyramid: false,
                 },
             );
             let admission = assess_reward_admission_from_master_deck(&master_deck, candidate, 0);
