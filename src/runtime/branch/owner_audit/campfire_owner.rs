@@ -1,11 +1,10 @@
 use sts_simulator::ai::campfire_policy_v1::{
-    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePolicyActionV1,
-    CampfirePolicyConfigV1,
+    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfireDecisionV1,
+    CampfirePolicyActionV1, CampfirePolicyConfigV1,
 };
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
 use sts_simulator::eval::run_control::{DecisionSurface, RunControlSession};
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
-use sts_simulator::state::run::RunState;
 
 use super::owner_commands::visible_input_decision;
 use super::owner_model::{OwnerDecision, OwnerRoutine};
@@ -33,7 +32,12 @@ fn choose_campfire_owner_action(
     surface: &DecisionSurface,
     options: &[CampfireChoice],
 ) -> Result<CampfireChoice, String> {
-    if let Some(choice) = strategic_rest_or_smith_choice(&session.run_state, options) {
+    let context = build_campfire_decision_context_v1(&session.run_state, options.to_vec());
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+    if let Some(choice) = strategic_rest_or_smith_choice(&decision) {
+        return Ok(choice);
+    }
+    if let Some(choice) = forced_smith_only_exit(options, &decision) {
         return Ok(choice);
     }
     if let Some(choice) = best_campfire_toke(session, surface, options) {
@@ -52,17 +56,33 @@ fn choose_campfire_owner_action(
     Err("Campfire owner found no policy action".to_string())
 }
 
-fn strategic_rest_or_smith_choice(
-    run_state: &RunState,
-    options: &[CampfireChoice],
-) -> Option<CampfireChoice> {
-    let context = build_campfire_decision_context_v1(run_state, options.to_vec());
-    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+fn strategic_rest_or_smith_choice(decision: &CampfireDecisionV1) -> Option<CampfireChoice> {
     match decision.action {
         CampfirePolicyActionV1::Rest { .. } => Some(CampfireChoice::Rest),
         CampfirePolicyActionV1::Smith { deck_index, .. } => Some(CampfireChoice::Smith(deck_index)),
         CampfirePolicyActionV1::Stop { .. } => None,
     }
+}
+
+fn forced_smith_only_exit(
+    options: &[CampfireChoice],
+    decision: &CampfireDecisionV1,
+) -> Option<CampfireChoice> {
+    if options.is_empty()
+        || !options
+            .iter()
+            .all(|choice| matches!(choice, CampfireChoice::Smith(_)))
+    {
+        return None;
+    }
+    decision
+        .candidate_plans
+        .iter()
+        .filter(|candidate| candidate.branch_active)
+        .find_map(|candidate| match candidate.choice {
+            Some(CampfireChoice::Smith(deck_index)) => Some(CampfireChoice::Smith(deck_index)),
+            _ => None,
+        })
 }
 
 fn best_campfire_toke(
@@ -160,6 +180,84 @@ mod tests {
             .push(RelicState::new(RelicId::Shovel));
 
         assert_eq!(owner_choice(&session), CampfireChoice::Dig);
+    }
+
+    #[test]
+    fn seed006_coffee_dripper_full_hp_campfire_has_an_executable_smith() {
+        let session = seed006_coffee_dripper_campfire_session();
+
+        let options =
+            sts_simulator::engine::campfire_handler::get_available_options(&session.run_state);
+        let context = build_campfire_decision_context_v1(&session.run_state, options.clone());
+        let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+        assert!(
+            matches!(decision.action, CampfirePolicyActionV1::Stop { .. }),
+            "the strict campfire policy should retain the compiler gate: {decision:#?}"
+        );
+        assert!(
+            matches!(owner_choice(&session), CampfireChoice::Smith(_)),
+            "the owner must still execute the only legal campfire action: options={options:?} decision={decision:#?}"
+        );
+    }
+
+    #[test]
+    fn forced_smith_exit_does_not_preempt_another_campfire_action() {
+        let mut session = seed006_coffee_dripper_campfire_session();
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::Shovel));
+
+        assert_eq!(owner_choice(&session), CampfireChoice::Dig);
+    }
+
+    fn seed006_coffee_dripper_campfire_session() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 38;
+        session.run_state.current_hp = 110;
+        session.run_state.max_hp = 110;
+        session.run_state.master_deck = vec![
+            card(CardId::Strike, 3, 0),
+            card(CardId::Strike, 4, 0),
+            card(CardId::Defend, 5, 0),
+            card(CardId::Defend, 6, 0),
+            card(CardId::Defend, 7, 0),
+            card(CardId::Defend, 8, 0),
+            card(CardId::Bash, 9, 1),
+            card(CardId::Berserk, 10_000, 0),
+            card(CardId::Clothesline, 10_001, 1),
+            card(CardId::Feed, 10_002, 0),
+            card(CardId::BattleTrance, 10_003, 1),
+            card(CardId::Armaments, 10_004, 1),
+            card(CardId::ShrugItOff, 10_005, 1),
+            card(CardId::MasterOfStrategy, 10_006, 1),
+            card(CardId::Inflame, 10_007, 1),
+            card(CardId::HeavyBlade, 10_008, 0),
+            card(CardId::ShrugItOff, 10_009, 1),
+            card(CardId::ShrugItOff, 10_010, 1),
+        ];
+        session.run_state.relics = [
+            RelicId::BurningBlood,
+            RelicId::FrozenEgg,
+            RelicId::OddMushroom,
+            RelicId::ToxicEgg,
+            RelicId::RunicPyramid,
+            RelicId::Courier,
+            RelicId::CoffeeDripper,
+        ]
+        .into_iter()
+        .map(RelicState::new)
+        .collect();
+        session
+    }
+
+    fn card(id: CardId, uuid: u32, upgrades: u8) -> CombatCard {
+        let mut card = CombatCard::new(id, uuid);
+        card.upgrades = upgrades;
+        card
     }
 
     fn owner_choice(session: &RunControlSession) -> CampfireChoice {
