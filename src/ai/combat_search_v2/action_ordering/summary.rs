@@ -19,13 +19,14 @@ pub(in crate::ai::combat_search_v2::action_ordering) fn summarize_ordering(
         if entry.priority.phase_hint.has_signal() {
             phase_signal_actions += 1;
         }
-        if entry.priority.effects.has_reactive_signal() {
+        if entry.priority.effects.has_reactive_signal() || entry.priority.phase_hint.has_signal() {
             action_effect_samples.push(ActionOrderingActionEffectSummary {
                 original_action_id: entry.original_action_id,
                 ordered_index,
                 role: entry.priority.role,
                 action_key: entry.choice.action_key.clone(),
                 effects: entry.priority.effects,
+                phase_hint: entry.priority.phase_hint,
             });
         }
     }

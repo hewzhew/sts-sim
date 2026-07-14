@@ -1,3 +1,5 @@
+use super::action_effects::{card_play_effect_facts, CardPlayEffectFacts};
+use super::enemy_mechanics_profile::{enemy_mechanics_profile, EnemyMechanicsProfileV1};
 use super::*;
 use crate::content::cards;
 #[cfg(test)]
@@ -36,14 +38,43 @@ pub(super) fn enemy_phase_transition_hint_for_input(
     phase_guard: CombatSearchPhaseGuardPluginId,
 ) -> EnemyPhaseTransitionHint {
     match input {
-        ClientInput::PlayCard { card_index, target } => combat
-            .zones
-            .hand
-            .get(*card_index)
-            .map(|card| play_card_phase_transition_hint(combat, card, *target, phase_guard))
-            .unwrap_or_default(),
+        ClientInput::PlayCard { card_index, target } => {
+            let Some(card) = combat.zones.hand.get(*card_index) else {
+                return EnemyPhaseTransitionHint::default();
+            };
+            enemy_phase_transition_hint_for_input_with_effects(
+                combat,
+                *card_index,
+                *target,
+                enemy_mechanics_profile(combat),
+                card_play_effect_facts(combat, card, *target),
+                phase_guard,
+            )
+        }
         _ => EnemyPhaseTransitionHint::default(),
     }
+}
+
+pub(super) fn enemy_phase_transition_hint_for_input_with_effects(
+    combat: &CombatState,
+    card_index: usize,
+    target: Option<usize>,
+    enemy_mechanics: EnemyMechanicsProfileV1,
+    effects: CardPlayEffectFacts,
+    phase_guard: CombatSearchPhaseGuardPluginId,
+) -> EnemyPhaseTransitionHint {
+    let Some(card) = combat.zones.hand.get(card_index) else {
+        return EnemyPhaseTransitionHint::default();
+    };
+    let mut hint = play_card_phase_transition_hint(combat, card, target, phase_guard);
+    hint.awakened_one_strength_transition = awakened_one_strength_transition_opportunity(
+        combat,
+        card_index,
+        target,
+        enemy_mechanics,
+        effects,
+    );
+    hint
 }
 
 impl EnemyPhaseTransitionHint {

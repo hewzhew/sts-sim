@@ -1,5 +1,6 @@
 use super::super::action_effects::CardPlayEffectDiagnostics;
 use super::super::action_priority::{ActionOrderingPriority, ActionOrderingRole};
+use super::super::phase_action_ordering::PhaseActionOrderingHint;
 use super::super::CombatActionChoice;
 use std::collections::BTreeMap;
 
@@ -47,6 +48,7 @@ pub(in crate::ai::combat_search_v2::action_ordering) struct ActionOrderingAction
     pub(in crate::ai::combat_search_v2::action_ordering) role: ActionOrderingRole,
     pub(in crate::ai::combat_search_v2::action_ordering) action_key: String,
     pub(in crate::ai::combat_search_v2::action_ordering) effects: CardPlayEffectDiagnostics,
+    pub(in crate::ai::combat_search_v2::action_ordering) phase_hint: PhaseActionOrderingHint,
 }
 
 impl ActionOrderingSummary {

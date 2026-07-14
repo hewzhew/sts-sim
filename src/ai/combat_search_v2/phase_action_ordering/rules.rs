@@ -1,8 +1,8 @@
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::CombatSearchPhaseGuardPluginId;
 use super::constants::{
-    AWAKENED_POWER_PENALTY, PHASE_ROLE_ADJUSTMENT, STASIS_TARGET_SETUP_MAX,
-    TIME_EATER_CLOCK_PENALTY,
+    AWAKENED_POWER_PENALTY, AWAKENED_STRENGTH_TRANSITION_SETUP_BONUS, PHASE_ROLE_ADJUSTMENT,
+    STASIS_TARGET_SETUP_MAX, TIME_EATER_CLOCK_PENALTY,
 };
 use super::types::{PhaseActionOrderingFacts, PhaseActionOrderingHint};
 use crate::content::cards::CardType;
@@ -17,6 +17,16 @@ pub(in crate::ai::combat_search_v2) fn phase_action_ordering_hint(
         phase_transition_safety: -facts.phase_transition.ordering_risk_score(),
         ..PhaseActionOrderingHint::default()
     };
+
+    if let Some(opportunity) = facts.phase_transition.awakened_one_strength_transition {
+        hint.role_rank_adjustment = hint
+            .role_rank_adjustment
+            .saturating_add(AWAKENED_STRENGTH_TRANSITION_SETUP_BONUS);
+        hint.phase_setup = hint
+            .phase_setup
+            .saturating_add(opportunity.convertible_positive_strength.max(1));
+        hint.awakened_one_strength_transition_setup = Some(opportunity);
+    }
 
     if profile.enemy_mechanics.lagavulin_sleeping_count > 0 {
         apply_lagavulin_sleep_hint(&mut hint, facts);

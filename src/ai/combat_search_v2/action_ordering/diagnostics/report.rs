@@ -1,8 +1,9 @@
 use super::super::super::{
     CombatSearchV2DiagnosticsActionEffectAccess, CombatSearchV2DiagnosticsActionEffectDerived,
     CombatSearchV2DiagnosticsActionEffectDirect, CombatSearchV2DiagnosticsActionEffectReactive,
-    CombatSearchV2DiagnosticsActionEffectSample, CombatSearchV2DiagnosticsActionRoleCount,
-    CombatSearchV2DiagnosticsOrdering, CombatSearchV2DiagnosticsOrderingSample,
+    CombatSearchV2DiagnosticsActionEffectSample, CombatSearchV2DiagnosticsActionPhase,
+    CombatSearchV2DiagnosticsActionRoleCount, CombatSearchV2DiagnosticsOrdering,
+    CombatSearchV2DiagnosticsOrderingSample,
 };
 use super::collector::ActionOrderingDiagnosticsCollector;
 
@@ -78,79 +79,97 @@ impl ActionOrderingDiagnosticsCollector {
     fn action_effect_samples(&self) -> Vec<CombatSearchV2DiagnosticsActionEffectSample> {
         self.action_effect_samples
             .iter()
-            .map(|sample| CombatSearchV2DiagnosticsActionEffectSample {
-                observed_at_state_query: sample.observed_at_state_query,
-                original_action_id: sample.original_action_id,
-                ordered_index: sample.ordered_index,
-                role: sample.role.label().to_string(),
-                action_key: sample.action_key.clone(),
-                direct: CombatSearchV2DiagnosticsActionEffectDirect {
-                    persistent_enemy_strength_down: sample
-                        .effects
-                        .direct
-                        .persistent_enemy_strength_down,
-                    temporary_enemy_strength_down: sample
-                        .effects
-                        .direct
-                        .temporary_enemy_strength_down,
-                    visible_attack_mitigation_hint: sample
-                        .effects
-                        .direct
-                        .visible_attack_mitigation_hint,
-                    enemy_weak: sample.effects.direct.enemy_weak,
-                    enemy_vulnerable: sample.effects.direct.enemy_vulnerable,
-                    enemy_strength_gain: sample.effects.direct.enemy_strength_gain,
-                    visible_attack_pressure_hint: sample
-                        .effects
-                        .direct
-                        .visible_attack_pressure_hint,
-                    player_strength_gain: sample.effects.direct.player_strength_gain,
-                    player_temporary_strength_gain: sample
-                        .effects
-                        .direct
-                        .player_temporary_strength_gain,
-                },
-                reactive: CombatSearchV2DiagnosticsActionEffectReactive {
-                    player_hp_loss: sample.effects.reactive.player_hp_loss,
-                    attack_retaliation_trigger_count_hint: sample
-                        .effects
-                        .reactive
-                        .attack_retaliation_trigger_count_hint,
-                    attack_retaliation_raw_player_damage_hint: sample
-                        .effects
-                        .reactive
-                        .attack_retaliation_raw_player_damage_hint,
-                    attack_retaliation_player_block_loss_hint: sample
-                        .effects
-                        .reactive
-                        .attack_retaliation_player_block_loss_hint,
-                    attack_retaliation_player_hp_loss_hint: sample
-                        .effects
-                        .reactive
-                        .attack_retaliation_player_hp_loss_hint,
-                    player_block: sample.effects.reactive.player_block,
-                    enemy_damage: sample.effects.reactive.enemy_damage,
-                    bad_draw_cards: sample.effects.reactive.bad_draw_cards,
-                    forced_turn_end: sample.effects.reactive.forced_turn_end,
-                    enemy_strength_gain: sample.effects.reactive.enemy_strength_gain,
-                    visible_attack_pressure_hint: sample
-                        .effects
-                        .reactive
-                        .visible_attack_pressure_hint,
-                    enemy_weak: sample.effects.reactive.enemy_weak,
-                    enemy_vulnerable: sample.effects.reactive.enemy_vulnerable,
-                },
-                access: CombatSearchV2DiagnosticsActionEffectAccess {
-                    declared_draw_cards: sample.effects.access.declared_draw_cards,
-                    conditional_draw_cards: sample.effects.access.conditional_draw_cards,
-                    total_draw_cards: sample.effects.access.total_draw_cards,
-                },
-                derived: CombatSearchV2DiagnosticsActionEffectDerived {
-                    mitigation_score: sample.effects.derived.mitigation_score,
-                    reactive_risk_score: sample.effects.derived.reactive_risk_score,
-                    enemy_scaling_risk_score: sample.effects.derived.enemy_scaling_risk_score,
-                    net_mitigation_score: sample.effects.derived.net_mitigation_score,
-                },
+            .map(|sample| {
+                let opportunity = sample.phase_hint.awakened_one_strength_transition_setup;
+                CombatSearchV2DiagnosticsActionEffectSample {
+                    observed_at_state_query: sample.observed_at_state_query,
+                    original_action_id: sample.original_action_id,
+                    ordered_index: sample.ordered_index,
+                    role: sample.role.label().to_string(),
+                    action_key: sample.action_key.clone(),
+                    direct: CombatSearchV2DiagnosticsActionEffectDirect {
+                        persistent_enemy_strength_down: sample
+                            .effects
+                            .direct
+                            .persistent_enemy_strength_down,
+                        temporary_enemy_strength_down: sample
+                            .effects
+                            .direct
+                            .temporary_enemy_strength_down,
+                        visible_attack_mitigation_hint: sample
+                            .effects
+                            .direct
+                            .visible_attack_mitigation_hint,
+                        enemy_weak: sample.effects.direct.enemy_weak,
+                        enemy_vulnerable: sample.effects.direct.enemy_vulnerable,
+                        enemy_strength_gain: sample.effects.direct.enemy_strength_gain,
+                        visible_attack_pressure_hint: sample
+                            .effects
+                            .direct
+                            .visible_attack_pressure_hint,
+                        player_strength_gain: sample.effects.direct.player_strength_gain,
+                        player_temporary_strength_gain: sample
+                            .effects
+                            .direct
+                            .player_temporary_strength_gain,
+                    },
+                    reactive: CombatSearchV2DiagnosticsActionEffectReactive {
+                        player_hp_loss: sample.effects.reactive.player_hp_loss,
+                        attack_retaliation_trigger_count_hint: sample
+                            .effects
+                            .reactive
+                            .attack_retaliation_trigger_count_hint,
+                        attack_retaliation_raw_player_damage_hint: sample
+                            .effects
+                            .reactive
+                            .attack_retaliation_raw_player_damage_hint,
+                        attack_retaliation_player_block_loss_hint: sample
+                            .effects
+                            .reactive
+                            .attack_retaliation_player_block_loss_hint,
+                        attack_retaliation_player_hp_loss_hint: sample
+                            .effects
+                            .reactive
+                            .attack_retaliation_player_hp_loss_hint,
+                        player_block: sample.effects.reactive.player_block,
+                        enemy_damage: sample.effects.reactive.enemy_damage,
+                        bad_draw_cards: sample.effects.reactive.bad_draw_cards,
+                        forced_turn_end: sample.effects.reactive.forced_turn_end,
+                        enemy_strength_gain: sample.effects.reactive.enemy_strength_gain,
+                        visible_attack_pressure_hint: sample
+                            .effects
+                            .reactive
+                            .visible_attack_pressure_hint,
+                        enemy_weak: sample.effects.reactive.enemy_weak,
+                        enemy_vulnerable: sample.effects.reactive.enemy_vulnerable,
+                    },
+                    access: CombatSearchV2DiagnosticsActionEffectAccess {
+                        declared_draw_cards: sample.effects.access.declared_draw_cards,
+                        conditional_draw_cards: sample.effects.access.conditional_draw_cards,
+                        total_draw_cards: sample.effects.access.total_draw_cards,
+                    },
+                    derived: CombatSearchV2DiagnosticsActionEffectDerived {
+                        mitigation_score: sample.effects.derived.mitigation_score,
+                        reactive_risk_score: sample.effects.derived.reactive_risk_score,
+                        enemy_scaling_risk_score: sample.effects.derived.enemy_scaling_risk_score,
+                        net_mitigation_score: sample.effects.derived.net_mitigation_score,
+                    },
+                    phase: CombatSearchV2DiagnosticsActionPhase {
+                        awakened_one_strength_transition: opportunity.is_some(),
+                        temporary_strength_down: opportunity
+                            .map(|value| value.temporary_strength_down)
+                            .unwrap_or_default(),
+                        convertible_positive_strength: opportunity
+                            .map(|value| value.convertible_positive_strength)
+                            .unwrap_or_default(),
+                        remaining_damage_upper_bound: opportunity
+                            .map(|value| value.remaining_damage_upper_bound)
+                            .unwrap_or_default(),
+                        phase_one_hp_with_block: opportunity
+                            .map(|value| value.phase_one_hp_with_block)
+                            .unwrap_or_default(),
+                    },
+                }
             })
             .collect()
     }

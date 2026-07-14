@@ -108,6 +108,100 @@ fn priority_for_input(
     )
 }
 
+fn awakened_transition_ordering_combat(
+    hp: i32,
+    strength: i32,
+    form_one: bool,
+) -> crate::runtime::combat::CombatState {
+    let mut combat = blank_test_combat();
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 7;
+    awakened.current_hp = hp;
+    awakened.max_hp = 300;
+    awakened.awakened_one.form1 = form_one;
+    combat.entities.monsters = vec![awakened];
+    combat.entities.power_db.insert(
+        7,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::Strength,
+            instance_id: None,
+            amount: strength,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat
+}
+
+fn transition_priority(
+    combat: &crate::runtime::combat::CombatState,
+    card_index: usize,
+) -> ActionOrderingPriority {
+    priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        combat,
+        &ClientInput::PlayCard {
+            card_index,
+            target: Some(7),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    )
+}
+
+#[test]
+fn awakened_transition_setup_orders_before_direct_form_one_lethal() {
+    let mut combat = awakened_transition_ordering_combat(6, 4, true);
+    combat.turn.energy = 1;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::DarkShackles, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+
+    let dark = transition_priority(&combat, 0);
+    let lethal = transition_priority(&combat, 1);
+
+    assert!(
+        dark.role_rank > lethal.role_rank,
+        "dark={dark:?} lethal={lethal:?}"
+    );
+    assert!(dark
+        .phase_hint
+        .awakened_one_strength_transition_setup
+        .is_some());
+}
+
+#[test]
+fn awakened_transition_setup_bonus_requires_all_hard_gates() {
+    for (label, mut combat) in [
+        ("form-two", awakened_transition_ordering_combat(6, 4, false)),
+        (
+            "zero-strength",
+            awakened_transition_ordering_combat(6, 0, true),
+        ),
+        (
+            "insufficient-damage",
+            awakened_transition_ordering_combat(40, 4, true),
+        ),
+    ] {
+        combat.turn.energy = 1;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::DarkShackles, 10),
+            CombatCard::new(CardId::Strike, 11),
+        ];
+        let priority = transition_priority(&combat, 0);
+        assert!(
+            priority
+                .phase_hint
+                .awakened_one_strength_transition_setup
+                .is_none(),
+            "unexpected setup hint for {label}"
+        );
+        assert_eq!(priority.phase_hint.role_rank_adjustment, 0, "{label}");
+    }
+}
+
 #[test]
 fn non_player_turn_priority_is_neutral() {
     let combat = blank_test_combat();

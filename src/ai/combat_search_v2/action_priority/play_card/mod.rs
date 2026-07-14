@@ -3,17 +3,17 @@ mod target;
 
 use super::super::action_effects::card_play_effect_facts;
 use super::super::action_resource_timing::resource_timing_facts_for_play;
+use super::super::enemy_phase_transition::enemy_phase_transition_hint_for_input_with_effects;
 use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
 };
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
-use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
+use super::super::visible_incoming_damage;
 use super::constants::*;
 use super::*;
 use crate::content::cards::{self, CardType};
 use crate::runtime::combat::CombatState;
-use crate::state::core::ClientInput;
 
 use setup::{
     current_turn_attack_setup_score, current_turn_retaliation_protection_score,
@@ -58,9 +58,12 @@ pub(super) fn priority_for_play_card(
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = target_progress_kills(combat, target_kind, target, damage);
     let future_debuff = effects.has_future_debuff();
-    let phase_transition = enemy_phase_transition_hint_for_input(
+    let phase_transition = enemy_phase_transition_hint_for_input_with_effects(
         combat,
-        &ClientInput::PlayCard { card_index, target },
+        card_index,
+        target,
+        phase_profile.enemy_mechanics,
+        effects,
         plugins.phase_guard,
     );
     let current_turn_attack_setup =

@@ -1,4 +1,6 @@
-use super::super::enemy_phase_transition::EnemyPhaseTransitionHint;
+use super::super::enemy_phase_transition::{
+    AwakenedOneStrengthTransitionOpportunity, EnemyPhaseTransitionHint,
+};
 use crate::content::cards::CardType;
 use crate::content::monsters::EnemyId;
 
@@ -31,6 +33,8 @@ pub(in crate::ai::combat_search_v2) struct PhaseActionOrderingHint {
     pub(in crate::ai::combat_search_v2) phase_setup: i32,
     pub(in crate::ai::combat_search_v2) phase_survival: i32,
     pub(in crate::ai::combat_search_v2) phase_transition_safety: i32,
+    pub(in crate::ai::combat_search_v2) awakened_one_strength_transition_setup:
+        Option<AwakenedOneStrengthTransitionOpportunity>,
 }
 
 impl PhaseActionOrderingHint {
@@ -39,6 +43,7 @@ impl PhaseActionOrderingHint {
             || self.phase_setup != 0
             || self.phase_survival != 0
             || self.phase_transition_safety != 0
+            || self.awakened_one_strength_transition_setup.is_some()
     }
 }
 

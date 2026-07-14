@@ -1,6 +1,65 @@
 use super::*;
 
 #[test]
+fn ordering_collector_reports_awakened_strength_transition_window() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 1;
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 7;
+    awakened.current_hp = 6;
+    awakened.max_hp = 300;
+    awakened.awakened_one.form1 = true;
+    combat.entities.monsters = vec![awakened];
+    combat.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 4,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::DarkShackles, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    let ordered = order_action_choices(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        vec![
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(7),
+                },
+            ),
+            CombatActionChoice::from_input(
+                &combat,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(7),
+                },
+            ),
+        ],
+    );
+    let mut collector = ActionOrderingDiagnosticsCollector::default();
+    collector.observe(&ordered.summary);
+    let report = collector.finish();
+
+    let sample = report
+        .action_effect_samples
+        .iter()
+        .find(|sample| sample.action_key.contains("Dark Shackles"))
+        .expect("transition setup sample");
+    assert!(sample.phase.awakened_one_strength_transition);
+    assert_eq!(sample.phase.convertible_positive_strength, 4);
+    assert!(sample.phase.remaining_damage_upper_bound >= sample.phase.phase_one_hp_with_block);
+}
+
+#[test]
 fn ordering_collector_reports_role_counts_without_action_tree() {
     let mut combat = blank_test_combat();
     let mut monster = test_monster(EnemyId::Cultist);

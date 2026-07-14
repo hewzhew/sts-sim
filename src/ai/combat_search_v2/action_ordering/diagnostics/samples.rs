@@ -1,5 +1,6 @@
 use super::super::super::action_effects::CardPlayEffectDiagnostics;
 use super::super::super::action_priority::ActionOrderingRole;
+use super::super::super::phase_action_ordering::PhaseActionOrderingHint;
 
 pub(super) const LARGEST_REORDER_SAMPLE_LIMIT: usize = 8;
 pub(in crate::ai::combat_search_v2::action_ordering) const ACTION_EFFECT_SAMPLE_LIMIT: usize = 12;
@@ -28,4 +29,5 @@ pub(super) struct ActionOrderingActionEffectObservation {
     pub(super) role: ActionOrderingRole,
     pub(super) action_key: String,
     pub(super) effects: CardPlayEffectDiagnostics,
+    pub(super) phase_hint: PhaseActionOrderingHint,
 }

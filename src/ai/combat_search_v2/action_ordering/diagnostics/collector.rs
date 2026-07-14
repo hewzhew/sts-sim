@@ -112,6 +112,7 @@ impl ActionOrderingDiagnosticsCollector {
                 role: sample.role,
                 action_key: sample.action_key.clone(),
                 effects: sample.effects,
+                phase_hint: sample.phase_hint,
             });
         }
     }
@@ -138,10 +139,22 @@ impl ActionOrderingDiagnosticsCollector {
         self.action_effect_samples.push(observation);
         self.action_effect_samples.sort_by(|left, right| {
             right
-                .effects
-                .derived
-                .reactive_risk_score
-                .cmp(&left.effects.derived.reactive_risk_score)
+                .phase_hint
+                .awakened_one_strength_transition_setup
+                .is_some()
+                .cmp(
+                    &left
+                        .phase_hint
+                        .awakened_one_strength_transition_setup
+                        .is_some(),
+                )
+                .then_with(|| {
+                    right
+                        .effects
+                        .derived
+                        .reactive_risk_score
+                        .cmp(&left.effects.derived.reactive_risk_score)
+                })
                 .then_with(|| {
                     right
                         .effects

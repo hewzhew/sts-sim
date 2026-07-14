@@ -172,6 +172,16 @@ pub struct CombatSearchV2DiagnosticsActionEffectSample {
     pub reactive: CombatSearchV2DiagnosticsActionEffectReactive,
     pub access: CombatSearchV2DiagnosticsActionEffectAccess,
     pub derived: CombatSearchV2DiagnosticsActionEffectDerived,
+    pub phase: CombatSearchV2DiagnosticsActionPhase,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionPhase {
+    pub awakened_one_strength_transition: bool,
+    pub temporary_strength_down: i32,
+    pub convertible_positive_strength: i32,
+    pub remaining_damage_upper_bound: i32,
+    pub phase_one_hp_with_block: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]
