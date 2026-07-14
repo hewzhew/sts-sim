@@ -8,10 +8,11 @@ use sts_simulator::ai::strategy::deck_strategic_deficit::StrategicBurdenLevel;
 use sts_simulator::ai::strategy::trajectory_comparison::{
     compare_trajectories, TrajectoryComparison, TrajectoryConstruction,
     TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence, TrajectoryProgress,
-    TrajectoryResources, TrajectorySearchComparability, TrajectorySnapshot, TrajectoryTerminal,
+    TrajectoryResources, TrajectorySnapshot, TrajectoryTerminal,
 };
 
 use super::branch_model::{Branch, BranchStatus, TerminalOutcome};
+use super::search_comparability::classify_search_comparability;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct FrontierTrajectoryEvaluation {
@@ -70,7 +71,7 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
             active_commitments,
             failed_commitments,
         },
-        search_comparability: TrajectorySearchComparability::default(),
+        search_comparability: classify_search_comparability(&branch.combat_search_history),
     }
 }
 
@@ -141,8 +142,11 @@ mod tests {
     };
     use sts_simulator::ai::strategy::trajectory_comparison::{
         TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence,
+        TrajectorySearchComparabilityStatus,
     };
-    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::eval::run_control::{
+        CombatSearchTraceSummary, RunControlConfig, RunControlSession,
+    };
 
     use super::*;
     use crate::runtime::branch::owner_audit::branch_model::{BranchStatus, Owner};
@@ -189,6 +193,25 @@ mod tests {
             TrajectoryDeployabilityEvidence::Unknown
         );
         assert_eq!(snapshot.resources.hp, branch.session.run_state.current_hp);
+    }
+
+    #[test]
+    fn snapshot_classifies_retained_node_bounded_search_history() {
+        let mut branch = test_branch(BranchPolicyLane::default());
+        branch.combat_search_history = vec![CombatSearchTraceSummary {
+            source: "primary".to_string(),
+            coverage_status: "NodeBudgetLimited".to_string(),
+            node_budget_hit: true,
+            ..CombatSearchTraceSummary::default()
+        }];
+
+        let snapshot = trajectory_snapshot(&branch);
+
+        assert_eq!(
+            snapshot.search_comparability.status,
+            TrajectorySearchComparabilityStatus::Comparable
+        );
+        assert_eq!(snapshot.search_comparability.node_bounded_attempts, 1);
     }
 
     #[test]

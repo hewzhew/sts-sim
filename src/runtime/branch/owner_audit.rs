@@ -154,6 +154,8 @@ mod run_state_json;
 mod run_stop_recorder;
 #[path = "owner_audit/runner.rs"]
 mod runner;
+#[path = "owner_audit/search_comparability.rs"]
+mod search_comparability;
 #[path = "owner_audit/shop_boss_preview_bundle_expansion.rs"]
 mod shop_boss_preview_bundle_expansion;
 #[path = "owner_audit/shop_investment.rs"]
