@@ -1,3 +1,4 @@
+use crate::ai::strategy::boss_survival_evidence::BossSurvivalRepairKind;
 use crate::ai::strategy::decision_pipeline::{
     CandidateEvaluation, CandidateLane, CleanupTarget, DecisionCandidateIr, DecisionCandidateKind,
 };
@@ -49,12 +50,14 @@ pub struct ShopPurchaseBundleFacts {
     pub solves_next_fight: bool,
     pub solves_boss_gap: bool,
     pub repairs_boss_scaling_plan: bool,
+    pub boss_survival_repair: Option<BossSurvivalRepairKind>,
     pub adds_deck_burden: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ShopPurchaseCandidateEvidence {
     pub repairs_boss_scaling_plan: bool,
+    pub boss_survival_repair: Option<BossSurvivalRepairKind>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -184,6 +187,13 @@ fn bundle_facts(
         repairs_boss_scaling_plan: opportunity.boss_answer_needed
             && !opportunity.survival_purchase_needed
             && evidence.repairs_boss_scaling_plan,
+        boss_survival_repair: if opportunity.boss_answer_needed
+            && !opportunity.survival_purchase_needed
+        {
+            evidence.boss_survival_repair
+        } else {
+            None
+        },
         adds_deck_burden,
     }
 }
@@ -227,6 +237,15 @@ fn bundle_verdict(
         return (
             ShopPurchaseBundleVerdict::StrategicBossRepairBuy,
             "StrategicBossScalingRepair",
+        );
+    }
+    if let Some(repair) = facts.boss_survival_repair {
+        return (
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy,
+            match repair {
+                BossSurvivalRepairKind::PlanRepair => "StrategicBossSurvivalPlanRepair",
+                BossSurvivalRepairKind::TimedBridge => "StrategicBossSurvivalTimedBridge",
+            },
         );
     }
     if spends_future_shop_liquidity_without_hard_need(opportunity, facts, candidate) {
@@ -350,6 +369,7 @@ fn is_checkpoint_cleanup_target(target: CleanupTarget) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::strategy::boss_survival_evidence::BossSurvivalRepairKind;
     use crate::ai::strategy::decision_pipeline::{
         CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, DecisionCandidateIr,
         ExpansionPlan, ScoreComponent,
@@ -713,6 +733,7 @@ mod tests {
             &demon_form,
             ShopPurchaseCandidateEvidence {
                 repairs_boss_scaling_plan: true,
+                boss_survival_repair: None,
             },
         );
 
@@ -723,6 +744,107 @@ mod tests {
             ShopPurchaseBundleVerdict::StrategicBossRepairBuy
         );
         assert_eq!(repair.reason, "StrategicBossScalingRepair");
+    }
+
+    #[test]
+    fn timed_boss_survival_bridge_can_spend_future_shop_liquidity() {
+        let shackles = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::DarkShackles,
+                upgrades: 1,
+                price: 78,
+            },
+            120,
+        );
+        let opportunity = ShopGoldOpportunity {
+            boss_answer_needed: true,
+            ..visible_future_shop_opportunity(180)
+        };
+
+        let decision = evaluate_shop_purchase_bundle_with_evidence(
+            opportunity,
+            &shackles,
+            ShopPurchaseCandidateEvidence {
+                repairs_boss_scaling_plan: false,
+                boss_survival_repair: Some(BossSurvivalRepairKind::TimedBridge),
+            },
+        );
+
+        assert_eq!(
+            decision.verdict,
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy
+        );
+        assert_eq!(decision.reason, "StrategicBossSurvivalTimedBridge");
+        assert_eq!(
+            decision.facts.boss_survival_repair,
+            Some(BossSurvivalRepairKind::TimedBridge)
+        );
+    }
+
+    #[test]
+    fn boss_survival_plan_repair_uses_distinct_bundle_reason() {
+        let disarm = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::Disarm,
+                upgrades: 0,
+                price: 75,
+            },
+            120,
+        );
+        let decision = evaluate_shop_purchase_bundle_with_evidence(
+            ShopGoldOpportunity {
+                boss_answer_needed: true,
+                ..visible_future_shop_opportunity(180)
+            },
+            &disarm,
+            ShopPurchaseCandidateEvidence {
+                repairs_boss_scaling_plan: false,
+                boss_survival_repair: Some(BossSurvivalRepairKind::PlanRepair),
+            },
+        );
+
+        assert_eq!(
+            decision.verdict,
+            ShopPurchaseBundleVerdict::StrategicBossRepairBuy
+        );
+        assert_eq!(decision.reason, "StrategicBossSurvivalPlanRepair");
+    }
+
+    #[test]
+    fn timed_bridge_does_not_override_maw_bank_or_survival_emergency() {
+        let shackles = evaluation(
+            DecisionCandidateKind::ShopBuyCard {
+                card: CardId::DarkShackles,
+                upgrades: 1,
+                price: 78,
+            },
+            120,
+        );
+        let evidence = ShopPurchaseCandidateEvidence {
+            repairs_boss_scaling_plan: false,
+            boss_survival_repair: Some(BossSurvivalRepairKind::TimedBridge),
+        };
+
+        let maw = evaluate_shop_purchase_bundle_with_evidence(
+            ShopGoldOpportunity {
+                boss_answer_needed: true,
+                ..maw_bank_opportunity(180)
+            },
+            &shackles,
+            evidence,
+        );
+        let emergency = evaluate_shop_purchase_bundle_with_evidence(
+            ShopGoldOpportunity {
+                boss_answer_needed: true,
+                survival_purchase_needed: true,
+                ..visible_future_shop_opportunity(180)
+            },
+            &shackles,
+            evidence,
+        );
+
+        assert_eq!(maw.reason, "BreaksMawBankWithoutHardNeed");
+        assert_eq!(emergency.reason, "SpendsFutureShopLiquidityWithoutHardNeed");
     }
 
     #[test]
@@ -737,6 +859,7 @@ mod tests {
         );
         let evidence = ShopPurchaseCandidateEvidence {
             repairs_boss_scaling_plan: true,
+            boss_survival_repair: None,
         };
         let maw_bank = ShopGoldOpportunity {
             boss_answer_needed: true,

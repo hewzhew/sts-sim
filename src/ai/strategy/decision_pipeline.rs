@@ -10,7 +10,9 @@ use crate::ai::strategy::boss_relic_admission::{
 use crate::ai::strategy::boss_scaling_evidence::{
     admission_is_strength_payoff, assess_boss_scaling_evidence,
 };
-use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
+use crate::ai::strategy::boss_survival_evidence::{
+    assess_boss_survival_evidence, BossSurvivalRepairKind,
+};
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -690,8 +692,13 @@ fn shop_purchase_candidate_evidence(
             .relevant_to_boss_plan
                 && !fragile_supported_payoff(context, admission)
         });
+    let boss_survival_repair = admission.and_then(|admission| {
+        assess_boss_survival_evidence(context.deck_plan, candidate_card(candidate.kind), admission)
+            .repair_kind
+    });
     ShopPurchaseCandidateEvidence {
         repairs_boss_scaling_plan,
+        boss_survival_repair,
     }
 }
 
@@ -1030,7 +1037,15 @@ fn shop_purchase_bundle_score(
     let label = match bundle.verdict {
         ShopPurchaseBundleVerdict::HardSurvivalBuy => "shop-bundle-hard-survival",
         ShopPurchaseBundleVerdict::HardBossAnswerBuy => "shop-bundle-boss-answer",
-        ShopPurchaseBundleVerdict::StrategicBossRepairBuy => "shop-bundle-boss-scaling-repair",
+        ShopPurchaseBundleVerdict::StrategicBossRepairBuy => {
+            match bundle.facts.boss_survival_repair {
+                Some(BossSurvivalRepairKind::PlanRepair) => "shop-bundle-boss-survival-plan-repair",
+                Some(BossSurvivalRepairKind::TimedBridge) => {
+                    "shop-bundle-boss-survival-timed-bridge"
+                }
+                None => "shop-bundle-boss-scaling-repair",
+            }
+        }
         ShopPurchaseBundleVerdict::EfficientBundleBuy => "shop-bundle-efficient",
         ShopPurchaseBundleVerdict::ContextBuy => "shop-bundle-context",
         ShopPurchaseBundleVerdict::PreserveGoldPreferred => "shop-bundle-preserve-gold",
