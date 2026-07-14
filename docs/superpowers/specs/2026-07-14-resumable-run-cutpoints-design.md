@@ -42,8 +42,9 @@ Add first-class resumable cutpoints to the owner-audit runtime.
 3. Store cutpoints using the existing full `RunControlSessionCheckpointV1` and
    frontier schema. Do not introduce a second partial run-state schema.
 4. Give every cutpoint a small manifest containing its kind, act, floor, boundary,
-   branch id, session fingerprint, source generation, and artifact trust. The
-   payload remains an ordinary resumable frontier file.
+   branch id, full session fingerprint, branch-control/history fingerprint,
+   candidate fingerprints, source generation, and artifact trust. The payload
+   remains an ordinary resumable frontier file.
 5. A restored experiment may override branch count and search budgets using the
    existing `--resume-frontier` contract. It must validate its expected fingerprint
    and visible candidate set before expanding choices.
@@ -57,17 +58,21 @@ For a run capsule, write cutpoints below `cutpoints/`:
 
 ```text
 cutpoints/
+  inflight_pre_combat_b0036.frontier.json
+  inflight_pre_combat_b0036.manifest.json
   latest_pre_combat_search.frontier.json
   latest_pre_combat_search.manifest.json
   a2f32_boss_relic.frontier.json
   a2f32_boss_relic.manifest.json
 ```
 
-The pre-combat pair is a provisional overwrite slot: only the newest recovery point
-is kept. It is written before search, retained when search cannot advance, and
-removed after that combat advances successfully. This bounds artifact growth,
-avoids presenting a stale successful combat as the current recovery point, and
-still makes the current combat gap recoverable.
+Each branch being searched uses one branch-named inflight pair so a successful
+branch cannot erase another branch's gap. A gap promotes its inflight pair to the
+single `latest_pre_combat_search` pair; success removes its inflight pair and removes
+the latest pair only when the fingerprints match. Inflight files are bounded by the
+branch cap and only the newest promoted recovery point is kept. This avoids
+presenting a stale successful combat as the current recovery point while still
+making the current combat gap recoverable.
 
 Boss relic cutpoints are durable and named by act/floor/boundary. There are at most
 three in a normal run, so retaining them does not create an unbounded checkpoint
