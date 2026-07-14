@@ -4,9 +4,13 @@ use crate::content::cards;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatCard;
 
+mod awakened_one;
 mod damage_projection;
 mod projection;
 mod transition_rules;
+pub(super) use awakened_one::{
+    awakened_one_strength_transition_opportunity, AwakenedOneStrengthTransitionOpportunity,
+};
 use projection::{PhaseProjection, ProjectedMonsterDamage};
 use transition_rules::{
     observe_champ_threshold_transition, observe_guardian_transition, observe_lagavulin_transition,
@@ -23,6 +27,7 @@ pub(super) struct EnemyPhaseTransitionHint {
     pub(super) lagavulin_wake_risk_count: usize,
     pub(super) champ_threshold_trigger_count: usize,
     pub(super) champ_threshold_debt_hp: i32,
+    pub(super) awakened_one_strength_transition: Option<AwakenedOneStrengthTransitionOpportunity>,
 }
 
 pub(super) fn enemy_phase_transition_hint_for_input(
