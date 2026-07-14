@@ -7,6 +7,7 @@ use super::combat_search_orchestrator;
 use super::combat_search_portfolio_result::CombatSearchPortfolioResult;
 use super::combat_search_report::CombatSearchPortfolioReport;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
+use super::run_cutpoint_recorder::RunCutpointRecorder;
 use super::run_deadline::RunDeadline;
 use super::{Args, BranchStatus, Owner};
 
@@ -35,6 +36,24 @@ pub(super) fn advance_to_owner_or_gap(
     args: Args,
     deadline: RunDeadline,
 ) -> AdvanceResult {
+    advance_to_owner_or_gap_impl(session, args, deadline, None)
+}
+
+pub(super) fn advance_to_owner_or_gap_with_cutpoints(
+    session: &mut RunControlSession,
+    args: Args,
+    deadline: RunDeadline,
+    cutpoints: &mut RunCutpointRecorder<'_>,
+) -> AdvanceResult {
+    advance_to_owner_or_gap_impl(session, args, deadline, Some(cutpoints))
+}
+
+fn advance_to_owner_or_gap_impl(
+    session: &mut RunControlSession,
+    args: Args,
+    deadline: RunDeadline,
+    mut cutpoints: Option<&mut RunCutpointRecorder<'_>>,
+) -> AdvanceResult {
     let mut policy_steps = 0usize;
     let mut auto_ops_used = 0usize;
     let mut auto_steps = Vec::new();
@@ -42,8 +61,18 @@ pub(super) fn advance_to_owner_or_gap(
     let mut accepted_high_loss_diagnostics = Vec::new();
     loop {
         let run_args = deadline.cap_args(args, 1);
+        if let Some(recorder) = cutpoints.as_deref_mut() {
+            if let Err(error) = recorder.before_combat_search(session) {
+                return advance_failed(format!("cutpoint persistence failed: {error}"));
+            }
+        }
         match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
             Ok(portfolio) => {
+                if let Some(recorder) = cutpoints.as_deref_mut() {
+                    if let Err(error) = recorder.after_combat_search(&portfolio.status) {
+                        return advance_failed(format!("cutpoint persistence failed: {error}"));
+                    }
+                }
                 let transition = absorb_portfolio_result(
                     portfolio,
                     args,
@@ -94,16 +123,33 @@ pub(super) fn advance_to_owner_or_gap(
                 }
             }
             Err(err) => {
+                if let Some(recorder) = cutpoints.as_deref_mut() {
+                    if let Err(cutpoint_error) = recorder.retain_on_error() {
+                        return advance_failed(format!(
+                            "combat search failed: {err}; cutpoint persistence failed: {cutpoint_error}"
+                        ));
+                    }
+                }
                 return advance_result(
                     BranchStatus::AdvanceFailed(err),
                     None,
                     auto_steps,
                     combat_search,
                     accepted_high_loss_diagnostics,
-                )
+                );
             }
         }
     }
+}
+
+fn advance_failed(message: String) -> AdvanceResult {
+    advance_result(
+        BranchStatus::AdvanceFailed(message),
+        None,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
 }
 
 fn absorb_portfolio_result(
