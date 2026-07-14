@@ -18,6 +18,7 @@ pub(super) fn compare_turn_plan_seed_candidate(
                 .progress_bucket()
                 .cmp(&right.eval.progress_bucket())
         })
+        .then_with(|| living_enemy_score(left).cmp(&living_enemy_score(right)))
         .then_with(|| left.eval.enemy_progress().cmp(&right.eval.enemy_progress()))
         .then_with(|| {
             left.eval
@@ -47,6 +48,17 @@ pub(super) fn compare_turn_plan_seed_candidate(
         })
         .then_with(|| left.eval.final_hp().cmp(&right.eval.final_hp()))
         .then_with(|| left.eval.cmp(&right.eval))
+}
+
+fn living_enemy_score(plan: &TurnPlanV1) -> i32 {
+    -(plan
+        .end_node
+        .combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .count() as i32)
 }
 
 pub(super) fn count_turn_plan_prior_scored_plans(

@@ -1,4 +1,6 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId;
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchChildRolloutPluginId, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+};
 
 use super::args::Args;
 
@@ -13,6 +15,8 @@ pub(super) struct ReviewOptions {
     pub(super) action_preview_limit: usize,
     pub(super) replay_focus: bool,
     pub(super) disable_rollout: bool,
+    rollout_plugin: Option<CombatSearchRolloutPluginId>,
+    turn_plan_plugin: Option<CombatSearchTurnPlanPluginId>,
     pub(super) rollout_max_actions: Option<usize>,
     pub(super) rollout_max_evaluations: Option<usize>,
     pub(super) line_lab: bool,
@@ -41,6 +45,8 @@ impl ReviewOptions {
             action_preview_limit: args.action_preview_limit,
             replay_focus: args.replay_focus,
             disable_rollout: args.disable_rollout,
+            rollout_plugin: args.rollout_policy,
+            turn_plan_plugin: args.turn_plan_policy,
             rollout_max_actions: args.rollout_max_actions,
             rollout_max_evaluations: args.rollout_max_evaluations,
             line_lab: args.line_lab,
@@ -63,5 +69,19 @@ impl ReviewOptions {
         } else {
             CombatSearchChildRolloutPluginId::LazyOnPop
         }
+    }
+
+    pub(super) fn rollout_plugin(&self) -> CombatSearchRolloutPluginId {
+        if self.disable_rollout {
+            CombatSearchRolloutPluginId::Disabled
+        } else {
+            self.rollout_plugin
+                .unwrap_or(CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion)
+        }
+    }
+
+    pub(super) fn turn_plan_plugin(&self) -> CombatSearchTurnPlanPluginId {
+        self.turn_plan_plugin
+            .unwrap_or(CombatSearchTurnPlanPluginId::Disabled)
     }
 }

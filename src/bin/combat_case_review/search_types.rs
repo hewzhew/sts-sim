@@ -1,5 +1,7 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchV2ActionPreview, CombatSearchV2DiagnosticsTurnPlan, SearchTerminalLabel,
+};
 use sts_simulator::eval::run_control::{
     CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
 };
@@ -69,6 +71,8 @@ impl SearchReview {
 #[derive(Serialize)]
 pub(super) struct SearchReviewFacts {
     pub(super) diagnostic_progress: Option<SearchDiagnosticProgressFacts>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) turn_plan: Option<CombatSearchV2DiagnosticsTurnPlan>,
 }
 
 #[derive(Clone, Serialize)]
@@ -180,6 +184,7 @@ mod tests {
             performance: zero_performance(),
             facts: SearchReviewFacts {
                 diagnostic_progress: None,
+                turn_plan: None,
             },
             candidate_adjudication_census,
             persistent_burden_cutpoint_probe,

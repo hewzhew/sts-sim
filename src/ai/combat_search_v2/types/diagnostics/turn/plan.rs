@@ -13,6 +13,7 @@ pub struct CombatSearchV2DiagnosticsTurnPlan {
     pub total_truncated_children: u64,
     pub turn_plan_prior_scored_plans: u64,
     pub frontier_seeded_nodes: u64,
+    pub frontier_seed_plans: Vec<CombatSearchV2DiagnosticsTurnPlanEntry>,
     pub bucket_counts: Vec<CombatSearchV2DiagnosticsTurnPlanCount>,
     pub stop_reason_counts: Vec<CombatSearchV2DiagnosticsTurnPlanCount>,
     pub samples: Vec<CombatSearchV2DiagnosticsTurnPlanSample>,

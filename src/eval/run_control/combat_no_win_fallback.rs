@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use crate::ai::combat_search_v2::{
-    filter_combat_search_legal_actions, find_combat_turn_pool_rescue_win_v0,
-    plan_combat_turn_segment_v1, CombatSearchV2ActionTrace, CombatSearchV2Config,
-    CombatSearchV2Report,
+    filter_combat_search_legal_actions, find_combat_turn_plan_rescue_win_v0,
+    find_combat_turn_pool_rescue_win_v0, plan_combat_turn_segment_v1, CombatSearchV2ActionTrace,
+    CombatSearchV2Config, CombatSearchV2Report,
 };
 use crate::content::potions::PotionId;
 use crate::sim::combat::{
@@ -39,6 +39,15 @@ pub(super) fn try_apply_no_win_fallback(
     )? {
         return Ok(Some(outcome));
     }
+    if let Some(outcome) = try_apply_turn_plan_rescue_after_no_win(
+        session,
+        start,
+        config,
+        search_report,
+        hp_loss_limit,
+    )? {
+        return Ok(Some(outcome));
+    }
     if let Some(outcome) = try_apply_line_lab_turn_pool_after_no_win(
         session,
         start,
@@ -59,6 +68,53 @@ pub(super) fn try_apply_no_win_fallback(
         return Ok(Some(outcome));
     }
     try_apply_smoke_bomb_survival_fallback_after_rejection(session, "no_complete_winning_candidate")
+}
+
+fn try_apply_turn_plan_rescue_after_no_win(
+    session: &mut RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    search_report: &CombatSearchV2Report,
+    hp_loss_limit: Option<u32>,
+) -> Result<Option<RunControlCommandOutcome>, String> {
+    let budget_ms = turn_plan_rescue_budget_ms(config);
+    let rescue_started = Instant::now();
+    let Some(rescue) = find_combat_turn_plan_rescue_win_v0(start, config, budget_ms, hp_loss_limit)
+    else {
+        return Ok(None);
+    };
+    let rescue_elapsed = rescue_started.elapsed();
+    let replay = replay_candidate_line(
+        start,
+        CombatCandidateLineSource::TurnPlanRescue,
+        &rescue.actions,
+        config,
+    )?;
+    if replay.line.terminal != CombatTerminal::Win {
+        return Ok(None);
+    }
+    if hp_loss_limit.is_some_and(|limit| replay.line.hp_loss > limit as i32) {
+        return Ok(None);
+    }
+    let summary = format!(
+        "{} per_plan_budget_ms={budget_ms}",
+        rescue.transition_summary()
+    );
+    apply_selected_combat_candidate_line(
+        session,
+        start,
+        config,
+        search_report,
+        replay.line,
+        CombatAutomationTrajectorySource::TurnPlanRescue,
+        summary,
+        Some(CombatCandidateLinePerformance {
+            nodes_expanded: rescue.nodes_expanded,
+            nodes_generated: rescue.nodes_generated,
+            total_us: duration_to_micros_u64(rescue_elapsed),
+        }),
+    )
+    .map(Some)
 }
 
 fn try_apply_line_lab_turn_pool_after_no_win(
@@ -111,6 +167,15 @@ fn turn_pool_rescue_budget_ms(config: &CombatSearchV2Config) -> u64 {
         .as_millis()
         .min(u128::from(u64::MAX)) as u64;
     configured.clamp(2_000, 5_000)
+}
+
+fn turn_plan_rescue_budget_ms(config: &CombatSearchV2Config) -> u64 {
+    let configured = config
+        .wall_time
+        .unwrap_or_else(|| std::time::Duration::from_millis(2_000))
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+    configured.clamp(2_000, 10_000)
 }
 
 fn try_apply_complete_line_solver_after_no_win(

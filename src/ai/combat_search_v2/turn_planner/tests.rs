@@ -13,6 +13,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 #[derive(Clone, Copy, Debug)]
 enum TestTurnMode {
     PlayThenEnd,
+    WideDepthWin,
     DirectNextTurnOutcomes,
     EqualNextTurnOutcomes,
     DangerRepairOutcomes,
@@ -39,6 +40,30 @@ impl CombatStepper for TestTurnStepper {
                         target: Some(1),
                     });
                 }
+                actions.push(ClientInput::EndTurn);
+                actions
+            }
+            TestTurnMode::WideDepthWin => {
+                if !matches!(position.engine, EngineState::CombatPlayerTurn)
+                    || position.combat.turn.turn_count > 0
+                {
+                    return Vec::new();
+                }
+                let mut actions = if position.combat.turn.energy > 0 {
+                    position
+                        .combat
+                        .zones
+                        .hand
+                        .iter()
+                        .enumerate()
+                        .map(|(card_index, _)| ClientInput::PlayCard {
+                            card_index,
+                            target: Some(1),
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
                 actions.push(ClientInput::EndTurn);
                 actions
             }
@@ -97,6 +122,28 @@ impl CombatStepper for TestTurnStepper {
             (TestTurnMode::PlayThenEnd, ClientInput::EndTurn) => {
                 combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
             }
+            (TestTurnMode::WideDepthWin, ClientInput::PlayCard { card_index, .. }) => {
+                let card_marker = combat
+                    .zones
+                    .hand
+                    .get(card_index)
+                    .map(|card| (card.uuid % 10) as i32)
+                    .unwrap_or_default();
+                move_hand_card_to_discard(card_index, &mut combat);
+                combat.turn.energy = combat.turn.energy.saturating_sub(1);
+                combat.entities.player.block = combat
+                    .entities
+                    .player
+                    .block
+                    .saturating_mul(10)
+                    .saturating_add(card_marker);
+                if let Some(monster) = combat.entities.monsters.first_mut() {
+                    monster.current_hp = monster.current_hp.saturating_sub(10);
+                }
+            }
+            (TestTurnMode::WideDepthWin, ClientInput::EndTurn) => {
+                combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+            }
             (TestTurnMode::DirectNextTurnOutcomes, ClientInput::PlayCard { card_index, .. }) => {
                 apply_direct_outcome(card_index, &mut combat);
             }
@@ -150,6 +197,44 @@ fn turn_planner_enumerates_same_turn_prefix_until_next_turn_boundary() {
         .any(|plan| plan.stop_reason == TurnPlanStopReason::NextTurn && plan.actions.len() == 2));
     assert!(plans.nodes_expanded >= 2);
     assert!(plans.nodes_generated >= 3);
+}
+
+#[test]
+fn turn_planner_reaches_deep_plan_within_wide_branching_budget() {
+    let mut combat = test_combat_with_cards(&[
+        CardId::Strike,
+        CardId::Bash,
+        CardId::Carnage,
+        CardId::TwinStrike,
+        CardId::Defend,
+        CardId::ShrugItOff,
+        CardId::Inflame,
+        CardId::BattleTrance,
+    ]);
+    combat.turn.energy = 4;
+    combat.entities.monsters[0].current_hp = 40;
+    combat.entities.monsters[0].max_hp = 40;
+    let root = test_node(combat);
+    let plans = enumerate_turn_plans(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::WideDepthWin,
+        },
+        &TurnPlannerConfigV1 {
+            max_inner_nodes: 64,
+            max_end_states: 8,
+            per_bucket_limit: 8,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    assert!(
+        plans.plans.iter().any(|plan| {
+            plan.stop_reason == TurnPlanStopReason::Terminal && plan.actions.len() == 4
+        }),
+        "bounded planner should reach a four-action terminal instead of exhausting the budget on shallow permutations"
+    );
 }
 
 #[test]
@@ -371,6 +456,37 @@ fn turn_planner_coverage_signature_reports_vulnerable_setup_from_bash() {
         "coverage signature must expose vulnerable setup from action facts"
     );
     assert!(bash_candidate.coverage_signature.damage_done > 0);
+}
+
+#[test]
+fn turn_planner_coverage_signature_reports_power_setup() {
+    let mut combat = test_combat_with_cards(&[CardId::Berserk]);
+    combat.turn.energy = 1;
+    let root = test_node(combat);
+    let plans = enumerate_turn_plans(
+        &root,
+        &EngineCombatStepper,
+        &TurnPlannerConfigV1 {
+            max_end_states: 4,
+            per_bucket_limit: 4,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    let power_candidate = plans
+        .selection_audit
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate
+                .action_keys
+                .iter()
+                .any(|action| action.contains("card:Berserk"))
+        })
+        .expect("Berserk turn plan should be audited");
+
+    assert_eq!(power_candidate.coverage_key.setup.label(), "power");
 }
 
 #[test]

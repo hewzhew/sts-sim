@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::combat_search_v2::turn_planner::types::{
     TurnPlanBucket, TurnPlanCandidateDropReasonV1, TurnPlanCandidateSelectionAuditV1,
@@ -68,6 +68,7 @@ pub(super) fn select_bucketed_plans(
     let mut selected_plan_indexes = vec![None; candidates.len()];
     let mut drop_reasons = vec![None; candidates.len()];
     let mut bucket_counts = BTreeMap::<TurnPlanBucket, usize>::new();
+    let mut selected_coverage = BTreeSet::new();
 
     for bucket in TURN_PLAN_BUCKET_DIVERSITY_ORDER {
         if selected.len() >= config.max_end_states {
@@ -81,8 +82,36 @@ pub(super) fn select_bucketed_plans(
             bucket_counts.insert(candidate.bucket, 1);
             selected_indexes[index] = true;
             selected_plan_indexes[index] = Some(selected.len());
+            selected_coverage.insert(TurnPlanCoverageGroupKeyV1 {
+                bucket: candidate.bucket,
+                coverage: TurnPlanCoverageSignatureV1::from_plan(candidate).coverage_key(),
+            });
             selected.push(candidate.clone());
         }
+    }
+
+    for (index, candidate) in candidates.iter().enumerate() {
+        if selected.len() >= config.max_end_states {
+            break;
+        }
+        if selected_indexes[index] {
+            continue;
+        }
+        let count = bucket_counts.entry(candidate.bucket).or_default();
+        if *count >= config.per_bucket_limit {
+            continue;
+        }
+        let coverage = TurnPlanCoverageGroupKeyV1 {
+            bucket: candidate.bucket,
+            coverage: TurnPlanCoverageSignatureV1::from_plan(candidate).coverage_key(),
+        };
+        if !selected_coverage.insert(coverage) {
+            continue;
+        }
+        *count = count.saturating_add(1);
+        selected_indexes[index] = true;
+        selected_plan_indexes[index] = Some(selected.len());
+        selected.push(candidate.clone());
     }
 
     for (index, candidate) in candidates.iter().enumerate() {
@@ -92,7 +121,6 @@ pub(super) fn select_bucketed_plans(
         if !selected_indexes[index] {
             let count = bucket_counts.entry(candidate.bucket).or_default();
             if *count >= config.per_bucket_limit {
-                drop_reasons[index] = Some(TurnPlanCandidateDropReasonV1::BucketCap);
                 continue;
             }
             *count = count.saturating_add(1);
@@ -102,11 +130,28 @@ pub(super) fn select_bucketed_plans(
         }
     }
 
-    if selected.len() >= config.max_end_states {
-        for (index, selected) in selected_indexes.iter().enumerate() {
-            if !*selected && drop_reasons[index].is_none() {
-                drop_reasons[index] = Some(TurnPlanCandidateDropReasonV1::MaxEndStates);
-            }
+    for (index, was_selected) in selected_indexes.iter().enumerate() {
+        if *was_selected {
+            continue;
+        }
+        let candidate = &candidates[index];
+        drop_reasons[index] = Some(
+            if bucket_counts
+                .get(&candidate.bucket)
+                .copied()
+                .unwrap_or_default()
+                >= config.per_bucket_limit
+            {
+                TurnPlanCandidateDropReasonV1::BucketCap
+            } else {
+                TurnPlanCandidateDropReasonV1::MaxEndStates
+            },
+        );
+        if selected.len() < config.max_end_states {
+            debug_assert_eq!(
+                drop_reasons[index],
+                Some(TurnPlanCandidateDropReasonV1::BucketCap)
+            );
         }
     }
 

@@ -90,6 +90,7 @@ mod segment_plan;
 mod trajectory_report;
 mod turn_plan_probe;
 mod turn_plan_probe_report;
+mod turn_plan_rescue;
 mod turn_pool_rescue;
 mod witness_guidance;
 
@@ -194,6 +195,7 @@ pub(crate) use turn_plan_probe_report::CombatSearchV2TurnPlanProbeStepReport;
 pub(crate) use turn_plan_probe_report::{
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
 };
+pub use turn_plan_rescue::{find_combat_turn_plan_rescue_win_v0, CombatTurnPlanRescueWin};
 pub use turn_pool_rescue::{find_combat_turn_pool_rescue_win_v0, CombatTurnPoolRescueWin};
 pub use types::*;
 pub use witness_guidance::{

@@ -48,6 +48,9 @@ pub(super) fn search_review(
         performance: performance_review(report),
         facts: SearchReviewFacts {
             diagnostic_progress: diagnostic_progress_facts(report, action_preview_limit),
+            turn_plan: (report.diagnostics.turn_plan.root_states_observed > 0
+                || report.diagnostics.turn_plan.frontier_seeded_nodes > 0)
+                .then(|| report.diagnostics.turn_plan.clone()),
         },
         candidate_adjudication_census: None,
         persistent_burden_cutpoint_probe: None,

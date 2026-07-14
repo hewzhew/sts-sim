@@ -29,7 +29,7 @@ pub(super) fn seed_turn_plan_frontier(
     }
 
     let seed_started = Instant::now();
-    let mut seeded_nodes =
+    let mut seeded_plans =
         turn_plan_frontier_seed(source, stepper, config, &loop_state.plugins, deadline);
     loop_state.performance.turn_plan_frontier_seed_calls = loop_state
         .performance
@@ -41,11 +41,12 @@ pub(super) fn seed_turn_plan_frontier(
         .saturating_add(seed_started.elapsed().as_micros());
     loop_state
         .diagnostics
-        .observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
+        .observe_turn_plan_frontier_seeded_plans(&seeded_plans.plans);
     loop_state
         .diagnostics
-        .observe_turn_plan_prior_scored_plans(seeded_nodes.turn_plan_prior_scored_plans);
-    for mut seed in seeded_nodes.nodes.drain(..) {
+        .observe_turn_plan_prior_scored_plans(seeded_plans.turn_plan_prior_scored_plans);
+    for plan in seeded_plans.plans.drain(..) {
+        let mut seed = plan.end_node;
         let nodes_generated_at_discovery = loop_state.stats.nodes_generated.saturating_add(1);
         seed.rollout_estimate = turn_plan_seed_rollout_estimate(
             loop_state,

@@ -117,11 +117,11 @@ impl SearchDiagnosticsCollector {
         self.turn_plan.observe_root(root, stepper);
     }
 
-    pub(in crate::ai::combat_search_v2) fn observe_turn_plan_frontier_seeded_nodes(
+    pub(in crate::ai::combat_search_v2) fn observe_turn_plan_frontier_seeded_plans(
         &mut self,
-        nodes: usize,
+        plans: &[super::super::turn_planner::TurnPlanV1],
     ) {
-        self.turn_plan.observe_frontier_seeded_nodes(nodes);
+        self.turn_plan.observe_frontier_seeded_plans(plans);
     }
 
     pub(in crate::ai::combat_search_v2) fn observe_turn_plan_prior_scored_plans(

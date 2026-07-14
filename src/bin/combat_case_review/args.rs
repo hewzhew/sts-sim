@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+};
 
 #[derive(Parser)]
 pub(super) struct Args {
@@ -37,6 +40,19 @@ pub(super) struct Args {
     pub(super) lazy_child_rollout: bool,
     #[arg(long)]
     pub(super) disable_rollout: bool,
+    #[arg(
+        long,
+        value_parser = parse_rollout_plugin,
+        conflicts_with = "disable_rollout",
+        help = "Override the review rollout policy: adaptive|conservative|phase-aware|turn-beam|disabled"
+    )]
+    pub(super) rollout_policy: Option<CombatSearchRolloutPluginId>,
+    #[arg(
+        long,
+        value_parser = parse_turn_plan_plugin,
+        help = "Override the review turn-plan policy: disabled|diagnostic|root-frontier|turn-boundary|tactical-boundary"
+    )]
+    pub(super) turn_plan_policy: Option<CombatSearchTurnPlanPluginId>,
     #[arg(long)]
     pub(super) rollout_max_actions: Option<usize>,
     #[arg(long)]
@@ -61,6 +77,58 @@ pub(super) struct Args {
     pub(super) counterfactual_hp_levels: String,
 }
 
+fn parse_rollout_plugin(value: &str) -> Result<CombatSearchRolloutPluginId, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "adaptive"
+        | "adaptive-no-potion"
+        | "adaptive_no_potion"
+        | "enemy-mechanics-adaptive-no-potion"
+        | "enemy_mechanics_adaptive_no_potion" => {
+            Ok(CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion)
+        }
+        "conservative" | "conservative-no-potion" | "conservative_no_potion" => {
+            Ok(CombatSearchRolloutPluginId::ConservativeNoPotion)
+        }
+        "phase-aware" | "phase_aware" | "phase-aware-no-potion" | "phase_aware_no_potion" => {
+            Ok(CombatSearchRolloutPluginId::PhaseAwareNoPotion)
+        }
+        "turn-beam" | "turn_beam" | "turn-beam-no-potion" | "turn_beam_no_potion" => {
+            Ok(CombatSearchRolloutPluginId::TurnBeamNoPotion)
+        }
+        "disabled" | "off" | "none" => Ok(CombatSearchRolloutPluginId::Disabled),
+        _ => Err(format!(
+            "invalid rollout policy '{value}', expected adaptive|conservative|phase-aware|turn-beam|disabled"
+        )),
+    }
+}
+
+fn parse_turn_plan_plugin(value: &str) -> Result<CombatSearchTurnPlanPluginId, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "disabled" | "off" | "none" => Ok(CombatSearchTurnPlanPluginId::Disabled),
+        "diagnostic" | "diagnostic-only" | "diagnostic_only" => {
+            Ok(CombatSearchTurnPlanPluginId::DiagnosticOnly)
+        }
+        "root-frontier" | "root_frontier" | "root-frontier-seed" | "root_frontier_seed" => {
+            Ok(CombatSearchTurnPlanPluginId::RootFrontierSeed)
+        }
+        "turn-boundary"
+        | "turn_boundary"
+        | "turn-boundary-frontier-seed"
+        | "turn_boundary_frontier_seed" => {
+            Ok(CombatSearchTurnPlanPluginId::TurnBoundaryFrontierSeed)
+        }
+        "tactical-boundary"
+        | "tactical_boundary"
+        | "tactical-enemy-turn-boundary-frontier-seed"
+        | "tactical_enemy_turn_boundary_frontier_seed" => {
+            Ok(CombatSearchTurnPlanPluginId::TacticalEnemyTurnBoundaryFrontierSeed)
+        }
+        _ => Err(format!(
+            "invalid turn-plan policy '{value}', expected disabled|diagnostic|root-frontier|turn-boundary|tactical-boundary"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +139,39 @@ mod tests {
             Args::try_parse_from(["combat_case_review", "--case", "case.json", "--adjudicate"])
                 .expect("parse adjudicate flag");
         assert!(args.adjudicate);
+    }
+
+    #[test]
+    fn rollout_policy_flag_parses_turn_beam() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--rollout-policy",
+            "turn-beam",
+        ])
+        .expect("parse rollout policy");
+
+        assert_eq!(
+            args.rollout_policy,
+            Some(CombatSearchRolloutPluginId::TurnBeamNoPotion)
+        );
+    }
+
+    #[test]
+    fn turn_plan_policy_flag_parses_root_frontier() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--turn-plan-policy",
+            "root-frontier",
+        ])
+        .expect("parse turn-plan policy");
+
+        assert_eq!(
+            args.turn_plan_policy,
+            Some(CombatSearchTurnPlanPluginId::RootFrontierSeed)
+        );
     }
 }

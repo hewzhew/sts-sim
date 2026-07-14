@@ -1,3 +1,4 @@
+use sts_simulator::content::powers::{store, PowerId};
 use sts_simulator::eval::run_control::{RunControlHpLossLimit, RunControlSession};
 use sts_simulator::state::core::CombatContext;
 use sts_simulator::state::map::node::RoomType;
@@ -8,9 +9,28 @@ pub(super) fn owner_audit_hp_loss_limit(session: &RunControlSession) -> RunContr
     }
     let (current_hp, max_hp) = session.visible_player_hp();
     let max_hp = max_hp.max(1);
-    let reserve_hp = (max_hp / 4).max(1);
+    let generic_reserve_hp = (max_hp / 4).max(1);
+    let finite_survival_reserve_hp = finite_survival_damage_mitigation_active(session)
+        .then(|| current_hp.max(0).saturating_add(1) / 2)
+        .unwrap_or_default();
+    let reserve_hp = generic_reserve_hp.max(finite_survival_reserve_hp);
     let max_hp_loss = current_hp.saturating_sub(reserve_hp).max(0) as u32;
     RunControlHpLossLimit::Limit(max_hp_loss)
+}
+
+fn finite_survival_damage_mitigation_active(session: &RunControlSession) -> bool {
+    session.active_combat.as_ref().is_some_and(|active| {
+        active
+            .combat_state
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| monster.is_alive_for_action())
+            .any(|monster| {
+                store::power_amount(&active.combat_state, monster.id, PowerId::Fading) > 0
+                    && store::has_power(&active.combat_state, monster.id, PowerId::Shifting)
+            })
+    })
 }
 
 fn room_boss_win_reaches_recovery_or_run_end(session: &RunControlSession) -> bool {
@@ -25,8 +45,9 @@ fn room_boss_win_reaches_recovery_or_run_end(session: &RunControlSession) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sts_simulator::content::monsters::factory::EncounterId;
+    use sts_simulator::content::monsters::{factory::EncounterId, EnemyId};
     use sts_simulator::eval::run_control::RunControlConfig;
+    use sts_simulator::runtime::combat::{Power, PowerPayload};
     use sts_simulator::state::core::{
         ActiveCombat, CombatContext, EngineState, EventCombatContext, PostCombatReturn,
         RoomCombatContext,
@@ -80,6 +101,47 @@ mod tests {
                 RunControlHpLossLimit::Limit(21)
             );
         }
+    }
+
+    #[test]
+    fn finite_survival_mechanic_requires_half_of_entry_hp_before_accepting_a_line() {
+        let mut session = room_session(RoomType::MonsterRoom);
+        let combat = &mut session
+            .active_combat
+            .as_mut()
+            .expect("active combat")
+            .combat_state;
+        combat.entities.player.current_hp = 74;
+        combat.entities.player.max_hp = 80;
+        combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::Cultist)];
+        let owner = combat.entities.monsters.first_mut().expect("monster");
+        owner.id = 7;
+        combat.entities.power_db.insert(
+            owner.id,
+            vec![
+                Power {
+                    power_type: PowerId::Fading,
+                    instance_id: None,
+                    amount: 5,
+                    extra_data: 0,
+                    payload: PowerPayload::None,
+                    just_applied: false,
+                },
+                Power {
+                    power_type: PowerId::Shifting,
+                    instance_id: None,
+                    amount: -1,
+                    extra_data: 0,
+                    payload: PowerPayload::None,
+                    just_applied: false,
+                },
+            ],
+        );
+
+        assert_eq!(
+            owner_audit_hp_loss_limit(&session),
+            RunControlHpLossLimit::Limit(37)
+        );
     }
 
     #[test]

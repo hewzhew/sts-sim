@@ -28,6 +28,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanDiagnosticsCollector {
     total_truncated_children: u64,
     turn_plan_prior_scored_plans: u64,
     frontier_seeded_nodes: u64,
+    frontier_seed_plans: Vec<TurnPlanDiagnosticEntry>,
     bucket_counts: BTreeMap<TurnPlanBucket, u64>,
     stop_reason_counts: BTreeMap<TurnPlanStopReason, u64>,
     samples: Vec<TurnPlanDiagnosticSample>,
@@ -96,6 +97,11 @@ impl TurnPlanDiagnosticsCollector {
             total_truncated_children: self.total_truncated_children,
             turn_plan_prior_scored_plans: self.turn_plan_prior_scored_plans,
             frontier_seeded_nodes: self.frontier_seeded_nodes,
+            frontier_seed_plans: self
+                .frontier_seed_plans
+                .iter()
+                .map(diagnostic_entry_report)
+                .collect(),
             bucket_counts: count_reports(&self.bucket_counts, TurnPlanBucket::label),
             stop_reason_counts: count_reports(&self.stop_reason_counts, TurnPlanStopReason::label),
             samples: self.sample_reports(),
@@ -154,8 +160,16 @@ impl TurnPlanDiagnosticsCollector {
         });
     }
 
-    pub(in crate::ai::combat_search_v2) fn observe_frontier_seeded_nodes(&mut self, nodes: usize) {
-        self.frontier_seeded_nodes = self.frontier_seeded_nodes.saturating_add(nodes as u64);
+    pub(in crate::ai::combat_search_v2) fn observe_frontier_seeded_plans(
+        &mut self,
+        plans: &[TurnPlanV1],
+    ) {
+        self.frontier_seeded_nodes = self
+            .frontier_seeded_nodes
+            .saturating_add(plans.len() as u64);
+        self.frontier_seed_plans.extend(plan_entries(plans));
+        self.frontier_seed_plans
+            .truncate(TURN_PLAN_DIAGNOSTIC_MAX_END_STATES);
     }
 
     pub(in crate::ai::combat_search_v2) fn observe_prior_scored_plans(&mut self, plans: usize) {
@@ -177,23 +191,29 @@ impl TurnPlanDiagnosticsCollector {
                 top_plans: sample
                     .top_plans
                     .iter()
-                    .map(|entry| CombatSearchV2DiagnosticsTurnPlanEntry {
-                        rank: entry.rank,
-                        bucket: entry.bucket.label(),
-                        stop_reason: entry.stop_reason.label(),
-                        outcome_class: entry.outcome_class,
-                        survival_bucket: entry.survival_bucket,
-                        progress_bucket: entry.progress_bucket,
-                        action_count: entry.action_count,
-                        final_hp: entry.final_hp,
-                        risk_margin: entry.risk_margin,
-                        enemy_progress: entry.enemy_progress,
-                        first_action_key: entry.first_action_key.clone(),
-                        action_keys_preview: entry.action_keys_preview.clone(),
-                    })
+                    .map(diagnostic_entry_report)
                     .collect(),
             })
             .collect()
+    }
+}
+
+fn diagnostic_entry_report(
+    entry: &TurnPlanDiagnosticEntry,
+) -> CombatSearchV2DiagnosticsTurnPlanEntry {
+    CombatSearchV2DiagnosticsTurnPlanEntry {
+        rank: entry.rank,
+        bucket: entry.bucket.label(),
+        stop_reason: entry.stop_reason.label(),
+        outcome_class: entry.outcome_class,
+        survival_bucket: entry.survival_bucket,
+        progress_bucket: entry.progress_bucket,
+        action_count: entry.action_count,
+        final_hp: entry.final_hp,
+        risk_margin: entry.risk_margin,
+        enemy_progress: entry.enemy_progress,
+        first_action_key: entry.first_action_key.clone(),
+        action_keys_preview: entry.action_keys_preview.clone(),
     }
 }
 

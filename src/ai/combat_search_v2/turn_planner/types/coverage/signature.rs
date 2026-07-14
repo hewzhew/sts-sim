@@ -162,16 +162,29 @@ fn debuff_class(signature: TurnPlanCoverageSignatureV1) -> TurnPlanDebuffClassV1
 }
 
 fn setup_class(signature: TurnPlanCoverageSignatureV1) -> TurnPlanSetupClassV1 {
+    let power = signature.powers_played > 0;
     let strength =
         signature.player_strength_gain > 0 || signature.player_temporary_strength_gain > 0;
     let access = signature.hand_delta > 0 || signature.draw_delta < 0;
     let shape = signature.exhaust_delta != 0 || signature.queued_cards_delta != 0;
-    match (strength, access, shape) {
-        (false, false, false) => TurnPlanSetupClassV1::None,
-        (true, false, false) => TurnPlanSetupClassV1::PlayerStrength,
-        (false, true, false) => TurnPlanSetupClassV1::AccessGain,
-        (false, false, true) => TurnPlanSetupClassV1::ExhaustOrQueueChange,
-        _ => TurnPlanSetupClassV1::Mixed,
+    if [power, strength, access, shape]
+        .into_iter()
+        .filter(|present| *present)
+        .count()
+        > 1
+    {
+        return TurnPlanSetupClassV1::Mixed;
+    }
+    if power {
+        TurnPlanSetupClassV1::Power
+    } else if strength {
+        TurnPlanSetupClassV1::PlayerStrength
+    } else if access {
+        TurnPlanSetupClassV1::AccessGain
+    } else if shape {
+        TurnPlanSetupClassV1::ExhaustOrQueueChange
+    } else {
+        TurnPlanSetupClassV1::None
     }
 }
 

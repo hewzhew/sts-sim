@@ -36,6 +36,7 @@ pub(in crate::ai::combat_search_v2) enum TurnPlanDebuffClassV1 {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(in crate::ai::combat_search_v2) enum TurnPlanSetupClassV1 {
     None,
+    Power,
     PlayerStrength,
     AccessGain,
     ExhaustOrQueueChange,
@@ -96,6 +97,7 @@ impl TurnPlanSetupClassV1 {
     pub(in crate::ai::combat_search_v2) fn label(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::Power => "power",
             Self::PlayerStrength => "player_strength",
             Self::AccessGain => "access_gain",
             Self::ExhaustOrQueueChange => "exhaust_or_queue_change",

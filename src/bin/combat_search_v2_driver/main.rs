@@ -8,6 +8,7 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
+use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
 use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
@@ -16,9 +17,9 @@ use sts_simulator::eval::combat_search_v2::{
     load_combat_turn_plan_prior_hints_jsonl_v0, run_combat_search_guidance_lab_benchmark_v1,
     run_combat_search_guidance_lab_v1, run_combat_search_v2_benchmark,
     run_combat_search_v2_loaded_start, run_combat_turn_plan_guidance_lab_benchmark_v1,
-    run_combat_turn_plan_guidance_lab_v1, CombatSearchV2RunOptions,
+    run_combat_turn_plan_guidance_lab_v1, CombatSearchV2LoadedStart, CombatSearchV2RunOptions,
 };
-use sts_simulator::eval::fingerprint::StateFingerprintV1;
+use sts_simulator::eval::fingerprint::{combat_state_fingerprint_v1, StateFingerprintV1};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -27,7 +28,13 @@ use sts_simulator::eval::fingerprint::StateFingerprintV1;
         ArgGroup::new("input")
             .required(true)
             .multiple(false)
-            .args(["start_spec", "combat_snapshot", "benchmark_spec", "lab_spec"])
+            .args([
+                "start_spec",
+                "combat_snapshot",
+                "combat_case",
+                "benchmark_spec",
+                "lab_spec"
+            ])
     )
 )]
 struct Args {
@@ -36,6 +43,9 @@ struct Args {
 
     #[arg(long)]
     combat_snapshot: Option<PathBuf>,
+
+    #[arg(long)]
+    combat_case: Option<PathBuf>,
 
     #[arg(long)]
     benchmark_spec: Option<PathBuf>,
@@ -427,6 +437,15 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         let loaded = if let Some(path) = args.combat_snapshot.as_ref() {
             load_combat_search_v2_snapshot(path)?
+        } else if let Some(path) = args.combat_case.as_ref() {
+            let case = load_combat_case(path)?;
+            let fingerprints = combat_state_fingerprint_v1(&case.position);
+            CombatSearchV2LoadedStart {
+                label: format!("combat_case:{}", path.display()),
+                position: case.position,
+                artifact_trust_level: None,
+                fingerprints: Some(fingerprints),
+            }
         } else {
             let path = args
                 .start_spec
@@ -1152,6 +1171,25 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
             "fingerprints": capture.fingerprints.as_ref().map(compact_fingerprint_report),
             "legal_action_count": capture.legal_actions.as_ref().map(|actions| actions.count),
             "summary": capture.summary,
+        })
+    } else if let Some(path) = args.combat_case.as_ref() {
+        let case = load_combat_case(path)?;
+        let fingerprints = combat_state_fingerprint_v1(&case.position);
+        serde_json::json!({
+            "schema_name": "CombatSearchV2InputValidationReport",
+            "schema_version": 1,
+            "status": "valid",
+            "input_kind": "combat_case",
+            "input_path": path.display().to_string(),
+            "source": case.source,
+            "gap": case.gap,
+            "fingerprints": compact_fingerprint_report(&fingerprints),
+            "position": {
+                "engine": format!("{:?}", case.position.engine),
+                "hp": case.position.combat.entities.player.current_hp,
+                "turn": case.position.combat.turn.turn_count,
+                "enemy_count": case.position.combat.entities.monsters.len(),
+            },
         })
     } else if let Some(path) = args.benchmark_spec.as_ref() {
         let benchmark = load_combat_search_v2_benchmark(path)?;

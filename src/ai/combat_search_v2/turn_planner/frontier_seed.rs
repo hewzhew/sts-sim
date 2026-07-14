@@ -5,7 +5,7 @@ use crate::sim::combat::CombatStepper;
 use super::super::frontier::SearchNode;
 use super::super::{CombatSearchPluginStack, CombatSearchV2Config};
 use super::enumerate::enumerate_turn_plans;
-use super::types::{TurnPlanBucket, TurnPlanStopReason, TurnPlannerConfigV1};
+use super::types::{TurnPlanBucket, TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1};
 
 const TURN_PLAN_FRONTIER_SEED_MAX_INNER_NODES: usize = 128;
 const TURN_PLAN_FRONTIER_SEED_MAX_END_STATES: usize = 8;
@@ -13,7 +13,7 @@ const TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT: usize = 2;
 
 #[derive(Default)]
 pub(in crate::ai::combat_search_v2) struct TurnPlanFrontierSeedResult {
-    pub(in crate::ai::combat_search_v2) nodes: Vec<SearchNode>,
+    pub(in crate::ai::combat_search_v2) plans: Vec<TurnPlanV1>,
     pub(in crate::ai::combat_search_v2) turn_plan_prior_scored_plans: usize,
 }
 
@@ -34,15 +34,14 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
     };
     let enumeration = enumerate_turn_plans(node, stepper, &turn_config, deadline);
     let turn_plan_prior_scored_plans = enumeration.turn_plan_prior_scored_plans;
-    let nodes = enumeration
+    let plans = enumeration
         .plans
         .into_iter()
         .filter(|plan| should_seed_frontier(plan.bucket, plan.stop_reason, plan.actions.len()))
-        .map(|plan| plan.end_node)
         .collect();
 
     TurnPlanFrontierSeedResult {
-        nodes,
+        plans,
         turn_plan_prior_scored_plans,
     }
 }

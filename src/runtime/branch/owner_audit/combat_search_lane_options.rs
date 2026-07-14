@@ -55,7 +55,12 @@ pub(super) fn lane_options(
 }
 
 fn lane_allows_internal_no_win_rescue(lane: CombatSearchLane) -> bool {
-    matches!(lane.kind(), CombatSearchLaneKind::DiagnosticRescue)
+    matches!(
+        lane.kind(),
+        CombatSearchLaneKind::DiagnosticRescue
+            | CombatSearchLaneKind::EliteSurvivalFallback
+            | CombatSearchLaneKind::HallwaySurvivalFallback
+    )
 }
 
 fn lane_allows_smoke_bomb_survival_fallback(lane: CombatSearchLane) -> bool {
@@ -644,6 +649,12 @@ mod tests {
         ));
         assert!(lane_allows_internal_no_win_rescue(CombatSearchLane::new(
             CombatSearchLaneKind::DiagnosticRescue
+        )));
+        assert!(lane_allows_internal_no_win_rescue(CombatSearchLane::new(
+            CombatSearchLaneKind::EliteSurvivalFallback
+        )));
+        assert!(lane_allows_internal_no_win_rescue(CombatSearchLane::new(
+            CombatSearchLaneKind::HallwaySurvivalFallback
         )));
         assert!(!lane_allows_internal_no_win_rescue(CombatSearchLane::new(
             CombatSearchLaneKind::BossNoPotion

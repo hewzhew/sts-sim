@@ -23,6 +23,7 @@ pub(crate) fn review_search_profile(
             wall_ms,
         },
         plugins: CombatSearchPluginStack {
+            turn_plan: options.turn_plan_plugin(),
             rollout: review_rollout_plugin(options),
             child_rollout: options.child_rollout_plugin(),
             ..CombatSearchPluginStack::default()
@@ -55,11 +56,7 @@ pub(crate) fn review_all_potions_profile(
 }
 
 pub(crate) fn review_rollout_plugin(options: &ReviewOptions) -> CombatSearchRolloutPluginId {
-    if options.disable_rollout {
-        CombatSearchRolloutPluginId::Disabled
-    } else {
-        CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion
-    }
+    options.rollout_plugin()
 }
 
 pub(crate) fn run_profile_search(
