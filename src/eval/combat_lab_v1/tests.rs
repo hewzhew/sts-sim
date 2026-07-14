@@ -70,6 +70,80 @@ fn seed006_derived_fixture_resolves() {
 }
 
 #[test]
+fn seed006_feasibility_fixture_resolves_with_any_surviving_win_threshold() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/combat_lab");
+    let feasibility = load_and_resolve_combat_lab_spec_v1(
+        &fixtures.join("seed006_reptomancer_feasibility_4x2.lab.json"),
+    )
+    .expect("seed006 feasibility fixture should resolve");
+    preflight_combat_lab_scenario_v1(&feasibility)
+        .expect("seed006 feasibility start should compile without approximation");
+
+    assert_eq!(
+        feasibility.experiment_id,
+        "seed006_reptomancer_feasibility_release_3s_4x2"
+    );
+    assert_eq!(feasibility.scenario_id, "seed006_derived_reptomancer");
+    assert_eq!(feasibility.schedule.seed, 20_260_713_006);
+    assert_eq!(
+        feasibility.schedule.generator,
+        CombatLabShuffleGeneratorV1::SplitMix64V1
+    );
+    assert_eq!(
+        feasibility
+            .profiles
+            .iter()
+            .map(|profile| profile.spec.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lazy_on_pop", "immediate"]
+    );
+    assert!(feasibility.profiles.iter().all(|profile| {
+        profile.spec.information_scope == super::CombatLabInformationScopeV1::ExactStateOracle
+    }));
+
+    let budget = &feasibility.common_budget;
+    assert_eq!(budget.max_nodes, 200_000);
+    assert_eq!(budget.max_actions_per_line, 200);
+    assert_eq!(budget.max_engine_steps_per_action, 250);
+    assert_eq!(budget.wall_ms, Some(3_000));
+    assert_eq!(budget.stop_on_win_hp_loss_at_most, Some(87));
+    assert_eq!(budget.min_win_candidates_before_stop, 1);
+    assert_eq!(budget.max_potions_used, Some(1));
+    assert_eq!(budget.rollout_max_evaluations, 384);
+    assert_eq!(budget.rollout_max_actions, 80);
+    assert_eq!(budget.rollout_beam_width, 3);
+    assert_eq!(budget.turn_plan_probe_max_inner_nodes, None);
+    assert_eq!(budget.turn_plan_probe_max_end_states, None);
+    assert_eq!(budget.turn_plan_probe_per_bucket_limit, None);
+
+    let maintained =
+        load_and_resolve_combat_lab_spec_v1(&fixtures.join("seed006_reptomancer_8x2.lab.json"))
+            .expect("maintained seed006 fixture should resolve");
+    assert_eq!(feasibility.schema_version, maintained.schema_version);
+    assert_eq!(feasibility.scenario_id, maintained.scenario_id);
+    assert_eq!(feasibility.scenario_hash, maintained.scenario_hash);
+    assert_eq!(
+        serde_json::to_value(&feasibility.start_spec_snapshot)
+            .expect("serialize feasibility start"),
+        serde_json::to_value(&maintained.start_spec_snapshot).expect("serialize maintained start")
+    );
+    assert_eq!(
+        serde_json::to_value(&feasibility.schedule).expect("serialize feasibility schedule"),
+        serde_json::to_value(&maintained.schedule).expect("serialize maintained schedule")
+    );
+    assert_eq!(
+        serde_json::to_value(&feasibility.profiles).expect("serialize feasibility profiles"),
+        serde_json::to_value(&maintained.profiles).expect("serialize maintained profiles")
+    );
+    let mut normalized_budget = feasibility.common_budget.clone();
+    normalized_budget.stop_on_win_hp_loss_at_most = None;
+    assert_eq!(
+        serde_json::to_value(normalized_budget).expect("serialize normalized budget"),
+        serde_json::to_value(&maintained.common_budget).expect("serialize maintained budget")
+    );
+}
+
+#[test]
 fn artifact_new_run_writes_manifest_before_cells() {
     let (directory, resolved) = resolved_lab_fixture("artifact_new_run_manifest_first");
     let output = directory.join("run");
