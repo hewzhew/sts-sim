@@ -155,6 +155,7 @@ fn combat_search_performance_snapshot(
         execution_adjudication: None,
         nodes_to_first_win: report.stats.nodes_to_first_win,
         deadline_hit: report.stats.deadline_hit,
+        node_budget_hit: report.stats.node_budget_hit,
         nodes_expanded: report.stats.nodes_expanded,
         nodes_generated: report.stats.nodes_generated,
         terminal_wins: report.stats.terminal_wins,
@@ -311,7 +312,91 @@ mod tests {
     use super::*;
     use crate::ai::combat_search_v2::{run_combat_search_v2, CombatSearchV2Config};
     use crate::eval::run_control::combat_candidate_line::CombatCandidateLineSource;
+    use crate::eval::run_control::{combat_search_trace_summaries, CombatSearchTraceSummary};
     use crate::state::core::EngineState;
+
+    #[test]
+    fn combat_search_trace_preserves_node_budget_hit() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters.clear();
+        let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let mut report = run_combat_search_v2(
+            &start.engine,
+            &start.combat,
+            CombatSearchV2Config {
+                max_nodes: 1,
+                ..CombatSearchV2Config::default()
+            },
+        );
+        report.stats.node_budget_hit = true;
+        let session = RunControlSession::new(Default::default());
+        let annotations = vec![combat_search_performance_trace_annotation(
+            "search_combat",
+            &session,
+            &start,
+            &report,
+        )];
+
+        let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = &annotations[0]
+        else {
+            panic!("expected combat search performance annotation")
+        };
+        let summary = combat_search_trace_summaries(&annotations)
+            .next()
+            .expect("combat search summary");
+
+        assert!(snapshot.node_budget_hit);
+        assert!(summary.node_budget_hit);
+    }
+
+    #[test]
+    fn legacy_combat_search_trace_defaults_node_budget_hit_to_false() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters.clear();
+        let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let mut report = run_combat_search_v2(
+            &start.engine,
+            &start.combat,
+            CombatSearchV2Config {
+                max_nodes: 1,
+                ..CombatSearchV2Config::default()
+            },
+        );
+        report.stats.node_budget_hit = true;
+        let session = RunControlSession::new(Default::default());
+        let annotation = combat_search_performance_trace_annotation(
+            "legacy",
+            &session,
+            &start,
+            &report,
+        );
+        let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation else {
+            panic!("expected combat search performance annotation")
+        };
+        let mut snapshot_value = serde_json::to_value(snapshot).expect("serialize snapshot");
+        snapshot_value
+            .as_object_mut()
+            .expect("snapshot object")
+            .remove("node_budget_hit");
+        let restored_snapshot: CombatSearchPerformanceSnapshotV1 =
+            serde_json::from_value(snapshot_value).expect("legacy snapshot");
+
+        let mut summary_value = serde_json::to_value(CombatSearchTraceSummary {
+            coverage_status: "NodeBudgetLimited".to_string(),
+            node_budget_hit: true,
+            ..CombatSearchTraceSummary::default()
+        })
+        .expect("serialize summary");
+        summary_value
+            .as_object_mut()
+            .expect("summary object")
+            .remove("node_budget_hit");
+        let restored_summary: CombatSearchTraceSummary =
+            serde_json::from_value(summary_value).expect("legacy summary");
+
+        assert!(!restored_snapshot.node_budget_hit);
+        assert!(!restored_summary.node_budget_hit);
+    }
 
     #[test]
     fn selected_line_snapshot_keeps_report_performance() {

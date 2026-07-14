@@ -119,6 +119,8 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     pub nodes_to_first_win: Option<u64>,
     #[serde(default)]
     pub deadline_hit: bool,
+    #[serde(default)]
+    pub node_budget_hit: bool,
     pub nodes_expanded: u64,
     pub nodes_generated: u64,
     pub terminal_wins: u64,
@@ -222,6 +224,8 @@ pub struct CombatSearchTraceSummary {
     pub nodes_to_first_win: Option<u64>,
     #[serde(default)]
     pub deadline_hit: bool,
+    #[serde(default)]
+    pub node_budget_hit: bool,
     pub nodes_expanded: u64,
     pub terminal_wins: u64,
     pub total_us: u64,
@@ -483,6 +487,7 @@ pub fn combat_search_trace_summaries(
             execution_adjudication: snapshot.execution_adjudication.clone(),
             nodes_to_first_win: snapshot.nodes_to_first_win,
             deadline_hit: snapshot.deadline_hit,
+            node_budget_hit: snapshot.node_budget_hit,
             nodes_expanded: snapshot.nodes_expanded,
             terminal_wins: snapshot.terminal_wins,
             total_us: snapshot.total_us,
