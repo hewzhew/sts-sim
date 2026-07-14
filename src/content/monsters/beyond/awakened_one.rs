@@ -105,6 +105,9 @@ mod tests {
         awakened.set_planned_move_id(SLASH);
         awakened.move_history_mut().push_back(SLASH);
         let mut state = crate::test_support::combat_with_monsters(vec![awakened]);
+        // S=10 before Dark Shackles, D=8 => the state immediately before lethal
+        // contains Strength(2) plus Shackled(8). The purge removes Shackled and
+        // preserves the positive Strength(2).
         store::set_powers_for(
             &mut state,
             7,
@@ -112,7 +115,7 @@ mod tests {
                 power(PowerId::Regen, 10),
                 power(PowerId::Curiosity, 1),
                 power(PowerId::Unawakened, -1),
-                power(PowerId::Shackled, -8),
+                power(PowerId::Shackled, 8),
                 power(PowerId::Weak, 2),
                 power(PowerId::Strength, 2),
             ],
@@ -165,6 +168,8 @@ mod tests {
             vec![PowerId::Regen, PowerId::Strength],
             "Java removes debuffs, Curiosity, Unawakened, and Shackled immediately during first-phase death"
         );
+        assert_eq!(store::power_amount(&state, 7, PowerId::Strength), 2);
+        assert!(!store::has_power(&state, 7, PowerId::Shackled));
 
         assert_eq!(state.pop_next_action(), Some(Action::ClearCardQueue));
         assert_eq!(
@@ -196,6 +201,42 @@ mod tests {
             2,
             "Java damage() calls setMove(REBIRTH) immediately and also queues SetMoveAction(REBIRTH)"
         );
+    }
+
+    #[test]
+    fn first_phase_purge_removes_negative_strength_when_temporary_loss_exceeds_strength() {
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.id = 7;
+        awakened.current_hp = 1;
+        awakened.max_hp = 300;
+        awakened.set_planned_move_id(SLASH);
+        let mut state = crate::test_support::combat_with_monsters(vec![awakened]);
+        store::set_powers_for(
+            &mut state,
+            7,
+            vec![
+                power(PowerId::Regen, 10),
+                power(PowerId::Unawakened, -1),
+                power(PowerId::Strength, -6),
+                power(PowerId::Shackled, 8),
+            ],
+        );
+
+        crate::engine::action_handlers::damage::handle_damage(
+            crate::runtime::action::DamageInfo {
+                source: PLAYER,
+                target: 7,
+                base: 1,
+                output: 1,
+                damage_type: crate::runtime::action::DamageType::Normal,
+                is_modified: true,
+            },
+            &mut state,
+        );
+
+        assert_eq!(store::power_amount(&state, 7, PowerId::Strength), 0);
+        assert!(!store::has_power(&state, 7, PowerId::Strength));
+        assert!(!store::has_power(&state, 7, PowerId::Shackled));
     }
 }
 
