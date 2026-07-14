@@ -973,7 +973,10 @@ Expected: current artifacts expose snake-case status/eligibility values; legacy 
 > choices were not assigned to challenger lanes and that shared-prefix search
 > evidence polluted suffix eligibility. Before resuming the long fork, add the
 > three-relic lane expansion and a persisted comparison horizon. Preserve and
-> report full-history comparability separately.
+> report full-history comparability separately. The smoke run also exposed a
+> `-1` relic-counter sentinel that restored as `0`, breaking the old cutpoint's
+> control hash, and challenger deduplication that merged two distinct relic
+> picks. Both must pass round-trip/retention regressions before the long fork.
 
 **Files:**
 

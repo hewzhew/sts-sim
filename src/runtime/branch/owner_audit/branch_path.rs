@@ -125,7 +125,10 @@ pub(super) struct BranchPathRelicState {
     id: RelicId,
     #[serde(default, skip_serializing_if = "is_false")]
     used_up: bool,
-    #[serde(default, skip_serializing_if = "is_default_counter")]
+    #[serde(
+        default = "default_relic_counter",
+        skip_serializing_if = "is_default_counter"
+    )]
     counter: i32,
     #[serde(default, skip_serializing_if = "is_zero")]
     amount: i32,
@@ -137,7 +140,10 @@ pub(super) struct BranchPathMawBankState {
     active: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     used_up: bool,
-    #[serde(default, skip_serializing_if = "is_default_counter")]
+    #[serde(
+        default = "default_relic_counter",
+        skip_serializing_if = "is_default_counter"
+    )]
     counter: i32,
 }
 
@@ -571,6 +577,10 @@ fn is_default_counter(value: &i32) -> bool {
     *value == -1
 }
 
+fn default_relic_counter() -> i32 {
+    -1
+}
+
 #[cfg(test)]
 mod tests {
     use sts_simulator::ai::strategy::candidate_pressure_response::StrategyCommitmentKind;
@@ -585,6 +595,30 @@ mod tests {
 
     use super::super::owner_model::{OwnerCandidateDecision, OwnerChoice, OwnerChoiceExpansion};
     use super::*;
+
+    #[test]
+    fn omitted_relic_counters_restore_the_minus_one_sentinel() {
+        let relic: BranchPathRelicState = serde_json::from_value(serde_json::json!({
+            "id": "BurningBlood"
+        }))
+        .expect("relic snapshot");
+        let maw_bank: BranchPathMawBankState = serde_json::from_value(serde_json::json!({
+            "owned": false,
+            "active": false
+        }))
+        .expect("maw bank snapshot");
+
+        assert_eq!(relic.counter, -1);
+        assert_eq!(maw_bank.counter, -1);
+        assert!(serde_json::to_value(relic)
+            .expect("serialize relic")
+            .get("counter")
+            .is_none());
+        assert!(serde_json::to_value(maw_bank)
+            .expect("serialize maw bank")
+            .get("counter")
+            .is_none());
+    }
 
     #[test]
     fn candidate_snapshot_keeps_selected_and_inspect_reason() {

@@ -33,6 +33,15 @@ is classified as `full_search_comparability`; pair eligibility uses
 horizon. A legacy checkpoint without a horizon continues to classify its full
 history, so compatibility fails closed rather than inventing a clean suffix.
 
+Two persistence/retention invariants are part of this boundary:
+
+- omitted relic counters deserialize to the engine sentinel `-1`, not the Rust
+  integer default `0`, so a written path round-trips to the same control hash;
+- frontier deduplication includes the first divergent decision key when one is
+  present, so semantically similar policies do not merge distinct relic arms.
+  Repeated branches with the same divergence key and strategy signature may
+  still merge normally.
+
 ## Existing Evidence and the Missing Boundary
 
 `CombatSearchV2Report` already records:

@@ -16,7 +16,8 @@ pub(super) fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
         return;
     }
     let mut baseline = None::<Branch>;
-    let mut challengers = std::collections::BTreeMap::<ChallengerSignature, Branch>::new();
+    let mut challengers =
+        std::collections::BTreeMap::<(ChallengerSignature, Option<String>), Branch>::new();
     for branch in frontier.drain(..) {
         let Some(signature) = challenger_signature_for_branch(&branch) else {
             let replace = match baseline.as_ref() {
@@ -28,12 +29,13 @@ pub(super) fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
             }
             continue;
         };
-        let replace = match challengers.get(&signature) {
+        let retention_identity = (signature, challenger_divergence_key(&branch));
+        let replace = match challengers.get(&retention_identity) {
             None => true,
             Some(existing) => stronger_frontier_branch(&branch, existing),
         };
         if replace {
-            challengers.insert(signature, branch);
+            challengers.insert(retention_identity, branch);
         }
     }
     let mut retained = Vec::new();
@@ -49,6 +51,16 @@ pub(super) fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
     });
     retained.extend(distinct_challengers.into_iter().take(challenger_slots));
     *frontier = retained.into();
+}
+
+fn challenger_divergence_key(branch: &Branch) -> Option<String> {
+    let lane = branch.policy_lane.label();
+    branch
+        .path
+        .iter()
+        .find(|step| step.policy_lane == lane)
+        .and_then(|step| step.key.as_ref())
+        .and_then(|key| serde_json::to_string(key).ok())
 }
 
 fn challenger_signature_for_branch(branch: &Branch) -> Option<ChallengerSignature> {
@@ -118,8 +130,11 @@ mod tests {
     use sts_simulator::ai::strategy::pressure_assessment::{
         EvidenceConfidence, PressureAxis, PressureCoverage, PressureHypothesis,
     };
+    use sts_simulator::content::relics::RelicId;
+    use sts_simulator::eval::run_control::DecisionCandidateKey;
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
+    use super::super::branch_path::{BranchPathStep, ChoiceAnnotationSnapshot};
     use super::super::branch_policy_lane::BranchPolicyLane;
     use super::super::{BranchStatus, Owner};
 
@@ -162,6 +177,27 @@ mod tests {
         branch_with_lane(lane_id as usize, BranchPolicyLane::challenger(policy), hp)
     }
 
+    fn boss_relic_challenger_branch(lane_id: u8, relic: RelicId) -> Branch {
+        let mut branch = challenger_branch(lane_id, PressureAxis::ResolutionTempo, 50);
+        branch.path.push(BranchPathStep {
+            policy_lane: branch.policy_lane.label(),
+            policy_selection: None,
+            key: Some(DecisionCandidateKey::BossRelicPick {
+                option_index: lane_id as usize,
+                relic,
+            }),
+            action_debug: format!("take {relic:?}"),
+            label: format!("Take {relic:?}"),
+            annotation: ChoiceAnnotationSnapshot::none(),
+            state_before: None,
+            decision_delta: None,
+            candidate_pool: Vec::new(),
+            shop_boss_preview_candidates: Vec::new(),
+            shop_boss_preview_bundles: Vec::new(),
+        });
+        branch
+    }
+
     #[test]
     fn lower_hp_baseline_is_not_dropped_for_healthier_challenger() {
         let mut frontier = VecDeque::from([
@@ -201,6 +237,41 @@ mod tests {
                         .iter()
                         .any(|item| item.axis == PressureAxis::DelayCapacity)
                 })
+        }));
+    }
+
+    #[test]
+    fn distinct_boss_relic_experiment_arms_survive_semantic_deduplication() {
+        let mut frontier = VecDeque::from([
+            baseline_branch(50),
+            boss_relic_challenger_branch(1, RelicId::CoffeeDripper),
+            boss_relic_challenger_branch(2, RelicId::PhilosopherStone),
+        ]);
+
+        retain_frontier(&mut frontier, 3);
+
+        assert_eq!(frontier.len(), 3);
+        assert!(frontier.iter().any(|branch| {
+            branch.path.last().is_some_and(|step| {
+                matches!(
+                    step.key,
+                    Some(DecisionCandidateKey::BossRelicPick {
+                        relic: RelicId::CoffeeDripper,
+                        ..
+                    })
+                )
+            })
+        }));
+        assert!(frontier.iter().any(|branch| {
+            branch.path.last().is_some_and(|step| {
+                matches!(
+                    step.key,
+                    Some(DecisionCandidateKey::BossRelicPick {
+                        relic: RelicId::PhilosopherStone,
+                        ..
+                    })
+                )
+            })
         }));
     }
 }

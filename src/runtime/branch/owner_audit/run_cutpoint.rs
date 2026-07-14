@@ -88,10 +88,16 @@ impl RunCutpointSnapshot {
         }
         let actual = Self::capture(self.manifest.kind, self.manifest.generation, branch)?;
         if actual.manifest.session_checkpoint_hash != self.manifest.session_checkpoint_hash {
-            return Err("session checkpoint fingerprint mismatch".to_string());
+            return Err(format!(
+                "session checkpoint fingerprint mismatch: expected {}, got {}",
+                self.manifest.session_checkpoint_hash, actual.manifest.session_checkpoint_hash
+            ));
         }
         if actual.manifest.branch_control_hash != self.manifest.branch_control_hash {
-            return Err("branch control fingerprint mismatch".to_string());
+            return Err(format!(
+                "branch control fingerprint mismatch: expected {}, got {}",
+                self.manifest.branch_control_hash, actual.manifest.branch_control_hash
+            ));
         }
         if actual.manifest.act != self.manifest.act
             || actual.manifest.floor != self.manifest.floor
