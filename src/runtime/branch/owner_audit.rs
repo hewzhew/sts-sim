@@ -128,6 +128,8 @@ mod run_chain_state;
 mod run_choice_owner;
 #[path = "owner_audit/run_contract.rs"]
 mod run_contract;
+#[path = "owner_audit/run_cutpoint.rs"]
+mod run_cutpoint;
 #[path = "owner_audit/run_deadline.rs"]
 mod run_deadline;
 #[path = "owner_audit/run_identity.rs"]
