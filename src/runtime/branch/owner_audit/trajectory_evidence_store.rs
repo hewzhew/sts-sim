@@ -148,7 +148,9 @@ mod tests {
     use std::collections::VecDeque;
 
     use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
-    use sts_simulator::ai::strategy::trajectory_comparison::TrajectoryTerminal;
+    use sts_simulator::ai::strategy::trajectory_comparison::{
+        TrajectoryPairEligibility, TrajectorySearchComparabilityStatus, TrajectoryTerminal,
+    };
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
     use super::*;
@@ -214,6 +216,66 @@ mod tests {
             .iter()
             .all(|snapshot| snapshot.terminal == TrajectoryTerminal::CoverageLimited));
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_trajectory_state_loads_and_refreshes_fail_closed() {
+        let root = std::env::temp_dir().join("trajectory_state_legacy_comparability");
+        let path = root.join("trajectory_state.json");
+        let _ = std::fs::remove_dir_all(&root);
+        let frontier = VecDeque::from([
+            test_branch(1, BranchPolicyLane::default()),
+            test_branch(
+                2,
+                BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
+            ),
+        ]);
+        record_frontier(&path, 10, &frontier).expect("record current state");
+
+        let mut value: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read current state"))
+                .expect("parse current state");
+        for observation in value["observations"].as_array_mut().expect("observations") {
+            observation["snapshot"]
+                .as_object_mut()
+                .expect("observation snapshot")
+                .remove("search_comparability");
+        }
+        for snapshot in value["evaluation"]["snapshots"]
+            .as_array_mut()
+            .expect("evaluation snapshots")
+        {
+            snapshot
+                .as_object_mut()
+                .expect("evaluation snapshot")
+                .remove("search_comparability");
+        }
+        for comparison in value["evaluation"]["comparisons"]
+            .as_array_mut()
+            .expect("evaluation comparisons")
+        {
+            comparison
+                .as_object_mut()
+                .expect("comparison")
+                .remove("eligibility");
+        }
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&value).expect("serialize legacy state"),
+        )
+        .expect("write legacy state");
+
+        let restored = read_state(&path).expect("load legacy state");
+
+        assert!(restored.evaluation.snapshots.iter().all(|snapshot| {
+            snapshot.search_comparability.status
+                == TrajectorySearchComparabilityStatus::InsufficientEvidence
+        }));
+        assert_eq!(
+            restored.evaluation.comparisons[0].eligibility,
+            TrajectoryPairEligibility::ExcludedInsufficientEvidence
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

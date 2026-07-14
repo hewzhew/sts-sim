@@ -370,6 +370,9 @@ mod tests {
 
     use super::*;
     use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
+    use sts_simulator::ai::strategy::trajectory_comparison::{
+        TrajectoryPairEligibility, TrajectorySearchComparabilityStatus,
+    };
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
         CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
@@ -501,6 +504,41 @@ mod tests {
                 .unwrap()
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn capsule_exposes_search_comparability_and_pair_eligibility() {
+        let mut baseline = sample_branch();
+        baseline.combat_search_history = vec![CombatSearchTraceSummary {
+            source: "primary".to_string(),
+            coverage_status: "NodeBudgetLimited".to_string(),
+            node_budget_hit: true,
+            ..CombatSearchTraceSummary::default()
+        }];
+        let mut challenger = challenger_sample_branch(1);
+        challenger.combat_search_history = baseline.combat_search_history.clone();
+        let trajectory_evaluation = evaluation(vec![baseline.clone(), challenger]);
+        let summary = branch_summary_value(
+            Path::new("target/test-capsule"),
+            sample_args(),
+            1,
+            &baseline,
+            &Value::Null,
+            &json!([]),
+            &trajectory_evaluation,
+            "gap",
+            None,
+            None,
+        );
+
+        assert_eq!(
+            summary["trajectory_snapshot"]["search_comparability"]["status"],
+            json!(TrajectorySearchComparabilityStatus::Comparable)
+        );
+        assert_eq!(
+            summary["trajectory_evaluation"]["comparisons"][0]["eligibility"],
+            json!(TrajectoryPairEligibility::Comparable)
         );
     }
 
