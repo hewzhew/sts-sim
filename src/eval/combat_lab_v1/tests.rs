@@ -939,6 +939,17 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
     assert_eq!(record.action_history.len(), 2);
     assert!(!record.draw_history.is_empty());
     assert!(record.outcome_order_key.is_some());
+    let candidate = record
+        .replayed_candidate
+        .as_ref()
+        .expect("resolved win should also retain the replayed candidate");
+    assert_eq!(
+        candidate.final_hp,
+        record.final_hp.expect("resolved final HP")
+    );
+    assert_eq!(candidate.hp_loss, record.hp_loss.expect("resolved HP loss"));
+    assert_eq!(candidate.action_history, record.action_history);
+    assert_eq!(candidate.draw_history, record.draw_history);
     assert_eq!(record.expanded_nodes, 11);
     assert_eq!(record.generated_nodes, 17);
     assert_eq!(record.nodes_to_first_win, Some(9));
@@ -951,6 +962,128 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
         crate::ai::combat_search_v2::COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
         12
     );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn cell_time_limited_replayed_win_retains_candidate_without_resolving() {
+    use crate::ai::combat_search_v2::{replay_combat_search_witness_line_v1, SearchCoverageStatus};
+
+    let (directory, resolved) = resolved_lab_fixture("cell_limited_win_candidate");
+    let (sample, trajectory) = replayable_win_sample();
+    let mut stats = crate::ai::combat_search_v2::CombatSearchV2Stats::default();
+    stats.nodes_to_first_win = Some(9);
+
+    let record = super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::TimeBudgetLimited,
+        Some(&trajectory),
+        &stats,
+        replay_combat_search_witness_line_v1,
+    );
+
+    assert_eq!(
+        record.outcome_class,
+        super::CombatLabOutcomeClassV1::CoverageLimited
+    );
+    assert!(record.replay_validated);
+    let candidate = record
+        .replayed_candidate
+        .as_ref()
+        .expect("replayed complete win should be retained as a candidate");
+    assert_eq!(
+        candidate.terminal,
+        crate::ai::combat_search_v2::SearchTerminalLabel::Win
+    );
+    assert_eq!(candidate.final_hp, trajectory.final_hp);
+    assert_eq!(candidate.hp_loss, trajectory.hp_loss);
+    assert_eq!(candidate.turns, trajectory.turns);
+    assert_eq!(candidate.actions, trajectory.actions.len());
+    assert_eq!(candidate.cards_played, trajectory.cards_played);
+    assert_eq!(candidate.potions_used, trajectory.potions_used);
+    assert_eq!(candidate.action_history.len(), trajectory.actions.len());
+    assert!(!candidate.draw_history.is_empty());
+    assert!(record.final_hp.is_none());
+    assert!(record.hp_loss.is_none());
+    assert!(record.turns.is_none());
+    assert!(record.actions.is_none());
+    assert!(record.action_history.is_empty());
+    assert!(record.draw_history.is_empty());
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn cell_time_limited_replayed_loss_retains_candidate_without_resolving() {
+    use crate::ai::combat_search_v2::{replay_combat_search_witness_line_v1, SearchCoverageStatus};
+
+    let (directory, resolved) = resolved_lab_fixture("cell_limited_loss_candidate");
+    let (sample, trajectory) = replayable_loss_sample();
+    let stats = crate::ai::combat_search_v2::CombatSearchV2Stats::default();
+
+    let record = super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::TimeBudgetLimited,
+        Some(&trajectory),
+        &stats,
+        replay_combat_search_witness_line_v1,
+    );
+
+    assert_eq!(
+        record.outcome_class,
+        super::CombatLabOutcomeClassV1::CoverageLimited
+    );
+    assert!(record.replay_validated);
+    let candidate = record
+        .replayed_candidate
+        .as_ref()
+        .expect("replayed complete loss should be retained as a candidate");
+    assert_eq!(
+        candidate.terminal,
+        crate::ai::combat_search_v2::SearchTerminalLabel::Loss
+    );
+    assert_eq!(candidate.final_hp, 0);
+    assert_eq!(candidate.hp_loss, 1);
+    assert_eq!(candidate.actions, 1);
+    assert_eq!(
+        candidate.action_history,
+        vec![crate::state::core::ClientInput::EndTurn]
+    );
+    assert!(record.final_hp.is_none());
+    assert!(record.action_history.is_empty());
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn cell_without_complete_trajectory_has_no_replayed_candidate() {
+    use crate::ai::combat_search_v2::SearchCoverageStatus;
+
+    let (directory, resolved) = resolved_lab_fixture("cell_no_complete_candidate");
+    let (sample, _) = replayable_win_sample();
+    let stats = crate::ai::combat_search_v2::CombatSearchV2Stats::default();
+
+    let record = super::replay::combat_lab_cell_record_from_trajectory_with_replayer_v1(
+        &resolved,
+        &sample,
+        &resolved.profiles[0],
+        SearchCoverageStatus::TimeBudgetLimited,
+        None,
+        &stats,
+        crate::ai::combat_search_v2::replay_combat_search_witness_line_v1,
+    );
+
+    assert_eq!(
+        record.outcome_class,
+        super::CombatLabOutcomeClassV1::CoverageLimited
+    );
+    assert!(!record.replay_validated);
+    assert!(record.replayed_candidate.is_none());
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }
@@ -981,6 +1114,7 @@ fn cell_replay_mismatch_is_halting_execution_error() {
     assert!(record.search_terminal.is_some());
     assert!(record.coverage_status.is_some());
     assert!(record.outcome_order_key.is_none());
+    assert!(record.replayed_candidate.is_none());
     let error = record.error.expect("replay mismatch should be recorded");
     assert_eq!(error.stage, super::CombatLabCellErrorStageV1::ExactReplay);
     assert_eq!(error.code, "exact_replay_invariant_mismatch");
@@ -2179,6 +2313,77 @@ fn replayable_win_sample() -> (
     (sample, trajectory)
 }
 
+fn replayable_loss_sample() -> (
+    super::CombatLabCompiledSampleV1,
+    crate::ai::combat_search_v2::CombatSearchV2TrajectoryReport,
+) {
+    use crate::ai::combat_search_v2::{trajectory_from_state, CombatSearchV2ActionTrace};
+    use crate::content::monsters::EnemyId;
+    use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
+    use crate::sim::combat::{
+        apply_combat_input_to_stable_observed_v1, CombatPosition, CombatStepLimits, CombatTerminal,
+    };
+    use crate::state::core::{ClientInput, EngineState};
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 1;
+    let mut monster = test_monster(EnemyId::JawWorm);
+    let attack = MonsterMoveSpec::Attack(AttackSpec {
+        base_damage: 1,
+        hits: 1,
+        damage_kind: DamageKind::Normal,
+    });
+    monster.set_planned_move_id(1);
+    monster.move_state.planned_steps = Some(attack.to_steps());
+    monster.move_state.planned_visible_spec = Some(attack);
+    combat.entities.monsters = vec![monster];
+    let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+    let input = ClientInput::EndTurn;
+    let observed = apply_combat_input_to_stable_observed_v1(
+        &start,
+        input.clone(),
+        CombatStepLimits {
+            max_engine_steps: 100,
+            deadline: None,
+        },
+    );
+    assert!(!observed.step.truncated);
+    assert!(!observed.step.timed_out);
+    let final_position = observed.step.position;
+    assert_eq!(
+        crate::sim::combat::combat_terminal(&final_position.engine, &final_position.combat),
+        CombatTerminal::Loss
+    );
+    let actions = vec![CombatSearchV2ActionTrace {
+        step_index: 0,
+        action_id: 0,
+        action_key: "end-turn".to_string(),
+        action_debug: format!("{input:?}"),
+        input,
+    }];
+    let trajectory = trajectory_from_state(
+        final_position.engine,
+        final_position.combat,
+        start.combat.entities.player.current_hp,
+        actions,
+        0,
+        0,
+        1,
+        false,
+    );
+    let sample = super::CombatLabCompiledSampleV1 {
+        sample_index: 8,
+        shuffle_seed: 100,
+        state_fingerprint: combat_state_fingerprint_v1(&start),
+        start,
+        non_shuffle_rng_hash: "non-shuffle".to_string(),
+        shuffle_rng_hash: "shuffle".to_string(),
+        monster_snapshot_hash: "monsters".to_string(),
+    };
+    (sample, trajectory)
+}
+
 fn json_with_reversed_object_keys(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Object(object) => {
@@ -2333,6 +2538,7 @@ fn summary_cell(
         coverage_status: None,
         outcome_class,
         outcome_order_key: resolved.then(|| summary_outcome_key(final_hp.unwrap_or_default())),
+        replayed_candidate: None,
         replay_validated: resolved,
         start_hp: Some(20),
         final_hp,
@@ -2435,6 +2641,7 @@ impl super::runner::CombatLabCellExecutorV1 for RecordingCellExecutor {
             coverage_status: Some(crate::ai::combat_search_v2::SearchCoverageStatus::FrontierOpen),
             outcome_class: CombatLabOutcomeClassV1::CoverageLimited,
             outcome_order_key: None,
+            replayed_candidate: None,
             replay_validated: false,
             start_hp: Some(sample.start.combat.entities.player.current_hp),
             final_hp: None,

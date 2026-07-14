@@ -45,6 +45,20 @@ pub struct CombatLabCellErrorV1 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombatLabReplayedCandidateV1 {
+    pub terminal: SearchTerminalLabel,
+    pub outcome_order_key: CombatSearchV2OutcomeOrderKeyReport,
+    pub final_hp: i32,
+    pub hp_loss: i32,
+    pub turns: u32,
+    pub actions: usize,
+    pub cards_played: u32,
+    pub potions_used: u32,
+    pub draw_history: Vec<DomainCardSnapshot>,
+    pub action_history: Vec<ClientInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CombatLabCellRecordV1 {
     pub schema_version: u32,
     pub cell_key: String,
@@ -61,6 +75,8 @@ pub struct CombatLabCellRecordV1 {
     pub coverage_status: Option<SearchCoverageStatus>,
     pub outcome_class: CombatLabOutcomeClassV1,
     pub outcome_order_key: Option<CombatSearchV2OutcomeOrderKeyReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replayed_candidate: Option<CombatLabReplayedCandidateV1>,
     pub replay_validated: bool,
     pub start_hp: Option<i32>,
     pub final_hp: Option<i32>,
@@ -224,32 +240,43 @@ where
     let outcome_class =
         classify_combat_lab_outcome_v1(coverage_status, selected_terminal, replay_error.is_some());
     let replay_validated = replay.is_some();
+    let replayed_candidate =
+        selected
+            .zip(replay.as_ref())
+            .map(|(trajectory, evidence)| CombatLabReplayedCandidateV1 {
+                terminal: trajectory.terminal,
+                outcome_order_key: trajectory.outcome_order_key,
+                final_hp: trajectory.final_hp,
+                hp_loss: trajectory.hp_loss,
+                turns: trajectory.turns,
+                actions: evidence.replayed_actions,
+                cards_played: trajectory.cards_played,
+                potions_used: trajectory.potions_used,
+                draw_history: evidence
+                    .steps
+                    .iter()
+                    .flat_map(|step| step.drawn_cards.iter().cloned())
+                    .collect(),
+                action_history: evidence
+                    .steps
+                    .iter()
+                    .map(|step| step.action.clone())
+                    .collect(),
+            });
     let resolved_trajectory = matches!(
         outcome_class,
         CombatLabOutcomeClassV1::ResolvedWin | CombatLabOutcomeClassV1::ResolvedLoss
     )
     .then_some(selected)
     .flatten();
-    let draw_history = if resolved_trajectory.is_some() {
-        replay
-            .as_ref()
-            .into_iter()
-            .flat_map(|evidence| &evidence.steps)
-            .flat_map(|step| step.drawn_cards.iter().cloned())
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let action_history = if resolved_trajectory.is_some() {
-        replay
-            .as_ref()
-            .into_iter()
-            .flat_map(|evidence| &evidence.steps)
-            .map(|step| step.action.clone())
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let draw_history = resolved_trajectory
+        .and_then(|_| replayed_candidate.as_ref())
+        .map(|candidate| candidate.draw_history.clone())
+        .unwrap_or_default();
+    let action_history = resolved_trajectory
+        .and_then(|_| replayed_candidate.as_ref())
+        .map(|candidate| candidate.action_history.clone())
+        .unwrap_or_default();
     let error = replay_error.map(|message| CombatLabCellErrorV1 {
         stage: CombatLabCellErrorStageV1::ExactReplay,
         code: "exact_replay_invariant_mismatch".to_string(),
@@ -281,6 +308,7 @@ where
         coverage_status: Some(coverage_status),
         outcome_class,
         outcome_order_key: resolved_trajectory.map(|trajectory| trajectory.outcome_order_key),
+        replayed_candidate,
         replay_validated,
         start_hp: Some(start_hp),
         final_hp: resolved_trajectory.map(|trajectory| trajectory.final_hp),

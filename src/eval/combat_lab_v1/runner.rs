@@ -205,6 +205,7 @@ fn sample_construction_error_cell_v1(
         coverage_status: None,
         outcome_class: CombatLabOutcomeClassV1::ExecutionError,
         outcome_order_key: None,
+        replayed_candidate: None,
         replay_validated: false,
         start_hp: None,
         final_hp: None,
