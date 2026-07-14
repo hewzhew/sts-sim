@@ -237,7 +237,8 @@ mod tests {
     use crate::ai::strategy::challenger_signature::DeckBurdenBand;
     use crate::ai::strategy::trajectory_comparison::{
         TrajectoryConstruction, TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence,
-        TrajectoryProgress, TrajectoryResources, TrajectorySnapshot, TrajectoryTerminal,
+        TrajectoryProgress, TrajectoryResources, TrajectorySearchComparability, TrajectorySnapshot,
+        TrajectoryTerminal,
     };
     use crate::state::core::EngineState;
 
@@ -260,6 +261,7 @@ mod tests {
                 active_commitments: 0,
                 failed_commitments: 0,
             },
+            search_comparability: TrajectorySearchComparability::default(),
         }
     }
 

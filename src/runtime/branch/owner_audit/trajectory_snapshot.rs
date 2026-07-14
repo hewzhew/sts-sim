@@ -8,7 +8,7 @@ use sts_simulator::ai::strategy::deck_strategic_deficit::StrategicBurdenLevel;
 use sts_simulator::ai::strategy::trajectory_comparison::{
     compare_trajectories, TrajectoryComparison, TrajectoryConstruction,
     TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence, TrajectoryProgress,
-    TrajectoryResources, TrajectorySnapshot, TrajectoryTerminal,
+    TrajectoryResources, TrajectorySearchComparability, TrajectorySnapshot, TrajectoryTerminal,
 };
 
 use super::branch_model::{Branch, BranchStatus, TerminalOutcome};
@@ -70,6 +70,7 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
             active_commitments,
             failed_commitments,
         },
+        search_comparability: TrajectorySearchComparability::default(),
     }
 }
 

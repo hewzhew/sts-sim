@@ -51,6 +51,53 @@ pub struct TrajectoryConstruction {
     pub failed_commitments: u16,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrajectorySearchComparabilityStatus {
+    Comparable,
+    WallSafetyLimited,
+    InsufficientEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrajectorySearchComparability {
+    pub status: TrajectorySearchComparabilityStatus,
+    pub total_attempts: u32,
+    pub exact_accepted_attempts: u32,
+    pub node_bounded_attempts: u32,
+    pub exhaustive_attempts: u32,
+    pub wall_limited_attempts: u32,
+    pub insufficient_attempts: u32,
+}
+
+impl TrajectorySearchComparability {
+    pub const fn comparable_without_attempts() -> Self {
+        Self {
+            status: TrajectorySearchComparabilityStatus::Comparable,
+            total_attempts: 0,
+            exact_accepted_attempts: 0,
+            node_bounded_attempts: 0,
+            exhaustive_attempts: 0,
+            wall_limited_attempts: 0,
+            insufficient_attempts: 0,
+        }
+    }
+}
+
+impl Default for TrajectorySearchComparability {
+    fn default() -> Self {
+        Self {
+            status: TrajectorySearchComparabilityStatus::InsufficientEvidence,
+            total_attempts: 0,
+            exact_accepted_attempts: 0,
+            node_bounded_attempts: 0,
+            exhaustive_attempts: 0,
+            wall_limited_attempts: 0,
+            insufficient_attempts: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrajectorySnapshot {
     pub lane: String,
@@ -60,6 +107,8 @@ pub struct TrajectorySnapshot {
     pub deployability: TrajectoryDeployabilityEvidence,
     pub resources: TrajectoryResources,
     pub construction: TrajectoryConstruction,
+    #[serde(default)]
+    pub search_comparability: TrajectorySearchComparability,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -81,6 +130,20 @@ pub enum TrajectoryVerdict {
     Inconclusive,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrajectoryPairEligibility {
+    Comparable,
+    ExcludedWallSafetyLimited,
+    ExcludedInsufficientEvidence,
+}
+
+impl Default for TrajectoryPairEligibility {
+    fn default() -> Self {
+        Self::ExcludedInsufficientEvidence
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrajectoryComparison {
     pub baseline_lane: String,
@@ -90,6 +153,8 @@ pub struct TrajectoryComparison {
     pub deployability: LayerComparison,
     pub resources: LayerComparison,
     pub construction: LayerComparison,
+    #[serde(default)]
+    pub eligibility: TrajectoryPairEligibility,
     pub verdict: TrajectoryVerdict,
 }
 
@@ -123,7 +188,16 @@ pub fn compare_trajectories(
         resources,
         construction,
     ];
-    let verdict = terminal_verdict.unwrap_or_else(|| aggregate_nonterminal(&layers));
+    let eligibility = pair_eligibility(
+        baseline.search_comparability.status,
+        challenger.search_comparability.status,
+    );
+    let computed_verdict = terminal_verdict.unwrap_or_else(|| aggregate_nonterminal(&layers));
+    let verdict = if eligibility == TrajectoryPairEligibility::Comparable {
+        computed_verdict
+    } else {
+        TrajectoryVerdict::Inconclusive
+    };
 
     TrajectoryComparison {
         baseline_lane: baseline.lane.clone(),
@@ -133,7 +207,26 @@ pub fn compare_trajectories(
         deployability,
         resources,
         construction,
+        eligibility,
         verdict,
+    }
+}
+
+fn pair_eligibility(
+    baseline: TrajectorySearchComparabilityStatus,
+    challenger: TrajectorySearchComparabilityStatus,
+) -> TrajectoryPairEligibility {
+    use TrajectorySearchComparabilityStatus::{
+        Comparable, InsufficientEvidence, WallSafetyLimited,
+    };
+    match (baseline, challenger) {
+        (WallSafetyLimited, _) | (_, WallSafetyLimited) => {
+            TrajectoryPairEligibility::ExcludedWallSafetyLimited
+        }
+        (InsufficientEvidence, _) | (_, InsufficientEvidence) => {
+            TrajectoryPairEligibility::ExcludedInsufficientEvidence
+        }
+        (Comparable, Comparable) => TrajectoryPairEligibility::Comparable,
     }
 }
 
@@ -327,7 +420,95 @@ mod tests {
                 active_commitments: 0,
                 failed_commitments: 0,
             },
+            search_comparability: TrajectorySearchComparability::comparable_without_attempts(),
         }
+    }
+
+    #[test]
+    fn comparable_pair_keeps_existing_terminal_verdict() {
+        let baseline = snapshot("baseline");
+        let mut challenger = snapshot("challenger-1");
+        challenger.terminal = TrajectoryTerminal::Victory;
+
+        let comparison = compare_trajectories(&baseline, &challenger);
+
+        assert_eq!(
+            comparison.eligibility,
+            TrajectoryPairEligibility::Comparable
+        );
+        assert_eq!(comparison.verdict, TrajectoryVerdict::ChallengerBetter);
+    }
+
+    #[test]
+    fn wall_limited_pair_is_explicitly_excluded() {
+        let baseline = snapshot("baseline");
+        let mut challenger = snapshot("challenger-1");
+        challenger.terminal = TrajectoryTerminal::Victory;
+        challenger.search_comparability = TrajectorySearchComparability {
+            status: TrajectorySearchComparabilityStatus::WallSafetyLimited,
+            total_attempts: 1,
+            exact_accepted_attempts: 0,
+            node_bounded_attempts: 0,
+            exhaustive_attempts: 0,
+            wall_limited_attempts: 1,
+            insufficient_attempts: 0,
+        };
+
+        let comparison = compare_trajectories(&baseline, &challenger);
+
+        assert_eq!(
+            comparison.eligibility,
+            TrajectoryPairEligibility::ExcludedWallSafetyLimited
+        );
+        assert_eq!(comparison.verdict, TrajectoryVerdict::Inconclusive);
+        assert_eq!(comparison.progression, LayerComparison::ChallengerBetter);
+    }
+
+    #[test]
+    fn insufficient_pair_is_explicitly_excluded() {
+        let baseline = snapshot("baseline");
+        let mut challenger = snapshot("challenger-1");
+        challenger.search_comparability = TrajectorySearchComparability::default();
+
+        let comparison = compare_trajectories(&baseline, &challenger);
+
+        assert_eq!(
+            comparison.eligibility,
+            TrajectoryPairEligibility::ExcludedInsufficientEvidence
+        );
+        assert_eq!(comparison.verdict, TrajectoryVerdict::Inconclusive);
+    }
+
+    #[test]
+    fn legacy_trajectory_json_defaults_to_excluded_search_evidence() {
+        let baseline = snapshot("baseline");
+        let challenger = snapshot("challenger-1");
+        let comparison = compare_trajectories(&baseline, &challenger);
+
+        let mut snapshot_value = serde_json::to_value(&baseline).expect("serialize snapshot");
+        snapshot_value
+            .as_object_mut()
+            .expect("snapshot object")
+            .remove("search_comparability");
+        let restored_snapshot: TrajectorySnapshot =
+            serde_json::from_value(snapshot_value).expect("legacy snapshot");
+
+        let mut comparison_value = serde_json::to_value(comparison).expect("serialize comparison");
+        comparison_value
+            .as_object_mut()
+            .expect("comparison object")
+            .remove("eligibility");
+        let restored_comparison: TrajectoryComparison =
+            serde_json::from_value(comparison_value).expect("legacy comparison");
+
+        assert_eq!(
+            restored_snapshot.search_comparability.status,
+            TrajectorySearchComparabilityStatus::InsufficientEvidence
+        );
+        assert_eq!(
+            restored_comparison.eligibility,
+            TrajectoryPairEligibility::ExcludedInsufficientEvidence
+        );
     }
 
     #[test]
