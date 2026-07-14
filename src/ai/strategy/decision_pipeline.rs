@@ -2663,6 +2663,87 @@ mod tests {
     }
 
     #[test]
+    fn seed006_f35_dark_shackles_bridge_survives_early_liquidity_filter() {
+        let cards = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+            CardId::Clothesline,
+            CardId::Feed,
+            CardId::BattleTrance,
+            CardId::Armaments,
+            CardId::ShrugItOff,
+            CardId::MasterOfStrategy,
+            CardId::Inflame,
+        ];
+        let mut deck = test_deck(&cards);
+        for card in &mut deck {
+            if matches!(
+                card.id,
+                CardId::Bash
+                    | CardId::Clothesline
+                    | CardId::BattleTrance
+                    | CardId::Armaments
+                    | CardId::ShrugItOff
+                    | CardId::MasterOfStrategy
+                    | CardId::Inflame
+            ) {
+                card.upgrades = 1;
+            }
+        }
+        let context = DecisionPipelineContext::shop(
+            DeckPlanSnapshot::from_deck(
+                &deck,
+                DeckAdmissionContext {
+                    act: 3,
+                    current_hp: 110,
+                    max_hp: 110,
+                },
+                RunStrategicFacts {
+                    entering_act: 3,
+                    starter_basic_count: 6,
+                    curse_count: 0,
+                    has_energy_relic: true,
+                    has_runic_pyramid: true,
+                },
+            )
+            .with_boss_key(Some(EncounterId::AwakenedOne)),
+            180,
+        )
+        .with_shop_gold_opportunity(ShopGoldOpportunity {
+            current_gold: 180,
+            current_hp: 110,
+            max_hp: 110,
+            active_maw_bank: false,
+            future_rooms_before_next_shop: 2,
+            hard_checkpoint_imminent: false,
+            survival_purchase_needed: false,
+            boss_answer_needed: true,
+        });
+
+        let shackles = shop_card_in_context_with_price(context, &deck, CardId::DarkShackles, 1, 78);
+
+        assert_eq!(shackles.lane, CandidateLane::Mainline, "{shackles:#?}");
+        assert_ne!(
+            shackles.inspect_only_reason(),
+            Some("SpendsFutureShopLiquidityWithoutHardNeed")
+        );
+        assert!(shackles
+            .scores
+            .iter()
+            .any(|score| score.by == "awakened-one-temporary-strength-timed-bridge"));
+        assert!(shackles
+            .scores
+            .iter()
+            .any(|score| score.by == "shop-bundle-boss-survival-timed-bridge"));
+    }
+
+    #[test]
     fn reward_automaton_context_keeps_shockwave_as_boss_support() {
         let cards = vec![
             CardId::Strike,
