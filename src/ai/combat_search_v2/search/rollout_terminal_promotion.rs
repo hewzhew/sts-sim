@@ -21,7 +21,9 @@ pub(super) fn promote_replayable_terminal_rollout(
         return;
     };
 
-    loop_state.remember_win(node, config);
+    if loop_state.remember_win(node, config) {
+        loop_state.mark_accepted_complete_candidate();
+    }
 }
 
 fn replay_terminal_witness(

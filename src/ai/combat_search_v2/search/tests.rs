@@ -832,6 +832,39 @@ fn terminal_rollout_is_promoted_only_after_exact_replay() {
 }
 
 #[test]
+fn exact_replayed_terminal_rollout_honors_hp_loss_acceptance_threshold() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            stop_on_win_hp_loss_at_most: Some(0),
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(report.stats.nodes_expanded, 0);
+    assert_eq!(
+        report
+            .best_complete_trajectory
+            .as_ref()
+            .map(|trajectory| trajectory.hp_loss),
+        Some(0)
+    );
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::AcceptedCompleteCandidate,
+        "an exact-replayed rollout win within the configured threshold must carry the same acceptance status as a main-frontier win"
+    );
+}
+
+#[test]
 fn terminal_turn_plan_seeds_skip_rollout_estimate() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
