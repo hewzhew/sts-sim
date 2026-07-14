@@ -24,6 +24,9 @@ pub(super) fn expand_registered_owner(
     next_branch_id: &mut usize,
 ) -> Vec<Branch> {
     let mut children = Vec::new();
+    let comparison_search_start = branch
+        .comparison_search_start
+        .or_else(|| (policy_expansions.len() > 1).then_some(branch.combat_search_history.len()));
     for expansion in policy_expansions.iter().cloned() {
         let choice_index = expansion.choice_index;
         let Some(choice) = choices.get(choice_index).cloned() else {
@@ -93,6 +96,7 @@ pub(super) fn expand_registered_owner(
             auto_steps: advance.auto_steps,
             combat_search,
             combat_search_history,
+            comparison_search_start,
             accepted_high_loss_diagnostics,
         });
     }
@@ -210,6 +214,7 @@ fn expand_shop_boss_preview_bundle_children(
             auto_steps: advance.auto_steps,
             combat_search,
             combat_search_history,
+            comparison_search_start: branch.comparison_search_start,
             accepted_high_loss_diagnostics,
         });
     }
@@ -257,7 +262,9 @@ mod tests {
         ExpansionPlan,
     };
     use sts_simulator::content::cards::CardId;
-    use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
+    use sts_simulator::eval::run_control::{
+        CombatSearchTraceSummary, DecisionCandidateKey, RunControlCommand,
+    };
 
     use super::super::branch_policy_lane::BranchPolicyLane;
     use super::super::policy_expansion_plan::{PolicyExpansion, PolicyExpansionEvidence};
@@ -366,7 +373,13 @@ mod tests {
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
+            combat_search_history: vec![CombatSearchTraceSummary {
+                source: "shared-prefix".to_string(),
+                coverage_status: "TimeBudgetLimited".to_string(),
+                deadline_hit: true,
+                ..CombatSearchTraceSummary::default()
+            }],
+            comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         };
         let choices = vec![
@@ -411,6 +424,8 @@ mod tests {
         assert_eq!(children.len(), 2);
         assert_eq!(children[0].policy_lane.label(), "baseline");
         assert_eq!(children[1].policy_lane.label(), "challenger-1");
+        assert_eq!(children[0].comparison_search_start, Some(1));
+        assert_eq!(children[1].comparison_search_start, Some(1));
         assert_eq!(children[1].path[0].policy_lane, "challenger-1");
         let selection = serde_json::to_value(
             children[1].path[0]
@@ -443,6 +458,7 @@ mod tests {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
+            comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         };
         let choices = vec![

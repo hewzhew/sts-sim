@@ -969,6 +969,12 @@ Expected: current artifacts expose snake-case status/eligibility values; legacy 
 
 ### Task 5: Verify the Delivery and Run the Seed006 Relic Fork
 
+> Execution correction: the first exact-cutpoint run proved that Boss Relic
+> choices were not assigned to challenger lanes and that shared-prefix search
+> evidence polluted suffix eligibility. Before resuming the long fork, add the
+> three-relic lane expansion and a persisted comparison horizon. Preserve and
+> report full-history comparability separately.
+
 **Files:**
 
 - Verify: all maintained Rust sources and tests
@@ -980,7 +986,7 @@ Expected: current artifacts expose snake-case status/eligibility values; legacy 
 - Consumes: Tasks 1-4, exact boss-relic cutpoint persistence, seed `20260713006`, fixed search node budgets.
 - Produces: completion evidence and one resumable Black Blood / Coffee Dripper / Philosopher's Stone comparison that is rankable only when every relevant pair is eligible.
 
-- [ ] **Step 1: Run repository completion verification**
+- [x] **Step 1: Run repository completion verification**
 
 Run from a clean status after Task 4's commit:
 
@@ -993,7 +999,7 @@ cargo test --test architecture_runtime_boundaries
 
 Expected: formatting succeeds, no whitespace errors are reported, all library tests pass, and all architecture boundary tests pass.
 
-- [ ] **Step 2: Run the bounded seed006 prefix once and retain its capsule**
+- [x] **Step 2: Run the bounded seed006 prefix once and retain its capsule**
 
 Use the historical mainline budget that reached this branch, with node limits fixed and the wall acting only as a one-hour outer safety stop:
 
@@ -1003,7 +1009,7 @@ cargo run --release --bin branch_tiny -- --seed 20260713006 --generations 29 --m
 
 Expected: the run writes `artifacts/runs/seed006-comparable-mainline-20260714/cutpoints/a2f32_boss_relic.frontier.json` and its matching manifest. If it stops earlier, retain the capsule and report the first real blocker; do not rerun the prefix speculatively.
 
-- [ ] **Step 3: Verify exact cutpoint identity before forking**
+- [x] **Step 3: Verify exact cutpoint identity before forking**
 
 Run:
 
@@ -1018,23 +1024,23 @@ if ($manifest.schema -ne 'branch_tiny_run_cutpoint_v1') { throw 'wrong cutpoint 
 if ($manifest.artifact_trust -ne 'exact_run_control_checkpoint_v1') { throw 'wrong cutpoint trust' }
 if ($manifest.act -ne 2 -or $manifest.floor -ne 32 -or $manifest.boundary -ne 'Boss Relic') { throw 'wrong cutpoint boundary' }
 if ($manifest.candidate_count -ne 4) { throw 'wrong boss relic candidate count' }
-if ($run[4] -ne 13 -or $run[5] -ne 101 -or $run[6] -ne 167) { throw 'unexpected HP or gold' }
+if ($run[4] -ne 26 -or $run[5] -ne 106 -or $run[6] -ne 167) { throw 'unexpected HP or gold' }
 if ($extras.master_deck.Count -ne 15) { throw 'unexpected deck size' }
 $branch.session[0] | ConvertTo-Json -Depth 12
 $extras.relics | ConvertTo-Json -Depth 12
 ```
 
-Expected: the assertions pass; the printed boss-relic selection is ordered Black Blood, Coffee Dripper, Philosopher's Stone (plus the normal skip candidate), and the retained relic/RNG payload matches the exact session fingerprint in the manifest. The subsequent resume command revalidates all fingerprints before executing any choice.
+Expected: the assertions pass; the current exact cutpoint is 26/106 HP with 167 gold, and the printed boss-relic selection is ordered Black Blood, Coffee Dripper, Philosopher's Stone (plus the normal skip candidate). The older 13/101 artifact remains historical evidence but is not substituted for this checkpoint. The retained relic/RNG payload matches the exact session fingerprint in the manifest. The subsequent resume command revalidates all fingerprints before executing any choice.
 
-- [ ] **Step 4: Resume the same cutpoint into four retained branches**
+- [ ] **Step 4: Resume the same cutpoint into three retained relic branches**
 
 Run:
 
 ```powershell
-cargo run --release --bin branch_tiny -- --resume-frontier artifacts/runs/seed006-comparable-mainline-20260714/cutpoints/a2f32_boss_relic.frontier.json --objective exhaust-frontier --generations 24 --max-branches 4 --auto-ops 64 --search-nodes 50000 --search-ms 1000 --rescue-search-nodes 2000000 --rescue-search-ms 20000 --boss-search-nodes 2000000 --boss-search-ms 20000 --wall-ms 3600000 --run-capsule artifacts/runs/seed006-comparable-boss-relic-fork-20260714
+cargo run --release --bin branch_tiny -- --resume-frontier artifacts/runs/seed006-comparable-mainline-20260714/cutpoints/a2f32_boss_relic.frontier.json --objective exhaust-frontier --generations 24 --max-branches 3 --auto-ops 64 --search-nodes 50000 --search-ms 1000 --rescue-search-nodes 2000000 --rescue-search-ms 20000 --boss-search-nodes 2000000 --boss-search-ms 20000 --wall-ms 3600000 --run-capsule artifacts/runs/seed006-comparable-boss-relic-fork-20260714
 ```
 
-Expected: resume validation succeeds before expansion, and the capsule retains the three relic arms plus skip as capacity permits. A wall safety stop is recorded rather than hidden.
+Expected: resume validation succeeds before expansion, and the capsule retains Black Blood, Coffee Dripper, and Philosopher's Stone as baseline plus two challenger lanes. Skip remains visible in candidate evidence but is not a fourth experimental arm. A wall safety stop is recorded rather than hidden.
 
 - [ ] **Step 5: Enforce eligibility before interpreting the relic result**
 
@@ -1042,7 +1048,7 @@ Run:
 
 ```powershell
 $trajectory = Get-Content -Raw 'artifacts/runs/seed006-comparable-boss-relic-fork-20260714/trajectory_state.json' | ConvertFrom-Json
-$trajectory.evaluation.snapshots | Select-Object lane,terminal,@{n='search_status';e={$_.search_comparability.status}},@{n='attempts';e={$_.search_comparability.total_attempts}},@{n='wall';e={$_.search_comparability.wall_limited_attempts}},@{n='insufficient';e={$_.search_comparability.insufficient_attempts}} | Format-Table -AutoSize
+$trajectory.evaluation.snapshots | Select-Object lane,terminal,@{n='suffix_status';e={$_.search_comparability.status}},@{n='full_status';e={$_.full_search_comparability.status}},@{n='suffix_attempts';e={$_.search_comparability.total_attempts}},@{n='suffix_wall';e={$_.search_comparability.wall_limited_attempts}},@{n='suffix_insufficient';e={$_.search_comparability.insufficient_attempts}} | Format-Table -AutoSize
 $trajectory.evaluation.comparisons | Select-Object baseline_lane,challenger_lane,eligibility,verdict | Format-Table -AutoSize
 $excluded = @($trajectory.evaluation.comparisons | Where-Object { $_.eligibility -ne 'comparable' })
 if ($excluded.Count -gt 0) { Write-Warning 'Boss relic counterfactual is inconclusive; keep the cutpoint and resume the affected work instead of ranking arms.' }

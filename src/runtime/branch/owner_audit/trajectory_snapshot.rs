@@ -45,6 +45,10 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
         })
         .unwrap_or((0, 0, 0));
 
+    let comparison_search_start = branch
+        .comparison_search_start
+        .unwrap_or(0)
+        .min(branch.combat_search_history.len());
     TrajectorySnapshot {
         lane: branch.policy_lane.label(),
         terminal: terminal_state(&branch.status),
@@ -71,7 +75,10 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
             active_commitments,
             failed_commitments,
         },
-        search_comparability: classify_search_comparability(&branch.combat_search_history),
+        search_comparability: classify_search_comparability(
+            &branch.combat_search_history[comparison_search_start..],
+        ),
+        full_search_comparability: classify_search_comparability(&branch.combat_search_history),
     }
 }
 
@@ -167,6 +174,7 @@ mod tests {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
+            comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
     }
@@ -212,6 +220,39 @@ mod tests {
             TrajectorySearchComparabilityStatus::Comparable
         );
         assert_eq!(snapshot.search_comparability.node_bounded_attempts, 1);
+    }
+
+    #[test]
+    fn snapshot_excludes_shared_prefix_from_pair_eligibility_but_keeps_full_audit() {
+        let mut branch = test_branch(BranchPolicyLane::default());
+        branch.combat_search_history = vec![
+            CombatSearchTraceSummary {
+                source: "shared-prefix".to_string(),
+                coverage_status: "TimeBudgetLimited".to_string(),
+                deadline_hit: true,
+                ..CombatSearchTraceSummary::default()
+            },
+            CombatSearchTraceSummary {
+                source: "relic-suffix".to_string(),
+                coverage_status: "NodeBudgetLimited".to_string(),
+                node_budget_hit: true,
+                ..CombatSearchTraceSummary::default()
+            },
+        ];
+        branch.comparison_search_start = Some(1);
+
+        let snapshot = trajectory_snapshot(&branch);
+
+        assert_eq!(
+            snapshot.search_comparability.status,
+            TrajectorySearchComparabilityStatus::Comparable
+        );
+        assert_eq!(snapshot.search_comparability.total_attempts, 1);
+        assert_eq!(
+            snapshot.full_search_comparability.status,
+            TrajectorySearchComparabilityStatus::WallSafetyLimited
+        );
+        assert_eq!(snapshot.full_search_comparability.total_attempts, 2);
     }
 
     #[test]

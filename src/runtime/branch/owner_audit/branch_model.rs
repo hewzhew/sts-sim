@@ -22,5 +22,6 @@ pub(super) struct Branch {
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
     pub(super) combat_search_history: Vec<CombatSearchTraceSummary>,
+    pub(super) comparison_search_start: Option<usize>,
     pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }

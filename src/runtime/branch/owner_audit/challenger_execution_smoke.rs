@@ -135,6 +135,7 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
         auto_steps: Vec::new(),
         combat_search: Vec::new(),
         combat_search_history: Vec::new(),
+        comparison_search_start: None,
         accepted_high_loss_diagnostics: Vec::new(),
     };
     let first_choices = forced_probe_choices(&root.session, CardId::Corruption);

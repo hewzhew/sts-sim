@@ -14,6 +14,7 @@ use sts_simulator::ai::strategy::challenger_policy_state::{
 use sts_simulator::ai::strategy::decision_pipeline::{CandidateLane, DecisionCandidateKind};
 use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
 use sts_simulator::ai::strategy::role_saturation::LaneCap;
+use sts_simulator::eval::run_control::DecisionCandidateKey;
 
 use super::branch_policy_lane::BranchPolicyLane;
 use super::owner_model::OwnerChoice;
@@ -56,6 +57,18 @@ impl PolicyExpansionEvidence {
             checkpoint_ref: checkpoint_ref.into(),
         }
     }
+
+    fn ordinary_challenger(checkpoint_ref: impl Into<String>) -> Self {
+        Self {
+            class: PolicyExpansionClass::OrdinaryChallenger,
+            matched_pressure_axes: Vec::new(),
+            matched_commitments: Vec::new(),
+            original_lane: CandidateLane::Mainline,
+            original_inspect_only: None,
+            overrode_reject: false,
+            checkpoint_ref: checkpoint_ref.into(),
+        }
+    }
 }
 
 pub(super) fn plan_policy_expansions(
@@ -67,6 +80,13 @@ pub(super) fn plan_policy_expansions(
 ) -> Vec<PolicyExpansion> {
     if lane_budget == 0 {
         return Vec::new();
+    }
+    if matches!(lane, BranchPolicyLane::Baseline { .. })
+        && choices
+            .iter()
+            .any(|choice| matches!(choice.key, Some(DecisionCandidateKey::BossRelicPick { .. })))
+    {
+        return plan_boss_relic_expansions(lane, choices, lane_budget, checkpoint_ref);
     }
     let production_index = choices.iter().position(OwnerChoice::auto_expand_allowed);
     let candidate_views = policy_candidate_views(choices);
@@ -88,6 +108,49 @@ pub(super) fn plan_policy_expansions(
             checkpoint_ref,
         ),
     }
+}
+
+fn plan_boss_relic_expansions(
+    lane: &BranchPolicyLane,
+    choices: &[OwnerChoice],
+    lane_budget: usize,
+    checkpoint_ref: &str,
+) -> Vec<PolicyExpansion> {
+    let Some(production_index) = choices.iter().position(|choice| {
+        choice.auto_expand_allowed()
+            && matches!(choice.key, Some(DecisionCandidateKey::BossRelicPick { .. }))
+    }) else {
+        return Vec::new();
+    };
+
+    let mut baseline_lane = lane.clone();
+    let mut expansions = vec![PolicyExpansion {
+        choice_index: production_index,
+        child_lane: baseline_lane.clone(),
+        selection_evidence: PolicyExpansionEvidence::production(checkpoint_ref),
+    }];
+    for (choice_index, choice) in choices.iter().enumerate() {
+        if expansions.len() >= lane_budget || choice_index == production_index {
+            continue;
+        }
+        if !choice.auto_expand_allowed()
+            || !matches!(choice.key, Some(DecisionCandidateKey::BossRelicPick { .. }))
+        {
+            continue;
+        }
+        let mut issued_lane = baseline_lane.clone();
+        let Some(lane_id) = issued_lane.issue_challenger_id() else {
+            break;
+        };
+        baseline_lane = issued_lane;
+        expansions.push(PolicyExpansion {
+            choice_index,
+            child_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(lane_id)),
+            selection_evidence: PolicyExpansionEvidence::ordinary_challenger(checkpoint_ref),
+        });
+    }
+    expansions[0].child_lane = baseline_lane;
+    expansions
 }
 
 fn plan_baseline_expansions(
@@ -308,7 +371,8 @@ mod tests {
     };
     use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
-    use sts_simulator::eval::run_control::RunControlCommand;
+    use sts_simulator::content::relics::RelicId;
+    use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::state::run::RunState;
 
@@ -355,6 +419,29 @@ mod tests {
             CandidateLane::Skip,
             skip_reward_admission(),
         )
+    }
+
+    fn boss_relic_choice(option_index: usize, relic: RelicId) -> OwnerChoice {
+        OwnerChoice {
+            key: Some(DecisionCandidateKey::BossRelicPick {
+                option_index,
+                relic,
+            }),
+            action: RunControlCommand::Noop,
+            label: format!("Take {relic:?}"),
+            annotation: ChoiceAnnotation::None,
+            expansion: OwnerChoiceExpansion::AutoAllowed,
+        }
+    }
+
+    fn boss_relic_skip_choice() -> OwnerChoice {
+        OwnerChoice {
+            key: Some(DecisionCandidateKey::BossRelicSkip),
+            action: RunControlCommand::Noop,
+            label: "Skip boss relic".to_string(),
+            annotation: ChoiceAnnotation::None,
+            expansion: OwnerChoiceExpansion::AutoAllowed,
+        }
     }
 
     fn probe_card_choice(card: CardId, reasons: Vec<RewardAdmissionReason>) -> OwnerChoice {
@@ -481,6 +568,42 @@ mod tests {
         assert_eq!(plan[0].child_lane.label(), "baseline");
         assert_eq!(plan[1].choice_index, 1);
         assert_eq!(plan[1].child_lane.label(), "challenger-1");
+    }
+
+    #[test]
+    fn boss_relic_picks_fill_three_policy_lanes_before_skip() {
+        let choices = vec![
+            boss_relic_choice(0, RelicId::BlackBlood),
+            boss_relic_choice(1, RelicId::CoffeeDripper),
+            boss_relic_choice(2, RelicId::PhilosopherStone),
+            boss_relic_skip_choice(),
+        ];
+
+        let plan = plan_policy_expansions(
+            &BranchPolicyLane::default(),
+            &context_from_facts(adequate_facts()),
+            &choices,
+            4,
+            "branch-29/step-29",
+        );
+
+        assert_eq!(
+            plan.iter()
+                .map(|item| item.choice_index)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(plan[0].child_lane.label(), "baseline");
+        assert_eq!(plan[1].child_lane.label(), "challenger-1");
+        assert_eq!(plan[2].child_lane.label(), "challenger-2");
+        assert_eq!(
+            plan[1].selection_evidence.class,
+            PolicyExpansionClass::OrdinaryChallenger
+        );
+        assert_eq!(
+            plan[2].selection_evidence.class,
+            PolicyExpansionClass::OrdinaryChallenger
+        );
     }
 
     #[test]

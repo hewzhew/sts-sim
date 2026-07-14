@@ -45,6 +45,7 @@ impl BranchRuntime {
                 auto_steps: advance.auto_steps,
                 combat_search: combat_search.clone(),
                 combat_search_history: combat_search,
+                comparison_search_start: None,
                 accepted_high_loss_diagnostics: advance.accepted_high_loss_diagnostics,
             }]),
             1usize,

@@ -34,6 +34,8 @@ struct BranchCheckpoint {
     #[serde(default)]
     combat_search_history: Vec<CombatSearchTraceSummary>,
     #[serde(default)]
+    comparison_search_start: Option<usize>,
+    #[serde(default)]
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
@@ -95,6 +97,7 @@ impl BranchCheckpoint {
             status: branch.status.clone(),
             policy_lane: branch.policy_lane.clone(),
             combat_search_history: branch.combat_search_history.clone(),
+            comparison_search_start: branch.comparison_search_start,
             accepted_high_loss_diagnostics: branch.accepted_high_loss_diagnostics.clone(),
         }
     }
@@ -111,6 +114,7 @@ impl BranchCheckpoint {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: self.combat_search_history,
+            comparison_search_start: self.comparison_search_start,
             accepted_high_loss_diagnostics: self.accepted_high_loss_diagnostics,
         })
     }
@@ -230,6 +234,7 @@ mod tests {
         policy.record_divergence("a1f7", &CandidatePressureResponse::default());
         frontier.front_mut().unwrap().policy_lane =
             super::super::branch_policy_lane::BranchPolicyLane::challenger(policy);
+        frontier.front_mut().unwrap().comparison_search_start = Some(7);
 
         save(&path, args, 2, next_branch_id, &frontier).unwrap();
         let (restored, _) = load(&path).unwrap().into_frontier().unwrap();
@@ -242,6 +247,7 @@ mod tests {
             .expect("challenger lane should survive checkpoint");
         assert_eq!(restored_policy.divergence_count, 2);
         assert_eq!(restored_policy.last_checkpoint_ref.as_deref(), Some("a1f7"));
+        assert_eq!(restored.front().unwrap().comparison_search_start, Some(7));
 
         let _ = fs::remove_file(path);
     }

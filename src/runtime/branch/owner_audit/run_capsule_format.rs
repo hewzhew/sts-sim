@@ -418,6 +418,7 @@ mod tests {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
+            comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
     }
@@ -534,6 +535,10 @@ mod tests {
 
         assert_eq!(
             summary["trajectory_snapshot"]["search_comparability"]["status"],
+            json!(TrajectorySearchComparabilityStatus::Comparable)
+        );
+        assert_eq!(
+            summary["trajectory_snapshot"]["full_search_comparability"]["status"],
             json!(TrajectorySearchComparabilityStatus::Comparable)
         );
         assert_eq!(

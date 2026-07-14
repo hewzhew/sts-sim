@@ -262,6 +262,7 @@ mod tests {
                 failed_commitments: 0,
             },
             search_comparability: TrajectorySearchComparability::default(),
+            full_search_comparability: TrajectorySearchComparability::default(),
         }
     }
 

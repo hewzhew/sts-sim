@@ -109,6 +109,8 @@ pub struct TrajectorySnapshot {
     pub construction: TrajectoryConstruction,
     #[serde(default)]
     pub search_comparability: TrajectorySearchComparability,
+    #[serde(default)]
+    pub full_search_comparability: TrajectorySearchComparability,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -421,6 +423,7 @@ mod tests {
                 failed_commitments: 0,
             },
             search_comparability: TrajectorySearchComparability::comparable_without_attempts(),
+            full_search_comparability: TrajectorySearchComparability::comparable_without_attempts(),
         }
     }
 
@@ -490,6 +493,10 @@ mod tests {
             .as_object_mut()
             .expect("snapshot object")
             .remove("search_comparability");
+        snapshot_value
+            .as_object_mut()
+            .expect("snapshot object")
+            .remove("full_search_comparability");
         let restored_snapshot: TrajectorySnapshot =
             serde_json::from_value(snapshot_value).expect("legacy snapshot");
 
@@ -503,6 +510,10 @@ mod tests {
 
         assert_eq!(
             restored_snapshot.search_comparability.status,
+            TrajectorySearchComparabilityStatus::InsufficientEvidence
+        );
+        assert_eq!(
+            restored_snapshot.full_search_comparability.status,
             TrajectorySearchComparabilityStatus::InsufficientEvidence
         );
         assert_eq!(

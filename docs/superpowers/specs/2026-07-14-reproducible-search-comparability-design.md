@@ -10,6 +10,29 @@ into Black Blood, Coffee Dripper, and Philosopher's Stone arms.
 This work classifies evidence only. It does not change search ordering, line
 acceptance, strategy scores, or game policy.
 
+## Execution Addendum: Exact-Fork Scope
+
+The first seed006 execution exposed two assumptions that the initial design had
+not verified:
+
+1. the generic challenger planner only created extra lanes for card-candidate
+   annotations, so a Boss Relic boundary still expanded only its first choice;
+2. each child retained the complete shared search history, so wall-limited
+   evidence from before the exact cutpoint incorrectly excluded every relic pair.
+
+Boss Relic experiments therefore use the existing three policy-lane identities
+for the three presented relic picks: the production pick remains `baseline`, and
+the other two picks become `challenger-1` and `challenger-2`. Skip is not a fourth
+experimental arm. This changes experimental branching only when branch capacity
+is greater than one; it does not change relic scores or the one-branch mainline.
+
+When the first multi-lane fork is created, every child records the same search
+history index as its comparison horizon. The full history remains persisted and
+is classified as `full_search_comparability`; pair eligibility uses
+`search_comparability`, which classifies only evidence at or after that shared
+horizon. A legacy checkpoint without a horizon continues to classify its full
+history, so compatibility fails closed rather than inventing a clean suffix.
+
 ## Existing Evidence and the Missing Boundary
 
 `CombatSearchV2Report` already records:

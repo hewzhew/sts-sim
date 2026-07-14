@@ -172,6 +172,7 @@ mod tests {
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
+            comparison_search_start: None,
             accepted_high_loss_diagnostics: Vec::new(),
         }
     }
@@ -241,6 +242,10 @@ mod tests {
                 .as_object_mut()
                 .expect("observation snapshot")
                 .remove("search_comparability");
+            observation["snapshot"]
+                .as_object_mut()
+                .expect("observation snapshot")
+                .remove("full_search_comparability");
         }
         for snapshot in value["evaluation"]["snapshots"]
             .as_array_mut()
@@ -250,6 +255,10 @@ mod tests {
                 .as_object_mut()
                 .expect("evaluation snapshot")
                 .remove("search_comparability");
+            snapshot
+                .as_object_mut()
+                .expect("evaluation snapshot")
+                .remove("full_search_comparability");
         }
         for comparison in value["evaluation"]["comparisons"]
             .as_array_mut()
@@ -270,6 +279,10 @@ mod tests {
 
         assert!(restored.evaluation.snapshots.iter().all(|snapshot| {
             snapshot.search_comparability.status
+                == TrajectorySearchComparabilityStatus::InsufficientEvidence
+        }));
+        assert!(restored.evaluation.snapshots.iter().all(|snapshot| {
+            snapshot.full_search_comparability.status
                 == TrajectorySearchComparabilityStatus::InsufficientEvidence
         }));
         assert_eq!(
