@@ -92,6 +92,8 @@ pub struct CombatSearchV2EnemyMechanicsReport {
     pub timed_threat_count: usize,
     pub timed_threat_min_owner_turns: Option<u32>,
     pub timed_threat_total_raw_damage: i32,
+    pub finite_survival_damage_mitigation_target_count: usize,
+    pub finite_survival_damage_mitigation_min_owner_turns: Option<u32>,
     pub attack_retaliation_target_count: usize,
     pub attack_retaliation_total_per_event: i32,
     pub attack_retaliation_visible_growth_target_count: usize,

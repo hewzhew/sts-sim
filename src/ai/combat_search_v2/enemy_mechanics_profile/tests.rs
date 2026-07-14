@@ -1,7 +1,66 @@
 use super::*;
-use crate::runtime::combat::{Power, PowerPayload};
+use crate::runtime::combat::{CombatState, Power, PowerPayload};
 use crate::runtime::monster_move::{BuffSpec, MonsterMoveSpec};
 use crate::test_support::{blank_test_combat, test_monster};
+
+fn test_power(power_type: PowerId, amount: i32) -> Power {
+    Power {
+        power_type,
+        instance_id: None,
+        amount,
+        extra_data: 0,
+        payload: PowerPayload::None,
+        just_applied: false,
+    }
+}
+
+fn combat_with_owner_powers(powers: Vec<Power>) -> CombatState {
+    let mut combat = blank_test_combat();
+    let mut owner = test_monster(EnemyId::Cultist);
+    owner.id = 7;
+    combat.entities.monsters = vec![owner];
+    combat.entities.power_db.insert(7, powers);
+    combat
+}
+
+#[test]
+fn finite_survival_damage_mitigation_profile_reads_powers_not_enemy_name() {
+    let combat = combat_with_owner_powers(vec![
+        test_power(PowerId::Fading, 5),
+        test_power(PowerId::Shifting, -1),
+    ]);
+
+    let profile = enemy_mechanics_profile(&combat);
+    let report = enemy_mechanics_profile_report(profile);
+
+    assert_eq!(profile.finite_survival_damage_mitigation_target_count, 1);
+    assert_eq!(
+        profile.finite_survival_damage_mitigation_min_owner_turns,
+        Some(5)
+    );
+    assert_eq!(report.finite_survival_damage_mitigation_target_count, 1);
+    assert_eq!(
+        report.finite_survival_damage_mitigation_min_owner_turns,
+        Some(5)
+    );
+}
+
+#[test]
+fn finite_survival_damage_mitigation_profile_requires_both_powers() {
+    for powers in [
+        vec![test_power(PowerId::Fading, 5)],
+        vec![test_power(PowerId::Shifting, -1)],
+    ] {
+        let combat = combat_with_owner_powers(powers);
+        let profile = enemy_mechanics_profile(&combat);
+
+        assert_eq!(profile.finite_survival_damage_mitigation_target_count, 0);
+        assert_eq!(
+            profile.finite_survival_damage_mitigation_min_owner_turns,
+            None
+        );
+    }
+}
 
 #[test]
 fn awakened_one_profile_reports_targetable_form_one_transition_facts() {

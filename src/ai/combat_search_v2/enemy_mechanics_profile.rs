@@ -17,6 +17,8 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) timed_threat_count: usize,
     pub(super) timed_threat_min_owner_turns: Option<u32>,
     pub(super) timed_threat_total_raw_damage: i32,
+    pub(super) finite_survival_damage_mitigation_target_count: usize,
+    pub(super) finite_survival_damage_mitigation_min_owner_turns: Option<u32>,
     pub(super) attack_retaliation_target_count: usize,
     pub(super) attack_retaliation_total_per_event: i32,
     pub(super) attack_retaliation_visible_growth_target_count: usize,
@@ -73,6 +75,16 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
         .iter()
         .filter(|monster| monster.is_alive_for_action())
     {
+        let fading_turns = store::power_amount(combat, monster.id, PowerId::Fading);
+        if fading_turns > 0 && store::has_power(combat, monster.id, PowerId::Shifting) {
+            profile.finite_survival_damage_mitigation_target_count += 1;
+            let fading_turns = fading_turns as u32;
+            profile.finite_survival_damage_mitigation_min_owner_turns = Some(
+                profile
+                    .finite_survival_damage_mitigation_min_owner_turns
+                    .map_or(fading_turns, |old| old.min(fading_turns)),
+            );
+        }
         if let Some(retaliation) = attack_retaliation_for_target(combat, monster.id) {
             profile.attack_retaliation_target_count += 1;
             profile.attack_retaliation_total_per_event = profile
@@ -225,6 +237,10 @@ pub(super) fn enemy_mechanics_profile_report(
         timed_threat_count: profile.timed_threat_count,
         timed_threat_min_owner_turns: profile.timed_threat_min_owner_turns,
         timed_threat_total_raw_damage: profile.timed_threat_total_raw_damage,
+        finite_survival_damage_mitigation_target_count: profile
+            .finite_survival_damage_mitigation_target_count,
+        finite_survival_damage_mitigation_min_owner_turns: profile
+            .finite_survival_damage_mitigation_min_owner_turns,
         attack_retaliation_target_count: profile.attack_retaliation_target_count,
         attack_retaliation_total_per_event: profile.attack_retaliation_total_per_event,
         attack_retaliation_visible_growth_target_count: profile
