@@ -4,6 +4,53 @@ use crate::runtime::monster_move::{BuffSpec, MonsterMoveSpec};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[test]
+fn awakened_one_profile_reports_targetable_form_one_transition_facts() {
+    let mut combat = blank_test_combat();
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 7;
+    awakened.current_hp = 23;
+    awakened.block = 4;
+    awakened.awakened_one.form1 = true;
+    combat.entities.monsters = vec![awakened];
+    combat.entities.power_db.insert(
+        7,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 6,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    let profile = enemy_mechanics_profile(&combat);
+    let report = enemy_mechanics_profile_report(profile);
+
+    assert_eq!(profile.awakened_one_form_one_target, Some(7));
+    assert_eq!(profile.awakened_one_form_one_hp_with_block, Some(27));
+    assert_eq!(profile.awakened_one_positive_strength, Some(6));
+    assert_eq!(report.awakened_one_form_one_target, Some(7));
+}
+
+#[test]
+fn awakened_one_profile_hides_transition_facts_in_form_two() {
+    let mut combat = blank_test_combat();
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 7;
+    awakened.current_hp = 23;
+    awakened.block = 4;
+    awakened.awakened_one.form1 = false;
+    combat.entities.monsters = vec![awakened];
+
+    let profile = enemy_mechanics_profile(&combat);
+
+    assert_eq!(profile.awakened_one_form_one_target, None);
+    assert_eq!(profile.awakened_one_form_one_hp_with_block, None);
+    assert_eq!(profile.awakened_one_positive_strength, None);
+}
+
+#[test]
 fn guardian_profile_reports_mode_shift_remaining() {
     let mut combat = blank_test_combat();
     let mut guardian = test_monster(EnemyId::TheGuardian);

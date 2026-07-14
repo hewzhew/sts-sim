@@ -41,6 +41,9 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) bronze_orb_stasis_pending_count: usize,
     pub(super) bronze_orb_stasis_card_count: usize,
     pub(super) awakened_one_curiosity_count: usize,
+    pub(super) awakened_one_form_one_target: Option<usize>,
+    pub(super) awakened_one_form_one_hp_with_block: Option<i32>,
+    pub(super) awakened_one_positive_strength: Option<i32>,
     pub(super) time_eater_count: usize,
     pub(super) time_eater_time_warp_counter: Option<i32>,
     pub(super) time_eater_cards_until_warp: Option<i32>,
@@ -183,6 +186,13 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                 if store::has_power(combat, monster.id, PowerId::Curiosity) {
                     profile.awakened_one_curiosity_count += 1;
                 }
+                if monster.awakened_one.form1 {
+                    profile.awakened_one_form_one_target = Some(monster.id);
+                    profile.awakened_one_form_one_hp_with_block =
+                        Some(monster.current_hp.saturating_add(monster.block));
+                    profile.awakened_one_positive_strength =
+                        Some(store::power_amount(combat, monster.id, PowerId::Strength).max(0));
+                }
             }
             EnemyId::TimeEater => {
                 profile.tracked_monsters += 1;
@@ -242,6 +252,9 @@ pub(super) fn enemy_mechanics_profile_report(
         bronze_orb_stasis_pending_count: profile.bronze_orb_stasis_pending_count,
         bronze_orb_stasis_card_count: profile.bronze_orb_stasis_card_count,
         awakened_one_curiosity_count: profile.awakened_one_curiosity_count,
+        awakened_one_form_one_target: profile.awakened_one_form_one_target,
+        awakened_one_form_one_hp_with_block: profile.awakened_one_form_one_hp_with_block,
+        awakened_one_positive_strength: profile.awakened_one_positive_strength,
         time_eater_count: profile.time_eater_count,
         time_eater_time_warp_counter: profile.time_eater_time_warp_counter,
         time_eater_cards_until_warp: profile.time_eater_cards_until_warp,
