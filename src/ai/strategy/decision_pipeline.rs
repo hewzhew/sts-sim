@@ -848,7 +848,7 @@ fn strategic_deficit_score(
             survival_evidence.score_delta,
         ));
     }
-    if survival_evidence.relevant_to_boss_survival_plan {
+    if survival_evidence.repairs_plan() {
         improves = true;
     }
     if needs(deficit.frontload_damage) && admission_frontloads(admission) {
@@ -1366,7 +1366,7 @@ fn heavy_burden_exception(
         || assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
             .relevant_to_boss_plan
         || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
-            .relevant_to_boss_survival_plan
+            .repairs_plan()
         || (admission_provides(admission, Mechanic::CardDraw)
             && admission_provides(admission, Mechanic::Energy))
         || admission
@@ -1418,7 +1418,7 @@ fn acute_survival_setup_only(
             .deck_plan
             .repairs_strength_package_reliability(candidate_card(kind))
         || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
-            .relevant_to_boss_survival_plan
+            .repairs_plan()
     {
         return false;
     }

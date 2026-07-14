@@ -5,18 +5,32 @@ use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BossSurvivalRepairKind {
+    PlanRepair,
+    TimedBridge,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BossSurvivalEvidence {
     pub label: &'static str,
     pub score_delta: i32,
-    pub relevant_to_boss_survival_plan: bool,
+    pub repair_kind: Option<BossSurvivalRepairKind>,
 }
 
 impl BossSurvivalEvidence {
-    const fn relevant(label: &'static str, score_delta: i32) -> Self {
+    const fn plan_repair(label: &'static str, score_delta: i32) -> Self {
         Self {
             label,
             score_delta,
-            relevant_to_boss_survival_plan: true,
+            repair_kind: Some(BossSurvivalRepairKind::PlanRepair),
+        }
+    }
+
+    const fn timed_bridge(label: &'static str, score_delta: i32) -> Self {
+        Self {
+            label,
+            score_delta,
+            repair_kind: Some(BossSurvivalRepairKind::TimedBridge),
         }
     }
 
@@ -24,7 +38,7 @@ impl BossSurvivalEvidence {
         Self {
             label,
             score_delta,
-            relevant_to_boss_survival_plan: false,
+            repair_kind: None,
         }
     }
 
@@ -32,8 +46,12 @@ impl BossSurvivalEvidence {
         Self {
             label: "",
             score_delta: 0,
-            relevant_to_boss_survival_plan: false,
+            repair_kind: None,
         }
+    }
+
+    pub const fn repairs_plan(self) -> bool {
+        self.repair_kind.is_some()
     }
 }
 
@@ -56,10 +74,10 @@ pub fn assess_boss_survival_evidence(
 fn guardian_survival_evidence(deck: DeckPlanSnapshot, card: CardId) -> BossSurvivalEvidence {
     match card {
         CardId::Clothesline if deck.roles.mitigation_units == 0 => {
-            BossSurvivalEvidence::relevant("guardian-first-weak-answer", 70)
+            BossSurvivalEvidence::plan_repair("guardian-first-weak-answer", 70)
         }
         CardId::FlameBarrier if deck.roles.block_units <= 5 => {
-            BossSurvivalEvidence::relevant("guardian-first-substantial-block", 70)
+            BossSurvivalEvidence::plan_repair("guardian-first-substantial-block", 70)
         }
         _ => BossSurvivalEvidence::none(),
     }
@@ -81,7 +99,7 @@ fn collector_minion_control_evidence(
         // Keep the known-boss authority explicit here. Generic shallow-AoE
         // credit no longer rewards duplicate weak attacks, so Collector's
         // concrete two-minion requirement owns the full comparison weight.
-        BossSurvivalEvidence::relevant("collector-minion-control", 150)
+        BossSurvivalEvidence::plan_repair("collector-minion-control", 150)
     } else {
         BossSurvivalEvidence::none()
     }
@@ -96,27 +114,40 @@ fn awakened_one_survival_evidence(
         return BossSurvivalEvidence::none();
     }
     match card {
-        CardId::Disarm => {
-            BossSurvivalEvidence::relevant("awakened-one-strength-down-survival", 100)
+        CardId::Disarm if deck.roles.persistent_enemy_strength_down_units == 0 => {
+            BossSurvivalEvidence::plan_repair("awakened-one-strength-down-survival", 100)
         }
-        CardId::Shockwave => {
-            BossSurvivalEvidence::relevant("awakened-one-weak-strength-down-survival", 95)
+        CardId::Disarm => {
+            BossSurvivalEvidence::score_only("awakened-one-duplicate-strength-down", 20)
+        }
+        CardId::Shockwave if deck.roles.weak_units == 0 => {
+            BossSurvivalEvidence::plan_repair("awakened-one-weak-strength-down-survival", 95)
+        }
+        CardId::Shockwave => BossSurvivalEvidence::score_only("awakened-one-duplicate-weak", 15),
+        CardId::DarkShackles if deck.roles.temporary_enemy_strength_down_units == 0 => {
+            BossSurvivalEvidence::timed_bridge(
+                "awakened-one-temporary-strength-timed-bridge",
+                dark_shackles_bridge_score(deck, upgrades),
+            )
+        }
+        CardId::DarkShackles => {
+            BossSurvivalEvidence::score_only("awakened-one-duplicate-timed-bridge", 15)
         }
         CardId::Impervious | CardId::PowerThrough => {
-            BossSurvivalEvidence::relevant("awakened-one-dark-echo-block-plan", 85)
+            BossSurvivalEvidence::plan_repair("awakened-one-dark-echo-block-plan", 85)
         }
         CardId::FlameBarrier => {
-            BossSurvivalEvidence::relevant("awakened-one-repeatable-block-plan", 70)
+            BossSurvivalEvidence::plan_repair("awakened-one-repeatable-block-plan", 70)
         }
         CardId::SecondWind
             if deck.roles.exhaust_stream_units > 0 || deck.roles.corruption_units > 0 =>
         {
-            BossSurvivalEvidence::relevant("awakened-one-exhaust-block-plan", 65)
+            BossSurvivalEvidence::plan_repair("awakened-one-exhaust-block-plan", 65)
         }
         CardId::FeelNoPain
             if deck.roles.exhaust_stream_units > 0 || deck.roles.corruption_units > 0 =>
         {
-            BossSurvivalEvidence::relevant("awakened-one-exhaust-block-engine", 60)
+            BossSurvivalEvidence::plan_repair("awakened-one-exhaust-block-engine", 60)
         }
         CardId::ShrugItOff if upgrades > 0 => {
             BossSurvivalEvidence::score_only("awakened-one-generic-block-access", 20)
@@ -126,9 +157,16 @@ fn awakened_one_survival_evidence(
 }
 
 fn awakened_one_survival_pressure_open(deck: DeckPlanSnapshot) -> bool {
-    deck.context.act >= 3
-        && deck.roles.mitigation_units == 0
-        && (deck.roles.strength_source_units > 0 || deck.roles.aoe_units > 0)
+    deck.context.act >= 3 && (deck.roles.strength_source_units > 0 || deck.roles.aoe_units > 0)
+}
+
+fn dark_shackles_bridge_score(deck: DeckPlanSnapshot, upgrades: u8) -> i32 {
+    80 + if upgrades > 0 { 20 } else { 0 }
+        + if deck.run_facts.has_runic_pyramid {
+            15
+        } else {
+            0
+        }
 }
 
 #[cfg(test)]
@@ -136,7 +174,7 @@ mod tests {
     use super::*;
     use crate::ai::analysis::card_semantics::Mechanic;
     use crate::ai::strategy::deck_admission::DeckAdmissionContext;
-    use crate::ai::strategy::reward_admission::RewardAdmissionReason;
+    use crate::ai::strategy::reward_admission::{RewardAdmissionClass, RewardAdmissionReason};
     use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
     use crate::runtime::combat::CombatCard;
 
@@ -165,6 +203,85 @@ mod tests {
     }
 
     #[test]
+    fn dark_shackles_is_timed_bridge_alongside_existing_weak_and_disarm() {
+        let plan = deck_plan(
+            &[
+                CardId::DemonForm,
+                CardId::Whirlwind,
+                CardId::Clothesline,
+                CardId::Disarm,
+            ],
+            Some(EncounterId::AwakenedOne),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::DarkShackles),
+            class: RewardAdmissionClass::ImmediateWork,
+            reasons: vec![
+                RewardAdmissionReason::Provides(Mechanic::TemporaryEnemyStrengthDown),
+                RewardAdmissionReason::ExhaustsSelf,
+            ],
+        };
+
+        let evidence =
+            assess_boss_survival_evidence(plan, Some((CardId::DarkShackles, 0)), &admission);
+
+        assert_eq!(
+            evidence.repair_kind,
+            Some(BossSurvivalRepairKind::TimedBridge)
+        );
+        assert_eq!(
+            evidence.label,
+            "awakened-one-temporary-strength-timed-bridge"
+        );
+    }
+
+    #[test]
+    fn duplicate_dark_shackles_is_score_only_not_second_timed_bridge() {
+        let plan = deck_plan(
+            &[CardId::DemonForm, CardId::Whirlwind, CardId::DarkShackles],
+            Some(EncounterId::AwakenedOne),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::DarkShackles),
+            class: RewardAdmissionClass::ImmediateWork,
+            reasons: vec![RewardAdmissionReason::Provides(
+                Mechanic::TemporaryEnemyStrengthDown,
+            )],
+        };
+
+        let evidence =
+            assess_boss_survival_evidence(plan, Some((CardId::DarkShackles, 1)), &admission);
+
+        assert_eq!(evidence.repair_kind, None);
+        assert!(evidence.score_delta > 0);
+    }
+
+    #[test]
+    fn upgrade_and_pyramid_raise_timed_bridge_score_without_changing_kind() {
+        let base = deck_plan(
+            &[CardId::DemonForm, CardId::Whirlwind, CardId::Clothesline],
+            Some(EncounterId::AwakenedOne),
+        );
+        let mut retained = base;
+        retained.run_facts.has_runic_pyramid = true;
+        let admission = RewardAdmission {
+            card: Some(CardId::DarkShackles),
+            class: RewardAdmissionClass::ImmediateWork,
+            reasons: vec![RewardAdmissionReason::Provides(
+                Mechanic::TemporaryEnemyStrengthDown,
+            )],
+        };
+
+        let plain =
+            assess_boss_survival_evidence(base, Some((CardId::DarkShackles, 0)), &admission);
+        let upgraded_retained =
+            assess_boss_survival_evidence(retained, Some((CardId::DarkShackles, 1)), &admission);
+
+        assert_eq!(plain.repair_kind, upgraded_retained.repair_kind);
+        assert!(upgraded_retained.score_delta > plain.score_delta);
+    }
+
+    #[test]
     fn awakened_one_mitigation_card_repairs_open_survival_plan() {
         let plan = deck_plan(
             &[
@@ -185,7 +302,7 @@ mod tests {
         let evidence = assess_boss_survival_evidence(plan, Some((CardId::Disarm, 0)), &admission);
 
         assert_eq!(evidence.label, "awakened-one-strength-down-survival");
-        assert!(evidence.relevant_to_boss_survival_plan);
+        assert!(evidence.repairs_plan());
     }
 
     #[test]
@@ -213,7 +330,7 @@ mod tests {
             assess_boss_survival_evidence(plan, Some((CardId::ShrugItOff, 1)), &admission);
 
         assert_eq!(evidence.label, "awakened-one-generic-block-access");
-        assert!(!evidence.relevant_to_boss_survival_plan);
+        assert!(!evidence.repairs_plan());
     }
 
     #[test]
@@ -240,7 +357,7 @@ mod tests {
         let evidence = assess_boss_survival_evidence(plan, Some((CardId::Cleave, 0)), &admission);
 
         assert_eq!(evidence.label, "collector-minion-control");
-        assert!(evidence.relevant_to_boss_survival_plan);
+        assert!(evidence.repairs_plan());
         assert!(evidence.score_delta >= 100);
     }
 }

@@ -471,8 +471,7 @@ fn improves_hard_gap(
         || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
-        || assess_boss_survival_evidence(deck_plan, candidate, admission)
-            .relevant_to_boss_survival_plan
+        || assess_boss_survival_evidence(deck_plan, candidate, admission).repairs_plan()
         || (deficit.frontload_damage == StrategicDeficitLevel::Missing
             && admission_frontloads(admission))
 }
@@ -495,8 +494,7 @@ fn improves_any_gap(
         || (needs(deficit.boss_scaling_plan)
             && assess_boss_scaling_evidence(deck_plan, candidate, admission).relevant_to_boss_plan
             && !fragile_supported_payoff(deck_plan, admission))
-        || assess_boss_survival_evidence(deck_plan, candidate, admission)
-            .relevant_to_boss_survival_plan
+        || assess_boss_survival_evidence(deck_plan, candidate, admission).repairs_plan()
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
 }
 
