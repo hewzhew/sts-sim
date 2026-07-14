@@ -107,6 +107,7 @@ fn summarize_enemy(
         escaped: monster.is_escaped,
         dying: monster.is_dying,
         half_dead: monster.half_dead,
+        phase: enemy_phase_label(monster),
         planned_move_id: monster.planned_move_id(),
         visible_intent: format!("{:?}", combat.monster_protocol_visible_intent(monster.id)),
         visible_incoming_damage: if monster.is_alive_for_action() {
@@ -114,5 +115,45 @@ fn summarize_enemy(
         } else {
             0
         },
+    }
+}
+
+fn enemy_phase_label(monster: &MonsterEntity) -> Option<&'static str> {
+    match EnemyId::from_id(monster.monster_type) {
+        Some(EnemyId::AwakenedOne) if monster.awakened_one.form1 => Some("form_one"),
+        Some(EnemyId::AwakenedOne) if monster.half_dead => Some("rebirth_pending"),
+        Some(EnemyId::AwakenedOne) => Some("form_two"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod phase_summary_tests {
+    use super::*;
+
+    #[test]
+    fn awakened_one_summary_distinguishes_both_forms_and_rebirth_window() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.awakened_one.form1 = true;
+        combat.entities.monsters = vec![awakened];
+
+        assert_eq!(
+            summarize_state(&EngineState::CombatPlayerTurn, &combat).enemy_slots[0].phase,
+            Some("form_one")
+        );
+
+        combat.entities.monsters[0].awakened_one.form1 = false;
+        combat.entities.monsters[0].half_dead = true;
+        assert_eq!(
+            summarize_state(&EngineState::CombatPlayerTurn, &combat).enemy_slots[0].phase,
+            Some("rebirth_pending")
+        );
+
+        combat.entities.monsters[0].half_dead = false;
+        assert_eq!(
+            summarize_state(&EngineState::CombatPlayerTurn, &combat).enemy_slots[0].phase,
+            Some("form_two")
+        );
     }
 }

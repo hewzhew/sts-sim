@@ -28,6 +28,9 @@ pub(super) struct ReviewOptions {
     pub(super) quality_lane_total_ms: Option<u64>,
     pub(super) counterfactual_hp_probe: bool,
     pub(super) counterfactual_hp_levels: String,
+    pub(super) awakened_opening_probe: bool,
+    pub(super) awakened_opening_probe_ms: u64,
+    pub(super) awakened_opening_probe_turns: usize,
     immediate_child_rollout: bool,
     lazy_child_rollout: bool,
 }
@@ -58,6 +61,9 @@ impl ReviewOptions {
             quality_lane_total_ms: args.quality_lane_total_ms,
             counterfactual_hp_probe: args.counterfactual_hp_probe,
             counterfactual_hp_levels: args.counterfactual_hp_levels.clone(),
+            awakened_opening_probe: args.awakened_opening_probe,
+            awakened_opening_probe_ms: args.awakened_opening_probe_ms,
+            awakened_opening_probe_turns: args.awakened_opening_probe_turns.max(1),
             immediate_child_rollout: args.immediate_child_rollout,
             lazy_child_rollout: args.lazy_child_rollout,
         }

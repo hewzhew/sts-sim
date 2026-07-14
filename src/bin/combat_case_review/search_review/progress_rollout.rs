@@ -37,6 +37,8 @@ pub(super) fn rollout_progress_facts(
                             .count()
                     })
                     .unwrap_or_default(),
+                awakened_one_phase: None,
+                awakened_one_phase_observation: "unavailable_for_estimated_rollout_endpoint",
                 visible_incoming_damage: frontier
                     .map(|trajectory| trajectory.final_state.visible_incoming_damage),
                 action_count: Some(

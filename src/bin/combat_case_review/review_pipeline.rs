@@ -13,6 +13,7 @@ use super::adjudication_probe::{
 use super::awakened_one_evidence::{
     awakened_one_failure_evidence, awakened_one_path_audit_v0, static_boss_matchup_audit_v0,
 };
+use super::awakened_opening_probe::run_awakened_opening_probe;
 use super::boss_pressure_lens::boss_pressure_lens;
 use super::case_payload::{
     assemble_combat_case_review, CombatCaseReview, CombatCaseReviewArtifacts,
@@ -100,6 +101,7 @@ pub(super) fn build_review(
     let awakened_one_path_audit_v0 = awakened_one_path_audit_v0(&case);
     let awakened_one_failure_evidence =
         awakened_one_failure_evidence(&case, counterfactual_hp_probe.as_ref());
+    let awakened_opening_probe = run_awakened_opening_probe(&options, &case);
     let champ_phase_audit = review_focus
         .as_ref()
         .and_then(|focus| champ_phase_audit(&case.position, focus));
@@ -120,6 +122,7 @@ pub(super) fn build_review(
             boss_matchup_acquisition_pressure_v0,
             awakened_one_failure_evidence,
             awakened_one_path_audit_v0,
+            awakened_opening_probe,
             boss_pressure_lens,
             frozen_panel_lanes,
             champ_phase_audit,

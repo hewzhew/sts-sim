@@ -1,9 +1,12 @@
 use std::cmp::Reverse;
 
+use crate::content::monsters::EnemyId;
 use crate::sim::combat::CombatPosition;
 
-use super::super::SearchTerminalLabel;
-use super::types::{CombatTurnPoolRescueLineSummary, TurnPoolLane, TurnPoolNode};
+use super::super::{trajectory_report::summarize_state, SearchTerminalLabel};
+use super::types::{
+    CombatTurnPoolOpeningLineReport, CombatTurnPoolRescueLineSummary, TurnPoolLane, TurnPoolNode,
+};
 
 pub(super) fn keep_lane_nodes(nodes: &mut Vec<TurnPoolNode>, lane: TurnPoolLane, limit: usize) {
     nodes.sort_by_key(|node| Reverse(lane_rank(node, lane)));
@@ -55,7 +58,49 @@ pub(super) fn lane_rank(node: &TurnPoolNode, lane: TurnPoolLane) -> (i32, i32, i
             -(node.actions.len() as i32),
             0,
         ),
+        TurnPoolLane::CultistCleanup => {
+            let (cultists_alive, total_cultist_hp) = cultist_pressure(&node.position);
+            (
+                terminal,
+                -(cultists_alive as i32),
+                -total_cultist_hp,
+                hp,
+                -enemy_hp,
+                -(node.actions.len() as i32),
+            )
+        }
     }
+}
+
+pub(super) fn turn_pool_opening_line_report(
+    lane: TurnPoolLane,
+    node: &TurnPoolNode,
+) -> CombatTurnPoolOpeningLineReport {
+    let (cultists_alive, total_cultist_hp) = cultist_pressure(&node.position);
+    CombatTurnPoolOpeningLineReport {
+        lane: lane.label(),
+        terminal: node.terminal,
+        final_hp: node.position.combat.entities.player.current_hp,
+        turns: node.position.combat.turn.turn_count,
+        actions: node.actions.clone(),
+        potions_used: node.potions_used,
+        powers_played: node.powers_played,
+        cultists_alive,
+        total_cultist_hp,
+        end_state: summarize_state(&node.position.engine, &node.position.combat),
+    }
+}
+
+pub(super) fn opening_cleanup_rank(
+    line: &CombatTurnPoolOpeningLineReport,
+) -> (i32, i32, i32, i32, i32) {
+    (
+        terminal_rank_for_line(line.terminal),
+        -(line.cultists_alive as i32),
+        -line.total_cultist_hp,
+        line.final_hp,
+        -(line.actions.len() as i32),
+    )
 }
 
 pub(super) fn turn_pool_summary(
@@ -131,6 +176,19 @@ fn total_enemy_hp(position: &CombatPosition) -> i32 {
         .filter(|monster| monster.is_alive_for_action())
         .map(|monster| monster.current_hp.max(0) + monster.block.max(0))
         .sum()
+}
+
+fn cultist_pressure(position: &CombatPosition) -> (usize, i32) {
+    let cultists = position.combat.entities.monsters.iter().filter(|monster| {
+        monster.is_alive_for_action()
+            && EnemyId::from_id(monster.monster_type) == Some(EnemyId::Cultist)
+    });
+    cultists.fold((0usize, 0i32), |(count, hp), monster| {
+        (
+            count.saturating_add(1),
+            hp.saturating_add(monster.current_hp.max(0)),
+        )
+    })
 }
 
 fn visible_pressure(position: &CombatPosition) -> i32 {

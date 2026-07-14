@@ -1920,6 +1920,7 @@ mod tests {
                 escaped: false,
                 dying: false,
                 half_dead: false,
+                phase: None,
                 planned_move_id: 0,
                 visible_intent: "attack".to_string(),
                 visible_incoming_damage: 6,

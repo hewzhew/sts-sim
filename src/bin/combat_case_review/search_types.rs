@@ -88,6 +88,8 @@ pub(super) struct SearchDiagnosticProgressFacts {
     pub(super) living_enemy_count: usize,
     pub(super) total_enemy_hp: i32,
     pub(super) half_dead_enemy_count: usize,
+    pub(super) awakened_one_phase: Option<&'static str>,
+    pub(super) awakened_one_phase_observation: &'static str,
     pub(super) visible_incoming_damage: Option<i32>,
     pub(super) action_count: Option<usize>,
     pub(super) exact_prefix_action_count: Option<usize>,

@@ -31,6 +31,8 @@ fn focus_with_action(action_key: String, input: ClientInput) -> CombatReviewFocu
             living_enemy_count: 1,
             total_enemy_hp: 10,
             half_dead_enemy_count: 0,
+            awakened_one_phase: None,
+            awakened_one_phase_observation: "fixture",
             visible_incoming_damage: None,
             action_count: Some(1),
             exact_prefix_action_count: Some(1),

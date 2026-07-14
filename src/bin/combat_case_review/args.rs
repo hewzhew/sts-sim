@@ -75,6 +75,15 @@ pub(super) struct Args {
     pub(super) counterfactual_hp_probe: bool,
     #[arg(long, default_value = "real,half,full")]
     pub(super) counterfactual_hp_levels: String,
+    #[arg(
+        long,
+        help = "Run an exact bounded turn-pool probe for the Awakened One opening"
+    )]
+    pub(super) awakened_opening_probe: bool,
+    #[arg(long, default_value_t = 5_000)]
+    pub(super) awakened_opening_probe_ms: u64,
+    #[arg(long, default_value_t = 4)]
+    pub(super) awakened_opening_probe_turns: usize,
 }
 
 fn parse_rollout_plugin(value: &str) -> Result<CombatSearchRolloutPluginId, String> {
@@ -173,5 +182,24 @@ mod tests {
             args.turn_plan_policy,
             Some(CombatSearchTurnPlanPluginId::RootFrontierSeed)
         );
+    }
+
+    #[test]
+    fn awakened_opening_probe_flag_and_bounds_parse() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--awakened-opening-probe",
+            "--awakened-opening-probe-ms",
+            "1234",
+            "--awakened-opening-probe-turns",
+            "3",
+        ])
+        .expect("parse Awakened One opening probe");
+
+        assert!(args.awakened_opening_probe);
+        assert_eq!(args.awakened_opening_probe_ms, 1234);
+        assert_eq!(args.awakened_opening_probe_turns, 3);
     }
 }

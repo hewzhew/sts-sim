@@ -4,7 +4,7 @@ use crate::sim::combat::{CombatPosition, CombatStepper, CombatTerminal, EngineCo
 use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::ClientInput;
 
-use super::super::{CombatSearchV2ActionTrace, SearchTerminalLabel};
+use super::super::{CombatSearchV2ActionTrace, CombatSearchV2StateSummary, SearchTerminalLabel};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatTurnPoolRescueReport {
@@ -13,6 +13,31 @@ pub struct CombatTurnPoolRescueReport {
     pub best: Option<CombatTurnPoolRescueLineSummary>,
     pub nodes_expanded: u64,
     pub deadline_hit: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPoolOpeningReport {
+    pub schema: &'static str,
+    pub max_turns: usize,
+    pub lanes: Vec<CombatTurnPoolOpeningLineReport>,
+    pub best_cultist_cleanup: Option<CombatTurnPoolOpeningLineReport>,
+    pub nodes_expanded: u64,
+    pub nodes_generated: u64,
+    pub deadline_hit: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPoolOpeningLineReport {
+    pub lane: &'static str,
+    pub terminal: SearchTerminalLabel,
+    pub final_hp: i32,
+    pub turns: u32,
+    pub actions: Vec<CombatSearchV2ActionTrace>,
+    pub potions_used: u32,
+    pub powers_played: u32,
+    pub cultists_alive: usize,
+    pub total_cultist_hp: i32,
+    pub end_state: CombatSearchV2StateSummary,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -66,13 +91,14 @@ pub(super) struct TurnPoolLaneNode {
     pub(super) node: TurnPoolNode,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum TurnPoolLane {
     Damage,
     Survival,
     Setup,
     PowerDelay,
     PotionBurst,
+    CultistCleanup,
 }
 
 impl TurnPoolLane {
@@ -83,6 +109,7 @@ impl TurnPoolLane {
             Self::Setup => "setup",
             Self::PowerDelay => "power_delay",
             Self::PotionBurst => "potion_burst",
+            Self::CultistCleanup => "cultist_cleanup",
         }
     }
 }

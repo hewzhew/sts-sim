@@ -3,7 +3,8 @@ mod ranking;
 mod types;
 
 pub use types::{
-    CombatTurnPoolRescueLineSummary, CombatTurnPoolRescueReport, CombatTurnPoolRescueWin,
+    CombatTurnPoolOpeningLineReport, CombatTurnPoolOpeningReport, CombatTurnPoolRescueLineSummary,
+    CombatTurnPoolRescueReport, CombatTurnPoolRescueWin,
 };
 
 use crate::sim::combat::CombatPosition;
@@ -57,5 +58,35 @@ pub fn run_combat_turn_pool_rescue_report_v0(
         best,
         nodes_expanded: run.nodes_expanded,
         deadline_hit: run.deadline_hit,
+    }
+}
+
+pub fn run_combat_turn_pool_opening_report_v0(
+    start: &CombatPosition,
+    budget_ms: u64,
+    max_turns: usize,
+    config: Option<&CombatSearchV2Config>,
+) -> CombatTurnPoolOpeningReport {
+    let run = engine::run_turn_pool_opening_nodes_v0(start, budget_ms, max_turns, config);
+    let nodes_expanded = run.nodes_expanded;
+    let nodes_generated = run.nodes_generated;
+    let deadline_hit = run.deadline_hit;
+    let lanes = run
+        .lanes
+        .iter()
+        .map(|candidate| ranking::turn_pool_opening_line_report(candidate.lane, &candidate.node))
+        .collect::<Vec<_>>();
+    let best_cultist_cleanup = lanes
+        .iter()
+        .max_by_key(|line| ranking::opening_cleanup_rank(line))
+        .cloned();
+    CombatTurnPoolOpeningReport {
+        schema: "combat_turn_pool_opening_probe_v0",
+        max_turns: max_turns.max(1),
+        lanes,
+        best_cultist_cleanup,
+        nodes_expanded,
+        nodes_generated,
+        deadline_hit,
     }
 }

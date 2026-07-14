@@ -64,6 +64,7 @@ pub struct CombatSearchV2EnemySummary {
     pub escaped: bool,
     pub dying: bool,
     pub half_dead: bool,
+    pub phase: Option<&'static str>,
     pub planned_move_id: u8,
     pub visible_intent: String,
     pub visible_incoming_damage: i32,

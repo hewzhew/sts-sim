@@ -14,36 +14,70 @@ use super::types::{
     TurnPoolExpandOutcome, TurnPoolLane, TurnPoolLaneNode, TurnPoolNode, TurnPoolRun,
 };
 
+const RESCUE_LANES: [TurnPoolLane; 5] = [
+    TurnPoolLane::Damage,
+    TurnPoolLane::Survival,
+    TurnPoolLane::Setup,
+    TurnPoolLane::PowerDelay,
+    TurnPoolLane::PotionBurst,
+];
+
+const OPENING_DIAGNOSTIC_LANES: [TurnPoolLane; 6] = [
+    TurnPoolLane::Damage,
+    TurnPoolLane::Survival,
+    TurnPoolLane::Setup,
+    TurnPoolLane::PowerDelay,
+    TurnPoolLane::PotionBurst,
+    TurnPoolLane::CultistCleanup,
+];
+
 pub(super) fn run_turn_pool_nodes_v0(
     start: &CombatPosition,
     budget_ms: u64,
     config: Option<&CombatSearchV2Config>,
 ) -> TurnPoolRun {
-    const LANES: [TurnPoolLane; 5] = [
-        TurnPoolLane::Damage,
-        TurnPoolLane::Survival,
-        TurnPoolLane::Setup,
-        TurnPoolLane::PowerDelay,
-        TurnPoolLane::PotionBurst,
-    ];
+    run_turn_pool_nodes(start, budget_ms, config, &RESCUE_LANES, 12)
+}
+
+pub(super) fn run_turn_pool_opening_nodes_v0(
+    start: &CombatPosition,
+    budget_ms: u64,
+    max_turns: usize,
+    config: Option<&CombatSearchV2Config>,
+) -> TurnPoolRun {
+    run_turn_pool_nodes(
+        start,
+        budget_ms,
+        config,
+        &OPENING_DIAGNOSTIC_LANES,
+        max_turns.max(1),
+    )
+}
+
+fn run_turn_pool_nodes(
+    start: &CombatPosition,
+    budget_ms: u64,
+    config: Option<&CombatSearchV2Config>,
+    lanes: &[TurnPoolLane],
+    max_turns: usize,
+) -> TurnPoolRun {
     const LANE_KEEP: usize = 3;
     const INNER_BEAM: usize = 12;
-    const MAX_TURNS: usize = 12;
     const MAX_INNER_NODES: usize = 160;
 
     let stepper = EngineCombatStepper;
-    let per_lane_ms = (budget_ms / LANES.len() as u64).max(500);
+    let per_lane_ms = (budget_ms / lanes.len().max(1) as u64).max(500);
     let plugins = config.map(CombatSearchPluginStack::from_config);
     let mut total_nodes = 0u64;
     let mut total_generated = 0u64;
     let mut any_deadline_hit = false;
     let mut lane_results = Vec::new();
 
-    for lane in LANES {
+    for &lane in lanes {
         let deadline = Instant::now() + Duration::from_millis(per_lane_ms);
         let mut frontier = vec![TurnPoolNode::root(start.clone(), &stepper)];
         let mut lane_deadline_hit = false;
-        for _ in 0..MAX_TURNS {
+        for _ in 0..max_turns {
             if Instant::now() >= deadline {
                 lane_deadline_hit = true;
                 break;
@@ -236,4 +270,15 @@ fn is_power_in_hand(position: &CombatPosition, card_index: usize) -> bool {
         .hand
         .get(card_index)
         .is_some_and(|card| get_card_definition(card.id).card_type == CardType::Power)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TurnPoolLane, OPENING_DIAGNOSTIC_LANES, RESCUE_LANES};
+
+    #[test]
+    fn cultist_cleanup_lane_is_review_only() {
+        assert!(!RESCUE_LANES.contains(&TurnPoolLane::CultistCleanup));
+        assert!(OPENING_DIAGNOSTIC_LANES.contains(&TurnPoolLane::CultistCleanup));
+    }
 }

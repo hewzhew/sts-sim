@@ -2,6 +2,7 @@ use serde::Serialize;
 use sts_simulator::ai::boss_matchup::BossMatchupAcquisitionPressureV0;
 use sts_simulator::ai::combat_search_v2::{
     CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2WitnessReplay,
+    CombatTurnPoolOpeningReport,
 };
 use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
 use sts_simulator::eval::combat_case::{
@@ -54,6 +55,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) boss_matchup_acquisition_pressure_v0: Option<BossMatchupAcquisitionPressureV0>,
     pub(super) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(super) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
+    pub(super) awakened_opening_probe: Option<CombatTurnPoolOpeningReport>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
@@ -74,6 +76,7 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) boss_matchup_acquisition_pressure_v0: Option<BossMatchupAcquisitionPressureV0>,
     pub(crate) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(crate) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
+    pub(crate) awakened_opening_probe: Option<CombatTurnPoolOpeningReport>,
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(crate) champ_phase_audit: Option<ChampPhaseAudit>,

@@ -5,6 +5,8 @@ mod adjudication_probe;
 mod args;
 #[path = "combat_case_review/awakened_one_evidence.rs"]
 mod awakened_one_evidence;
+#[path = "combat_case_review/awakened_opening_probe.rs"]
+mod awakened_opening_probe;
 #[path = "combat_case_review/boss_pressure_lens.rs"]
 mod boss_pressure_lens;
 #[path = "combat_case_review/case_payload.rs"]

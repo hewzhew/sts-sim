@@ -24,6 +24,13 @@ pub(super) fn complete_progress_facts(
             .iter()
             .filter(|enemy| enemy.half_dead)
             .count(),
+        awakened_one_phase: trajectory
+            .final_state
+            .enemy_slots
+            .iter()
+            .find(|enemy| enemy.enemy_id == "AwakenedOne")
+            .and_then(|enemy| enemy.phase),
+        awakened_one_phase_observation: "exact_final_state",
         visible_incoming_damage: Some(trajectory.final_state.visible_incoming_damage),
         action_count: Some(trajectory.actions.len()),
         exact_prefix_action_count: Some(trajectory.actions.len()),
