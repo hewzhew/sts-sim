@@ -6,6 +6,8 @@ use std::path::Path;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    let profile = env::var("PROFILE").expect("Cargo should provide PROFILE to build.rs");
+    println!("cargo:rustc-env=STS_CARGO_PROFILE={profile}");
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");

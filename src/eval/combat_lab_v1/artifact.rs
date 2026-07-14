@@ -30,6 +30,10 @@ pub struct CombatLabEnvironmentV1 {
     pub package_version: String,
     pub target_os: String,
     pub target_arch: String,
+    #[serde(default)]
+    pub cargo_profile: Option<String>,
+    #[serde(default)]
+    pub debug_assertions: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -65,6 +69,8 @@ impl CombatLabManifestV1 {
                 package_version: env!("CARGO_PKG_VERSION").to_string(),
                 target_os: std::env::consts::OS.to_string(),
                 target_arch: std::env::consts::ARCH.to_string(),
+                cargo_profile: Some(env!("STS_CARGO_PROFILE").to_string()),
+                debug_assertions: Some(cfg!(debug_assertions)),
             },
             created_at_unix_ms,
         }
@@ -336,6 +342,16 @@ fn validate_resume_identity(
         "environment.target_arch",
         &existing.environment.target_arch,
         &expected.environment.target_arch,
+    )?;
+    ensure_resume_field(
+        "environment.cargo_profile",
+        &existing.environment.cargo_profile,
+        &expected.environment.cargo_profile,
+    )?;
+    ensure_resume_field(
+        "environment.debug_assertions",
+        &existing.environment.debug_assertions,
+        &expected.environment.debug_assertions,
     )?;
     Ok(())
 }

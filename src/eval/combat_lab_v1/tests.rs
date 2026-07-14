@@ -86,6 +86,99 @@ fn artifact_new_run_writes_manifest_before_cells() {
 }
 
 #[test]
+fn artifact_manifest_records_build_identity() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_build_identity");
+    let manifest = artifact_manifest(resolved, 123);
+
+    assert_eq!(
+        manifest.environment.cargo_profile.as_deref(),
+        Some(env!("STS_CARGO_PROFILE"))
+    );
+    assert_eq!(
+        manifest.environment.debug_assertions,
+        Some(cfg!(debug_assertions))
+    );
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_resume_rejects_missing_or_changed_build_identity() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_build_identity_resume");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 100);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+        .expect("create build-identified artifact");
+    store
+        .append_cell(&artifact_cell(&resolved, 0))
+        .expect("append identity-test cell");
+    drop(store);
+
+    let manifest_path = output.join("manifest.json");
+    let canonical_manifest = fs::read(&manifest_path).expect("read canonical manifest");
+    let canonical_journal = fs::read(output.join("cells.jsonl")).expect("read canonical journal");
+    for (field, mutation) in [
+        ("environment.cargo_profile", "remove_cargo_profile"),
+        ("environment.cargo_profile", "change_cargo_profile"),
+        ("environment.debug_assertions", "change_debug_assertions"),
+    ] {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&canonical_manifest).expect("parse canonical manifest");
+        match mutation {
+            "remove_cargo_profile" => {
+                value["environment"]
+                    .as_object_mut()
+                    .expect("environment object")
+                    .remove("cargo_profile");
+            }
+            "change_cargo_profile" => {
+                value["environment"]["cargo_profile"] = json!("changed-profile");
+            }
+            "change_debug_assertions" => {
+                value["environment"]["debug_assertions"] = json!(!cfg!(debug_assertions));
+            }
+            _ => unreachable!(),
+        }
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec(&value).expect("serialize mutated manifest"),
+        )
+        .expect("write mutated manifest");
+
+        let error = CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+            .err()
+            .expect("build identity mismatch must reject resume");
+        assert!(error.contains(field), "{error}");
+        assert_eq!(
+            fs::read(output.join("cells.jsonl")).expect("read preserved journal"),
+            canonical_journal
+        );
+        fs::write(&manifest_path, &canonical_manifest).expect("restore canonical manifest");
+    }
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_legacy_manifest_without_build_identity_still_deserializes() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_legacy_build_identity");
+    let manifest = artifact_manifest(resolved, 100);
+    let mut value = serde_json::to_value(manifest).expect("serialize manifest value");
+    let environment = value["environment"]
+        .as_object_mut()
+        .expect("environment object");
+    environment.remove("cargo_profile");
+    environment.remove("debug_assertions");
+
+    let legacy: CombatLabManifestV1 =
+        serde_json::from_value(value).expect("legacy manifest should remain readable");
+    assert_eq!(legacy.environment.cargo_profile, None);
+    assert_eq!(legacy.environment.debug_assertions, None);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn artifact_new_run_refuses_canonical_orphan_files() {
     let (directory, resolved) = resolved_lab_fixture("artifact_canonical_orphans");
     for file_name in ["cells.jsonl", "checkpoint.json", "summary.json"] {
