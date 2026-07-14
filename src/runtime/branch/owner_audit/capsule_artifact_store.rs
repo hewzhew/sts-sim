@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -33,6 +33,10 @@ impl CapsuleArtifactStore {
             git_commit: source_identity.git_commit.clone(),
             source_identity,
         }
+    }
+
+    pub(super) fn root_path(&self) -> &Path {
+        &self.root
     }
 
     pub(super) fn combat_cases_dir(&self) -> PathBuf {

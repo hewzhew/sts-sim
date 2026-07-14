@@ -193,6 +193,70 @@ mod tests {
         assert_eq!(restored_next_id, next_branch_id);
     }
 
+    #[test]
+    fn exact_boss_relic_cutpoint_round_trip_preserves_session_and_candidates() {
+        let mut args = crate::runtime::branch::default_branch_args(20260713006);
+        args.generations = 29;
+        args.max_branches = 4;
+        let (mut frontier, next_branch_id) =
+            super::super::branch_runtime::BranchRuntime::initial_frontier(
+                args,
+                std::time::Instant::now(),
+            );
+        let mut original = frontier.pop_front().unwrap();
+        original.session.run_state.act_num = 2;
+        original.session.run_state.floor_num = 32;
+        original.session.run_state.current_hp = 13;
+        original.session.run_state.max_hp = 101;
+        original.session.run_state.gold = 167;
+        original.session.engine_state =
+            EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![
+                RelicId::BlackBlood,
+                RelicId::CoffeeDripper,
+                RelicId::PhilosopherStone,
+            ]));
+        original.status = BranchStatus::Running {
+            boundary: "Boss Relic".to_string(),
+            owner: Owner::BossRelic,
+        };
+        let store = RunCutpointStore::new(unique_root().join("cutpoints"));
+        let deadline =
+            super::super::run_deadline::RunDeadline::new(std::time::Instant::now(), None);
+
+        let _ = super::super::branch_scheduler::prepare_branch_work(
+            original.clone(),
+            args,
+            args.generations,
+            deadline,
+            Some(&store),
+            next_branch_id,
+        );
+        let path = store.boss_relic_frontier_path(2, 32);
+        let (checkpoint, restored_frontier, _) = load_resume_frontier(&path).unwrap();
+        let restored = restored_frontier.front().unwrap();
+
+        assert_eq!(restored.session.run_state, original.session.run_state);
+        assert_eq!(restored.session.engine_state, original.session.engine_state);
+        assert_eq!(
+            sts_simulator::eval::run_control::build_decision_surface(&restored.session)
+                .view
+                .candidates,
+            sts_simulator::eval::run_control::build_decision_surface(&original.session)
+                .view
+                .candidates,
+        );
+        let restored_state_before_override = restored.session.run_state.clone();
+        let restored_engine_before_override = restored.session.engine_state.clone();
+        let mut overridden_args = checkpoint.args;
+        overridden_args.max_branches = 1;
+        assert_eq!(overridden_args.max_branches, 1);
+        assert_eq!(restored.session.run_state, restored_state_before_override);
+        assert_eq!(
+            restored.session.engine_state,
+            restored_engine_before_override
+        );
+    }
+
     fn unique_root() -> std::path::PathBuf {
         static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let ordinal = NEXT_TEST_DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

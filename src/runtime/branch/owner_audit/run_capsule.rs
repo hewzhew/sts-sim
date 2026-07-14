@@ -27,6 +27,10 @@ impl RunCapsule {
         self.store.combat_cases_dir()
     }
 
+    pub(super) fn cutpoints_dir(&self) -> PathBuf {
+        self.store.root_path().join("cutpoints")
+    }
+
     pub(super) fn result_path(&self) -> PathBuf {
         self.store.result_path()
     }
@@ -175,5 +179,19 @@ impl RunCapsule {
                 reason,
             )?
             .map(|running| RunCapsuleSave::Frontier { running }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cutpoints_live_under_the_capsule_root() {
+        let root = std::env::temp_dir().join("sts_capsule_cutpoint_root");
+
+        let capsule = RunCapsule::new(root.clone());
+
+        assert_eq!(capsule.cutpoints_dir(), root.join("cutpoints"));
     }
 }

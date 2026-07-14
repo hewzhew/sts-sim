@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+
 use super::run_capsule::RunCapsule;
+use super::run_cutpoint_store::RunCutpointStore;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
@@ -31,6 +34,12 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         run_capsule.as_ref(),
         human_output,
     );
+    let cutpoint_store = cutpoint_root_for_outputs(
+        frontier_checkpoint_path.as_ref(),
+        resume_frontier.as_ref(),
+        run_capsule.as_ref(),
+    )
+    .map(RunCutpointStore::new);
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
@@ -68,7 +77,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             args,
             generation,
             deadline,
-            None,
+            cutpoint_store.as_ref(),
             next_branch_id,
         );
         if prepared.total_expanded > 0
@@ -269,4 +278,57 @@ fn print_header(args: super::Args, resume_frontier: bool) {
 
 fn elapsed_ms(started: std::time::Instant) -> u64 {
     started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn cutpoint_root_for_outputs(
+    frontier_checkpoint_path: Option<&PathBuf>,
+    resume_frontier: Option<&PathBuf>,
+    capsule: Option<&RunCapsule>,
+) -> Option<PathBuf> {
+    capsule.map(RunCapsule::cutpoints_dir).or_else(|| {
+        frontier_checkpoint_path
+            .or(resume_frontier)
+            .and_then(|path| path.parent())
+            .map(|parent| {
+                if parent.file_name().is_some_and(|name| name == "cutpoints") {
+                    parent.to_path_buf()
+                } else {
+                    parent.join("cutpoints")
+                }
+            })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cutpoint_root_for_explicit_frontier_is_a_sibling_directory() {
+        let frontier = temp_root().join("requested.frontier.json");
+
+        let root = cutpoint_root_for_outputs(Some(&frontier), None, None).unwrap();
+
+        assert_eq!(root, frontier.parent().unwrap().join("cutpoints"));
+    }
+
+    #[test]
+    fn cutpoint_root_reuses_existing_cutpoints_directory() {
+        let frontier = temp_root()
+            .join("cutpoints")
+            .join("latest_pre_combat_search.frontier.json");
+
+        let root = cutpoint_root_for_outputs(None, Some(&frontier), None).unwrap();
+
+        assert_eq!(root, frontier.parent().unwrap());
+    }
+
+    #[test]
+    fn cutpoint_root_is_absent_without_artifact_outputs() {
+        assert!(cutpoint_root_for_outputs(None, None, None).is_none());
+    }
+
+    fn temp_root() -> std::path::PathBuf {
+        std::env::temp_dir().join("sts_cutpoint_root_test")
+    }
 }
