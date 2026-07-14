@@ -1,5 +1,9 @@
-use super::action_effects::{card_play_effect_facts, CardPlayEffectFacts};
-use super::enemy_mechanics_profile::{enemy_mechanics_profile, EnemyMechanicsProfileV1};
+#[cfg(test)]
+use super::action_effects::card_play_effect_facts;
+use super::action_effects::CardPlayEffectFacts;
+#[cfg(test)]
+use super::enemy_mechanics_profile::enemy_mechanics_profile;
+use super::enemy_mechanics_profile::EnemyMechanicsProfileV1;
 use super::*;
 use crate::content::cards;
 #[cfg(test)]
@@ -32,6 +36,7 @@ pub(super) struct EnemyPhaseTransitionHint {
     pub(super) awakened_one_strength_transition: Option<AwakenedOneStrengthTransitionOpportunity>,
 }
 
+#[cfg(test)]
 pub(super) fn enemy_phase_transition_hint_for_input(
     combat: &CombatState,
     input: &ClientInput,
