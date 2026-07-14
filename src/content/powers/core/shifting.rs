@@ -39,9 +39,7 @@ pub fn on_attacked(
 
 pub fn at_end_of_turn(_owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
     let actions = smallvec::smallvec![];
-    // In actual game shifting restores stripped strength back to its starting state each turn.
-    // For now we assume a hard reset or clean state handling per turn.
-    // Actual implementation requires an internal track `amount_lost_this_turn`, simplified for MVP.
-    // actions.push(Action::ApplyPower { ... amount: amount_lost_this_turn ... })
+    // Shifting applies paired Shackled stacks on damage; Shackled owns the
+    // end-of-turn Strength restoration and removes itself.
     actions
 }

@@ -80,9 +80,52 @@ mod tests {
     use super::policy::adaptive_no_potion_rollout_plugin;
     use super::*;
     use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::CombatState;
+    use crate::content::powers::PowerId;
+    use crate::runtime::combat::{CombatState, Power, PowerPayload};
     use crate::state::core::EngineState;
     use crate::test_support::{blank_test_combat, test_monster};
+
+    fn combat_with_owner_powers(powers: &[(PowerId, i32)]) -> CombatState {
+        let mut combat = blank_test_combat();
+        let mut owner = test_monster(EnemyId::Cultist);
+        owner.id = 7;
+        combat.entities.monsters = vec![owner];
+        combat.entities.power_db.insert(
+            7,
+            powers
+                .iter()
+                .map(|(power_type, amount)| Power {
+                    power_type: *power_type,
+                    instance_id: None,
+                    amount: *amount,
+                    extra_data: 0,
+                    payload: PowerPayload::None,
+                    just_applied: false,
+                })
+                .collect(),
+        );
+        combat
+    }
+
+    #[test]
+    fn adaptive_no_potion_rollout_uses_phase_aware_for_finite_survival_damage_mitigation() {
+        let combined = combat_with_owner_powers(&[(PowerId::Fading, 5), (PowerId::Shifting, -1)]);
+        let fading_only = combat_with_owner_powers(&[(PowerId::Fading, 5)]);
+        let shifting_only = combat_with_owner_powers(&[(PowerId::Shifting, -1)]);
+
+        assert_eq!(
+            adaptive_no_potion_rollout_plugin(&test_search_node(combined)),
+            CombatSearchRolloutPluginId::PhaseAwareNoPotion
+        );
+        assert_eq!(
+            adaptive_no_potion_rollout_plugin(&test_search_node(fading_only)),
+            CombatSearchRolloutPluginId::ConservativeNoPotion
+        );
+        assert_eq!(
+            adaptive_no_potion_rollout_plugin(&test_search_node(shifting_only)),
+            CombatSearchRolloutPluginId::ConservativeNoPotion
+        );
+    }
 
     #[test]
     fn adaptive_no_potion_rollout_uses_phase_aware_for_guardian_and_keeps_nob_conservative() {

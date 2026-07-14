@@ -67,7 +67,7 @@ impl RolloutCache {
                 "unresolved rollout priority uses phase-adjusted enemy effort from phase_profile",
                 "high-fanout pending choices stop rollout estimates instead of selecting an arbitrary branch",
                 "small pending choices may be followed by rollout, but their actions become a terminal outcome record only after exact replay",
-                "enemy_mechanics_adaptive_no_potion uses phase-aware rollout for typed Guardian/Bronze Automaton mechanics and otherwise falls back to conservative_no_potion",
+                "enemy_mechanics_adaptive_no_potion uses phase-aware rollout for typed Guardian/Bronze Automaton and finite-survival damage-mitigation mechanics, otherwise falling back to conservative_no_potion",
                 "turn_beam_no_potion uses turn-plan end states as an estimate-only beam; a complete terminal-win witness still requires exact replay",
             ],
         }
