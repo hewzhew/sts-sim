@@ -29,6 +29,7 @@ pub struct CombatLabProfileSummaryV1 {
     pub losses: usize,
     pub coverage_limited: usize,
     pub errors: usize,
+    pub candidates: CombatLabCandidateSummaryV1,
     pub win_rate_all_non_error: Option<f64>,
     pub win_rate_all_non_error_denominator: usize,
     pub win_rate_resolved: Option<f64>,
@@ -46,6 +47,20 @@ pub struct CombatLabProfileSummaryV1 {
     pub expanded_nodes: CombatLabNumericSummaryV1,
     pub deadline_exhaustion_rate: Option<f64>,
     pub node_budget_exhaustion_rate: Option<f64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CombatLabCandidateSummaryV1 {
+    pub replayed_complete_candidates: usize,
+    pub replayed_win_candidates: usize,
+    pub replayed_loss_candidates: usize,
+    pub replayed_win_rate_all_non_error: Option<f64>,
+    pub replayed_win_rate_all_non_error_denominator: usize,
+    pub win_hp_loss: CombatLabNumericSummaryV1,
+    pub terminal_hp: CombatLabNumericSummaryV1,
+    pub turns: CombatLabNumericSummaryV1,
+    pub potions_used: CombatLabNumericSummaryV1,
+    pub nodes_to_first_win: CombatLabNumericSummaryV1,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -444,6 +459,59 @@ fn summarize_profile(
         .iter()
         .filter(|cell| cell.node_budget_exhausted)
         .count();
+    let replayed_candidates = cells
+        .iter()
+        .filter_map(|cell| cell.replayed_candidate.as_ref())
+        .collect::<Vec<_>>();
+    let replayed_win_candidates = replayed_candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.terminal == crate::ai::combat_search_v2::SearchTerminalLabel::Win
+        })
+        .count();
+    let replayed_loss_candidates = replayed_candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.terminal == crate::ai::combat_search_v2::SearchTerminalLabel::Loss
+        })
+        .count();
+    let candidates = CombatLabCandidateSummaryV1 {
+        replayed_complete_candidates: replayed_candidates.len(),
+        replayed_win_candidates,
+        replayed_loss_candidates,
+        replayed_win_rate_all_non_error: ratio(replayed_win_candidates, all_non_error_denominator),
+        replayed_win_rate_all_non_error_denominator: all_non_error_denominator,
+        win_hp_loss: numeric_summary(
+            replayed_candidates
+                .iter()
+                .filter(|candidate| {
+                    candidate.terminal == crate::ai::combat_search_v2::SearchTerminalLabel::Win
+                })
+                .map(|candidate| f64::from(candidate.hp_loss)),
+        ),
+        terminal_hp: numeric_summary(
+            replayed_candidates
+                .iter()
+                .map(|candidate| f64::from(candidate.final_hp)),
+        ),
+        turns: numeric_summary(
+            replayed_candidates
+                .iter()
+                .map(|candidate| f64::from(candidate.turns)),
+        ),
+        potions_used: numeric_summary(
+            replayed_candidates
+                .iter()
+                .map(|candidate| f64::from(candidate.potions_used)),
+        ),
+        nodes_to_first_win: numeric_summary(cells.iter().filter_map(|cell| {
+            let candidate = cell.replayed_candidate.as_ref()?;
+            (candidate.terminal == crate::ai::combat_search_v2::SearchTerminalLabel::Win)
+                .then_some(cell.nodes_to_first_win)
+                .flatten()
+                .map(|nodes| nodes as f64)
+        })),
+    };
 
     CombatLabProfileSummaryV1 {
         profile_id: profile_id.to_string(),
@@ -454,6 +522,7 @@ fn summarize_profile(
         losses,
         coverage_limited,
         errors,
+        candidates,
         win_rate_all_non_error: ratio(wins, all_non_error_denominator),
         win_rate_all_non_error_denominator: all_non_error_denominator,
         win_rate_resolved: ratio(wins, resolved_cells),

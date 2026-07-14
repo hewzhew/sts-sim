@@ -1268,6 +1268,134 @@ fn summary_separates_coverage_from_loss() {
 }
 
 #[test]
+fn summary_reports_replayed_candidates_without_promoting_coverage() {
+    let (directory, manifest, fingerprint) =
+        summary_manifest("summary_candidates", &["baseline", "empty"]);
+    let mut cells = vec![
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            0,
+            "baseline",
+            CombatLabOutcomeClassV1::CoverageLimited,
+            None,
+            None,
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            1,
+            "baseline",
+            CombatLabOutcomeClassV1::CoverageLimited,
+            None,
+            None,
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            2,
+            "baseline",
+            CombatLabOutcomeClassV1::CoverageLimited,
+            None,
+            None,
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            3,
+            "baseline",
+            CombatLabOutcomeClassV1::ExecutionError,
+            None,
+            None,
+        ),
+        summary_cell(
+            &manifest,
+            &fingerprint,
+            4,
+            "baseline",
+            CombatLabOutcomeClassV1::ResolvedWin,
+            Some(18),
+            Some(2),
+        ),
+    ];
+    cells[0].replayed_candidate = Some(summary_candidate(
+        crate::ai::combat_search_v2::SearchTerminalLabel::Win,
+        15,
+        5,
+        3,
+        1,
+    ));
+    cells[0].nodes_to_first_win = Some(100);
+    cells[1].replayed_candidate = Some(summary_candidate(
+        crate::ai::combat_search_v2::SearchTerminalLabel::Loss,
+        0,
+        20,
+        4,
+        0,
+    ));
+    cells[4].replayed_candidate = Some(summary_candidate(
+        crate::ai::combat_search_v2::SearchTerminalLabel::Win,
+        18,
+        2,
+        2,
+        0,
+    ));
+    cells[4].nodes_to_first_win = Some(50);
+
+    let summary = summarize_combat_lab_v1(&manifest, &cells, 5).expect("summarize candidates");
+    let baseline = &summary.profiles[0];
+    assert_eq!(baseline.resolved_cells, 1);
+    assert_eq!(baseline.wins, 1);
+    assert_eq!(baseline.losses, 0);
+    assert_eq!(baseline.coverage_limited, 3);
+    assert_eq!(baseline.errors, 1);
+
+    let candidates = &baseline.candidates;
+    assert_eq!(candidates.replayed_complete_candidates, 3);
+    assert_eq!(candidates.replayed_win_candidates, 2);
+    assert_eq!(candidates.replayed_loss_candidates, 1);
+    assert_eq!(candidates.replayed_win_rate_all_non_error_denominator, 4);
+    assert_approx_eq(candidates.replayed_win_rate_all_non_error, 0.5);
+    assert_eq!(candidates.win_hp_loss.count, 2);
+    assert_approx_eq(candidates.win_hp_loss.mean, 3.5);
+    assert_approx_eq(candidates.win_hp_loss.stddev_population, 1.5);
+    assert_approx_eq(candidates.win_hp_loss.median, 3.5);
+    assert_eq!(candidates.terminal_hp.count, 3);
+    assert_approx_eq(candidates.terminal_hp.mean, 11.0);
+    assert_eq!(candidates.turns.count, 3);
+    assert_approx_eq(candidates.turns.mean, 3.0);
+    assert_eq!(candidates.potions_used.count, 3);
+    assert_approx_eq(candidates.potions_used.mean, 1.0 / 3.0);
+    assert_eq!(candidates.nodes_to_first_win.count, 2);
+    assert_approx_eq(candidates.nodes_to_first_win.mean, 75.0);
+
+    let empty = &summary.profiles[1].candidates;
+    assert_eq!(empty.replayed_complete_candidates, 0);
+    assert_eq!(empty.replayed_win_candidates, 0);
+    assert_eq!(empty.replayed_loss_candidates, 0);
+    assert_eq!(empty.replayed_win_rate_all_non_error_denominator, 0);
+    assert_eq!(empty.replayed_win_rate_all_non_error, None);
+    for numeric in [
+        &empty.win_hp_loss,
+        &empty.terminal_hp,
+        &empty.turns,
+        &empty.potions_used,
+        &empty.nodes_to_first_win,
+    ] {
+        assert_eq!(numeric.count, 0);
+        assert_eq!(numeric.mean, None);
+        assert_eq!(numeric.stddev_population, None);
+        assert_eq!(numeric.median, None);
+    }
+
+    assert_eq!(summary.pairs[0].shared_samples, 0);
+    assert_eq!(summary.pairs[0].comparable_resolved_samples, 0);
+    assert!(summary.interaction.is_none());
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn summary_pairs_use_only_shared_samples_and_report_divergences() {
     use crate::content::cards::CardId;
     use crate::state::core::ClientInput;
@@ -2572,6 +2700,27 @@ fn summary_outcome_key(
         fewer_cards_played: 0,
         enemy_progress: 0,
         shorter_line: 0,
+    }
+}
+
+fn summary_candidate(
+    terminal: crate::ai::combat_search_v2::SearchTerminalLabel,
+    final_hp: i32,
+    hp_loss: i32,
+    turns: u32,
+    potions_used: u32,
+) -> super::CombatLabReplayedCandidateV1 {
+    super::CombatLabReplayedCandidateV1 {
+        terminal,
+        outcome_order_key: summary_outcome_key(final_hp),
+        final_hp,
+        hp_loss,
+        turns,
+        actions: 0,
+        cards_played: 0,
+        potions_used,
+        draw_history: Vec::new(),
+        action_history: Vec::new(),
     }
 }
 
