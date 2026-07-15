@@ -1095,7 +1095,7 @@ fn shop_potion_score(
         return;
     };
     let mut value = shop_potion_score_value(potion);
-    if context.deck_plan.survival_pressure() && value > 0 {
+    if context.deck_plan.survival_pressure() && value > 0 && potion != PotionId::ExplosivePotion {
         value += 40;
     }
     scores.push(score("shop-potion", value));
@@ -2438,6 +2438,39 @@ mod tests {
             attack_potion.scores,
             block_potion.scores
         );
+    }
+
+    #[test]
+    fn survival_pressure_only_boosts_potions_with_generic_emergency_access() {
+        let context = shop_context_with_hp(&act1_low_margin_reward_deck(), 12, 39);
+        assert!(context.deck_plan.survival_pressure());
+        let explosive = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::ExplosivePotion,
+                price: 50,
+            },
+            None,
+        );
+        let energy = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::EnergyPotion,
+                price: 50,
+            },
+            None,
+        );
+        let shop_potion_score = |evaluation: &CandidateEvaluation| {
+            evaluation
+                .scores
+                .iter()
+                .find(|component| component.by == "shop-potion")
+                .expect("shop potion evaluation should expose its score")
+                .value
+        };
+
+        assert_eq!(shop_potion_score(&explosive), 70);
+        assert_eq!(shop_potion_score(&energy), 110);
     }
 
     #[test]

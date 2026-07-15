@@ -308,7 +308,6 @@ fn is_hard_survival_potion(potion: PotionId) -> bool {
     matches!(
         potion,
         PotionId::FirePotion
-            | PotionId::ExplosivePotion
             | PotionId::FearPotion
             | PotionId::BlockPotion
             | PotionId::DexterityPotion
@@ -487,6 +486,39 @@ mod tests {
             "hard survival potion should be allowed to break Maw Bank: potion={:?} leave={:?}",
             potion_bundle,
             leave_bundle
+        );
+    }
+
+    #[test]
+    fn fixed_aoe_potion_is_not_a_generic_hard_survival_purchase() {
+        let explosive = evaluation(
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::ExplosivePotion,
+                price: 50,
+            },
+            70,
+        );
+        let energy = evaluation(
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: PotionId::EnergyPotion,
+                price: 50,
+            },
+            70,
+        );
+        let opportunity = maw_bank_survival_opportunity(80);
+
+        let explosive_bundle = evaluate_shop_purchase_bundle(opportunity, &explosive);
+        let energy_bundle = evaluate_shop_purchase_bundle(opportunity, &energy);
+
+        assert_eq!(
+            explosive_bundle.verdict,
+            ShopPurchaseBundleVerdict::Reject,
+            "fixed AoE only solves survival when encounter evidence exposes an AoE breakpoint"
+        );
+        assert_eq!(
+            energy_bundle.verdict,
+            ShopPurchaseBundleVerdict::HardSurvivalBuy,
+            "flexible extra actions remain a generic emergency resource"
         );
     }
 

@@ -18,7 +18,7 @@ use super::owner_candidate_eval::candidate_annotation;
 use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice};
 use super::shop_investment::shop_investment_for_surface;
-use super::shop_route_evidence::has_visible_future_shop;
+use super::shop_route_evidence::future_shop_distance;
 
 pub(super) fn shop_tiny_owner_choices(
     session: &RunControlSession,
@@ -58,14 +58,14 @@ fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
     let context = DecisionPipelineContext::shop(deck_plan, session.run_state.gold);
     let active_maw_bank = active_maw_bank_opportunity(session);
     let hard_checkpoint_imminent = hard_checkpoint_imminent(session);
-    let visible_future_shop = has_visible_future_shop(session);
-    if active_maw_bank || hard_checkpoint_imminent || visible_future_shop {
+    let future_shop_distance = future_shop_distance(session);
+    if active_maw_bank || hard_checkpoint_imminent || future_shop_distance.is_some() {
         context.with_shop_gold_opportunity(ShopGoldOpportunity {
             current_gold: session.run_state.gold,
             current_hp: session.run_state.current_hp,
             max_hp: session.run_state.max_hp,
             active_maw_bank,
-            future_rooms_before_next_shop: if visible_future_shop { 2 } else { 5 },
+            future_rooms_before_next_shop: future_shop_distance.unwrap_or(5),
             hard_checkpoint_imminent,
             survival_purchase_needed: deck_plan.survival_pressure(),
             boss_answer_needed: matches!(
@@ -176,7 +176,15 @@ mod tests {
     };
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::state::core::{ClientInput, EngineState};
+    use sts_simulator::state::map::node::{MapEdge, MapRoomNode, RoomType};
+    use sts_simulator::state::map::state::MapState;
     use sts_simulator::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
+
+    fn map_node(x: i32, y: i32, class: RoomType) -> MapRoomNode {
+        let mut node = MapRoomNode::new(x, y);
+        node.class = Some(class);
+        node
+    }
 
     fn maw_bank_session() -> RunControlSession {
         let mut session = RunControlSession::new(RunControlConfig::default());
@@ -206,6 +214,41 @@ mod tests {
             annotation: ChoiceAnnotation::None,
             expansion: super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
         }
+    }
+
+    #[test]
+    fn shop_tiny_context_preserves_actual_future_shop_distance() {
+        let mut current = map_node(0, 0, RoomType::ShopRoom);
+        current.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut first = map_node(0, 1, RoomType::MonsterRoom);
+        first.edges.insert(MapEdge::new(0, 1, 0, 2));
+        let mut second = map_node(0, 2, RoomType::EventRoom);
+        second.edges.insert(MapEdge::new(0, 2, 0, 3));
+        let mut third = map_node(0, 3, RoomType::RestRoom);
+        third.edges.insert(MapEdge::new(0, 3, 0, 4));
+        let future_shop = map_node(0, 4, RoomType::ShopRoom);
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.map = MapState::new(vec![
+            vec![current],
+            vec![first],
+            vec![second],
+            vec![third],
+            vec![future_shop],
+        ]);
+        session.run_state.map.current_x = 0;
+        session.run_state.map.current_y = 0;
+
+        let context = shop_tiny_context(&session);
+
+        assert_eq!(
+            context
+                .shop_gold_opportunity
+                .expect("reachable future shop should create route evidence")
+                .future_rooms_before_next_shop,
+            4,
+            "a distant reachable shop must not be compressed into the two-room liquidity window"
+        );
     }
 
     #[test]
