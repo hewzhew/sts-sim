@@ -172,6 +172,39 @@ impl CombatSearchLaneAttempt {
         self.selected = true;
         Ok(())
     }
+
+    #[cfg(test)]
+    pub(super) fn synthetic_for_test(
+        root: &RunControlSession,
+        label: &'static str,
+        candidate_facts: CombatSearchCandidateFacts,
+    ) -> Self {
+        let mut trial = root.clone();
+        trial.run_state.current_hp = candidate_facts.run_hp;
+        Self {
+            trial_session: Some(trial),
+            outcome: None,
+            status: BranchStatus::AwaitingAuto {
+                boundary: label.to_string(),
+                reason: "synthetic accepted line".to_string(),
+            },
+            label,
+            max_nodes: 0,
+            wall_ms: 0,
+            potion_policy: None,
+            max_potions_used: None,
+            action_keys: Vec::new(),
+            internal_no_win_rescue_enabled: false,
+            applicable: true,
+            selected: false,
+            incumbent_reason: "not_evaluated",
+            candidate_facts: Some(candidate_facts),
+            engine_fingerprint: "synthetic".to_string(),
+            auto_stop_kind: None,
+            applied_operations: 1,
+            accepted_high_loss_diagnostic: None,
+        }
+    }
 }
 
 fn candidate_facts(

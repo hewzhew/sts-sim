@@ -44,9 +44,8 @@ pub(super) fn lane_options(
         .profile
         .map(|profile| profile.to_config().potion_policy);
     options.search.max_hp_loss = Some(match lane.kind() {
-        CombatSearchLaneKind::HallwaySurvivalFallback
-        | CombatSearchLaneKind::EliteSurvivalFallback => RunControlHpLossLimit::Unlimited,
-        _ => owner_audit_hp_loss_limit(session),
+        CombatSearchLaneKind::Primary => owner_audit_hp_loss_limit(session),
+        _ => RunControlHpLossLimit::Unlimited,
     });
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
     options.search.allow_smoke_bomb_survival_fallback =
@@ -378,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn hallway_survival_fallback_relaxes_only_hp_reserve() {
+    fn all_post_primary_hallway_lanes_generate_relaxed_candidates() {
         let mut session = session_with_combat_stakes(false, false);
         let player = &mut session
             .active_combat
@@ -405,7 +404,7 @@ mod tests {
 
         assert_eq!(
             quality.search.max_hp_loss,
-            Some(RunControlHpLossLimit::Limit(2))
+            Some(RunControlHpLossLimit::Unlimited)
         );
         assert_eq!(
             fallback.search.max_hp_loss,
