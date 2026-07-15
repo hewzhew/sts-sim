@@ -97,7 +97,6 @@ pub enum RunControlCommand {
         target_slot_or_id: Option<usize>,
     },
     Input(ClientInput),
-    InputSequence(Vec<ClientInput>),
 }
 
 #[derive(Clone, Debug, PartialEq)]

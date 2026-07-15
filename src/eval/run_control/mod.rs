@@ -50,7 +50,6 @@ mod session;
 mod session_trace;
 mod session_trace_outcome;
 mod shop_legal;
-mod shop_policy;
 mod trace_annotation;
 mod trace_replay;
 mod transition_report;
@@ -122,7 +121,6 @@ pub use session_trace::{
     SESSION_TRACE_SCHEMA_VERSION,
 };
 pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
-pub use shop_policy::shop_plan_step_input_and_label_v1;
 pub(crate) use trace_annotation::combat_automation_trajectories_v1;
 pub use trace_annotation::{
     annotations_have_combat_automation_trajectory_v1, combat_search_trace_summaries,

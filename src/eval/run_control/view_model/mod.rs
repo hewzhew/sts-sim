@@ -236,11 +236,6 @@ pub fn client_input_hint(input: &ClientInput) -> String {
 fn run_control_command_hint(command: &super::commands::RunControlCommand) -> String {
     match command {
         super::commands::RunControlCommand::Input(input) => client_input_hint(input),
-        super::commands::RunControlCommand::InputSequence(inputs) => inputs
-            .iter()
-            .map(client_input_hint)
-            .collect::<Vec<_>>()
-            .join(" then "),
         super::commands::RunControlCommand::BranchSkipCardReward(index) => {
             format!("branch-skip-card-reward {index}")
         }

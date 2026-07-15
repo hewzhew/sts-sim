@@ -123,7 +123,6 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "event" | "option" => Ok(RunControlCommand::Input(ClientInput::EventChoice(
             parse_usize_arg(rest.first(), "event option index")?,
         ))),
-        "event-select" | "event-selection" => parse_event_select_command(&rest),
         "claim" => Ok(RunControlCommand::Input(ClientInput::ClaimReward(
             parse_usize_arg(rest.first(), "reward index")?,
         ))),
@@ -188,11 +187,6 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         )?)),
         other => Err(format!("unknown run/play command '{other}'")),
     }
-}
-
-fn parse_event_select_command(rest: &[&str]) -> Result<RunControlCommand, String> {
-    let _ = rest;
-    Err("event-select is retired; use `event <idx>` and then `select <deck_idx...>`".to_string())
 }
 
 fn is_candidate_id(command: &str) -> bool {

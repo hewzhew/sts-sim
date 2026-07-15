@@ -461,11 +461,3 @@ fn run_control_parser_accepts_view_commands() {
         RunControlCommand::SelectionIndices(vec![2, 4])
     );
 }
-
-#[test]
-fn run_control_parser_retires_typed_event_select_sequence() {
-    assert!(
-        parse_run_control_command("event-select 0 3").is_err(),
-        "event-select cannot safely encode a deck UUID selection without event context"
-    );
-}

@@ -108,14 +108,14 @@ game-mechanic surfaces compile without warnings and pass their existing tests.
 
 | Measure | Value | Change evidence |
 | --- | ---: | --- |
-| Rust files under `src` | 1,789 | 24 branch-experiment closure files retired |
-| Physical Rust lines under `src` | 333,506 | Current tree measurement after intervening mainline development |
-| `#[test]` markers under `src` | 2,839 | 137 library tests retired from the pre-delivery 2,891-test suite |
+| Rust files under `src` | 1,788 | 25 branch-experiment closure files retired |
+| Physical Rust lines under `src` | 333,442 | Current tree measurement after intervening mainline development |
+| `#[test]` markers under `src` | 2,838 | 138 library tests retired from the pre-delivery 2,891-test suite |
 | Rust files containing `#[test]` | 415 | 10 self-testing legacy product files retired |
-| Passing library tests | 2,754 | 0 failed |
+| Passing library tests | 2,753 | 0 failed |
 | Linked library test binary | 49.07 MiB | Down from approximately 51.6 MiB; size is observational only |
 
-The delivery removes 14,531 net Rust lines. It does not prune tests from cards, relics, monsters,
+The delivery removes 14,595 net Rust lines. It does not prune tests from cards, relics, monsters,
 events, combat search, owner-audit, or ordinary run-control. The still-live
 `BranchSkipCardReward` command is also retained despite its historical name because the current
 run-control decision surface and owner-audit renderer consume it.
@@ -271,8 +271,9 @@ diagnostic adapter.
 - Removal delivery: the 2026-07-15 branch-experiment dependency-closure cleanup recorded here.
 - Removed contracts: the `BranchExperimentV1` report and runner, shared-start profile runner,
   branch retention portfolio, branch boundary enumerator, branch trajectory and decision-path
-  envelopes, branch-only event auto-policy, and their private candidate/report schemas.
-- Removed tests: 137 self-tests whose only production owner was the retired product.
+  envelopes, branch-only event auto-policy, the unconstructable `InputSequence` command, the
+  `event-select` retirement tombstone, and their private candidate/report schemas.
+- Removed tests: 138 self-tests whose only production owner was the retired product.
 - Replacement: none. `branch_tiny` and `branch_panel` remain the supported portfolio mainline;
   owner-audit and ordinary run-control retain their own automation and evidence contracts.
 - Recovery: repository history and `origin/backup/pre-cleanup-20260712`.

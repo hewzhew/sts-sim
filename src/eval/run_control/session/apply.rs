@@ -193,19 +193,7 @@ impl RunControlSession {
                 }
             }
             RunControlCommand::Input(input) => self.apply_input(input),
-            RunControlCommand::InputSequence(inputs) => self.apply_input_sequence(inputs),
         }
-    }
-
-    fn apply_input_sequence(
-        &mut self,
-        inputs: Vec<ClientInput>,
-    ) -> Result<RunControlCommandOutcome, String> {
-        let mut last = None;
-        for input in inputs {
-            last = Some(self.apply_input(input)?);
-        }
-        Ok(last.unwrap_or_else(|| RunControlCommandOutcome::message("")))
     }
 
     fn apply_branch_skip_card_reward(
