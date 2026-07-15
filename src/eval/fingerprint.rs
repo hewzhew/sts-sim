@@ -158,7 +158,7 @@ pub fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
     hash_bytes(format!("{value:?}").as_bytes())
 }
 
-fn hash_serializable<T: Serialize>(value: &T) -> String {
+pub(crate) fn hash_serializable<T: Serialize>(value: &T) -> String {
     let payload =
         serde_json::to_vec(value).expect("fingerprint input should serialize deterministically");
     hash_bytes(&payload)
