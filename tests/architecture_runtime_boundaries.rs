@@ -165,7 +165,7 @@ fn combat_line_adjudication_has_one_production_owner() {
 }
 
 #[test]
-fn live_decision_layers_do_not_depend_on_combat_laboratory() {
+fn live_decision_layers_do_not_depend_on_offline_laboratories() {
     fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) {
         if root.is_file() {
             if root.extension().is_some_and(|extension| extension == "rs") {
@@ -187,6 +187,8 @@ fn live_decision_layers_do_not_depend_on_combat_laboratory() {
     let mut sources = Vec::new();
     for root in [
         "src/eval/run_control",
+        "src/runtime/branch/owner_audit",
+        "src/ai/campfire_policy_v1",
         "src/ai/route_planner_v1",
         "src/ai/strategy/acquisition.rs",
     ] {
@@ -195,11 +197,13 @@ fn live_decision_layers_do_not_depend_on_combat_laboratory() {
 
     for path in sources {
         let source = std::fs::read_to_string(&path).expect("read live decision-layer source");
-        assert!(
-            !source.contains("combat_lab_v1"),
-            "live decision layer '{}' must not import or read the offline combat laboratory",
-            path.display()
-        );
+        for forbidden in ["combat_lab_v1", "campfire_survival_scenarios"] {
+            assert!(
+                !source.contains(forbidden),
+                "live decision layer '{}' must not import or read offline laboratory `{forbidden}`",
+                path.display()
+            );
+        }
     }
 }
 
