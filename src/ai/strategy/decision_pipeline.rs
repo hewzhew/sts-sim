@@ -3118,4 +3118,42 @@ mod tests {
             second_wind.scores
         );
     }
+
+    #[test]
+    fn cheap_survival_access_shop_admission_reaches_mainline_lane() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+        ];
+        let deck = test_deck(&cards);
+        let plan = DeckPlanSnapshot::from_deck(
+            &deck,
+            DeckAdmissionContext {
+                act: 1,
+                current_hp: 80,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 2,
+                starter_basic_count: 8,
+                curse_count: 0,
+                has_energy_relic: false,
+                has_runic_pyramid: false,
+            },
+        );
+        let context = DecisionPipelineContext::shop(plan, 43);
+
+        let shrug = shop_card_in_context_with_price(context, &deck, CardId::ShrugItOff, 0, 25);
+
+        assert_eq!(shrug.inspect_only_reason(), None, "shrug={shrug:#?}");
+        assert_eq!(shrug.lane, CandidateLane::Mainline, "shrug={shrug:#?}");
+    }
 }

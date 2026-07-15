@@ -6,7 +6,9 @@ use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_construction_pressure::candidate_improves_card_flow;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
-use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
+use crate::ai::strategy::reward_admission::{
+    RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
+};
 use crate::content::cards::{get_card_definition, CardId};
 
 const CHEAP_SHOP_CARD_PRICE: i32 = 35;
@@ -117,6 +119,7 @@ pub enum AcquisitionPolicyReason {
     BossScalingRepair,
     ConstructionRoleAccepted,
     SurvivalPressureStabilizer,
+    CheapSurvivalAccessCompression,
     HpCostAccessDebt,
     DeployabilityDebt,
     LowMarginLacksHardGap,
@@ -143,6 +146,7 @@ pub struct CardAcquisitionReport {
     pub construction_role: Option<AcquisitionConstructionRole>,
     pub low_margin_filler: bool,
     pub hp_cost_access_debt: bool,
+    pub cheap_survival_access_compression: bool,
 }
 
 pub fn assess_card_acquisition(
@@ -183,6 +187,8 @@ pub fn assess_card_acquisition(
     let construction_role = construction_role(context.deck_plan, admission, &strategic_delta);
     let low_margin_filler = admission.card.is_some_and(low_margin_filler_card);
     let hp_cost_access_debt = hp_cost_access_debt(context.deck_plan, admission);
+    let cheap_survival_access_compression =
+        cheap_survival_access_compression(context.deck_plan, source, opportunity_cost, admission);
     CardAcquisitionReport {
         card,
         upgrades,
@@ -194,6 +200,7 @@ pub fn assess_card_acquisition(
         construction_role,
         low_margin_filler,
         hp_cost_access_debt,
+        cheap_survival_access_compression,
     }
 }
 
@@ -346,6 +353,10 @@ fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPol
             AcquisitionPolicyVerdict::SkipPreferred,
             AcquisitionPolicyReason::PurgeReserveBlocksHardGap,
         ),
+        AcquisitionSource::Shop if report.cheap_survival_access_compression => acquisition_policy(
+            AcquisitionPolicyVerdict::ContextTake,
+            AcquisitionPolicyReason::CheapSurvivalAccessCompression,
+        ),
         AcquisitionSource::Shop => acquisition_policy(
             AcquisitionPolicyVerdict::Reject,
             AcquisitionPolicyReason::NoPolicySupport,
@@ -386,6 +397,9 @@ fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static 
         }
         AcquisitionPolicyReason::SurvivalPressureStabilizer => {
             "card stabilizes immediate survival pressure"
+        }
+        AcquisitionPolicyReason::CheapSurvivalAccessCompression => {
+            "cheap shop card compresses survival and still-needed access"
         }
         AcquisitionPolicyReason::PremiumCard
         | AcquisitionPolicyReason::UpgradedShopCard
@@ -614,6 +628,21 @@ fn admission_survival_tool(admission: &RewardAdmission) -> bool {
         || admission_provides(admission, Mechanic::TemporaryEnemyStrengthDown)
 }
 
+fn cheap_survival_access_compression(
+    deck_plan: DeckPlanSnapshot,
+    source: AcquisitionSource,
+    opportunity_cost: AcquisitionOpportunityCost,
+    admission: &RewardAdmission,
+) -> bool {
+    source == AcquisitionSource::Shop
+        && opportunity_cost == AcquisitionOpportunityCost::Cheap
+        && admission.class == RewardAdmissionClass::ImmediateWork
+        && admission_survival_tool(admission)
+        && ((admission_provides(admission, Mechanic::CardDraw) && deck_plan.roles.draw_units < 2)
+            || (admission_provides(admission, Mechanic::Energy)
+                && deck_plan.roles.energy_units == 0))
+}
+
 fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
     admission.reasons.iter().any(|reason| {
         matches!(
@@ -645,7 +674,8 @@ mod tests {
     use super::{
         assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionConstructionRole,
         AcquisitionContext, AcquisitionCost, AcquisitionOpportunityCost, AcquisitionPolicyReason,
-        AcquisitionPolicyVerdict, AcquisitionSource, MarginalAcquisitionQuality,
+        AcquisitionPolicyVerdict, AcquisitionSource, CardAcquisitionReport,
+        MarginalAcquisitionQuality,
     };
 
     fn deck(cards: &[CardId]) -> Vec<CombatCard> {
@@ -763,6 +793,75 @@ mod tests {
             CardId::Armaments,
             CardId::Disarm,
         ]
+    }
+
+    fn seed006_post_purge_shop_report(candidate: CardId, price: i32) -> CardAcquisitionReport {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+        ];
+        let master_deck = deck(&cards);
+        let plan = DeckPlanSnapshot::from_deck(
+            &master_deck,
+            DeckAdmissionContext {
+                act: 1,
+                current_hp: 80,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 2,
+                starter_basic_count: 8,
+                curse_count: 0,
+                has_energy_relic: false,
+                has_runic_pyramid: false,
+            },
+        );
+        let admission = assess_reward_admission_from_master_deck(&master_deck, candidate, 0);
+
+        assess_card_acquisition(
+            AcquisitionContext::shop(plan, 43, price),
+            candidate,
+            0,
+            &admission,
+        )
+    }
+
+    #[test]
+    fn cheap_survival_access_shop_admission_accepts_seed006_shrug() {
+        let report = seed006_post_purge_shop_report(CardId::ShrugItOff, 25);
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(report.cheap_survival_access_compression);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::CheapSurvivalAccessCompression
+        );
+    }
+
+    #[test]
+    fn cheap_survival_access_shop_admission_requires_cheap_price() {
+        let report = seed006_post_purge_shop_report(CardId::ShrugItOff, 36);
+        let policy = evaluate_deck_construction_contract(&report);
+
+        assert!(!report.cheap_survival_access_compression);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::Reject);
+        assert_eq!(policy.reason, AcquisitionPolicyReason::NoPolicySupport);
+    }
+
+    #[test]
+    fn cheap_survival_access_shop_admission_requires_both_roles() {
+        let report = seed006_post_purge_shop_report(CardId::IronWave, 25);
+
+        assert!(!report.cheap_survival_access_compression);
     }
 
     #[test]
