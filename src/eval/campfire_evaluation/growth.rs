@@ -9,6 +9,7 @@ use crate::ai::upgrade_planner_v1::{
     UpgradeMechanicalDeltaV1, UpgradeRoleV1, UpgradeVerdictV1,
 };
 use crate::content::cards::CardId;
+use crate::content::relics::{girya::Girya, RelicId};
 use crate::engine::campfire_candidates::CampfireCandidate;
 use crate::eval::campfire_projection::CampfireProjection;
 use crate::state::run::RunState;
@@ -23,6 +24,7 @@ use super::{
 pub struct CampfireGrowth {
     pub smith: Option<CampfireSmithGrowth>,
     pub toke: Option<CampfireTokeGrowth>,
+    pub lift: Option<CampfireLiftGrowth>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,6 +50,15 @@ pub struct CampfireTokeGrowth {
     pub deck_size_after: usize,
     pub target_class: DeckMutationTargetClassV1,
     pub target_loss: DeckMutationTargetLossV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CampfireLiftGrowth {
+    pub girya_counter_before: i32,
+    pub girya_counter_after: i32,
+    pub combat_start_strength_before: i32,
+    pub combat_start_strength_after: i32,
+    pub combat_start_strength_delta: i32,
 }
 
 pub(super) struct CampfireGrowthFacts {
@@ -96,6 +107,12 @@ pub enum CampfireGrowthError {
     RemovalProjectionMismatch {
         card_uuid: u32,
     },
+    MissingGirya,
+    AmbiguousGirya,
+    GiryaCounterMismatch {
+        before: i32,
+        after: i32,
+    },
 }
 
 pub(super) struct CampfireGrowthAssessment {
@@ -116,6 +133,7 @@ pub(super) fn assess_growth(
         CampfireCandidate::Toke { card_uuid } => {
             assess_toke(root, facts, candidate, card_uuid, projection)
         }
+        CampfireCandidate::Lift => assess_lift(root, candidate, projection),
         _ => Ok(unsupported_growth(projection)),
     }
 }
@@ -169,6 +187,7 @@ fn assess_smith(
                 verdict: planner.verdict,
             }),
             toke: None,
+            lift: None,
         },
         evidence: partial_growth_evidence(
             CampfireEvidenceProvenance::EngineTransitionAndUpgradePlanner,
@@ -212,11 +231,59 @@ fn assess_toke(
                 target_class: removal.target_class,
                 target_loss: removal.target_loss.clone(),
             }),
+            lift: None,
         },
         evidence: partial_growth_evidence(
             CampfireEvidenceProvenance::EngineTransitionAndDeckMutationCompiler,
         ),
     })
+}
+
+fn assess_lift(
+    root: &RunState,
+    candidate: CampfireCandidate,
+    projection: &CampfireProjection,
+) -> Result<CampfireGrowthAssessment, CampfireGrowthError> {
+    let CampfireProjection::Exact(exact) = projection else {
+        return Err(CampfireGrowthError::ExpectedExactProjection { candidate });
+    };
+    let girya_counter_before = unique_girya_counter(root)?;
+    let girya_counter_after = unique_girya_counter(&exact.run_state)?;
+    if girya_counter_after != girya_counter_before + 1 {
+        return Err(CampfireGrowthError::GiryaCounterMismatch {
+            before: girya_counter_before,
+            after: girya_counter_after,
+        });
+    }
+    let combat_start_strength_before = Girya::battle_start_strength(girya_counter_before);
+    let combat_start_strength_after = Girya::battle_start_strength(girya_counter_after);
+
+    Ok(CampfireGrowthAssessment {
+        value: CampfireGrowth {
+            smith: None,
+            toke: None,
+            lift: Some(CampfireLiftGrowth {
+                girya_counter_before,
+                girya_counter_after,
+                combat_start_strength_before,
+                combat_start_strength_after,
+                combat_start_strength_delta: combat_start_strength_after
+                    - combat_start_strength_before,
+            }),
+        },
+        evidence: partial_growth_evidence(
+            CampfireEvidenceProvenance::EngineTransitionAndRelicMechanics,
+        ),
+    })
+}
+
+fn unique_girya_counter(run: &RunState) -> Result<i32, CampfireGrowthError> {
+    let mut giryas = run.relics.iter().filter(|relic| relic.id == RelicId::Girya);
+    let girya = giryas.next().ok_or(CampfireGrowthError::MissingGirya)?;
+    if giryas.next().is_some() {
+        return Err(CampfireGrowthError::AmbiguousGirya);
+    }
+    Ok(girya.counter)
 }
 
 fn partial_growth_evidence(provenance: CampfireEvidenceProvenance) -> CampfireFieldEvidence {

@@ -18,7 +18,10 @@ mod growth;
 mod run_feasibility;
 
 use growth::{assess_growth, build_growth_facts};
-pub use growth::{CampfireGrowth, CampfireGrowthError, CampfireSmithGrowth, CampfireTokeGrowth};
+pub use growth::{
+    CampfireGrowth, CampfireGrowthError, CampfireLiftGrowth, CampfireSmithGrowth,
+    CampfireTokeGrowth,
+};
 use run_feasibility::assess_run_feasibility;
 pub use run_feasibility::{CampfireRubyKeyObligation, CampfireRunFeasibility};
 
@@ -257,6 +260,7 @@ pub enum CampfireEvidenceProvenance {
     EngineTransition,
     EngineTransitionAndUpgradePlanner,
     EngineTransitionAndDeckMutationCompiler,
+    EngineTransitionAndRelicMechanics,
     PublicRootAndRouteWindowFacts,
     NoProducer,
 }
@@ -742,6 +746,48 @@ mod tests {
         assert_eq!(
             evidence.provenance,
             CampfireEvidenceProvenance::EngineTransitionAndDeckMutationCompiler
+        );
+        assert!(evidence
+            .limitations
+            .contains(&CampfireEvidenceLimitation::DownstreamGrowthDistributionNotEvaluated));
+    }
+
+    #[test]
+    fn lift_growth_binds_girya_strength_to_exact_projection() {
+        let root = candidate_run();
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let candidate = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Lift)
+            .expect("Girya should make Lift a legal candidate");
+        let growth = candidate
+            .growth
+            .lift
+            .as_ref()
+            .expect("Lift should expose typed Girya growth facts");
+
+        assert_eq!(growth.girya_counter_before, 0);
+        assert_eq!(growth.girya_counter_after, 1);
+        assert_eq!(growth.combat_start_strength_before, 0);
+        assert_eq!(growth.combat_start_strength_after, 1);
+        assert_eq!(growth.combat_start_strength_delta, 1);
+        let typed_copy = CampfireLiftGrowth {
+            girya_counter_before: growth.girya_counter_before,
+            girya_counter_after: growth.girya_counter_after,
+            combat_start_strength_before: growth.combat_start_strength_before,
+            combat_start_strength_after: growth.combat_start_strength_after,
+            combat_start_strength_delta: growth.combat_start_strength_delta,
+        };
+        assert_eq!(&typed_copy, growth);
+
+        let evidence = candidate
+            .evidence_for(CampfireProspectField::GrowthDistribution)
+            .unwrap();
+        assert_eq!(evidence.status, CampfireEvidenceStatus::Partial);
+        assert_eq!(
+            evidence.provenance,
+            CampfireEvidenceProvenance::EngineTransitionAndRelicMechanics
         );
         assert!(evidence
             .limitations
