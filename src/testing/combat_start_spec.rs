@@ -86,17 +86,37 @@ pub fn compile_combat_start_spec_with_rng_overrides(
     compile_combat_start_spec_inner(spec, seed, shuffle_seed)
 }
 
+/// Compiles the run-level portion of a start spec without realizing an
+/// encounter. Offline run-decision experiments use this to share the same
+/// card/relic/potion schema as exact combat fixtures.
+pub fn compile_run_state_from_combat_start_spec(
+    spec: &CombatStartSpec,
+    seed: u64,
+) -> Result<RunState, String> {
+    compile_run_state_from_combat_start_spec_with_shuffle(spec, seed, None)
+}
+
 fn compile_combat_start_spec_inner(
     spec: &CombatStartSpec,
     seed: u64,
     shuffle_seed: Option<u64>,
 ) -> Result<(EngineState, CombatState), String> {
+    let encounter_id = encounter_id_from_spec(&spec.encounter_id)?;
+    let room_type = room_type_from_spec(&spec.room_type)?;
+    let mut run_state =
+        compile_run_state_from_combat_start_spec_with_shuffle(spec, seed, shuffle_seed)?;
+
+    build_natural_combat_start(&mut run_state, encounter_id, room_type)
+}
+
+fn compile_run_state_from_combat_start_spec_with_shuffle(
+    spec: &CombatStartSpec,
+    seed: u64,
+    shuffle_seed: Option<u64>,
+) -> Result<RunState, String> {
     let player_class = canonical_player_class(&spec.player_class)?;
     let ascension_level = u8::try_from(spec.ascension_level)
         .map_err(|_| format!("ascension_level {} out of u8 range", spec.ascension_level))?;
-    let encounter_id = encounter_id_from_spec(&spec.encounter_id)?;
-    let room_type = room_type_from_spec(&spec.room_type)?;
-
     let mut run_state = RunState::new(seed, ascension_level, false, player_class);
     if let Some(shuffle_seed) = shuffle_seed {
         run_state.rng_pool.shuffle_rng = StsRng::new(shuffle_seed);
@@ -106,8 +126,7 @@ fn compile_combat_start_spec_inner(
     run_state.master_deck = compile_master_deck(&spec.master_deck)?;
     run_state.relics = compile_relics(&spec.relics)?;
     run_state.potions = compile_potions(&spec.potions, ascension_level)?;
-
-    build_natural_combat_start(&mut run_state, encounter_id, room_type)
+    Ok(run_state)
 }
 
 pub fn encounter_id_from_spec(

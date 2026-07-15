@@ -534,7 +534,7 @@ fn journal_digest(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> Result<(), String> {
+pub(crate) fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> Result<(), String> {
     let bytes = serde_json::to_vec(value)
         .map_err(|error| format!("failed to serialize '{}': {error}", destination.display()))?;
     let temporary = unique_sibling_temporary_path(destination);

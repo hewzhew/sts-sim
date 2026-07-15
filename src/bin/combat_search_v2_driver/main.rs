@@ -7,6 +7,9 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
     CombatSearchV2TurnPlanPolicy,
 };
+use sts_simulator::eval::campfire_threat_panel::{
+    run_campfire_threat_panel_v1, CampfireThreatPanelRunRequestV1,
+};
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
@@ -33,7 +36,8 @@ use sts_simulator::eval::fingerprint::{combat_state_fingerprint_v1, StateFingerp
                 "combat_snapshot",
                 "combat_case",
                 "benchmark_spec",
-                "lab_spec"
+                "lab_spec",
+                "threat_panel_spec"
             ])
     )
 )]
@@ -95,6 +99,56 @@ struct Args {
 
     #[arg(long, requires = "lab_spec", value_parser = parse_nonzero_lab_samples)]
     lab_samples: Option<u64>,
+
+    #[arg(
+        long,
+        requires_all = ["threat_panel_output", "threat_panel_samples"],
+        conflicts_with_all = [
+            "max_nodes",
+            "max_actions_per_line",
+            "max_engine_steps_per_action",
+            "wall_ms",
+            "max_hp_loss",
+            "potion_policy",
+            "max_potions_used",
+            "rollout_policy",
+            "child_rollout_policy",
+            "compare_rollout",
+            "compare_turn_plan",
+            "compare_frontier",
+            "explain_case",
+            "rollout_max_evaluations",
+            "rollout_max_actions",
+            "rollout_beam_width",
+            "turn_plan_policy",
+            "frontier_policy",
+            "validate_only",
+            "gate_only",
+            "guidance_lab",
+            "turn_plan_guidance_lab",
+            "guidance_lab_max_cases",
+            "probe_max_nodes",
+            "probe_wall_ms",
+            "turn_plan_probe_max_inner_nodes",
+            "turn_plan_probe_max_end_states",
+            "turn_plan_probe_per_bucket_limit",
+            "root_action_prior_hints",
+            "turn_plan_prior_hints",
+            "compact",
+            "output"
+        ]
+    )]
+    threat_panel_spec: Option<PathBuf>,
+
+    #[arg(long, requires = "threat_panel_spec")]
+    threat_panel_output: Option<PathBuf>,
+
+    #[arg(
+        long,
+        requires = "threat_panel_spec",
+        value_parser = parse_nonzero_lab_samples
+    )]
+    threat_panel_samples: Option<u64>,
 
     #[arg(long)]
     max_nodes: Option<usize>,
@@ -198,6 +252,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(spec_path) = args.threat_panel_spec.as_ref() {
+        let report = run_campfire_threat_panel_v1(&CampfireThreatPanelRunRequestV1 {
+            experiment_spec_path: spec_path.clone(),
+            output_dir: args
+                .threat_panel_output
+                .clone()
+                .expect("clap requires --threat-panel-output"),
+            requested_samples: args
+                .threat_panel_samples
+                .expect("clap requires --threat-panel-samples"),
+        })?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "output_dir": report.output_dir,
+                "requested_samples": report.requested_samples,
+                "cells_present": report.cells_present,
+                "cells_appended": report.cells_appended,
+                "halted_on_replay_error": report.halted_on_replay_error,
+                "completed_cells_in_summary": report.summary.completed_cells,
+                "direction_reversals": report.summary.reversals.len(),
+            }))?
+        );
+        return Ok(());
+    }
     if let Some(lab_spec_path) = args.lab_spec.as_ref() {
         let report = run_combat_lab_v1(&CombatLabRunRequestV1 {
             lab_spec_path: lab_spec_path.clone(),
@@ -671,6 +750,78 @@ fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn threat_panel_mode_parser_accepts_complete_request() {
+        let args = Args::try_parse_from([
+            "combat_search_v2_driver",
+            "--threat-panel-spec",
+            "panel.json",
+            "--threat-panel-output",
+            "artifacts/runs/panel-test",
+            "--threat-panel-samples",
+            "3",
+        ])
+        .expect("complete threat panel request should parse");
+
+        assert_eq!(args.threat_panel_spec, Some(PathBuf::from("panel.json")));
+        assert_eq!(
+            args.threat_panel_output,
+            Some(PathBuf::from("artifacts/runs/panel-test"))
+        );
+        assert_eq!(args.threat_panel_samples, Some(3));
+    }
+
+    #[test]
+    fn threat_panel_mode_rejects_incomplete_or_mixed_requests() {
+        for argv in [
+            vec!["driver", "--threat-panel-spec", "panel.json"],
+            vec![
+                "driver",
+                "--threat-panel-spec",
+                "panel.json",
+                "--threat-panel-output",
+                "artifacts/runs/panel-test",
+            ],
+            vec![
+                "driver",
+                "--threat-panel-spec",
+                "panel.json",
+                "--threat-panel-output",
+                "artifacts/runs/panel-test",
+                "--threat-panel-samples",
+                "0",
+            ],
+            vec![
+                "driver",
+                "--threat-panel-spec",
+                "panel.json",
+                "--threat-panel-output",
+                "artifacts/runs/panel-test",
+                "--threat-panel-samples",
+                "1",
+                "--lab-spec",
+                "lab.json",
+                "--lab-output",
+                "artifacts/runs/lab-test",
+                "--lab-samples",
+                "1",
+            ],
+            vec![
+                "driver",
+                "--threat-panel-spec",
+                "panel.json",
+                "--threat-panel-output",
+                "artifacts/runs/panel-test",
+                "--threat-panel-samples",
+                "1",
+                "--wall-ms",
+                "10",
+            ],
+        ] {
+            assert!(Args::try_parse_from(argv).is_err());
+        }
+    }
 
     #[test]
     fn lab_mode_parser_accepts_complete_request() {

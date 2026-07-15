@@ -197,7 +197,11 @@ fn live_decision_layers_do_not_depend_on_offline_laboratories() {
 
     for path in sources {
         let source = std::fs::read_to_string(&path).expect("read live decision-layer source");
-        for forbidden in ["combat_lab_v1", "campfire_survival_scenarios"] {
+        for forbidden in [
+            "combat_lab_v1",
+            "campfire_survival_scenarios",
+            "campfire_threat_panel",
+        ] {
             assert!(
                 !source.contains(forbidden),
                 "live decision layer '{}' must not import or read offline laboratory `{forbidden}`",

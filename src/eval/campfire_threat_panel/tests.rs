@@ -1,4 +1,6 @@
 use serde_json::json;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 
 use super::*;
 use crate::ai::combat_search_v2::{
@@ -18,6 +20,7 @@ use crate::eval::combat_lab_v1::{
     CombatLabCommonBudgetV1, CombatLabOutcomeClassV1, CombatLabProfileSpecV1,
     CombatLabReplayedCandidateV1, CombatLabShuffleGeneratorV1, CombatLabShuffleScheduleV1,
 };
+use crate::runtime::branch::SourceIdentity;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;
@@ -249,6 +252,83 @@ fn summary_reports_encounter_direction_reversals_without_resolving_limited_cells
         .expect("opposite encounter medians should create one direction reversal");
     assert_eq!(reversal.left_better_encounters.len(), 1);
     assert_eq!(reversal.right_better_encounters.len(), 1);
+}
+
+#[test]
+fn artifact_store_repairs_partial_tail_and_rejects_duplicate_append() {
+    let root = root();
+    let evaluation = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+    let mut spec = panel_spec();
+    spec.encounter_sources = vec![CampfireThreatEncounterSourceV1::Explicit {
+        encounter_id: EncounterId::JawWorm,
+        room_type: crate::state::map::node::RoomType::MonsterRoom,
+        label: "journal-test".to_string(),
+    }];
+    spec.lenses = vec![CampfireSurvivalLens::ActualConsequence];
+    let resolved = resolve_campfire_threat_panel_spec_v1(spec).unwrap();
+    let sample = compile_campfire_threat_panel_sample_v1(&root, &evaluation, &resolved, 0).unwrap();
+    let subjects = sample
+        .cells
+        .iter()
+        .map(|(_, cell)| cell.subject)
+        .collect::<Vec<_>>();
+    let manifest = CampfireThreatPanelManifestV1::new(
+        resolved.clone(),
+        evaluation.context.clone(),
+        subjects,
+        sample.gaps.clone(),
+        SourceIdentity {
+            git_commit: Some("test".to_string()),
+            git_dirty: Some(false),
+        },
+        123,
+    );
+    let output = std::env::temp_dir().join(format!(
+        "campfire-threat-panel-artifact-{}-{}",
+        std::process::id(),
+        resolved.contract_hash
+    ));
+    if output.exists() {
+        fs::remove_dir_all(&output).unwrap();
+    }
+    let scenario = &sample.cells[0];
+    let mut record = fake_cell(&resolved, scenario, 0, 17);
+    record.context_fingerprint = evaluation.context.context_fingerprint.clone();
+    record.cell_key = campfire_threat_panel_cell_key_v1(
+        &resolved.contract_hash,
+        &record.context_fingerprint,
+        record.subject,
+        record.lens,
+        &record.encounter,
+        0,
+        record.analysis_seed,
+        record.shuffle_seed,
+        &record.profile_id,
+    );
+
+    {
+        let mut store =
+            CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest.clone())
+                .unwrap();
+        store.append_cell(&record).unwrap();
+        assert!(store.append_cell(&record).is_err());
+    }
+    OpenOptions::new()
+        .append(true)
+        .open(output.join("cells.jsonl"))
+        .unwrap()
+        .write_all(br#"{"partial":"#)
+        .unwrap();
+
+    let recovered =
+        CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest).unwrap();
+
+    assert_eq!(recovered.cells().len(), 1);
+    assert!(recovered.contains_cell(&record.cell_key));
+    assert!(fs::read(output.join("cells.jsonl"))
+        .unwrap()
+        .ends_with(b"\n"));
+    fs::remove_dir_all(output).unwrap();
 }
 
 fn fake_cell(

@@ -74,8 +74,8 @@ pub struct CampfireThreatNumericSummaryV1 {
     pub count: usize,
     pub mean: Option<f64>,
     pub median: Option<f64>,
-    pub min: Option<i32>,
-    pub max: Option<i32>,
+    pub min: Option<i64>,
+    pub max: Option<i64>,
 }
 
 pub fn summarize_campfire_threat_panel_v1(
@@ -171,15 +171,27 @@ fn summarize_stratum(
                 candidate.terminal == crate::ai::combat_search_v2::SearchTerminalLabel::Loss
             })
             .count(),
-        terminal_hp: numeric(replayed.iter().map(|candidate| candidate.final_hp)),
-        hp_loss: numeric(replayed.iter().map(|candidate| candidate.hp_loss)),
-        turns: numeric(replayed.iter().map(|candidate| candidate.turns as i32)),
+        terminal_hp: numeric(
+            replayed
+                .iter()
+                .map(|candidate| i64::from(candidate.final_hp)),
+        ),
+        hp_loss: numeric(
+            replayed
+                .iter()
+                .map(|candidate| i64::from(candidate.hp_loss)),
+        ),
+        turns: numeric(replayed.iter().map(|candidate| i64::from(candidate.turns))),
         potions_used: numeric(
             replayed
                 .iter()
-                .map(|candidate| candidate.potions_used as i32),
+                .map(|candidate| i64::from(candidate.potions_used)),
         ),
-        expanded_nodes: numeric(cells.iter().map(|cell| cell.expanded_nodes as i32)),
+        expanded_nodes: numeric(
+            cells
+                .iter()
+                .map(|cell| i64::try_from(cell.expanded_nodes).unwrap_or(i64::MAX)),
+        ),
     }
 }
 
@@ -248,11 +260,16 @@ fn summarize_pairs(
                     ) else {
                         continue;
                     };
-                    final_hp.push(left_candidate.final_hp - right_candidate.final_hp);
-                    hp_loss.push(left_candidate.hp_loss - right_candidate.hp_loss);
-                    turns.push(left_candidate.turns as i32 - right_candidate.turns as i32);
+                    final_hp.push(
+                        i64::from(left_candidate.final_hp) - i64::from(right_candidate.final_hp),
+                    );
+                    hp_loss.push(
+                        i64::from(left_candidate.hp_loss) - i64::from(right_candidate.hp_loss),
+                    );
+                    turns.push(i64::from(left_candidate.turns) - i64::from(right_candidate.turns));
                     potions.push(
-                        left_candidate.potions_used as i32 - right_candidate.potions_used as i32,
+                        i64::from(left_candidate.potions_used)
+                            - i64::from(right_candidate.potions_used),
                     );
                 }
                 let replayed_pairs = final_hp.len();
@@ -309,7 +326,7 @@ fn summarize_reversals(
         .collect()
 }
 
-fn numeric(values: impl IntoIterator<Item = i32>) -> CampfireThreatNumericSummaryV1 {
+fn numeric(values: impl IntoIterator<Item = i64>) -> CampfireThreatNumericSummaryV1 {
     let mut values = values.into_iter().collect::<Vec<_>>();
     values.sort_unstable();
     let count = values.len();

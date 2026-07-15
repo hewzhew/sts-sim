@@ -160,6 +160,38 @@ campaign RNG history that had already been consumed before the original combat.
 Both profiles are `exact_state_oracle` searches that may inspect hidden state,
 not human-visible-information policies.
 
+### Campfire Threat Panel V1
+
+The Campfire Threat Panel is the wider, offline Campfire microscope. It expands
+every alignable exact Campfire candidate against every encounter in a declared
+public pool, with matched analysis RNG and shuffle samples. It never reads the
+live run's hidden encounter queue and never updates live Campfire policy.
+
+Run the reconstructed seed006 pre-Transient pilot with:
+
+```powershell
+cargo run --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
+```
+
+The fixture is explicitly reconstructed from recorded public deck/resources;
+it is not claimed to restore the campaign's consumed hidden RNG or route map.
+The manifest records this public context, the resolved encounter pool, all
+alignable subjects, typed candidate gaps, source identity, and fixed search
+contract. `cells.jsonl` is again the append-only evidence authority. Repeating
+the identical command resumes completed cells; increasing only the sample
+target extends the fixed shuffle schedule.
+
+Read the two lenses separately:
+
+- `actual_consequence` keeps each candidate's real post-Campfire HP/resources;
+- `root_hp_capability` resets only current HP to the public root, isolating what
+  the resulting deck can mechanically do at equal starting HP.
+
+Summaries remain stratified by encounter and subject. Pair deltas and direction
+reversals are evidence that a choice changes with the threat, not a hidden
+global Campfire score. Coverage-limited rows remain usable exact-replayed best
+candidates, but they are not proofs that search found the optimum.
+
 Historical artifacts remain readable and valid when a profile implementation is
 later removed. Rerunning that historical profile requires the Git commit recorded
 in its manifest; the current tree must not silently substitute a newer profile.

@@ -14,7 +14,7 @@ file only records binary ownership and boundaries.
 | `branch_tiny` | Lightweight owner-audit runner with run capsules, frontier continuation, seed-panel diagnostics, and combat-case capture. |
 | `branch_panel` | Rust seed-panel scheduler for smoke/drain runs over multiple `branch_tiny` capsules. |
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
-| `combat_search_v2_driver` | Whole-combat search from start specs and captures, benchmark suites, and the resumable offline Combat Laboratory V1. |
+| `combat_search_v2_driver` | Whole-combat search from start specs and captures, benchmark suites, the resumable Combat Laboratory V1, and the offline Campfire Threat Panel. |
 | `run_play_driver` | Manual and semi-automatic REPL over `eval::run_control`: traces, bookmarks, captures, baselines, and interactive panels. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments; exported labels are behavior-policy data, not truth. |
 
@@ -25,8 +25,9 @@ file only records binary ownership and boundaries.
 - `branch_panel` schedules and resumes `branch_tiny` capsules. It should not
   reinterpret owner policy or combat strategy.
 - `combat_search_v2_driver` and `combat_case_review` are combat investigation
-  tools. They do not decide non-combat policy. Combat Laboratory artifacts are
-  descriptive evidence and never feed live policy automatically.
+  tools. They do not decide non-combat policy. Combat Laboratory and Campfire
+  Threat Panel artifacts are descriptive evidence and never feed live policy
+  automatically.
 - `run_play_driver` is an interactive shell over the run-control kernel. Its
   detailed command help belongs in the binary and in `docs/RUNBOOK.md`, not in
   this map.
