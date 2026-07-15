@@ -41,12 +41,14 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
+    use crate::state::core::CampfireChoice;
+    use crate::state::run::RunState;
 
     fn candidate_run() -> RunState {
         let mut run = RunState::new(17, 0, true, "Ironclad");
         run.master_deck = vec![
-            CombatCard::new(CardId::StrikeR, 101),
-            CombatCard::new(CardId::DefendR, 102),
+            CombatCard::new(CardId::Strike, 101),
+            CombatCard::new(CardId::Defend, 102),
             CombatCard::new(CardId::AscendersBane, 103),
         ];
         run.relics = vec![
@@ -333,8 +335,8 @@ Add this test to the existing `campfire_handler.rs` test module:
 fn available_options_collapse_complete_target_sets_to_family_placeholders() {
     let mut run = RunState::new(19, 0, false, "Ironclad");
     run.master_deck = vec![
-        CombatCard::new(CardId::StrikeR, 301),
-        CombatCard::new(CardId::DefendR, 302),
+        CombatCard::new(CardId::Strike, 301),
+        CombatCard::new(CardId::Defend, 302),
     ];
     run.relics = vec![RelicState::new(RelicId::PeacePipe)];
 

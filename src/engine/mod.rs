@@ -1,5 +1,6 @@
 pub mod action_handlers;
 pub(crate) mod boss_reward_handler;
+pub mod campfire_candidates;
 pub mod campfire_handler;
 pub mod core;
 pub mod event_handler;
