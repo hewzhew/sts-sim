@@ -104,6 +104,8 @@ The first migration does not add a fingerprint API to every existing policy owne
 
 Recall is evaluated as a run-feasibility obligation before survival and growth. The current run contract cannot distinguish every victory target, so production Recall cutover requires an explicit goal source rather than inferring Heart intent from a generic `FirstVictory` label.
 
+The first run-feasibility promotion is deliberately limited to the Ruby Key sub-obligation. `Act3Victory` does not require it; `HeartEligibility` and `HeartVictory` do. An already-held key and a key obtained by the projected `Recall` transition are exact facts. A non-Recall action is deferrable on every or some visible path only when `route_window_facts` proves a future Campfire with the corresponding modality. It violates the Ruby Key obligation only when complete Act 3 route evidence proves the boss occurs before any future Campfire. Earlier-act bosses and a truncated or unavailable route window do not prove violation. A stochastic consequence that could change route mobility keeps the deadline unresolved until that chance outcome is modeled. This sub-obligation may be exact even while the aggregate run-feasibility field remains partial because other Heart keys or later survival are not represented.
+
 ## Candidate Set And Scaling
 
 The candidate families are:
