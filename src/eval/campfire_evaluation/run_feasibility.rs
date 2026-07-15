@@ -4,6 +4,9 @@ use super::{
     CampfireEvaluationContext, CampfireEvidenceLimitation, CampfireEvidenceProvenance,
     CampfireEvidenceStatus, CampfireFieldEvidence, CampfireProspectField, CampfireRunGoal,
 };
+use crate::ai::route_window_facts::{
+    RouteWindowModality, RouteWindowPredicate, RouteWindowSubject,
+};
 use crate::engine::campfire_candidates::CampfireCandidate;
 use crate::eval::campfire_projection::CampfireProjection;
 use crate::state::run::RunState;
@@ -69,15 +72,12 @@ pub(super) fn assess_run_feasibility(
                     ),
                 )
             } else {
-                (
-                    CampfireRubyKeyObligation::UnresolvedBeyondVisibleWindow,
-                    partial_evidence(
-                        CampfireEvidenceProvenance::NoProducer,
-                        vec![
-                            CampfireEvidenceLimitation::VisibleDeadlineNotProven,
-                            CampfireEvidenceLimitation::OtherHeartKeysNotEvaluated,
-                        ],
-                    ),
+                classify_missing_ruby_key(
+                    root,
+                    context,
+                    candidate,
+                    sapphire_key_held,
+                    emerald_key_held,
                 )
             }
         }
@@ -92,6 +92,106 @@ pub(super) fn assess_run_feasibility(
         },
         evidence,
     }
+}
+
+fn classify_missing_ruby_key(
+    root: &RunState,
+    context: &CampfireEvaluationContext,
+    candidate: CampfireCandidate,
+    sapphire_key_held: bool,
+    emerald_key_held: bool,
+) -> (CampfireRubyKeyObligation, CampfireFieldEvidence) {
+    let boss_before_campfire = route_modality(
+        context,
+        RouteWindowPredicate::OccursBefore {
+            subject: RouteWindowSubject::Boss,
+            before: RouteWindowSubject::Campfire,
+        },
+    );
+    if root.act_num == 3 && boss_before_campfire == Some(RouteWindowModality::Must) {
+        if candidate == CampfireCandidate::Dig {
+            return (
+                CampfireRubyKeyObligation::UnresolvedByChanceOutcome,
+                partial_evidence(
+                    CampfireEvidenceProvenance::PublicRootAndRouteWindowFacts,
+                    heart_limitations(
+                        sapphire_key_held,
+                        emerald_key_held,
+                        [CampfireEvidenceLimitation::ChanceOutcomeCouldChangeRouteAccess],
+                    ),
+                ),
+            );
+        }
+        return (
+            CampfireRubyKeyObligation::ViolatedAtVisibleAct3BossDeadline,
+            exact_evidence(CampfireEvidenceProvenance::PublicRootAndRouteWindowFacts),
+        );
+    }
+
+    let future_campfire = route_modality(
+        context,
+        RouteWindowPredicate::PresentInWindow {
+            subject: RouteWindowSubject::Campfire,
+        },
+    );
+    match future_campfire {
+        Some(RouteWindowModality::Must) => (
+            CampfireRubyKeyObligation::DeferrableOnEveryVisiblePath,
+            partial_evidence(
+                CampfireEvidenceProvenance::PublicRootAndRouteWindowFacts,
+                heart_limitations(
+                    sapphire_key_held,
+                    emerald_key_held,
+                    [CampfireEvidenceLimitation::FutureRecallDecisionNotEvaluated],
+                ),
+            ),
+        ),
+        Some(RouteWindowModality::Can) => (
+            CampfireRubyKeyObligation::DeferrableOnSomeVisiblePath,
+            partial_evidence(
+                CampfireEvidenceProvenance::PublicRootAndRouteWindowFacts,
+                heart_limitations(
+                    sapphire_key_held,
+                    emerald_key_held,
+                    [CampfireEvidenceLimitation::FutureRecallDecisionNotEvaluated],
+                ),
+            ),
+        ),
+        Some(RouteWindowModality::Cannot) | Some(RouteWindowModality::Unknown) | None => (
+            CampfireRubyKeyObligation::UnresolvedBeyondVisibleWindow,
+            partial_evidence(
+                CampfireEvidenceProvenance::PublicRootAndRouteWindowFacts,
+                heart_limitations(
+                    sapphire_key_held,
+                    emerald_key_held,
+                    [CampfireEvidenceLimitation::VisibleDeadlineNotProven],
+                ),
+            ),
+        ),
+    }
+}
+
+fn route_modality(
+    context: &CampfireEvaluationContext,
+    predicate: RouteWindowPredicate,
+) -> Option<RouteWindowModality> {
+    context
+        .route_window_facts
+        .facts_for(&predicate)
+        .first()
+        .map(|fact| fact.modality)
+}
+
+fn heart_limitations<const N: usize>(
+    sapphire_key_held: bool,
+    emerald_key_held: bool,
+    primary: [CampfireEvidenceLimitation; N],
+) -> Vec<CampfireEvidenceLimitation> {
+    let mut limitations = primary.to_vec();
+    if !sapphire_key_held || !emerald_key_held {
+        limitations.push(CampfireEvidenceLimitation::OtherHeartKeysNotEvaluated);
+    }
+    limitations
 }
 
 fn projected_ruby_key(projection: &CampfireProjection) -> bool {

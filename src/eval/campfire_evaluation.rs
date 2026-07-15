@@ -261,6 +261,8 @@ pub enum CampfireEvidenceProvenance {
 pub enum CampfireEvidenceLimitation {
     OtherHeartKeysNotEvaluated,
     VisibleDeadlineNotProven,
+    FutureRecallDecisionNotEvaluated,
+    ChanceOutcomeCouldChangeRouteAccess,
     SurvivalWindowNotEvaluated,
     ThreatTimingNotEvaluated,
     GrowthNotEvaluated,
@@ -445,6 +447,8 @@ mod tests {
     use crate::content::relics::{RelicId, RelicState};
     use crate::engine::campfire_candidates::{legal_campfire_candidates, CampfireCandidate};
     use crate::runtime::combat::CombatCard;
+    use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::state::map::state::MapState;
     use crate::state::run::RunState;
 
     fn evaluation_spec() -> CampfireEvaluationSpec {
@@ -479,6 +483,44 @@ mod tests {
         ];
         run.potions = vec![Some(Potion::new(PotionId::DexterityPotion, 401))];
         run.keys[0] = false;
+        run
+    }
+
+    fn run_with_next_rooms(next_rooms: &[RoomType]) -> RunState {
+        let mut run = candidate_run();
+        run.act_num = 3;
+        let mut current = MapRoomNode::new(0, 0);
+        current.class = Some(RoomType::RestRoom);
+        let next_row = next_rooms
+            .iter()
+            .enumerate()
+            .map(|(x, room)| {
+                current.edges.insert(MapEdge::new(0, 0, x as i32, 1));
+                let mut node = MapRoomNode::new(x as i32, 1);
+                node.class = Some(*room);
+                node
+            })
+            .collect::<Vec<_>>();
+        run.map = MapState::new(vec![vec![current], next_row]);
+        run.map.current_x = 0;
+        run.map.current_y = 0;
+        run
+    }
+
+    fn run_at_last_visible_fire(act_num: u8) -> RunState {
+        let mut run = candidate_run();
+        run.act_num = act_num;
+        let mut graph = (0..=14)
+            .map(|y| {
+                let mut node = MapRoomNode::new(0, y);
+                node.class = Some(RoomType::MonsterRoom);
+                vec![node]
+            })
+            .collect::<Vec<_>>();
+        graph[14][0].class = Some(RoomType::RestRoom);
+        run.map = MapState::new(graph);
+        run.map.current_x = 0;
+        run.map.current_y = 14;
         run
     }
 
@@ -658,5 +700,112 @@ mod tests {
                 .status,
             CampfireEvidenceStatus::Exact
         );
+    }
+
+    #[test]
+    fn future_campfire_modality_distinguishes_every_path_from_some_paths() {
+        let every_root = run_with_next_rooms(&[RoomType::RestRoom]);
+        let every_batch = build_campfire_evaluation_batch(&every_root, evaluation_spec()).unwrap();
+        let every_rest = every_batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert_eq!(
+            every_rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::DeferrableOnEveryVisiblePath
+        );
+
+        let some_root = run_with_next_rooms(&[RoomType::RestRoom, RoomType::MonsterRoom]);
+        let some_batch = build_campfire_evaluation_batch(&some_root, evaluation_spec()).unwrap();
+        let some_rest = some_batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert_eq!(
+            some_rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::DeferrableOnSomeVisiblePath
+        );
+        assert!(some_rest
+            .evidence_for(CampfireProspectField::RunFeasibility)
+            .unwrap()
+            .limitations
+            .contains(&CampfireEvidenceLimitation::FutureRecallDecisionNotEvaluated));
+    }
+
+    #[test]
+    fn visible_act3_boss_deadline_proves_deterministic_skip_but_not_dig() {
+        let root = run_at_last_visible_fire(3);
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let rest = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert_eq!(
+            rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::ViolatedAtVisibleAct3BossDeadline
+        );
+        assert_eq!(
+            rest.evidence_for(CampfireProspectField::RunFeasibility)
+                .unwrap()
+                .status,
+            CampfireEvidenceStatus::Exact
+        );
+
+        let dig = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Dig)
+            .unwrap();
+        assert_eq!(
+            dig.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::UnresolvedByChanceOutcome
+        );
+        assert!(dig
+            .evidence_for(CampfireProspectField::RunFeasibility)
+            .unwrap()
+            .limitations
+            .contains(&CampfireEvidenceLimitation::ChanceOutcomeCouldChangeRouteAccess));
+    }
+
+    #[test]
+    fn earlier_act_boss_is_not_the_ruby_key_deadline() {
+        let root = run_at_last_visible_fire(2);
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let rest = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+
+        assert_eq!(
+            rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::UnresolvedBeyondVisibleWindow
+        );
+    }
+
+    #[test]
+    fn unavailable_map_keeps_ruby_key_deadline_unresolved() {
+        let mut root = candidate_run();
+        root.act_num = 3;
+        root.map = MapState::checkpoint_externalized_placeholder();
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let rest = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+
+        assert_eq!(
+            rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::UnresolvedBeyondVisibleWindow
+        );
+        assert!(rest
+            .evidence_for(CampfireProspectField::RunFeasibility)
+            .unwrap()
+            .limitations
+            .contains(&CampfireEvidenceLimitation::VisibleDeadlineNotProven));
     }
 }
