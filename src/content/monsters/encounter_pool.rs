@@ -8,11 +8,132 @@
 
 use super::factory::EncounterId;
 use crate::runtime::rng::StsRng;
+use serde::{Deserialize, Serialize};
+
+pub const PUBLIC_ENCOUNTER_POOL_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EncounterPoolTier {
+    Weak,
+    Strong,
+    Elite,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct PublicEncounterPoolEntry {
+    pub encounter: EncounterId,
+    pub weight: f32,
+}
+
+const ACT1_WEAK: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::Cultist, 2.0),
+    pool_entry(EncounterId::JawWorm, 2.0),
+    pool_entry(EncounterId::TwoLouse, 2.0),
+    pool_entry(EncounterId::SmallSlimes, 2.0),
+];
+const ACT1_STRONG: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::BlueSlaver, 2.0),
+    pool_entry(EncounterId::GremlinGang, 1.0),
+    pool_entry(EncounterId::Looter, 2.0),
+    pool_entry(EncounterId::LargeSlime, 2.0),
+    pool_entry(EncounterId::LotsOfSlimes, 1.0),
+    pool_entry(EncounterId::ExordiumThugs, 1.5),
+    pool_entry(EncounterId::ExordiumWildlife, 1.5),
+    pool_entry(EncounterId::RedSlaver, 1.0),
+    pool_entry(EncounterId::ThreeLouse, 2.0),
+    pool_entry(EncounterId::TwoFungiBeasts, 2.0),
+];
+const ACT1_ELITE: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::GremlinNob, 1.0),
+    pool_entry(EncounterId::Lagavulin, 1.0),
+    pool_entry(EncounterId::ThreeSentries, 1.0),
+];
+const ACT2_WEAK: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::SphericGuardian, 2.0),
+    pool_entry(EncounterId::ChosenAlone, 2.0),
+    pool_entry(EncounterId::ShellParasite, 2.0),
+    pool_entry(EncounterId::ThreeByrds, 2.0),
+    pool_entry(EncounterId::TwoThieves, 2.0),
+];
+const ACT2_STRONG: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::ChosenAndByrds, 2.0),
+    pool_entry(EncounterId::SentryAndSphere, 2.0),
+    pool_entry(EncounterId::SnakePlant, 6.0),
+    pool_entry(EncounterId::Snecko, 4.0),
+    pool_entry(EncounterId::CenturionAndHealer, 6.0),
+    pool_entry(EncounterId::CultistAndChosen, 3.0),
+    pool_entry(EncounterId::ThreeCultists, 3.0),
+    pool_entry(EncounterId::ShelledParasiteAndFungi, 3.0),
+];
+const ACT2_ELITE: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::GremlinLeader, 1.0),
+    pool_entry(EncounterId::Slavers, 1.0),
+    pool_entry(EncounterId::BookOfStabbing, 1.0),
+];
+const ACT3_WEAK: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::ThreeDarklings, 2.0),
+    pool_entry(EncounterId::OrbWalker, 2.0),
+    pool_entry(EncounterId::ThreeShapes, 2.0),
+];
+const ACT3_STRONG: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::SpireGrowth, 1.0),
+    pool_entry(EncounterId::Transient, 1.0),
+    pool_entry(EncounterId::FourShapes, 1.0),
+    pool_entry(EncounterId::TheMaw, 1.0),
+    pool_entry(EncounterId::SphereAndTwoShapes, 1.0),
+    pool_entry(EncounterId::JawWormHorde, 1.0),
+    pool_entry(EncounterId::ThreeDarklings, 1.0),
+    pool_entry(EncounterId::WrithingMass, 1.0),
+];
+const ACT3_ELITE: &[PublicEncounterPoolEntry] = &[
+    pool_entry(EncounterId::GiantHead, 2.0),
+    pool_entry(EncounterId::TheNemesis, 2.0),
+    pool_entry(EncounterId::Reptomancer, 2.0),
+];
+const ACT4_FIXED: &[PublicEncounterPoolEntry] = &[pool_entry(EncounterId::ShieldAndSpear, 1.0)];
+
+const fn pool_entry(encounter: EncounterId, weight: f32) -> PublicEncounterPoolEntry {
+    PublicEncounterPoolEntry { encounter, weight }
+}
+
+/// Public content eligibility only. This does not roll, condition on, or expose
+/// the hidden scheduled encounter queue.
+pub fn public_encounter_pool(
+    act: u8,
+    tier: EncounterPoolTier,
+) -> &'static [PublicEncounterPoolEntry] {
+    match (act, tier) {
+        (1, EncounterPoolTier::Weak) => ACT1_WEAK,
+        (1, EncounterPoolTier::Strong) => ACT1_STRONG,
+        (1, EncounterPoolTier::Elite) => ACT1_ELITE,
+        (2, EncounterPoolTier::Weak) => ACT2_WEAK,
+        (2, EncounterPoolTier::Strong) => ACT2_STRONG,
+        (2, EncounterPoolTier::Elite) => ACT2_ELITE,
+        (3, EncounterPoolTier::Weak) => ACT3_WEAK,
+        (3, EncounterPoolTier::Strong) => ACT3_STRONG,
+        (3, EncounterPoolTier::Elite) => ACT3_ELITE,
+        (4, EncounterPoolTier::Strong | EncounterPoolTier::Elite) => ACT4_FIXED,
+        _ => &[],
+    }
+}
 
 /// A weighted encounter entry, mirroring Java's `MonsterInfo`.
 struct MonsterInfo {
     encounter: EncounterId,
     weight: f32,
+}
+
+fn normalized_monster_infos(entries: &[PublicEncounterPoolEntry]) -> Vec<MonsterInfo> {
+    let mut infos = entries
+        .iter()
+        .map(|entry| MonsterInfo {
+            encounter: entry.encounter,
+            weight: entry.weight,
+        })
+        .collect::<Vec<_>>();
+    normalize_weights(&mut infos);
+    infos
 }
 
 /// Normalize weights so they sum to 1.0, sorted ascending by weight.
@@ -141,74 +262,14 @@ fn generate_exordium(
 ) {
     // Weak enemies (3)
     // Java: Cultist(2.0), JawWorm(2.0), 2Louse(2.0), SmallSlimes(2.0)
-    let mut weak = vec![
-        MonsterInfo {
-            encounter: EncounterId::Cultist,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::JawWorm,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::TwoLouse,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::SmallSlimes,
-            weight: 2.0,
-        },
-    ];
-    normalize_weights(&mut weak);
+    let weak = normalized_monster_infos(public_encounter_pool(1, EncounterPoolTier::Weak));
     populate_monster_list(monster_list, &weak, 3, false, monster_rng);
 
     // Strong enemies (12)
     // Java: BlueSlaver(2.0), GremlinGang(1.0), Looter(2.0), LargeSlime(2.0),
     //       LotsOfSlimes(1.0), ExordiumThugs(1.5), ExordiumWildlife(1.5),
     //       RedSlaver(1.0), 3Louse(2.0), 2FungiBeasts(2.0)
-    let mut strong = vec![
-        MonsterInfo {
-            encounter: EncounterId::BlueSlaver,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::GremlinGang,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Looter,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::LargeSlime,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::LotsOfSlimes,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ExordiumThugs,
-            weight: 1.5,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ExordiumWildlife,
-            weight: 1.5,
-        },
-        MonsterInfo {
-            encounter: EncounterId::RedSlaver,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeLouse,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::TwoFungiBeasts,
-            weight: 2.0,
-        },
-    ];
-    normalize_weights(&mut strong);
+    let strong = normalized_monster_infos(public_encounter_pool(1, EncounterPoolTier::Strong));
 
     // First strong enemy with exclusions based on last weak enemy
     let exclusions = exordium_exclusions(monster_list);
@@ -217,21 +278,7 @@ fn generate_exordium(
 
     // Elites (10)
     // Java: GremlinNob(1.0), Lagavulin(1.0), 3Sentries(1.0)
-    let mut elites = vec![
-        MonsterInfo {
-            encounter: EncounterId::GremlinNob,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Lagavulin,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeSentries,
-            weight: 1.0,
-        },
-    ];
-    normalize_weights(&mut elites);
+    let elites = normalized_monster_infos(public_encounter_pool(1, EncounterPoolTier::Elite));
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);
 }
 
@@ -258,90 +305,20 @@ fn generate_the_city(
 ) {
     // Weak enemies (2)
     // Java: SphericGuardian(2.0), Chosen(2.0), ShellParasite(2.0), 3Byrds(2.0), 2Thieves(2.0)
-    let mut weak = vec![
-        MonsterInfo {
-            encounter: EncounterId::SphericGuardian,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ChosenAlone,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ShellParasite,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeByrds,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::TwoThieves,
-            weight: 2.0,
-        },
-    ];
-    normalize_weights(&mut weak);
+    let weak = normalized_monster_infos(public_encounter_pool(2, EncounterPoolTier::Weak));
     populate_monster_list(monster_list, &weak, 2, false, monster_rng);
 
     // Strong enemies (12)
     // Java: ChosenAndByrds(2.0), SentryAndSphere(2.0), SnakePlant(6.0), Snecko(4.0),
     //       CenturionAndHealer(6.0), CultistAndChosen(3.0), 3Cultists(3.0), ShelledParasiteAndFungi(3.0)
-    let mut strong = vec![
-        MonsterInfo {
-            encounter: EncounterId::ChosenAndByrds,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::SentryAndSphere,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::SnakePlant,
-            weight: 6.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Snecko,
-            weight: 4.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::CenturionAndHealer,
-            weight: 6.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::CultistAndChosen,
-            weight: 3.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeCultists,
-            weight: 3.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ShelledParasiteAndFungi,
-            weight: 3.0,
-        },
-    ];
-    normalize_weights(&mut strong);
+    let strong = normalized_monster_infos(public_encounter_pool(2, EncounterPoolTier::Strong));
     let exclusions = city_exclusions(monster_list);
     populate_first_strong_enemy(monster_list, &strong, &exclusions, monster_rng);
     populate_monster_list(monster_list, &strong, 12, false, monster_rng);
 
     // Elites (10)
     // Java: GremlinLeader(1.0), Slavers(1.0), BookOfStabbing(1.0)
-    let mut elites = vec![
-        MonsterInfo {
-            encounter: EncounterId::GremlinLeader,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Slavers,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::BookOfStabbing,
-            weight: 1.0,
-        },
-    ];
-    normalize_weights(&mut elites);
+    let elites = normalized_monster_infos(public_encounter_pool(2, EncounterPoolTier::Elite));
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);
 }
 
@@ -369,82 +346,20 @@ fn generate_the_beyond(
 ) {
     // Weak enemies (2)
     // Java: 3Darklings(2.0), OrbWalker(2.0), 3Shapes(2.0)
-    let mut weak = vec![
-        MonsterInfo {
-            encounter: EncounterId::ThreeDarklings,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::OrbWalker,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeShapes,
-            weight: 2.0,
-        },
-    ];
-    normalize_weights(&mut weak);
+    let weak = normalized_monster_infos(public_encounter_pool(3, EncounterPoolTier::Weak));
     populate_monster_list(monster_list, &weak, 2, false, monster_rng);
 
     // Strong enemies (12)
     // Java: SpireGrowth(1.0), Transient(1.0), 4Shapes(1.0), Maw(1.0),
     //       SphereAndTwoShapes(1.0), JawWormHorde(1.0), 3Darklings(1.0), WrithingMass(1.0)
-    let mut strong = vec![
-        MonsterInfo {
-            encounter: EncounterId::SpireGrowth,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Transient,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::FourShapes,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::TheMaw,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::SphereAndTwoShapes,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::JawWormHorde,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::ThreeDarklings,
-            weight: 1.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::WrithingMass,
-            weight: 1.0,
-        },
-    ];
-    normalize_weights(&mut strong);
+    let strong = normalized_monster_infos(public_encounter_pool(3, EncounterPoolTier::Strong));
     let exclusions = beyond_exclusions(monster_list);
     populate_first_strong_enemy(monster_list, &strong, &exclusions, monster_rng);
     populate_monster_list(monster_list, &strong, 12, false, monster_rng);
 
     // Elites (10)
     // Java: GiantHead(2.0), Nemesis(2.0), Reptomancer(2.0)
-    let mut elites = vec![
-        MonsterInfo {
-            encounter: EncounterId::GiantHead,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::TheNemesis,
-            weight: 2.0,
-        },
-        MonsterInfo {
-            encounter: EncounterId::Reptomancer,
-            weight: 2.0,
-        },
-    ];
-    normalize_weights(&mut elites);
+    let elites = normalized_monster_infos(public_encounter_pool(3, EncounterPoolTier::Elite));
     populate_monster_list(elite_list, &elites, 10, true, monster_rng);
 }
 
@@ -668,6 +583,41 @@ pub fn generate_boss_list_with_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_act3_pools_expose_content_weights_without_realizing_hidden_queue() {
+        let strong = public_encounter_pool(3, EncounterPoolTier::Strong);
+        let elite = public_encounter_pool(3, EncounterPoolTier::Elite);
+
+        assert_eq!(
+            strong
+                .iter()
+                .map(|entry| (entry.encounter, entry.weight))
+                .collect::<Vec<_>>(),
+            vec![
+                (EncounterId::SpireGrowth, 1.0),
+                (EncounterId::Transient, 1.0),
+                (EncounterId::FourShapes, 1.0),
+                (EncounterId::TheMaw, 1.0),
+                (EncounterId::SphereAndTwoShapes, 1.0),
+                (EncounterId::JawWormHorde, 1.0),
+                (EncounterId::ThreeDarklings, 1.0),
+                (EncounterId::WrithingMass, 1.0),
+            ]
+        );
+        assert_eq!(
+            elite
+                .iter()
+                .map(|entry| (entry.encounter, entry.weight))
+                .collect::<Vec<_>>(),
+            vec![
+                (EncounterId::GiantHead, 2.0),
+                (EncounterId::TheNemesis, 2.0),
+                (EncounterId::Reptomancer, 2.0),
+            ]
+        );
+        assert!(public_encounter_pool(99, EncounterPoolTier::Strong).is_empty());
+    }
 
     fn assert_java_normal_repeat_rule(monsters: &[EncounterId], first_strong_index: usize) {
         for window in monsters.windows(2) {
