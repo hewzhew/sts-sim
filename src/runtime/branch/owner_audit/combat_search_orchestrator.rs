@@ -16,8 +16,11 @@ pub(super) fn run_combat_portfolio_step(
     let mut output = CombatSearchPortfolioOutput::default();
     let mut attempts = Vec::new();
 
-    let primary = run_lane_attempt(session, &request, CombatSearchLane::primary())
+    let mut primary = run_lane_attempt(session, &request, CombatSearchLane::primary())
         .map_err(|err| format!("primary failed: {err}"))?;
+    if primary.applicable {
+        primary.commit_into(session)?;
+    }
     output.collect_attempt(&primary);
     let mut status = primary.status.clone();
     let primary_stop_kind = primary.auto_stop_kind;
@@ -80,8 +83,11 @@ pub(super) fn run_combat_portfolio_step(
     }
 
     for lane in post_primary_lanes {
-        let attempt = run_lane_attempt(session, &request, lane)
+        let mut attempt = run_lane_attempt(session, &request, lane)
             .map_err(|err| format!("{} failed: {err}", lane.label()))?;
+        if attempt.applicable {
+            attempt.commit_into(session)?;
+        }
         output.collect_attempt(&attempt);
         if request.should_report() {
             attempts.push(lane_attempt_report(&attempt));
