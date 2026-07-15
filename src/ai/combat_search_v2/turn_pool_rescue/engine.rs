@@ -9,7 +9,7 @@ use super::super::{
     filter_combat_search_legal_actions, CombatSearchPluginStack, CombatSearchV2Config,
     SearchTerminalLabel,
 };
-use super::ranking::{keep_lane_nodes, lane_rank};
+use super::ranking::{keep_diverse_lane_nodes, keep_lane_nodes, lane_rank};
 use super::types::{
     TurnPoolExpandOutcome, TurnPoolLane, TurnPoolLaneNode, TurnPoolNode, TurnPoolRun,
 };
@@ -109,7 +109,7 @@ fn run_turn_pool_nodes(
             if next_turn.is_empty() {
                 break;
             }
-            keep_lane_nodes(&mut next_turn, lane, LANE_KEEP);
+            keep_diverse_lane_nodes(&mut next_turn, lane, LANE_KEEP);
             let all_terminal = next_turn
                 .iter()
                 .all(|node| node.terminal != SearchTerminalLabel::Unresolved);
@@ -226,7 +226,7 @@ fn expand_one_turn(
             break;
         }
         if !next.is_empty() {
-            keep_lane_nodes(&mut next, lane, beam);
+            keep_diverse_lane_nodes(&mut next, lane, beam);
         }
         frontier = next;
         if deadline_hit {
