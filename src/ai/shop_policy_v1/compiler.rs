@@ -415,7 +415,10 @@ fn rollout_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
 
 fn role_rank_v1(candidate: &ShopPlanCandidateV1, mode: ShopCompileModeV1) -> i32 {
     if candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
-        && matches!(mode, ShopCompileModeV1::BranchTopK { .. })
+        && matches!(
+            mode,
+            ShopCompileModeV1::ExecutePlanHead { .. } | ShopCompileModeV1::BranchTopK { .. }
+        )
         && plan_has_leave_shop_step_v1(candidate)
     {
         return 5;

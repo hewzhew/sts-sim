@@ -704,7 +704,7 @@ fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
 }
 
 #[test]
-fn compiled_shop_branch_topk_uses_executable_leave_when_no_purchase_is_selected() {
+fn compiled_shop_plan_modes_use_executable_leave_when_no_purchase_is_selected() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 10;
     let shop = ShopState::new();
@@ -720,6 +720,11 @@ fn compiled_shop_branch_topk_uses_executable_leave_when_no_purchase_is_selected(
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
+    let plan_head = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+    );
 
     assert_eq!(execute.compat_selected_plan.kind, ShopPlanKindV1::Stop);
     assert!(
@@ -727,6 +732,11 @@ fn compiled_shop_branch_topk_uses_executable_leave_when_no_purchase_is_selected(
         "ordinary shop automation should remain conservative when no purchase is selected"
     );
     assert!(branch
+        .compat_selected_plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop)));
+    assert!(plan_head
         .compat_selected_plan
         .steps
         .iter()
