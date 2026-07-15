@@ -14,6 +14,11 @@ use crate::eval::fingerprint::{hash_serializable, FINGERPRINT_ALGORITHM_JSON};
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
+mod run_feasibility;
+
+use run_feasibility::assess_run_feasibility;
+pub use run_feasibility::{CampfireRubyKeyObligation, CampfireRunFeasibility};
+
 pub const CAMPFIRE_EVALUATION_CONTEXT_SCHEMA_NAME: &str = "CampfireEvaluationContextV1";
 pub const CAMPFIRE_EVALUATION_CONTEXT_SCHEMA_VERSION: u32 = 1;
 
@@ -245,14 +250,17 @@ pub enum CampfireEvidenceStatus {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CampfireEvidenceProvenance {
+    PublicRootObservation,
     EngineTransition,
+    PublicRootAndRouteWindowFacts,
     NoProducer,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CampfireEvidenceLimitation {
-    GoalSemanticsNotEvaluated,
+    OtherHeartKeysNotEvaluated,
+    VisibleDeadlineNotProven,
     SurvivalWindowNotEvaluated,
     ThreatTimingNotEvaluated,
     GrowthNotEvaluated,
@@ -289,6 +297,7 @@ pub struct CampfireCandidateEvaluation {
     pub candidate: CampfireCandidate,
     pub projection: CampfireProjection,
     pub immediate_hp: CampfireImmediateHp,
+    pub run_feasibility: CampfireRunFeasibility,
     pub field_evidence: Vec<CampfireFieldEvidence>,
 }
 
@@ -331,11 +340,13 @@ pub fn build_campfire_evaluation_batch(
         let projection = project_campfire_candidate(root, candidate)
             .map_err(|source| CampfireEvaluationError::Projection { candidate, source })?;
         let immediate_hp = immediate_hp(root, &projection);
-        let field_evidence = field_evidence(&projection);
+        let run_feasibility = assess_run_feasibility(root, &context, candidate, &projection);
+        let field_evidence = field_evidence(&projection, run_feasibility.evidence);
         candidates.push(CampfireCandidateEvaluation {
             candidate,
             projection,
             immediate_hp,
+            run_feasibility: run_feasibility.value,
             field_evidence,
         });
     }
@@ -357,7 +368,10 @@ fn immediate_hp(root: &RunState, projection: &CampfireProjection) -> CampfireImm
     }
 }
 
-fn field_evidence(projection: &CampfireProjection) -> Vec<CampfireFieldEvidence> {
+fn field_evidence(
+    projection: &CampfireProjection,
+    run_feasibility: CampfireFieldEvidence,
+) -> Vec<CampfireFieldEvidence> {
     let mut future_limitations = Vec::new();
     match projection {
         CampfireProjection::Exact(_) => {}
@@ -377,10 +391,7 @@ fn field_evidence(projection: &CampfireProjection) -> Vec<CampfireFieldEvidence>
             provenance: CampfireEvidenceProvenance::EngineTransition,
             limitations: Vec::new(),
         },
-        unsupported_evidence(
-            CampfireProspectField::RunFeasibility,
-            vec![CampfireEvidenceLimitation::GoalSemanticsNotEvaluated],
-        ),
+        run_feasibility,
         unsupported_evidence(
             CampfireProspectField::SurvivalDistribution,
             with_future_limitations(
@@ -562,7 +573,6 @@ mod tests {
             CampfireEvidenceStatus::Exact
         );
         for field in [
-            CampfireProspectField::RunFeasibility,
             CampfireProspectField::SurvivalDistribution,
             CampfireProspectField::ThreatResolutionDistribution,
             CampfireProspectField::GrowthDistribution,
@@ -581,5 +591,72 @@ mod tests {
         assert!(growth
             .limitations
             .contains(&CampfireEvidenceLimitation::PostRevealRecourseNotEvaluated));
+    }
+
+    #[test]
+    fn immediate_ruby_key_obligations_follow_declared_goal_and_projection() {
+        let root = candidate_run();
+        let mut act3_spec = evaluation_spec();
+        act3_spec.run_goal = CampfireRunGoal::Act3Victory;
+        let act3_batch = build_campfire_evaluation_batch(&root, act3_spec).unwrap();
+        let act3_rest = act3_batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert_eq!(
+            act3_rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::NotRequired
+        );
+        assert_eq!(
+            act3_rest
+                .evidence_for(CampfireProspectField::RunFeasibility)
+                .unwrap()
+                .status,
+            CampfireEvidenceStatus::Exact
+        );
+
+        let heart_batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let recall = heart_batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Recall)
+            .unwrap();
+        assert_eq!(
+            recall.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::SatisfiedByCandidate
+        );
+        let CampfireProjection::Exact(recall_projection) = &recall.projection else {
+            panic!("Recall must be an exact projection");
+        };
+        assert!(recall_projection.run_state.keys[0]);
+        assert_eq!(
+            recall
+                .evidence_for(CampfireProspectField::RunFeasibility)
+                .unwrap()
+                .status,
+            CampfireEvidenceStatus::Partial
+        );
+
+        let mut all_keys_held = root.clone();
+        all_keys_held.keys = [true, true, true];
+        let held_batch =
+            build_campfire_evaluation_batch(&all_keys_held, evaluation_spec()).unwrap();
+        let held_rest = held_batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert_eq!(
+            held_rest.run_feasibility.ruby_key,
+            CampfireRubyKeyObligation::AlreadySatisfied
+        );
+        assert_eq!(
+            held_rest
+                .evidence_for(CampfireProspectField::RunFeasibility)
+                .unwrap()
+                .status,
+            CampfireEvidenceStatus::Exact
+        );
     }
 }
