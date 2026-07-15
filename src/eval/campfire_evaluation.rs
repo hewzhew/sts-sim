@@ -14,8 +14,11 @@ use crate::eval::fingerprint::{hash_serializable, FINGERPRINT_ALGORITHM_JSON};
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
+mod growth;
 mod run_feasibility;
 
+use growth::assess_growth;
+pub use growth::{CampfireGrowth, CampfireGrowthError, CampfireSmithGrowth};
 use run_feasibility::assess_run_feasibility;
 pub use run_feasibility::{CampfireRubyKeyObligation, CampfireRunFeasibility};
 
@@ -252,6 +255,7 @@ pub enum CampfireEvidenceStatus {
 pub enum CampfireEvidenceProvenance {
     PublicRootObservation,
     EngineTransition,
+    EngineTransitionAndUpgradePlanner,
     PublicRootAndRouteWindowFacts,
     NoProducer,
 }
@@ -266,6 +270,7 @@ pub enum CampfireEvidenceLimitation {
     SurvivalWindowNotEvaluated,
     ThreatTimingNotEvaluated,
     GrowthNotEvaluated,
+    DownstreamGrowthDistributionNotEvaluated,
     ChanceOutcomeNotEstimated,
     PostRevealRecourseNotEvaluated,
 }
@@ -300,6 +305,7 @@ pub struct CampfireCandidateEvaluation {
     pub projection: CampfireProjection,
     pub immediate_hp: CampfireImmediateHp,
     pub run_feasibility: CampfireRunFeasibility,
+    pub growth: CampfireGrowth,
     pub field_evidence: Vec<CampfireFieldEvidence>,
 }
 
@@ -324,6 +330,10 @@ pub enum CampfireEvaluationError {
         candidate: CampfireCandidate,
         source: CampfireProjectionError,
     },
+    Growth {
+        candidate: CampfireCandidate,
+        source: CampfireGrowthError,
+    },
 }
 
 impl From<CampfireEvaluationSpecError> for CampfireEvaluationError {
@@ -343,12 +353,15 @@ pub fn build_campfire_evaluation_batch(
             .map_err(|source| CampfireEvaluationError::Projection { candidate, source })?;
         let immediate_hp = immediate_hp(root, &projection);
         let run_feasibility = assess_run_feasibility(root, &context, candidate, &projection);
-        let field_evidence = field_evidence(&projection, run_feasibility.evidence);
+        let growth = assess_growth(root, candidate, &projection)
+            .map_err(|source| CampfireEvaluationError::Growth { candidate, source })?;
+        let field_evidence = field_evidence(&projection, run_feasibility.evidence, growth.evidence);
         candidates.push(CampfireCandidateEvaluation {
             candidate,
             projection,
             immediate_hp,
             run_feasibility: run_feasibility.value,
+            growth: growth.value,
             field_evidence,
         });
     }
@@ -373,6 +386,7 @@ fn immediate_hp(root: &RunState, projection: &CampfireProjection) -> CampfireImm
 fn field_evidence(
     projection: &CampfireProjection,
     run_feasibility: CampfireFieldEvidence,
+    growth: CampfireFieldEvidence,
 ) -> Vec<CampfireFieldEvidence> {
     let mut future_limitations = Vec::new();
     match projection {
@@ -408,13 +422,7 @@ fn field_evidence(
                 &future_limitations,
             ),
         ),
-        unsupported_evidence(
-            CampfireProspectField::GrowthDistribution,
-            with_future_limitations(
-                CampfireEvidenceLimitation::GrowthNotEvaluated,
-                &future_limitations,
-            ),
-        ),
+        growth,
     ]
 }
 
@@ -633,6 +641,65 @@ mod tests {
         assert!(growth
             .limitations
             .contains(&CampfireEvidenceLimitation::PostRevealRecourseNotEvaluated));
+    }
+
+    #[test]
+    fn smith_growth_binds_typed_planner_facts_to_exact_uuid_projection() {
+        let root = candidate_run();
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let smith = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Smith { card_uuid: 101 })
+            .expect("Strike should be a legal Smith candidate");
+        let growth = smith
+            .growth
+            .smith
+            .as_ref()
+            .expect("Smith should expose typed growth facts");
+
+        assert_eq!(growth.card_uuid, 101);
+        assert_eq!(growth.card, CardId::Strike);
+        assert_eq!(growth.upgrades_before, 0);
+        assert_eq!(growth.upgrades_after, 1);
+        assert_eq!(growth.mechanical_delta.damage_delta, 3);
+        let typed_copy = CampfireSmithGrowth {
+            card_uuid: growth.card_uuid,
+            card: growth.card,
+            upgrades_before: growth.upgrades_before,
+            upgrades_after: growth.upgrades_after,
+            mechanical_delta: growth.mechanical_delta.clone(),
+            roles: growth.roles.clone(),
+            pays_debts: growth.pays_debts.clone(),
+            opportunity_costs: growth.opportunity_costs.clone(),
+            urgency: growth.urgency,
+            verdict: growth.verdict,
+        };
+        assert_eq!(&typed_copy, growth);
+        let evidence = smith
+            .evidence_for(CampfireProspectField::GrowthDistribution)
+            .unwrap();
+        assert_eq!(evidence.status, CampfireEvidenceStatus::Partial);
+        assert_eq!(
+            evidence.provenance,
+            CampfireEvidenceProvenance::EngineTransitionAndUpgradePlanner
+        );
+        assert!(evidence
+            .limitations
+            .contains(&CampfireEvidenceLimitation::DownstreamGrowthDistributionNotEvaluated));
+
+        let rest = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Rest)
+            .unwrap();
+        assert!(rest.growth.smith.is_none());
+        assert_eq!(
+            rest.evidence_for(CampfireProspectField::GrowthDistribution)
+                .unwrap()
+                .status,
+            CampfireEvidenceStatus::Unsupported
+        );
     }
 
     #[test]
