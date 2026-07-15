@@ -15,12 +15,22 @@ pub struct CombatSearchBudgetSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct CombatSearchProfile {
-    pub label: &'static str,
+pub struct CombatSearchEngineProfile {
     pub budget: CombatSearchBudgetSpec,
     pub plugins: CombatSearchPluginStack,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct CombatSearchAttemptPolicy {
     pub acceptance: CombatSearchAcceptancePluginId,
     pub artifacts: CombatSearchArtifactPluginId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct CombatSearchProfile {
+    pub label: &'static str,
+    pub engine: CombatSearchEngineProfile,
+    pub policy: CombatSearchAttemptPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -328,7 +338,7 @@ impl CombatSearchArtifactPlugin for CombatSearchArtifactPluginId {
 
 impl CombatSearchProfile {
     pub fn with_acceptance(mut self, acceptance: CombatSearchAcceptancePluginId) -> Self {
-        self.acceptance = acceptance;
+        self.policy.acceptance = acceptance;
         self
     }
 
@@ -336,12 +346,12 @@ impl CombatSearchProfile {
         mut self,
         action_prior: CombatSearchActionPriorPluginId,
     ) -> Self {
-        self.plugins.action_prior = action_prior;
+        self.engine.plugins.action_prior = action_prior;
         self
     }
 
     pub fn with_turn_plan_plugin(mut self, turn_plan: CombatSearchTurnPlanPluginId) -> Self {
-        self.plugins.turn_plan = turn_plan;
+        self.engine.plugins.turn_plan = turn_plan;
         self
     }
 
@@ -349,33 +359,47 @@ impl CombatSearchProfile {
         mut self,
         child_rollout: CombatSearchChildRolloutPluginId,
     ) -> Self {
-        self.plugins.child_rollout = child_rollout;
+        self.engine.plugins.child_rollout = child_rollout;
         self
     }
 
     pub fn with_rollout_plugin(mut self, rollout: CombatSearchRolloutPluginId) -> Self {
-        self.plugins.rollout = rollout;
+        self.engine.plugins.rollout = rollout;
         self
     }
 
     pub fn with_frontier_plugin(mut self, frontier: CombatSearchFrontierPluginId) -> Self {
-        self.plugins.frontier = frontier;
+        self.engine.plugins.frontier = frontier;
         self
     }
 
     pub fn with_potion_policy(mut self, policy: CombatSearchV2PotionPolicy) -> Self {
-        self.plugins.potion.policy = policy;
+        self.engine.plugins.potion.policy = policy;
         self
     }
 
     pub fn with_max_potions_used(mut self, max_potions_used: u32) -> Self {
-        self.plugins.potion.max_potions_used = Some(max_potions_used);
+        self.engine.plugins.potion.max_potions_used = Some(max_potions_used);
         self
     }
 
     pub fn with_phase_guard_plugin(mut self, phase_guard: CombatSearchPhaseGuardPluginId) -> Self {
-        self.plugins.phase_guard = phase_guard;
+        self.engine.plugins.phase_guard = phase_guard;
         self
+    }
+
+    pub fn to_config(self) -> CombatSearchV2Config {
+        self.engine.to_config()
+    }
+
+    pub fn engine_fingerprint(self) -> String {
+        self.engine.fingerprint()
+    }
+}
+
+impl CombatSearchEngineProfile {
+    pub fn fingerprint(self) -> String {
+        serde_json::to_string(&self).expect("combat search engine profile should serialize")
     }
 
     pub fn to_config(self) -> CombatSearchV2Config {
@@ -534,6 +558,50 @@ impl From<CombatSearchV2PhaseGuardPolicy> for CombatSearchPhaseGuardPluginId {
 mod tests {
     use super::*;
 
+    fn test_profile(label: &'static str) -> CombatSearchProfile {
+        CombatSearchProfile {
+            label,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 50,
+                    wall_ms: 100,
+                },
+                plugins: CombatSearchPluginStack::default(),
+            },
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
+        }
+    }
+
+    #[test]
+    fn engine_identity_ignores_label_and_attempt_policy() {
+        let base = test_profile("immediate");
+        let renamed = CombatSearchProfile {
+            label: "renamed",
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
+                artifacts: CombatSearchArtifactPluginId::FullTrace,
+            },
+            ..base
+        };
+
+        assert_eq!(base.engine, renamed.engine);
+        assert_eq!(base.engine_fingerprint(), renamed.engine_fingerprint());
+    }
+
+    #[test]
+    fn engine_identity_distinguishes_child_rollout_policy() {
+        let immediate = test_profile("immediate")
+            .with_child_rollout_plugin(CombatSearchChildRolloutPluginId::Immediate);
+        let lazy = test_profile("lazy")
+            .with_child_rollout_plugin(CombatSearchChildRolloutPluginId::LazyOnPop);
+
+        assert_ne!(immediate.engine, lazy.engine);
+        assert_ne!(immediate.engine_fingerprint(), lazy.engine_fingerprint());
+    }
+
     #[test]
     fn plugin_ids_implement_their_role_traits() {
         fn action_prior_id(
@@ -628,13 +696,17 @@ mod tests {
     fn profile_builder_can_set_core_search_plugins() {
         let profile = CombatSearchProfile {
             label: "test",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 7,
-                wall_ms: 11,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 7,
+                    wall_ms: 11,
+                },
+                plugins: CombatSearchPluginStack::default(),
             },
-            plugins: CombatSearchPluginStack::default(),
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         }
         .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
         .with_turn_plan_plugin(CombatSearchTurnPlanPluginId::RootFrontierSeed)

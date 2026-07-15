@@ -40,9 +40,10 @@ mod tests {
     use std::time::Duration;
 
     use sts_simulator::ai::combat_search_v2::{
-        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-        CombatSearchPluginStack, CombatSearchProfile, CombatSearchV2Config,
-        CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior,
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+        CombatSearchBudgetSpec, CombatSearchEngineProfile, CombatSearchPluginStack,
+        CombatSearchProfile, CombatSearchV2Config, CombatSearchV2RolloutPolicy,
+        CombatSearchV2RootActionPrior,
     };
 
     use super::ReviewSearchIntervention;
@@ -82,13 +83,17 @@ mod tests {
     fn intervention_can_materialize_profile_without_erasing_profile_budget() {
         let profile = CombatSearchProfile {
             label: "profile-a",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 17,
-                wall_ms: 23,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 17,
+                    wall_ms: 23,
+                },
+                plugins: CombatSearchPluginStack::default(),
             },
-            plugins: CombatSearchPluginStack::default(),
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         };
 
         let config = ReviewSearchIntervention::default()

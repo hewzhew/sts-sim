@@ -1,8 +1,8 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-    CombatSearchChildRolloutPluginId, CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId,
-    CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
-    CombatSearchV2PotionPolicy,
+    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+    CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
+    CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
+    CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
 };
 use sts_simulator::eval::run_control::{
     RunControlAutoStepOptions, RunControlHpLossLimit, RunControlSession,
@@ -198,16 +198,20 @@ fn profile_with_budget(
 ) -> CombatSearchProfile {
     CombatSearchProfile {
         label,
-        budget: CombatSearchBudgetSpec {
-            max_nodes: budget.max_nodes(args),
-            wall_ms: budget.wall_ms(args),
+        engine: CombatSearchEngineProfile {
+            budget: CombatSearchBudgetSpec {
+                max_nodes: budget.max_nodes(args),
+                wall_ms: budget.wall_ms(args),
+            },
+            plugins: CombatSearchPluginStack {
+                child_rollout: child_rollout_plugin,
+                ..CombatSearchPluginStack::default()
+            },
         },
-        plugins: CombatSearchPluginStack {
-            child_rollout: child_rollout_plugin,
-            ..CombatSearchPluginStack::default()
+        policy: CombatSearchAttemptPolicy {
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
         },
-        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-        artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
     }
 }
 
@@ -468,18 +472,18 @@ mod tests {
         );
 
         assert_eq!(profile.label, "profile_test");
-        assert_eq!(profile.budget.max_nodes, 22);
-        assert_eq!(profile.budget.wall_ms, 202);
+        assert_eq!(profile.engine.budget.max_nodes, 22);
+        assert_eq!(profile.engine.budget.wall_ms, 202);
         assert_eq!(
-            profile.plugins.child_rollout,
+            profile.engine.plugins.child_rollout,
             sts_simulator::ai::combat_search_v2::CombatSearchChildRolloutPluginId::Immediate
         );
         assert_eq!(
-            profile.plugins.turn_plan,
+            profile.engine.plugins.turn_plan,
             sts_simulator::ai::combat_search_v2::CombatSearchTurnPlanPluginId::Disabled
         );
         assert_eq!(
-            profile.acceptance,
+            profile.policy.acceptance,
             sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId::AcceptedLineOnly
         );
     }

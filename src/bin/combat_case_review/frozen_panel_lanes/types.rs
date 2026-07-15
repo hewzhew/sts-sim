@@ -40,18 +40,25 @@ pub(super) struct FrozenPanelLaneConfigSummary {
 impl FrozenPanelLaneConfigSummary {
     pub(super) fn from_profile(profile: CombatSearchProfile) -> Self {
         Self {
-            max_nodes: profile.budget.max_nodes,
-            wall_ms: profile.budget.wall_ms,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::from(profile.plugins.turn_plan).label(),
-            potion_policy: potion_policy_label(profile.plugins.potion.policy),
-            max_potions_used: profile.plugins.potion.max_potions_used.unwrap_or_default(),
-            rollout_policy: CombatSearchV2RolloutPolicy::from(profile.plugins.rollout).label(),
+            max_nodes: profile.engine.budget.max_nodes,
+            wall_ms: profile.engine.budget.wall_ms,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::from(profile.engine.plugins.turn_plan)
+                .label(),
+            potion_policy: potion_policy_label(profile.engine.plugins.potion.policy),
+            max_potions_used: profile
+                .engine
+                .plugins
+                .potion
+                .max_potions_used
+                .unwrap_or_default(),
+            rollout_policy: CombatSearchV2RolloutPolicy::from(profile.engine.plugins.rollout)
+                .label(),
             child_rollout_policy: CombatSearchV2ChildRolloutPolicy::from(
-                profile.plugins.child_rollout,
+                profile.engine.plugins.child_rollout,
             )
             .label(),
-            setup_bias_policy: profile.plugins.action_prior.label(),
-            phase_guard_policy: profile.plugins.phase_guard.label(),
+            setup_bias_policy: profile.engine.plugins.action_prior.label(),
+            phase_guard_policy: profile.engine.plugins.phase_guard.label(),
         }
     }
 }
@@ -73,10 +80,10 @@ pub(crate) struct FrozenPanelLaneSpec {
 #[cfg(test)]
 mod tests {
     use sts_simulator::ai::combat_search_v2::{
-        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-        CombatSearchChildRolloutPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
-        CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
-        CombatSearchV2PotionPolicy,
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+        CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
+        CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+        CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
     };
 
     use super::FrozenPanelLaneConfigSummary;
@@ -85,22 +92,26 @@ mod tests {
     fn config_summary_is_derived_from_the_profile_that_will_run() {
         let profile = CombatSearchProfile {
             label: "panel_lane",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 12,
-                wall_ms: 34,
-            },
-            plugins: CombatSearchPluginStack {
-                rollout: CombatSearchRolloutPluginId::Disabled,
-                child_rollout: CombatSearchChildRolloutPluginId::Immediate,
-                potion: CombatSearchPotionPlugin {
-                    policy: CombatSearchV2PotionPolicy::All,
-                    max_potions_used: Some(3),
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 12,
+                    wall_ms: 34,
                 },
-                phase_guard: CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
-                ..CombatSearchPluginStack::default()
+                plugins: CombatSearchPluginStack {
+                    rollout: CombatSearchRolloutPluginId::Disabled,
+                    child_rollout: CombatSearchChildRolloutPluginId::Immediate,
+                    potion: CombatSearchPotionPlugin {
+                        policy: CombatSearchV2PotionPolicy::All,
+                        max_potions_used: Some(3),
+                    },
+                    phase_guard: CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
+                    ..CombatSearchPluginStack::default()
+                },
             },
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         };
 
         let summary = FrozenPanelLaneConfigSummary::from_profile(profile);

@@ -1,8 +1,8 @@
 use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId,
-    CombatSearchBudgetSpec, CombatSearchPluginStack, CombatSearchProfile,
-    CombatSearchRolloutPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
-    CombatSearchV2Report,
+    CombatSearchAttemptPolicy, CombatSearchBudgetSpec, CombatSearchEngineProfile,
+    CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
@@ -18,18 +18,22 @@ pub(crate) fn review_search_profile(
 ) -> CombatSearchProfile {
     CombatSearchProfile {
         label,
-        budget: CombatSearchBudgetSpec {
-            max_nodes: nodes,
-            wall_ms,
+        engine: CombatSearchEngineProfile {
+            budget: CombatSearchBudgetSpec {
+                max_nodes: nodes,
+                wall_ms,
+            },
+            plugins: CombatSearchPluginStack {
+                turn_plan: options.turn_plan_plugin(),
+                rollout: review_rollout_plugin(options),
+                child_rollout: options.child_rollout_plugin(),
+                ..CombatSearchPluginStack::default()
+            },
         },
-        plugins: CombatSearchPluginStack {
-            turn_plan: options.turn_plan_plugin(),
-            rollout: review_rollout_plugin(options),
-            child_rollout: options.child_rollout_plugin(),
-            ..CombatSearchPluginStack::default()
+        policy: CombatSearchAttemptPolicy {
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::None,
         },
-        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-        artifacts: CombatSearchArtifactPluginId::None,
     }
 }
 

@@ -45,7 +45,7 @@ fn effective_combat_search_profile(
         },
         |profile| EffectiveCombatSearchProfile {
             profile_id: profile.label,
-            acceptance: profile.acceptance,
+            acceptance: profile.policy.acceptance,
         },
     )
 }
@@ -163,8 +163,9 @@ pub(super) fn search_config(
 mod adjudication_tests {
     use super::*;
     use crate::ai::combat_search_v2::{
-        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-        CombatSearchPluginStack, CombatSearchProfile,
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+        CombatSearchBudgetSpec, CombatSearchEngineProfile, CombatSearchPluginStack,
+        CombatSearchProfile,
     };
     use crate::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use crate::state::map::node::RoomType;
@@ -194,13 +195,17 @@ mod adjudication_tests {
 
         let profile = CombatSearchProfile {
             label: "primary",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 10,
-                wall_ms: 20,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 10,
+                    wall_ms: 20,
+                },
+                plugins: CombatSearchPluginStack::default(),
             },
-            plugins: CombatSearchPluginStack::default(),
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         };
         let prepared = prepare_search_combat(
             &session,

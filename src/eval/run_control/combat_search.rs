@@ -189,9 +189,10 @@ mod tests {
     };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
-        CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchPluginStack,
-        CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
-        CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
+        CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
+        CombatSearchEngineProfile, CombatSearchPluginStack, CombatSearchPotionPlugin,
+        CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
+        CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
@@ -483,17 +484,21 @@ mod tests {
         let session = RunControlSession::new(RunControlConfig::default());
         let profile = CombatSearchProfile {
             label: "profile_default",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 222,
-                wall_ms: 333,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 222,
+                    wall_ms: 333,
+                },
+                plugins: CombatSearchPluginStack {
+                    action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
+                    rollout: CombatSearchRolloutPluginId::Disabled,
+                    ..CombatSearchPluginStack::default()
+                },
             },
-            plugins: CombatSearchPluginStack {
-                action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
-                rollout: CombatSearchRolloutPluginId::Disabled,
-                ..CombatSearchPluginStack::default()
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
             },
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
         };
 
         let config = search_config(
@@ -583,19 +588,23 @@ mod tests {
         let session = session_with_combat_flags(true, false);
         let profile = CombatSearchProfile {
             label: "no_potion_profile",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 10,
-                wall_ms: 20,
-            },
-            plugins: CombatSearchPluginStack {
-                potion: CombatSearchPotionPlugin {
-                    policy: CombatSearchV2PotionPolicy::Never,
-                    max_potions_used: Some(0),
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 10,
+                    wall_ms: 20,
                 },
-                ..CombatSearchPluginStack::default()
+                plugins: CombatSearchPluginStack {
+                    potion: CombatSearchPotionPlugin {
+                        policy: CombatSearchV2PotionPolicy::Never,
+                        max_potions_used: Some(0),
+                    },
+                    ..CombatSearchPluginStack::default()
+                },
             },
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         };
 
         let options = high_stakes_search_options(

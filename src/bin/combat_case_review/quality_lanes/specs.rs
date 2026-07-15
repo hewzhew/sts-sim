@@ -1,9 +1,9 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-    CombatSearchChildRolloutPluginId, CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId,
-    CombatSearchPluginStack, CombatSearchPotionPlugin, CombatSearchProfile,
-    CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy,
+    CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+    CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
+    CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
+    CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
+    CombatSearchTurnPlanPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
 };
 
 #[derive(Clone, Copy)]
@@ -44,18 +44,22 @@ impl QualityLanePlugins {
     fn profile(self, label: &'static str, max_nodes: usize, wall_ms: u64) -> CombatSearchProfile {
         CombatSearchProfile {
             label,
-            budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
-            plugins: CombatSearchPluginStack {
-                frontier: self.frontier_plugin,
-                turn_plan: self.turn_plan_plugin,
-                rollout: self.rollout_plugin,
-                child_rollout: self.child_rollout_plugin,
-                potion: self.potion,
-                phase_guard: self.phase_guard_plugin,
-                ..CombatSearchPluginStack::default()
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
+                plugins: CombatSearchPluginStack {
+                    frontier: self.frontier_plugin,
+                    turn_plan: self.turn_plan_plugin,
+                    rollout: self.rollout_plugin,
+                    child_rollout: self.child_rollout_plugin,
+                    potion: self.potion,
+                    phase_guard: self.phase_guard_plugin,
+                    ..CombatSearchPluginStack::default()
+                },
             },
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::None,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::None,
+            },
         }
     }
 }

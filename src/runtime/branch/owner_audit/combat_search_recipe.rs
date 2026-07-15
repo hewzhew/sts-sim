@@ -49,21 +49,26 @@ mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
-        CombatSearchArtifactPluginId, CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId,
-        CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
-        CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
-        CombatSearchTurnPlanPluginId, CombatSearchV2ChildRolloutPolicy,
-        CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy,
-        CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+        CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
+        CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchFrontierPluginId,
+        CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+        CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+        CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy,
+        CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+        CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
     };
 
     fn profile_for_test(max_nodes: usize, wall_ms: u64) -> CombatSearchProfile {
         CombatSearchProfile {
             label: "test_profile",
-            budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
-            plugins: CombatSearchPluginStack::default(),
-            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-            artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
+                plugins: CombatSearchPluginStack::default(),
+            },
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+            },
         }
     }
 
@@ -77,18 +82,16 @@ mod tests {
 
     #[test]
     fn recipe_carries_core_search_profile() {
-        let profile = CombatSearchProfile {
-            plugins: CombatSearchPluginStack {
-                rollout: CombatSearchRolloutPluginId::Disabled,
-                frontier: CombatSearchFrontierPluginId::SingleQueue,
-                potion: CombatSearchPotionPlugin {
-                    policy: CombatSearchV2PotionPolicy::Never,
-                    max_potions_used: Some(0),
-                },
-                phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
-                ..CombatSearchPluginStack::default()
+        let mut profile = profile_for_test(123, 456);
+        profile.engine.plugins = CombatSearchPluginStack {
+            rollout: CombatSearchRolloutPluginId::Disabled,
+            frontier: CombatSearchFrontierPluginId::SingleQueue,
+            potion: CombatSearchPotionPlugin {
+                policy: CombatSearchV2PotionPolicy::Never,
+                max_potions_used: Some(0),
             },
-            ..profile_for_test(123, 456)
+            phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+            ..CombatSearchPluginStack::default()
         };
         let options = CombatSearchRecipe::from_profile(profile, 7, false).into_auto_step_options();
         let config = options.search.profile.expect("profile").to_config();
@@ -123,12 +126,10 @@ mod tests {
 
     #[test]
     fn wall_limited_recipe_uses_single_operation_chunk() {
-        let profile = CombatSearchProfile {
-            plugins: CombatSearchPluginStack {
-                child_rollout: CombatSearchChildRolloutPluginId::Immediate,
-                ..CombatSearchPluginStack::default()
-            },
-            ..profile_for_test(10, 20)
+        let mut profile = profile_for_test(10, 20);
+        profile.engine.plugins = CombatSearchPluginStack {
+            child_rollout: CombatSearchChildRolloutPluginId::Immediate,
+            ..CombatSearchPluginStack::default()
         };
         let options = CombatSearchRecipe::from_profile(profile, 99, true).into_auto_step_options();
 
@@ -147,25 +148,29 @@ mod tests {
     fn recipe_preserves_explicit_combat_search_profile() {
         let profile = CombatSearchProfile {
             label: "test_profile",
-            budget: CombatSearchBudgetSpec {
-                max_nodes: 321,
-                wall_ms: 654,
-            },
-            plugins: CombatSearchPluginStack {
-                action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
-                turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
-                child_rollout: CombatSearchChildRolloutPluginId::Immediate,
-                rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
-                frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
-                potion: CombatSearchPotionPlugin {
-                    policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
-                    max_potions_used: Some(2),
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 321,
+                    wall_ms: 654,
                 },
-                phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
-                ..CombatSearchPluginStack::default()
+                plugins: CombatSearchPluginStack {
+                    action_prior: CombatSearchActionPriorPluginId::KeyCardOnline,
+                    turn_plan: CombatSearchTurnPlanPluginId::DiagnosticOnly,
+                    child_rollout: CombatSearchChildRolloutPluginId::Immediate,
+                    rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
+                    frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
+                    potion: CombatSearchPotionPlugin {
+                        policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
+                        max_potions_used: Some(2),
+                    },
+                    phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+                    ..CombatSearchPluginStack::default()
+                },
             },
-            acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
-            artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+            policy: CombatSearchAttemptPolicy {
+                acceptance: CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse,
+                artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+            },
         };
 
         let options = CombatSearchRecipe::from_profile(profile, 5, false).into_auto_step_options();

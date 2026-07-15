@@ -1229,9 +1229,10 @@ mod tests {
         NonCombatAutoMode,
     };
     use crate::ai::combat_search_v2::{
-        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchBudgetSpec,
-        CombatSearchPluginStack, CombatSearchProfile, CombatSearchV2FrontierPolicy,
-        CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
+        CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
+        CombatSearchBudgetSpec, CombatSearchEngineProfile, CombatSearchPluginStack,
+        CombatSearchProfile, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
+        CombatSearchV2TurnPlanPolicy,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
@@ -1395,13 +1396,17 @@ mod tests {
             RunControlSearchCombatOptions {
                 profile: Some(CombatSearchProfile {
                     label: "test_profile_budget",
-                    budget: CombatSearchBudgetSpec {
-                        max_nodes: 10_000,
-                        wall_ms: 100,
+                    engine: CombatSearchEngineProfile {
+                        budget: CombatSearchBudgetSpec {
+                            max_nodes: 10_000,
+                            wall_ms: 100,
+                        },
+                        plugins: CombatSearchPluginStack::default(),
                     },
-                    plugins: CombatSearchPluginStack::default(),
-                    acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
-                    artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+                    policy: CombatSearchAttemptPolicy {
+                        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+                        artifacts: CombatSearchArtifactPluginId::PortfolioAttempt,
+                    },
                 }),
                 ..RunControlSearchCombatOptions::default()
             },
