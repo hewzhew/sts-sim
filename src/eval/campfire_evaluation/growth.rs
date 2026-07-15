@@ -1,5 +1,11 @@
+use std::collections::HashMap;
+
+use crate::ai::deck_mutation_compiler_v1::{
+    deck_removal_target_snapshots_v1, DeckMutationCardSnapshotV1, DeckMutationTargetClassV1,
+    DeckMutationTargetLossV1,
+};
 use crate::ai::upgrade_planner_v1::{
-    upgrade_candidate_for_card_uuid_v1, UpgradeDebtKindV1, UpgradeDebtSeverityV1,
+    plan_upgrades_v1, UpgradeCandidateV1, UpgradeDebtKindV1, UpgradeDebtSeverityV1,
     UpgradeMechanicalDeltaV1, UpgradeRoleV1, UpgradeVerdictV1,
 };
 use crate::content::cards::CardId;
@@ -16,6 +22,7 @@ use super::{
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CampfireGrowth {
     pub smith: Option<CampfireSmithGrowth>,
+    pub toke: Option<CampfireTokeGrowth>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,6 +37,38 @@ pub struct CampfireSmithGrowth {
     pub opportunity_costs: Vec<String>,
     pub urgency: UpgradeDebtSeverityV1,
     pub verdict: UpgradeVerdictV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CampfireTokeGrowth {
+    pub card_uuid: u32,
+    pub card: CardId,
+    pub upgrades: u8,
+    pub deck_size_before: usize,
+    pub deck_size_after: usize,
+    pub target_class: DeckMutationTargetClassV1,
+    pub target_loss: DeckMutationTargetLossV1,
+}
+
+pub(super) struct CampfireGrowthFacts {
+    smith_by_uuid: HashMap<u32, UpgradeCandidateV1>,
+    toke_by_uuid: HashMap<u32, DeckMutationCardSnapshotV1>,
+}
+
+pub(super) fn build_growth_facts(root: &RunState) -> CampfireGrowthFacts {
+    let smith_by_uuid = plan_upgrades_v1(root)
+        .candidates
+        .into_iter()
+        .map(|candidate| (candidate.card_uuid, candidate))
+        .collect();
+    let toke_by_uuid = deck_removal_target_snapshots_v1(root)
+        .into_iter()
+        .map(|candidate| (candidate.uuid, candidate))
+        .collect();
+    CampfireGrowthFacts {
+        smith_by_uuid,
+        toke_by_uuid,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +90,12 @@ pub enum CampfireGrowthError {
         before: u8,
         after: u8,
     },
+    MissingRemovalTarget {
+        card_uuid: u32,
+    },
+    RemovalProjectionMismatch {
+        card_uuid: u32,
+    },
 }
 
 pub(super) struct CampfireGrowthAssessment {
@@ -60,16 +105,33 @@ pub(super) struct CampfireGrowthAssessment {
 
 pub(super) fn assess_growth(
     root: &RunState,
+    facts: &CampfireGrowthFacts,
     candidate: CampfireCandidate,
     projection: &CampfireProjection,
 ) -> Result<CampfireGrowthAssessment, CampfireGrowthError> {
-    let CampfireCandidate::Smith { card_uuid } = candidate else {
-        return Ok(unsupported_growth(projection));
-    };
+    match candidate {
+        CampfireCandidate::Smith { card_uuid } => {
+            assess_smith(facts, candidate, card_uuid, projection)
+        }
+        CampfireCandidate::Toke { card_uuid } => {
+            assess_toke(root, facts, candidate, card_uuid, projection)
+        }
+        _ => Ok(unsupported_growth(projection)),
+    }
+}
+
+fn assess_smith(
+    facts: &CampfireGrowthFacts,
+    candidate: CampfireCandidate,
+    card_uuid: u32,
+    projection: &CampfireProjection,
+) -> Result<CampfireGrowthAssessment, CampfireGrowthError> {
     let CampfireProjection::Exact(exact) = projection else {
         return Err(CampfireGrowthError::ExpectedExactProjection { candidate });
     };
-    let planner = upgrade_candidate_for_card_uuid_v1(root, card_uuid)
+    let planner = facts
+        .smith_by_uuid
+        .get(&card_uuid)
         .ok_or(CampfireGrowthError::MissingUpgradeCandidate { card_uuid })?;
 
     let mut projected_cards = exact
@@ -99,21 +161,71 @@ pub(super) fn assess_growth(
                 card: planner.card,
                 upgrades_before: planner.upgrades,
                 upgrades_after: projected.upgrades,
-                mechanical_delta: planner.mechanical_delta,
-                roles: planner.roles,
-                pays_debts: planner.pays_debts,
-                opportunity_costs: planner.opportunity_costs,
+                mechanical_delta: planner.mechanical_delta.clone(),
+                roles: planner.roles.clone(),
+                pays_debts: planner.pays_debts.clone(),
+                opportunity_costs: planner.opportunity_costs.clone(),
                 urgency: planner.urgency,
                 verdict: planner.verdict,
             }),
+            toke: None,
         },
-        evidence: CampfireFieldEvidence {
-            field: CampfireProspectField::GrowthDistribution,
-            status: CampfireEvidenceStatus::Partial,
-            provenance: CampfireEvidenceProvenance::EngineTransitionAndUpgradePlanner,
-            limitations: vec![CampfireEvidenceLimitation::DownstreamGrowthDistributionNotEvaluated],
-        },
+        evidence: partial_growth_evidence(
+            CampfireEvidenceProvenance::EngineTransitionAndUpgradePlanner,
+        ),
     })
+}
+
+fn assess_toke(
+    root: &RunState,
+    facts: &CampfireGrowthFacts,
+    candidate: CampfireCandidate,
+    card_uuid: u32,
+    projection: &CampfireProjection,
+) -> Result<CampfireGrowthAssessment, CampfireGrowthError> {
+    let CampfireProjection::Exact(exact) = projection else {
+        return Err(CampfireGrowthError::ExpectedExactProjection { candidate });
+    };
+    let removal = facts
+        .toke_by_uuid
+        .get(&card_uuid)
+        .ok_or(CampfireGrowthError::MissingRemovalTarget { card_uuid })?;
+    let expected_deck = root
+        .master_deck
+        .iter()
+        .filter(|card| card.uuid != card_uuid)
+        .cloned()
+        .collect::<Vec<_>>();
+    if exact.run_state.master_deck != expected_deck {
+        return Err(CampfireGrowthError::RemovalProjectionMismatch { card_uuid });
+    }
+
+    Ok(CampfireGrowthAssessment {
+        value: CampfireGrowth {
+            smith: None,
+            toke: Some(CampfireTokeGrowth {
+                card_uuid,
+                card: removal.card,
+                upgrades: removal.upgrades,
+                deck_size_before: root.master_deck.len(),
+                deck_size_after: exact.run_state.master_deck.len(),
+                target_class: removal.target_class,
+                target_loss: removal.target_loss.clone(),
+            }),
+        },
+        evidence: partial_growth_evidence(
+            CampfireEvidenceProvenance::EngineTransitionAndDeckMutationCompiler,
+        ),
+    })
+}
+
+fn partial_growth_evidence(provenance: CampfireEvidenceProvenance) -> CampfireFieldEvidence {
+    CampfireFieldEvidence {
+        field: CampfireProspectField::GrowthDistribution,
+        status: CampfireEvidenceStatus::Partial,
+        provenance,
+        limitations: vec![CampfireEvidenceLimitation::DownstreamGrowthDistributionNotEvaluated],
+    }
 }
 
 fn unsupported_growth(projection: &CampfireProjection) -> CampfireGrowthAssessment {

@@ -17,8 +17,8 @@ use crate::state::run::RunState;
 mod growth;
 mod run_feasibility;
 
-use growth::assess_growth;
-pub use growth::{CampfireGrowth, CampfireGrowthError, CampfireSmithGrowth};
+use growth::{assess_growth, build_growth_facts};
+pub use growth::{CampfireGrowth, CampfireGrowthError, CampfireSmithGrowth, CampfireTokeGrowth};
 use run_feasibility::assess_run_feasibility;
 pub use run_feasibility::{CampfireRubyKeyObligation, CampfireRunFeasibility};
 
@@ -256,6 +256,7 @@ pub enum CampfireEvidenceProvenance {
     PublicRootObservation,
     EngineTransition,
     EngineTransitionAndUpgradePlanner,
+    EngineTransitionAndDeckMutationCompiler,
     PublicRootAndRouteWindowFacts,
     NoProducer,
 }
@@ -347,13 +348,14 @@ pub fn build_campfire_evaluation_batch(
     spec: CampfireEvaluationSpec,
 ) -> Result<CampfireEvaluationBatch, CampfireEvaluationError> {
     let context = build_campfire_evaluation_context(root, spec)?;
+    let growth_facts = build_growth_facts(root);
     let mut candidates = Vec::new();
     for candidate in legal_campfire_candidates(root) {
         let projection = project_campfire_candidate(root, candidate)
             .map_err(|source| CampfireEvaluationError::Projection { candidate, source })?;
         let immediate_hp = immediate_hp(root, &projection);
         let run_feasibility = assess_run_feasibility(root, &context, candidate, &projection);
-        let growth = assess_growth(root, candidate, &projection)
+        let growth = assess_growth(root, &growth_facts, candidate, &projection)
             .map_err(|source| CampfireEvaluationError::Growth { candidate, source })?;
         let field_evidence = field_evidence(&projection, run_feasibility.evidence, growth.evidence);
         candidates.push(CampfireCandidateEvaluation {
@@ -450,6 +452,9 @@ fn with_future_limitations(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::deck_mutation_compiler_v1::{
+        DeckMutationTargetClassV1, DeckMutationTargetLossTierV1,
+    };
     use crate::content::cards::CardId;
     use crate::content::potions::{Potion, PotionId};
     use crate::content::relics::{RelicId, RelicState};
@@ -700,6 +705,47 @@ mod tests {
                 .status,
             CampfireEvidenceStatus::Unsupported
         );
+    }
+
+    #[test]
+    fn toke_growth_binds_typed_removal_facts_to_exact_uuid_projection() {
+        let root = candidate_run();
+        let batch = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+        let toke = batch
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate == CampfireCandidate::Toke { card_uuid: 101 })
+            .expect("Strike should be a legal Toke candidate");
+        let growth = toke
+            .growth
+            .toke
+            .as_ref()
+            .expect("Toke should expose typed removal facts");
+
+        assert_eq!(growth.card_uuid, 101);
+        assert_eq!(growth.card, CardId::Strike);
+        assert_eq!(growth.upgrades, 0);
+        assert_eq!(growth.deck_size_before, 3);
+        assert_eq!(growth.deck_size_after, 2);
+        assert_eq!(
+            growth.target_class,
+            DeckMutationTargetClassV1::StarterStrike
+        );
+        assert_eq!(
+            growth.target_loss.tier,
+            DeckMutationTargetLossTierV1::LowValue
+        );
+        let evidence = toke
+            .evidence_for(CampfireProspectField::GrowthDistribution)
+            .unwrap();
+        assert_eq!(evidence.status, CampfireEvidenceStatus::Partial);
+        assert_eq!(
+            evidence.provenance,
+            CampfireEvidenceProvenance::EngineTransitionAndDeckMutationCompiler
+        );
+        assert!(evidence
+            .limitations
+            .contains(&CampfireEvidenceLimitation::DownstreamGrowthDistributionNotEvaluated));
     }
 
     #[test]

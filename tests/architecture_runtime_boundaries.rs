@@ -228,3 +228,43 @@ fn deck_mutation_compiler_does_not_depend_on_campfire_policy_configuration() {
         );
     }
 }
+
+#[test]
+fn campfire_growth_facts_are_built_once_without_policy_scores() {
+    let source = std::fs::read_to_string("src/eval/campfire_evaluation/growth.rs")
+        .expect("read Campfire growth evaluator");
+    for forbidden in [
+        "upgrade_candidate_for_card_uuid_v1",
+        "score_hint",
+        "DeckMutationPlanRoleV1",
+        "AllowedDeckMutationConsumersV1",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "Campfire growth must not contain per-candidate replanning or policy detail '{forbidden}'"
+        );
+    }
+    assert_eq!(
+        source.matches("plan_upgrades_v1(").count(),
+        1,
+        "Campfire growth must build upgrade facts once"
+    );
+    assert_eq!(
+        source.matches("deck_removal_target_snapshots_v1(").count(),
+        1,
+        "Campfire growth must build removal facts once"
+    );
+
+    let batch = std::fs::read_to_string("src/eval/campfire_evaluation.rs")
+        .expect("read Campfire evaluation batch");
+    let build = batch
+        .find("let growth_facts = build_growth_facts(root);")
+        .expect("growth facts must be constructed by the batch");
+    let loop_start = batch
+        .find("for candidate in legal_campfire_candidates(root)")
+        .expect("Campfire batch must enumerate legal candidates");
+    assert!(
+        build < loop_start,
+        "Campfire growth facts must be built before candidate iteration"
+    );
+}
