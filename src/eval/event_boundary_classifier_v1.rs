@@ -19,15 +19,6 @@ pub(crate) struct EventBoundaryClassificationV1 {
 }
 
 impl EventBoundaryClassificationV1 {
-    pub(crate) fn skips_branch_when_only_option(self) -> bool {
-        matches!(
-            self.class,
-            EventBoundaryClassV1::FlavorAdvance
-                | EventBoundaryClassV1::TerminalNoopLeave
-                | EventBoundaryClassV1::ForcedStateResolution
-        )
-    }
-
     pub(crate) fn single_auto_advance_reason(self) -> Option<&'static str> {
         match self.class {
             EventBoundaryClassV1::FlavorAdvance | EventBoundaryClassV1::TerminalNoopLeave => {

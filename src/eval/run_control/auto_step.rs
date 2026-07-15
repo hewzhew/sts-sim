@@ -24,12 +24,6 @@ use super::view_model::{build_run_control_view_model, DecisionCandidate, RunCont
 const DEFAULT_MAX_OPERATIONS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::eval::run_control) enum NonCombatAutoMode {
-    RoutineOnly,
-    BranchExperimentBoundary,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
     Routine,
     Forced,
@@ -118,14 +112,6 @@ fn route_decision_packet(
 pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
-) -> Result<RunControlCommandOutcome, String> {
-    apply_guarded_auto_step_with_mode(session, options, NonCombatAutoMode::RoutineOnly)
-}
-
-pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
-    session: &mut RunControlSession,
-    options: RunControlAutoStepOptions,
-    noncombat_mode: NonCombatAutoMode,
 ) -> Result<RunControlCommandOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = AutoAppliedLog::new();
@@ -385,36 +371,6 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             continue;
         }
 
-        if options.route == super::commands::RunControlRouteAutomationMode::Planner {
-            if let Some(application) = apply_noncombat_policy(session, noncombat_mode)? {
-                let auto_capture_summaries =
-                    auto_capture_summaries(&application.outcome.trace_annotations);
-                applied.push_outcome(
-                    RunControlAutoAppliedKindV1::BranchExperimentPolicy,
-                    application.summary,
-                    &application.outcome,
-                );
-                decision_parent_snapshots.extend(application.outcome.decision_parent_snapshots);
-                trace_annotations.extend(application.outcome.trace_annotations);
-                applied.extend(auto_capture_summaries);
-                continue;
-            }
-        }
-        if noncombat_mode == NonCombatAutoMode::BranchExperimentBoundary
-            && branch_experiment_should_stop_before_visible_candidate(session)
-        {
-            return finish_auto_step(
-                session,
-                &before,
-                applied,
-                trace_annotations,
-                decision_parent_snapshots,
-                RunControlAutoStopKind::BranchExperimentBoundary,
-                human_stop_reason(session),
-                None,
-            );
-        }
-
         let view = build_run_control_view_model(session);
         if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
             let Some(input) = auto_candidate.candidate.action.executable_input() else {
@@ -473,40 +429,6 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
-}
-
-fn branch_experiment_should_stop_before_visible_candidate(session: &RunControlSession) -> bool {
-    match &session.engine_state {
-        EngineState::RewardScreen(reward) => {
-            reward.pending_card_choice.is_some() || !reward.items.is_empty()
-        }
-        EngineState::RewardOverlay { reward_state, .. } => {
-            reward_state.pending_card_choice.is_some() || !reward_state.items.is_empty()
-        }
-        EngineState::EventRoom => !event_room_has_safe_auto_advance(session),
-        EngineState::Campfire
-        | EngineState::Shop(_)
-        | EngineState::RunPendingChoice(_)
-        | EngineState::BossRelicSelect(_) => true,
-        _ => false,
-    }
-}
-
-fn event_room_has_safe_auto_advance(session: &RunControlSession) -> bool {
-    let view = build_run_control_view_model(session);
-    auto_advance_candidate(session, &view).is_some()
-}
-
-fn apply_noncombat_policy(
-    session: &mut RunControlSession,
-    mode: NonCombatAutoMode,
-) -> Result<Option<super::noncombat_auto::NonCombatAutoApplication>, String> {
-    match mode {
-        NonCombatAutoMode::RoutineOnly => Ok(None),
-        NonCombatAutoMode::BranchExperimentBoundary => {
-            super::noncombat_auto::apply_branch_experiment_noncombat_policy(session)
-        }
-    }
 }
 
 fn apply_pending_shop_reward_overlay(
@@ -1223,10 +1145,9 @@ fn indent_block(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_guarded_auto_step, apply_guarded_auto_step_with_mode, auto_boundary_key,
-        auto_no_potion_first_options, auto_potion_rescue_options, auto_search_options,
-        auto_stall_key, combat_search_stop_reason, high_stakes_auto_search_requires_hp_loss_gate,
-        NonCombatAutoMode,
+        apply_guarded_auto_step, auto_boundary_key, auto_no_potion_first_options,
+        auto_potion_rescue_options, auto_search_options, auto_stall_key, combat_search_stop_reason,
+        high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
@@ -1253,14 +1174,13 @@ mod tests {
             crate::content::cards::CardId::Clothesline,
         ]);
 
-        let outcome = apply_guarded_auto_step_with_mode(
+        let outcome = apply_guarded_auto_step(
             &mut session,
             RunControlAutoStepOptions {
                 route: RunControlRouteAutomationMode::Planner,
                 max_operations: Some(1),
                 ..RunControlAutoStepOptions::default()
             },
-            NonCombatAutoMode::RoutineOnly,
         )
         .expect("owner audit auto step should stop cleanly at card reward");
 

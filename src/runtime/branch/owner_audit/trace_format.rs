@@ -115,7 +115,6 @@ fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
         RunControlAutoAppliedKindV1::RoutePlanner => "route_planner",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward_overlay",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine_candidate",
-        RunControlAutoAppliedKindV1::BranchExperimentPolicy => "branch_experiment_policy",
         RunControlAutoAppliedKindV1::AutoCapture => "auto_capture",
         RunControlAutoAppliedKindV1::OwnerRoutine => "owner_routine",
     }
@@ -331,21 +330,6 @@ mod tests {
         apply_owner_audit_auto_run, RunControlAutoStepOptions, RunControlConfig, RunControlSession,
     };
     use sts_simulator::state::core::EngineState;
-
-    #[test]
-    fn branch_experiment_policy_uses_precise_trace_json_label() {
-        assert_eq!(
-            auto_step_kind_value(RunControlAutoAppliedKindV1::BranchExperimentPolicy),
-            "branch_experiment_policy"
-        );
-        let step = RunControlAutoAppliedStepV1 {
-            kind: RunControlAutoAppliedKindV1::BranchExperimentPolicy,
-            label: "test policy".to_string(),
-            action_result: None,
-            route_decision_packet: None,
-        };
-        assert!(auto_step_value(&step).get("map_decision_packet").is_none());
-    }
 
     #[test]
     fn route_auto_step_trace_retains_typed_map_decision_packet() {

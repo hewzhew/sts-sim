@@ -216,7 +216,7 @@ impl RunControlSession {
             let EngineState::RewardScreen(reward) = &mut self.engine_state else {
                 return Err("branch-skip-card-reward is only valid on a reward screen".to_string());
             };
-            crate::engine::reward_handler::skip_card_reward_item_for_branch_experiment(
+            crate::engine::reward_handler::skip_card_reward_item(
                 &mut self.run_state,
                 reward,
                 reward_index,

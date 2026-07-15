@@ -444,7 +444,6 @@ pub enum RunControlAutoAppliedKindV1 {
     RoutePlanner,
     RewardOverlay,
     RoutineCandidate,
-    BranchExperimentPolicy,
     AutoCapture,
     OwnerRoutine,
 }
@@ -463,7 +462,6 @@ pub enum RunControlAutoStopKind {
     CombatSearchNoCompleteWin,
     RoutePlannerNoMutation,
     RoutePlannerDeclined,
-    BranchExperimentBoundary,
     AutoCandidateNotExecutable,
     HumanBoundary,
     OperationBudgetExhausted,

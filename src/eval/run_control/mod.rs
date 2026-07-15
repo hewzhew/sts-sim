@@ -31,10 +31,8 @@ mod decision_case;
 mod decision_surface;
 #[cfg(test)]
 mod decision_surface_tests;
-mod event_policy;
 mod input_gate;
 mod next_hint;
-mod noncombat_auto;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
 pub mod outcome;
@@ -62,7 +60,6 @@ pub use accepted_combat_line_evidence::{
     accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
 };
 pub use auto_capture::AutoCombatCaptureConfig;
-pub(crate) use auto_run::apply_branch_experiment_auto_run;
 pub use auto_run::apply_owner_audit_auto_run;
 pub use bookmarks::{
     default_bookmark_registry_path, load_bookmark_registry, mark_current_boundary,

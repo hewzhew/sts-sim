@@ -1,9 +1,4 @@
 pub mod artifact;
-pub mod branch_experiment;
-pub(crate) mod branch_experiment_boundary;
-pub mod branch_experiment_retention;
-pub mod branch_experiment_search_options;
-pub mod branch_experiment_trajectory;
 pub mod campfire_evaluation;
 pub mod campfire_projection;
 pub mod campfire_survival_scenarios;
@@ -13,8 +8,6 @@ pub mod combat_capture;
 pub mod combat_case;
 pub mod combat_lab_v1;
 pub mod combat_search_v2;
-pub(crate) mod decision_candidate_axis_v1;
-pub mod decision_path;
 pub(crate) mod event_boundary_classifier_v1;
 pub mod event_boundary_packet_v1;
 pub mod fingerprint;
