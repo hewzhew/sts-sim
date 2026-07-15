@@ -1,4 +1,7 @@
 use crate::content::relics::RelicId;
+use crate::engine::campfire_candidates::{
+    campfire_candidate_for_choice, legal_campfire_candidates,
+};
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -135,31 +138,8 @@ pub fn handle(
 }
 
 pub fn campfire_choice_is_available(run_state: &RunState, choice: CampfireChoice) -> bool {
-    let available_options = get_available_options(run_state);
-    match choice {
-        CampfireChoice::Rest
-        | CampfireChoice::Dig
-        | CampfireChoice::Lift
-        | CampfireChoice::Recall => available_options.contains(&choice),
-        CampfireChoice::Smith(idx) => {
-            available_options
-                .iter()
-                .any(|option| matches!(option, CampfireChoice::Smith(_)))
-                && run_state
-                    .master_deck
-                    .get(idx)
-                    .is_some_and(crate::state::core::master_deck_card_can_upgrade)
-        }
-        CampfireChoice::Toke(idx) => {
-            available_options
-                .iter()
-                .any(|option| matches!(option, CampfireChoice::Toke(_)))
-                && run_state.master_deck.get(idx).is_some_and(|card| {
-                    crate::state::core::master_deck_card_is_purgeable(card)
-                        && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
-                })
-        }
-    }
+    campfire_candidate_for_choice(run_state, choice)
+        .is_some_and(|candidate| legal_campfire_candidates(run_state).contains(&candidate))
 }
 
 #[cfg(test)]
@@ -380,6 +360,57 @@ mod tests {
             } if card.id == CardId::Strike && card.uuid == 10
         )));
     }
+
+    #[test]
+    fn available_options_collapse_complete_target_sets_to_family_placeholders() {
+        let mut run = RunState::new(19, 0, false, "Ironclad");
+        run.master_deck = vec![
+            CombatCard::new(CardId::Strike, 301),
+            CombatCard::new(CardId::Defend, 302),
+        ];
+        run.relics = vec![RelicState::new(RelicId::PeacePipe)];
+
+        let candidates = crate::engine::campfire_candidates::legal_campfire_candidates(&run);
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| matches!(
+                    candidate,
+                    crate::engine::campfire_candidates::CampfireCandidate::Smith { .. }
+                ))
+                .count(),
+            2
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| matches!(
+                    candidate,
+                    crate::engine::campfire_candidates::CampfireCandidate::Toke { .. }
+                ))
+                .count(),
+            2
+        );
+        assert_eq!(
+            super::get_available_options(&run),
+            vec![
+                CampfireChoice::Rest,
+                CampfireChoice::Smith(0),
+                CampfireChoice::Toke(0),
+            ]
+        );
+    }
+
+    #[test]
+    fn available_options_do_not_offer_smith_for_only_nonupgradable_cards() {
+        let mut run = RunState::new(23, 0, false, "Ironclad");
+        run.master_deck = vec![CombatCard::new(CardId::AscendersBane, 401)];
+
+        assert_eq!(
+            super::get_available_options(&run),
+            vec![CampfireChoice::Rest]
+        );
+    }
 }
 
 /// Dispatch card pool by player class and rarity.
@@ -428,52 +459,11 @@ pub fn nonempty_card_pool_for_class(
 pub fn get_available_options(run_state: &RunState) -> Vec<CampfireChoice> {
     let mut options = Vec::new();
 
-    // 1. Rest — vetoed by CoffeeDripper
-    let has_coffee_dripper = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == RelicId::CoffeeDripper);
-    if !has_coffee_dripper {
-        options.push(CampfireChoice::Rest);
-    }
-
-    // 2. Smith — vetoed by FusionHammer or no upgradable cards
-    let has_fusion_hammer = run_state
-        .relics
-        .iter()
-        .any(|r| r.id == RelicId::FusionHammer);
-    if !has_fusion_hammer {
-        // SearingBlow can always upgrade; other cards can upgrade once (upgrades == 0)
-        let has_upgradable = run_state
-            .master_deck
-            .iter()
-            .any(|c| c.id == crate::content::cards::CardId::SearingBlow || c.upgrades == 0);
-        if has_upgradable {
-            options.push(CampfireChoice::Smith(0)); // Index 0 is placeholder; AI picks actual card
+    for candidate in legal_campfire_candidates(run_state) {
+        let option = candidate.family_placeholder_choice();
+        if !options.contains(&option) {
+            options.push(option);
         }
-    }
-
-    // 3. Relic campfire options (in relic acquisition order)
-    for relic in &run_state.relics {
-        match relic.id {
-            RelicId::Girya if relic.counter < 3 => {
-                options.push(CampfireChoice::Lift);
-            }
-            RelicId::Shovel => {
-                options.push(CampfireChoice::Dig);
-            }
-            RelicId::PeacePipe => {
-                if crate::state::core::has_non_bottled_purgeable_master_deck_card(run_state) {
-                    options.push(CampfireChoice::Toke(0)); // Index 0 placeholder
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // 4. Recall — Java: CampfireUI:91 shows if isFinalActAvailable && !hasRubyKey
-    if run_state.is_final_act_available && !run_state.keys[0] {
-        options.push(CampfireChoice::Recall);
     }
 
     options
