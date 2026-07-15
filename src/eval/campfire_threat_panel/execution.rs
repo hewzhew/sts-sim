@@ -41,12 +41,20 @@ pub struct CampfireThreatPanelCellV1 {
     pub outcome_class: CombatLabOutcomeClassV1,
     pub replay_validated: bool,
     pub replayed_candidate: Option<CombatLabReplayedCandidateV1>,
+    #[serde(default)]
+    pub execution_reuse: Option<CampfireThreatPanelExecutionReuseV1>,
     pub expanded_nodes: u64,
     pub generated_nodes: u64,
     pub nodes_to_first_win: Option<u64>,
     pub node_budget_exhausted: bool,
     pub deadline_exhausted: bool,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CampfireThreatPanelExecutionReuseV1 {
+    IdenticalExactState { source_cell_key: String },
 }
 
 #[derive(Clone, Debug)]
@@ -171,6 +179,7 @@ pub fn execute_campfire_threat_panel_cell_v1(
         outcome_class,
         replay_validated: replayed_candidate.is_some(),
         replayed_candidate,
+        execution_reuse: None,
         expanded_nodes: report.stats.nodes_expanded,
         generated_nodes: report.stats.nodes_generated,
         nodes_to_first_win: report.stats.nodes_to_first_win,

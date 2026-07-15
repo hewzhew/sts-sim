@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -16,8 +17,9 @@ use super::{
     campfire_threat_panel_cell_key_v1, compile_campfire_threat_panel_sample_v1,
     execute_campfire_threat_panel_cell_v1, resolve_campfire_threat_panel_spec_v1,
     summarize_campfire_threat_panel_v1, CampfireThreatPanelArtifactStoreV1,
-    CampfireThreatPanelManifestV1, CampfireThreatPanelSpecV1, CampfireThreatPanelSummaryV1,
-    ResolvedCampfireThreatPanelSpecV1, CAMPFIRE_THREAT_PANEL_SCHEMA_VERSION,
+    CampfireThreatPanelExecutionReuseV1, CampfireThreatPanelManifestV1, CampfireThreatPanelSpecV1,
+    CampfireThreatPanelSummaryV1, ResolvedCampfireThreatPanelSpecV1,
+    CAMPFIRE_THREAT_PANEL_SCHEMA_VERSION,
 };
 
 pub const CAMPFIRE_THREAT_PANEL_EXPERIMENT_SCHEMA_VERSION: u32 = 1;
@@ -109,6 +111,12 @@ pub fn run_campfire_threat_panel_v1(
     let context_fingerprint = evaluation.context.context_fingerprint.as_str();
     let mut cells_appended = 0_usize;
     let mut halted = store.cells().iter().any(|cell| cell.error.is_some());
+    let mut exact_state_results = HashMap::new();
+    for cell in store.cells().iter().filter(|cell| cell.error.is_none()) {
+        exact_state_results
+            .entry(cell.state_fingerprint.exact_state_hash.clone())
+            .or_insert_with(|| cell.clone());
+    }
 
     for sample_index in 0..request.requested_samples {
         if halted {
@@ -130,13 +138,18 @@ pub fn run_campfire_threat_panel_v1(
             if store.contains_cell(&key) {
                 continue;
             }
-            let record = execute_campfire_threat_panel_cell_v1(
-                &resolved,
-                context_fingerprint,
-                encounter,
-                sample_index,
-                cell,
-            );
+            let exact_state_hash = &cell.state_fingerprint.exact_state_hash;
+            let record = if let Some(source) = exact_state_results.get(exact_state_hash) {
+                reuse_identical_state_result(source, &key, encounter, sample_index, cell)?
+            } else {
+                execute_campfire_threat_panel_cell_v1(
+                    &resolved,
+                    context_fingerprint,
+                    encounter,
+                    sample_index,
+                    cell,
+                )
+            };
             if record.cell_key != key {
                 return Err(format!(
                     "Campfire threat executor returned cell key '{}'; expected '{key}'",
@@ -146,6 +159,11 @@ pub fn run_campfire_threat_panel_v1(
             let halt_after_flush = record.error.is_some();
             store.append_cell(&record)?;
             cells_appended += 1;
+            if !halt_after_flush {
+                exact_state_results
+                    .entry(exact_state_hash.clone())
+                    .or_insert_with(|| record.clone());
+            }
             if halt_after_flush {
                 halted = true;
                 break;
@@ -178,6 +196,35 @@ pub fn run_campfire_threat_panel_v1(
         halted_on_replay_error: halted,
         summary,
     })
+}
+
+pub(super) fn reuse_identical_state_result(
+    source: &super::CampfireThreatPanelCellV1,
+    expected_key: &str,
+    encounter: &super::CampfireThreatEncounterV1,
+    sample_index: u64,
+    cell: &crate::eval::campfire_survival_scenarios::CampfireSurvivalScenarioCell,
+) -> Result<super::CampfireThreatPanelCellV1, String> {
+    if source.state_fingerprint != cell.state_fingerprint {
+        return Err(format!(
+            "exact-state hash collision between '{}' and pending cell '{expected_key}'",
+            source.cell_key
+        ));
+    }
+    let mut reused = source.clone();
+    reused.cell_key = expected_key.to_string();
+    reused.subject = cell.subject;
+    reused.lens = cell.lens;
+    reused.encounter = encounter.clone();
+    reused.sample_index = sample_index;
+    reused.analysis_seed = cell.analysis_seed;
+    reused.shuffle_seed = cell.shuffle_seed;
+    reused.state_fingerprint = cell.state_fingerprint.clone();
+    reused.start_hp = cell.start.combat.entities.player.current_hp;
+    reused.execution_reuse = Some(CampfireThreatPanelExecutionReuseV1::IdenticalExactState {
+        source_cell_key: source.cell_key.clone(),
+    });
+    Ok(reused)
 }
 
 fn load_experiment(path: &Path) -> Result<CampfireThreatPanelExperimentV1, String> {

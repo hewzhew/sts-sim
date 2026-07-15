@@ -46,7 +46,7 @@ fn budget() -> CombatLabCommonBudgetV1 {
         max_nodes: 2_000,
         max_actions_per_line: 200,
         max_engine_steps_per_action: 250,
-        wall_ms: Some(50),
+        wall_ms: None,
         stop_on_win_hp_loss_at_most: None,
         min_win_candidates_before_stop: 1,
         max_potions_used: Some(1),
@@ -135,6 +135,16 @@ fn public_pool_contract_expands_all_act3_strong_entries() {
             } if (normalized_weight - 0.125).abs() < f64::EPSILON
         )
     }));
+}
+
+#[test]
+fn panel_contract_rejects_wall_clock_budget_noise() {
+    let mut spec = panel_spec();
+    spec.common_budget.wall_ms = Some(50);
+
+    let error = resolve_campfire_threat_panel_spec_v1(spec).unwrap_err();
+
+    assert!(error.contains("forbids wall_ms"), "{error}");
 }
 
 #[test]
@@ -331,6 +341,61 @@ fn artifact_store_repairs_partial_tail_and_rejects_duplicate_append() {
     fs::remove_dir_all(output).unwrap();
 }
 
+#[test]
+fn identical_exact_state_reuse_preserves_result_and_rebinds_cell_identity() {
+    let root = root();
+    let evaluation = build_campfire_evaluation_batch(&root, evaluation_spec()).unwrap();
+    let mut spec = panel_spec();
+    spec.encounter_sources = vec![CampfireThreatEncounterSourceV1::Explicit {
+        encounter_id: EncounterId::JawWorm,
+        room_type: crate::state::map::node::RoomType::MonsterRoom,
+        label: "reuse-test".to_string(),
+    }];
+    let resolved = resolve_campfire_threat_panel_spec_v1(spec).unwrap();
+    let sample = compile_campfire_threat_panel_sample_v1(&root, &evaluation, &resolved, 0).unwrap();
+    let smith = CampfireSurvivalSubject::Candidate {
+        candidate: CampfireCandidate::Smith { card_uuid: 101 },
+    };
+    let actual = sample
+        .cells
+        .iter()
+        .find(|(_, cell)| {
+            cell.subject == smith && cell.lens == CampfireSurvivalLens::ActualConsequence
+        })
+        .unwrap();
+    let capability = sample
+        .cells
+        .iter()
+        .find(|(_, cell)| {
+            cell.subject == smith && cell.lens == CampfireSurvivalLens::RootHpCapability
+        })
+        .unwrap();
+    assert_eq!(actual.1.state_fingerprint, capability.1.state_fingerprint);
+    let source = fake_cell(&resolved, actual, 0, 13);
+
+    let reused = super::runner::reuse_identical_state_result(
+        &source,
+        "reused-key",
+        &capability.0,
+        0,
+        &capability.1,
+    )
+    .unwrap();
+
+    assert_eq!(reused.cell_key, "reused-key");
+    assert_eq!(reused.lens, CampfireSurvivalLens::RootHpCapability);
+    assert_eq!(
+        serde_json::to_value(&reused.replayed_candidate).unwrap(),
+        serde_json::to_value(&source.replayed_candidate).unwrap()
+    );
+    assert_eq!(
+        reused.execution_reuse,
+        Some(CampfireThreatPanelExecutionReuseV1::IdenticalExactState {
+            source_cell_key: source.cell_key
+        })
+    );
+}
+
 fn fake_cell(
     resolved: &ResolvedCampfireThreatPanelSpecV1,
     scenario: &(
@@ -385,6 +450,7 @@ fn fake_cell(
             draw_history: Vec::new(),
             action_history: vec![ClientInput::EndTurn],
         }),
+        execution_reuse: None,
         expanded_nodes: 100,
         generated_nodes: 150,
         nodes_to_first_win: Some(50),

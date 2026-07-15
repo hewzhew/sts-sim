@@ -131,10 +131,10 @@
       "setup_bias_policy": "default"
     },
     "common_budget": {
-      "max_nodes": 10000,
+      "max_nodes": 64,
       "max_actions_per_line": 200,
       "max_engine_steps_per_action": 250,
-      "wall_ms": 100,
+      "wall_ms": null,
       "stop_on_win_hp_loss_at_most": null,
       "min_win_candidates_before_stop": 1,
       "max_potions_used": 1,

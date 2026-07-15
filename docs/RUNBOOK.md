@@ -166,6 +166,9 @@ The Campfire Threat Panel is the wider, offline Campfire microscope. It expands
 every alignable exact Campfire candidate against every encounter in a declared
 public pool, with matched analysis RNG and shuffle samples. It never reads the
 live run's hidden encounter queue and never updates live Campfire policy.
+The contract rejects wall-clock budgets: comparisons use deterministic node
+limits, and cells with identical exact-state fingerprints reuse one explicitly
+recorded search result rather than measuring scheduler noise twice.
 
 Run the reconstructed seed006 pre-Transient pilot with:
 

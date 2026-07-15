@@ -107,6 +107,12 @@ pub fn resolve_campfire_threat_panel_spec_v1(
     {
         return Err("Campfire threat panel common budget limits must be nonzero".to_string());
     }
+    if spec.common_budget.wall_ms.is_some() {
+        return Err(
+            "Campfire threat panel forbids wall_ms: paired evidence requires a deterministic node budget"
+                .to_string(),
+        );
+    }
 
     let mut encounters = Vec::new();
     for source in &spec.encounter_sources {
