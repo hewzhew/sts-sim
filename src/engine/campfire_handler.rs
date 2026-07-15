@@ -6,6 +6,32 @@ use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
 
+/// Applies the deterministic HP prefix of Rest without triggering on-rest relic rewards.
+pub fn apply_campfire_rest_healing(run_state: &mut RunState) {
+    let heal_pct = if run_state.ascension_level >= 14 {
+        0.25f32
+    } else {
+        0.3f32
+    };
+    let mut heal = (run_state.max_hp as f32 * heal_pct) as i32;
+
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::RegalPillow)
+    {
+        heal += 15;
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::MarkOfTheBloom)
+    {
+        heal = 0;
+    }
+    run_state.current_hp = (run_state.current_hp + heal).min(run_state.max_hp);
+}
+
 /// Campfire (Rest Site) handler.
 ///
 /// Java behaviour reference:
@@ -28,33 +54,7 @@ pub fn handle(
         }
         match choice {
             CampfireChoice::Rest => {
-                // Java: Asc 14 = 25%, else 30%. (int)(maxHP * multiplier) — truncation.
-                let heal_pct = if run_state.ascension_level >= 14 {
-                    0.25f32
-                } else {
-                    0.3f32
-                };
-                let mut heal = (run_state.max_hp as f32 * heal_pct) as i32;
-
-                // Regal Pillow: flat +15 to rest heal
-                if run_state
-                    .relics
-                    .iter()
-                    .any(|r| r.id == RelicId::RegalPillow)
-                {
-                    heal += 15;
-                }
-
-                // MarkOfTheBloom: blocks ALL healing (Java: onPlayerHeal → return 0)
-                if run_state
-                    .relics
-                    .iter()
-                    .any(|r| r.id == RelicId::MarkOfTheBloom)
-                {
-                    heal = 0;
-                }
-
-                run_state.current_hp = (run_state.current_hp + heal).min(run_state.max_hp);
+                apply_campfire_rest_healing(run_state);
 
                 // --- onRest() relic callbacks ---
                 // DreamCatcher: after resting, generate a card reward screen
@@ -410,6 +410,26 @@ mod tests {
             super::get_available_options(&run),
             vec![CampfireChoice::Rest]
         );
+    }
+
+    #[test]
+    fn rest_healing_kernel_matches_rest_execution_before_reward_side_effects() {
+        let mut kernel_run = RunState::new(29, 0, false, "Ironclad");
+        kernel_run.current_hp = 20;
+        kernel_run.relics = vec![RelicState::new(RelicId::RegalPillow)];
+        let mut handler_run = kernel_run.clone();
+
+        super::apply_campfire_rest_healing(&mut kernel_run);
+        let mut engine = EngineState::Campfire;
+        assert!(super::handle(
+            &mut engine,
+            &mut handler_run,
+            Some(ClientInput::CampfireOption(CampfireChoice::Rest)),
+        ));
+
+        assert_eq!(kernel_run.current_hp, handler_run.current_hp);
+        assert_eq!(kernel_run.current_hp, 59);
+        assert!(matches!(engine, EngineState::MapNavigation));
     }
 }
 
