@@ -47,6 +47,8 @@ mod cli_args;
 mod combat_gap_case;
 #[path = "owner_audit/combat_portfolio_json.rs"]
 mod combat_portfolio_json;
+#[path = "owner_audit/combat_search_incumbent.rs"]
+mod combat_search_incumbent;
 #[path = "owner_audit/combat_search_lane_commit.rs"]
 mod combat_search_lane_commit;
 #[path = "owner_audit/combat_search_lane_options.rs"]
