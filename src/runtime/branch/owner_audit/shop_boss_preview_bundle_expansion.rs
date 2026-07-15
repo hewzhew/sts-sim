@@ -26,13 +26,13 @@ fn apply_shop_candidate_kind(
         .iter()
         .find(|candidate| candidate_kind_matches(&candidate.key, kind))
         .ok_or_else(|| format!("shop boss preview bundle candidate not visible: {kind:?}"))?;
-    let command = candidate.action.executable_command().ok_or_else(|| {
+    let action = candidate.action.executable_action().ok_or_else(|| {
         format!(
             "shop boss preview bundle candidate is not executable: {}",
             candidate.label
         )
     })?;
-    session.apply_command(command)?;
+    session.apply_decision_action(action)?;
     Ok(())
 }
 

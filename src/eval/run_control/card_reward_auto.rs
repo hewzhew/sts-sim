@@ -2,53 +2,13 @@ use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardCard, RewardItem};
 
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::RunControlTraceAnnotationV1;
-
-pub(super) fn apply_recorded_card_reward_pick(
-    session: &mut RunControlSession,
-    index: usize,
-) -> Result<RunControlCommandOutcome, String> {
-    if let Some(cards) = active_pending_reward_cards(session) {
-        return apply_recorded_pick_to_pending_cards(session, cards, index);
-    }
-
-    let Some((reward_index, cards)) = visible_card_reward_item(session) else {
-        return Err(
-            "rp <idx> is only valid on a card reward item or card reward screen".to_string(),
-        );
-    };
-    let decision = recorded_card_reward_decision(session, &cards, index)?;
-    let selected_card = decision.candidates[index].card;
-    let record = selected_card_reward_record(
-        &decision,
-        "run_control_recorded_card_reward_pick_v1",
-        "human_recorded_pick",
-    );
-    let trace_annotation = card_reward_policy_trace_annotation(&decision, record)?;
-
-    session.apply_input(ClientInput::ClaimReward(reward_index))?;
-    let Some(opened_cards) = active_pending_reward_cards(session) else {
-        return Err(
-            "recorded card reward pick opened a reward item but no pending card choice appeared"
-                .to_string(),
-        );
-    };
-    if opened_cards.len() <= index || opened_cards[index].id != selected_card {
-        return Err(
-            "recorded card reward pick opened a reward item but choices drifted".to_string(),
-        );
-    }
-
-    Ok(session
-        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![trace_annotation]))
-}
 
 pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
     session: &mut RunControlSession,
     reward_index: usize,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     if !session
         .run_state
         .relics
@@ -93,23 +53,6 @@ fn ensure_visible_card_reward_item_at(
         ));
     }
     Ok(())
-}
-
-fn apply_recorded_pick_to_pending_cards(
-    session: &mut RunControlSession,
-    cards: Vec<RewardCard>,
-    index: usize,
-) -> Result<RunControlCommandOutcome, String> {
-    let decision = recorded_card_reward_decision(session, &cards, index)?;
-    let record = selected_card_reward_record(
-        &decision,
-        "run_control_recorded_card_reward_pick_v1",
-        "human_recorded_pick",
-    );
-    let trace_annotation = card_reward_policy_trace_annotation(&decision, record)?;
-    Ok(session
-        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(index))?
-        .with_trace_annotations(vec![trace_annotation]))
 }
 
 pub(super) fn manual_card_reward_selection_annotation(
@@ -227,23 +170,4 @@ fn active_pending_reward_cards(session: &RunControlSession) -> Option<Vec<Reward
         _ => return None,
     };
     Some(cards.clone())
-}
-
-fn visible_card_reward_item(session: &RunControlSession) -> Option<(usize, Vec<RewardCard>)> {
-    let reward = match &session.engine_state {
-        EngineState::RewardScreen(reward) => reward,
-        EngineState::RewardOverlay { reward_state, .. } => reward_state,
-        _ => return None,
-    };
-    if reward.pending_card_choice.is_some() {
-        return None;
-    }
-    reward
-        .items
-        .iter()
-        .enumerate()
-        .find_map(|(idx, item)| match item {
-            RewardItem::Card { cards } => Some((idx, cards.clone())),
-            _ => None,
-        })
 }

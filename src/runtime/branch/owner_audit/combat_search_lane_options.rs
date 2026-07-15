@@ -33,12 +33,8 @@ pub(super) fn lane_options(
     request: &CombatSearchRequest,
     session: &RunControlSession,
 ) -> RunControlAutoStepOptions {
-    let mut options = CombatSearchRecipe::from_profile(
-        lane_profile(lane, request, session),
-        request.args.auto_ops,
-        request.args.wall_ms.is_some(),
-    )
-    .into_auto_step_options();
+    let mut options = CombatSearchRecipe::from_profile(lane_profile(lane, request, session))
+        .into_auto_step_options();
     options.search.potion_policy = options
         .search
         .profile
@@ -234,17 +230,13 @@ fn quality_recipe(
     child_rollout_plugin: CombatSearchChildRolloutPluginId,
     phase_guard_plugin: CombatSearchPhaseGuardPluginId,
 ) -> CombatSearchRecipe {
-    CombatSearchRecipe::from_profile(
-        quality_profile(
-            "test_quality",
-            args,
-            budget,
-            child_rollout_plugin,
-            phase_guard_plugin,
-        ),
-        args.auto_ops,
-        args.wall_ms.is_some(),
-    )
+    CombatSearchRecipe::from_profile(quality_profile(
+        "test_quality",
+        args,
+        budget,
+        child_rollout_plugin,
+        phase_guard_plugin,
+    ))
 }
 
 fn quality_profile(

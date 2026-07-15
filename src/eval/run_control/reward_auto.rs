@@ -6,7 +6,7 @@ use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::rewards::{RewardItem, RewardState};
 
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::RunControlTraceAnnotationV1;
 
 const MAX_AUTO_REWARD_CLAIMS: usize = 16;
@@ -93,18 +93,18 @@ pub(super) fn apply_reward_automation(
 
 pub fn apply_reward_tiny_automation(
     session: &mut RunControlSession,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     let report = apply_reward_automation(session)?;
     if !report.is_empty() {
         return Ok(Some(
-            RunControlCommandOutcome::message(report.render())
+            RunProgressOutcome::message(report.render())
                 .with_trace_annotations(report.trace_annotations),
         ));
     }
     let Some(labels) = discard_unclaimable_potion_rewards(session) else {
         return Ok(None);
     };
-    Ok(Some(RunControlCommandOutcome::message(format!(
+    Ok(Some(RunProgressOutcome::message(format!(
         "Ignored unclaimable potion reward: {}",
         labels.join(", ")
     ))))
@@ -232,55 +232,6 @@ fn apply_claim_reward_to_stable(
         );
     }
     Ok(())
-}
-
-pub(super) fn set_reward_automation(
-    config: &mut RewardAutomationConfig,
-    target: RewardAutomationTarget,
-    enabled: bool,
-) {
-    match target {
-        RewardAutomationTarget::Gold => config.claim_gold = enabled,
-        RewardAutomationTarget::Potion => config.claim_potion_with_empty_slot = enabled,
-        RewardAutomationTarget::Relic => {
-            config.claim_safe_relic_without_sapphire_key = enabled;
-        }
-        RewardAutomationTarget::All => {
-            config.claim_gold = enabled;
-            config.claim_potion_with_empty_slot = enabled;
-            config.claim_safe_relic_without_sapphire_key = enabled;
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RewardAutomationTarget {
-    Gold,
-    Potion,
-    Relic,
-    All,
-}
-
-pub fn parse_reward_automation_target(raw: &str) -> Result<RewardAutomationTarget, String> {
-    match raw.to_ascii_lowercase().as_str() {
-        "gold" | "money" => Ok(RewardAutomationTarget::Gold),
-        "potion" | "potions" | "potion-if-empty" | "potion_if_empty_slot" => {
-            Ok(RewardAutomationTarget::Potion)
-        }
-        "relic" | "relics" | "safe-relic" | "safe_relic" => Ok(RewardAutomationTarget::Relic),
-        "all" => Ok(RewardAutomationTarget::All),
-        _ => Err(format!(
-            "unknown auto-reward target '{raw}', expected gold|potion|relic|all"
-        )),
-    }
-}
-
-pub fn parse_on_off(raw: &str) -> Result<bool, String> {
-    match raw.to_ascii_lowercase().as_str() {
-        "on" | "true" | "yes" | "1" => Ok(true),
-        "off" | "false" | "no" | "0" => Ok(false),
-        _ => Err(format!("expected on|off, got '{raw}'")),
-    }
 }
 
 fn on_off(enabled: bool) -> &'static str {

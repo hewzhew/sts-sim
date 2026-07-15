@@ -6,21 +6,11 @@ use sts_simulator::eval::run_control::{
 #[derive(Clone, Copy)]
 pub(super) struct CombatSearchRecipe {
     profile: CombatSearchProfile,
-    auto_ops: usize,
-    wall_limited: bool,
 }
 
 impl CombatSearchRecipe {
-    pub(super) fn from_profile(
-        profile: CombatSearchProfile,
-        auto_ops: usize,
-        wall_limited: bool,
-    ) -> Self {
-        Self {
-            profile,
-            auto_ops,
-            wall_limited,
-        }
+    pub(super) fn from_profile(profile: CombatSearchProfile) -> Self {
+        Self { profile }
     }
 
     pub(super) fn into_auto_step_options(self) -> RunControlAutoStepOptions {
@@ -30,17 +20,8 @@ impl CombatSearchRecipe {
                 disable_no_win_rescue: true,
                 ..Default::default()
             },
-            max_operations: Some(auto_run_chunk_ops(self.auto_ops, self.wall_limited)),
             route: RunControlRouteAutomationMode::Planner,
         }
-    }
-}
-
-fn auto_run_chunk_ops(auto_ops: usize, wall_limited: bool) -> usize {
-    if wall_limited {
-        1
-    } else {
-        auto_ops
     }
 }
 
@@ -74,8 +55,8 @@ mod tests {
 
     #[test]
     fn recipe_leaves_hp_loss_policy_to_owner_audit() {
-        let options = CombatSearchRecipe::from_profile(profile_for_test(10, 20), 3, false)
-            .into_auto_step_options();
+        let options =
+            CombatSearchRecipe::from_profile(profile_for_test(10, 20)).into_auto_step_options();
 
         assert_eq!(options.search.max_hp_loss, None);
     }
@@ -93,7 +74,7 @@ mod tests {
             phase_guard: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
             ..CombatSearchPluginStack::default()
         };
-        let options = CombatSearchRecipe::from_profile(profile, 7, false).into_auto_step_options();
+        let options = CombatSearchRecipe::from_profile(profile).into_auto_step_options();
         let config = options.search.profile.expect("profile").to_config();
 
         assert_eq!(config.max_nodes, 123);
@@ -101,7 +82,6 @@ mod tests {
             config.wall_time.map(|duration| duration.as_millis()),
             Some(456)
         );
-        assert_eq!(options.max_operations, Some(7));
         assert_eq!(options.route, RunControlRouteAutomationMode::Planner);
         assert_eq!(
             config.turn_plan_policy,
@@ -125,21 +105,9 @@ mod tests {
     }
 
     #[test]
-    fn wall_limited_recipe_uses_single_operation_chunk() {
-        let mut profile = profile_for_test(10, 20);
-        profile.engine.plugins = CombatSearchPluginStack {
-            child_rollout: CombatSearchChildRolloutPluginId::Immediate,
-            ..CombatSearchPluginStack::default()
-        };
-        let options = CombatSearchRecipe::from_profile(profile, 99, true).into_auto_step_options();
-
-        assert_eq!(options.max_operations, Some(1));
-    }
-
-    #[test]
     fn portfolio_recipe_disables_internal_no_win_rescue() {
         let profile = profile_for_test(10, 20);
-        let options = CombatSearchRecipe::from_profile(profile, 3, false).into_auto_step_options();
+        let options = CombatSearchRecipe::from_profile(profile).into_auto_step_options();
 
         assert!(options.search.disable_no_win_rescue);
     }
@@ -173,7 +141,7 @@ mod tests {
             },
         };
 
-        let options = CombatSearchRecipe::from_profile(profile, 5, false).into_auto_step_options();
+        let options = CombatSearchRecipe::from_profile(profile).into_auto_step_options();
         let config = options.search.profile.expect("profile").to_config();
 
         assert_eq!(config.max_nodes, 321);
@@ -181,7 +149,6 @@ mod tests {
             config.wall_time.map(|duration| duration.as_millis()),
             Some(654)
         );
-        assert_eq!(options.max_operations, Some(5));
         assert_eq!(
             config.child_rollout_policy,
             CombatSearchV2ChildRolloutPolicy::Immediate

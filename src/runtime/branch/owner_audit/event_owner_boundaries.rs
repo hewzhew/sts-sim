@@ -2,7 +2,7 @@ use sts_simulator::content::cards::CardId;
 use sts_simulator::content::potions::{Potion, PotionId};
 use sts_simulator::engine::event_handler::get_event_options;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlCommand, RunControlConfig, RunControlSession,
+    build_decision_surface, RunControlConfig, RunControlSession, RunDecisionAction,
 };
 use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
@@ -23,26 +23,26 @@ fn event_session(event_id: EventId, screen: usize) -> RunControlSession {
     session
 }
 
-fn event_owner_command(session: &RunControlSession, event_id: EventId) -> RunControlCommand {
+fn event_owner_action(session: &RunControlSession, event_id: EventId) -> RunDecisionAction {
     assert!(matches!(
         owner_for_current_boundary(session),
         Some(Owner::Event(actual)) if actual == event_id
     ));
     let surface = build_decision_surface(session);
     match owners::owner_decision(session, Owner::Event(event_id), &surface) {
-        OwnerDecision::Routine(OwnerRoutine::Command(command)) => command,
-        _ => panic!("{event_id:?} owner must produce one executable routine command"),
+        OwnerDecision::Routine(OwnerRoutine::Action(action)) => action,
+        _ => panic!("{event_id:?} owner must produce one executable routine action"),
     }
 }
 
 fn apply_event_owner(session: &mut RunControlSession, event_id: EventId) -> ClientInput {
-    let command = event_owner_command(session, event_id);
-    let RunControlCommand::Input(input @ ClientInput::EventChoice(_)) = command else {
+    let action = event_owner_action(session, event_id);
+    let RunDecisionAction::Input(input @ ClientInput::EventChoice(_)) = action else {
         panic!("{event_id:?} owner must select a typed event option");
     };
     session
-        .apply_command(RunControlCommand::Input(input.clone()))
-        .unwrap_or_else(|err| panic!("{event_id:?} owner command failed: {err}"));
+        .apply_decision_action(RunDecisionAction::Input(input.clone()))
+        .unwrap_or_else(|err| panic!("{event_id:?} owner action failed: {err}"));
     input
 }
 
@@ -75,7 +75,7 @@ fn assert_run_choice_handoff(
     let [choice] = choices.as_slice() else {
         panic!("{event_id:?} RunChoice must produce exactly one committed candidate");
     };
-    let RunControlCommand::Input(ClientInput::SubmitSelection(resolution)) = &choice.action else {
+    let RunDecisionAction::Input(ClientInput::SubmitSelection(resolution)) = &choice.action else {
         panic!("{event_id:?} RunChoice must submit a typed deck selection");
     };
     assert_eq!(resolution.scope, SelectionScope::Deck);
@@ -85,8 +85,8 @@ fn assert_run_choice_handoff(
         .contains(&ClientInput::SubmitSelection(resolution.clone())));
 
     session
-        .apply_command(choice.action.clone())
-        .unwrap_or_else(|err| panic!("{event_id:?} RunChoice command was not legal: {err}"));
+        .apply_decision_action(choice.action.clone())
+        .unwrap_or_else(|err| panic!("{event_id:?} RunChoice action was not legal: {err}"));
     assert!(matches!(session.engine_state, EngineState::EventRoom));
 }
 
@@ -224,12 +224,12 @@ fn colosseum_first_combat_returns_to_event_owner_that_flees() {
         Some(Owner::Event(EventId::Colosseum))
     ));
 
-    let command = event_owner_command(&session, EventId::Colosseum);
+    let action = event_owner_action(&session, EventId::Colosseum);
     assert!(matches!(
-        command,
-        RunControlCommand::Input(ClientInput::EventChoice(0))
+        action,
+        RunDecisionAction::Input(ClientInput::EventChoice(0))
     ));
-    session.apply_command(command).unwrap();
+    session.apply_decision_action(action).unwrap();
     assert!(matches!(session.engine_state, EngineState::MapNavigation));
     assert!(session.active_combat.is_none());
 }
@@ -284,8 +284,8 @@ fn knowing_skull_rechecks_escalating_cost_until_safe_leave() {
     let mut left = false;
     for _ in 0..16 {
         let options = get_event_options(&session.run_state);
-        let command = event_owner_command(&session, EventId::KnowingSkull);
-        let RunControlCommand::Input(ClientInput::EventChoice(index)) = command else {
+        let action = event_owner_action(&session, EventId::KnowingSkull);
+        let RunDecisionAction::Input(ClientInput::EventChoice(index)) = action else {
             panic!("Knowing Skull owner must select a typed event option");
         };
         match index {
@@ -303,7 +303,11 @@ fn knowing_skull_rechecks_escalating_cost_until_safe_leave() {
                     assert_eq!(cost, previous + 1);
                 }
                 paid_costs.push(cost);
-                session.apply_command(command).unwrap();
+                session
+                    .apply_decision_action(RunDecisionAction::Input(ClientInput::EventChoice(
+                        index,
+                    )))
+                    .unwrap();
             }
             3 => {
                 assert!(
@@ -321,7 +325,11 @@ fn knowing_skull_rechecks_escalating_cost_until_safe_leave() {
                     .unwrap();
                 assert!(session.run_state.current_hp > next_gold_cost);
                 assert!(session.run_state.current_hp > 6);
-                session.apply_command(command).unwrap();
+                session
+                    .apply_decision_action(RunDecisionAction::Input(ClientInput::EventChoice(
+                        index,
+                    )))
+                    .unwrap();
                 assert!(session.run_state.current_hp > 0);
                 assert_eq!(
                     session

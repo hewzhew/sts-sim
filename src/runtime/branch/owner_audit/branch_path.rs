@@ -591,7 +591,7 @@ mod tests {
     use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
     use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
-    use sts_simulator::eval::run_control::RunControlCommand;
+    use sts_simulator::eval::run_control::RunDecisionAction;
 
     use super::super::owner_model::{OwnerCandidateDecision, OwnerChoice, OwnerChoiceExpansion};
     use super::*;
@@ -625,14 +625,14 @@ mod tests {
         let choices = vec![
             OwnerChoice {
                 key: None,
-                action: RunControlCommand::Noop,
+                action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: "take".to_string(),
                 annotation: ChoiceAnnotation::None,
                 expansion: OwnerChoiceExpansion::AutoAllowed,
             },
             OwnerChoice {
                 key: None,
-                action: RunControlCommand::Noop,
+                action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: "skip".to_string(),
                 annotation: ChoiceAnnotation::None,
                 expansion: OwnerChoiceExpansion::InspectOnly("blocked"),
@@ -769,7 +769,7 @@ mod tests {
         fn purge_choice(target: CleanupTarget) -> OwnerChoice {
             OwnerChoice {
                 key: None,
-                action: RunControlCommand::Noop,
+                action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: format!("Remove {target:?}"),
                 annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                     evaluation: CandidateEvaluation {
@@ -806,7 +806,7 @@ mod tests {
         fn choice(kind: DecisionCandidateKind, expansion: OwnerChoiceExpansion) -> OwnerChoice {
             OwnerChoice {
                 key: None,
-                action: RunControlCommand::Noop,
+                action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: format!("{kind:?}"),
                 annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                     evaluation: CandidateEvaluation {

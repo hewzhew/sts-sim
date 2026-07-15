@@ -372,7 +372,7 @@ mod tests {
     use sts_simulator::ai::strategy::role_saturation::LaneCap;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::content::relics::RelicId;
-    use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
+    use sts_simulator::eval::run_control::{DecisionCandidateKey, RunDecisionAction};
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::state::run::RunState;
 
@@ -389,7 +389,7 @@ mod tests {
         let auto = lane != CandidateLane::Probe;
         OwnerChoice {
             key: None,
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
             annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                 evaluation: CandidateEvaluation {
@@ -427,7 +427,7 @@ mod tests {
                 option_index,
                 relic,
             }),
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("Take {relic:?}"),
             annotation: ChoiceAnnotation::None,
             expansion: OwnerChoiceExpansion::AutoAllowed,
@@ -437,7 +437,7 @@ mod tests {
     fn boss_relic_skip_choice() -> OwnerChoice {
         OwnerChoice {
             key: Some(DecisionCandidateKey::BossRelicSkip),
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: "Skip boss relic".to_string(),
             annotation: ChoiceAnnotation::None,
             expansion: OwnerChoiceExpansion::AutoAllowed,
@@ -459,7 +459,7 @@ mod tests {
     fn shop_leave_choice() -> OwnerChoice {
         OwnerChoice {
             key: None,
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: "Leave".to_string(),
             annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                 evaluation: CandidateEvaluation {
@@ -484,7 +484,7 @@ mod tests {
     ) -> OwnerChoice {
         OwnerChoice {
             key: None,
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("Buy {card:?}"),
             annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                 evaluation: CandidateEvaluation {

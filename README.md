@@ -51,8 +51,8 @@ Review a saved combat case:
 cargo run --bin combat_case_review -- --case <case.json> --ladder
 ```
 
-Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained commands, continuation
-examples, combat search drivers, manual REPL usage, and verification.
+Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained bounded-run commands,
+continuation examples, combat search drivers, and verification.
 
 ## Main Entrypoints
 
@@ -62,7 +62,6 @@ examples, combat search drivers, manual REPL usage, and verification.
 | `branch_panel` | Rust seed-panel scheduler for smoke/drain runs across several seeds |
 | `combat_case_review` | diagnostic review ladder for saved combat cases |
 | `combat_search_v2_driver` | fixed combat search from start specs, captures, or benchmark suites |
-| `run_play_driver` | manual and semi-automatic simulator REPL |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |
 
 See [src/bin/README.md](src/bin/README.md) for binary ownership boundaries.

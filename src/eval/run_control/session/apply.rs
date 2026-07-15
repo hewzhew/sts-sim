@@ -1,205 +1,86 @@
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
-use super::{CombatCompletionSource, RunControlCommandOutcome, RunControlSession};
+use super::{CombatCompletionSource, RunControlSession, RunProgressOutcome};
 use crate::eval::run_control::auto_capture::render_auto_capture_result;
-use crate::eval::run_control::commands::{run_control_help, RunControlCommand};
-use crate::eval::run_control::panels::{
-    render_combat_zone_panel, render_deck_panel, render_full_map_panel, render_inspect_panel,
-    render_map_panel, render_potions_panel, render_relics_panel, render_route_summary_panel,
-    CombatZonePanel,
-};
-use crate::eval::run_control::render::{
-    render_combat_actions, render_run_control_details, render_run_control_raw,
-    render_run_control_state,
-};
-use crate::eval::run_control::reward_auto::set_reward_automation;
+use crate::eval::run_control::render::render_run_control_state;
 use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
 use crate::eval::run_control::transition_report::{
     action_result_changes_from_domain_events, action_result_from_transition_with_extra_changes,
     render_action_result, transition_action_for_input, RunApplyStatus, RunVisibleSnapshot,
 };
+use crate::eval::run_control::RunDecisionAction;
+use crate::eval::run_control::{RunControlAutoStepOptions, RunControlSearchCombatOptions};
 
 const MAX_STABLE_ADVANCE_TICKS: usize = 2_000;
 
 impl RunControlSession {
-    pub fn apply_command(
+    pub fn apply_decision_action(
         &mut self,
-        command: RunControlCommand,
-    ) -> Result<RunControlCommandOutcome, String> {
-        self.ensure_combat_started_if_needed()?;
-
-        match command {
-            RunControlCommand::Noop => Ok(RunControlCommandOutcome::message("")),
-            RunControlCommand::DefaultCandidate => self.apply_default_candidate(),
-            RunControlCommand::Candidate(id) => self.apply_visible_candidate(&id),
-            RunControlCommand::Help => Ok(RunControlCommandOutcome::message(run_control_help())),
-            RunControlCommand::Quit => Ok(RunControlCommandOutcome::quit("quit")),
-            RunControlCommand::Main => Ok(RunControlCommandOutcome::message(
-                render_run_control_state(self),
-            )),
-            RunControlCommand::Deck => {
-                Ok(RunControlCommandOutcome::message(render_deck_panel(self)))
+        action: RunDecisionAction,
+    ) -> Result<RunProgressOutcome, String> {
+        match action {
+            RunDecisionAction::Input(input) => self.apply_input(input),
+            RunDecisionAction::SkipCardReward { reward_item_index } => {
+                self.apply_branch_skip_card_reward(reward_item_index)
             }
-            RunControlCommand::Map => Ok(RunControlCommandOutcome::message(render_map_panel(self))),
-            RunControlCommand::MapFull => Ok(RunControlCommandOutcome::message(
-                render_full_map_panel(self),
-            )),
-            RunControlCommand::MapSummary => Ok(RunControlCommandOutcome::message(
-                render_route_summary_panel(self),
-            )),
-            RunControlCommand::BoundaryRecord => Ok(RunControlCommandOutcome::message(
-                super::super::noncombat_boundary::render_current_noncombat_boundary_record(self),
-            )),
-            RunControlCommand::RouteSuggest => Ok(RunControlCommandOutcome::message(
-                super::super::route_policy::render_route_suggestion(self),
-            )),
-            RunControlCommand::RouteGo => super::super::route_policy::apply_route_go(self),
-            RunControlCommand::Relics => {
-                Ok(RunControlCommandOutcome::message(render_relics_panel(self)))
-            }
-            RunControlCommand::Potions => Ok(RunControlCommandOutcome::message(
-                render_potions_panel(self),
-            )),
-            RunControlCommand::Draw => Ok(RunControlCommandOutcome::message(
-                render_combat_zone_panel(self, CombatZonePanel::Draw),
-            )),
-            RunControlCommand::Discard => Ok(RunControlCommandOutcome::message(
-                render_combat_zone_panel(self, CombatZonePanel::Discard),
-            )),
-            RunControlCommand::Exhaust => Ok(RunControlCommandOutcome::message(
-                render_combat_zone_panel(self, CombatZonePanel::Exhaust),
-            )),
-            RunControlCommand::Inspect(id) => Ok(RunControlCommandOutcome::message(
-                render_inspect_panel(self, &id),
-            )),
-            RunControlCommand::SaveDecisionCase { path } => {
-                super::super::artifact_commands::apply_save_decision_case(self, path)
-            }
-            RunControlCommand::Details => Ok(RunControlCommandOutcome::message(
-                render_run_control_details(self),
-            )),
-            RunControlCommand::Raw => Ok(RunControlCommandOutcome::message(
-                render_run_control_raw(self),
-            )),
-            RunControlCommand::Actions => Ok(RunControlCommandOutcome::message(
-                render_combat_actions(self)?,
-            )),
-            RunControlCommand::Capture { path, label } => {
-                super::super::artifact_commands::apply_capture(self, path, label)
-            }
-            RunControlCommand::CaptureCase {
-                root,
-                case_id,
-                label,
-            } => super::super::artifact_commands::apply_capture_case(self, root, case_id, label),
-            RunControlCommand::CaptureCaseDefault { case_id, label } => {
-                super::super::artifact_commands::apply_default_capture_case(self, case_id, label)
-            }
-            RunControlCommand::SaveBaseline { path, case_id } => {
-                super::super::artifact_commands::apply_save_baseline(self, path, case_id)
-            }
-            RunControlCommand::SaveBaselineCase { root, case_id } => {
-                super::super::artifact_commands::apply_save_baseline_case(self, root, case_id)
-            }
-            RunControlCommand::SaveBaselineForLastCaptureCase => {
-                super::super::artifact_commands::apply_save_baseline_for_last_capture_case(self)
-            }
-            RunControlCommand::RegisterBenchmarkCase { root, case_id } => {
-                super::super::artifact_commands::apply_register_benchmark_case(root, case_id)
-            }
-            RunControlCommand::SearchDefaults(command) => {
-                super::super::search_defaults::apply_search_defaults(self, command)
-            }
-            RunControlCommand::SearchCombat(options) => {
-                super::super::combat_search::apply_search_combat(self, options)
-            }
-            RunControlCommand::AutoStep(options) => {
-                super::super::auto_step::apply_guarded_auto_step(self, options)
-            }
-            RunControlCommand::AutoRun(options) => {
-                super::super::auto_run::apply_auto_run(self, options)
-            }
-            RunControlCommand::RewardAutomationStatus => Ok(RunControlCommandOutcome::message(
-                self.reward_automation.summary(),
-            )),
-            RunControlCommand::SetRewardAutomation { target, enabled } => {
-                set_reward_automation(&mut self.reward_automation, target, enabled);
-                Ok(RunControlCommandOutcome::message(
-                    self.reward_automation.summary(),
-                ))
-            }
-            RunControlCommand::BranchSkipCardReward(index) => {
-                self.apply_branch_skip_card_reward(index)
-            }
-            RunControlCommand::SingingBowlVisibleCardReward(index) => {
+            RunDecisionAction::SingingBowlCardReward { reward_item_index } => {
                 super::super::card_reward_auto::apply_singing_bowl_to_visible_card_reward_item(
-                    self, index,
+                    self,
+                    reward_item_index,
                 )
             }
-            RunControlCommand::RecordedCardRewardPick(index) => {
-                super::super::card_reward_auto::apply_recorded_card_reward_pick(self, index)
-            }
-            RunControlCommand::CardIndex(index) => {
-                if matches!(self.engine_state, EngineState::Shop(_)) {
-                    self.apply_input(ClientInput::BuyCard(index))
-                } else if matches!(
-                    self.engine_state,
-                    EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. }
-                ) {
-                    self.apply_input(ClientInput::SelectCard(index))
-                } else {
-                    Err("card <idx> is only valid in shop or card reward screens".to_string())
-                }
-            }
-            RunControlCommand::RelicIndex(index) => {
-                if matches!(self.engine_state, EngineState::Shop(_)) {
-                    self.apply_input(ClientInput::BuyRelic(index))
-                } else if matches!(self.engine_state, EngineState::BossRelicSelect(_)) {
-                    self.apply_input(ClientInput::SubmitRelicChoice(index))
-                } else {
-                    Err("relic <idx> is only valid in shop or boss relic screens".to_string())
-                }
-            }
-            RunControlCommand::SelectionIndices(indices) => {
-                let input =
-                    super::super::selection_surface::resolve_selection_indices(self, indices)?;
-                self.apply_input(input)
-            }
-            RunControlCommand::ActionIndex(index) => {
-                let input = self.combat_action_by_index(index)?;
-                self.apply_input(input)
-            }
-            RunControlCommand::PlayCard {
-                card_index,
-                target_slot_or_id,
-            } => {
-                let target = self.resolve_target(target_slot_or_id)?;
-                self.apply_input(ClientInput::PlayCard { card_index, target })
-            }
-            RunControlCommand::UsePotion {
-                potion_index,
-                target_slot_or_id,
-            } => {
-                if matches!(self.engine_state, EngineState::Shop(_)) && target_slot_or_id.is_none()
-                {
-                    self.apply_input(ClientInput::BuyPotion(potion_index))
-                } else {
-                    let target = self.resolve_target(target_slot_or_id)?;
-                    self.apply_input(ClientInput::UsePotion {
-                        potion_index,
-                        target,
-                    })
-                }
-            }
-            RunControlCommand::Input(input) => self.apply_input(input),
         }
+    }
+
+    pub fn apply_candidate_id(&mut self, candidate_id: &str) -> Result<RunProgressOutcome, String> {
+        let surface = super::super::decision_surface::build_decision_surface(self);
+        let candidate = super::super::decision_surface::resolve_surface_candidate(
+            &surface,
+            &self.engine_state,
+            candidate_id,
+        )
+        .ok_or_else(|| format!("no visible candidate '{candidate_id}'"))?;
+        let action = candidate.action.executable_action().ok_or_else(|| {
+            format!(
+                "candidate '{candidate_id}' is not directly executable: {}",
+                candidate.action.summary()
+            )
+        })?;
+        self.apply_decision_action(action)
+    }
+
+    pub fn apply_only_candidate(&mut self) -> Result<RunProgressOutcome, String> {
+        let surface = super::super::decision_surface::build_decision_surface(self);
+        let [candidate] = surface.view.candidates.as_slice() else {
+            return Err("exactly one visible candidate is required".to_string());
+        };
+        let candidate_id = candidate.id.clone();
+        self.apply_candidate_id(&candidate_id)
+    }
+
+    pub fn apply_progress_step(
+        &mut self,
+        options: RunControlAutoStepOptions,
+    ) -> Result<RunProgressOutcome, String> {
+        super::super::auto_step::apply_guarded_auto_step(self, options)
+    }
+
+    pub fn apply_combat_search(
+        &mut self,
+        options: RunControlSearchCombatOptions,
+    ) -> Result<RunProgressOutcome, String> {
+        super::super::combat_search::apply_search_combat(self, options)
+    }
+
+    pub fn apply_route_plan(&mut self) -> Result<RunProgressOutcome, String> {
+        super::super::route_policy::apply_route_plan(self)
     }
 
     fn apply_branch_skip_card_reward(
         &mut self,
         reward_index: usize,
-    ) -> Result<RunControlCommandOutcome, String> {
+    ) -> Result<RunProgressOutcome, String> {
         let next_state = {
             let EngineState::RewardScreen(reward) = &mut self.engine_state else {
                 return Err("branch-skip-card-reward is only valid on a reward screen".to_string());
@@ -223,51 +104,21 @@ impl RunControlSession {
                 reward_automation.render()
             )
         };
-        Ok(RunControlCommandOutcome::message(message)
+        Ok(RunProgressOutcome::message(message)
             .with_trace_annotations(reward_automation.trace_annotations))
-    }
-
-    fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {
-        let surface = super::super::decision_surface::build_decision_surface(self);
-        if surface.view.candidates.len() != 1 {
-            return Err(
-                "Enter only executes when exactly one visible action is available; choose an id"
-                    .to_string(),
-            );
-        }
-        let id = surface.view.candidates[0].id.clone();
-        self.apply_visible_candidate(&id)
-    }
-
-    fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
-        let surface = super::super::decision_surface::build_decision_surface(self);
-        let Some(candidate) = super::super::decision_surface::resolve_surface_candidate(
-            &surface,
-            &self.engine_state,
-            id,
-        ) else {
-            return Err(format!("no visible candidate '{id}'"));
-        };
-        match candidate.action.executable_command() {
-            Some(command) => self.apply_command(command),
-            None => Err(format!(
-                "candidate '{id}' is not directly executable: {}",
-                candidate.action.command_hint()
-            )),
-        }
     }
 
     pub(in crate::eval::run_control) fn apply_input(
         &mut self,
         input: ClientInput,
-    ) -> Result<RunControlCommandOutcome, String> {
+    ) -> Result<RunProgressOutcome, String> {
         self.apply_input_inner(input, true)
     }
 
     pub(in crate::eval::run_control) fn apply_input_without_manual_card_reward_trace(
         &mut self,
         input: ClientInput,
-    ) -> Result<RunControlCommandOutcome, String> {
+    ) -> Result<RunProgressOutcome, String> {
         self.apply_input_inner(input, false)
     }
 
@@ -275,7 +126,7 @@ impl RunControlSession {
         &mut self,
         input: ClientInput,
         trace_manual_card_reward_selection: bool,
-    ) -> Result<RunControlCommandOutcome, String> {
+    ) -> Result<RunProgressOutcome, String> {
         self.ensure_combat_started_if_needed()?;
         self.validate_input_for_current_state(&input)?;
         let manual_card_reward_annotation = if trace_manual_card_reward_selection {
@@ -404,7 +255,7 @@ impl RunControlSession {
                 label_role: "diagnostic_capture_not_human_baseline".to_string(),
             });
         }
-        Ok(RunControlCommandOutcome::action(
+        Ok(RunProgressOutcome::action(
             format!("{report}\n{}", render_run_control_state(self)),
             action_result,
         )

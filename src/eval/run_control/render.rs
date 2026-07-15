@@ -177,7 +177,7 @@ fn render_candidate_resolution_details(session: &RunControlSession, out: &mut St
             format!(
                 "candidate[{}] command={} label={}",
                 candidate.id,
-                candidate.action.command_hint(),
+                candidate.action.summary(),
                 candidate.label
             ),
         );
@@ -463,13 +463,12 @@ fn push_line(out: &mut String, line: impl AsRef<str>) {
 mod tests {
     use super::*;
     use crate::content::relics::RelicId;
-    use crate::eval::run_control::commands::RunControlCommand;
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
     use crate::state::core::EngineState;
     use crate::state::rewards::BossRelicChoiceState;
 
     #[test]
-    fn main_view_is_default_and_keeps_debug_fields_out_of_startup_panel() {
+    fn diagnostic_state_view_keeps_retired_repl_chrome_out() {
         let session = RunControlSession::new(RunControlConfig {
             seed: 521,
             ..RunControlConfig::default()
@@ -480,7 +479,8 @@ mod tests {
         assert!(rendered.contains("Neow Intro"));
         assert!(rendered.contains("Neow greets you."));
         assert!(rendered.contains("0 | Proceed"));
-        assert!(rendered.contains("Inspect: deck | map | relics"));
+        assert!(!rendered.contains("Inspect:"));
+        assert!(!rendered.contains("Command:"));
         assert!(
             !rendered.contains("Route note:"),
             "startup main panel should not present route preview as part of the current screen"
@@ -515,7 +515,7 @@ mod tests {
             ..RunControlConfig::default()
         });
         session
-            .apply_command(crate::eval::run_control::commands::RunControlCommand::DefaultCandidate)
+            .apply_only_candidate()
             .expect("Neow intro should advance");
         let rendered = render_run_control_state(&session);
 
@@ -542,7 +542,7 @@ mod tests {
             ..RunControlConfig::default()
         });
         session
-            .apply_command(RunControlCommand::DefaultCandidate)
+            .apply_only_candidate()
             .expect("Neow intro should advance");
         let rendered = render_run_control_details(&session);
 
@@ -560,10 +560,10 @@ mod tests {
             ..RunControlConfig::default()
         });
         session
-            .apply_command(RunControlCommand::DefaultCandidate)
+            .apply_only_candidate()
             .expect("Neow intro should advance");
         session
-            .apply_command(RunControlCommand::Candidate("0".to_string()))
+            .apply_candidate_id("0")
             .expect("Neow colorless option should open a card reward item");
 
         let reward_item_details = render_run_control_details(&session);
@@ -571,7 +571,7 @@ mod tests {
         assert!(reward_item_details.contains("Dramatic Entrance"));
 
         session
-            .apply_command(RunControlCommand::Candidate("0".to_string()))
+            .apply_candidate_id("0")
             .expect("claiming card reward item should open pending card choice");
         let card_choice_details = render_run_control_details(&session);
         assert!(card_choice_details.contains("resolution: Known"));

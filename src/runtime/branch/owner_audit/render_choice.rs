@@ -1,7 +1,7 @@
 use sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact;
 use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
 use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
-use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
+use sts_simulator::eval::run_control::{DecisionCandidateKey, RunDecisionAction};
 
 use super::branch_path::BranchPathStep;
 use super::owner_model::{
@@ -11,7 +11,7 @@ use super::owner_model::{
 pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
     let base = match &choice.key {
         Some(key) => render_choice_key_timeline(key),
-        None => format!("{}:{}", command_hint(&choice.action), choice.label),
+        None => format!("{}:{}", action_hint(&choice.action), choice.label),
     };
     match &choice.annotation {
         ChoiceAnnotation::Candidate(decision) => {
@@ -118,15 +118,14 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
     }
 }
 
-fn command_hint(command: &RunControlCommand) -> String {
-    match command {
-        RunControlCommand::Input(input) => format!("{input:?}"),
-        RunControlCommand::BranchSkipCardReward(index) => {
-            format!("BranchSkipCardReward({index})")
+fn action_hint(action: &RunDecisionAction) -> String {
+    match action {
+        RunDecisionAction::Input(input) => format!("{input:?}"),
+        RunDecisionAction::SkipCardReward { reward_item_index } => {
+            format!("SkipCardReward({reward_item_index})")
         }
-        RunControlCommand::SingingBowlVisibleCardReward(index) => {
-            format!("SingingBowlVisibleCardReward({index})")
+        RunDecisionAction::SingingBowlCardReward { reward_item_index } => {
+            format!("SingingBowlCardReward({reward_item_index})")
         }
-        _ => format!("{command:?}"),
     }
 }

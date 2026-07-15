@@ -45,7 +45,7 @@ pub(super) fn neow_owner_decision(
             if option.ui.disabled {
                 return None;
             }
-            let action = candidate.action.executable_command()?;
+            let action = candidate.action.executable_action()?;
             let rank = rank_neow_option(&option.semantics);
             Some((
                 rank,

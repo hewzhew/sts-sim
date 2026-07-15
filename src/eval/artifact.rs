@@ -66,7 +66,8 @@ pub enum ArtifactSourceKind {
     Unknown,
     ExactCombatPosition,
     ManualRunControl,
-    AutoRunControl,
+    #[serde(alias = "auto_run_control")]
+    RuntimeProgress,
     IntentReplay,
     FixtureStartSpec,
 }
@@ -131,10 +132,10 @@ impl ArtifactProvenanceV1 {
         )
     }
 
-    pub fn auto_run_control(run: &RunState) -> Self {
+    pub fn runtime_progress(run: &RunState) -> Self {
         Self::new(
-            ArtifactSourceKind::AutoRunControl,
-            "run_control_auto_capture",
+            ArtifactSourceKind::RuntimeProgress,
+            "runtime_progress_capture",
             Some(ArtifactRunConfigV1::from_run_state(run)),
         )
     }

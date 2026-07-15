@@ -156,6 +156,15 @@ Checkpoint owns exact resume state. State owns scheduling data. Journal owns
 decision facts and candidate identity. Report is a cheap projection.
 Diagnostics are opt-in sidecars for large or narrow-use explanations.
 
+`SessionTraceV1` is the current typed decision-history carrier for interactive
+and automated run-control traces. Outcome-learned planner capture extends that
+one authority: observations and legal-candidate payloads live in deduplicated,
+content-addressed trace tables; step annotations contain behavior events that
+reference those payloads; outcome attachments reference the behavior event.
+These events are explicitly behavior-policy evidence, never teacher labels.
+Dataset and coverage exports are rebuildable projections and must not become a
+second decision-history authority.
+
 Default reports should reference state, journal, checkpoint, and diagnostics
 instead of inlining large payloads. Compression is not a license to store
 unbounded data.

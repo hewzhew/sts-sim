@@ -33,124 +33,6 @@ pub(super) fn noncombat_human_boundary_annotation(
     }))
 }
 
-pub(super) fn render_current_noncombat_boundary_record(session: &RunControlSession) -> String {
-    let Some(record) =
-        build_noncombat_human_boundary_record_v1(session, "manual noncombat boundary inspection")
-    else {
-        return "No NonCombatDecisionRecordV1 is available at the current boundary.\n\
-Supported noncombat boundaries: Neow, event, map, reward/card reward, shop, campfire, boss relic."
-            .to_string();
-    };
-
-    render_noncombat_decision_record_summary(&record)
-}
-
-fn render_noncombat_decision_record_summary(record: &NonCombatDecisionRecordV1) -> String {
-    let hidden_free = !record.information_boundary.hidden_simulator_state_used
-        && record
-            .information_boundary
-            .forbidden_inputs
-            .contains(&InformationClassV1::HiddenSimulatorState);
-    let mut out = String::new();
-    push_line(
-        &mut out,
-        format!("{} v{}", record.schema_name, record.schema_version),
-    );
-    if let Err(errors) = validate_noncombat_decision_record_v1(record) {
-        push_line(
-            &mut out,
-            format!(
-                "Validation errors: {}",
-                render_noncombat_decision_record_validation_errors(&errors)
-            ),
-        );
-    }
-    push_line(
-        &mut out,
-        format!(
-            "site={:?} data_role={:?} hidden_free={hidden_free}",
-            record.site, record.data_role
-        ),
-    );
-    push_line(
-        &mut out,
-        format!(
-            "selection={:?} mode={} confidence={:.2}",
-            record.selection.status, record.selection.selection_mode, record.selection.confidence
-        ),
-    );
-    push_line(&mut out, format!("reason={}", record.selection.reason));
-    push_line(
-        &mut out,
-        format!(
-            "candidates={} evidence_items={} values={}",
-            record.candidates.len(),
-            record.evidence.items.len(),
-            record.values.len()
-        ),
-    );
-    push_line(&mut out, "");
-    push_line(
-        &mut out,
-        format!(
-            "Information: allowed={} forbidden={}",
-            information_classes_label(&record.information_boundary.allowed_inputs),
-            information_classes_label(&record.information_boundary.forbidden_inputs)
-        ),
-    );
-    push_line(&mut out, "");
-    push_line(&mut out, "Candidates:");
-    if record.candidates.is_empty() {
-        push_line(&mut out, "  none");
-    }
-    for candidate in &record.candidates {
-        let command = candidate
-            .action_plan
-            .command
-            .as_deref()
-            .unwrap_or("not executable");
-        push_line(
-            &mut out,
-            format!(
-                "  {} | {} | command={}",
-                candidate.candidate_id, candidate.label, command
-            ),
-        );
-        if !candidate.uncertainty_notes.is_empty() {
-            push_line(
-                &mut out,
-                format!("    notes: {}", candidate.uncertainty_notes.join("; ")),
-            );
-        }
-    }
-    if !record.evidence.warnings.is_empty() {
-        push_line(&mut out, "");
-        push_line(&mut out, "Warnings:");
-        for warning in &record.evidence.warnings {
-            push_line(&mut out, format!("  - {warning}"));
-        }
-    }
-    push_line(&mut out, "");
-    push_line(&mut out, "Commands: main | details | raw | q");
-    out
-}
-
-fn information_classes_label(classes: &[InformationClassV1]) -> String {
-    if classes.is_empty() {
-        return "none".to_string();
-    }
-    classes
-        .iter()
-        .map(|class| format!("{class:?}"))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn push_line(out: &mut String, line: impl AsRef<str>) {
-    out.push_str(line.as_ref());
-    out.push('\n');
-}
-
 fn build_noncombat_human_boundary_record_v1(
     session: &RunControlSession,
     reason: &str,
@@ -340,10 +222,8 @@ fn candidate_descriptor(
 
 fn candidate_command(candidate: &DecisionCandidate) -> Option<String> {
     match &candidate.action {
-        CandidateAction::Input(_) | CandidateAction::Command(_) => {
-            Some(candidate.action.command_hint())
-        }
-        CandidateAction::ManualCommand { template } => Some(template.clone()),
+        CandidateAction::Execute(_) => Some(candidate.action.summary()),
+        CandidateAction::Parameterized { template } => Some(template.clone()),
         CandidateAction::Unavailable { .. } => None,
     }
 }
@@ -408,33 +288,5 @@ fn site_slug(site: DecisionSiteKindV1) -> &'static str {
         DecisionSiteKindV1::BossRelic => "boss_relic",
         DecisionSiteKindV1::Reward => "reward",
         DecisionSiteKindV1::RunChoice => "run_choice",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::eval::run_control::{RunControlConfig, RunControlSession};
-
-    #[test]
-    fn boundary_summary_surfaces_record_validation_errors() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        let mut shop = crate::state::shop::ShopState::new();
-        shop.cards.push(crate::state::shop::ShopCard {
-            card_id: crate::content::cards::CardId::Armaments,
-            upgrades: 0,
-            price: 49,
-            can_buy: true,
-            blocked_reason: None,
-        });
-        session.engine_state = EngineState::Shop(shop);
-        let mut record = build_noncombat_human_boundary_record_v1(&session, "test")
-            .expect("shop should build a boundary record");
-        record.information_boundary.hidden_simulator_state_used = true;
-
-        let rendered = render_noncombat_decision_record_summary(&record);
-
-        assert!(rendered.contains("Validation errors:"));
-        assert!(rendered.contains("information_boundary.hidden_simulator_state_used"));
     }
 }

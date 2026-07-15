@@ -1,5 +1,15 @@
 # Deletion-Driven Campfire Prospect Migration Design
 
+> **Status: superseded as a production-owner direction.**
+> The engine-legality, stable-candidate, deterministic-projection, and
+> hidden-information rules in this document remain useful. Campfire is no
+> longer preselected as the first learned-planner cutover, and its prospect or
+> threat vocabulary must not become the cross-domain planning core. See
+> `docs/design/2026-07-15-outcome-learned-run-planner-core-contract.md`.
+> Do not execute the remaining production-owner cutover from this document;
+> completed mechanics and offline-evidence work may remain until separately
+> retired or consumed under the new core contract.
+
 ## Goal
 
 Replace the current threshold-driven Campfire policy with one production decision owner that compares the consequences of every legal Campfire action under one explicit public-information, horizon, and continuation-policy contract.

@@ -1,9 +1,6 @@
 mod accepted_combat_line_evidence;
-mod artifact_commands;
 mod auto_capture;
-mod auto_run;
 mod auto_step;
-mod bookmarks;
 mod card_reward_auto;
 mod combat_auto_policy;
 mod combat_candidate_line;
@@ -26,7 +23,7 @@ mod combat_search_rejection;
 mod combat_search_render;
 mod combat_search_setup;
 mod combat_start;
-mod commands;
+mod decision_action;
 mod decision_case;
 mod decision_surface;
 #[cfg(test)]
@@ -40,18 +37,17 @@ mod panels;
 #[cfg(test)]
 mod pending_choice_card_contract_tests;
 mod persistent_burden_cutpoint_probe;
+mod planner_capture;
+mod progress_options;
 pub mod registry;
 mod render;
 mod reward_auto;
 mod route_policy;
-mod search_defaults;
 mod selection_surface;
 mod session;
 mod session_trace;
-mod session_trace_outcome;
 mod shop_legal;
 mod trace_annotation;
-mod trace_replay;
 mod transition_report;
 mod view_model;
 
@@ -59,13 +55,7 @@ pub use accepted_combat_line_evidence::{
     accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
 };
 pub use auto_capture::AutoCombatCaptureConfig;
-pub use auto_run::apply_owner_audit_auto_run;
-pub use bookmarks::{
-    default_bookmark_registry_path, load_bookmark_registry, mark_current_boundary,
-    render_bookmarks, resolve_goto_bookmark, validate_bookmark_name, GotoBookmarkPlan,
-    RunPlayBookmarkRegistryV1, RunPlayBookmarkV1, BOOKMARK_REGISTRY_SCHEMA_NAME,
-    BOOKMARK_REGISTRY_SCHEMA_VERSION,
-};
+pub use auto_step::apply_owner_audit_progress_step;
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,
 };
@@ -78,11 +68,7 @@ pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
     CombatLineRejectionReasonV1,
 };
-pub use commands::{
-    parse_run_control_command, run_control_help, run_control_short_hint, RunControlAutoStepOptions,
-    RunControlCombatSegmentMode, RunControlCommand, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
-};
+pub use decision_action::RunDecisionAction;
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
     RUN_DECISION_CASE_SCHEMA_NAME, RUN_DECISION_CASE_SCHEMA_VERSION,
@@ -99,23 +85,29 @@ pub use persistent_burden_cutpoint_probe::{
     PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
     PersistentBurdenGainedCurseCountV1, PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
 };
+pub use planner_capture::{
+    build_planner_capture_coverage_report, build_planner_capture_dataset,
+    PlannerCaptureCoverageReport, PlannerCaptureDataset, PlannerDecisionSiteCoverage,
+};
+pub use progress_options::{
+    RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlHpLossLimit,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{
     render_auto_applied_step_compact_v1, render_combat_actions, render_run_control_details,
     render_run_control_raw, render_run_control_state,
 };
-pub use reward_auto::{
-    apply_reward_tiny_automation, RewardAutomationConfig, RewardAutomationTarget,
-};
+pub use reward_auto::{apply_reward_tiny_automation, RewardAutomationConfig};
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome, RunControlConfig,
-    RunControlSession, RunControlSessionCheckpointV1, ShopVisitContextV1,
+    RunControlAutoStopKind, RunControlAutoStopV1, RunControlConfig, RunControlSession,
+    RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
 };
 pub use session_trace::{
-    SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,
-    SessionTraceBoundaryRecordV1, SessionTraceCandidateV1, SessionTraceCombatFingerprintV1,
-    SessionTraceLineageRoleV1, SessionTraceLineageV1, SessionTraceRecorder,
+    load_session_trace_v1, SessionTraceArtifactKind, SessionTraceArtifactRefV1,
+    SessionTraceBoundaryFingerprintV1, SessionTraceBoundaryRecordV1, SessionTraceCandidateV1,
+    SessionTraceCombatFingerprintV1, SessionTraceLineageRoleV1, SessionTraceLineageV1,
     SessionTraceRewardAutomationV1, SessionTraceRunConfigV1, SessionTraceSelectionResolution,
     SessionTraceStepSourceV1, SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME,
     SESSION_TRACE_SCHEMA_VERSION,
@@ -128,12 +120,6 @@ pub use trace_annotation::{
     CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
     CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary, CombatSearchTraceSummary,
     RunControlTraceAnnotationV1,
-};
-pub use trace_replay::{
-    load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,
-    replay_session_trace_with_recorder, SessionTraceReplayAppliedStep, SessionTraceReplayDrift,
-    SessionTraceReplayDriftPhase, SessionTraceReplayOptions, SessionTraceReplayReport,
-    SessionTraceReplayStop,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

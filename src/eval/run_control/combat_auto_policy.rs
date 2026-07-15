@@ -3,7 +3,7 @@ use crate::ai::combat_auto_policy_v1::{
     CombatAutoSearchPlanV1,
 };
 
-use super::commands::{RunControlHpLossLimit, RunControlSearchCombatOptions};
+use super::progress_options::{RunControlHpLossLimit, RunControlSearchCombatOptions};
 use super::session::RunControlSession;
 
 pub(super) fn combat_auto_search_plan(

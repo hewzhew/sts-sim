@@ -201,21 +201,6 @@ fn selection_items_for_master_deck_targets(
         .collect()
 }
 
-pub(super) fn resolve_selection_indices(
-    session: &RunControlSession,
-    indices: Vec<usize>,
-) -> Result<ClientInput, String> {
-    match &session.engine_state {
-        EngineState::PendingChoice(choice) => {
-            resolve_combat_selection_indices(session, choice, indices)
-        }
-        EngineState::RunPendingChoice(choice) => {
-            resolve_run_pending_selection_indices(session, choice, indices)
-        }
-        _ => Err("select <idx...> is only valid on a selection screen".to_string()),
-    }
-}
-
 pub(super) fn current_selection_input_is_allowed(
     session: &RunControlSession,
     input: &ClientInput,
@@ -233,45 +218,6 @@ pub(super) fn current_selection_input_is_allowed(
         },
         _ => None,
     }
-}
-
-fn resolve_combat_selection_indices(
-    session: &RunControlSession,
-    choice: &PendingChoice,
-    indices: Vec<usize>,
-) -> Result<ClientInput, String> {
-    match choice {
-        PendingChoice::HandSelect {
-            candidate_uuids, ..
-        } => Ok(selection_input(
-            SelectionScope::Hand,
-            indices_to_uuids(candidate_uuids, &indices)?,
-        )),
-        PendingChoice::GridSelect {
-            candidate_uuids, ..
-        } => Ok(selection_input(
-            SelectionScope::Grid,
-            indices_to_uuids(candidate_uuids, &indices)?,
-        )),
-        PendingChoice::ScrySelect { cards, .. } => {
-            validate_indices_in_range(cards.len(), &indices)?;
-            reject_duplicate_indices(&indices)?;
-            Ok(ClientInput::SubmitScryDiscard(indices))
-        }
-        _ => Err(
-            "select <idx...> is not used for this pending choice; choose a visible id".to_string(),
-        ),
-    }
-    .and_then(|input| {
-        if pending_choice_input_is_allowed(session, choice, &input) {
-            Ok(input)
-        } else {
-            Err(format!(
-                "selection `{}` is not valid for the current bounds",
-                crate::eval::run_control::view_model::client_input_hint(&input)
-            ))
-        }
-    })
 }
 
 pub(super) fn pending_choice_input_is_allowed(
@@ -350,28 +296,6 @@ pub(super) fn pending_choice_input_is_allowed(
     }
 }
 
-fn resolve_run_pending_selection_indices(
-    session: &RunControlSession,
-    choice: &crate::state::core::RunPendingChoiceState,
-    indices: Vec<usize>,
-) -> Result<ClientInput, String> {
-    let request = choice.selection_request(&session.run_state);
-    validate_indices_in_range(request.targets.len(), &indices)?;
-    reject_duplicate_indices(&indices)?;
-    let input = ClientInput::SubmitSelection(SelectionResolution {
-        scope: SelectionScope::Deck,
-        selected: indices
-            .into_iter()
-            .map(|idx| request.targets[idx])
-            .collect::<Vec<_>>(),
-    });
-    if current_selection_input_is_allowed(session, &input).unwrap_or(false) {
-        Ok(input)
-    } else {
-        Err("selection is not valid for the current deck choice".to_string())
-    }
-}
-
 fn run_pending_resolution_is_allowed(
     session: &RunControlSession,
     choice: &crate::state::core::RunPendingChoiceState,
@@ -393,16 +317,6 @@ fn run_pending_resolution_is_allowed(
         .collect::<Vec<_>>();
     indices.len() == resolution.selected.len()
         && session.run_pending_selection_is_allowed(choice, &indices)
-}
-
-fn indices_to_uuids(candidate_uuids: &[u32], indices: &[usize]) -> Result<Vec<u32>, String> {
-    validate_indices_in_range(candidate_uuids.len(), indices)?;
-    reject_duplicate_indices(indices)?;
-    Ok(indices.iter().map(|idx| candidate_uuids[*idx]).collect())
-}
-
-fn selection_input(scope: SelectionScope, uuids: Vec<u32>) -> ClientInput {
-    ClientInput::SubmitSelection(SelectionResolution::card_uuids(scope, uuids))
 }
 
 fn validate_indices_in_range(item_count: usize, indices: &[usize]) -> Result<(), String> {

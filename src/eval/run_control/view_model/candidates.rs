@@ -1,7 +1,7 @@
 use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
-use crate::eval::run_control::RunControlCommand;
+use crate::eval::run_control::RunDecisionAction;
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
@@ -221,7 +221,7 @@ fn reward_candidates(
             let mut skip = candidate(
                 "skip-card-reward",
                 "Skip card reward",
-                RunControlCommand::BranchSkipCardReward(reward_item_index),
+                RunDecisionAction::SkipCardReward { reward_item_index },
                 Some("consume this card reward without taking a card"),
             );
             skip.key = Some(DecisionCandidateKey::CardRewardSkip { reward_item_index });
@@ -272,7 +272,7 @@ fn reward_candidates(
             candidates.push(candidate(
                 "bowl",
                 "Singing Bowl | gain 2 max HP",
-                RunControlCommand::SingingBowlVisibleCardReward(reward_item_index),
+                RunDecisionAction::SingingBowlCardReward { reward_item_index },
                 Some("consume the first visible card reward instead of taking a card"),
             ));
             if let Some(candidate) = candidates.last_mut() {

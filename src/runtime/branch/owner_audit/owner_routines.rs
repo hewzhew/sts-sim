@@ -1,5 +1,5 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlCommand, RunControlCommandOutcome, RunControlSession,
+    build_decision_surface, RunControlSession, RunDecisionAction, RunProgressOutcome,
 };
 use sts_simulator::state::core::{ClientInput, EngineState};
 
@@ -9,9 +9,9 @@ use super::render;
 pub(super) fn apply_owner_routine(
     session: &mut RunControlSession,
     routine: OwnerRoutine,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     match routine {
-        OwnerRoutine::Command(command) => session.apply_command(command),
+        OwnerRoutine::Action(action) => session.apply_decision_action(action),
         OwnerRoutine::RewardTinyAutomation => apply_reward_tiny_routine(session),
         OwnerRoutine::AdvanceEmptyCampfire => {
             sts_simulator::engine::run_loop::tick_run_active_with_observer(
@@ -20,19 +20,19 @@ pub(super) fn apply_owner_routine(
                 &mut session.active_combat,
                 None,
             );
-            session.apply_command(RunControlCommand::Noop)
+            Ok(RunProgressOutcome::progress("advanced empty campfire"))
         }
     }
 }
 
 fn apply_reward_tiny_routine(
     session: &mut RunControlSession,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     if let Some(outcome) = sts_simulator::eval::run_control::apply_reward_tiny_automation(session)?
     {
         return Ok(outcome);
     }
-    session.apply_command(RunControlCommand::Input(reward_tiny_exit_input(session)?))
+    session.apply_decision_action(RunDecisionAction::Input(reward_tiny_exit_input(session)?))
 }
 
 fn reward_tiny_exit_input(session: &RunControlSession) -> Result<ClientInput, String> {

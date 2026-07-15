@@ -27,17 +27,17 @@ pub(super) fn run(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> 
     );
     for candidate in &surface.view.candidates {
         println!(
-            "  candidate id={} key={:?} label={} command={:?}",
+            "  candidate id={} key={:?} label={} action={:?}",
             candidate.id,
             candidate.key,
             candidate.label,
-            candidate.action.executable_command()
+            candidate.action.executable_action()
         );
     }
 
     match owners::owner_decision(&session, Owner::Event(probe.event_id), &surface) {
-        OwnerDecision::Routine(OwnerRoutine::Command(command)) => {
-            println!("  owner_decision=command {command:?}");
+        OwnerDecision::Routine(OwnerRoutine::Action(action)) => {
+            println!("  owner_decision=action {action:?}");
         }
         OwnerDecision::Routine(OwnerRoutine::RewardTinyAutomation) => {
             println!("  owner_decision=unexpected_reward_tiny_automation");
@@ -49,7 +49,7 @@ pub(super) fn run(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> 
             println!("  owner_decision=candidates count={}", choices.len());
             for choice in choices {
                 println!(
-                    "    choice key={:?} label={} command={:?}",
+                    "    choice key={:?} label={} action={:?}",
                     choice.key, choice.label, choice.action
                 );
             }

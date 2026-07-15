@@ -1,174 +1,30 @@
 use super::*;
 use crate::content::monsters::factory::EncounterId;
 use crate::eval::run_control::decision_surface;
-use crate::eval::run_control::registry::BenchmarkCasePaths;
 use crate::eval::run_control::{
-    parse_run_control_command, render_run_control_details, render_run_control_state,
-    CombatBaselineOutcomeV1, RunControlCommand, RunControlHpLossLimit,
+    render_run_control_details, render_run_control_state, CombatBaselineOutcomeV1,
+    RunDecisionAction,
 };
 use crate::state::core::ClientInput;
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
 use crate::state::map::state::MapState;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-mod checkpoint_tests;
-
-#[test]
-fn run_control_capture_command_saves_active_combat_position() {
-    let mut session = test_session_with_first_monster_room();
-    session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
-        .expect("map input should enter combat");
-    assert!(matches!(
-        session.engine_state,
-        EngineState::CombatPlayerTurn
-    ));
-
-    let dir = unique_temp_dir("run_control_capture");
-    fs::create_dir_all(&dir).expect("temp dir should be created");
-    let path = dir.join("capture.json");
-    let outcome = session
-        .apply_command(RunControlCommand::Capture {
-            path: path.clone(),
-            label: Some("first fight".to_string()),
-        })
-        .expect("capture command should save");
-
-    assert!(outcome.message.contains("saved CombatCaptureV1"));
-    let loaded = crate::eval::combat_capture::load_combat_capture_v1(&path)
-        .expect("saved capture should load");
-    assert_eq!(loaded.label.as_deref(), Some("first fight"));
-    assert_eq!(
-        loaded.provenance.source_kind,
-        crate::eval::artifact::ArtifactSourceKind::ManualRunControl
-    );
-    assert_eq!(
-        loaded.provenance.capture_method,
-        "run_control_manual_capture"
-    );
-    assert_eq!(loaded.source.capture_method, "run_control_manual_capture");
-    assert_eq!(
-        loaded
-            .provenance
-            .run_config
-            .as_ref()
-            .and_then(|config| config.seed),
-        Some(session.run_state.seed)
-    );
-    assert!(loaded.fingerprints.is_some());
-    assert!(loaded.legal_actions.is_some());
-    assert!(matches!(
-        loaded.position.engine,
-        EngineState::CombatPlayerTurn
-    ));
-
-    let _ = fs::remove_file(path);
-    let _ = fs::remove_dir(dir);
-}
-
-#[test]
-fn run_control_capture_case_registers_benchmark_manifest() {
-    let mut session = test_session_with_first_monster_room();
-    session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
-        .expect("map input should enter combat");
-
-    let root = unique_temp_dir("run_control_capture_case");
-    let outcome = session
-        .apply_command(RunControlCommand::CaptureCase {
-            root: root.clone(),
-            case_id: "first_fight".to_string(),
-            label: Some("first fight".to_string()),
-        })
-        .expect("capture-case should save and register");
-
-    assert!(outcome.message.contains("registered"));
-    let paths = BenchmarkCasePaths::for_case(&root, "first_fight");
-    assert!(paths.capture_path.exists());
-    assert!(paths.benchmark_manifest.exists());
-    let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
-    assert!(manifest.contains("\"combat_snapshot\": \"captures/first_fight.capture.json\""));
-    assert!(manifest.contains("\"expected_fingerprints\""));
-    crate::eval::combat_search_v2::load_combat_search_v2_benchmark(&paths.benchmark_manifest)
-        .expect("registered suite should validate through search benchmark loader");
-    assert_eq!(
-        session
-            .last_capture_case()
-            .map(|case| (case.root.clone(), case.case_id.clone())),
-        Some((root.clone(), "first_fight".to_string()))
-    );
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn run_control_baseline_command_rejects_search_resolved_combat() {
-    let mut session = test_session_with_first_monster_room();
-    session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
-        .expect("map input should enter combat");
-
-    let root = unique_temp_dir("run_control_baseline_last");
-    session
-        .apply_command(RunControlCommand::CaptureCase {
-            root: root.clone(),
-            case_id: "first_fight".to_string(),
-            label: None,
-        })
-        .expect("capture-case should remember the case");
-    session
-        .apply_command(RunControlCommand::SearchCombat(
-            crate::eval::run_control::RunControlSearchCombatOptions {
-                max_nodes: Some(2_000),
-                wall_ms: Some(5_000),
-                ..Default::default()
-            },
-        ))
-        .expect("search-combat should finish the captured combat");
-    assert!(session.last_completed_combat_matches_capture_case());
-    assert!(!session.last_completed_manual_combat_matches_capture_case());
-
-    let err = session
-        .apply_command(RunControlCommand::SaveBaselineForLastCaptureCase)
-        .expect_err("search-combat outcome should not save as human baseline");
-
-    assert!(err.contains("resolved by search-combat"));
-    let paths = BenchmarkCasePaths::for_case(&root, "first_fight");
-    assert!(!paths.baseline_path.exists());
-    let manifest = fs::read_to_string(&paths.benchmark_manifest).expect("manifest readable");
-    assert!(!manifest.contains("\"baseline\""));
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn run_control_capture_command_rejects_map_state() {
-    let session = test_session_after_neow_at_map();
-
-    let err = session
-        .save_current_combat_capture(Path::new("unused.json"), None)
-        .expect_err("map state should not capture");
-
-    assert!(err.contains("no active combat state"));
-}
 
 #[test]
 fn run_control_search_combat_applies_complete_winning_trajectory() {
     let mut session = test_session_with_first_monster_room();
     session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::SelectMapNode(0)))
         .expect("map input should enter combat");
 
     let outcome = session
-        .apply_command(RunControlCommand::SearchCombat(
-            crate::eval::run_control::RunControlSearchCombatOptions {
-                max_nodes: Some(2_000),
-                wall_ms: Some(5_000),
-                ..Default::default()
-            },
-        ))
+        .apply_combat_search(crate::eval::run_control::RunControlSearchCombatOptions {
+            max_nodes: Some(2_000),
+            wall_ms: Some(5_000),
+            ..Default::default()
+        })
         .expect("search-combat should resolve starter combat");
 
     assert!(outcome
@@ -197,46 +53,17 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
 }
 
 #[test]
-fn run_control_combat_potion_use_updates_visible_potion_slots() {
-    let mut session = test_session_with_first_monster_room();
-    session.run_state.potions[1] = Some(crate::content::potions::Potion::new(
-        crate::content::potions::PotionId::FruitJuice,
-        42,
-    ));
-    session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
-        .expect("map input should enter combat");
-
-    let outcome = session
-        .apply_command(RunControlCommand::UsePotion {
-            potion_index: 1,
-            target_slot_or_id: None,
-        })
-        .expect("fruit juice should be usable in combat");
-
-    assert!(outcome.message.contains("Lost potion: Fruit Juice"));
-    assert!(session.active_combat.as_ref().is_some_and(|active| active
-        .combat_state
-        .entities
-        .potions[1]
-        .is_none()));
-    let rendered = render_run_control_state(&session);
-    assert!(!rendered.contains("Fruit Juice"));
-    assert!(render_run_control_details(&session).contains("potions=0"));
-}
-
-#[test]
 fn run_control_auto_step_advances_routine_neow_intro_only() {
     let mut session = RunControlSession::new(RunControlConfig::default());
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should advance routine intro");
 
     assert!(outcome.message.contains("routine: Proceed"));
     assert!(outcome
         .message
-        .contains("Reason: Neow bonus requires human choice"));
+        .contains("Reason: one atomic progress step applied"));
     assert!(outcome.message.contains("Next: choose a Neow bonus id"));
     assert!(outcome.action_result.is_some());
     assert!(matches!(session.engine_state, EngineState::EventRoom));
@@ -251,30 +78,11 @@ fn run_control_auto_step_advances_routine_neow_intro_only() {
 }
 
 #[test]
-fn run_control_auto_run_wraps_auto_step_with_run_summary() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(Default::default()))
-        .expect("auto-run should advance routine intro");
-
-    assert!(outcome.message.contains("Auto-run stopped: Neow Bonus"));
-    assert!(outcome
-        .message
-        .contains("Reason: Neow bonus requires human choice"));
-    assert!(outcome.message.contains("Next: choose a Neow bonus id"));
-    assert!(outcome.message.contains("route=planner"));
-    assert!(outcome.message.contains("applied_operations=1"));
-    assert!(outcome.message.contains("routine: Proceed"));
-    assert!(outcome.action_result.is_some());
-}
-
-#[test]
 fn run_control_auto_step_neow_stop_exports_human_boundary_record() {
     let mut session = RunControlSession::new(RunControlConfig::default());
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should advance intro and stop at Neow bonus");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -304,7 +112,7 @@ fn run_control_auto_step_event_stop_exports_human_boundary_record() {
     session.engine_state = EngineState::EventRoom;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at strategic event choice");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -343,12 +151,9 @@ fn run_control_auto_step_labels_single_event_state_resolution_as_forced() {
     session.engine_state = EngineState::EventRoom;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
         .expect("auto-step should apply the forced Cursed Tome damage screen");
 
     assert!(
@@ -363,7 +168,7 @@ fn run_control_auto_step_labels_single_event_state_resolution_as_forced() {
 }
 
 #[test]
-fn run_control_auto_run_stops_at_event_owner_boundary() {
+fn run_control_progress_step_stops_at_event_owner_boundary() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 0;
     session.run_state.event_state = Some(crate::state::events::EventState::new(
@@ -372,14 +177,11 @@ fn run_control_auto_run_stops_at_event_owner_boundary() {
     session.engine_state = EngineState::EventRoom;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop at the event owner boundary");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
+        .expect("progress step should stop at the event owner boundary");
 
     assert_eq!(
         outcome.auto_stop.as_ref().map(|stop| stop.kind),
@@ -418,13 +220,10 @@ fn run_control_auto_step_collapses_terminal_event_leave_to_map() {
     session.engine_state = EngineState::EventRoom;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
         .expect("auto-step should collapse the terminal Scrap Ooze leave screen");
 
     assert!(
@@ -441,7 +240,7 @@ fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
     let mut session = test_session_at_shop();
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at non-empty shop");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -486,34 +285,12 @@ fn run_control_auto_step_shop_stop_exports_human_boundary_record() {
 }
 
 #[test]
-fn run_control_boundary_command_renders_current_noncombat_record_summary() {
-    let mut session = test_session_at_shop();
-    let command = parse_run_control_command("bd").expect("bd should parse as boundary view");
-
-    let outcome = session
-        .apply_command(command)
-        .expect("boundary view should render current noncombat record");
-
-    assert!(outcome.message.contains("NonCombatDecisionRecordV1"));
-    assert!(outcome.message.contains("site=Shop"));
-    assert!(outcome
-        .message
-        .contains("data_role=HumanBoundaryNotTeacher"));
-    assert!(outcome.message.contains("hidden_free=true"));
-    assert!(outcome.message.contains("selection=Stopped"));
-    assert!(outcome.message.contains("shop:card-0"));
-    assert!(outcome.message.contains("shop:leave"));
-    assert!(outcome.action_result.is_none());
-    assert!(matches!(session.engine_state, EngineState::Shop(_)));
-}
-
-#[test]
 fn run_control_auto_step_campfire_stop_exports_human_boundary_record() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at campfire");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -549,17 +326,14 @@ fn run_control_auto_step_campfire_stop_exports_human_boundary_record() {
 }
 
 #[test]
-fn run_control_auto_run_stops_at_low_hp_campfire_without_choosing() {
+fn run_control_progress_step_stops_at_low_hp_campfire_without_choosing() {
     let mut session = test_session_at_campfire_with_hp(20, 80);
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop at the campfire owner boundary");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop at the campfire owner boundary");
 
     assert_eq!(
         outcome.auto_stop.as_ref().map(|stop| stop.kind),
@@ -580,7 +354,7 @@ fn run_control_auto_run_stops_at_low_hp_campfire_without_choosing() {
 }
 
 #[test]
-fn run_control_auto_run_stops_at_shop_owner_boundary() {
+fn run_control_progress_step_stops_at_shop_owner_boundary() {
     let mut session = test_session_at_shop();
     session
         .run_state
@@ -591,13 +365,10 @@ fn run_control_auto_run_stops_at_shop_owner_boundary() {
         );
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop at the shop owner boundary");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop at the shop owner boundary");
 
     assert_eq!(
         outcome.auto_stop.as_ref().map(|stop| stop.kind),
@@ -623,7 +394,7 @@ fn run_control_auto_run_stops_at_shop_owner_boundary() {
 }
 
 #[test]
-fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_owner_boundary() {
+fn run_control_progress_step_reopens_pending_shop_rewards() {
     let mut session = test_session_at_shop();
     session
         .reward_automation
@@ -645,18 +416,12 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_owner_boundary(
     shop.pending_reward_overlay = Some(pending);
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should reopen pending rewards before the shop owner boundary");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should reopen pending rewards");
 
     assert!(outcome.message.contains("routine: Open pending rewards"));
-    assert!(outcome
-        .message
-        .contains("Reason: relic reward requires human choice"));
     assert!(
         session
             .run_state
@@ -685,7 +450,11 @@ fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
     session.engine_state = EngineState::RewardScreen(reward);
 
     session
-        .apply_command(RunControlCommand::BranchSkipCardReward(0))
+        .apply_decision_action(
+            crate::eval::run_control::RunDecisionAction::SkipCardReward {
+                reward_item_index: 0,
+            },
+        )
         .expect("synthetic branch skip should consume the card reward item");
 
     assert!(
@@ -700,7 +469,7 @@ fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
 }
 
 #[test]
-fn run_control_auto_run_stops_at_run_choice_owner_boundary() {
+fn run_control_progress_step_stops_at_run_choice_owner_boundary() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
         .run_state
@@ -721,13 +490,10 @@ fn run_control_auto_run_stops_at_run_choice_owner_boundary() {
         });
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop at the run-choice owner boundary");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop at the run-choice owner boundary");
 
     assert_eq!(
         outcome.auto_stop.as_ref().map(|stop| stop.kind),
@@ -784,7 +550,7 @@ fn run_control_details_include_deck_mutation_compiler_groups() {
 }
 
 #[test]
-fn run_control_auto_run_executes_single_forced_run_pending_choice() {
+fn run_control_progress_step_executes_single_forced_run_pending_choice() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.master_deck = vec![crate::runtime::combat::CombatCard::new(
         crate::content::cards::CardId::Strike,
@@ -802,13 +568,10 @@ fn run_control_auto_run_executes_single_forced_run_pending_choice() {
         });
 
     session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should execute a single forced run pending choice");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should execute a single forced run pending choice");
 
     assert_eq!(session.run_state.master_deck[0].upgrades, 1);
     assert!(matches!(session.engine_state, EngineState::MapNavigation));
@@ -824,7 +587,7 @@ fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
         ]));
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at boss relic choice");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -855,7 +618,7 @@ fn run_control_auto_step_boss_relic_stop_exports_human_boundary_record() {
 }
 
 #[test]
-fn run_control_auto_run_stops_on_high_agency_boss_relic_choice() {
+fn run_control_progress_step_stops_on_high_agency_boss_relic_choice() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state =
         EngineState::BossRelicSelect(crate::state::rewards::BossRelicChoiceState::new(vec![
@@ -865,14 +628,11 @@ fn run_control_auto_run_stops_on_high_agency_boss_relic_choice() {
         ]));
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop for high-agency boss relic choices");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
+        .expect("progress step should stop for high-agency boss relic choices");
 
     assert!(outcome
         .message
@@ -904,7 +664,7 @@ fn run_control_auto_step_run_choice_stop_exports_human_boundary_record() {
         });
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at multi-candidate run choice");
 
     let record = noncombat_human_boundary_record(&outcome);
@@ -936,7 +696,7 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
     let mut session = test_session_after_neow_at_map();
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should stop at map");
 
     assert!(outcome.message.contains("Applied:\n  none"));
@@ -951,7 +711,7 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
 }
 
 #[test]
-fn run_control_route_go_keeps_manual_safety_gate_when_all_routes_are_forced_risk() {
+fn run_control_route_plan_keeps_manual_safety_gate_when_all_routes_are_forced_risk() {
     let mut session = test_session_with_forced_unsafe_elite_route();
     let before = (
         session.run_state.map.current_x,
@@ -960,8 +720,8 @@ fn run_control_route_go_keeps_manual_safety_gate_when_all_routes_are_forced_risk
     );
 
     let err = session
-        .apply_command(RunControlCommand::RouteGo)
-        .expect_err("manual route-go should keep the safety gate");
+        .apply_route_plan()
+        .expect_err("manual route planning should keep the safety gate");
 
     assert!(err.contains("route planner selected only reject-unless-forced routes"));
     assert_eq!(
@@ -984,13 +744,10 @@ fn run_control_auto_step_applies_forced_route_when_no_safe_alternative_exists() 
     );
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
         .expect("auto-step should apply the least-bad forced route");
 
     assert!(outcome
@@ -1046,13 +803,10 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
     session.run_state.map.current_y = 15;
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(2),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
         .expect("map overlay back should be routine automation");
 
     assert!(outcome.message.contains("Back to reward screen"));
@@ -1061,25 +815,27 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
         .contains("route planner declined automatic map selection"));
     assert!(outcome
         .message
-        .contains("Reason: card reward requires human choice"));
+        .contains("Reason: one atomic progress step applied"));
     assert!(matches!(session.engine_state, EngineState::RewardScreen(_)));
 }
 
 #[test]
-fn run_control_auto_run_uses_route_planner_by_default() {
+fn run_control_progress_step_can_use_route_planner() {
     let mut session = test_session_with_first_monster_room();
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should use route planner");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
+        .expect("progress step should use route planner");
 
-    assert!(outcome.message.contains("Auto-run stopped: Combat"));
-    assert!(outcome.message.contains("route=planner"));
+    assert!(outcome
+        .message
+        .contains("Advanced to human boundary: Combat"));
+    assert!(outcome
+        .message
+        .contains("Reason: one atomic progress step applied"));
     assert!(outcome.message.contains("route planner:"));
     assert!(outcome
         .message
@@ -1091,20 +847,17 @@ fn run_control_auto_run_uses_route_planner_by_default() {
 }
 
 #[test]
-fn run_control_auto_run_claims_safe_relic_reward_with_policy_annotation() {
+fn run_control_progress_step_claims_safe_relic_reward_with_policy_annotation() {
     let mut session =
         test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Relic {
             relic_id: crate::content::relics::RelicId::Anchor,
         }]);
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should claim a safe relic reward");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should claim a safe relic reward");
 
     let changes = auto_reward_changes(&outcome).expect("reward automation should report changes");
     assert!(changes.contains(
@@ -1145,7 +898,7 @@ fn run_control_auto_run_claims_safe_relic_reward_with_policy_annotation() {
 }
 
 #[test]
-fn run_control_auto_run_keeps_relic_reward_when_sapphire_key_is_available() {
+fn run_control_progress_step_keeps_relic_reward_when_sapphire_key_is_available() {
     let mut session = test_session_at_reward_items(vec![
         crate::state::rewards::RewardItem::Relic {
             relic_id: crate::content::relics::RelicId::Anchor,
@@ -1154,13 +907,10 @@ fn run_control_auto_run_keeps_relic_reward_when_sapphire_key_is_available() {
     ]);
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop for sapphire/relic choice");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop for sapphire/relic choice");
 
     assert!(outcome
         .message
@@ -1185,7 +935,7 @@ fn run_control_auto_run_keeps_relic_reward_when_sapphire_key_is_available() {
 }
 
 #[test]
-fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
+fn run_control_progress_step_stops_on_card_reward_with_singing_bowl() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -1199,13 +949,10 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
         ));
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop when Singing Bowl adds a strategic card reward option");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop when Singing Bowl adds a strategic card reward option");
 
     assert!(outcome
         .message
@@ -1228,67 +975,6 @@ fn run_control_auto_run_stops_on_card_reward_with_singing_bowl() {
 }
 
 #[test]
-fn run_control_recorded_card_reward_pick_selects_card_with_noncombat_record() {
-    let mut session = test_session_at_card_reward(vec![
-        crate::content::cards::CardId::Shockwave,
-        crate::content::cards::CardId::Clash,
-        crate::content::cards::CardId::SeverSoul,
-    ]);
-
-    let outcome = session
-        .apply_command(RunControlCommand::RecordedCardRewardPick(1))
-        .expect("recorded pick should select a card reward");
-
-    assert!(outcome.action_result.is_some());
-    assert!(session
-        .run_state
-        .master_deck
-        .iter()
-        .any(|card| card.id == crate::content::cards::CardId::Clash));
-    let annotations = outcome
-        .trace_annotations
-        .iter()
-        .filter_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                card_reward_packet,
-            } => Some((record, card_reward_packet)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        annotations.len(),
-        1,
-        "recorded card reward pick should not duplicate selected records"
-    );
-    let annotation = annotations
-        .first()
-        .copied()
-        .expect("recorded pick should attach a card reward noncombat record");
-    let (record, packet) = annotation;
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("recorded card reward record should validate");
-    assert_eq!(
-        record.site,
-        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
-    );
-    assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
-    );
-    assert_eq!(
-        record.selection.selected_candidate_id.as_deref(),
-        Some("card_reward:1:Clash")
-    );
-    assert_eq!(record.selection.selection_mode, "human_recorded_pick");
-    assert_eq!(
-        record.provenance.source_policy,
-        "run_control_recorded_card_reward_pick_v1"
-    );
-    assert!(packet.is_some());
-}
-
-#[test]
 fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
@@ -1297,7 +983,7 @@ fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
     ]);
 
     let outcome = session
-        .apply_command(RunControlCommand::Candidate("1".to_string()))
+        .apply_candidate_id("1")
         .expect("manual visible card reward pick should select a card reward");
 
     assert!(outcome.action_result.is_some());
@@ -1344,7 +1030,7 @@ fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
 }
 
 #[test]
-fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
+fn run_control_progress_step_does_not_open_card_reward_item_with_singing_bowl() {
     let mut session = test_session_at_reward_items(vec![crate::state::rewards::RewardItem::Card {
         cards: vec![
             crate::state::rewards::RewardCard::new(crate::content::cards::CardId::Shockwave, 0),
@@ -1360,13 +1046,10 @@ fn run_control_auto_run_does_not_open_card_reward_item_with_singing_bowl() {
         ));
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should stop before opening a Singing Bowl card reward item");
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            ..Default::default()
+        })
+        .expect("progress step should stop before opening a Singing Bowl card reward item");
 
     assert!(outcome
         .message
@@ -1409,8 +1092,15 @@ fn visible_singing_bowl_candidate_consumes_unopened_card_reward_item() {
         ));
     let before_max_hp = session.run_state.max_hp;
 
+    let bowl_action = crate::eval::run_control::build_decision_surface(&session)
+        .view
+        .candidates
+        .into_iter()
+        .find(|candidate| candidate.id == "bowl")
+        .and_then(|candidate| candidate.action.executable_action())
+        .expect("bowl should be an executable typed action");
     session
-        .apply_command(RunControlCommand::Candidate("bowl".to_string()))
+        .apply_decision_action(bowl_action)
         .expect("bowl should consume the visible card reward item");
 
     assert_eq!(session.run_state.max_hp, before_max_hp + 2);
@@ -1430,13 +1120,10 @@ fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
     let mut session = test_session_with_first_monster_room();
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
         .expect("auto-step route planner should choose a map node");
 
     assert!(outcome.message.contains("route planner:"));
@@ -1447,7 +1134,7 @@ fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
         .contains("label_role=behavior_policy_not_teacher"));
     assert!(outcome
         .message
-        .contains("Reason: operation budget exhausted at 1 automatic operations"));
+        .contains("Reason: one atomic progress step applied"));
     assert!(outcome.action_result.is_some());
     assert!(matches!(
         session.engine_state,
@@ -1466,13 +1153,10 @@ fn run_control_auto_step_route_planner_reports_auto_capture() {
     };
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            ..Default::default()
+        })
         .expect("route planner should enter combat and auto-capture");
 
     assert!(outcome.message.contains("route planner:"));
@@ -1500,7 +1184,7 @@ fn run_control_auto_step_leaves_empty_shop() {
     }
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should leave a shop with no remaining executable choices");
 
     assert!(outcome
@@ -1528,7 +1212,7 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
     session.engine_state = EngineState::RewardScreen(rewards);
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(Default::default()))
+        .apply_progress_step(Default::default())
         .expect("auto-step should claim deterministic rewards");
 
     let changes = auto_reward_changes(&outcome).expect("reward automation should report changes");
@@ -1546,7 +1230,7 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
     ));
     assert!(outcome
         .message
-        .contains("Reason: card reward requires human choice"));
+        .contains("Reason: one atomic progress step applied"));
     assert_eq!(session.run_state.gold, 118);
     assert_eq!(
         session.run_state.potions[0]
@@ -1558,36 +1242,29 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
 }
 
 #[test]
-fn run_control_auto_step_solves_starter_combat_and_stops_at_reward_choice() {
+fn run_control_auto_step_resolves_one_starter_combat() {
     let mut session = test_session_with_first_monster_room();
     session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::SelectMapNode(0)))
         .expect("map input should enter combat");
 
     let outcome = session
-        .apply_command(RunControlCommand::AutoStep(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                search: crate::eval::run_control::RunControlSearchCombatOptions {
-                    max_nodes: Some(2_000),
-                    wall_ms: Some(5_000),
-                    ..Default::default()
-                },
+        .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
+            search: crate::eval::run_control::RunControlSearchCombatOptions {
+                max_nodes: Some(2_000),
+                wall_ms: Some(5_000),
                 ..Default::default()
             },
-        ))
+            ..Default::default()
+        })
         .expect("auto-step should resolve starter combat");
 
     assert!(outcome
         .message
         .contains("combat search: search-combat applied"));
-    assert!(
-        outcome
-            .message
-            .contains("Reason: remaining reward requires human choice")
-            || outcome
-                .message
-                .contains("Reason: card reward requires human choice")
-    );
+    assert!(outcome
+        .message
+        .contains("Reason: one atomic progress step applied"));
     assert!(outcome.action_result.is_some());
     assert!(session.active_combat.is_none());
     assert_eq!(
@@ -1599,39 +1276,10 @@ fn run_control_auto_step_solves_starter_combat_and_stops_at_reward_choice() {
 }
 
 #[test]
-fn run_control_case_command_saves_diagnostic_decision_case() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    let dir = unique_temp_dir("run_control_decision_case");
-    fs::create_dir_all(&dir).expect("temp dir should be created");
-    let path = dir.join("decision.json");
-
-    let outcome = session
-        .apply_command(RunControlCommand::SaveDecisionCase {
-            path: Some(path.clone()),
-        })
-        .expect("case command should save");
-
-    assert!(outcome.message.contains("saved RunDecisionCaseV1"));
-    assert!(
-        outcome.action_result.is_none(),
-        "non-action commands should not fabricate action results"
-    );
-    let payload = fs::read_to_string(&path).expect("decision case should exist");
-    assert!(payload.contains("\"schema_name\": \"sts_simulator.run_decision_case\""));
-    assert!(payload.contains("\"label_role\": \"diagnostic_not_teacher_label\""));
-    assert!(payload.contains("\"trainable_as_action_label\": false"));
-    assert!(payload.contains("\"policy_quality_claim\": false"));
-    assert!(payload.contains("\"resolution\""));
-
-    let _ = fs::remove_file(path);
-    let _ = fs::remove_dir(dir);
-}
-
-#[test]
 fn run_control_visible_candidate_command_advances_current_screen() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let outcome = session
-        .apply_command(RunControlCommand::DefaultCandidate)
+        .apply_only_candidate()
         .expect("single visible Neow intro action should execute");
 
     assert!(outcome.message.contains("Neow Bonus"));
@@ -1663,7 +1311,7 @@ fn run_control_rejects_proceed_alias_on_neow_intro() {
     let mut session = RunControlSession::new(RunControlConfig::default());
 
     let err = session
-        .apply_command(RunControlCommand::Input(ClientInput::Proceed))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::Proceed))
         .expect_err("raw proceed must not be accepted on the Neow intro event screen");
 
     assert!(err.contains("input `proceed` is not valid"));
@@ -1685,7 +1333,7 @@ fn run_control_rejects_reward_command_on_neow_intro() {
     let mut session = RunControlSession::new(RunControlConfig::default());
 
     let err = session
-        .apply_command(RunControlCommand::Input(ClientInput::ClaimReward(0)))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::ClaimReward(0)))
         .expect_err("reward claim must not be accepted on an event screen");
 
     assert!(err.contains("input `claim 0` is not valid"));
@@ -1698,11 +1346,11 @@ fn run_control_rejects_reward_command_on_neow_intro() {
 fn run_control_rejects_map_travel_before_neow_is_complete() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
-        .apply_command(RunControlCommand::DefaultCandidate)
+        .apply_only_candidate()
         .expect("Neow intro should advance");
 
     let err = session
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::SelectMapNode(0)))
         .expect_err("Neow bonus should not allow first-room travel");
 
     assert!(err.contains("input `go 0` is not valid"));
@@ -1711,36 +1359,11 @@ fn run_control_rejects_map_travel_before_neow_is_complete() {
 }
 
 #[test]
-fn run_control_shop_accepts_visible_candidate_ids_and_contextual_words() {
-    let mut session = test_session_at_shop();
-
-    let outcome = session
-        .apply_command(RunControlCommand::Candidate("card-0".to_string()))
-        .expect("visible shop card id should buy");
-    assert!(outcome.message.contains("Added card: Armaments"));
-    assert_eq!(session.run_state.gold, 51);
-
-    let mut session = test_session_at_shop();
-    let outcome = session
-        .apply_command(RunControlCommand::CardIndex(1))
-        .expect("card <idx> should buy in shop");
-    assert!(outcome.message.contains("Added card: Shrug It Off"));
-    assert_eq!(session.run_state.gold, 50);
-
-    let mut session = test_session_at_shop();
-    let outcome = session
-        .apply_command(RunControlCommand::Candidate("1".to_string()))
-        .expect("bare numeric shop id should fall back to card-<idx>");
-    assert!(outcome.message.contains("Added card: Shrug It Off"));
-    assert_eq!(session.run_state.gold, 50);
-}
-
-#[test]
 fn run_control_shop_leave_candidate_exits_shop() {
     let mut session = test_session_at_shop();
 
     let outcome = session
-        .apply_command(RunControlCommand::Candidate("leave".to_string()))
+        .apply_candidate_id("leave")
         .expect("visible leave id should leave shop");
 
     assert!(outcome.message.contains("Chose: Leave shop"));
@@ -1763,7 +1386,7 @@ fn run_control_shop_rewards_candidate_reopens_pending_overlay() {
     shop.pending_reward_overlay = Some(pending);
 
     let outcome = session
-        .apply_command(parse_run_control_command("rewards").expect("rewards should parse"))
+        .apply_candidate_id("rewards")
         .expect("visible rewards id should reopen overlay");
 
     assert!(outcome.message.contains("Chose: Open pending rewards"));
@@ -1785,18 +1408,6 @@ fn run_control_shop_rewards_candidate_reopens_pending_overlay() {
 }
 
 #[test]
-fn run_control_campfire_accepts_bare_smith_index_alias() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.engine_state = EngineState::Campfire;
-
-    let outcome = session
-        .apply_command(RunControlCommand::Candidate("8".to_string()))
-        .expect("bare numeric campfire id should fall back to smith-<idx>");
-
-    assert!(outcome.message.contains("Chose: Smith Defend"));
-}
-
-#[test]
 fn visible_candidate_alias_resolves_label_leave_and_skip() {
     use crate::eval::run_control::view_model::{CandidateAction, DecisionCandidate};
 
@@ -1804,7 +1415,7 @@ fn visible_candidate_alias_resolves_label_leave_and_skip() {
         DecisionCandidate {
             id: "0".to_string(),
             label: "Leave.".to_string(),
-            action: CandidateAction::Input(ClientInput::EventChoice(0)),
+            action: CandidateAction::Execute(ClientInput::EventChoice(0).into()),
             key: None,
             note: None,
             resolution: None,
@@ -1812,7 +1423,7 @@ fn visible_candidate_alias_resolves_label_leave_and_skip() {
         DecisionCandidate {
             id: "1".to_string(),
             label: "Skip card reward".to_string(),
-            action: CandidateAction::Input(ClientInput::Proceed),
+            action: CandidateAction::Execute(ClientInput::Proceed.into()),
             key: None,
             note: None,
             resolution: None,
@@ -1950,7 +1561,7 @@ fn test_session_after_neow_at_map() -> RunControlSession {
 }
 
 fn noncombat_human_boundary_record(
-    outcome: &RunControlCommandOutcome,
+    outcome: &RunProgressOutcome,
 ) -> &crate::ai::noncombat_decision_v1::NonCombatDecisionRecordV1 {
     let record = outcome
         .trace_annotations
@@ -1966,7 +1577,7 @@ fn noncombat_human_boundary_record(
 }
 
 fn auto_reward_changes(
-    outcome: &RunControlCommandOutcome,
+    outcome: &RunProgressOutcome,
 ) -> Option<&[crate::eval::run_control::RunActionResultChangeV1]> {
     outcome
         .auto_applied_steps

@@ -25,43 +25,6 @@ impl RunControlSession {
         ))
     }
 
-    pub(super) fn combat_action_by_index(&self, index: usize) -> Result<ClientInput, String> {
-        let position = self.current_combat_position_for_actions()?;
-        let actions = get_legal_moves(&position.engine, &position.combat);
-        actions
-            .get(index)
-            .cloned()
-            .ok_or_else(|| format!("combat action index {index} out of range"))
-    }
-
-    pub(super) fn resolve_target(
-        &self,
-        target_slot_or_id: Option<usize>,
-    ) -> Result<Option<usize>, String> {
-        let Some(raw) = target_slot_or_id else {
-            return Ok(None);
-        };
-        let combat = self
-            .active_combat
-            .as_ref()
-            .map(|active| &active.combat_state)
-            .ok_or_else(|| "targeted action requires active combat".to_string())?;
-        combat
-            .entities
-            .monsters
-            .iter()
-            .find(|monster| monster.slot as usize == raw)
-            .or_else(|| {
-                combat
-                    .entities
-                    .monsters
-                    .iter()
-                    .find(|monster| monster.id == raw)
-            })
-            .map(|monster| Some(monster.id))
-            .ok_or_else(|| format!("no monster slot or entity id {raw}"))
-    }
-
     fn visible_candidate_allows_input(&self, input: &ClientInput) -> bool {
         let surface = crate::eval::run_control::decision_surface::build_decision_surface(self);
         crate::eval::run_control::decision_surface::surface_allows_visible_input(&surface, input)

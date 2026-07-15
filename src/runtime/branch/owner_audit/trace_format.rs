@@ -327,7 +327,8 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
 mod tests {
     use super::*;
     use sts_simulator::eval::run_control::{
-        apply_owner_audit_auto_run, RunControlAutoStepOptions, RunControlConfig, RunControlSession,
+        apply_owner_audit_progress_step, RunControlAutoStepOptions, RunControlConfig,
+        RunControlRouteAutomationMode, RunControlSession,
     };
     use sts_simulator::state::core::EngineState;
 
@@ -337,19 +338,19 @@ mod tests {
         session.run_state.event_state = None;
         session.engine_state = EngineState::MapNavigation;
 
-        let outcome = apply_owner_audit_auto_run(
+        let outcome = apply_owner_audit_progress_step(
             &mut session,
             RunControlAutoStepOptions {
-                max_operations: Some(1),
+                route: RunControlRouteAutomationMode::Planner,
                 ..RunControlAutoStepOptions::default()
             },
         )
-        .expect("owner auto-run should select one route");
+        .expect("owner progress step should select one route");
         let route_step = outcome
             .auto_applied_steps
             .iter()
             .find(|step| step.kind == RunControlAutoAppliedKindV1::RoutePlanner)
-            .expect("auto-run should record the route step");
+            .expect("progress step should record the route step");
 
         let packet = route_step
             .route_decision_packet

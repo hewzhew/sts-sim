@@ -169,7 +169,7 @@ pub fn capture_combat_position_from_run_v1(
     )
 }
 
-pub fn capture_combat_position_from_auto_run_v1(
+pub fn capture_combat_position_from_runtime_progress_v1(
     label: Option<String>,
     position: &CombatPosition,
     run_state: &RunState,
@@ -177,7 +177,7 @@ pub fn capture_combat_position_from_auto_run_v1(
     capture_combat_position_with_provenance_v1(
         label,
         position,
-        ArtifactProvenanceV1::auto_run_control(run_state),
+        ArtifactProvenanceV1::runtime_progress(run_state),
     )
 }
 

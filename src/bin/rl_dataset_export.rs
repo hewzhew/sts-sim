@@ -9,14 +9,18 @@ use serde_json::{json, Value};
 use sts_simulator::content::cards::{
     get_card_definition, CardId, CardRarity, CardTag, CardTarget, CardType,
 };
+use sts_simulator::eval::run_control::{
+    build_planner_capture_coverage_report, build_planner_capture_dataset, load_session_trace_v1,
+    SESSION_TRACE_SCHEMA_NAME,
+};
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Export branch path decisions as an RLDS-style episode JSON dataset",
+    about = "Export branch decisions or typed SessionTrace planner captures as JSON datasets",
     version
 )]
 struct Args {
-    /// Path to a branch_tiny result.json/frontier.json/path.json file or a capsule/panel directory.
+    /// Path to a SessionTraceV1, branch_tiny result/frontier/path file, or capsule/panel directory.
     #[arg(long)]
     input: PathBuf,
 
@@ -27,6 +31,10 @@ struct Args {
     /// Output JSON path. Writes to stdout when omitted.
     #[arg(long)]
     out: Option<PathBuf>,
+
+    /// Optional coverage report path when --input is a SessionTraceV1.
+    #[arg(long)]
+    planner_coverage_out: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -92,6 +100,12 @@ struct InputBundle {
 
 fn main() -> Result<(), String> {
     let args = Args::parse();
+    if export_planner_trace_if_present(&args)? {
+        return Ok(());
+    }
+    if args.planner_coverage_out.is_some() {
+        return Err("--planner-coverage-out requires a SessionTraceV1 input".to_string());
+    }
     let bundles = read_input_bundles(&args.input, args.summary.as_ref())?;
     let mut episodes = Vec::new();
     for bundle in &bundles {
@@ -145,6 +159,26 @@ fn main() -> Result<(), String> {
         episodes,
     };
     write_json(args.out, &dataset)
+}
+
+fn export_planner_trace_if_present(args: &Args) -> Result<bool, String> {
+    if !args.input.is_file() {
+        return Ok(false);
+    }
+    let value = read_json_path(&args.input)?;
+    if value.get("schema_name").and_then(Value::as_str) != Some(SESSION_TRACE_SCHEMA_NAME) {
+        return Ok(false);
+    }
+    if args.summary.is_some() {
+        return Err("--summary is not used with SessionTraceV1 input".to_string());
+    }
+    let trace = load_session_trace_v1(&args.input)?;
+    let dataset = build_planner_capture_dataset(&trace);
+    write_json(args.out.clone(), &dataset)?;
+    if let Some(path) = args.planner_coverage_out.clone() {
+        write_json(Some(path), &build_planner_capture_coverage_report(&trace))?;
+    }
+    Ok(true)
 }
 
 fn episode_from_path(
@@ -342,7 +376,7 @@ fn write_json<T: Serialize>(out: Option<PathBuf>, value: &T) -> Result<(), Strin
         }
         fs::write(&path, format!("{text}\n"))
             .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
-        eprintln!("wrote RLDS-style episode dataset to {}", path.display());
+        eprintln!("wrote rebuildable dataset/report to {}", path.display());
     } else {
         let mut stdout = std::io::stdout().lock();
         stdout

@@ -1,6 +1,6 @@
 use sts_simulator::eval::run_control::{
-    apply_owner_audit_auto_run, CombatSearchTraceSummary, RunControlAutoStopKind,
-    RunControlCommandOutcome, RunControlHpLossLimit, RunControlSession,
+    apply_owner_audit_progress_step, CombatSearchTraceSummary, RunControlAutoStopKind,
+    RunControlHpLossLimit, RunControlSession, RunProgressOutcome,
 };
 
 use super::accepted_high_loss_diagnostic::{
@@ -18,7 +18,7 @@ use super::{boundary_router, BranchStatus};
 
 pub(super) struct CombatSearchLaneAttempt {
     trial_session: Option<RunControlSession>,
-    pub(super) outcome: Option<RunControlCommandOutcome>,
+    pub(super) outcome: Option<RunProgressOutcome>,
     pub(super) status: BranchStatus,
     pub(super) label: &'static str,
     pub(super) max_nodes: usize,
@@ -82,7 +82,7 @@ pub(super) fn run_lane_attempt(
     });
     let internal_no_win_rescue_enabled =
         !options.search.disable_no_win_rescue || options.search.allow_smoke_bomb_survival_fallback;
-    let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
+    let outcome = match apply_owner_audit_progress_step(&mut trial, options) {
         Ok(outcome) => outcome,
         Err(err) => {
             return Ok(CombatSearchLaneAttempt {
@@ -262,7 +262,7 @@ impl CombatSearchLaneAttempt {
 fn candidate_facts(
     trial: &RunControlSession,
     status: &BranchStatus,
-    outcome: &RunControlCommandOutcome,
+    outcome: &RunProgressOutcome,
     owner_hp_loss_limit: Option<u32>,
     root_potion_count: u32,
     fallback_action_count: usize,
@@ -385,7 +385,7 @@ pub(super) fn lane_attempt_report(attempt: &CombatSearchLaneAttempt) -> CombatSe
     })
 }
 
-fn lane_status(session: &RunControlSession, outcome: &RunControlCommandOutcome) -> BranchStatus {
+fn lane_status(session: &RunControlSession, outcome: &RunProgressOutcome) -> BranchStatus {
     if let Some(outcome) = boundary_router::terminal_outcome(session) {
         BranchStatus::Terminal(outcome)
     } else {

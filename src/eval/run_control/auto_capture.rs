@@ -2,9 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::content::monsters::EnemyId;
+use crate::eval::combat_capture::{
+    capture_combat_position_from_runtime_progress_v1, save_combat_capture_v1,
+};
 use crate::state::core::EngineState;
 
-use super::artifact_commands::default_benchmark_root;
 use super::registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 use super::RunControlSession;
 
@@ -41,7 +43,13 @@ pub(super) fn maybe_auto_capture_combat_start(
         .unwrap_or_else(|| default_benchmark_root(session));
     let case_id = next_available_case_id(&root, &base_case_id(session));
     let paths = BenchmarkCasePaths::for_case(&root, &case_id);
-    session.save_current_auto_combat_capture(&paths.capture_path, Some(case_id.clone()))?;
+    let position = session.current_active_combat_position()?;
+    let capture = capture_combat_position_from_runtime_progress_v1(
+        Some(case_id.clone()),
+        &position,
+        &session.run_state,
+    )?;
+    save_combat_capture_v1(&paths.capture_path, &capture)?;
     let paths = add_case_to_benchmark_registry(&root, &case_id)?;
     session.remember_capture_case(root, case_id.clone());
     session.auto_capture_last_combat_sequence = Some(session.combat_sequence);
@@ -55,11 +63,21 @@ pub(super) fn maybe_auto_capture_combat_start(
 
 pub(super) fn render_auto_capture_result(result: &AutoCombatCaptureResult) -> String {
     format!(
-        "Auto-captured combat case `{}` to {} and registered {}.\nAfter this combat ends, type `baseline` only if you played it manually.",
+        "Auto-captured combat case `{}` to {} and registered {}.",
         result.case_id,
         result.capture_path.display(),
         result.benchmark_manifest.display()
     )
+}
+
+fn default_benchmark_root(session: &RunControlSession) -> PathBuf {
+    PathBuf::from("tools")
+        .join("artifacts")
+        .join("benchmarks")
+        .join(format!(
+            "seed{}_act{}",
+            session.run_state.seed, session.run_state.act_num
+        ))
 }
 
 fn is_auto_capture_boundary(session: &RunControlSession) -> bool {
@@ -160,7 +178,7 @@ mod tests {
         };
 
         let outcome = session
-            .apply_command(crate::eval::run_control::RunControlCommand::Input(
+            .apply_decision_action(crate::eval::run_control::RunDecisionAction::Input(
                 ClientInput::SelectMapNode(0),
             ))
             .expect("map input should enter combat and auto-capture");
@@ -181,13 +199,13 @@ mod tests {
         let capture = load_combat_capture_v1(&captures[0]).expect("auto capture should load");
         assert_eq!(
             capture.provenance.source_kind,
-            ArtifactSourceKind::AutoRunControl
+            ArtifactSourceKind::RuntimeProgress
         );
         assert_eq!(
             capture.provenance.capture_method,
-            "run_control_auto_capture"
+            "runtime_progress_capture"
         );
-        assert_eq!(capture.source.capture_method, "run_control_auto_capture");
+        assert_eq!(capture.source.capture_method, "runtime_progress_capture");
 
         let second =
             maybe_auto_capture_combat_start(&mut session).expect("same combat should not fail");

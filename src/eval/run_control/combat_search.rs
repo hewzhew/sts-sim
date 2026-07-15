@@ -16,16 +16,14 @@ use super::combat_search_rejection::{
 use super::combat_search_setup::{
     effective_hp_loss_limit, prepare_search_combat, search_report_has_invalid_card_identity,
 };
-use super::commands::RunControlSearchCombatOptions;
-use super::session::{
-    RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
-};
+use super::progress_options::RunControlSearchCombatOptions;
+use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
 
 pub(super) fn apply_search_combat(
     session: &mut RunControlSession,
     options: RunControlSearchCombatOptions,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let prepared = prepare_search_combat(session, options)?;
     let effective_profile = prepared.effective_profile;
     let options = prepared.options;

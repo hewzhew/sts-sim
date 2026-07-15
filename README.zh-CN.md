@@ -46,7 +46,7 @@ cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 155222
 cargo run --bin combat_case_review -- --case <case.json> --ladder
 ```
 
-当前维护命令、续跑、combat search driver、手动 REPL 和验证方式见
+当前维护的有界运行、续跑、combat search driver 和验证方式见
 [docs/RUNBOOK.md](docs/RUNBOOK.md)。
 
 ## 主要入口
@@ -57,7 +57,6 @@ cargo run --bin combat_case_review -- --case <case.json> --ladder
 | `branch_panel` | Rust seed-panel scheduler，用于多 seed smoke/drain run |
 | `combat_case_review` | saved combat case 的诊断 review ladder |
 | `combat_search_v2_driver` | 从 start spec、capture 或 benchmark suite 跑固定战斗搜索 |
-| `run_play_driver` | 手动和半自动模拟器 REPL |
 | `rl_dataset_export` | 离线 decision sample 导出，用于 imitation/RL 实验 |
 
 Binary 边界见 [src/bin/README.md](src/bin/README.md)。

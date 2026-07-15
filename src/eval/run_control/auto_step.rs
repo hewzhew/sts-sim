@@ -1,18 +1,14 @@
-use std::collections::BTreeSet;
-
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
-use crate::runtime::combat::CombatCard;
-use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
-use crate::state::events::EventId;
+use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::combat_line_adjudication::{CombatLineAdjudicationV1, CombatLineRejectionReasonV1};
-use super::commands::{
+use super::progress_options::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStopKind,
-    RunControlAutoStopV1, RunControlCombatSearchRejection, RunControlCommandOutcome,
-    RunControlDecisionParentSnapshotV1, RunControlSession,
+    RunControlAutoStopV1, RunControlCombatSearchRejection, RunControlDecisionParentSnapshotV1,
+    RunControlSession, RunProgressOutcome,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
@@ -20,8 +16,6 @@ use super::transition_report::{
     TransitionAction,
 };
 use super::view_model::{build_run_control_view_model, DecisionCandidate, RunControlViewModel};
-
-const DEFAULT_MAX_OPERATIONS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
@@ -65,7 +59,7 @@ impl AutoAppliedLog {
         &mut self,
         kind: RunControlAutoAppliedKindV1,
         label: impl Into<String>,
-        outcome: &RunControlCommandOutcome,
+        outcome: &RunProgressOutcome,
     ) {
         self.steps.push(RunControlAutoAppliedStepV1 {
             kind,
@@ -112,56 +106,42 @@ fn route_decision_packet(
 pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = AutoAppliedLog::new();
     let mut trace_annotations = Vec::new();
     let mut decision_parent_snapshots = Vec::new();
-    let mut seen_boundaries = BTreeSet::new();
-    let max_operations = options.max_operations.unwrap_or(DEFAULT_MAX_OPERATIONS);
 
-    for _ in 0..max_operations {
-        let boundary_key = auto_boundary_key(session);
-        let stall_key = auto_stall_key(session, &boundary_key);
-        if !seen_boundaries.insert(stall_key.clone()) {
+    let reward_before = RunVisibleSnapshot::capture(session);
+    let reward_report = super::reward_auto::apply_reward_automation(session)?;
+    if !reward_report.is_empty() {
+        let reward_after = RunVisibleSnapshot::capture(session);
+        let action_result = action_result_from_transition(
+            TransitionAction {
+                label: "reward automation".to_string(),
+            },
+            &reward_before,
+            &reward_after,
+            current_run_apply_status(session),
+        );
+        applied.push_step(
+            RunControlAutoAppliedKindV1::RewardAutomation,
+            "reward automation",
+            Some(action_result),
+        );
+        trace_annotations.extend(reward_report.trace_annotations);
+        return finish_applied_progress_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            decision_parent_snapshots,
+        );
+    }
+
+    if session.current_active_combat_position().is_ok() {
+        if high_stakes_auto_search_requires_hp_loss_gate(session, &options.search) {
             return finish_auto_step(
-                session,
-                &before,
-                applied,
-                trace_annotations,
-                decision_parent_snapshots,
-                RunControlAutoStopKind::RepeatedBoundary,
-                "repeated auto boundary without progress",
-                Some(format!(
-                    "boundary={boundary_key}\nstall_key={stall_key}\nThis usually means the selected automatic action did not mutate the visible boundary state."
-                )),
-            );
-        }
-
-        let reward_before = RunVisibleSnapshot::capture(session);
-        let reward_report = super::reward_auto::apply_reward_automation(session)?;
-        if !reward_report.is_empty() {
-            let reward_after = RunVisibleSnapshot::capture(session);
-            let action_result = action_result_from_transition(
-                TransitionAction {
-                    label: "reward automation".to_string(),
-                },
-                &reward_before,
-                &reward_after,
-                current_run_apply_status(session),
-            );
-            applied.push_step(
-                RunControlAutoAppliedKindV1::RewardAutomation,
-                "reward automation",
-                Some(action_result),
-            );
-            trace_annotations.extend(reward_report.trace_annotations);
-            continue;
-        }
-
-        if session.current_active_combat_position().is_ok() {
-            if high_stakes_auto_search_requires_hp_loss_gate(session, &options.search) {
-                return finish_auto_step(
                     session,
                     &before,
                     applied,
@@ -174,100 +154,90 @@ pub(super) fn apply_guarded_auto_step(
                             .to_string(),
                     ),
                 );
-            }
+        }
 
-            let mut no_potion_rejection = None;
-            let mut no_potion_rejection_kind = None;
-            let mut no_potion_adjudication = None;
-            if let Some(no_potion_options) = auto_no_potion_first_options(session, &options.search)
-            {
-                let outcome =
-                    super::combat_search::apply_search_combat(session, no_potion_options)?;
-                if let Some(result) = outcome.action_result.as_ref() {
-                    applied.push_outcome(
-                        RunControlAutoAppliedKindV1::CombatSearch,
-                        format!("combat search(no potion): {}", result.chosen_label),
-                        &outcome,
-                    );
-                    let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-                    decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-                    trace_annotations.extend(outcome.trace_annotations);
-                    applied.extend(auto_capture_summaries);
-                    continue;
-                }
-                decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-                trace_annotations.extend(outcome.trace_annotations);
-                no_potion_rejection_kind = outcome.combat_search_rejection;
-                no_potion_adjudication = outcome.execution_adjudication.clone();
-                no_potion_rejection = Some(trim_search_rejection(&outcome.message));
-            }
-
-            let outcome = super::combat_search::apply_search_combat(
-                session,
-                auto_search_options(session, options.search.clone()),
-            )?;
+        let mut no_potion_rejection = None;
+        let mut no_potion_rejection_kind = None;
+        let mut no_potion_adjudication = None;
+        if let Some(no_potion_options) = auto_no_potion_first_options(session, &options.search) {
+            let outcome = super::combat_search::apply_search_combat(session, no_potion_options)?;
             if let Some(result) = outcome.action_result.as_ref() {
-                let label = if no_potion_rejection.is_some() {
-                    format!("combat search(semantic fallback): {}", result.chosen_label)
-                } else {
-                    format!("combat search: {}", result.chosen_label)
-                };
-                applied.push_outcome(RunControlAutoAppliedKindV1::CombatSearch, label, &outcome);
+                applied.push_outcome(
+                    RunControlAutoAppliedKindV1::CombatSearch,
+                    format!("combat search(no potion): {}", result.chosen_label),
+                    &outcome,
+                );
                 let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
                 decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                 trace_annotations.extend(outcome.trace_annotations);
                 applied.extend(auto_capture_summaries);
-                continue;
-            }
-            let fallback_rejection = trim_search_rejection(&outcome.message);
-            let fallback_rejection_kind = outcome.combat_search_rejection;
-            let fallback_adjudication = outcome.execution_adjudication.clone();
-            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-            trace_annotations.extend(outcome.trace_annotations);
-            if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
-                let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
-                if let Some(result) = rescue.action_result.as_ref() {
-                    applied.push_outcome(
-                        RunControlAutoAppliedKindV1::CombatSearch,
-                        format!("combat search(potion rescue): {}", result.chosen_label),
-                        &rescue,
-                    );
-                    let auto_capture_summaries = auto_capture_summaries(&rescue.trace_annotations);
-                    decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
-                    trace_annotations.extend(rescue.trace_annotations);
-                    applied.extend(auto_capture_summaries);
-                    continue;
-                }
-                decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
-                trace_annotations.extend(rescue.trace_annotations);
-                let rescue_rejection_kind = rescue.combat_search_rejection;
-                let rescue_adjudication = rescue.execution_adjudication.clone();
-                return finish_auto_step(
+                return finish_applied_progress_step(
                     session,
                     &before,
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
-                    RunControlAutoStopKind::CombatSearchNoCompleteWin,
-                    combat_search_stop_reason(
-                        &[
-                            no_potion_rejection_kind,
-                            fallback_rejection_kind,
-                            rescue_rejection_kind,
-                        ],
-                        &[
-                            no_potion_adjudication,
-                            fallback_adjudication,
-                            rescue_adjudication,
-                        ],
-                    ),
-                    Some(combine_three_search_rejections(
-                        no_potion_rejection,
-                        fallback_rejection,
-                        trim_search_rejection(&rescue.message),
-                    )),
                 );
             }
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+            trace_annotations.extend(outcome.trace_annotations);
+            no_potion_rejection_kind = outcome.combat_search_rejection;
+            no_potion_adjudication = outcome.execution_adjudication.clone();
+            no_potion_rejection = Some(trim_search_rejection(&outcome.message));
+        }
+
+        let outcome = super::combat_search::apply_search_combat(
+            session,
+            auto_search_options(session, options.search.clone()),
+        )?;
+        if let Some(result) = outcome.action_result.as_ref() {
+            let label = if no_potion_rejection.is_some() {
+                format!("combat search(semantic fallback): {}", result.chosen_label)
+            } else {
+                format!("combat search: {}", result.chosen_label)
+            };
+            applied.push_outcome(RunControlAutoAppliedKindV1::CombatSearch, label, &outcome);
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+            trace_annotations.extend(outcome.trace_annotations);
+            applied.extend(auto_capture_summaries);
+            return finish_applied_progress_step(
+                session,
+                &before,
+                applied,
+                trace_annotations,
+                decision_parent_snapshots,
+            );
+        }
+        let fallback_rejection = trim_search_rejection(&outcome.message);
+        let fallback_rejection_kind = outcome.combat_search_rejection;
+        let fallback_adjudication = outcome.execution_adjudication.clone();
+        decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+        trace_annotations.extend(outcome.trace_annotations);
+        if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
+            let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
+            if let Some(result) = rescue.action_result.as_ref() {
+                applied.push_outcome(
+                    RunControlAutoAppliedKindV1::CombatSearch,
+                    format!("combat search(potion rescue): {}", result.chosen_label),
+                    &rescue,
+                );
+                let auto_capture_summaries = auto_capture_summaries(&rescue.trace_annotations);
+                decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
+                trace_annotations.extend(rescue.trace_annotations);
+                applied.extend(auto_capture_summaries);
+                return finish_applied_progress_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    decision_parent_snapshots,
+                );
+            }
+            decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
+            trace_annotations.extend(rescue.trace_annotations);
+            let rescue_rejection_kind = rescue.combat_search_rejection;
+            let rescue_adjudication = rescue.execution_adjudication.clone();
             return finish_auto_step(
                 session,
                 &before,
@@ -276,146 +246,182 @@ pub(super) fn apply_guarded_auto_step(
                 decision_parent_snapshots,
                 RunControlAutoStopKind::CombatSearchNoCompleteWin,
                 combat_search_stop_reason(
-                    &[no_potion_rejection_kind, fallback_rejection_kind],
-                    &[no_potion_adjudication, fallback_adjudication],
+                    &[
+                        no_potion_rejection_kind,
+                        fallback_rejection_kind,
+                        rescue_rejection_kind,
+                    ],
+                    &[
+                        no_potion_adjudication,
+                        fallback_adjudication,
+                        rescue_adjudication,
+                    ],
                 ),
-                Some(combine_search_rejections(
+                Some(combine_three_search_rejections(
                     no_potion_rejection,
                     fallback_rejection,
+                    trim_search_rejection(&rescue.message),
                 )),
             );
         }
-
-        if let Some((outcome, summary)) = apply_map_overlay_back_without_route_candidates(session)?
-        {
-            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-            applied.push_outcome(
-                RunControlAutoAppliedKindV1::RewardOverlay,
-                summary,
-                &outcome,
-            );
-            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-            trace_annotations.extend(outcome.trace_annotations);
-            applied.extend(auto_capture_summaries);
-            continue;
-        }
-
-        if session.engine_state.is_map_surface()
-            && options.route == RunControlRouteAutomationMode::Planner
-        {
-            let route_result =
-                super::route_policy::apply_route_go_with_summary_allowing_forced_risk(session);
-            match route_result {
-                Ok(applied_route) => {
-                    if applied_route.outcome.action_result.is_some() {
-                        let auto_capture_summaries =
-                            auto_capture_summaries(&applied_route.outcome.trace_annotations);
-                        applied.push_outcome(
-                            RunControlAutoAppliedKindV1::RoutePlanner,
-                            applied_route.auto_step_summary,
-                            &applied_route.outcome,
-                        );
-                        decision_parent_snapshots
-                            .extend(applied_route.outcome.decision_parent_snapshots);
-                        trace_annotations.extend(applied_route.outcome.trace_annotations);
-                        applied.extend(auto_capture_summaries);
-                        continue;
-                    }
-                    decision_parent_snapshots
-                        .extend(applied_route.outcome.decision_parent_snapshots);
-                    trace_annotations.extend(applied_route.outcome.trace_annotations);
-                    return finish_auto_step(
-                        session,
-                        &before,
-                        applied,
-                        trace_annotations,
-                        decision_parent_snapshots,
-                        RunControlAutoStopKind::RoutePlannerNoMutation,
-                        "route planner did not modify state",
-                        Some(applied_route.outcome.message),
-                    );
-                }
-                Err(err) => {
-                    let detail =
-                        match super::route_policy::route_policy_stop_for_session(session, &err)? {
-                            Some((annotation, summary)) => {
-                                trace_annotations.push(annotation);
-                                Some(format!("{summary}\n{err}"))
-                            }
-                            None => Some(err),
-                        };
-                    return finish_auto_step(
-                        session,
-                        &before,
-                        applied,
-                        trace_annotations,
-                        decision_parent_snapshots,
-                        RunControlAutoStopKind::RoutePlannerDeclined,
-                        "route planner declined automatic map selection",
-                        detail,
-                    );
-                }
-            }
-        }
-
-        if let Some((outcome, summary)) = apply_pending_shop_reward_overlay(session)? {
-            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-            applied.push_outcome(
-                RunControlAutoAppliedKindV1::RewardOverlay,
-                summary,
-                &outcome,
-            );
-            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-            trace_annotations.extend(outcome.trace_annotations);
-            applied.extend(auto_capture_summaries);
-            continue;
-        }
-
-        let view = build_run_control_view_model(session);
-        if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
-            let Some(input) = auto_candidate.candidate.action.executable_input() else {
-                return finish_auto_step(
-                    session,
-                    &before,
-                    applied,
-                    trace_annotations,
-                    decision_parent_snapshots,
-                    RunControlAutoStopKind::AutoCandidateNotExecutable,
-                    "auto-selected candidate is not executable",
-                    None,
-                );
-            };
-            let outcome = session.apply_input(input)?;
-            let label = outcome
-                .action_result
-                .as_ref()
-                .map(|result| result.chosen_label.clone())
-                .unwrap_or_else(|| auto_candidate.candidate.label.clone());
-            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
-            applied.push_outcome(
-                RunControlAutoAppliedKindV1::RoutineCandidate,
-                format!(
-                    "{}: {label} ({})",
-                    auto_class_label(auto_candidate.class),
-                    auto_candidate.reason
-                ),
-                &outcome,
-            );
-            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
-            trace_annotations.extend(outcome.trace_annotations);
-            applied.extend(auto_capture_summaries);
-            continue;
-        }
-
         return finish_auto_step(
             session,
             &before,
             applied,
             trace_annotations,
             decision_parent_snapshots,
-            RunControlAutoStopKind::HumanBoundary,
-            human_stop_reason(session),
-            None,
+            RunControlAutoStopKind::CombatSearchNoCompleteWin,
+            combat_search_stop_reason(
+                &[no_potion_rejection_kind, fallback_rejection_kind],
+                &[no_potion_adjudication, fallback_adjudication],
+            ),
+            Some(combine_search_rejections(
+                no_potion_rejection,
+                fallback_rejection,
+            )),
+        );
+    }
+
+    if let Some((outcome, summary)) = apply_map_overlay_back_without_route_candidates(session)? {
+        let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+        applied.push_outcome(
+            RunControlAutoAppliedKindV1::RewardOverlay,
+            summary,
+            &outcome,
+        );
+        decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+        trace_annotations.extend(outcome.trace_annotations);
+        applied.extend(auto_capture_summaries);
+        return finish_applied_progress_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            decision_parent_snapshots,
+        );
+    }
+
+    if session.engine_state.is_map_surface()
+        && options.route == RunControlRouteAutomationMode::Planner
+    {
+        let route_result =
+            super::route_policy::apply_route_plan_with_summary_allowing_forced_risk(session);
+        match route_result {
+            Ok(applied_route) => {
+                if applied_route.outcome.action_result.is_some() {
+                    let auto_capture_summaries =
+                        auto_capture_summaries(&applied_route.outcome.trace_annotations);
+                    applied.push_outcome(
+                        RunControlAutoAppliedKindV1::RoutePlanner,
+                        applied_route.auto_step_summary,
+                        &applied_route.outcome,
+                    );
+                    decision_parent_snapshots
+                        .extend(applied_route.outcome.decision_parent_snapshots);
+                    trace_annotations.extend(applied_route.outcome.trace_annotations);
+                    applied.extend(auto_capture_summaries);
+                    return finish_applied_progress_step(
+                        session,
+                        &before,
+                        applied,
+                        trace_annotations,
+                        decision_parent_snapshots,
+                    );
+                }
+                decision_parent_snapshots.extend(applied_route.outcome.decision_parent_snapshots);
+                trace_annotations.extend(applied_route.outcome.trace_annotations);
+                return finish_auto_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    decision_parent_snapshots,
+                    RunControlAutoStopKind::RoutePlannerNoMutation,
+                    "route planner did not modify state",
+                    Some(applied_route.outcome.message),
+                );
+            }
+            Err(err) => {
+                let detail =
+                    match super::route_policy::route_policy_stop_for_session(session, &err)? {
+                        Some((annotation, summary)) => {
+                            trace_annotations.push(annotation);
+                            Some(format!("{summary}\n{err}"))
+                        }
+                        None => Some(err),
+                    };
+                return finish_auto_step(
+                    session,
+                    &before,
+                    applied,
+                    trace_annotations,
+                    decision_parent_snapshots,
+                    RunControlAutoStopKind::RoutePlannerDeclined,
+                    "route planner declined automatic map selection",
+                    detail,
+                );
+            }
+        }
+    }
+
+    if let Some((outcome, summary)) = apply_pending_shop_reward_overlay(session)? {
+        let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+        applied.push_outcome(
+            RunControlAutoAppliedKindV1::RewardOverlay,
+            summary,
+            &outcome,
+        );
+        decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+        trace_annotations.extend(outcome.trace_annotations);
+        applied.extend(auto_capture_summaries);
+        return finish_applied_progress_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            decision_parent_snapshots,
+        );
+    }
+
+    let view = build_run_control_view_model(session);
+    if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
+        let Some(input) = auto_candidate.candidate.action.executable_input() else {
+            return finish_auto_step(
+                session,
+                &before,
+                applied,
+                trace_annotations,
+                decision_parent_snapshots,
+                RunControlAutoStopKind::AutoCandidateNotExecutable,
+                "auto-selected candidate is not executable",
+                None,
+            );
+        };
+        let outcome = session.apply_input(input)?;
+        let label = outcome
+            .action_result
+            .as_ref()
+            .map(|result| result.chosen_label.clone())
+            .unwrap_or_else(|| auto_candidate.candidate.label.clone());
+        let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+        applied.push_outcome(
+            RunControlAutoAppliedKindV1::RoutineCandidate,
+            format!(
+                "{}: {label} ({})",
+                auto_class_label(auto_candidate.class),
+                auto_candidate.reason
+            ),
+            &outcome,
+        );
+        decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
+        trace_annotations.extend(outcome.trace_annotations);
+        applied.extend(auto_capture_summaries);
+        return finish_applied_progress_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            decision_parent_snapshots,
         );
     }
 
@@ -425,15 +431,41 @@ pub(super) fn apply_guarded_auto_step(
         applied,
         trace_annotations,
         decision_parent_snapshots,
-        RunControlAutoStopKind::OperationBudgetExhausted,
-        format!("operation budget exhausted at {max_operations} automatic operations"),
+        RunControlAutoStopKind::HumanBoundary,
+        human_stop_reason(session),
+        None,
+    )
+}
+
+pub fn apply_owner_audit_progress_step(
+    session: &mut RunControlSession,
+    options: RunControlAutoStepOptions,
+) -> Result<RunProgressOutcome, String> {
+    apply_guarded_auto_step(session, options)
+}
+
+fn finish_applied_progress_step(
+    session: &RunControlSession,
+    before: &RunVisibleSnapshot,
+    applied: AutoAppliedLog,
+    trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+) -> Result<RunProgressOutcome, String> {
+    finish_auto_step(
+        session,
+        before,
+        applied,
+        trace_annotations,
+        decision_parent_snapshots,
+        RunControlAutoStopKind::ProgressApplied,
+        "one atomic progress step applied",
         None,
     )
 }
 
 fn apply_pending_shop_reward_overlay(
     session: &mut RunControlSession,
-) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+) -> Result<Option<(RunProgressOutcome, String)>, String> {
     let EngineState::Shop(shop) = &session.engine_state else {
         return Ok(None);
     };
@@ -468,6 +500,7 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
             | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
+            | RunControlTraceAnnotationV1::PlannerBehaviorDecision { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
             | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
             | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => None,
@@ -542,7 +575,7 @@ fn high_stakes_auto_search_requires_hp_loss_gate(
 
 fn apply_map_overlay_back_without_route_candidates(
     session: &mut RunControlSession,
-) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+) -> Result<Option<(RunProgressOutcome, String)>, String> {
     if !matches!(session.engine_state, EngineState::MapOverlay { .. }) {
         return Ok(None);
     }
@@ -857,7 +890,7 @@ fn finish_auto_step(
     stop_kind: RunControlAutoStopKind,
     reason: impl Into<String>,
     detail: Option<String>,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let reason = reason.into();
     let auto_stop = RunControlAutoStopV1 {
         kind: stop_kind,
@@ -890,7 +923,7 @@ fn finish_auto_step(
 
     if applied.is_empty() {
         lines.push(super::render::render_run_control_state(session));
-        return Ok(RunControlCommandOutcome::message(lines.join("\n"))
+        return Ok(RunProgressOutcome::message(lines.join("\n"))
             .with_auto_stop(auto_stop)
             .with_auto_applied_steps(applied.steps)
             .with_trace_annotations(trace_annotations)
@@ -911,13 +944,11 @@ fn finish_auto_step(
     );
     lines.push(render_action_result(&action_result));
     lines.push(super::render::render_run_control_state(session));
-    Ok(
-        RunControlCommandOutcome::action(lines.join("\n"), action_result)
-            .with_auto_stop(auto_stop)
-            .with_auto_applied_steps(applied.steps)
-            .with_trace_annotations(trace_annotations)
-            .with_decision_parent_snapshots(decision_parent_snapshots),
-    )
+    Ok(RunProgressOutcome::action(lines.join("\n"), action_result)
+        .with_auto_stop(auto_stop)
+        .with_auto_applied_steps(applied.steps)
+        .with_trace_annotations(trace_annotations)
+        .with_decision_parent_snapshots(decision_parent_snapshots))
 }
 
 fn combat_search_stop_reason(
@@ -953,141 +984,6 @@ fn combat_search_stop_reason(
     } else {
         "combat search did not find an executable complete win".to_string()
     }
-}
-
-fn auto_boundary_key(session: &RunControlSession) -> String {
-    let view = build_run_control_view_model(session);
-    let active_combat = session
-        .active_combat
-        .as_ref()
-        .map(active_combat_boundary_key)
-        .unwrap_or_else(|| "no-combat".to_string());
-    let event = session
-        .run_state
-        .event_state
-        .as_ref()
-        .map(|event| format!("{:?}:screen{}", event.id, event.current_screen))
-        .unwrap_or_else(|| "no-event".to_string());
-    let candidates = view
-        .candidates
-        .iter()
-        .map(|candidate| format!("{}={}", candidate.id, candidate.action.command_hint()))
-        .collect::<Vec<_>>()
-        .join(",");
-    let (player_hp, _) = session.visible_player_hp();
-    format!(
-        "{:?}|{}|{}|act{}|floor{}|hp{}|gold{}|{}|{}",
-        session.engine_state,
-        view.header.title,
-        event,
-        session.run_state.act_num,
-        session.run_state.floor_num,
-        player_hp,
-        session.run_state.gold,
-        active_combat,
-        candidates
-    )
-}
-
-fn auto_stall_key(session: &RunControlSession, boundary_key: &str) -> String {
-    let Some(event_state) = session.run_state.event_state.as_ref() else {
-        return boundary_key.to_string();
-    };
-    if event_state.id != EventId::MatchAndKeep {
-        return boundary_key.to_string();
-    }
-    let Some(fingerprint) =
-        crate::content::events::match_and_keep::stall_fingerprint(&session.run_state, event_state)
-    else {
-        return boundary_key.to_string();
-    };
-    format!("{boundary_key}|progress:{fingerprint}")
-}
-
-fn active_combat_boundary_key(active: &ActiveCombat) -> String {
-    let combat = &active.combat_state;
-    let player = &combat.entities.player;
-    let zones = &combat.zones;
-    let monsters = combat
-        .entities
-        .monsters
-        .iter()
-        .map(|monster| {
-            format!(
-                "slot{}:id{}:hp{}/{}:block{}:dying{}:escaped{}:half{}:move{}:move_state{:?}",
-                monster.slot,
-                monster.monster_type,
-                monster.current_hp,
-                monster.max_hp,
-                monster.block,
-                monster.is_dying,
-                monster.is_escaped,
-                monster.half_dead,
-                monster.planned_move_id(),
-                monster.move_state,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    let mut powers = combat
-        .entities
-        .power_db
-        .iter()
-        .map(|(entity, powers)| format!("{entity}:{powers:?}"))
-        .collect::<Vec<_>>();
-    powers.sort();
-
-    format!(
-        "{:?}:turn{}:{:?}:energy{}:draw_mod{}:player_hp{}/{}:block{}:stance{:?}:gold{}:hand[{}]:draw[{}]:discard[{}]:exhaust[{}]:limbo[{}]:queued{:?}:uuid{}:monsters[{}]:powers[{}]:queue{:?}",
-        active.engine_state,
-        combat.turn.turn_count,
-        combat.turn.current_phase,
-        combat.turn.energy,
-        combat.turn.turn_start_draw_modifier,
-        player.current_hp,
-        player.max_hp,
-        player.block,
-        player.stance,
-        player.gold,
-        combat_card_sequence_key(&zones.hand),
-        combat_card_sequence_key(&zones.draw_pile),
-        combat_card_sequence_key(&zones.discard_pile),
-        combat_card_sequence_key(&zones.exhaust_pile),
-        combat_card_sequence_key(&zones.limbo),
-        zones.queued_cards,
-        zones.card_uuid_counter,
-        monsters,
-        powers.join(","),
-        combat.engine.action_queue,
-    )
-}
-
-fn combat_card_sequence_key(cards: &[CombatCard]) -> String {
-    cards
-        .iter()
-        .map(combat_card_boundary_key)
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn combat_card_boundary_key(card: &CombatCard) -> String {
-    format!(
-        "{:?}+{}#{}:misc{}:cost{}:turn{:?}:free{}:ex{:?}:ret{:?}:d{:?}:b{:?}:dm{}:bm{}:mm{}",
-        card.id,
-        card.upgrades,
-        card.uuid,
-        card.misc_value,
-        card.cost_modifier,
-        card.cost_for_turn,
-        card.free_to_play_once,
-        card.exhaust_override,
-        card.retain_override,
-        card.base_damage_override,
-        card.base_block_override,
-        card.base_damage_mut,
-        card.base_block_mut,
-        card.base_magic_num_mut,
-    )
 }
 
 fn current_run_apply_status(session: &RunControlSession) -> RunApplyStatus {
@@ -1145,8 +1041,8 @@ fn indent_block(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_guarded_auto_step, auto_boundary_key, auto_no_potion_first_options,
-        auto_potion_rescue_options, auto_search_options, auto_stall_key, combat_search_stop_reason,
+        apply_guarded_auto_step, auto_no_potion_first_options, auto_potion_rescue_options,
+        auto_search_options, combat_search_stop_reason,
         high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
@@ -1178,7 +1074,6 @@ mod tests {
             &mut session,
             RunControlAutoStepOptions {
                 route: RunControlRouteAutomationMode::Planner,
-                max_operations: Some(1),
                 ..RunControlAutoStepOptions::default()
             },
         )
@@ -1193,87 +1088,6 @@ mod tests {
             session.engine_state,
             EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. }
         ));
-    }
-
-    #[test]
-    fn auto_boundary_key_distinguishes_combat_enemy_hp_changes() {
-        let mut first =
-            crate::test_support::combat_with_monsters(vec![crate::test_support::test_monster(
-                crate::content::monsters::EnemyId::Cultist,
-            )]);
-        first.zones.hand = vec![crate::runtime::combat::CombatCard::new(
-            crate::content::cards::CardId::Strike,
-            10,
-        )];
-        first.entities.monsters[0]
-            .set_planned_visible_spec(Some(crate::runtime::monster_move::MonsterMoveSpec::Unknown));
-        let mut second = first.clone();
-        second.entities.monsters[0].current_hp -= 1;
-
-        let make_session = |combat| {
-            let mut session = RunControlSession::new(RunControlConfig::default());
-            session.engine_state = EngineState::CombatPlayerTurn;
-            session.active_combat = Some(ActiveCombat::new(
-                EngineState::CombatPlayerTurn,
-                combat,
-                CombatContext::Room(RoomCombatContext {
-                    room_type: RoomType::MonsterRoom,
-                }),
-            ));
-            session
-        };
-
-        assert_eq!(first.zones.hand.len(), second.zones.hand.len());
-        assert_ne!(
-            auto_boundary_key(&make_session(first)),
-            auto_boundary_key(&make_session(second))
-        );
-    }
-
-    #[test]
-    fn match_and_keep_stall_key_tracks_result_progress_without_changing_boundary_identity() {
-        let bludgeon_result = match_and_keep_session_at_result(4, 7, 0x0090, 4);
-        let rage_result = match_and_keep_session_at_result(5, 9, 0x02b0, 3);
-
-        let bludgeon_boundary = auto_boundary_key(&bludgeon_result);
-        let rage_boundary = auto_boundary_key(&rage_result);
-        assert_eq!(
-            bludgeon_boundary, rage_boundary,
-            "boundary identity should remain coarse enough for logs and grouping"
-        );
-        assert_ne!(
-            auto_stall_key(&bludgeon_result, &bludgeon_boundary),
-            auto_stall_key(&rage_result, &rage_boundary),
-            "stall guard must treat MatchAndKeep result screens with new progress as distinct"
-        );
-    }
-
-    #[test]
-    fn match_and_keep_stall_key_ignores_stale_last_result_outside_result_screen() {
-        let mut first = match_and_keep_session_at_first_flip();
-        let mut second = match_and_keep_session_at_first_flip();
-        {
-            let event = second.run_state.event_state.as_mut().unwrap();
-            event.extra_data[27] = 4;
-            event.extra_data[28] = 7;
-        }
-
-        let first_boundary = auto_boundary_key(&first);
-        let second_boundary = auto_boundary_key(&second);
-        assert_eq!(first_boundary, second_boundary);
-        assert_eq!(
-            auto_stall_key(&first, &first_boundary),
-            auto_stall_key(&second, &second_boundary),
-            "screen 1 progress fingerprint should not include stale last_result fields"
-        );
-
-        first.run_state.event_state.as_mut().unwrap().extra_data[12] = 0x0090;
-        let updated_boundary = auto_boundary_key(&first);
-        assert_ne!(
-            auto_stall_key(&first, &updated_boundary),
-            auto_stall_key(&second, &second_boundary),
-            "matched_mask is real progress and should affect the stall fingerprint"
-        );
     }
 
     #[test]
@@ -1332,52 +1146,6 @@ mod tests {
             },
         );
         assert_eq!(profile_options.wall_ms, None);
-    }
-
-    fn match_and_keep_session_at_first_flip() -> RunControlSession {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        let mut event_state =
-            crate::state::events::EventState::new(crate::state::events::EventId::MatchAndKeep);
-        event_state.current_screen = 1;
-        event_state.extra_data = match_and_keep_extra_data();
-        session.run_state.event_state = Some(event_state);
-        session.engine_state = EngineState::EventRoom;
-        session
-    }
-
-    fn match_and_keep_session_at_result(
-        first_pos: i32,
-        second_pos: i32,
-        matched_mask: i32,
-        attempts: i32,
-    ) -> RunControlSession {
-        let mut session = match_and_keep_session_at_first_flip();
-        let event = session.run_state.event_state.as_mut().unwrap();
-        event.current_screen = 3;
-        event.extra_data[12] = matched_mask;
-        event.extra_data[13] = attempts;
-        event.extra_data[14] = -1;
-        event.extra_data[27] = first_pos;
-        event.extra_data[28] = second_pos;
-        session
-    }
-
-    fn match_and_keep_extra_data() -> Vec<i32> {
-        let mut extra_data = vec![3, 4, 4, 5, 0, 1, 2, 0, 3, 1, 5, 2, 0, 5, -1];
-        for (card_id, upgrades) in [
-            (crate::content::cards::CardId::Bludgeon, 0),
-            (crate::content::cards::CardId::Rage, 0),
-            (crate::content::cards::CardId::ThunderClap, 0),
-            (crate::content::cards::CardId::Impatience, 0),
-            (crate::content::cards::CardId::Doubt, 0),
-            (crate::content::cards::CardId::Bash, 0),
-        ] {
-            extra_data.push(card_id as i32);
-            extra_data.push(upgrades);
-        }
-        extra_data.push(-1);
-        extra_data.push(-1);
-        extra_data
     }
 
     fn test_session_at_pending_card_reward(

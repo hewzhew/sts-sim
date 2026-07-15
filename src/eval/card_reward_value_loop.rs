@@ -557,6 +557,7 @@ fn card_reward_record_from_annotation(
         | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
         | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
         | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
+        | RunControlTraceAnnotationV1::PlannerBehaviorDecision { .. }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
         | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }

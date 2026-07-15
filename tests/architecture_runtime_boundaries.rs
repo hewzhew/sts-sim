@@ -1,3 +1,21 @@
+fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) {
+    if root.is_file() {
+        if root.extension().is_some_and(|extension| extension == "rs") {
+            paths.push(root.to_path_buf());
+        }
+        return;
+    }
+
+    for entry in std::fs::read_dir(root).expect("read Rust source directory") {
+        let path = entry.expect("read Rust source entry").path();
+        if path.is_dir() {
+            collect_rust_sources(&path, paths);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            paths.push(path);
+        }
+    }
+}
+
 #[test]
 fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
@@ -7,6 +25,142 @@ fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
         !owner_audit.contains("../../bin/branch_tiny"),
         "runtime owner_audit must own its implementation modules instead of path-importing bin files"
     );
+}
+
+#[test]
+fn retired_repl_and_multi_operation_auto_run_do_not_return() {
+    for retired in [
+        "src/bin/run_play_driver/main.rs",
+        "src/eval/run_play.rs",
+        "src/eval/run_control/bookmarks.rs",
+        "src/eval/run_control/auto_run.rs",
+        "src/eval/neow_guided_prefix.rs",
+        "src/eval/run_control/commands.rs",
+        "src/eval/run_control/commands/help.rs",
+        "src/eval/run_control/commands/options.rs",
+        "src/eval/run_control/commands/parse.rs",
+        "src/eval/run_control/commands/tests.rs",
+        "src/eval/run_control/artifact_commands.rs",
+        "src/eval/run_control/search_defaults.rs",
+        "src/eval/run_control/trace_replay.rs",
+        "src/eval/run_control/session_trace_outcome.rs",
+        "src/eval/run_control/panels/map.rs",
+    ] {
+        assert!(
+            !std::path::Path::new(retired).exists(),
+            "retired human-command surface must stay deleted: {retired}"
+        );
+    }
+
+    let mut sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src/eval/run_control"), &mut sources);
+    collect_rust_sources(std::path::Path::new("src/runtime/branch"), &mut sources);
+    for path in sources {
+        if path.ends_with("commands/tests.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read run execution source");
+        for forbidden in [
+            "RunControlCommand::AutoRun",
+            "apply_owner_audit_auto_run",
+            "max_operations",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "run execution source '{}' must not restore retired `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn run_control_has_no_legacy_command_parser_recorder_or_replay_executor() {
+    let mut sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src/eval/run_control"), &mut sources);
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read run-control source");
+        for forbidden in [
+            "RunControlCommand",
+            "parse_run_control_command",
+            ".apply_command(",
+            "SessionTraceRecorder",
+            "replay_session_trace",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "run-control source '{}' must not restore retired `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+
+    let trace_reader = std::fs::read_to_string("src/eval/run_control/session_trace.rs")
+        .expect("read historical trace schema reader");
+    assert!(trace_reader.contains("load_session_trace_v1"));
+    assert!(trace_reader.contains("raw_command_line"));
+    assert!(
+        !trace_reader.contains("apply_decision_action"),
+        "historical trace compatibility is read/export only, never an execution path"
+    );
+}
+
+#[test]
+fn owner_audit_executes_typed_actions_without_the_legacy_command_kernel() {
+    let mut sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("src/runtime/branch/owner_audit"),
+        &mut sources,
+    );
+    sources.push(std::path::PathBuf::from(
+        "src/runtime/branch/owner_audit.rs",
+    ));
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read owner-audit source");
+        for forbidden in [
+            "RunControlCommand::",
+            "RunControlCommand,",
+            "RunControlCommand;",
+            ".apply_command(",
+            ".executable_command(",
+            "OwnerRoutine::Command",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "owner-audit source '{}' must execute typed RunDecisionAction values, not `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+
+    let candidate_model = std::fs::read_to_string("src/eval/run_control/view_model/mod.rs")
+        .expect("read decision candidate model");
+    for forbidden in [
+        "CandidateAction::Command",
+        "ManualCommand",
+        "executable_command",
+        "command_hint",
+    ] {
+        assert!(
+            !candidate_model.contains(forbidden),
+            "decision candidates must not expose the legacy command kernel through `{forbidden}`"
+        );
+    }
+
+    let decision_surface = std::fs::read_to_string("src/eval/run_control/decision_surface.rs")
+        .expect("read decision surface");
+    for forbidden in [
+        "command_hint",
+        "inspectable_panels",
+        "candidate_section_title",
+    ] {
+        assert!(
+            !decision_surface.contains(forbidden),
+            "machine decision surface must not carry retired REPL field `{forbidden}`"
+        );
+    }
 }
 
 #[test]
@@ -184,24 +338,6 @@ fn combat_line_adjudication_has_one_production_owner() {
 
 #[test]
 fn live_decision_layers_do_not_depend_on_offline_laboratories() {
-    fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) {
-        if root.is_file() {
-            if root.extension().is_some_and(|extension| extension == "rs") {
-                paths.push(root.to_path_buf());
-            }
-            return;
-        }
-
-        for entry in std::fs::read_dir(root).expect("read live decision-layer directory") {
-            let path = entry.expect("read live decision-layer entry").path();
-            if path.is_dir() {
-                collect_rust_sources(&path, paths);
-            } else if path.extension().is_some_and(|extension| extension == "rs") {
-                paths.push(path);
-            }
-        }
-    }
-
     let mut sources = Vec::new();
     for root in [
         "src/eval/run_control",
@@ -293,4 +429,45 @@ fn campfire_growth_facts_are_built_once_without_policy_scores() {
         build < loop_start,
         "Campfire growth facts must be built before candidate iteration"
     );
+}
+
+#[test]
+fn planner_core_is_clean_room_representation_not_a_strategy_owner() {
+    let source = ["src/ai/planner_core/mod.rs", "src/ai/planner_core/types.rs"]
+        .into_iter()
+        .map(|path| std::fs::read_to_string(path).expect("read planner core source"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for forbidden in [
+        "crate::eval",
+        "noncombat_strategy_v1",
+        "campfire_policy_v1",
+        "pressure",
+        "prospect",
+        "ValueEstimateV1",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "planner core must not import incumbent strategy vocabulary `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn planner_capture_uses_candidate_enumeration_without_incumbent_explanations() {
+    let source = std::fs::read_to_string("src/eval/run_control/planner_capture.rs")
+        .expect("read planner capture adapter");
+    let production = source.split("#[cfg(test)]").next().unwrap_or(&source);
+    for forbidden in [
+        "build_run_control_view_model",
+        "noncombat_strategy_v1",
+        "pressure",
+        "prospect",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "planner capture adapter must not depend on incumbent explanation `{forbidden}`"
+        );
+    }
 }

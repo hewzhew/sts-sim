@@ -3,7 +3,7 @@ use super::decision_surface::{
     surface_legal_visibility_violations,
 };
 use super::view_model::{CandidateAction, DecisionCandidate};
-use super::{RunControlCommand, RunControlConfig, RunControlSession};
+use super::{RunControlConfig, RunControlSession, RunDecisionAction};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::{Potion, PotionId};
@@ -115,28 +115,14 @@ fn decision_surface_pending_choices_expose_all_legal_inputs() {
 }
 
 #[test]
-fn decision_surface_pending_choice_hints_do_not_offer_end_turn() {
-    let surface = build_decision_surface(&pending_grid_session());
-
-    assert_eq!(surface.candidate_section_title, "Selection commands:");
-    assert!(surface.command_hint.starts_with("select <idx...>"));
-    assert!(
-        !surface.command_hint.contains("end"),
-        "pending choices must not advertise end turn: {}",
-        surface.command_hint
-    );
-}
-
-#[test]
 fn decision_surface_scry_exposes_keep_and_discard_choices() {
     let session = pending_scry_session();
     let surface = build_decision_surface(&session);
 
-    assert_eq!(surface.candidate_section_title, "Selection commands:");
     assert!(surface.view.candidates.iter().any(|candidate| {
         candidate.id == "select"
             && candidate.label.contains("Submit selection")
-            && candidate.action.command_hint() == "select <idx...>"
+            && candidate.action.summary() == "select <idx...>"
     }));
     assert!(
         !surface
@@ -288,7 +274,7 @@ fn decision_surface_shop_exposes_pending_reward_overlay_candidate() {
 }
 
 #[test]
-fn decision_surface_reward_screen_singing_bowl_hints_bowl_command() {
+fn decision_surface_reward_screen_exposes_typed_singing_bowl_actions() {
     let mut pending = reward_card_choice_session();
     pending
         .run_state
@@ -296,11 +282,15 @@ fn decision_surface_reward_screen_singing_bowl_hints_bowl_command() {
         .push(RelicState::new(RelicId::SingingBowl));
     let pending_surface = build_decision_surface(&pending);
 
-    assert!(
-        pending_surface.command_hint.contains("bowl"),
-        "opened card reward with Singing Bowl should advertise bowl: {}",
-        pending_surface.command_hint
-    );
+    assert!(pending_surface.view.candidates.iter().any(|candidate| {
+        candidate.id == "bowl"
+            && matches!(
+                candidate.action.executable_action(),
+                Some(crate::eval::run_control::RunDecisionAction::Input(
+                    ClientInput::SelectCard(_)
+                ))
+            )
+    }));
 
     let mut unopened = reward_screen_session();
     unopened
@@ -309,11 +299,13 @@ fn decision_surface_reward_screen_singing_bowl_hints_bowl_command() {
         .push(RelicState::new(RelicId::SingingBowl));
     let unopened_surface = build_decision_surface(&unopened);
 
-    assert!(
-        unopened_surface.command_hint.contains("bowl"),
-        "visible unopened card reward with Singing Bowl should advertise bowl: {}",
-        unopened_surface.command_hint
-    );
+    assert!(unopened_surface.view.candidates.iter().any(|candidate| {
+        candidate.id == "bowl"
+            && matches!(
+                candidate.action.executable_action(),
+                Some(crate::eval::run_control::RunDecisionAction::SingingBowlCardReward { .. })
+            )
+    }));
 }
 
 #[test]
@@ -322,7 +314,7 @@ fn decision_surface_label_aliases_cover_leave_and_skip() {
         DecisionCandidate {
             id: "0".to_string(),
             label: "Leave.".to_string(),
-            action: CandidateAction::Input(ClientInput::EventChoice(0)),
+            action: CandidateAction::Execute(ClientInput::EventChoice(0).into()),
             key: None,
             note: None,
             resolution: None,
@@ -330,7 +322,7 @@ fn decision_surface_label_aliases_cover_leave_and_skip() {
         DecisionCandidate {
             id: "1".to_string(),
             label: "Skip card reward".to_string(),
-            action: CandidateAction::Input(ClientInput::Proceed),
+            action: CandidateAction::Execute(ClientInput::Proceed.into()),
             key: None,
             note: None,
             resolution: None,
@@ -368,7 +360,7 @@ fn contract_sessions() -> Vec<RunControlSession> {
     ];
     let mut combat = test_session_with_first_monster_room();
     combat
-        .apply_command(RunControlCommand::Input(ClientInput::SelectMapNode(0)))
+        .apply_decision_action(RunDecisionAction::Input(ClientInput::SelectMapNode(0)))
         .expect("map input should enter combat");
     sessions.push(combat);
     sessions

@@ -1,28 +1,8 @@
-use crate::ai::route_planner_v1::{
-    RouteCandidateTraceV1, RouteMoveKindV1, RoutePathSummaryV1, RouteSafetyFlagV1,
-};
+use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteMoveKindV1, RouteSafetyFlagV1};
 
 use super::super::view_model::room_type_label;
 
-pub(in crate::eval::run_control) fn format_range(min: usize, max: usize) -> String {
-    if min == max {
-        min.to_string()
-    } else {
-        format!("{min}-{max}")
-    }
-}
-
-pub(in crate::eval::run_control) fn recovery_label(summary: &RoutePathSummaryV1) -> &'static str {
-    if summary.min_fires > 0 {
-        "rest site exists on every visible path"
-    } else if summary.max_fires > 0 {
-        "rest site exists on some visible paths"
-    } else {
-        "not visible on this route"
-    }
-}
-
-pub(super) fn render_route_go_selection(candidate: &RouteCandidateTraceV1) -> String {
+pub(super) fn render_route_plan_selection(candidate: &RouteCandidateTraceV1) -> String {
     let mut lines = Vec::new();
     lines.push("Route planner selected:".to_string());
     lines.push(format!(
@@ -48,7 +28,7 @@ pub(super) fn render_route_go_selection(candidate: &RouteCandidateTraceV1) -> St
     lines.join("\n")
 }
 
-pub(super) fn render_route_go_auto_step_summary(candidate: &RouteCandidateTraceV1) -> String {
+pub(super) fn render_route_plan_auto_step_summary(candidate: &RouteCandidateTraceV1) -> String {
     let command = candidate
         .suggested_command
         .as_deref()

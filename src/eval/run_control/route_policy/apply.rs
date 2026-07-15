@@ -2,50 +2,50 @@ use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteMoveKindV1, RouteS
 use crate::state::core::ClientInput;
 
 use super::super::session::{
-    RunControlCommandOutcome, RunControlDecisionParentSnapshotV1, RunControlSession,
-    RunControlSessionCheckpointV1,
+    RunControlDecisionParentSnapshotV1, RunControlSession, RunControlSessionCheckpointV1,
+    RunProgressOutcome,
 };
-use super::format::{render_route_go_auto_step_summary, render_route_go_selection};
+use super::format::{render_route_plan_auto_step_summary, render_route_plan_selection};
 use super::planner::plan_route_for_session;
 use super::suggestion::render_route_suggestion;
-use super::trace::{route_go_trace_annotation, route_policy_stop_annotation};
+use super::trace::{route_plan_trace_annotation, route_policy_stop_annotation};
 
-pub(in crate::eval::run_control) struct RouteGoApplied {
-    pub outcome: RunControlCommandOutcome,
+pub(in crate::eval::run_control) struct RoutePlanApplied {
+    pub outcome: RunProgressOutcome,
     pub auto_step_summary: String,
 }
 
-pub(in crate::eval::run_control) fn apply_route_go(
+pub(in crate::eval::run_control) fn apply_route_plan(
     session: &mut RunControlSession,
-) -> Result<RunControlCommandOutcome, String> {
-    Ok(apply_route_go_with_summary(session)?.outcome)
+) -> Result<RunProgressOutcome, String> {
+    Ok(apply_route_plan_with_summary(session)?.outcome)
 }
 
-pub(in crate::eval::run_control) fn apply_route_go_with_summary(
+pub(in crate::eval::run_control) fn apply_route_plan_with_summary(
     session: &mut RunControlSession,
-) -> Result<RouteGoApplied, String> {
-    apply_route_go_with_safety_mode(session, RouteGoSafetyMode::RejectForcedRisk)
+) -> Result<RoutePlanApplied, String> {
+    apply_route_plan_with_safety_mode(session, RoutePlanSafetyMode::RejectForcedRisk)
 }
 
-pub(in crate::eval::run_control) fn apply_route_go_with_summary_allowing_forced_risk(
+pub(in crate::eval::run_control) fn apply_route_plan_with_summary_allowing_forced_risk(
     session: &mut RunControlSession,
-) -> Result<RouteGoApplied, String> {
-    apply_route_go_with_safety_mode(session, RouteGoSafetyMode::AllowForcedRisk)
+) -> Result<RoutePlanApplied, String> {
+    apply_route_plan_with_safety_mode(session, RoutePlanSafetyMode::AllowForcedRisk)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RouteGoSafetyMode {
+enum RoutePlanSafetyMode {
     RejectForcedRisk,
     AllowForcedRisk,
 }
 
-fn apply_route_go_with_safety_mode(
+fn apply_route_plan_with_safety_mode(
     session: &mut RunControlSession,
-    safety_mode: RouteGoSafetyMode,
-) -> Result<RouteGoApplied, String> {
+    safety_mode: RoutePlanSafetyMode,
+) -> Result<RoutePlanApplied, String> {
     if !session.engine_state.is_map_surface() {
         return Err(format!(
-            "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
+            "route planning is only valid on a map boundary.\n{}",
             render_route_suggestion(session)
         ));
     }
@@ -59,19 +59,19 @@ fn apply_route_go_with_safety_mode(
         .get(selected_index)
         .cloned()
         .ok_or_else(|| "route planner selected an out-of-range map target".to_string())?;
-    if safety_mode == RouteGoSafetyMode::RejectForcedRisk
+    if safety_mode == RoutePlanSafetyMode::RejectForcedRisk
         && candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative
     {
         return Err(format!(
-            "route planner selected only reject-unless-forced routes; inspect with `rs` and choose manually with `go <x>` or `fly <x> <y>`.\n{}",
-            render_route_go_selection(&candidate)
+            "route planner selected only reject-unless-forced routes; an explicit owner choice is required.\n{}",
+            render_route_plan_selection(&candidate)
         ));
     }
 
     let input = route_candidate_input(&candidate)?;
-    let selection = render_route_go_selection(&candidate);
-    let auto_step_summary = render_route_go_auto_step_summary(&candidate);
-    let trace_annotation = route_go_trace_annotation(&trace, selected_index, &candidate)?;
+    let selection = render_route_plan_selection(&candidate);
+    let auto_step_summary = render_route_plan_auto_step_summary(&candidate);
+    let trace_annotation = route_plan_trace_annotation(&trace, selected_index, &candidate)?;
     let parent_snapshot = RunControlDecisionParentSnapshotV1 {
         source: "route_planner".to_string(),
         command: candidate
@@ -81,9 +81,9 @@ fn apply_route_go_with_safety_mode(
         snapshot: RunControlSessionCheckpointV1::from_session(session),
     };
     let outcome = session.apply_input(input)?;
-    Ok(RouteGoApplied {
+    Ok(RoutePlanApplied {
         auto_step_summary,
-        outcome: RunControlCommandOutcome {
+        outcome: RunProgressOutcome {
             message: format!("{selection}\n{}", outcome.message),
             ..outcome
         }

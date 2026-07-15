@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use sts_simulator::eval::combat_capture::{
-    capture_combat_position_from_auto_run_v1, save_combat_capture_v1, CombatCaptureV1,
+    capture_combat_position_from_runtime_progress_v1, save_combat_capture_v1, CombatCaptureV1,
 };
 use sts_simulator::eval::run_control::{
     accepted_combat_line_evidence_v1, combat_automation_trajectories_v1,
@@ -137,7 +137,7 @@ pub(super) fn capture_active_combat(
         return Ok(None);
     }
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
-    capture_combat_position_from_auto_run_v1(
+    capture_combat_position_from_runtime_progress_v1(
         Some("accepted high-loss candidate".to_string()),
         &position,
         &session.run_state,
@@ -236,7 +236,7 @@ fn slug(raw: &str) -> String {
 mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
-    use sts_simulator::eval::combat_capture::capture_combat_position_from_auto_run_v1;
+    use sts_simulator::eval::combat_capture::capture_combat_position_from_runtime_progress_v1;
     use sts_simulator::eval::run_control::{
         AcceptedCombatLineEvidenceV1, CombatAutomationActionV1, CombatAutomationStepStateV1,
         CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
@@ -277,7 +277,7 @@ mod tests {
             sts_simulator::runtime::monster_move::MonsterMoveSpec::Unknown,
         ));
         combat.entities.monsters = vec![monster];
-        capture_combat_position_from_auto_run_v1(
+        capture_combat_position_from_runtime_progress_v1(
             Some("accepted high loss".to_string()),
             &CombatPosition::new(EngineState::CombatPlayerTurn, combat),
             &run,

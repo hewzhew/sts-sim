@@ -1,6 +1,6 @@
 use super::decision_surface::{build_decision_surface, surface_legal_visibility_violations};
 use super::view_model::CandidateAction;
-use super::{RunControlCommand, RunControlConfig, RunControlSession};
+use super::{RunControlConfig, RunControlSession, RunDecisionAction};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -45,7 +45,7 @@ fn ironclad_and_neow_colorless_pending_cards_surface_all_legal_resolutions() {
         };
 
         session
-            .apply_command(RunControlCommand::Input(play_input))
+            .apply_decision_action(RunDecisionAction::Input(play_input))
             .unwrap_or_else(|err| {
                 panic!("{} should play into a stable boundary: {err}", case.name)
             });
@@ -153,7 +153,7 @@ fn assert_pending_choice_surface_contract(
                 )
             });
         assert!(
-            matches!(select.action, CandidateAction::ManualCommand { .. }),
+            matches!(select.action, CandidateAction::Parameterized { .. }),
             "{} compact selection command must stay manual, got {:?}",
             case.name,
             select.action

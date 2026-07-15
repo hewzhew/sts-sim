@@ -19,7 +19,7 @@ pub(super) fn primary_operation_budget_exhausted(
     status: &BranchStatus,
     primary_stop_kind: Option<RunControlAutoStopKind>,
 ) -> bool {
-    primary_stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
+    primary_stop_kind == Some(RunControlAutoStopKind::ProgressApplied)
         || matches!(status, BranchStatus::OperationBudgetExhausted { .. })
 }
 
@@ -49,11 +49,11 @@ mod tests {
         assert!(lane_commits(
             CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk,
             &status,
-            Some(RunControlAutoStopKind::OperationBudgetExhausted)
+            Some(RunControlAutoStopKind::ProgressApplied)
         ));
         assert!(primary_operation_budget_exhausted(
             &status,
-            Some(RunControlAutoStopKind::OperationBudgetExhausted)
+            Some(RunControlAutoStopKind::ProgressApplied)
         ));
     }
 

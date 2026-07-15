@@ -8,9 +8,9 @@ use super::super::trace_annotation::{
     RoutePlannerSelectionEvidenceV1, RunControlTraceAnnotationV1,
 };
 use super::super::view_model::room_type_label;
-use super::format::{render_route_go_auto_step_summary, safety_label};
+use super::format::{render_route_plan_auto_step_summary, safety_label};
 
-pub(super) fn route_go_trace_annotation(
+pub(super) fn route_plan_trace_annotation(
     trace: &RouteDecisionTraceV1,
     selected_index: usize,
     candidate: &RouteCandidateTraceV1,
@@ -19,7 +19,7 @@ pub(super) fn route_go_trace_annotation(
     validate_noncombat_policy_record("route planner", &noncombat_record)?;
 
     Ok(RunControlTraceAnnotationV1::RoutePlannerSelection {
-        summary: render_route_go_auto_step_summary(candidate),
+        summary: render_route_plan_auto_step_summary(candidate),
         selected_index: Some(selected_index),
         candidate_count: trace.candidates.len(),
         target_x: candidate.target.x,
@@ -33,11 +33,11 @@ pub(super) fn route_go_trace_annotation(
             .as_deref()
             .unwrap_or("unknown-command")
             .to_string(),
-        top_candidates: route_go_top_candidate_summaries(trace),
+        top_candidates: route_plan_top_candidate_summaries(trace),
         candidate_pool: Vec::new(),
         label_role: "behavior_policy_not_teacher".to_string(),
         map_decision_packet: Some(MapDecisionPacketV1::from_route_decision_trace_v1(trace)),
-        route_evidence: Some(route_go_selection_evidence(candidate)),
+        route_evidence: Some(route_plan_selection_evidence(candidate)),
         noncombat_record: Some(noncombat_record),
     })
 }
@@ -58,7 +58,7 @@ pub(super) fn route_policy_stop_annotation(
         summary: format!("route planner stopped: {}", first_line(reason)),
         selected_index: None,
         candidate_count: stopped_trace.candidates.len(),
-        top_candidates: route_go_top_candidate_summaries(&stopped_trace),
+        top_candidates: route_plan_top_candidate_summaries(&stopped_trace),
         candidate_pool: Vec::new(),
         label_role: "behavior_policy_not_teacher".to_string(),
         map_decision_packet: Some(MapDecisionPacketV1::from_route_decision_trace_v1(
@@ -69,13 +69,13 @@ pub(super) fn route_policy_stop_annotation(
     })
 }
 
-fn route_go_top_candidate_summaries(
+fn route_plan_top_candidate_summaries(
     trace: &RouteDecisionTraceV1,
 ) -> Vec<RoutePlannerCandidateSummaryV1> {
-    route_go_candidate_summaries(trace, Some(3))
+    route_plan_candidate_summaries(trace, Some(3))
 }
 
-fn route_go_candidate_summaries(
+fn route_plan_candidate_summaries(
     trace: &RouteDecisionTraceV1,
     limit: Option<usize>,
 ) -> Vec<RoutePlannerCandidateSummaryV1> {
@@ -84,14 +84,14 @@ fn route_go_candidate_summaries(
         .iter()
         .take(limit.unwrap_or(usize::MAX))
         .enumerate()
-        .map(route_go_candidate_summary)
+        .map(route_plan_candidate_summary)
         .collect()
 }
 
-fn route_go_candidate_summary(
+fn route_plan_candidate_summary(
     (rank, candidate): (usize, &RouteCandidateTraceV1),
 ) -> RoutePlannerCandidateSummaryV1 {
-    let evidence = route_go_selection_evidence(candidate);
+    let evidence = route_plan_selection_evidence(candidate);
     RoutePlannerCandidateSummaryV1 {
         rank,
         target_x: candidate.target.x,
@@ -112,7 +112,7 @@ fn route_go_candidate_summary(
     }
 }
 
-fn route_go_selection_evidence(
+fn route_plan_selection_evidence(
     candidate: &RouteCandidateTraceV1,
 ) -> RoutePlannerSelectionEvidenceV1 {
     let first_elite = &candidate.path_summary.first_elite;

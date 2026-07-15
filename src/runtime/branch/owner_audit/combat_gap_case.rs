@@ -157,7 +157,7 @@ mod tests {
     use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
     use sts_simulator::ai::strategy::decision_pipeline::CandidateLane;
     use sts_simulator::ai::strategy::pressure_assessment::PressureAxis;
-    use sts_simulator::eval::run_control::RunControlCommand;
+    use sts_simulator::eval::run_control::RunDecisionAction;
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
 
     use super::*;
@@ -210,7 +210,9 @@ mod tests {
             candidate_pool: BranchPathCandidateSnapshot::from_choices(
                 &[OwnerChoice {
                     key: None,
-                    action: RunControlCommand::Noop,
+                    action: RunDecisionAction::Input(
+                        sts_simulator::state::core::ClientInput::Proceed,
+                    ),
                     label: "candidate".to_string(),
                     annotation: ChoiceAnnotation::None,
                     expansion: OwnerChoiceExpansion::AutoAllowed,

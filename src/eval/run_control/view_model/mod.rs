@@ -13,12 +13,14 @@ use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{EventActionKind, EventId};
 use crate::state::selection::{SelectionReason, SelectionScope};
 
+use super::RunDecisionAction;
+
 pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
 use context::{decision_context, decision_warnings};
 use labels::pending_choice_label;
 pub(super) use labels::{
-    boss_label, combat_card_label, deck_summary, monster_name, reward_card_label, room_type_label,
+    boss_label, combat_card_label, monster_name, reward_card_label, room_type_label,
 };
 pub use resolution::{CandidateResolution, FollowupBoundary};
 
@@ -118,63 +120,62 @@ pub enum DecisionCandidateKey {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CandidateAction {
-    Input(ClientInput),
-    Command(super::commands::RunControlCommand),
-    ManualCommand { template: String },
+    Execute(RunDecisionAction),
+    Parameterized { template: String },
     Unavailable { reason: String },
 }
 
 impl CandidateAction {
-    pub fn command_hint(&self) -> String {
+    pub fn summary(&self) -> String {
         match self {
-            CandidateAction::Input(input) => client_input_hint(input),
-            CandidateAction::Command(command) => run_control_command_hint(command),
-            CandidateAction::ManualCommand { template } => template.clone(),
+            CandidateAction::Execute(RunDecisionAction::Input(input)) => client_input_hint(input),
+            CandidateAction::Execute(RunDecisionAction::SkipCardReward { reward_item_index }) => {
+                format!("skip card reward {reward_item_index}")
+            }
+            CandidateAction::Execute(RunDecisionAction::SingingBowlCardReward {
+                reward_item_index,
+            }) => format!("singing bowl card reward {reward_item_index}"),
+            CandidateAction::Parameterized { template } => template.clone(),
             CandidateAction::Unavailable { reason } => format!("locked: {reason}"),
         }
     }
 
     pub fn executable_input(&self) -> Option<ClientInput> {
         match self {
-            CandidateAction::Input(input) => Some(input.clone()),
-            CandidateAction::Command(_)
-            | CandidateAction::ManualCommand { .. }
-            | CandidateAction::Unavailable { .. } => None,
+            CandidateAction::Execute(action) => action.executable_input(),
+            CandidateAction::Parameterized { .. } | CandidateAction::Unavailable { .. } => None,
         }
     }
 
-    pub fn executable_command(&self) -> Option<super::commands::RunControlCommand> {
+    pub fn executable_action(&self) -> Option<RunDecisionAction> {
         match self {
-            CandidateAction::Input(input) => {
-                Some(super::commands::RunControlCommand::Input(input.clone()))
-            }
-            CandidateAction::Command(command) => Some(command.clone()),
-            CandidateAction::ManualCommand { .. } | CandidateAction::Unavailable { .. } => None,
+            CandidateAction::Execute(action) => Some(action.clone()),
+            CandidateAction::Parameterized { .. } | CandidateAction::Unavailable { .. } => None,
         }
     }
 }
 
 impl From<ClientInput> for CandidateAction {
     fn from(value: ClientInput) -> Self {
-        CandidateAction::Input(value)
+        CandidateAction::Execute(value.into())
     }
 }
 
-impl From<super::commands::RunControlCommand> for CandidateAction {
-    fn from(value: super::commands::RunControlCommand) -> Self {
-        CandidateAction::Command(value)
+impl From<RunDecisionAction> for CandidateAction {
+    fn from(value: RunDecisionAction) -> Self {
+        CandidateAction::Execute(value)
     }
 }
 
 impl From<String> for CandidateAction {
     fn from(value: String) -> Self {
-        CandidateAction::ManualCommand { template: value }
+        CandidateAction::Parameterized { template: value }
     }
 }
 
 impl From<&str> for CandidateAction {
     fn from(value: &str) -> Self {
-        CandidateAction::ManualCommand {
+        CandidateAction::Parameterized {
             template: value.to_string(),
         }
     }
@@ -233,27 +234,6 @@ pub fn client_input_hint(input: &ClientInput) -> String {
     }
 }
 
-fn run_control_command_hint(command: &super::commands::RunControlCommand) -> String {
-    match command {
-        super::commands::RunControlCommand::Input(input) => client_input_hint(input),
-        super::commands::RunControlCommand::BranchSkipCardReward(index) => {
-            format!("branch-skip-card-reward {index}")
-        }
-        super::commands::RunControlCommand::SingingBowlVisibleCardReward(index) => {
-            format!("singing-bowl-card-reward {index}")
-        }
-        super::commands::RunControlCommand::RecordedCardRewardPick(index) => {
-            format!("record-pick {index}")
-        }
-        super::commands::RunControlCommand::CardIndex(index) => format!("card {index}"),
-        super::commands::RunControlCommand::RelicIndex(index) => format!("relic {index}"),
-        super::commands::RunControlCommand::SelectionIndices(indices) => {
-            format_usize_command("select", indices)
-        }
-        _ => format!("{command:?}"),
-    }
-}
-
 fn format_usize_command(command: &str, values: &[usize]) -> String {
     format!(
         "{command} {}",
@@ -292,10 +272,14 @@ pub fn build_run_control_view_model(session: &RunControlSession) -> RunControlVi
     RunControlViewModel {
         header,
         decision: decision_summary(session),
-        candidates: decision_candidates(session),
+        candidates: build_run_control_candidates(session),
         context: decision_context(session),
         warnings: decision_warnings(session),
     }
+}
+
+pub(super) fn build_run_control_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
+    decision_candidates(session)
 }
 
 fn decision_title(session: &RunControlSession) -> String {

@@ -6,6 +6,7 @@ use crate::state::core::EngineState;
 
 use super::{CombatCompletionSource, LastBenchmarkCaptureCase, RunControlSession};
 use crate::eval::run_control::trace_annotation::CombatAutomationTrajectoryRecordV1;
+use crate::eval::run_control::CombatBaselineOutcomeV1;
 
 impl RunControlSession {
     pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
@@ -107,12 +108,6 @@ impl RunControlSession {
             && self.last_completed_combat_source == Some(CombatCompletionSource::Manual)
     }
 
-    pub(in crate::eval::run_control) fn last_completed_combat_source(
-        &self,
-    ) -> Option<CombatCompletionSource> {
-        self.last_completed_combat_source
-    }
-
     pub(in crate::eval::run_control) fn mark_current_combat_search_resolved(&mut self) {
         if self.active_combat.is_some() {
             self.current_combat_source = Some(CombatCompletionSource::SearchCombat);
@@ -129,6 +124,10 @@ impl RunControlSession {
 
     pub fn last_combat_automation_trajectory(&self) -> Option<&CombatAutomationTrajectoryRecordV1> {
         self.last_combat_automation_trajectory.as_ref()
+    }
+
+    pub fn last_combat_baseline(&self) -> Option<&CombatBaselineOutcomeV1> {
+        self.combat_outcomes.last()
     }
 
     pub fn last_completed_combat_automation_trajectory(

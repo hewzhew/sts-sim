@@ -409,8 +409,7 @@ pub struct RunControlDecisionParentSnapshotV1 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RunControlCommandOutcome {
-    pub should_quit: bool,
+pub struct RunProgressOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub combat_search_rejection: Option<RunControlCombatSearchRejection>,
@@ -457,20 +456,18 @@ pub struct RunControlAutoStopV1 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunControlAutoStopKind {
-    RepeatedBoundary,
     HpLossGateRequired,
     CombatSearchNoCompleteWin,
     RoutePlannerNoMutation,
     RoutePlannerDeclined,
     AutoCandidateNotExecutable,
     HumanBoundary,
-    OperationBudgetExhausted,
+    ProgressApplied,
 }
 
-impl RunControlCommandOutcome {
-    pub(in crate::eval::run_control) fn message(message: impl Into<String>) -> Self {
+impl RunProgressOutcome {
+    pub fn progress(message: impl Into<String>) -> Self {
         Self {
-            should_quit: false,
             message: message.into(),
             action_result: None,
             combat_search_rejection: None,
@@ -482,18 +479,8 @@ impl RunControlCommandOutcome {
         }
     }
 
-    fn quit(message: impl Into<String>) -> Self {
-        Self {
-            should_quit: true,
-            message: message.into(),
-            action_result: None,
-            combat_search_rejection: None,
-            execution_adjudication: None,
-            auto_stop: None,
-            auto_applied_steps: Vec::new(),
-            trace_annotations: Vec::new(),
-            decision_parent_snapshots: Vec::new(),
-        }
+    pub(in crate::eval::run_control) fn message(message: impl Into<String>) -> Self {
+        Self::progress(message)
     }
 
     pub(in crate::eval::run_control) fn action(
@@ -501,7 +488,6 @@ impl RunControlCommandOutcome {
         action_result: ActionResult,
     ) -> Self {
         Self {
-            should_quit: false,
             message: message.into(),
             action_result: Some(action_result),
             combat_search_rejection: None,

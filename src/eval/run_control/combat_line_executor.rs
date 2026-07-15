@@ -14,7 +14,7 @@ use super::combat_line_trace::{
 use super::combat_search_render::{
     render_complete_line_solver_application, render_search_application, render_segment_application,
 };
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::{
     CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
 };
@@ -32,7 +32,7 @@ pub(super) fn apply_selected_combat_candidate_line(
     trajectory_source: CombatAutomationTrajectorySource,
     transition_label: String,
     line_performance: Option<CombatCandidateLinePerformance>,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let replay =
         replay_candidate_line(start, selected_line.source, &selected_line.actions, config)?;
     if replay.line.terminal != CombatTerminal::Win {
@@ -76,18 +76,17 @@ pub(super) fn apply_selected_combat_candidate_line(
     let automation_record =
         CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions);
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let outcome =
-        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
-            automation_record.into_annotation(),
-            combat_line_performance_trace_annotation(
-                trajectory_source.label(),
-                session,
-                start,
-                report,
-                &selected_line,
-                line_performance,
-            ),
-        ]);
+    let outcome = RunProgressOutcome::action(message, action_result).with_trace_annotations(vec![
+        automation_record.into_annotation(),
+        combat_line_performance_trace_annotation(
+            trajectory_source.label(),
+            session,
+            start,
+            report,
+            &selected_line,
+            line_performance,
+        ),
+    ]);
     Ok(outcome)
 }
 
@@ -97,7 +96,7 @@ pub(super) fn apply_combat_turn_segment(
     search_report: &CombatSearchV2Report,
     segment_report: &CombatSearchV2TurnSegmentReport,
     rejection_result: &'static str,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let trajectory = segment_report
         .selected
         .as_ref()
@@ -131,16 +130,15 @@ pub(super) fn apply_combat_turn_segment(
         automation_actions,
     );
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let outcome =
-        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
-            automation_record.into_annotation(),
-            combat_search_performance_trace_annotation(
-                "search_combat_turn_segment",
-                session,
-                start,
-                search_report,
-            ),
-        ]);
+    let outcome = RunProgressOutcome::action(message, action_result).with_trace_annotations(vec![
+        automation_record.into_annotation(),
+        combat_search_performance_trace_annotation(
+            "search_combat_turn_segment",
+            session,
+            start,
+            search_report,
+        ),
+    ]);
     Ok(outcome)
 }
 
@@ -148,7 +146,7 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     session: &mut RunControlSession,
     smoke_input: ClientInput,
     rejection_result: &'static str,
-) -> Result<RunControlCommandOutcome, String> {
+) -> Result<RunProgressOutcome, String> {
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let mut automation_actions = Vec::new();
     let outcome = session.apply_input(smoke_input.clone())?;
@@ -192,7 +190,7 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
         automation_actions,
     );
     session.remember_combat_automation_trajectory(automation_record.clone());
-    let outcome = RunControlCommandOutcome::action(message, action_result)
+    let outcome = RunProgressOutcome::action(message, action_result)
         .with_trace_annotations(vec![automation_record.into_annotation()]);
     Ok(outcome)
 }

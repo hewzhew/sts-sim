@@ -6,6 +6,10 @@ use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
 };
+use crate::ai::planner_core::{
+    stable_planner_id, PlannerBehaviorEvent, PLANNER_BEHAVIOR_EVENT_SCHEMA_NAME,
+    PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
+};
 use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::state::core::ClientInput;
 
@@ -369,6 +373,9 @@ pub enum RunControlTraceAnnotationV1 {
     NonCombatHumanBoundary {
         record: NonCombatDecisionRecordV1,
     },
+    PlannerBehaviorDecision {
+        event: PlannerBehaviorEvent,
+    },
     AutoCombatCapture {
         case_id: String,
         capture_path: String,
@@ -547,6 +554,9 @@ fn validate_run_control_trace_annotation_v1(
         RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => {
             validate_noncombat_record_annotation(idx, "noncombat_human_boundary", record)
         }
+        RunControlTraceAnnotationV1::PlannerBehaviorDecision { event } => {
+            validate_planner_behavior_event(idx, event)
+        }
         RunControlTraceAnnotationV1::RoutePlannerSelection {
             noncombat_record: None,
             ..
@@ -560,6 +570,24 @@ fn validate_run_control_trace_annotation_v1(
         | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
         | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => Ok(()),
     }
+}
+
+fn validate_planner_behavior_event(idx: usize, event: &PlannerBehaviorEvent) -> Result<(), String> {
+    if event.schema_name != PLANNER_BEHAVIOR_EVENT_SCHEMA_NAME
+        || event.schema_version != PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION
+    {
+        return Err(format!(
+            "annotation[{idx}] has unsupported planner behavior event schema"
+        ));
+    }
+    let mut behavior_payload = event.behavior.clone();
+    behavior_payload.behavior_id.clear();
+    if event.behavior.behavior_id != stable_planner_id("behavior", &behavior_payload)? {
+        return Err(format!(
+            "annotation[{idx}] planner behavior id does not match its payload"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_noncombat_record_annotation(

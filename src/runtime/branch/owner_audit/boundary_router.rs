@@ -1,6 +1,6 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome,
-    RunControlSession,
+    build_decision_surface, RunControlAutoStopKind, RunControlAutoStopV1, RunControlSession,
+    RunProgressOutcome,
 };
 use sts_simulator::state::core::{EngineState, RunResult};
 
@@ -8,7 +8,7 @@ use super::{BoundarySite, BranchStatus, Owner, TerminalOutcome};
 
 pub(super) fn classify_auto_outcome(
     session: &RunControlSession,
-    outcome: &RunControlCommandOutcome,
+    outcome: &RunProgressOutcome,
 ) -> BranchStatus {
     if let Some(result) = terminal_outcome(session) {
         return BranchStatus::Terminal(result);
@@ -33,7 +33,7 @@ pub(super) fn classify_boundary(
     }
     let surface = build_decision_surface(session);
     let boundary = surface.view.header.title.clone();
-    if stop.kind == RunControlAutoStopKind::OperationBudgetExhausted {
+    if stop.kind == RunControlAutoStopKind::ProgressApplied {
         if let Some(owner) = owner_for_current_boundary(session) {
             return BranchStatus::Running { boundary, owner };
         }

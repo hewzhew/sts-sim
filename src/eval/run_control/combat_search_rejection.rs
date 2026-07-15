@@ -9,9 +9,7 @@ use super::combat_search_render::{
     render_policy_evidence_summary, render_search_diagnostics_summary,
     render_search_performance_summary, render_search_policy_summary,
 };
-use super::session::{
-    RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
-};
+use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 
 pub(super) struct CombatSearchRejectionOutcome {
     pub(super) result: &'static str,
@@ -26,8 +24,8 @@ pub(super) fn build_combat_search_rejection_outcome(
     start: &CombatPosition,
     report: &CombatSearchV2Report,
     rejection: CombatSearchRejectionOutcome,
-) -> RunControlCommandOutcome {
-    let mut outcome = RunControlCommandOutcome::message(format!(
+) -> RunProgressOutcome {
+    let mut outcome = RunProgressOutcome::message(format!(
         "{}\n\n{}",
         render_search_rejection(report, rejection.result, rejection.detail),
         super::render::render_run_control_state(session)

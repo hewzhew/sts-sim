@@ -1,4 +1,4 @@
-use sts_simulator::eval::run_control::{DecisionSurface, RunControlCommand};
+use sts_simulator::eval::run_control::{DecisionSurface, RunDecisionAction};
 use sts_simulator::state::core::ClientInput;
 
 use super::owner_model::{
@@ -22,7 +22,7 @@ pub(super) fn visible_input_decision(
         .iter()
         .any(|visible| visible == &input)
     {
-        OwnerDecision::Routine(OwnerRoutine::Command(RunControlCommand::Input(input)))
+        OwnerDecision::Routine(OwnerRoutine::Action(RunDecisionAction::Input(input)))
     } else {
         OwnerDecision::Gap(format!("routine input {input:?} is not visible"))
     }
@@ -37,8 +37,8 @@ fn executable_choices_with_cancel(
         .candidates
         .iter()
         .filter_map(|candidate| {
-            let action = candidate.action.executable_command()?;
-            if !include_owner_choice_command(&action, include_cancel) {
+            let action = candidate.action.executable_action()?;
+            if !include_owner_choice_action(&action, include_cancel) {
                 return None;
             }
             Some(OwnerChoice {
@@ -52,10 +52,10 @@ fn executable_choices_with_cancel(
         .collect()
 }
 
-fn include_owner_choice_command(command: &RunControlCommand, include_cancel: bool) -> bool {
-    include_cancel || !is_navigation_only_command(command)
+fn include_owner_choice_action(action: &RunDecisionAction, include_cancel: bool) -> bool {
+    include_cancel || !is_navigation_only_action(action)
 }
 
-fn is_navigation_only_command(command: &RunControlCommand) -> bool {
-    matches!(command, RunControlCommand::Input(ClientInput::Cancel))
+fn is_navigation_only_action(action: &RunDecisionAction) -> bool {
+    matches!(action, RunDecisionAction::Input(ClientInput::Cancel))
 }

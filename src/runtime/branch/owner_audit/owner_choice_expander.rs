@@ -36,7 +36,7 @@ pub(super) fn expand_registered_owner(
             BranchPathPolicySelectionSnapshot::from_evidence(&expansion.selection_evidence);
         let policy_lane_label = expansion.child_lane.label();
         let mut session = branch.session.clone();
-        let (advance, decision_delta) = match session.apply_command(choice.action.clone()) {
+        let (advance, decision_delta) = match session.apply_decision_action(choice.action.clone()) {
             Ok(_) => {
                 let delta =
                     decision_delta::decision_delta(&branch.session.run_state, &session.run_state);
@@ -263,7 +263,7 @@ mod tests {
     };
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
-        CombatSearchTraceSummary, DecisionCandidateKey, RunControlCommand,
+        CombatSearchTraceSummary, DecisionCandidateKey, RunDecisionAction,
     };
 
     use super::super::branch_policy_lane::BranchPolicyLane;
@@ -278,7 +278,7 @@ mod tests {
     ) -> OwnerChoice {
         OwnerChoice {
             key: Some(key),
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
             annotation: super::super::owner_model::ChoiceAnnotation::Candidate(
                 super::super::owner_model::OwnerCandidateDecision {

@@ -702,7 +702,6 @@ mod tests {
     use super::*;
     use crate::content::relics::RelicState;
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
-    use crate::eval::run_control::RunControlCommand;
 
     #[test]
     fn transition_report_renders_relic_swap_from_state_diff() {
@@ -883,12 +882,12 @@ mod tests {
             ..RunControlConfig::default()
         });
         session
-            .apply_command(RunControlCommand::DefaultCandidate)
+            .apply_only_candidate()
             .expect("Neow intro should advance");
         let before = RunVisibleSnapshot::capture(&session);
         let action = transition_action_for_input(&session, &ClientInput::EventChoice(1));
         session
-            .apply_command(RunControlCommand::Candidate("1".to_string()))
+            .apply_candidate_id("1")
             .expect("gold option should execute");
         let after = RunVisibleSnapshot::capture(&session);
         let rendered = render_transition_report(action, &before, &after, RunApplyStatus::Running);

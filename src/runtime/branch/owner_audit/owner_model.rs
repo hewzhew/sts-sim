@@ -1,7 +1,7 @@
 use sts_simulator::ai::strategy::boss_relic_admission::BossRelicAdmission;
 use sts_simulator::ai::strategy::decision_pipeline::{CandidateEvaluation, CleanupTarget};
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
-use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
+use sts_simulator::eval::run_control::{DecisionCandidateKey, RunDecisionAction};
 
 pub(super) type DecisionKey = DecisionCandidateKey;
 
@@ -12,7 +12,7 @@ pub(super) enum OwnerDecision {
 }
 
 pub(super) enum OwnerRoutine {
-    Command(RunControlCommand),
+    Action(RunDecisionAction),
     RewardTinyAutomation,
     AdvanceEmptyCampfire,
 }
@@ -20,7 +20,7 @@ pub(super) enum OwnerRoutine {
 #[derive(Clone)]
 pub(super) struct OwnerChoice {
     pub(super) key: Option<DecisionKey>,
-    pub(super) action: RunControlCommand,
+    pub(super) action: RunDecisionAction,
     pub(super) label: String,
     pub(super) annotation: ChoiceAnnotation,
     pub(super) expansion: OwnerChoiceExpansion,

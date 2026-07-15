@@ -134,7 +134,7 @@ mod tests {
     use sts_simulator::content::cards::CardId;
     use sts_simulator::content::relics::{RelicId, RelicState};
     use sts_simulator::eval::run_control::{
-        build_decision_surface, RunControlCommand, RunControlConfig, RunControlSession,
+        build_decision_surface, RunControlConfig, RunControlSession, RunDecisionAction,
     };
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
@@ -263,7 +263,7 @@ mod tests {
     fn owner_choice(session: &RunControlSession) -> CampfireChoice {
         let surface = build_decision_surface(session);
         match campfire_owner_decision(session, &surface) {
-            OwnerDecision::Routine(OwnerRoutine::Command(RunControlCommand::Input(
+            OwnerDecision::Routine(OwnerRoutine::Action(RunDecisionAction::Input(
                 ClientInput::CampfireOption(choice),
             ))) => choice,
             _ => panic!("expected visible campfire input"),

@@ -57,46 +57,6 @@ cargo run --bin combat_case_review -- --case <case.json> --ladder
 Review output is diagnostic. It does not mutate runner policy and does not
 prove a deck is good or bad by itself.
 
-## Manual Run Play Driver
-
-Use `run_play_driver` for manual or semi-automatic inspection of one simulator
-run:
-
-```powershell
-$seed = Get-Random -Minimum 1 -Maximum 2147483647
-echo "seed=$seed"
-cargo run --profile fast-run --bin run_play_driver -- --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
-```
-
-Common commands:
-
-| Command | Meaning |
-| --- | --- |
-| `ar` | auto-run with guarded route/card/search helpers until a boundary stops |
-| `n` | guarded advance without route planning |
-| `nr` | guarded advance with route planning |
-| `rs` / `rg` | route suggestion / execute one route choice |
-| `bd` | show current non-combat decision record summary |
-| `sc` | run combat search from the current combat boundary |
-| `sd` | inspect or update search defaults |
-| `mark <name>` | save a replay bookmark while recording |
-| `q` | quit cleanly |
-
-Useful panels:
-
-```text
-deck | map | mf | bd | relics | potions | draw | discard | exhaust | inspect <id> | details | raw
-```
-
-Resume a recorded bookmark:
-
-```powershell
-cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wall-ms 100
-```
-
-Reward-screen note: opening a card reward and skipping that card reward are
-different from leaving an outer reward screen while other rewards remain.
-
 ## Combat Search Driver
 
 Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark
@@ -199,6 +159,21 @@ Historical artifacts remain readable and valid when a profile implementation is
 later removed. Rerunning that historical profile requires the Git commit recorded
 in its manifest; the current tree must not silently substitute a newer profile.
 
+## Planner Capture Export
+
+The retired interactive driver no longer produces live `SessionTraceV1`
+captures. Existing schema-v15 traces remain readable while capture moves to the
+atomic run-job journal. A rebuildable dataset and coverage report can still be
+exported from an existing typed trace under `artifacts/runs` with:
+
+```powershell
+cargo run --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
+```
+
+The coverage report measures representation and linkage only. It does not rank
+decision sites, declare policy quality, or promote the recorded behavior to a
+correct-action label.
+
 ## Verification
 
 For core code changes:
@@ -207,7 +182,6 @@ For core code changes:
 cargo fmt --check
 cargo check --all-targets
 cargo check --release --all-targets
-cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check
 ```

@@ -8,23 +8,6 @@ use super::{card_line, debug_words, push_line};
 use crate::eval::run_control::session::RunControlSession;
 use crate::eval::run_control::view_model::{monster_name, reward_card_label};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CombatZonePanel {
-    Draw,
-    Discard,
-    Exhaust,
-}
-
-impl CombatZonePanel {
-    fn label(self) -> &'static str {
-        match self {
-            CombatZonePanel::Draw => "Draw",
-            CombatZonePanel::Discard => "Discard",
-            CombatZonePanel::Exhaust => "Exhaust",
-        }
-    }
-}
-
 pub(super) fn push_combat_screen(session: &RunControlSession, out: &mut String) {
     let Some(combat) = session
         .active_combat
@@ -242,35 +225,6 @@ fn power_label(power: &Power) -> String {
             power.amount
         )
     }
-}
-
-pub fn render_combat_zone_panel(session: &RunControlSession, zone: CombatZonePanel) -> String {
-    let mut out = String::new();
-    let Some(combat) = session
-        .active_combat
-        .as_ref()
-        .map(|active| &active.combat_state)
-    else {
-        return format!("{} is only available during combat.", zone.label());
-    };
-    let cards = match zone {
-        CombatZonePanel::Draw => &combat.zones.draw_pile,
-        CombatZonePanel::Discard => &combat.zones.discard_pile,
-        CombatZonePanel::Exhaust => &combat.zones.exhaust_pile,
-    };
-    push_line(
-        &mut out,
-        format!("{} pile {} cards:", zone.label(), cards.len()),
-    );
-    if cards.is_empty() {
-        push_line(&mut out, "  empty");
-    }
-    for (idx, card) in cards.iter().enumerate() {
-        push_line(&mut out, format!("  {idx} {}", card_line(card, true)));
-    }
-    push_line(&mut out, "");
-    push_line(&mut out, "Commands: main | raw | q");
-    out
 }
 
 fn monster_intent_line(combat: &CombatState, monster_id: usize) -> String {

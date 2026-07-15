@@ -18,8 +18,8 @@ use super::combat_line_executor::{
     apply_smoke_bomb_survival_fallback,
 };
 use super::combat_line_trace::{millis_to_micros_u64, CombatCandidateLinePerformance};
-use super::commands::{RunControlCombatSegmentMode, RunControlSearchCombatOptions};
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::progress_options::{RunControlCombatSegmentMode, RunControlSearchCombatOptions};
+use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
 
 pub(super) fn try_apply_no_win_fallback(
@@ -29,7 +29,7 @@ pub(super) fn try_apply_no_win_fallback(
     options: &RunControlSearchCombatOptions,
     search_report: &CombatSearchV2Report,
     hp_loss_limit: Option<u32>,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     if let Some(outcome) = try_apply_complete_line_solver_after_no_win(
         session,
         start,
@@ -76,7 +76,7 @@ fn try_apply_turn_plan_rescue_after_no_win(
     config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
     hp_loss_limit: Option<u32>,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     let budget_ms = turn_plan_rescue_budget_ms(config);
     let rescue_started = Instant::now();
     let Some(rescue) = find_combat_turn_plan_rescue_win_v0(start, config, budget_ms, hp_loss_limit)
@@ -123,7 +123,7 @@ fn try_apply_line_lab_turn_pool_after_no_win(
     config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
     hp_loss_limit: Option<u32>,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     let budget_ms = turn_pool_rescue_budget_ms(config);
     let rescue_started = Instant::now();
     let Some(rescue) = find_combat_turn_pool_rescue_win_v0(start, config, budget_ms) else {
@@ -184,7 +184,7 @@ fn try_apply_complete_line_solver_after_no_win(
     config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
     hp_loss_limit: Option<u32>,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     let Some(solution) = super::combat_complete_line_solver::try_solve_complete_line(start, config)
     else {
         return Ok(None);
@@ -217,7 +217,7 @@ pub(super) fn try_apply_turn_segment_after_rejection(
     options: &RunControlSearchCombatOptions,
     search_report: &CombatSearchV2Report,
     rejection_result: &'static str,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     if !segment_mode_allows_turn_segment(options.segment_mode, start) {
         return Ok(None);
     }
@@ -240,7 +240,7 @@ pub(super) fn try_apply_turn_segment_after_rejection(
 pub(super) fn try_apply_smoke_bomb_survival_fallback_after_rejection(
     session: &mut RunControlSession,
     rejection_result: &'static str,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+) -> Result<Option<RunProgressOutcome>, String> {
     let Some(active) = session.active_combat.as_ref() else {
         return Ok(None);
     };

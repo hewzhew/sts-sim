@@ -2,7 +2,7 @@ use sts_simulator::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
 };
 use sts_simulator::content::cards::get_card_definition;
-use sts_simulator::eval::run_control::{RunControlCommand, RunControlSession};
+use sts_simulator::eval::run_control::{RunControlSession, RunDecisionAction};
 use sts_simulator::state::core::{
     ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState,
 };
@@ -110,7 +110,7 @@ fn deck_mutation_owner_decision(
 
     OwnerDecision::Candidates(vec![OwnerChoice {
         key: None,
-        action: RunControlCommand::Input(ClientInput::SubmitSelection(
+        action: RunDecisionAction::Input(ClientInput::SubmitSelection(
             SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
         )),
         label: format!(
@@ -130,7 +130,7 @@ fn deck_mutation_owner_decision(
 mod tests {
     use super::*;
     use sts_simulator::content::cards::CardId;
-    use sts_simulator::eval::run_control::{RunControlCommand, RunControlConfig};
+    use sts_simulator::eval::run_control::{RunControlConfig, RunDecisionAction};
     use sts_simulator::state::events::EventId;
     use sts_simulator::state::selection::{DomainEventSource, SelectionScope};
 
@@ -152,7 +152,7 @@ mod tests {
         let [choice] = choices.as_slice() else {
             panic!("RunChoice must produce one committed candidate");
         };
-        let RunControlCommand::Input(ClientInput::SubmitSelection(resolution)) = &choice.action
+        let RunDecisionAction::Input(ClientInput::SubmitSelection(resolution)) = &choice.action
         else {
             panic!("RunChoice candidate must submit a typed selection");
         };

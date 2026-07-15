@@ -1,4 +1,3 @@
-use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
 
 use super::session::RunControlSession;
@@ -7,9 +6,6 @@ use super::view_model::{build_run_control_view_model, DecisionCandidate, RunCont
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecisionSurface {
     pub view: RunControlViewModel,
-    pub candidate_section_title: &'static str,
-    pub inspectable_panels: &'static str,
-    pub command_hint: String,
     pub visible_executable_inputs: Vec<ClientInput>,
 }
 
@@ -21,9 +17,6 @@ pub fn build_decision_surface(session: &RunControlSession) -> DecisionSurface {
         .filter_map(|candidate| candidate.action.executable_input())
         .collect::<Vec<_>>();
     DecisionSurface {
-        candidate_section_title: candidate_section_title(session),
-        inspectable_panels: inspectable_panels(session),
-        command_hint: main_command_hint(session, &view),
         view,
         visible_executable_inputs,
     }
@@ -139,141 +132,4 @@ pub(super) fn surface_legal_visibility_violations(session: &RunControlSession) -
         }
     }
     violations
-}
-
-fn candidate_section_title(session: &RunControlSession) -> &'static str {
-    match &session.engine_state {
-        _ if super::selection_surface::active_selection_surface(session).is_some() => {
-            "Selection commands:"
-        }
-        EngineState::EventRoom => {
-            if session.run_state.event_state.as_ref().is_some_and(|event| {
-                event.id == crate::state::events::EventId::Neow && event.current_screen > 0
-            }) {
-                "Options:"
-            } else {
-                "Available action:"
-            }
-        }
-        EngineState::PendingChoice(_) => "Selections:",
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => "Actions:",
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => "Choices:",
-        EngineState::RewardOverlay { reward_state, .. }
-            if reward_state.pending_card_choice.is_some() =>
-        {
-            "Choices:"
-        }
-        EngineState::MapNavigation | EngineState::MapOverlay { .. } => "Paths:",
-        _ => "Available actions:",
-    }
-}
-
-fn inspectable_panels(session: &RunControlSession) -> &'static str {
-    match &session.engine_state {
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => {
-            "deck | draw | discard | exhaust | relics | potions | inspect <id> | details | raw"
-        }
-        _ => "deck | map | relics | potions | inspect <id> | details | raw",
-    }
-}
-
-fn main_command_hint(session: &RunControlSession, view: &RunControlViewModel) -> String {
-    let first = view.candidates.first();
-    let primary = match first {
-        Some(candidate)
-            if view.candidates.len() == 1 && candidate.action.executable_input().is_some() =>
-        {
-            format!("Enter/{}: {}", candidate.id, candidate.label)
-        }
-        Some(_) => state_command_hint(session),
-        None => "type a command".to_string(),
-    };
-    let views = match session.engine_state {
-        EngineState::CombatPlayerTurn
-        | EngineState::CombatProcessing
-        | EngineState::PendingChoice(_) => {
-            "draw | discard | exhaust | potions | relics | case | raw | help | q"
-        }
-        EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
-            "deck | map | ms | rs | rg | relics | potions | case | raw | help | q"
-        }
-        _ => "deck | map | relics | potions | case | raw | help | q",
-    };
-    let baseline = if session.last_completed_manual_combat_matches_capture_case() {
-        " | baseline"
-    } else {
-        ""
-    };
-    format!("{primary} | {views}{baseline}")
-}
-
-fn state_command_hint(session: &RunControlSession) -> String {
-    match &session.engine_state {
-        EngineState::Shop(_) => {
-            "card-2 or card 2 | relic-1 or relic 1 | potion-0 or potion 0 | leave".to_string()
-        }
-        EngineState::Campfire => {
-            "rest | smith-<deck_idx> or smith <deck_idx> | dig | lift | toke-<deck_idx> | recall"
-                .to_string()
-        }
-        EngineState::MapNavigation => {
-            "type a path id, e.g. 0 or 5 | map=full map | rg=route-go".to_string()
-        }
-        EngineState::MapOverlay { .. } => {
-            "type a path id to commit, or back/cancel to return".to_string()
-        }
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            if has_singing_bowl(session) {
-                "type visible id to take card; rp <id> records pick; bowl; back".to_string()
-            } else {
-                "type visible id to take card; rp <id> records pick; back".to_string()
-            }
-        }
-        EngineState::RewardOverlay { reward_state, .. }
-            if reward_state.pending_card_choice.is_some() =>
-        {
-            if has_singing_bowl(session) {
-                "type visible id to take card; rp <id> records pick; bowl; back".to_string()
-            } else {
-                "type visible id to take card; rp <id> records pick; back".to_string()
-            }
-        }
-        EngineState::RewardOverlay { reward_state, .. } => {
-            if has_singing_bowl(session) && reward_state.has_card_reward_item() {
-                "type visible id, bowl, or back".to_string()
-            } else {
-                "type visible id or back".to_string()
-            }
-        }
-        EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
-            if has_singing_bowl(session) {
-                "type visible id to open reward; rp <card_idx> records first card reward pick; bowl; skip"
-                    .to_string()
-            } else {
-                "type visible id to open reward; rp <card_idx> records first card reward pick; skip"
-                    .to_string()
-            }
-        }
-        EngineState::RewardScreen(_) => "type visible id, pick <idx>, or skip".to_string(),
-        EngineState::PendingChoice(_)
-            if super::selection_surface::active_selection_surface(session).is_some() =>
-        {
-            "select <idx...> | select = choose nothing | cancel".to_string()
-        }
-        EngineState::PendingChoice(_) => "type visible selection id".to_string(),
-        EngineState::CombatPlayerTurn | EngineState::CombatProcessing => {
-            "cap <case_id> | n | visible action id | end".to_string()
-        }
-        _ => "type visible id".to_string(),
-    }
-}
-
-fn has_singing_bowl(session: &RunControlSession) -> bool {
-    session
-        .run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::SingingBowl)
 }

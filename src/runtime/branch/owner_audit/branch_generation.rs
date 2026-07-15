@@ -202,7 +202,7 @@ mod tests {
     };
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
-        RunControlCommand, RunControlConfig, RunControlSession,
+        RunControlConfig, RunControlSession, RunDecisionAction,
     };
 
     use super::super::branch_policy_lane::BranchPolicyLane;
@@ -219,7 +219,7 @@ mod tests {
         };
         OwnerChoice {
             key: None,
-            action: RunControlCommand::Noop,
+            action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
             annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
                 evaluation: CandidateEvaluation {

@@ -3,7 +3,7 @@ use crate::ai::combat_search_v2::{
 };
 use crate::sim::combat::CombatPosition;
 
-use super::commands::{RunControlHpLossLimit, RunControlSearchCombatOptions};
+use super::progress_options::{RunControlHpLossLimit, RunControlSearchCombatOptions};
 use super::session::RunControlSession;
 
 pub(super) struct PreparedCombatSearch {
