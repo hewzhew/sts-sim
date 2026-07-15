@@ -5,6 +5,11 @@ pub(super) struct CombatSearchPortfolioPlan {
     lanes: Vec<CombatSearchLane>,
 }
 
+pub(super) struct CombatSearchPortfolioSchedule {
+    pub(super) lanes: Vec<CombatSearchLane>,
+    pub(super) suppressed: Vec<CombatSearchLane>,
+}
+
 impl CombatSearchPortfolioPlan {
     pub(super) fn after_primary(context: CombatSearchPortfolioContext) -> Self {
         let lanes = match context.stakes {
@@ -32,8 +37,24 @@ impl CombatSearchPortfolioPlan {
         Self { lanes }
     }
 
-    pub(super) fn into_lanes(self) -> Vec<CombatSearchLane> {
-        self.lanes
+    pub(super) fn into_schedule_by<K, F>(self, mut key_for: F) -> CombatSearchPortfolioSchedule
+    where
+        K: Eq,
+        F: FnMut(CombatSearchLane) -> K,
+    {
+        let mut keys = Vec::new();
+        let mut lanes = Vec::new();
+        let mut suppressed = Vec::new();
+        for lane in self.lanes {
+            let key = key_for(lane);
+            if keys.contains(&key) {
+                suppressed.push(lane);
+            } else {
+                keys.push(key);
+                lanes.push(lane);
+            }
+        }
+        CombatSearchPortfolioSchedule { lanes, suppressed }
     }
 
     #[cfg(test)]
@@ -116,5 +137,20 @@ mod tests {
             ]
         );
         assert!(!plan.should_report());
+    }
+
+    #[test]
+    fn duplicate_producer_is_suppressed_in_stable_order() {
+        let duplicate = CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue);
+        let plan = CombatSearchPortfolioPlan {
+            lanes: vec![duplicate, duplicate],
+        };
+
+        let schedule = plan.into_schedule_by(|lane| lane.kind());
+
+        assert_eq!(schedule.lanes.len(), 1);
+        assert_eq!(schedule.lanes[0].kind(), duplicate.kind());
+        assert_eq!(schedule.suppressed.len(), 1);
+        assert_eq!(schedule.suppressed[0].kind(), duplicate.kind());
     }
 }

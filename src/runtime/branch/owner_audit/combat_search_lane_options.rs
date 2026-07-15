@@ -108,7 +108,7 @@ fn lane_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
-            CombatSearchChildRolloutPluginId::Immediate,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
             CombatSearchPhaseGuardPluginId::ChampSplitGuard,
         ),
         CombatSearchLaneKind::BossNoPotion => profile_with_budget(
@@ -415,6 +415,39 @@ mod tests {
             CombatSearchV2PotionPolicy::SemanticBudgeted
         );
         assert_eq!(fallback_config.max_potions_used, Some(2));
+    }
+
+    #[test]
+    fn hallway_quality_and_survival_use_complementary_engines_at_same_budget() {
+        let session = session_with_combat_stakes(false, false);
+        let request = CombatSearchRequest::from_session(&session, test_args());
+        let quality = lane_options(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue),
+            &request,
+            &session,
+        )
+        .search
+        .profile
+        .expect("quality profile");
+        let survival = lane_options(
+            CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
+            &request,
+            &session,
+        )
+        .search
+        .profile
+        .expect("survival profile");
+
+        assert_eq!(
+            quality.engine.plugins.child_rollout,
+            CombatSearchChildRolloutPluginId::Immediate
+        );
+        assert_eq!(
+            survival.engine.plugins.child_rollout,
+            CombatSearchChildRolloutPluginId::LazyOnPop
+        );
+        assert_eq!(quality.engine.budget, survival.engine.budget);
+        assert_ne!(quality.engine_fingerprint(), survival.engine_fingerprint());
     }
 
     #[test]

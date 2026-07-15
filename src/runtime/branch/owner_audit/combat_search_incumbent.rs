@@ -13,6 +13,14 @@ impl CombatSearchCandidateTier {
             Self::ReserveCompliantCompleteWin => 2,
         }
     }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::SurvivalFallback => "survival_fallback",
+            Self::RelaxedCompleteWin => "relaxed_complete_win",
+            Self::ReserveCompliantCompleteWin => "reserve_compliant_complete_win",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

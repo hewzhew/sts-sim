@@ -103,9 +103,12 @@ fn print_combat_portfolio(report: &CombatSearchPortfolioReport) {
     );
     for attempt in &report.attempts {
         println!(
-            "    attempt {}: {} potion={} max_potions={:?} budget={}nodes/{}ms",
+            "    attempt {}: {} selected={} tier={:?} decision={} potion={} max_potions={:?} budget={}nodes/{}ms",
             attempt.label,
             combat_portfolio_status_label(&attempt.status),
+            attempt.selected,
+            attempt.candidate_tier,
+            attempt.incumbent_reason,
             attempt.potion_policy,
             attempt.max_potions_used,
             attempt.max_nodes,

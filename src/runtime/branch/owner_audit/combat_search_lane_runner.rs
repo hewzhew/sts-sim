@@ -50,6 +50,7 @@ pub(super) fn run_lane_attempt(
         RunControlHpLossLimit::Limit(limit) => Some(limit),
         RunControlHpLossLimit::Unlimited => None,
     };
+    let root_potion_count = visible_potion_count(session);
     let profile_config = options.search.profile.map(|profile| profile.to_config());
     let engine_fingerprint = options
         .search
@@ -121,6 +122,7 @@ pub(super) fn run_lane_attempt(
             &status,
             &outcome,
             owner_hp_loss_limit,
+            root_potion_count,
             action_keys.len(),
         )
     });
@@ -173,6 +175,56 @@ impl CombatSearchLaneAttempt {
         Ok(())
     }
 
+    pub(super) fn duplicate_engine_suppressed(
+        session: &RunControlSession,
+        request: &CombatSearchRequest,
+        lane: CombatSearchLane,
+    ) -> Self {
+        let options = lane.options(request, session);
+        let profile_config = options.search.profile.map(|profile| profile.to_config());
+        Self {
+            trial_session: None,
+            outcome: None,
+            status: BranchStatus::CombatGap {
+                boundary: "Combat".to_string(),
+                reason: "duplicate_engine_suppressed".to_string(),
+            },
+            label: lane.label(),
+            max_nodes: options
+                .search
+                .max_nodes
+                .or_else(|| profile_config.as_ref().map(|config| config.max_nodes))
+                .unwrap_or_default(),
+            wall_ms: options
+                .search
+                .wall_ms
+                .or_else(|| {
+                    profile_config.as_ref().and_then(|config| {
+                        config.wall_time.map(|duration| duration.as_millis() as u64)
+                    })
+                })
+                .unwrap_or_default(),
+            potion_policy: options.search.potion_policy,
+            max_potions_used: profile_config
+                .as_ref()
+                .and_then(|config| config.max_potions_used),
+            action_keys: Vec::new(),
+            internal_no_win_rescue_enabled: !options.search.disable_no_win_rescue,
+            applicable: false,
+            selected: false,
+            incumbent_reason: "duplicate_engine_suppressed",
+            candidate_facts: None,
+            engine_fingerprint: options
+                .search
+                .profile
+                .map(|profile| profile.engine_fingerprint())
+                .unwrap_or_else(|| "manual_default".to_string()),
+            auto_stop_kind: None,
+            applied_operations: 0,
+            accepted_high_loss_diagnostic: None,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn synthetic_for_test(
         root: &RunControlSession,
@@ -212,6 +264,7 @@ fn candidate_facts(
     status: &BranchStatus,
     outcome: &RunControlCommandOutcome,
     owner_hp_loss_limit: Option<u32>,
+    root_potion_count: u32,
     fallback_action_count: usize,
 ) -> CombatSearchCandidateFacts {
     let best_win =
@@ -221,7 +274,7 @@ fn candidate_facts(
         best_win.as_ref().map(|summary| summary.hp_loss),
         owner_hp_loss_limit,
     );
-    let run_hp = trial.run_state.current_hp;
+    let run_hp = trial.visible_player_hp().0;
     CombatSearchCandidateFacts {
         terminal_run_victory: matches!(
             status,
@@ -236,7 +289,7 @@ fn candidate_facts(
         potions_used: best_win
             .as_ref()
             .map(|summary| summary.potions_used)
-            .unwrap_or_default(),
+            .unwrap_or_else(|| root_potion_count.saturating_sub(visible_potion_count(trial))),
         potions_discarded: best_win
             .as_ref()
             .map(|summary| summary.potions_discarded)
@@ -250,6 +303,22 @@ fn candidate_facts(
             .map(|summary| summary.action_count)
             .unwrap_or(fallback_action_count),
     }
+}
+
+fn visible_potion_count(session: &RunControlSession) -> u32 {
+    session
+        .active_combat
+        .as_ref()
+        .map(|active| {
+            active
+                .combat_state
+                .entities
+                .potions
+                .iter()
+                .flatten()
+                .count()
+        })
+        .unwrap_or_else(|| session.run_state.potions.iter().flatten().count()) as u32
 }
 
 fn candidate_tier(
@@ -284,6 +353,12 @@ pub(super) fn combat_search_summaries(
         summary.profile_max_potions_used = attempt.max_potions_used;
         summary.profile_internal_no_win_rescue_enabled =
             Some(attempt.internal_no_win_rescue_enabled);
+        summary.engine_fingerprint = Some(attempt.engine_fingerprint.clone());
+        summary.portfolio_candidate_tier = attempt
+            .candidate_facts
+            .map(|facts| facts.tier.as_str().to_string());
+        summary.portfolio_selected = Some(attempt.selected);
+        summary.portfolio_decision = Some(attempt.incumbent_reason.to_string());
     }
     summaries
 }
@@ -297,6 +372,16 @@ pub(super) fn lane_attempt_report(attempt: &CombatSearchLaneAttempt) -> CombatSe
         potion_policy: attempt.potion_policy,
         max_potions_used: attempt.max_potions_used,
         action_keys: attempt.action_keys.clone(),
+        engine_fingerprint: attempt.engine_fingerprint.clone(),
+        candidate_tier: attempt
+            .candidate_facts
+            .map(|facts| facts.tier.as_str().to_string()),
+        selected: attempt.selected,
+        incumbent_reason: attempt.incumbent_reason.to_string(),
+        combat_final_hp: attempt.candidate_facts.map(|facts| facts.combat_final_hp),
+        run_hp: attempt.candidate_facts.map(|facts| facts.run_hp),
+        potions_used: attempt.candidate_facts.map(|facts| facts.potions_used),
+        turns: attempt.candidate_facts.map(|facts| facts.turns),
     })
 }
 

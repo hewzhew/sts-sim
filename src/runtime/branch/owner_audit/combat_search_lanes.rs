@@ -4,7 +4,9 @@ use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSess
 use super::combat_search_lane_options;
 use super::combat_search_lane_spec::lane_spec;
 use super::combat_search_portfolio_context::CombatSearchPortfolioContext;
-use super::combat_search_portfolio_plan::CombatSearchPortfolioPlan;
+use super::combat_search_portfolio_plan::{
+    CombatSearchPortfolioPlan, CombatSearchPortfolioSchedule,
+};
 use super::Args;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -52,8 +54,22 @@ impl CombatSearchRequest {
         }
     }
 
-    pub(super) fn portfolio_after_primary(&self) -> Vec<CombatSearchLane> {
-        CombatSearchPortfolioPlan::after_primary(self.context).into_lanes()
+    pub(super) fn portfolio_after_primary(
+        &self,
+        session: &RunControlSession,
+    ) -> CombatSearchPortfolioSchedule {
+        CombatSearchPortfolioPlan::after_primary(self.context).into_schedule_by(|lane| {
+            let options = lane.options(self, session);
+            (
+                options
+                    .search
+                    .profile
+                    .map(|profile| profile.engine_fingerprint())
+                    .unwrap_or_else(|| "manual_default".to_string()),
+                !options.search.disable_no_win_rescue,
+                options.search.allow_smoke_bomb_survival_fallback,
+            )
+        })
     }
 
     pub(super) fn should_report(&self) -> bool {

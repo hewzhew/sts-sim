@@ -22,6 +22,7 @@ pub(super) fn run_combat_portfolio_step(
     let mut primary = run_lane_attempt(session, &request, CombatSearchLane::primary())
         .map_err(|err| format!("primary failed: {err}"))?;
     if primary.applicable {
+        primary.incumbent_reason = "primary_fast_path";
         primary.commit_into(session)?;
     }
     output.collect_attempt(&primary);
@@ -50,8 +51,8 @@ pub(super) fn run_combat_portfolio_step(
         ));
     }
 
-    let post_primary_lanes = request.portfolio_after_primary();
-    if post_primary_lanes.is_empty() {
+    let schedule = request.portfolio_after_primary(session);
+    if schedule.lanes.is_empty() {
         let report = portfolio_report(&request, status.clone(), lane_reports);
         return Ok(combat_search_result(
             status,
@@ -85,11 +86,16 @@ pub(super) fn run_combat_portfolio_step(
         ));
     }
 
-    let arbitration = arbitrate_post_primary(session, status, post_primary_lanes, |root, lane| {
+    let suppressed_attempts = schedule
+        .suppressed
+        .into_iter()
+        .map(|lane| CombatSearchLaneAttempt::duplicate_engine_suppressed(session, &request, lane))
+        .collect::<Vec<_>>();
+    let arbitration = arbitrate_post_primary(session, status, schedule.lanes, |root, lane| {
         run_lane_attempt(root, &request, lane)
     })?;
     status = arbitration.status;
-    for attempt in arbitration.attempts {
+    for attempt in arbitration.attempts.into_iter().chain(suppressed_attempts) {
         output.collect_attempt(&attempt);
         if request.should_report() {
             lane_reports.push(lane_attempt_report(&attempt));
