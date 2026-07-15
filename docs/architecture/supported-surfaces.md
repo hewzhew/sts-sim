@@ -120,6 +120,32 @@ events, combat search, owner-audit, or ordinary run-control. The still-live
 `BranchSkipCardReward` command is also retained despite its historical name because the current
 run-control decision surface and owner-audit renderer consume it.
 
+## Post-Legacy-Shop-Bundle-Retirement Baseline
+
+Counts below describe the 2026-07-15 working tree after removing the legacy
+`shop_purchase_bundle` policy from the generic decision pipeline and ShopTiny owner. The retired
+module mixed candidate evidence, whole-shop opportunity costs, owner verdicts, score weights, and
+string reason codes. Whole-shop planning now has an explicit owner boundary: the generic pipeline
+may expose candidate evidence, while an owner/compiler must choose between purchases, cleanup,
+future liquidity, and leaving.
+
+| Measure | Value | Change evidence |
+| --- | ---: | --- |
+| Rust files under `src` | 1,787 | The 936-line legacy bundle module retired |
+| Physical Rust lines under `src` | 331,957 | Current exact physical-line measurement |
+| `#[test]` markers under `src` | 2,814 | 24 bundle/string-owner tests retired |
+| Rust files containing `#[test]` | 414 | The bundle self-test file retired |
+| Passing library tests | 2,729 | 0 failed |
+| Linked library test binary | 49.01 MiB | Size is observational only |
+
+The delivery removes 1,527 net Rust lines. Boss scaling and survival repair remain typed evidence
+in `decision_pipeline`; the hard-checkpoint boss bundle preview now explicitly promotes the next
+owner-selected executable step instead of requiring prior generic-pipeline approval. Maw Bank and
+future-shop opportunity costs are intentionally no longer hidden filters in the candidate
+pipeline. If restored, they must be modeled by the whole-shop plan compiler rather than by string
+reason codes. The existing `shop_policy_v1` compiler passes its focused tests but is not yet the
+production ShopTiny owner.
+
 ## Status Vocabulary
 
 - `SupportedMainline`: required to build, execute, or protect the current mainline run workflow.
@@ -276,6 +302,20 @@ diagnostic adapter.
 - Removed tests: 138 self-tests whose only production owner was the retired product.
 - Replacement: none. `branch_tiny` and `branch_panel` remain the supported portfolio mainline;
   owner-audit and ordinary run-control retain their own automation and evidence contracts.
+- Recovery: repository history and `origin/backup/pre-cleanup-20260712`.
+
+### Legacy shop purchase bundle policy
+
+- Removal delivery: the 2026-07-15 shop-bundle dependency-closure cleanup recorded here.
+- Removed contracts: `ShopGoldOpportunity`, `ShopPurchaseBundleDecision`, bundle verdict and fact
+  schemas, bundle filter/score passes, Maw Bank and future-shop string reason codes, and the
+  ShopTiny route-to-bundle adapter.
+- Removed tests: 24 tests that owned the retired bundle or asserted its string reasons and magic
+  cross-candidate ordering weights.
+- Surviving contracts: typed boss scaling/survival evidence, ordinary candidate admission,
+  ShopTiny hard-checkpoint boss preview, and the separately tested `shop_policy_v1` compiler.
+- Replacement boundary: whole-shop opportunity costs belong in a shop plan owner/compiler;
+  `decision_pipeline` must not regain cross-candidate purchase policy.
 - Recovery: repository history and `origin/backup/pre-cleanup-20260712`.
 
 ## Test Retention Contract

@@ -10,9 +10,7 @@ use crate::ai::strategy::boss_relic_admission::{
 use crate::ai::strategy::boss_scaling_evidence::{
     admission_is_strength_payoff, assess_boss_scaling_evidence,
 };
-use crate::ai::strategy::boss_survival_evidence::{
-    assess_boss_survival_evidence, BossSurvivalRepairKind,
-};
+use crate::ai::strategy::boss_survival_evidence::assess_boss_survival_evidence;
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -24,10 +22,6 @@ use crate::ai::strategy::reward_quality::RewardDuplicateConcern;
 use crate::ai::strategy::role_saturation::{
     assess_role_saturation, marginal_reason_label, LaneCap, RoleSaturationCandidate,
 };
-use crate::ai::strategy::shop_purchase_bundle::{
-    evaluate_shop_purchase_bundle, evaluate_shop_purchase_bundle_with_evidence,
-    ShopGoldOpportunity, ShopPurchaseBundleVerdict, ShopPurchaseCandidateEvidence,
-};
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -37,7 +31,6 @@ pub struct DecisionPipelineContext {
     pub deck_plan: DeckPlanSnapshot,
     pub gold: Option<i32>,
     pub shop_investment: Option<ShopInvestmentEvidence>,
-    pub shop_gold_opportunity: Option<ShopGoldOpportunity>,
 }
 
 impl DecisionPipelineContext {
@@ -46,7 +39,6 @@ impl DecisionPipelineContext {
             deck_plan,
             gold: None,
             shop_investment: None,
-            shop_gold_opportunity: None,
         }
     }
 
@@ -55,20 +47,12 @@ impl DecisionPipelineContext {
             deck_plan,
             gold: Some(gold),
             shop_investment: None,
-            shop_gold_opportunity: None,
         }
     }
 
     pub fn with_shop_investment(self, shop_investment: ShopInvestmentEvidence) -> Self {
         Self {
             shop_investment: Some(shop_investment),
-            ..self
-        }
-    }
-
-    pub fn with_shop_gold_opportunity(self, shop_gold_opportunity: ShopGoldOpportunity) -> Self {
-        Self {
-            shop_gold_opportunity: Some(shop_gold_opportunity),
             ..self
         }
     }
@@ -405,7 +389,6 @@ fn filter_passes() -> &'static [FilterPass] {
         missing_card_admission_filter,
         shop_affordability_filter,
         shop_investment_filter,
-        shop_purchase_bundle_filter,
         shop_followup_required_filter,
         cleanup_target_filter,
         unmodeled_card_filter,
@@ -429,7 +412,6 @@ fn score_passes() -> &'static [ScorePass] {
         reward_reason_score,
         payoff_support_quality_score,
         shop_investment_score,
-        shop_purchase_bundle_score,
         shop_relic_score,
         shop_potion_score,
         survival_pressure_score,
@@ -486,36 +468,6 @@ fn shop_investment_filter(
         ShopInvestmentDecision::Mainline
         | ShopInvestmentDecision::Probe
         | ShopInvestmentDecision::NotInvestment => FilterDecision::Pass,
-    }
-}
-
-fn shop_purchase_bundle_filter(
-    context: DecisionPipelineContext,
-    candidate: DecisionCandidateIr,
-    admission: Option<&RewardAdmission>,
-) -> FilterDecision {
-    let Some(opportunity) = context.shop_gold_opportunity else {
-        return FilterDecision::Pass;
-    };
-    if !is_shop_bundle_candidate(candidate.kind) {
-        return FilterDecision::Pass;
-    }
-    let evaluation = CandidateEvaluation {
-        candidate,
-        lane: CandidateLane::Mainline,
-        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
-        expansion: ExpansionPlan::Auto,
-        scores: Vec::new(),
-    };
-    let bundle = evaluate_shop_purchase_bundle_with_evidence(
-        opportunity,
-        &evaluation,
-        shop_purchase_candidate_evidence(context, candidate, admission),
-    );
-    if bundle.verdict == ShopPurchaseBundleVerdict::Reject {
-        FilterDecision::InspectOnly(bundle.reason)
-    } else {
-        FilterDecision::Pass
     }
 }
 
@@ -624,7 +576,7 @@ fn risky_shop_card_filter(
     let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = candidate.kind else {
         return FilterDecision::Pass;
     };
-    if is_hard_boss_answer_shop_bundle(context, candidate) {
+    if is_boss_answer_shop_card(context, candidate.kind, admission) {
         return FilterDecision::Pass;
     }
     let definition = card_definition_with_upgrades(card, upgrades);
@@ -654,52 +606,24 @@ fn risky_shop_card_filter(
     }
 }
 
-fn is_hard_boss_answer_shop_bundle(
+fn is_boss_answer_shop_card(
     context: DecisionPipelineContext,
-    candidate: DecisionCandidateIr,
-) -> bool {
-    let Some(opportunity) = context.shop_gold_opportunity else {
-        return false;
-    };
-    if !is_shop_bundle_candidate(candidate.kind) {
-        return false;
-    }
-    let evaluation = CandidateEvaluation {
-        candidate,
-        lane: CandidateLane::Mainline,
-        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
-        expansion: ExpansionPlan::Auto,
-        scores: Vec::new(),
-    };
-    evaluate_shop_purchase_bundle(opportunity, &evaluation).verdict
-        == ShopPurchaseBundleVerdict::HardBossAnswerBuy
-}
-
-fn shop_purchase_candidate_evidence(
-    context: DecisionPipelineContext,
-    candidate: DecisionCandidateIr,
+    kind: DecisionCandidateKind,
     admission: Option<&RewardAdmission>,
-) -> ShopPurchaseCandidateEvidence {
-    let repairs_boss_scaling_plan = context
-        .shop_gold_opportunity
-        .is_some_and(|opportunity| opportunity.boss_answer_needed)
-        && admission.is_some_and(|admission| {
-            assess_boss_scaling_evidence(
-                context.deck_plan,
-                candidate_card(candidate.kind),
-                admission,
-            )
-            .relevant_to_boss_plan
-                && !fragile_supported_payoff(context, admission)
-        });
-    let boss_survival_repair = admission.and_then(|admission| {
-        assess_boss_survival_evidence(context.deck_plan, candidate_card(candidate.kind), admission)
-            .repair_kind
-    });
-    ShopPurchaseCandidateEvidence {
-        repairs_boss_scaling_plan,
-        boss_survival_repair,
+) -> bool {
+    if !matches!(kind, DecisionCandidateKind::ShopBuyCard { .. }) {
+        return false;
     }
+    let Some(admission) = admission else {
+        return false;
+    };
+    let scaling = assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission);
+    let survival =
+        assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission);
+    (needs(context.deck_plan.strategic_deficit.boss_scaling_plan)
+        && scaling.relevant_to_boss_plan
+        && !fragile_supported_payoff(context, admission))
+        || survival.repairs_plan()
 }
 
 fn shop_card_acquisition_filter(
@@ -718,7 +642,7 @@ fn shop_card_acquisition_filter(
     let (Some(admission), Some(gold)) = (admission, context.gold) else {
         return FilterDecision::Pass;
     };
-    if is_hard_boss_answer_shop_bundle(context, candidate) {
+    if is_boss_answer_shop_card(context, candidate.kind, Some(admission)) {
         return FilterDecision::Pass;
     }
     let report = assess_card_acquisition(
@@ -1010,67 +934,6 @@ fn shop_investment_score(
     }
 }
 
-fn shop_purchase_bundle_score(
-    context: DecisionPipelineContext,
-    candidate: DecisionCandidateIr,
-    admission: Option<&RewardAdmission>,
-    scores: &mut Vec<ScoreComponent>,
-) {
-    let Some(opportunity) = context.shop_gold_opportunity else {
-        return;
-    };
-    if !is_shop_bundle_candidate(candidate.kind) {
-        return;
-    }
-    let evaluation = CandidateEvaluation {
-        candidate,
-        lane: CandidateLane::Mainline,
-        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
-        expansion: ExpansionPlan::Auto,
-        scores: Vec::new(),
-    };
-    let bundle = evaluate_shop_purchase_bundle_with_evidence(
-        opportunity,
-        &evaluation,
-        shop_purchase_candidate_evidence(context, candidate, admission),
-    );
-    let label = match bundle.verdict {
-        ShopPurchaseBundleVerdict::HardSurvivalBuy => "shop-bundle-hard-survival",
-        ShopPurchaseBundleVerdict::HardBossAnswerBuy => "shop-bundle-boss-answer",
-        ShopPurchaseBundleVerdict::StrategicBossRepairBuy => {
-            match bundle.facts.boss_survival_repair {
-                Some(BossSurvivalRepairKind::PlanRepair) => "shop-bundle-boss-survival-plan-repair",
-                Some(BossSurvivalRepairKind::TimedBridge) => {
-                    "shop-bundle-boss-survival-timed-bridge"
-                }
-                None => "shop-bundle-boss-scaling-repair",
-            }
-        }
-        ShopPurchaseBundleVerdict::EfficientBundleBuy => "shop-bundle-efficient",
-        ShopPurchaseBundleVerdict::ContextBuy => "shop-bundle-context",
-        ShopPurchaseBundleVerdict::PreserveGoldPreferred => "shop-bundle-preserve-gold",
-        ShopPurchaseBundleVerdict::Reject => "shop-bundle-reject",
-    };
-    scores.push(score(label, shop_purchase_bundle_score_value(&bundle)));
-}
-
-fn shop_purchase_bundle_score_value(
-    bundle: &crate::ai::strategy::shop_purchase_bundle::ShopPurchaseBundleDecision,
-) -> i32 {
-    match bundle.verdict {
-        ShopPurchaseBundleVerdict::HardSurvivalBuy => 180,
-        ShopPurchaseBundleVerdict::HardBossAnswerBuy => match bundle.facts.kind {
-            crate::ai::strategy::shop_purchase_bundle::ShopPurchaseBundleKind::BuyOneCard => 240,
-            _ => 160,
-        },
-        ShopPurchaseBundleVerdict::StrategicBossRepairBuy => 180,
-        ShopPurchaseBundleVerdict::EfficientBundleBuy => 120,
-        ShopPurchaseBundleVerdict::ContextBuy => 70,
-        ShopPurchaseBundleVerdict::PreserveGoldPreferred => 50,
-        ShopPurchaseBundleVerdict::Reject => 0,
-    }
-}
-
 fn shop_relic_score(
     context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
@@ -1248,7 +1111,7 @@ fn acquisition_lane_cap(
     kind: DecisionCandidateKind,
     admission: Option<&RewardAdmission>,
 ) -> Option<LaneCap> {
-    if is_hard_boss_answer_shop_bundle(context, DecisionCandidateIr { kind }) {
+    if is_boss_answer_shop_card(context, kind, admission) {
         return None;
     }
     let admission = admission?;
@@ -1320,17 +1183,6 @@ fn candidate_requires_card_admission(kind: DecisionCandidateKind) -> bool {
     matches!(
         kind,
         DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
-    )
-}
-
-fn is_shop_bundle_candidate(kind: DecisionCandidateKind) -> bool {
-    matches!(
-        kind,
-        DecisionCandidateKind::ShopBuyCard { .. }
-            | DecisionCandidateKind::ShopBuyRelic { .. }
-            | DecisionCandidateKind::ShopBuyPotion { .. }
-            | DecisionCandidateKind::ShopPurge { .. }
-            | DecisionCandidateKind::ShopLeave
     )
 }
 
@@ -1712,36 +1564,6 @@ mod tests {
         )
     }
 
-    fn shop_context_with_maw_bank(cards: &[CardId], gold: i32) -> DecisionPipelineContext {
-        shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
-            crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
-                current_gold: gold,
-                current_hp: 70,
-                max_hp: 80,
-                active_maw_bank: true,
-                future_rooms_before_next_shop: 5,
-                hard_checkpoint_imminent: false,
-                survival_purchase_needed: false,
-                boss_answer_needed: false,
-            },
-        )
-    }
-
-    fn shop_context_with_maw_bank_boss_gap(cards: &[CardId], gold: i32) -> DecisionPipelineContext {
-        shop_context_with_gold_and_hp(cards, gold, 70, 80).with_shop_gold_opportunity(
-            crate::ai::strategy::shop_purchase_bundle::ShopGoldOpportunity {
-                current_gold: gold,
-                current_hp: 70,
-                max_hp: 80,
-                active_maw_bank: true,
-                future_rooms_before_next_shop: 5,
-                hard_checkpoint_imminent: true,
-                survival_purchase_needed: false,
-                boss_answer_needed: true,
-            },
-        )
-    }
-
     fn reward_context_with_act(cards: &[CardId], act: u8) -> DecisionPipelineContext {
         reward_context_with_act_and_hp(cards, act, 70, 80)
     }
@@ -1868,10 +1690,6 @@ mod tests {
             DecisionCandidateKind::ShopBuyRelic { relic, price: 150 },
             None,
         )
-    }
-
-    fn shop_leave(context: DecisionPipelineContext) -> CandidateEvaluation {
-        evaluate_decision_candidate(context, DecisionCandidateKind::ShopLeave, None)
     }
 
     fn shop_card(cards: &[CardId], candidate: CardId) -> CandidateEvaluation {
@@ -2186,81 +2004,7 @@ mod tests {
     }
 
     #[test]
-    fn shop_maw_bank_prefers_leave_over_generic_relic_purchase() {
-        let context = shop_context_with_maw_bank(&act1_low_margin_reward_deck(), 224);
-        let leave = shop_leave(context);
-        let clockwork = evaluate_decision_candidate(
-            context,
-            DecisionCandidateKind::ShopBuyRelic {
-                relic: RelicId::ClockworkSouvenir,
-                price: 149,
-            },
-            None,
-        );
-
-        assert_eq!(leave.lane, CandidateLane::Skip);
-        assert_ne!(
-            clockwork.lane,
-            CandidateLane::Mainline,
-            "generic relic should not mainline through active Maw Bank: {:?}",
-            clockwork.scores
-        );
-        assert!(
-            leave.order_key(false) < clockwork.order_key(false),
-            "leave-with-gold should outrank ordinary Maw Bank-breaking purchase: leave={:?} clockwork={:?}",
-            leave,
-            clockwork
-        );
-    }
-
-    #[test]
-    fn shop_boss_repair_card_can_break_maw_bank_when_boss_gap_is_open() {
-        let deck_cards = act1_low_margin_reward_deck();
-        let deck = test_deck(&deck_cards);
-        let context = shop_context_with_maw_bank_boss_gap(&deck_cards, 288);
-
-        let fiend_fire = shop_card_in_context_with_price(context, &deck, CardId::FiendFire, 0, 152);
-        let leave = shop_leave(context);
-
-        assert_ne!(
-            fiend_fire.inspect_only_reason(),
-            Some("BreaksMawBankWithoutHardNeed"),
-            "deterministic boss repair should not be hidden behind Maw Bank protection"
-        );
-        assert!(
-            fiend_fire.order_key(false) < leave.order_key(false),
-            "boss-repair purchase should be eligible ahead of pure gold preservation: fiend_fire={:?} leave={:?}",
-            fiend_fire,
-            leave
-        );
-    }
-
-    #[test]
-    fn shop_boss_repair_card_orders_before_single_damage_potion() {
-        let deck_cards = act1_low_margin_reward_deck();
-        let deck = test_deck(&deck_cards);
-        let context = shop_context_with_maw_bank_boss_gap(&deck_cards, 288);
-
-        let fiend_fire = shop_card_in_context_with_price(context, &deck, CardId::FiendFire, 0, 152);
-        let fire_potion = evaluate_decision_candidate(
-            context,
-            DecisionCandidateKind::ShopBuyPotion {
-                potion: PotionId::FirePotion,
-                price: 51,
-            },
-            None,
-        );
-
-        assert!(
-            fiend_fire.order_key(false) < fire_potion.order_key(false),
-            "boss repair payload should outrank one-shot potion when both can break Maw Bank: fiend_fire={:?} fire_potion={:?}",
-            fiend_fire,
-            fire_potion
-        );
-    }
-
-    #[test]
-    fn shop_boss_scaling_repair_precedes_cleanup_and_survives_liquidity_guard() {
+    fn shop_boss_scaling_repair_remains_mainline() {
         let cards = vec![
             CardId::Strike,
             CardId::Strike,
@@ -2298,38 +2042,12 @@ mod tests {
             )
             .with_boss_key(Some(EncounterId::TheChamp)),
             313,
-        )
-        .with_shop_gold_opportunity(ShopGoldOpportunity {
-            current_gold: 313,
-            current_hp: 75,
-            max_hp: 80,
-            active_maw_bank: false,
-            future_rooms_before_next_shop: 2,
-            hard_checkpoint_imminent: false,
-            survival_purchase_needed: false,
-            boss_answer_needed: true,
-        });
+        );
         let demon_form =
             shop_card_in_context_with_price(context_at_entry, &deck, CardId::DemonForm, 0, 139);
-        let purge = evaluate_decision_candidate(
-            context_at_entry,
-            DecisionCandidateKind::ShopPurge {
-                target: CleanupTarget::StarterStrike,
-            },
-            None,
-        );
-
         assert_eq!(demon_form.lane, CandidateLane::Mainline);
-        assert!(
-            demon_form.order_key(false) < purge.order_key(false),
-            "scarce boss scaling repair should be bought before generic cleanup: demon={demon_form:#?} purge={purge:#?}"
-        );
 
-        let context_after_cleanup = DecisionPipelineContext::shop(context_at_entry.deck_plan, 213)
-            .with_shop_gold_opportunity(ShopGoldOpportunity {
-                current_gold: 213,
-                ..context_at_entry.shop_gold_opportunity.unwrap()
-            });
+        let context_after_cleanup = DecisionPipelineContext::shop(context_at_entry.deck_plan, 213);
         let demon_after_cleanup = shop_card_in_context_with_price(
             context_after_cleanup,
             &deck,
@@ -2342,10 +2060,7 @@ mod tests {
             CandidateLane::Mainline,
             "demon_after_cleanup={demon_after_cleanup:#?}"
         );
-        assert_ne!(
-            demon_after_cleanup.inspect_only_reason(),
-            Some("SpendsFutureShopLiquidityWithoutHardNeed")
-        );
+        assert!(demon_after_cleanup.auto_expands());
     }
 
     #[test]
@@ -2381,25 +2096,11 @@ mod tests {
             )
             .with_boss_key(Some(EncounterId::TheChamp)),
             213,
-        )
-        .with_shop_gold_opportunity(ShopGoldOpportunity {
-            current_gold: 213,
-            current_hp: 12,
-            max_hp: 39,
-            active_maw_bank: false,
-            future_rooms_before_next_shop: 2,
-            hard_checkpoint_imminent: false,
-            survival_purchase_needed: true,
-            boss_answer_needed: true,
-        });
+        );
 
         let demon_form = shop_card_in_context_with_price(context, &deck, CardId::DemonForm, 0, 139);
 
         assert_ne!(demon_form.lane, CandidateLane::Mainline);
-        assert_eq!(
-            demon_form.inspect_only_reason(),
-            Some("SpendsFutureShopLiquidityWithoutHardNeed")
-        );
     }
 
     #[test]
@@ -2700,7 +2401,7 @@ mod tests {
     }
 
     #[test]
-    fn seed006_f35_dark_shackles_bridge_survives_early_liquidity_filter() {
+    fn seed006_f35_dark_shackles_is_recognized_as_boss_survival_bridge() {
         let cards = [
             CardId::Strike,
             CardId::Strike,
@@ -2751,33 +2452,15 @@ mod tests {
             )
             .with_boss_key(Some(EncounterId::AwakenedOne)),
             180,
-        )
-        .with_shop_gold_opportunity(ShopGoldOpportunity {
-            current_gold: 180,
-            current_hp: 110,
-            max_hp: 110,
-            active_maw_bank: false,
-            future_rooms_before_next_shop: 2,
-            hard_checkpoint_imminent: false,
-            survival_purchase_needed: false,
-            boss_answer_needed: true,
-        });
+        );
 
         let shackles = shop_card_in_context_with_price(context, &deck, CardId::DarkShackles, 1, 78);
 
         assert_eq!(shackles.lane, CandidateLane::Mainline, "{shackles:#?}");
-        assert_ne!(
-            shackles.inspect_only_reason(),
-            Some("SpendsFutureShopLiquidityWithoutHardNeed")
-        );
         assert!(shackles
             .scores
             .iter()
             .any(|score| score.by == "awakened-one-temporary-strength-timed-bridge"));
-        assert!(shackles
-            .scores
-            .iter()
-            .any(|score| score.by == "shop-bundle-boss-survival-timed-bridge"));
     }
 
     #[test]
