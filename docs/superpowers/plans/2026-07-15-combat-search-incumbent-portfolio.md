@@ -241,7 +241,7 @@ fn relaxed_win_cannot_replace_reserve_compliant_win() {
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_incumbent::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_incumbent::tests -- --nocapture
 ```
 
 Expected: compilation fails because the new module types are not implemented.
@@ -288,7 +288,7 @@ pub(super) struct CombatSearchIncumbent {
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_incumbent::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_incumbent::tests -- --nocapture
 ```
 
 Expected: all incumbent ordering tests pass in under one second after the binary is linked.
@@ -338,7 +338,7 @@ assert_eq!(
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_lane_runner::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_lane_runner::tests -- --nocapture
 ```
 
 Expected: compilation fails because attempts do not retain a trial session or candidate facts and the runner still takes `&mut RunControlSession`.
@@ -404,8 +404,8 @@ pub(super) fn collect_selected_attempt(&mut self, attempt: &CombatSearchLaneAtte
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_lane_runner::tests -- --nocapture
-cargo test --bin branch_tiny combat_search_portfolio_output::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_lane_runner::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_portfolio_output::tests -- --nocapture
 ```
 
 Expected: the root non-mutation, tier classification, and selected-output ownership tests pass.
@@ -451,7 +451,7 @@ Use synthetic attempts to prove:
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_orchestrator::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_orchestrator::tests -- --nocapture
 ```
 
 Expected: compilation fails because the orchestrator still mutates per lane and stops at first acceptance.
@@ -484,8 +484,8 @@ Collect diagnostics from every attempt only after its final incumbent reason and
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_orchestrator::tests -- --nocapture
-cargo test --bin branch_tiny combat_search_lane_commit::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_orchestrator::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_lane_commit::tests -- --nocapture
 ```
 
 Expected: primary chunk behavior remains green; post-primary tests prove same-root execution and exactly one commit.
@@ -534,8 +534,8 @@ Add a duplicate-plan test that supplies the same lane twice and expects the seco
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_portfolio_plan::tests -- --nocapture
-cargo test --bin branch_tiny combat_portfolio_json::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_portfolio_plan::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_portfolio_json::tests -- --nocapture
 ```
 
 Expected: the survival profile is still Immediate and trace/report winner fields do not exist.
@@ -567,9 +567,9 @@ Run:
 
 ```powershell
 cargo test --lib eval::run_control::combat_line_trace::tests -- --nocapture
-cargo test --bin branch_tiny combat_search_portfolio_plan::tests -- --nocapture
-cargo test --bin branch_tiny combat_portfolio_json::tests -- --nocapture
-cargo test --bin branch_tiny run_capsule_format::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_portfolio_plan::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_portfolio_json::tests -- --nocapture
+cargo test --lib runtime::branch::owner_audit::run_capsule_format::tests -- --nocapture
 ```
 
 Expected: backward-compatible summary deserialization passes and new owner-audit JSON identifies the selected incumbent.
@@ -608,7 +608,7 @@ Expected: both commands exit zero.
 Run:
 
 ```powershell
-cargo test --bin branch_tiny combat_search_ -- --nocapture
+cargo test --lib runtime::branch::owner_audit::combat_search_ -- --nocapture
 ```
 
 Expected: all incumbent, lane, plan, report, and orchestrator tests pass.
