@@ -125,6 +125,24 @@ fn build_script_only_watches_consumed_inputs() {
         );
     }
 }
+
+#[test]
+fn windows_test_linking_uses_the_bundled_lld_without_machine_specific_paths() {
+    let cargo_config =
+        std::fs::read_to_string(".cargo/config.toml").expect("read repository Cargo config");
+
+    assert!(
+        cargo_config.contains("[target.x86_64-pc-windows-msvc]")
+            && cargo_config.contains("linker = \"rust-lld\""),
+        "Windows MSVC builds should use rustup's bundled LLD"
+    );
+    for forbidden in ["C:\\", "Users\\", "17239"] {
+        assert!(
+            !cargo_config.contains(forbidden),
+            "Cargo linker configuration must not contain machine-specific path fragment '{forbidden}'"
+        );
+    }
+}
 #[test]
 fn combat_line_adjudication_has_one_production_owner() {
     let selector = std::fs::read_to_string("src/eval/run_control/combat_line_selector.rs")

@@ -212,6 +212,15 @@ cargo build --release --bin combat_search_v2_driver
 git diff --check
 ```
 
+On `x86_64-pc-windows-msvc`, the repository uses rustup's bundled `rust-lld`
+through `.cargo/config.toml`. This is intentional: the monolithic library test
+target is large, and LLD substantially reduces its relink latency without a
+machine-specific tool path. Do not override the linker in routine test scripts.
+Several focused `cargo test --lib <filter>` commands reuse the same compiled
+test binary as long as no source/configuration input changes between commands;
+at completion, prefer one full `cargo test --lib` rather than relinking after
+each edit.
+
 For documentation-only changes:
 
 ```powershell

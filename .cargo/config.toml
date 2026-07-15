@@ -1,0 +1,5 @@
+[target.x86_64-pc-windows-msvc]
+# rustup ships this COFF linker with the Windows MSVC target. It materially
+# reduces relink time for the large library-test binary without a machine-
+# specific absolute path.
+linker = "rust-lld"
