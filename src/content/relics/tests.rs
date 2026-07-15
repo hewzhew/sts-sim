@@ -5365,6 +5365,11 @@ fn rare_run_relic_can_spawn_gates_match_java_sources() {
 
 #[test]
 fn girya_lift_counter_and_battle_start_strength_match_java() {
+    assert_eq!(girya::Girya::battle_start_strength(-1), 0);
+    assert_eq!(girya::Girya::battle_start_strength(0), 0);
+    assert_eq!(girya::Girya::battle_start_strength(1), 1);
+    assert_eq!(girya::Girya::battle_start_strength(3), 3);
+
     let mut engine_state = crate::state::core::EngineState::Campfire;
     let mut run = crate::state::run::RunState::new(1, 0, false, "Ironclad");
     run.relics.clear();
