@@ -163,7 +163,7 @@ pub fn combat_lab_cell_record_from_search_report_v1(
     )
 }
 
-pub(super) fn classify_combat_lab_outcome_v1(
+pub fn classify_combat_lab_outcome_v1(
     coverage_status: SearchCoverageStatus,
     selected_terminal: Option<SearchTerminalLabel>,
     replay_failed: bool,
@@ -188,6 +188,71 @@ pub(super) fn classify_combat_lab_outcome_v1(
     }
 }
 
+pub fn exact_replay_combat_search_trajectory_v1(
+    start: &CombatPosition,
+    trajectory: &CombatSearchV2TrajectoryReport,
+    max_engine_steps_per_action: usize,
+) -> Result<CombatLabReplayedCandidateV1, String> {
+    exact_replay_combat_search_trajectory_with_replayer_v1(
+        start,
+        trajectory,
+        max_engine_steps_per_action,
+        replay_combat_search_witness_line_v1,
+    )
+}
+
+fn exact_replay_combat_search_trajectory_with_replayer_v1<F>(
+    start: &CombatPosition,
+    trajectory: &CombatSearchV2TrajectoryReport,
+    max_engine_steps_per_action: usize,
+    replayer: F,
+) -> Result<CombatLabReplayedCandidateV1, String>
+where
+    F: FnOnce(
+        &CombatPosition,
+        &CombatSearchV2WitnessLine,
+        usize,
+    ) -> Result<CombatSearchV2WitnessReplayV1, String>,
+{
+    if trajectory.estimated {
+        return Err("selected complete trajectory is estimated".to_string());
+    }
+    let witness = witness_line_from_trajectory(trajectory);
+    let evidence = replayer(start, &witness, max_engine_steps_per_action)?;
+    let replay_final_hp = evidence
+        .steps
+        .last()
+        .map(|step| step.player_hp)
+        .unwrap_or(start.combat.entities.player.current_hp);
+    if replay_final_hp != trajectory.final_hp {
+        return Err(format!(
+            "replayed final HP mismatch: expected {}, replayed {replay_final_hp}",
+            trajectory.final_hp
+        ));
+    }
+
+    Ok(CombatLabReplayedCandidateV1 {
+        terminal: trajectory.terminal,
+        outcome_order_key: trajectory.outcome_order_key,
+        final_hp: trajectory.final_hp,
+        hp_loss: trajectory.hp_loss,
+        turns: trajectory.turns,
+        actions: evidence.replayed_actions,
+        cards_played: trajectory.cards_played,
+        potions_used: trajectory.potions_used,
+        draw_history: evidence
+            .steps
+            .iter()
+            .flat_map(|step| step.drawn_cards.iter().cloned())
+            .collect(),
+        action_history: evidence
+            .steps
+            .iter()
+            .map(|step| step.action.clone())
+            .collect(),
+    })
+}
+
 pub(super) fn combat_lab_cell_record_from_trajectory_with_replayer_v1<F>(
     resolved: &ResolvedCombatLabSpecV1,
     sample: &CombatLabCompiledSampleV1,
@@ -205,64 +270,26 @@ where
     ) -> Result<CombatSearchV2WitnessReplayV1, String>,
 {
     let selected_terminal = selected.map(|trajectory| trajectory.terminal);
-    let mut replay = None;
     let mut replay_error = None;
-    if let Some(trajectory) = selected {
-        if trajectory.estimated {
-            replay_error = Some("selected complete trajectory is estimated".to_string());
-        } else {
-            let witness = witness_line_from_trajectory(trajectory);
-            match replayer(
+    let replayed_candidate =
+        selected.and_then(
+            |trajectory| match exact_replay_combat_search_trajectory_with_replayer_v1(
                 &sample.start,
-                &witness,
+                trajectory,
                 resolved.common_budget.max_engine_steps_per_action,
+                replayer,
             ) {
-                Ok(evidence) => {
-                    let replay_final_hp = evidence
-                        .steps
-                        .last()
-                        .map(|step| step.player_hp)
-                        .unwrap_or(sample.start.combat.entities.player.current_hp);
-                    if replay_final_hp != trajectory.final_hp {
-                        replay_error = Some(format!(
-                            "replayed final HP mismatch: expected {}, replayed {replay_final_hp}",
-                            trajectory.final_hp
-                        ));
-                    } else {
-                        replay = Some(evidence);
-                    }
+                Ok(candidate) => Some(candidate),
+                Err(error) => {
+                    replay_error = Some(error);
+                    None
                 }
-                Err(error) => replay_error = Some(error),
-            }
-        }
-    }
+            },
+        );
 
     let outcome_class =
         classify_combat_lab_outcome_v1(coverage_status, selected_terminal, replay_error.is_some());
-    let replay_validated = replay.is_some();
-    let replayed_candidate =
-        selected
-            .zip(replay.as_ref())
-            .map(|(trajectory, evidence)| CombatLabReplayedCandidateV1 {
-                terminal: trajectory.terminal,
-                outcome_order_key: trajectory.outcome_order_key,
-                final_hp: trajectory.final_hp,
-                hp_loss: trajectory.hp_loss,
-                turns: trajectory.turns,
-                actions: evidence.replayed_actions,
-                cards_played: trajectory.cards_played,
-                potions_used: trajectory.potions_used,
-                draw_history: evidence
-                    .steps
-                    .iter()
-                    .flat_map(|step| step.drawn_cards.iter().cloned())
-                    .collect(),
-                action_history: evidence
-                    .steps
-                    .iter()
-                    .map(|step| step.action.clone())
-                    .collect(),
-            });
+    let replay_validated = replayed_candidate.is_some();
     let resolved_trajectory = matches!(
         outcome_class,
         CombatLabOutcomeClassV1::ResolvedWin | CombatLabOutcomeClassV1::ResolvedLoss
@@ -277,6 +304,9 @@ where
         .and_then(|_| replayed_candidate.as_ref())
         .map(|candidate| candidate.action_history.clone())
         .unwrap_or_default();
+    let replayed_actions = resolved_trajectory
+        .and_then(|_| replayed_candidate.as_ref())
+        .map(|candidate| candidate.actions);
     let error = replay_error.map(|message| CombatLabCellErrorV1 {
         stage: CombatLabCellErrorStageV1::ExactReplay,
         code: "exact_replay_invariant_mismatch".to_string(),
@@ -314,12 +344,7 @@ where
         final_hp: resolved_trajectory.map(|trajectory| trajectory.final_hp),
         hp_loss: resolved_trajectory.map(|trajectory| trajectory.hp_loss),
         turns: resolved_trajectory.map(|trajectory| trajectory.turns),
-        actions: resolved_trajectory.map(|_| {
-            replay
-                .as_ref()
-                .expect("resolved trajectory should have replay evidence")
-                .replayed_actions
-        }),
+        actions: replayed_actions,
         cards_played: resolved_trajectory.map(|trajectory| trajectory.cards_played),
         potions_used: resolved_trajectory.map(|trajectory| trajectory.potions_used),
         draw_history,

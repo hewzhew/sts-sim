@@ -1134,6 +1134,22 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
 }
 
 #[test]
+fn shared_exact_replay_adapter_returns_the_validated_candidate() {
+    let (sample, trajectory) = replayable_win_sample();
+
+    let candidate =
+        super::exact_replay_combat_search_trajectory_v1(&sample.start, &trajectory, 250)
+            .expect("shared exact replay should validate the complete trajectory");
+
+    assert_eq!(candidate.terminal, trajectory.terminal);
+    assert_eq!(candidate.final_hp, trajectory.final_hp);
+    assert_eq!(candidate.hp_loss, trajectory.hp_loss);
+    assert_eq!(candidate.actions, trajectory.actions.len());
+    assert!(!candidate.draw_history.is_empty());
+    assert_eq!(candidate.action_history.len(), trajectory.actions.len());
+}
+
+#[test]
 fn cell_time_limited_replayed_win_retains_candidate_without_resolving() {
     use crate::ai::combat_search_v2::{replay_combat_search_witness_line_v1, SearchCoverageStatus};
 
