@@ -24,9 +24,48 @@ pub struct ShopDecisionContextV1 {
     pub run_debt: RunDebtLedgerV1,
     pub upgrade_need: ShopUpgradeNeedProfileV1,
     pub need: ShopNeedProfileV1,
+    pub visit: ShopVisitFactsV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,
     pub affordable_purchase_exists: bool,
     pub conversion_pressure: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShopVisitFactsV1 {
+    pub entry_gold: i32,
+    pub spent_gold_in_visit: bool,
+    pub maw_bank: ShopMawBankStateV1,
+    pub future_shop: ShopFutureShopV1,
+    pub next_threat: ShopThreatWindowV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopMawBankStateV1 {
+    Absent,
+    LiveUnspent,
+    BrokenThisVisit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopFutureShopV1 {
+    Unknown,
+    NotVisible,
+    VisibleIn(u8),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopThreatWindowV1 {
+    Unknown,
+    NoVisibleHardFight,
+    EliteIn(u8),
+    BossIn(i32),
+}
+
+impl ShopDecisionContextV1 {
+    pub fn with_visit_facts(mut self, visit: ShopVisitFactsV1) -> Self {
+        self.visit = visit;
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -67,8 +106,27 @@ pub struct ShopCandidateEvidenceV1 {
     pub legacy_estimate: Option<i32>,
     pub gold_cost: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
+    pub signals: Vec<ShopPurchaseSignalV1>,
+    pub risk_kinds: Vec<ShopPurchaseRiskV1>,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ShopPurchaseSignalV1 {
+    BossAnswer,
+    CombatPatch,
+    EngineClosure,
+    StartupAccess,
+    CoreDefenseOrSurvival,
+    CoreCardAccess,
+    CombatShapeChange,
+    DigestCapacity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ShopPurchaseRiskV1 {
+    BossEnemyStrengthMultiHit,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +188,7 @@ pub enum ShopPlanSourceV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopCompileModeV1 {
     ExecuteOne,
+    ExecutePlanHead { max_plans: usize },
     BranchTopK { max_plans: usize },
 }
 
@@ -332,6 +391,8 @@ pub enum ShopPlanComponentKindV1 {
     LegacyEstimate,
     BranchExploration,
     BossAnswer,
+    ImmediateThreatCoverage,
+    MawBankOpportunityCost,
     StopReason,
 }
 

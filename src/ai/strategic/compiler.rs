@@ -20,6 +20,8 @@ pub struct CompiledDecision {
     pub action: CandidateAction,
     pub verdict: AcquisitionVerdict,
     pub score: f32,
+    #[serde(default)]
+    pub matched_pressure_kinds: Vec<super::PressureKind>,
     pub reasons: Vec<String>,
 }
 
@@ -129,8 +131,25 @@ fn compile_candidate(delta: &CandidateDelta, ledger: &PressureLedger) -> Compile
         action: delta.action.clone(),
         verdict,
         score,
+        matched_pressure_kinds: matched_pressure_kinds(delta, ledger),
         reasons,
     }
+}
+
+fn matched_pressure_kinds(
+    delta: &CandidateDelta,
+    ledger: &PressureLedger,
+) -> Vec<super::PressureKind> {
+    let mut kinds = delta
+        .positive
+        .iter()
+        .filter_map(|candidate| {
+            (ledger_match_strength(ledger, candidate.kind) > 0.0).then_some(candidate.kind)
+        })
+        .collect::<Vec<_>>();
+    kinds.sort();
+    kinds.dedup();
+    kinds
 }
 
 fn ledger_alignment_bonus(delta: &CandidateDelta, ledger: &PressureLedger) -> f32 {

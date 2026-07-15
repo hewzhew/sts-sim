@@ -26,9 +26,14 @@ pub fn compile_shop_decision_v1(
             candidate
         })
         .collect::<Vec<_>>();
-    if let ShopCompileModeV1::BranchTopK { max_plans } = mode {
+    let portfolio_limit = match mode {
+        ShopCompileModeV1::ExecutePlanHead { max_plans }
+        | ShopCompileModeV1::BranchTopK { max_plans } => max_plans,
+        ShopCompileModeV1::ExecuteOne => 0,
+    };
+    if portfolio_limit > 0 {
         let portfolio_candidates =
-            evaluated_shop_portfolio_combo_plans_v1(context, &candidate_plans, max_plans)
+            evaluated_shop_portfolio_combo_plans_v1(context, &candidate_plans, portfolio_limit)
                 .into_iter()
                 .map(|plan| {
                     let mut candidate = ShopPlanCandidateV1 {
@@ -57,7 +62,7 @@ pub fn compile_shop_decision_v1(
             stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
         });
     let branch_frontier = match mode {
-        ShopCompileModeV1::ExecuteOne => Vec::new(),
+        ShopCompileModeV1::ExecuteOne | ShopCompileModeV1::ExecutePlanHead { .. } => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
             branch_frontier_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
         }
@@ -203,6 +208,7 @@ fn shop_plan_is_rollout_eligible_in_mode_v1(
     match mode {
         ShopCompileModeV1::BranchTopK { .. } => true,
         ShopCompileModeV1::ExecuteOne => !shop_plan_is_context_card_purchase_v1(candidate),
+        ShopCompileModeV1::ExecutePlanHead { .. } => true,
     }
 }
 

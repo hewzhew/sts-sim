@@ -30,6 +30,14 @@ pub(crate) fn score_shop_plan_components_v1(
                 positive += 100.0 * component.amount.max(0.0);
                 has_non_legacy_signal = true;
             }
+            ShopPlanComponentKindV1::ImmediateThreatCoverage => {
+                positive += 110.0 * component.amount.max(0.0);
+                has_non_legacy_signal = true;
+            }
+            ShopPlanComponentKindV1::MawBankOpportunityCost => {
+                negative += 8.0 * component.amount.max(0.0);
+                has_non_legacy_signal = true;
+            }
             ShopPlanComponentKindV1::LegacyEstimate => {
                 has_legacy_estimate = true;
             }

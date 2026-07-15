@@ -138,13 +138,13 @@ future liquidity, and leaving.
 | Passing library tests | 2,729 | 0 failed |
 | Linked library test binary | 49.01 MiB | Size is observational only |
 
-The delivery removes 1,527 net Rust lines. Boss scaling and survival repair remain typed evidence
-in `decision_pipeline`; the hard-checkpoint boss bundle preview now explicitly promotes the next
-owner-selected executable step instead of requiring prior generic-pipeline approval. Maw Bank and
-future-shop opportunity costs are intentionally no longer hidden filters in the candidate
-pipeline. If restored, they must be modeled by the whole-shop plan compiler rather than by string
-reason codes. The existing `shop_policy_v1` compiler passes its focused tests but is not yet the
-production ShopTiny owner.
+The retirement delivery removed 1,527 net Rust lines. The subsequent owner migration makes
+`shop_policy_v1` the production ShopTiny planner: it compiles a whole-visit plan, executes only the
+current plan head, and recompiles after each state change. Typed visit facts carry Maw Bank state,
+visible future-shop distance, and the nearest visible elite-or-boss window. The generic decision
+pipeline still supplies candidate annotations for challenger/audit evidence, but it no longer
+sorts or selects the production ShopTiny action. A missing or stale compiled plan head is
+inspect-only and cannot silently fall back to the legacy owner.
 
 ## Status Vocabulary
 
@@ -312,10 +312,11 @@ diagnostic adapter.
   ShopTiny route-to-bundle adapter.
 - Removed tests: 24 tests that owned the retired bundle or asserted its string reasons and magic
   cross-candidate ordering weights.
-- Surviving contracts: typed boss scaling/survival evidence, ordinary candidate admission,
-  ShopTiny hard-checkpoint boss preview, and the separately tested `shop_policy_v1` compiler.
-- Replacement boundary: whole-shop opportunity costs belong in a shop plan owner/compiler;
-  `decision_pipeline` must not regain cross-candidate purchase policy.
+- Surviving contracts: typed boss scaling/survival evidence, ordinary candidate annotations,
+  diagnostic boss-preview artifacts, and the production `shop_policy_v1` compiler.
+- Replacement boundary: whole-shop opportunity costs and production action order belong in
+  `shop_policy_v1`; `decision_pipeline` and diagnostic boss preview must not regain production
+  cross-candidate purchase policy.
 - Recovery: repository history and `origin/backup/pre-cleanup-20260712`.
 
 ## Test Retention Contract

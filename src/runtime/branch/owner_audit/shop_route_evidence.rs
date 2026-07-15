@@ -8,6 +8,14 @@ pub(super) fn has_visible_future_shop(session: &RunControlSession) -> bool {
 }
 
 pub(super) fn future_shop_distance(session: &RunControlSession) -> Option<u8> {
+    future_room_distance(session, RoomType::ShopRoom)
+}
+
+pub(super) fn future_elite_distance(session: &RunControlSession) -> Option<u8> {
+    future_room_distance(session, RoomType::MonsterRoomElite)
+}
+
+fn future_room_distance(session: &RunControlSession, target: RoomType) -> Option<u8> {
     let map = &session.run_state.map;
     if map.graph.is_empty() {
         return None;
@@ -42,7 +50,7 @@ pub(super) fn future_shop_distance(session: &RunControlSession) -> Option<u8> {
         else {
             continue;
         };
-        if node.class == Some(RoomType::ShopRoom) {
+        if node.class == Some(target) {
             return Some(distance);
         }
         let next_distance = distance.saturating_add(1);

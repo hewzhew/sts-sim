@@ -27,10 +27,12 @@ use crate::content::relics::RelicId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
-use super::types::ShopPurchaseTargetV1;
+use super::types::{ShopPurchaseRiskV1, ShopPurchaseSignalV1, ShopPurchaseTargetV1};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ShopPurchaseStrategyAnalysisV1 {
+    pub signals: Vec<ShopPurchaseSignalV1>,
+    pub risk_kinds: Vec<ShopPurchaseRiskV1>,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
 }
@@ -66,23 +68,31 @@ fn analyze_shop_card(
     let startup = deck_startup_profile_v1(run_state);
 
     if run_state.boss_key == Some(EncounterId::Collector) && collector_answer_card(card, &profile) {
+        push_signal(analysis, ShopPurchaseSignalV1::BossAnswer);
         push_evidence(analysis, TAG_COLLECTOR_ANSWER);
     }
 
     if closes_or_supports_exhaust_engine(card, run_state, strategy) {
+        push_signal(analysis, ShopPurchaseSignalV1::EngineClosure);
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
     }
 
     if startup_access_card(card, &profile, &startup) {
+        push_signal(analysis, ShopPurchaseSignalV1::StartupAccess);
         push_evidence(analysis, TAG_STARTUP_ACCESS);
     }
 
     let shape_tags = combat_shape_change_tags_for_card_v1(card);
     if !shape_tags.is_empty() {
+        push_signal(analysis, ShopPurchaseSignalV1::CombatShapeChange);
         for tag in shape_tags {
             push_evidence(analysis, tag);
         }
-        for tag in combat_shape_digest_capacity_tags(run_state) {
+        let digest_tags = combat_shape_digest_capacity_tags(run_state);
+        if !digest_tags.is_empty() {
+            push_signal(analysis, ShopPurchaseSignalV1::DigestCapacity);
+        }
+        for tag in digest_tags {
             push_evidence(analysis, tag);
         }
     }
@@ -96,21 +106,27 @@ fn analyze_shop_relic(
 ) {
     let mechanics = crate::ai::card_semantics_v1::relic_mechanics_profile_v1(relic);
     if mechanics.core_defense_or_survival {
+        push_signal(analysis, ShopPurchaseSignalV1::CoreDefenseOrSurvival);
         push_evidence(analysis, "shop_relic_core_defense_or_survival");
     }
     if mechanics.core_card_access {
+        push_signal(analysis, ShopPurchaseSignalV1::CoreCardAccess);
         push_evidence(analysis, "shop_relic_core_card_access");
     }
     if relic == RelicId::MedicalKit
         && deck_has_role(run_state, CardRewardSemanticRoleV1::StatusGenerator)
     {
+        push_signal(analysis, ShopPurchaseSignalV1::EngineClosure);
+        push_signal(analysis, ShopPurchaseSignalV1::DigestCapacity);
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
         push_evidence(analysis, TAG_DIGEST_CAPACITY_STATUS);
     }
     if relic == RelicId::OrangePellets && strength.temporary_bursts > 0 {
+        push_signal(analysis, ShopPurchaseSignalV1::EngineClosure);
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
     }
     if relic_purchase_creates_boss_enemy_strength_risk(relic, run_state) {
+        push_risk_kind(analysis, ShopPurchaseRiskV1::BossEnemyStrengthMultiHit);
         push_risk(analysis, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK);
     }
 }
@@ -121,7 +137,21 @@ fn analyze_shop_potion(
     analysis: &mut ShopPurchaseStrategyAnalysisV1,
 ) {
     if run_state.boss_key == Some(EncounterId::Collector) && collector_answer_potion(potion) {
+        push_signal(analysis, ShopPurchaseSignalV1::BossAnswer);
         push_evidence(analysis, TAG_COLLECTOR_ANSWER);
+    }
+    if potion_acquisition_traits_v1(potion).iter().any(|trait_| {
+        matches!(
+            trait_,
+            PotionAcquisitionTraitV1::CombatDamage
+                | PotionAcquisitionTraitV1::CombatBlock
+                | PotionAcquisitionTraitV1::DebuffSetup
+                | PotionAcquisitionTraitV1::EnergyBurst
+                | PotionAcquisitionTraitV1::CardAccess
+                | PotionAcquisitionTraitV1::ActionAmplifier
+        )
+    }) {
+        push_signal(analysis, ShopPurchaseSignalV1::CombatPatch);
     }
 }
 
@@ -249,9 +279,21 @@ fn push_evidence(analysis: &mut ShopPurchaseStrategyAnalysisV1, tag: &'static st
     }
 }
 
+fn push_signal(analysis: &mut ShopPurchaseStrategyAnalysisV1, signal: ShopPurchaseSignalV1) {
+    if !analysis.signals.contains(&signal) {
+        analysis.signals.push(signal);
+    }
+}
+
 fn push_risk(analysis: &mut ShopPurchaseStrategyAnalysisV1, tag: &'static str) {
     if !analysis.risks.iter().any(|item| item == tag) {
         analysis.risks.push(tag.to_string());
+    }
+}
+
+fn push_risk_kind(analysis: &mut ShopPurchaseStrategyAnalysisV1, risk: ShopPurchaseRiskV1) {
+    if !analysis.risk_kinds.contains(&risk) {
+        analysis.risk_kinds.push(risk);
     }
 }
 

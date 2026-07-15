@@ -8,8 +8,9 @@ use crate::state::shop::ShopState;
 
 use super::strategy_tags::shop_purchase_strategy_analysis_v1;
 use super::types::{
-    purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1,
-    ShopPurchaseTargetV1,
+    purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopFutureShopV1,
+    ShopMawBankStateV1, ShopPolicyClassV1, ShopPurchaseTargetV1, ShopThreatWindowV1,
+    ShopVisitFactsV1,
 };
 use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
 use crate::ai::deck_mutation_compiler_v1::{
@@ -29,6 +30,25 @@ pub fn build_shop_decision_context_v1(
     let run_debt = crate::ai::strategic::run_debt_ledger_v1(run_state);
     let upgrade_need = shop_upgrade_need_profile_from_run_state_v1(run_state);
     let need = crate::ai::shop_policy_v1::build_shop_need_profile_v1(run_state);
+    let visit = ShopVisitFactsV1 {
+        entry_gold: run_state.gold,
+        spent_gold_in_visit: false,
+        maw_bank: if run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == crate::content::relics::RelicId::MawBank && !relic.used_up)
+        {
+            ShopMawBankStateV1::LiveUnspent
+        } else {
+            ShopMawBankStateV1::Absent
+        },
+        future_shop: ShopFutureShopV1::Unknown,
+        next_threat: if need.near_boss {
+            ShopThreatWindowV1::BossIn(need.floors_to_boss)
+        } else {
+            ShopThreatWindowV1::Unknown
+        },
+    };
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
     let conversion_pressure =
         crate::ai::shop_policy_v1::shop_conversion_pressure_v1(run_state, shop);
@@ -66,6 +86,8 @@ pub fn build_shop_decision_context_v1(
             priority,
             card.price,
             run_state_same_card_count(run_state, card.card_id),
+            analysis.signals,
+            analysis.risk_kinds,
             analysis.evidence,
             analysis.risks,
         )
@@ -86,6 +108,8 @@ pub fn build_shop_decision_context_v1(
             ),
             relic.price,
             0,
+            analysis.signals,
+            analysis.risk_kinds,
             analysis.evidence,
             analysis.risks,
         )
@@ -114,6 +138,8 @@ pub fn build_shop_decision_context_v1(
             ),
             potion.price,
             0,
+            analysis.signals,
+            analysis.risk_kinds,
             analysis.evidence,
             analysis.risks,
         )
@@ -129,6 +155,8 @@ pub fn build_shop_decision_context_v1(
         legacy_estimate: None,
         gold_cost: None,
         support_gate: StrategyPlanSupportV1::Strong,
+        signals: Vec::new(),
+        risk_kinds: Vec::new(),
         evidence: leave_shop_evidence(&need, conversion_pressure),
         risks: leave_shop_risks(&need, conversion_pressure, affordable_purchase_exists),
     });
@@ -141,6 +169,7 @@ pub fn build_shop_decision_context_v1(
         run_debt,
         upgrade_need,
         need,
+        visit,
         candidates,
         affordable_purchase_exists,
         conversion_pressure,
@@ -307,6 +336,8 @@ fn purge_candidate_evidence(
         legacy_estimate: None,
         gold_cost: Some(purge_cost),
         support_gate,
+        signals: Vec::new(),
+        risk_kinds: Vec::new(),
         evidence,
         risks,
     })
@@ -319,6 +350,8 @@ fn purchase_candidate_evidence(
     priority: i32,
     price: i32,
     same_card_count: usize,
+    signals: Vec<super::types::ShopPurchaseSignalV1>,
+    risk_kinds: Vec<super::types::ShopPurchaseRiskV1>,
     extra_evidence: Vec<String>,
     extra_risks: Vec<String>,
 ) -> ShopCandidateEvidenceV1 {
@@ -352,6 +385,8 @@ fn purchase_candidate_evidence(
         } else {
             StrategyPlanSupportV1::Blocked
         },
+        signals,
+        risk_kinds,
         evidence,
         risks,
     }

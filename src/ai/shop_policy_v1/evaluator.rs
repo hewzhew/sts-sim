@@ -1,14 +1,15 @@
-use crate::ai::decision_tags_v1::TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK;
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 use crate::ai::strategic::{
-    AcquisitionVerdict, CandidateAction, CompiledDecision, StrategicDecisionTrace,
+    AcquisitionVerdict, CandidateAction, CompiledDecision, PressureKind, StrategicDecisionTrace,
 };
 
 use super::component_scorer::score_shop_plan_components_v1;
 use super::types::{
-    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
-    ShopPlanComponentKindV1, ShopPlanComponentV1, ShopPlanEvaluationV1, ShopPlanKindV1,
-    ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopFutureShopV1, ShopMawBankStateV1,
+    ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentV1,
+    ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1,
+    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseSignalV1, ShopPurchaseTargetV1,
+    ShopThreatWindowV1,
 };
 
 pub(crate) fn evaluate_shop_plan_candidate_v1(
@@ -22,6 +23,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.plan.steps.is_empty()
     {
         return attach_components_and_score_v1(
+            context,
             ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone()),
             candidate_plan,
             None,
@@ -32,6 +34,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.plan.source == ShopPlanSourceV1::PortfolioCandidate
     {
         return attach_components_and_score_v1(
+            context,
             evaluate_portfolio_plan_v1(context, config, strategic_trace, candidate_plan),
             candidate_plan,
             None,
@@ -40,6 +43,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
 
     let Some(candidate_id) = candidate_plan.plan.candidate_ids.first() else {
         return attach_components_and_score_v1(
+            context,
             ShopPlanEvaluationV1::block(
                 candidate_plan.plan.legacy_priority,
                 "shop plan has no candidate id",
@@ -54,6 +58,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         .find(|candidate| &candidate.candidate_id == candidate_id)
     else {
         return attach_components_and_score_v1(
+            context,
             ShopPlanEvaluationV1::block(
                 candidate_plan.plan.legacy_priority,
                 format!("shop plan candidate id {candidate_id} is no longer visible"),
@@ -64,6 +69,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     };
 
     attach_components_and_score_v1(
+        context,
         evaluate_single_candidate_v1(config, strategic_trace, candidate),
         candidate_plan,
         Some(candidate),
@@ -71,11 +77,12 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
 }
 
 fn attach_components_and_score_v1(
+    context: &ShopDecisionContextV1,
     mut evaluation: ShopPlanEvaluationV1,
     candidate_plan: &ShopPlanCandidateV1,
     candidate: Option<&ShopCandidateEvidenceV1>,
 ) -> ShopPlanEvaluationV1 {
-    evaluation.components = plan_components_v1(candidate_plan, candidate);
+    evaluation.components = plan_components_v1(context, candidate_plan, candidate);
     evaluation.component_score = score_shop_plan_components_v1(&evaluation.components);
     evaluation
 }
@@ -361,10 +368,10 @@ fn evaluate_portfolio_plan_v1(
 
 fn blocking_purchase_risk_reason_v1(candidate: &ShopCandidateEvidenceV1) -> Option<String> {
     candidate
-        .risks
+        .risk_kinds
         .iter()
-        .find(|risk| risk.as_str() == TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK)
-        .map(|risk| format!("shop purchase blocked by {risk}"))
+        .find(|risk| **risk == ShopPurchaseRiskV1::BossEnemyStrengthMultiHit)
+        .map(|risk| format!("shop purchase blocked by typed risk {risk:?}"))
 }
 
 fn purchase_strategic_decision(
@@ -485,9 +492,9 @@ fn strategic_purchase_evaluation_v1(
 
 fn strategic_decision_matches_boss_tax_v1(strategic_decision: &CompiledDecision) -> bool {
     strategic_decision
-        .reasons
+        .matched_pressure_kinds
         .iter()
-        .any(|reason| reason.contains("+ledger_match:BossTax("))
+        .any(|kind| matches!(kind, PressureKind::BossTax(_)))
 }
 
 fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {
@@ -507,6 +514,7 @@ fn legacy_estimate_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicyCo
 }
 
 fn plan_components_v1(
+    context: &ShopDecisionContextV1,
     candidate_plan: &ShopPlanCandidateV1,
     candidate: Option<&ShopCandidateEvidenceV1>,
 ) -> Vec<ShopPlanComponentV1> {
@@ -593,15 +601,52 @@ fn plan_components_v1(
     }
     if candidate.is_some_and(|candidate| {
         candidate
-            .evidence
-            .iter()
-            .any(|evidence| evidence.contains("answer"))
+            .signals
+            .contains(&ShopPurchaseSignalV1::BossAnswer)
     }) {
         components.push(component_v1(
             ShopPlanComponentKindV1::BossAnswer,
             1.0,
             "candidate evidence marks this as a combat answer",
         ));
+    }
+    let hard_threat_is_near = matches!(
+        context.visit.next_threat,
+        ShopThreatWindowV1::EliteIn(0..=2) | ShopThreatWindowV1::BossIn(0..=4)
+    );
+    let plan_covers_near_threat = candidate_plan
+        .plan
+        .candidate_ids
+        .iter()
+        .any(|candidate_id| {
+            context.candidates.iter().any(|candidate| {
+                candidate.candidate_id == *candidate_id
+                    && candidate.signals.iter().any(|signal| {
+                        matches!(
+                            signal,
+                            ShopPurchaseSignalV1::BossAnswer | ShopPurchaseSignalV1::CombatPatch
+                        )
+                    })
+            })
+        });
+    if hard_threat_is_near && plan_covers_near_threat {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::ImmediateThreatCoverage,
+            1.0,
+            "shop plan carries typed coverage for a near hard fight",
+        ));
+    }
+    if candidate_plan.plan.total_gold_spent > 0
+        && context.visit.maw_bank == ShopMawBankStateV1::LiveUnspent
+        && !context.visit.spent_gold_in_visit
+    {
+        if let ShopFutureShopV1::VisibleIn(floors) = context.visit.future_shop {
+            components.push(component_v1(
+                ShopPlanComponentKindV1::MawBankOpportunityCost,
+                floors as f32,
+                "spending now ends typed Maw Bank income before a visible future shop",
+            ));
+        }
     }
     if components.is_empty() {
         components.push(component_v1(

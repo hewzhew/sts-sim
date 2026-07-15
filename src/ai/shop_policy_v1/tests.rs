@@ -6,9 +6,10 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1,
     legacy_shop_card_purchase_estimate_v1, ShopCompileModeV1, ShopDecisionSourceV1,
-    ShopPlanCandidateRoleV1, ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanProjectionRoleV1,
-    ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1,
-    ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopFutureShopV1, ShopMawBankStateV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
+    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
+    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseRiskV1,
+    ShopPurchaseTargetV1, ShopThreatWindowV1, ShopVisitFactsV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -331,7 +332,7 @@ fn shop_strategic_snapshot_preserves_convertible_strength_facts() {
 }
 
 #[test]
-fn compiled_shop_card_purchase_records_strategic_evaluation_reason() {
+fn compiled_shop_card_purchase_uses_strategic_verdict() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 4;
@@ -379,13 +380,8 @@ fn compiled_shop_card_purchase_records_strategic_evaluation_reason() {
 
     assert_eq!(card_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
-        card_plan
-            .evaluation
-            .reasons
-            .iter()
-            .any(|reason| reason.contains("strategic evaluation")),
-        "shop card purchases should be governed by strategic acquisition verdicts, with legacy priority retained only as estimate/tie-breaker; got {:?}",
-        card_plan.evaluation.reasons
+        card_plan.evaluation.rollout_admission.is_admitted(),
+        "a behavior-eligible strategic card purchase should be rollout-admitted"
     );
 }
 
@@ -525,11 +521,11 @@ fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_
         .expect("Brimstone purchase candidate should exist");
     assert!(
         brimstone_candidate
-            .risks
+            .risk_kinds
             .iter()
-            .any(|risk| risk.contains("enemy_strength_multi_hit_risk")),
-        "enemy-strength relics should surface boss pressure risk, got {:?}",
-        brimstone_candidate.risks
+            .any(|risk| *risk == ShopPurchaseRiskV1::BossEnemyStrengthMultiHit),
+        "enemy-strength relics should expose typed boss pressure risk, got {:?}",
+        brimstone_candidate.risk_kinds
     );
 
     let compiled = compile_shop_decision_v1(
@@ -554,15 +550,6 @@ fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_
         .expect("Brimstone plan candidate should exist");
 
     assert_eq!(brimstone_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
-    assert!(
-        brimstone_plan
-            .evaluation
-            .reasons
-            .iter()
-            .any(|reason| reason.contains("enemy_strength_multi_hit_risk")),
-        "blocked relic plan should explain the boss pressure risk, got {:?}",
-        brimstone_plan.evaluation.reasons
-    );
     assert!(
         !matches!(
             compiled.compat_selected_plan.steps.first(),
@@ -1000,6 +987,48 @@ fn compiled_shop_plan_evaluations_expose_component_score() {
         relic.evaluation.component_score.positive > 0.0,
         "relic plan should have positive component score"
     );
+}
+
+#[test]
+fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 200;
+    let mut shop = ShopState::new();
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context =
+        build_shop_decision_context_v1(&run_state, &shop).with_visit_facts(ShopVisitFactsV1 {
+            entry_gold: 200,
+            spent_gold_in_visit: false,
+            maw_bank: ShopMawBankStateV1::LiveUnspent,
+            future_shop: ShopFutureShopV1::VisibleIn(4),
+            next_threat: ShopThreatWindowV1::EliteIn(2),
+        });
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+    );
+    let potion = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps
+                == vec![ShopPlanStepV1::BuyPotion {
+                    index: 0,
+                    potion: PotionId::FirePotion,
+                    cost: 50,
+                }]
+        })
+        .expect("Fire Potion plan should be compiled");
+
+    assert_plan_has_component(potion, ShopPlanComponentKindV1::ImmediateThreatCoverage);
+    assert_plan_has_component(potion, ShopPlanComponentKindV1::MawBankOpportunityCost);
 }
 
 #[test]
@@ -1515,12 +1544,10 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
 
     assert_eq!(evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
-        evaluation
-            .reasons
-            .iter()
-            .any(|reason| reason.contains("passed unified shop gates")),
-        "portfolio candidates should be judged by their step evaluations, not by a raw legacy plan gate; got {:?}",
-        evaluation.reasons
+        evaluation.rollout_admission.is_admitted()
+            && evaluation.branch_admission.is_admitted()
+            && evaluation.score > 0,
+        "portfolio candidates should be judged by their typed step admissions, not a diagnostic reason or raw legacy plan gate"
     );
 }
 

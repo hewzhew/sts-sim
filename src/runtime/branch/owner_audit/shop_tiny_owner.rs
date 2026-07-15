@@ -1,13 +1,18 @@
+use sts_simulator::ai::shop_policy_v1::{
+    build_shop_decision_context_v1, compile_shop_decision_v1, CompiledShopDecisionV1,
+    ShopCompileModeV1, ShopFutureShopV1, ShopMawBankStateV1, ShopPlanStepV1, ShopPolicyConfigV1,
+    ShopThreatWindowV1, ShopVisitFactsV1,
+};
 use sts_simulator::ai::strategy::decision_pipeline::{
-    CandidateOrderKey, DecisionCandidateKind, DecisionPipelineContext,
+    DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, RewardAdmission,
 };
-use sts_simulator::ai::strategy::shop_boss_preview::shop_boss_preview_bundles;
 use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
+use sts_simulator::state::core::EngineState;
 
 use super::candidate_ir_adapter::shop_tiny_kind;
 use super::expansion_policy::shop_tiny_choice_expansion;
@@ -15,6 +20,7 @@ use super::owner_candidate_eval::candidate_annotation;
 use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion};
 use super::shop_investment::shop_investment_for_surface;
+use super::shop_route_evidence::{future_elite_distance, future_shop_distance};
 
 pub(super) fn shop_tiny_owner_choices(
     session: &RunControlSession,
@@ -26,7 +32,8 @@ pub(super) fn shop_tiny_owner_choices(
     let context = shop_investment
         .map(|shop| base_context.with_shop_investment(shop))
         .unwrap_or(base_context);
-    let mut choices = executable_choices(surface)
+    let selected_step = compiled_shop_rollout_step(session);
+    let choices = executable_choices(surface)
         .into_iter()
         .map(|mut choice| {
             choice.annotation = shop_tiny_candidate_for_choice(context, deck, &choice);
@@ -34,31 +41,40 @@ pub(super) fn shop_tiny_owner_choices(
         })
         .enumerate()
         .collect::<Vec<_>>();
-    let preferred_bundle_next = preferred_shop_boss_bundle_next_kind(session, &choices);
+    order_choices_by_compiled_step(choices, selected_step.as_ref())
+}
+
+fn order_choices_by_compiled_step(
+    mut choices: Vec<(usize, OwnerChoice)>,
+    selected_step: Option<&ShopPlanStepV1>,
+) -> Vec<OwnerChoice> {
+    let selected_choice_index = selected_step.and_then(|step| {
+        choices
+            .iter()
+            .find(|(_, choice)| shop_plan_step_matches_choice(step, choice))
+            .map(|(index, _)| *index)
+    });
     let mut auto_purge_targets = Vec::new();
-    for (_, choice) in choices.iter_mut() {
-        choice.expansion = shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
-        if preferred_bundle_next.is_some_and(|preferred| shop_tiny_kind(&choice.key) == preferred) {
+    for (index, choice) in choices.iter_mut() {
+        if selected_choice_index.is_some() {
+            choice.expansion =
+                shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
+        } else {
+            choice.expansion = OwnerChoiceExpansion::InspectOnly(
+                "compiled shop plan has no executable head on the current surface",
+            );
+        }
+        if selected_choice_index == Some(*index) {
             choice.expansion = OwnerChoiceExpansion::AutoAllowed;
         }
     }
-    choices.sort_by_key(|(index, choice)| {
-        (
-            bundle_execution_rank(&preferred_bundle_next, &choice.key),
-            shop_tiny_choice_rank(choice),
-            *index,
-        )
-    });
+    choices.sort_by_key(|(index, _)| (selected_choice_index != Some(*index), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
 fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
     let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
     DecisionPipelineContext::shop(deck_plan, session.run_state.gold)
-}
-
-fn hard_checkpoint_imminent(session: &RunControlSession) -> bool {
-    session.run_state.act_num == 1 && session.run_state.floor_num >= 13
 }
 
 fn shop_tiny_candidate_for_choice(
@@ -83,42 +99,116 @@ fn shop_card_admission(
     }
 }
 
-fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
-    match &choice.annotation {
-        ChoiceAnnotation::Candidate(decision) => decision.evaluation.auto_order_key(false),
-        _ => (u8::MAX, CandidateOrderKey::fallback()),
-    }
-}
-
-fn preferred_shop_boss_bundle_next_kind(
-    session: &RunControlSession,
-    choices: &[(usize, OwnerChoice)],
-) -> Option<DecisionCandidateKind> {
-    if !hard_checkpoint_imminent(session) {
+fn compiled_shop_rollout_step(session: &RunControlSession) -> Option<ShopPlanStepV1> {
+    let EngineState::Shop(shop) = &session.engine_state else {
         return None;
-    }
-    let executable_kinds = choices
-        .iter()
-        .map(|(_, choice)| shop_tiny_kind(&choice.key))
-        .collect::<Vec<_>>();
-    let bundle = shop_boss_preview_bundles(executable_kinds, session.run_state.gold, 2)
-        .into_iter()
-        .find(|bundle| !bundle.items.is_empty())?;
-    bundle.items.into_iter().find(|kind| {
-        choices
-            .iter()
-            .any(|(_, choice)| shop_tiny_kind(&choice.key) == *kind)
-    })
+    };
+    let base_context = build_shop_decision_context_v1(&session.run_state, shop);
+    let visit = shop_visit_facts(session, base_context.need.floors_to_boss);
+    let context = base_context.with_visit_facts(visit);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead { max_plans: 8 },
+    );
+    compiled_rollout_plan(&compiled)?.steps.first().cloned()
 }
 
-fn bundle_execution_rank(
-    preferred_bundle_next: &Option<DecisionCandidateKind>,
-    key: &Option<DecisionCandidateKey>,
-) -> u8 {
-    match preferred_bundle_next {
-        Some(kind) if shop_tiny_kind(key) == *kind => 0,
-        Some(_) => 1,
-        None => 0,
+fn compiled_rollout_plan(
+    compiled: &CompiledShopDecisionV1,
+) -> Option<&sts_simulator::ai::shop_policy_v1::ShopPlanV1> {
+    let projection = compiled.rollout_head.as_ref()?;
+    compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+        .map(|candidate| &candidate.plan)
+}
+
+fn shop_visit_facts(session: &RunControlSession, floors_to_boss: i32) -> ShopVisitFactsV1 {
+    let visit_context = session.shop_visit_context();
+    let maw_bank_live_now = session.run_state.relics.iter().any(|relic| {
+        relic.id == sts_simulator::content::relics::RelicId::MawBank && !relic.used_up
+    });
+    let maw_bank = match visit_context {
+        Some(context) if context.maw_bank_live_at_entry && context.spent_gold_in_visit => {
+            ShopMawBankStateV1::BrokenThisVisit
+        }
+        Some(context) if context.maw_bank_live_at_entry => ShopMawBankStateV1::LiveUnspent,
+        _ if maw_bank_live_now => ShopMawBankStateV1::LiveUnspent,
+        _ => ShopMawBankStateV1::Absent,
+    };
+    let future_shop = if session.run_state.map.graph.is_empty() {
+        ShopFutureShopV1::Unknown
+    } else {
+        future_shop_distance(session)
+            .map(ShopFutureShopV1::VisibleIn)
+            .unwrap_or(ShopFutureShopV1::NotVisible)
+    };
+    let elite_distance = future_elite_distance(session);
+    let next_threat = match elite_distance {
+        Some(distance) if i32::from(distance) < floors_to_boss => {
+            ShopThreatWindowV1::EliteIn(distance)
+        }
+        _ if floors_to_boss >= 0 => ShopThreatWindowV1::BossIn(floors_to_boss),
+        Some(distance) => ShopThreatWindowV1::EliteIn(distance),
+        None if session.run_state.map.graph.is_empty() => ShopThreatWindowV1::Unknown,
+        None => ShopThreatWindowV1::NoVisibleHardFight,
+    };
+    ShopVisitFactsV1 {
+        entry_gold: visit_context
+            .map(|context| context.entry_gold)
+            .unwrap_or(session.run_state.gold),
+        spent_gold_in_visit: visit_context.is_some_and(|context| context.spent_gold_in_visit),
+        maw_bank,
+        future_shop,
+        next_threat,
+    }
+}
+
+fn shop_plan_step_matches_choice(step: &ShopPlanStepV1, choice: &OwnerChoice) -> bool {
+    match (step, choice.key.as_ref()) {
+        (
+            ShopPlanStepV1::BuyCard { index, card, cost },
+            Some(DecisionCandidateKey::ShopBuyCard {
+                shop_slot,
+                card: choice_card,
+                price,
+                ..
+            }),
+        ) => index == shop_slot && card == choice_card && cost == price,
+        (
+            ShopPlanStepV1::BuyRelic { index, relic, cost },
+            Some(DecisionCandidateKey::ShopBuyRelic {
+                shop_slot,
+                relic: choice_relic,
+                price,
+            }),
+        ) => index == shop_slot && relic == choice_relic && cost == price,
+        (
+            ShopPlanStepV1::BuyPotion {
+                index,
+                potion,
+                cost,
+            },
+            Some(DecisionCandidateKey::ShopBuyPotion {
+                shop_slot,
+                potion: choice_potion,
+                price,
+            }),
+        ) => index == shop_slot && potion == choice_potion && cost == price,
+        (
+            ShopPlanStepV1::RemoveCard {
+                deck_index, card, ..
+            },
+            Some(DecisionCandidateKey::ShopPurgeCard {
+                deck_index: choice_index,
+                card: choice_card,
+                ..
+            }),
+        ) => deck_index == choice_index && card == choice_card,
+        (ShopPlanStepV1::LeaveShop, Some(DecisionCandidateKey::ShopLeave)) => true,
+        _ => false,
     }
 }
 
@@ -194,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn hard_checkpoint_bundle_next_item_preempts_random_potion_spend() {
+    fn near_checkpoint_combat_patch_executes_before_optional_cleanup() {
         let mut session = shop_session();
         session.run_state.act_num = 1;
         session.run_state.floor_num = 13;
@@ -230,14 +320,43 @@ mod tests {
         assert!(
             matches!(
                 choices.first().and_then(|choice| choice.key.as_ref()),
-                Some(DecisionCandidateKey::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    price: 152,
+                Some(DecisionCandidateKey::ShopBuyPotion {
+                    potion: PotionId::GamblersBrew,
+                    price: 73,
                     ..
                 })
             ),
-            "hard checkpoint bundle execution should buy Fiend Fire before spending on random/deferred potions; got {:?}",
+            "an admitted near-threat combat patch should execute before optional deck cleanup; got {:?}",
             choices.first().map(|choice| choice.label.as_str())
         );
+    }
+
+    #[test]
+    fn unmatched_compiled_plan_head_cannot_fall_back_to_legacy_auto_choice() {
+        let mut session = shop_session();
+        let mut shop = ShopState::new();
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::FirePotion,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+        let surface = build_decision_surface(&session);
+        let choices = executable_choices(&surface)
+            .into_iter()
+            .enumerate()
+            .collect::<Vec<_>>();
+        let stale_head = ShopPlanStepV1::BuyRelic {
+            index: 0,
+            relic: RelicId::Waffle,
+            cost: 155,
+        };
+
+        let ordered = order_choices_by_compiled_step(choices, Some(&stale_head));
+
+        assert!(ordered
+            .iter()
+            .all(|choice| matches!(choice.expansion, OwnerChoiceExpansion::InspectOnly(_))));
     }
 }

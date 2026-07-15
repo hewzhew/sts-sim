@@ -30,11 +30,28 @@ pub(super) fn evaluated_shop_portfolio_combo_plans_v1(
 struct EvaluatedShopComboOptionV1 {
     rank: i32,
     cost: i32,
+    execution_phase: ShopPlanExecutionPhaseV1,
     can_start_combo: bool,
     can_follow_combo: bool,
     can_continue_combo: bool,
-    effect_kind: &'static str,
+    effect_kind: ShopPlanEffectKindV1,
     plan: ShopPlanV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShopPlanEffectKindV1 {
+    BuyCard,
+    BuyPotion,
+    BuyRelic,
+    Purge,
+    Combo,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ShopPlanExecutionPhaseV1 {
+    PurchaseBenefit,
+    DeckCleanup,
+    ShopClosingInteraction,
 }
 
 fn evaluated_combo_option_v1(
@@ -48,18 +65,42 @@ fn evaluated_combo_option_v1(
     }
 
     let step = candidate.plan.steps.first()?;
-    let (effect_kind, can_start_combo, can_follow_combo, can_continue_combo) = match *step {
-        ShopPlanStepV1::BuyCard { .. } => ("shop_buy_card", true, true, true),
-        ShopPlanStepV1::BuyPotion { .. } => ("shop_buy_potion", true, true, true),
-        ShopPlanStepV1::BuyRelic { relic, .. } => (
-            "shop_buy_relic",
-            shop_relic_purchase_keeps_shop_open(relic),
-            true,
-            shop_relic_purchase_keeps_shop_open(relic),
-        ),
-        ShopPlanStepV1::RemoveCard { .. } => ("shop_purge", true, true, true),
-        ShopPlanStepV1::LeaveShop => return None,
-    };
+    let (effect_kind, execution_phase, can_start_combo, can_follow_combo, can_continue_combo) =
+        match *step {
+            ShopPlanStepV1::BuyCard { .. } => (
+                ShopPlanEffectKindV1::BuyCard,
+                ShopPlanExecutionPhaseV1::PurchaseBenefit,
+                true,
+                true,
+                true,
+            ),
+            ShopPlanStepV1::BuyPotion { .. } => (
+                ShopPlanEffectKindV1::BuyPotion,
+                ShopPlanExecutionPhaseV1::PurchaseBenefit,
+                true,
+                true,
+                true,
+            ),
+            ShopPlanStepV1::BuyRelic { relic, .. } => (
+                ShopPlanEffectKindV1::BuyRelic,
+                if shop_relic_purchase_keeps_shop_open(relic) {
+                    ShopPlanExecutionPhaseV1::PurchaseBenefit
+                } else {
+                    ShopPlanExecutionPhaseV1::ShopClosingInteraction
+                },
+                shop_relic_purchase_keeps_shop_open(relic),
+                true,
+                shop_relic_purchase_keeps_shop_open(relic),
+            ),
+            ShopPlanStepV1::RemoveCard { .. } => (
+                ShopPlanEffectKindV1::Purge,
+                ShopPlanExecutionPhaseV1::DeckCleanup,
+                true,
+                true,
+                true,
+            ),
+            ShopPlanStepV1::LeaveShop => return None,
+        };
 
     let mut plan = candidate.plan.clone();
     plan.plan_id = format!("portfolio:{}", candidate.plan.plan_id);
@@ -73,6 +114,7 @@ fn evaluated_combo_option_v1(
     Some(EvaluatedShopComboOptionV1 {
         rank: evaluated_candidate_rank_v1(candidate),
         cost: candidate.plan.total_gold_spent,
+        execution_phase,
         can_start_combo,
         can_follow_combo,
         can_continue_combo,
@@ -172,6 +214,13 @@ fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopC
         .sum::<i32>()
         .saturating_add((entries.len() as i32).saturating_sub(1) * 100);
     let cost = entries.iter().map(|entry| entry.cost).sum::<i32>();
+    let mut entries = entries.to_vec();
+    entries.sort_by(|left, right| {
+        left.execution_phase
+            .cmp(&right.execution_phase)
+            .then_with(|| right.rank.cmp(&left.rank))
+            .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
+    });
     let label = entries
         .iter()
         .map(|entry| entry.plan.label.as_str())
@@ -179,7 +228,7 @@ fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopC
         .join(" + ");
     let mut steps = Vec::new();
     let mut candidate_ids = Vec::new();
-    for entry in entries {
+    for entry in &entries {
         steps.extend(entry.plan.steps.clone());
         candidate_ids.extend(entry.plan.candidate_ids.clone());
     }
@@ -202,10 +251,11 @@ fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopC
     EvaluatedShopComboOptionV1 {
         rank,
         cost,
+        execution_phase: ShopPlanExecutionPhaseV1::ShopClosingInteraction,
         can_start_combo: false,
         can_follow_combo: false,
         can_continue_combo: false,
-        effect_kind: "shop_buy_combo",
+        effect_kind: ShopPlanEffectKindV1::Combo,
         plan,
     }
 }

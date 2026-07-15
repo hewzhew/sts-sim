@@ -25,11 +25,12 @@ pub use policy::{
 };
 pub use types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
-    ShopDecisionSourceV1, ShopNeedProfileV1, ShopPlanBranchAdmissionStatusV1,
-    ShopPlanBranchAdmissionV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
-    ShopPlanComponentKindV1, ShopPlanComponentScoreV1, ShopPlanComponentV1, ShopPlanEvaluationV1,
-    ShopPlanFrontierV1, ShopPlanKindV1, ShopPlanLaneGroupV1, ShopPlanLaneV1,
+    ShopDecisionSourceV1, ShopFutureShopV1, ShopMawBankStateV1, ShopNeedProfileV1,
+    ShopPlanBranchAdmissionStatusV1, ShopPlanBranchAdmissionV1, ShopPlanCandidateRoleV1,
+    ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentScoreV1, ShopPlanComponentV1,
+    ShopPlanEvaluationV1, ShopPlanFrontierV1, ShopPlanKindV1, ShopPlanLaneGroupV1, ShopPlanLaneV1,
     ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanRolloutAdmissionStatusV1,
     ShopPlanRolloutAdmissionV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseSignalV1,
+    ShopPurchaseTargetV1, ShopThreatWindowV1, ShopVisitFactsV1,
 };
