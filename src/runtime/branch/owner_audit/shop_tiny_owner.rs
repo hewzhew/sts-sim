@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn near_checkpoint_combat_patch_executes_before_optional_cleanup() {
+    fn near_checkpoint_unmatched_temporary_potion_does_not_displace_cleanup() {
         let mut session = shop_session();
         session.run_state.act_num = 1;
         session.run_state.floor_num = 13;
@@ -320,13 +320,12 @@ mod tests {
         assert!(
             matches!(
                 choices.first().and_then(|choice| choice.key.as_ref()),
-                Some(DecisionCandidateKey::ShopBuyPotion {
-                    potion: PotionId::GamblersBrew,
-                    price: 73,
+                Some(DecisionCandidateKey::ShopPurgeCard {
+                    card: CardId::Strike,
                     ..
                 })
             ),
-            "an admitted near-threat combat patch should execute before optional deck cleanup; got {:?}",
+            "a generic temporary potion must not displace admitted deck cleanup without a typed pressure match; got {:?}",
             choices.first().map(|choice| choice.label.as_str())
         );
     }

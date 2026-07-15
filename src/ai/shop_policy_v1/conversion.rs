@@ -3,9 +3,8 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardSemanticRoleV1,
 };
 use crate::ai::card_semantics_v1::{
-    potion_acquisition_requirements_v1, potion_acquisition_traits_v1,
-    relic_acquisition_requirements_v1, relic_acquisition_traits_v1, AcquisitionRequirementV1,
-    PotionAcquisitionTraitV1,
+    potion_acquisition_requirements_v1, relic_acquisition_requirements_v1,
+    relic_acquisition_traits_v1, AcquisitionRequirementV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::potions::PotionId;
@@ -127,13 +126,6 @@ pub fn legacy_shop_potion_purchase_estimate_v1(run_state: &RunState) -> i32 {
 
 pub fn legacy_shop_potion_purchase_estimate_for_v1(potion: PotionId, run_state: &RunState) -> i32 {
     let mut priority = legacy_shop_potion_purchase_estimate_v1(run_state);
-    let near_serious_fight = run_state.act_num >= 2 || run_state.floor_num >= 6;
-    if near_serious_fight && shop_potion_is_combat_patch_v1(potion) {
-        priority += 260;
-        if run_state.act_num >= 3 {
-            priority += 120;
-        }
-    }
     for requirement in potion_acquisition_requirements_v1(potion) {
         match requirement {
             AcquisitionRequirementV1::LowHpDeathInsurance => {
@@ -161,11 +153,6 @@ fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) 
             && card.price <= gold
             && shop_card_has_high_impact_semantics_v1(card.card_id)
             && (run_state.act_num >= 2 || shop_card_is_combat_patch_v1(card.card_id))
-    }) || shop.potions.iter().any(|potion| {
-        potion.can_buy
-            && potion.price <= gold
-            && shop_potion_is_combat_patch_v1(potion.potion_id)
-            && (run_state.act_num >= 2 || run_state.floor_num >= 6)
     })
 }
 
@@ -215,12 +202,6 @@ fn shop_card_has_dual_debuff_semantics_v1(profile: &CardRewardSemanticProfileV1)
 
 fn role(profile: &CardRewardSemanticProfileV1, role: CardRewardSemanticRoleV1) -> bool {
     profile.roles.contains(&role)
-}
-
-pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {
-    potion_acquisition_traits_v1(potion)
-        .iter()
-        .any(|trait_| !matches!(trait_, PotionAcquisitionTraitV1::EscapeTool))
 }
 
 fn high_impact_shop_relic(relic: RelicId) -> bool {

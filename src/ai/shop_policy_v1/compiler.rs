@@ -310,31 +310,13 @@ fn plan_delta_from_strategic_trace_v1<'a>(
         })
         .or_else(|| {
             plan.steps.iter().find_map(|step| {
-                let step_id = shop_plan_step_action_candidate_id_v1(step)?;
+                let step_id = step.strategic_candidate_id_v1();
                 strategic_trace
                     .candidate_deltas
                     .iter()
                     .find(|delta| delta.action.candidate_id() == step_id)
             })
         })
-}
-
-fn shop_plan_step_action_candidate_id_v1(step: &ShopPlanStepV1) -> Option<String> {
-    match *step {
-        ShopPlanStepV1::BuyCard { index, card, .. } => {
-            Some(format!("shop:buy_card:{index}:{card:?}"))
-        }
-        ShopPlanStepV1::BuyRelic { index, relic, .. } => {
-            Some(format!("shop:buy_relic:{index}:{relic:?}"))
-        }
-        ShopPlanStepV1::BuyPotion { index, potion, .. } => {
-            Some(format!("shop:buy_potion:{index}:{potion:?}"))
-        }
-        ShopPlanStepV1::RemoveCard {
-            deck_index, card, ..
-        } => Some(format!("shop:remove:{deck_index}:{card:?}")),
-        ShopPlanStepV1::LeaveShop => Some("shop:leave".to_string()),
-    }
 }
 
 fn shop_card_buy_frontier_lane_projection_v1(delta: Option<&CandidateDelta>) -> ShopPlanLaneV1 {

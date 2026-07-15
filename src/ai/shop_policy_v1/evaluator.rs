@@ -8,8 +8,7 @@ use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopFutureShopV1, ShopMawBankStateV1,
     ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentV1,
     ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1,
-    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseSignalV1, ShopPurchaseTargetV1,
-    ShopThreatWindowV1,
+    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseTargetV1, ShopThreatWindowV1,
 };
 
 pub(crate) fn evaluate_shop_plan_candidate_v1(
@@ -24,9 +23,9 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     {
         return attach_components_and_score_v1(
             context,
+            strategic_trace,
             ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone()),
             candidate_plan,
-            None,
         );
     }
 
@@ -35,21 +34,21 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     {
         return attach_components_and_score_v1(
             context,
+            strategic_trace,
             evaluate_portfolio_plan_v1(context, config, strategic_trace, candidate_plan),
             candidate_plan,
-            None,
         );
     }
 
     let Some(candidate_id) = candidate_plan.plan.candidate_ids.first() else {
         return attach_components_and_score_v1(
             context,
+            strategic_trace,
             ShopPlanEvaluationV1::block(
                 candidate_plan.plan.legacy_priority,
                 "shop plan has no candidate id",
             ),
             candidate_plan,
-            None,
         );
     };
     let Some(candidate) = context
@@ -59,35 +58,36 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     else {
         return attach_components_and_score_v1(
             context,
+            strategic_trace,
             ShopPlanEvaluationV1::block(
                 candidate_plan.plan.legacy_priority,
                 format!("shop plan candidate id {candidate_id} is no longer visible"),
             ),
             candidate_plan,
-            None,
         );
     };
 
     attach_components_and_score_v1(
         context,
-        evaluate_single_candidate_v1(config, strategic_trace, candidate),
+        strategic_trace,
+        evaluate_single_candidate_v1(context, config, strategic_trace, candidate),
         candidate_plan,
-        Some(candidate),
     )
 }
 
 fn attach_components_and_score_v1(
     context: &ShopDecisionContextV1,
+    strategic_trace: &StrategicDecisionTrace,
     mut evaluation: ShopPlanEvaluationV1,
     candidate_plan: &ShopPlanCandidateV1,
-    candidate: Option<&ShopCandidateEvidenceV1>,
 ) -> ShopPlanEvaluationV1 {
-    evaluation.components = plan_components_v1(context, candidate_plan, candidate);
+    evaluation.components = plan_components_v1(context, strategic_trace, candidate_plan);
     evaluation.component_score = score_shop_plan_components_v1(&evaluation.components);
     evaluation
 }
 
 fn evaluate_single_candidate_v1(
+    context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
     strategic_trace: &StrategicDecisionTrace,
     candidate: &ShopCandidateEvidenceV1,
@@ -101,7 +101,7 @@ fn evaluate_single_candidate_v1(
             evaluate_functional_repair_purge_v1(candidate, config)
         }
         ShopPolicyClassV1::PurchaseOpportunity => {
-            evaluate_purchase_v1(candidate, config, strategic_trace)
+            evaluate_purchase_v1(context, candidate, config, strategic_trace)
         }
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
@@ -157,6 +157,7 @@ fn evaluate_functional_repair_purge_v1(
 }
 
 fn evaluate_purchase_v1(
+    context: &ShopDecisionContextV1,
     candidate: &ShopCandidateEvidenceV1,
     config: &ShopPolicyConfigV1,
     strategic_trace: &StrategicDecisionTrace,
@@ -199,10 +200,14 @@ fn evaluate_purchase_v1(
         );
     }
 
+    if let ShopPurchaseTargetV1::Potion { .. } = target {
+        return evaluate_temporary_potion_purchase_v1(context, candidate, target, strategic_trace);
+    }
+
     let Some(priority) = candidate.legacy_estimate else {
         return ShopPlanEvaluationV1::block(None, "purchase legacy estimate missing");
     };
-    let threshold = legacy_estimate_threshold(target, config);
+    let threshold = config.high_impact_relic_legacy_estimate_threshold;
     if config.allow_high_impact_purchase && priority >= threshold {
         return ShopPlanEvaluationV1::allow(
             300,
@@ -218,6 +223,110 @@ fn evaluate_purchase_v1(
     ShopPlanEvaluationV1::block(
         Some(priority),
         format!("purchase legacy estimate {priority} does not clear legacy shop evaluator gates"),
+    )
+}
+
+fn evaluate_temporary_potion_purchase_v1(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+    target: ShopPurchaseTargetV1,
+    strategic_trace: &StrategicDecisionTrace,
+) -> ShopPlanEvaluationV1 {
+    // This is an admission contract over observable semantics and the typed
+    // pressure ledger. A single seed result (or combat-search failure) must
+    // not promote or demote a potion here; outcome calibration belongs in a
+    // separate evidence loop with comparable samples.
+    if !matches!(
+        context.visit.next_threat,
+        ShopThreatWindowV1::EliteIn(0..=2) | ShopThreatWindowV1::BossIn(0..=4)
+    ) {
+        return ShopPlanEvaluationV1::block(
+            candidate.legacy_estimate,
+            "temporary potion has no typed near-hard-fight window",
+        );
+    }
+
+    let Some(strategic_decision) = purchase_strategic_decision(target, strategic_trace) else {
+        return ShopPlanEvaluationV1::block(
+            candidate.legacy_estimate,
+            "strategic trace has no typed potion purchase decision",
+        );
+    };
+    let matched_temporary_pressures = strategic_decision
+        .matched_pressure_kinds
+        .iter()
+        .copied()
+        .filter(|kind| immediate_combat_pressure_kind_v1(*kind))
+        .collect::<Vec<_>>();
+    if matched_temporary_pressures.is_empty() {
+        return ShopPlanEvaluationV1::block(
+            candidate.legacy_estimate,
+            "temporary potion matches no current strategic pressure",
+        );
+    }
+    if !strategic_decision.verdict.allows_behavior_acquisition() {
+        return ShopPlanEvaluationV1::block(
+            candidate.legacy_estimate,
+            format!(
+                "typed potion pressure match is not strong enough for rollout: verdict={:?} score={:.2}",
+                strategic_decision.verdict, strategic_decision.score
+            ),
+        );
+    }
+
+    strategic_temporary_potion_evaluation_v1(
+        candidate.legacy_estimate,
+        strategic_decision,
+        matched_temporary_pressures.len(),
+    )
+}
+
+fn immediate_combat_pressure_kind_v1(kind: PressureKind) -> bool {
+    matches!(
+        kind,
+        PressureKind::MissingJob(
+            crate::ai::strategic::StrategicJob::Frontload
+                | crate::ai::strategic::StrategicJob::Block
+                | crate::ai::strategic::StrategicJob::Scaling
+                | crate::ai::strategic::StrategicJob::DrawEnergy
+                | crate::ai::strategic::StrategicJob::Consistency
+                | crate::ai::strategic::StrategicJob::EnemyStrengthDown
+        ) | PressureKind::BossTax(_)
+    )
+}
+
+fn strategic_temporary_potion_evaluation_v1(
+    legacy_priority: Option<i32>,
+    strategic_decision: &CompiledDecision,
+    matched_pressure_count: usize,
+) -> ShopPlanEvaluationV1 {
+    let mut tier = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 315,
+        AcquisitionVerdict::StrongTake => 305,
+        AcquisitionVerdict::ContextTake => 290,
+        _ => 0,
+    };
+    if strategic_decision_matches_boss_tax_v1(strategic_decision) {
+        tier += 5;
+    }
+    let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
+    let score = strategic_score.saturating_add((matched_pressure_count as i32) * 25);
+    let confidence = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 0.72,
+        AcquisitionVerdict::StrongTake => 0.66,
+        AcquisitionVerdict::ContextTake => 0.60,
+        _ => 0.0,
+    };
+
+    ShopPlanEvaluationV1::allow(
+        tier,
+        score,
+        confidence,
+        legacy_priority,
+        format!(
+            "typed temporary-resource evaluation: verdict={:?} score={:.2} matched_pressures={matched_pressure_count}; legacy estimate is audit-only",
+            strategic_decision.verdict, strategic_decision.score
+        ),
     )
 }
 
@@ -295,7 +404,7 @@ fn evaluate_portfolio_plan_v1(
                 format!("portfolio plan candidate id {candidate_id} is no longer visible"),
             );
         };
-        let evaluation = evaluate_single_candidate_v1(config, strategic_trace, candidate);
+        let evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
         if !evaluation.branch_admission.is_admitted() {
             let reason = evaluation
                 .reasons
@@ -378,13 +487,22 @@ fn purchase_strategic_decision(
     target: ShopPurchaseTargetV1,
     strategic_trace: &StrategicDecisionTrace,
 ) -> Option<&CompiledDecision> {
-    let ShopPurchaseTargetV1::Card { index, card } = target else {
-        return None;
-    };
-    let action = CandidateAction::BuyCard {
-        shop_index: index,
-        card,
-        gold: 0,
+    let action = match target {
+        ShopPurchaseTargetV1::Card { index, card } => CandidateAction::BuyCard {
+            shop_index: index,
+            card,
+            gold: 0,
+        },
+        ShopPurchaseTargetV1::Relic { index, relic } => CandidateAction::BuyRelic {
+            shop_index: index,
+            relic,
+            gold: 0,
+        },
+        ShopPurchaseTargetV1::Potion { index, potion } => CandidateAction::BuyPotion {
+            shop_index: index,
+            potion,
+            gold: 0,
+        },
     };
     strategic_trace.compiled_for_action(&action)
 }
@@ -505,18 +623,10 @@ fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {
     }
 }
 
-fn legacy_estimate_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicyConfigV1) -> i32 {
-    match target {
-        ShopPurchaseTargetV1::Card { .. } => config.high_impact_card_legacy_estimate_threshold,
-        ShopPurchaseTargetV1::Relic { .. } => config.high_impact_relic_legacy_estimate_threshold,
-        ShopPurchaseTargetV1::Potion { .. } => config.high_impact_potion_legacy_estimate_threshold,
-    }
-}
-
 fn plan_components_v1(
     context: &ShopDecisionContextV1,
+    strategic_trace: &StrategicDecisionTrace,
     candidate_plan: &ShopPlanCandidateV1,
-    candidate: Option<&ShopCandidateEvidenceV1>,
 ) -> Vec<ShopPlanComponentV1> {
     let mut components = Vec::new();
     for step in &candidate_plan.plan.steps {
@@ -599,36 +709,30 @@ fn plan_components_v1(
             "portfolio plan is retained for branch exploration",
         ));
     }
-    if candidate.is_some_and(|candidate| {
-        candidate
-            .signals
-            .contains(&ShopPurchaseSignalV1::BossAnswer)
+    if shop_plan_matches_pressure_v1(candidate_plan, strategic_trace, |kind| {
+        matches!(kind, PressureKind::BossTax(_))
     }) {
         components.push(component_v1(
             ShopPlanComponentKindV1::BossAnswer,
             1.0,
-            "candidate evidence marks this as a combat answer",
+            "typed strategic delta matches a current boss tax",
         ));
     }
     let hard_threat_is_near = matches!(
         context.visit.next_threat,
         ShopThreatWindowV1::EliteIn(0..=2) | ShopThreatWindowV1::BossIn(0..=4)
     );
-    let plan_covers_near_threat = candidate_plan
+    let plan_has_temporary_potion = candidate_plan
         .plan
-        .candidate_ids
+        .steps
         .iter()
-        .any(|candidate_id| {
-            context.candidates.iter().any(|candidate| {
-                candidate.candidate_id == *candidate_id
-                    && candidate.signals.iter().any(|signal| {
-                        matches!(
-                            signal,
-                            ShopPurchaseSignalV1::BossAnswer | ShopPurchaseSignalV1::CombatPatch
-                        )
-                    })
-            })
-        });
+        .any(|step| matches!(step, ShopPlanStepV1::BuyPotion { .. }));
+    let plan_covers_near_threat = plan_has_temporary_potion
+        && shop_plan_matches_pressure_v1(
+            candidate_plan,
+            strategic_trace,
+            immediate_combat_pressure_kind_v1,
+        );
     if hard_threat_is_near && plan_covers_near_threat {
         components.push(component_v1(
             ShopPlanComponentKindV1::ImmediateThreatCoverage,
@@ -656,6 +760,24 @@ fn plan_components_v1(
         ));
     }
     components
+}
+
+fn shop_plan_matches_pressure_v1(
+    candidate_plan: &ShopPlanCandidateV1,
+    strategic_trace: &StrategicDecisionTrace,
+    predicate: impl Fn(PressureKind) -> bool,
+) -> bool {
+    candidate_plan.plan.steps.iter().any(|step| {
+        let candidate_id = step.strategic_candidate_id_v1();
+        strategic_trace.compiled.iter().any(|decision| {
+            decision.action.candidate_id() == candidate_id
+                && decision
+                    .matched_pressure_kinds
+                    .iter()
+                    .copied()
+                    .any(|kind| predicate(kind))
+        })
+    })
 }
 
 fn component_v1(

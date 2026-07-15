@@ -432,11 +432,6 @@ fn combat_patch_purchase_bonus(
         {
             base_bonus / 2
         }
-        ShopPurchaseTargetV1::Potion { potion, .. }
-            if super::conversion::shop_potion_is_combat_patch_v1(potion) =>
-        {
-            base_bonus
-        }
         _ => 0,
     }
 }

@@ -1003,9 +1003,10 @@ fn compiled_shop_plan_evaluations_expose_component_score() {
 fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 200;
+    run_state.boss_key = Some(EncounterId::Collector);
     let mut shop = ShopState::new();
     shop.potions.push(ShopPotion {
-        potion_id: PotionId::FirePotion,
+        potion_id: PotionId::ExplosivePotion,
         price: 50,
         can_buy: true,
         blocked_reason: None,
@@ -1017,7 +1018,7 @@ fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
             spent_gold_in_visit: false,
             maw_bank: ShopMawBankStateV1::LiveUnspent,
             future_shop: ShopFutureShopV1::VisibleIn(4),
-            next_threat: ShopThreatWindowV1::EliteIn(2),
+            next_threat: ShopThreatWindowV1::BossIn(2),
         });
     let compiled = compile_shop_decision_v1(
         &context,
@@ -1031,11 +1032,11 @@ fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
             candidate.plan.steps
                 == vec![ShopPlanStepV1::BuyPotion {
                     index: 0,
-                    potion: PotionId::FirePotion,
+                    potion: PotionId::ExplosivePotion,
                     cost: 50,
                 }]
         })
-        .expect("Fire Potion plan should be compiled");
+        .expect("Explosive Potion plan should be compiled");
 
     assert_plan_has_component(potion, ShopPlanComponentKindV1::ImmediateThreatCoverage);
     assert_plan_has_component(potion, ShopPlanComponentKindV1::MawBankOpportunityCost);
@@ -1597,13 +1598,139 @@ fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
 }
 
 #[test]
-fn smoke_bomb_escape_tool_is_not_a_combat_patch_potion() {
-    assert!(!super::conversion::shop_potion_is_combat_patch_v1(
-        PotionId::SmokeBomb
-    ));
-    assert!(super::conversion::shop_potion_is_combat_patch_v1(
-        PotionId::FairyPotion
-    ));
+fn shop_potion_deltas_keep_temporary_roles_distinct() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 19;
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.purge_available = false;
+    for (potion_id, price) in [
+        (PotionId::ExplosivePotion, 50),
+        (PotionId::EnergyPotion, 52),
+        (PotionId::EssenceOfSteel, 78),
+    ] {
+        shop.potions.push(ShopPotion {
+            potion_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    let context =
+        build_shop_decision_context_v1(&run_state, &shop).with_visit_facts(ShopVisitFactsV1 {
+            entry_gold: 500,
+            spent_gold_in_visit: false,
+            maw_bank: ShopMawBankStateV1::Absent,
+            future_shop: ShopFutureShopV1::Unknown,
+            next_threat: ShopThreatWindowV1::EliteIn(2),
+        });
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let explosive = buy_potion_delta(&trace, PotionId::ExplosivePotion);
+    let energy = buy_potion_delta(&trace, PotionId::EnergyPotion);
+    let steel = buy_potion_delta(&trace, PotionId::EssenceOfSteel);
+
+    assert_delta_has_job(explosive, StrategicJob::Frontload);
+    assert_delta_lacks_job(explosive, StrategicJob::Block);
+    assert_delta_lacks_job(explosive, StrategicJob::DrawEnergy);
+    assert_delta_lacks_job(explosive, StrategicJob::Scaling);
+    assert_delta_has_job(energy, StrategicJob::DrawEnergy);
+    assert_delta_lacks_job(energy, StrategicJob::Frontload);
+    assert_delta_lacks_job(energy, StrategicJob::Block);
+    assert_delta_has_job(steel, StrategicJob::Block);
+    assert_delta_lacks_job(steel, StrategicJob::Frontload);
+    assert_delta_lacks_job(steel, StrategicJob::DrawEnergy);
+}
+
+#[test]
+fn far_threat_does_not_admit_temporary_potion_rollout() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 19;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.purge_available = false;
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::ExplosivePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    let context =
+        build_shop_decision_context_v1(&run_state, &shop).with_visit_facts(ShopVisitFactsV1 {
+            entry_gold: 500,
+            spent_gold_in_visit: false,
+            maw_bank: ShopMawBankStateV1::Absent,
+            future_shop: ShopFutureShopV1::Unknown,
+            next_threat: ShopThreatWindowV1::BossIn(13),
+        });
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+    );
+    let potion = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyPotion {
+                        potion: PotionId::ExplosivePotion,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("Explosive Potion candidate should remain inspectable");
+
+    assert!(!potion.evaluation.rollout_admission.is_admitted());
+    assert_eq!(
+        compiled.compat_selected_plan.steps,
+        vec![ShopPlanStepV1::LeaveShop]
+    );
+}
+
+#[test]
+fn explosive_potion_does_not_claim_champ_execute_or_scaling_pressure() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 30;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.purge_available = false;
+    for potion_id in [PotionId::ExplosivePotion, PotionId::EssenceOfSteel] {
+        shop.potions.push(ShopPotion {
+            potion_id,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    let context =
+        build_shop_decision_context_v1(&run_state, &shop).with_visit_facts(ShopVisitFactsV1 {
+            entry_gold: 500,
+            spent_gold_in_visit: false,
+            maw_bank: ShopMawBankStateV1::Absent,
+            future_shop: ShopFutureShopV1::Unknown,
+            next_threat: ShopThreatWindowV1::BossIn(2),
+        });
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let explosive = buy_potion_delta(&trace, PotionId::ExplosivePotion);
+    let steel = buy_potion_delta(&trace, PotionId::EssenceOfSteel);
+
+    assert_delta_lacks_job(explosive, StrategicJob::Scaling);
+    assert!(explosive
+        .positive
+        .iter()
+        .all(|entry| { entry.kind != PressureKind::BossTax(StrategicBossTax::ChampExecutePlan) }));
+    assert!(steel
+        .positive
+        .iter()
+        .any(|entry| { entry.kind == PressureKind::BossTax(StrategicBossTax::ChampExecutePlan) }));
 }
 
 #[test]
@@ -1737,6 +1864,25 @@ fn buy_card_delta(
             )
         })
         .expect("buy-card delta should exist")
+}
+
+fn buy_potion_delta(
+    trace: &crate::ai::strategic::StrategicDecisionTrace,
+    potion: PotionId,
+) -> &crate::ai::strategic::CandidateDelta {
+    trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| {
+            matches!(
+                delta.action,
+                CandidateAction::BuyPotion {
+                    potion: candidate,
+                    ..
+                } if candidate == potion
+            )
+        })
+        .expect("buy-potion delta should exist")
 }
 
 fn assert_delta_has_job(delta: &crate::ai::strategic::CandidateDelta, job: StrategicJob) {

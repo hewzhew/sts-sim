@@ -88,8 +88,10 @@ pub enum RelicAcquisitionTraitV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PotionAcquisitionTraitV1 {
     CombatDamage,
+    AoeDamage,
     CombatBlock,
-    DebuffSetup,
+    VulnerableSetup,
+    WeakControl,
     EnergyBurst,
     StrengthGain,
     CardAccess,
@@ -320,14 +322,21 @@ pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTr
         push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DebuffControl);
     }
     match potion {
-        PotionId::FirePotion | PotionId::ExplosivePotion => {
+        PotionId::FirePotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CombatDamage);
+        }
+        PotionId::ExplosivePotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CombatDamage);
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::AoeDamage);
         }
         PotionId::BlockPotion | PotionId::EssenceOfSteel | PotionId::SpeedPotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CombatBlock);
         }
-        PotionId::FearPotion | PotionId::WeakenPotion => {
-            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DebuffSetup);
+        PotionId::FearPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::VulnerableSetup);
+        }
+        PotionId::WeakenPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::WeakControl);
         }
         PotionId::EnergyPotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::EnergyBurst);
@@ -410,6 +419,23 @@ mod tests {
         assert!(potion_mechanics_profile_v1(PotionId::SteroidPotion).temporary_strength_burst);
         assert!(potion_acquisition_traits_v1(PotionId::StrengthPotion)
             .contains(&PotionAcquisitionTraitV1::StrengthGain));
+    }
+
+    #[test]
+    fn potion_traits_keep_damage_scope_and_debuff_kind_distinct() {
+        let fire = potion_acquisition_traits_v1(PotionId::FirePotion);
+        let explosive = potion_acquisition_traits_v1(PotionId::ExplosivePotion);
+        let fear = potion_acquisition_traits_v1(PotionId::FearPotion);
+        let weaken = potion_acquisition_traits_v1(PotionId::WeakenPotion);
+
+        assert!(fire.contains(&PotionAcquisitionTraitV1::CombatDamage));
+        assert!(!fire.contains(&PotionAcquisitionTraitV1::AoeDamage));
+        assert!(explosive.contains(&PotionAcquisitionTraitV1::CombatDamage));
+        assert!(explosive.contains(&PotionAcquisitionTraitV1::AoeDamage));
+        assert!(fear.contains(&PotionAcquisitionTraitV1::VulnerableSetup));
+        assert!(!fear.contains(&PotionAcquisitionTraitV1::WeakControl));
+        assert!(weaken.contains(&PotionAcquisitionTraitV1::WeakControl));
+        assert!(!weaken.contains(&PotionAcquisitionTraitV1::VulnerableSetup));
     }
 
     #[test]

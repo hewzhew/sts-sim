@@ -23,7 +23,8 @@ pub(crate) fn score_shop_plan_components_v1(
                 has_non_legacy_signal = true;
             }
             ShopPlanComponentKindV1::PotionFill => {
-                positive += 80.0 * component.amount.max(0.0);
+                // Filling a slot is an observable state change, not value by
+                // itself. Temporary value comes from typed pressure coverage.
                 has_non_legacy_signal = true;
             }
             ShopPlanComponentKindV1::BossAnswer => {

@@ -12,14 +12,19 @@ use crate::ai::card_component_signal_v1::{
 use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
 };
-use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::card_semantics_v1::{
+    card_mechanics_profile_v1, potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
+};
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
 use crate::ai::deck_startup_profile_v1::startup_energy_candidate_discounted_by_snecko_v1;
 use crate::ai::shop_policy_v1::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
+    ShopThreatWindowV1,
 };
+use crate::content::monsters::factory::EncounterId;
+use crate::content::potions::PotionId;
 use crate::state::rewards::RewardCard;
 
 pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::StrategicDecisionTrace {
@@ -163,6 +168,15 @@ fn candidate_delta_from_shop_candidate(
                     amount: shop_card_add_cycle_debt_amount(context),
                     reason: shop_card_add_cycle_debt_reason(context),
                 });
+            } else if let Some(ShopPurchaseTargetV1::Potion { potion, .. }) =
+                candidate.purchase_target
+            {
+                add_shop_potion_purchase_deltas(context, potion, &mut delta);
+                delta.positive.push(LedgerDelta {
+                    kind: PressureKind::EconomyNeed,
+                    amount: SHOP_PURCHASE_GOLD_CONVERSION_SIGNAL,
+                    reason: "shop_purchase_converts_gold_without_legacy_shop_estimate".to_string(),
+                });
             } else {
                 delta.positive.push(LedgerDelta {
                     kind: PressureKind::EconomyNeed,
@@ -212,6 +226,178 @@ fn candidate_delta_from_shop_candidate(
 
     add_shop_run_debt_deltas(context, candidate, &mut delta);
     delta
+}
+
+fn add_shop_potion_purchase_deltas(
+    context: &ShopDecisionContextV1,
+    potion: PotionId,
+    delta: &mut CandidateDelta,
+) {
+    if !shop_potion_has_near_threat_window(context) {
+        delta
+            .evidence
+            .push("temporary_potion_has_no_near_hard_fight_window".to_string());
+        return;
+    }
+
+    let traits = potion_acquisition_traits_v1(potion);
+    for trait_ in &traits {
+        match trait_ {
+            PotionAcquisitionTraitV1::CombatDamage | PotionAcquisitionTraitV1::VulnerableSetup => {
+                set_shop_potion_role(delta, CandidateRole::Transition);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::Frontload),
+                    0.35,
+                    "temporary_potion_frontload",
+                );
+            }
+            PotionAcquisitionTraitV1::CombatBlock | PotionAcquisitionTraitV1::WeakControl => {
+                set_shop_potion_role(delta, CandidateRole::DefensivePatch);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::Block),
+                    0.45,
+                    "temporary_potion_mitigation",
+                );
+            }
+            PotionAcquisitionTraitV1::EnergyBurst => {
+                set_shop_potion_role(delta, CandidateRole::Lubricant);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::DrawEnergy),
+                    0.35,
+                    "temporary_potion_energy",
+                );
+            }
+            PotionAcquisitionTraitV1::CardAccess => {
+                set_shop_potion_role(delta, CandidateRole::Lubricant);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::Consistency),
+                    0.35,
+                    "temporary_potion_access",
+                );
+            }
+            PotionAcquisitionTraitV1::StrengthGain | PotionAcquisitionTraitV1::ActionAmplifier
+                if shop_potion_targets_near_boss(context) =>
+            {
+                set_shop_potion_role(delta, CandidateRole::Payoff);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::Scaling),
+                    0.35,
+                    "temporary_potion_boss_conversion",
+                );
+            }
+            PotionAcquisitionTraitV1::DeathInsurance
+                if context.need.hp * 3 <= context.need.max_hp =>
+            {
+                set_shop_potion_role(delta, CandidateRole::DefensivePatch);
+                push_shop_potion_pressure_once(
+                    delta,
+                    PressureKind::MissingJob(StrategicJob::Block),
+                    0.45,
+                    "temporary_potion_death_insurance",
+                );
+            }
+            PotionAcquisitionTraitV1::AoeDamage
+            | PotionAcquisitionTraitV1::DebuffControl
+            | PotionAcquisitionTraitV1::EscapeTool
+            | PotionAcquisitionTraitV1::StrengthGain
+            | PotionAcquisitionTraitV1::ActionAmplifier
+            | PotionAcquisitionTraitV1::DeathInsurance => {}
+        }
+    }
+
+    if shop_potion_targets_near_boss(context) {
+        for tax in shop_potion_covered_boss_taxes(context.need.boss, &traits) {
+            set_shop_potion_role(delta, CandidateRole::BossAnswer);
+            push_shop_potion_pressure_once(
+                delta,
+                PressureKind::BossTax(tax),
+                0.50,
+                "temporary_potion_matches_boss_tax",
+            );
+        }
+    }
+}
+
+fn shop_potion_has_near_threat_window(context: &ShopDecisionContextV1) -> bool {
+    matches!(
+        context.visit.next_threat,
+        ShopThreatWindowV1::EliteIn(0..=2) | ShopThreatWindowV1::BossIn(0..=4)
+    )
+}
+
+fn shop_potion_targets_near_boss(context: &ShopDecisionContextV1) -> bool {
+    matches!(context.visit.next_threat, ShopThreatWindowV1::BossIn(0..=4))
+}
+
+fn shop_potion_covered_boss_taxes(
+    boss: Option<EncounterId>,
+    traits: &[PotionAcquisitionTraitV1],
+) -> Vec<StrategicBossTax> {
+    let has = |trait_| traits.contains(&trait_);
+    let mitigation =
+        has(PotionAcquisitionTraitV1::CombatBlock) || has(PotionAcquisitionTraitV1::WeakControl);
+    let boss_conversion = has(PotionAcquisitionTraitV1::StrengthGain)
+        || has(PotionAcquisitionTraitV1::ActionAmplifier);
+    let mut taxes = Vec::new();
+    match boss {
+        Some(EncounterId::TheChamp) if mitigation || boss_conversion => {
+            taxes.push(StrategicBossTax::ChampExecutePlan);
+        }
+        Some(EncounterId::Collector) => {
+            if has(PotionAcquisitionTraitV1::AoeDamage) {
+                taxes.push(StrategicBossTax::CollectorMinionPlan);
+            }
+            if mitigation {
+                taxes.push(StrategicBossTax::CollectorTurnFourDebuffPlan);
+            }
+        }
+        Some(EncounterId::Automaton) => {
+            if mitigation {
+                taxes.push(StrategicBossTax::AutomatonHyperbeamPlan);
+            }
+            if has(PotionAcquisitionTraitV1::CombatDamage)
+                || has(PotionAcquisitionTraitV1::AoeDamage)
+            {
+                taxes.push(StrategicBossTax::AutomatonOrbControl);
+            }
+        }
+        Some(EncounterId::AwakenedOne) if mitigation => {
+            taxes.push(StrategicBossTax::AwakenedPhaseTwoBlock);
+        }
+        _ => {}
+    }
+    taxes
+}
+
+fn set_shop_potion_role(delta: &mut CandidateDelta, role: CandidateRole) {
+    if matches!(
+        delta.role,
+        CandidateRole::Unknown | CandidateRole::ResourceConversion
+    ) || role == CandidateRole::BossAnswer
+    {
+        delta.role = role;
+    }
+}
+
+fn push_shop_potion_pressure_once(
+    delta: &mut CandidateDelta,
+    kind: PressureKind,
+    amount: f32,
+    reason: &'static str,
+) {
+    if delta.positive.iter().any(|entry| entry.kind == kind) {
+        return;
+    }
+    delta.positive.push(LedgerDelta {
+        kind,
+        amount,
+        reason: reason.to_string(),
+    });
 }
 
 fn add_shop_card_purchase_deltas(

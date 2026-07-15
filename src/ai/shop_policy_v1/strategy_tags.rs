@@ -6,7 +6,6 @@ use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
-use crate::ai::card_semantics_v1::{potion_acquisition_traits_v1, PotionAcquisitionTraitV1};
 use crate::ai::decision_tags_v1::{
     combat_shape_change_tags_for_card_v1, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK,
     TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
@@ -22,7 +21,6 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::ai::strength_profile_v1::StrengthProfileV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
-use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
@@ -51,9 +49,7 @@ pub(crate) fn shop_purchase_strategy_analysis_v1(
         ShopPurchaseTargetV1::Relic { relic, .. } => {
             analyze_shop_relic(relic, run_state, strength, &mut analysis);
         }
-        ShopPurchaseTargetV1::Potion { potion, .. } => {
-            analyze_shop_potion(potion, run_state, &mut analysis);
-        }
+        ShopPurchaseTargetV1::Potion { .. } => {}
     }
     analysis
 }
@@ -131,51 +127,12 @@ fn analyze_shop_relic(
     }
 }
 
-fn analyze_shop_potion(
-    potion: PotionId,
-    run_state: &RunState,
-    analysis: &mut ShopPurchaseStrategyAnalysisV1,
-) {
-    if run_state.boss_key == Some(EncounterId::Collector) && collector_answer_potion(potion) {
-        push_signal(analysis, ShopPurchaseSignalV1::BossAnswer);
-        push_evidence(analysis, TAG_COLLECTOR_ANSWER);
-    }
-    if potion_acquisition_traits_v1(potion).iter().any(|trait_| {
-        matches!(
-            trait_,
-            PotionAcquisitionTraitV1::CombatDamage
-                | PotionAcquisitionTraitV1::CombatBlock
-                | PotionAcquisitionTraitV1::DebuffSetup
-                | PotionAcquisitionTraitV1::EnergyBurst
-                | PotionAcquisitionTraitV1::CardAccess
-                | PotionAcquisitionTraitV1::ActionAmplifier
-        )
-    }) {
-        push_signal(analysis, ShopPurchaseSignalV1::CombatPatch);
-    }
-}
-
 fn collector_answer_card(card: CardId, profile: &CardRewardSemanticProfileV1) -> bool {
     let facts = card_facts(&RewardCard::new(card, 0));
     has_role(profile, CardRewardSemanticRoleV1::AoeDamage)
         || has_role(profile, CardRewardSemanticRoleV1::Weak)
         || has_role(profile, CardRewardSemanticRoleV1::EnemyStrengthDown)
         || facts.block >= 12
-}
-
-fn collector_answer_potion(potion: PotionId) -> bool {
-    let traits = potion_acquisition_traits_v1(potion);
-    traits.iter().any(|trait_| {
-        matches!(
-            trait_,
-            PotionAcquisitionTraitV1::CombatDamage
-                | PotionAcquisitionTraitV1::CombatBlock
-                | PotionAcquisitionTraitV1::DebuffSetup
-                | PotionAcquisitionTraitV1::EnergyBurst
-                | PotionAcquisitionTraitV1::CardAccess
-                | PotionAcquisitionTraitV1::ActionAmplifier
-        )
-    })
 }
 
 fn closes_or_supports_exhaust_engine(

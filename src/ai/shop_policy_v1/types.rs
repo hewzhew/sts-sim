@@ -115,7 +115,6 @@ pub struct ShopCandidateEvidenceV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ShopPurchaseSignalV1 {
     BossAnswer,
-    CombatPatch,
     EngineClosure,
     StartupAccess,
     CoreDefenseOrSurvival,
@@ -153,11 +152,9 @@ pub struct ShopPolicyConfigV1 {
     pub allow_starter_strike_purge_when_core_plan_protected: bool,
     pub allow_functional_repair_purge: bool,
     pub allow_high_impact_purchase: bool,
-    /// Legacy estimate thresholds for non-card purchases that do not yet have
-    /// a richer strategic evaluator. These gates should shrink over time.
-    pub high_impact_card_legacy_estimate_threshold: i32,
+    /// Legacy estimate threshold for relic purchases, which do not yet have
+    /// the typed strategic evaluator used by cards and potions.
     pub high_impact_relic_legacy_estimate_threshold: i32,
-    pub high_impact_potion_legacy_estimate_threshold: i32,
 }
 
 impl Default for ShopPolicyConfigV1 {
@@ -167,9 +164,7 @@ impl Default for ShopPolicyConfigV1 {
             allow_starter_strike_purge_when_core_plan_protected: true,
             allow_functional_repair_purge: true,
             allow_high_impact_purchase: true,
-            high_impact_card_legacy_estimate_threshold: 650,
             high_impact_relic_legacy_estimate_threshold: 900,
-            high_impact_potion_legacy_estimate_threshold: 780,
         }
     }
 }
@@ -535,6 +530,24 @@ pub enum ShopPlanStepV1 {
         cost: i32,
     },
     LeaveShop,
+}
+
+impl ShopPlanStepV1 {
+    pub(crate) fn strategic_candidate_id_v1(&self) -> String {
+        match *self {
+            Self::BuyCard { index, card, .. } => format!("shop:buy_card:{index}:{card:?}"),
+            Self::BuyRelic { index, relic, .. } => {
+                format!("shop:buy_relic:{index}:{relic:?}")
+            }
+            Self::BuyPotion { index, potion, .. } => {
+                format!("shop:buy_potion:{index}:{potion:?}")
+            }
+            Self::RemoveCard {
+                deck_index, card, ..
+            } => format!("shop:remove:{deck_index}:{card:?}"),
+            Self::LeaveShop => "shop:leave".to_string(),
+        }
+    }
 }
 
 impl CompiledShopDecisionV1 {
