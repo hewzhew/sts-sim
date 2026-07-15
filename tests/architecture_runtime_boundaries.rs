@@ -216,3 +216,15 @@ fn durable_upgrade_consumers_do_not_depend_on_rest_vs_smith() {
         );
     }
 }
+
+#[test]
+fn deck_mutation_compiler_does_not_depend_on_campfire_policy_configuration() {
+    let source = std::fs::read_to_string("src/ai/deck_mutation_compiler_v1/compiler.rs")
+        .expect("read deck mutation compiler");
+    for forbidden in ["campfire_policy_v1", "clear_core_smith_priority_threshold"] {
+        assert!(
+            !source.contains(forbidden),
+            "deck mutation compiler must not depend on Campfire policy detail '{forbidden}'"
+        );
+    }
+}

@@ -26,6 +26,7 @@ use super::types::{
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
 const PREMIUM_DUPLICATE_TARGET_PRIORITY: i32 = 760;
+const POLICY_PREFERRED_UPGRADE_PRIORITY_THRESHOLD: i32 = 180;
 
 #[derive(Clone, Debug)]
 struct ExactTarget {
@@ -759,7 +760,7 @@ fn evaluate_candidate_for_reason(
     } else if mutation_choice && has_functional_target {
         DeckMutationPlanRoleV1::RiskyExploration
     } else if matches!(reason, RunPendingChoiceReason::Upgrade)
-        && candidate.score_hint >= clear_upgrade_priority_threshold()
+        && candidate.score_hint >= POLICY_PREFERRED_UPGRADE_PRIORITY_THRESHOLD
     {
         DeckMutationPlanRoleV1::PolicyPreferred
     } else if mutation_choice && all_low_value {
@@ -879,11 +880,6 @@ fn transform_candidate_role(
         .map(|card| card.transform.branch_lane)
         .max()
         .unwrap_or(DeckMutationPlanRoleV1::InspectOnly)
-}
-
-fn clear_upgrade_priority_threshold() -> i32 {
-    crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default()
-        .clear_core_smith_priority_threshold
 }
 
 fn apply_portfolio_suppression(candidates: &mut [DeckMutationPlanCandidateV1], limit: usize) {
