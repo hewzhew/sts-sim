@@ -6,6 +6,7 @@ pub mod branch_experiment_search_options;
 pub mod branch_experiment_trajectory;
 pub mod campfire_evaluation;
 pub mod campfire_projection;
+pub mod campfire_survival_scenarios;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_case;
