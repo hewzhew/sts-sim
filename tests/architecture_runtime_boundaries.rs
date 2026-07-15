@@ -202,3 +202,17 @@ fn live_decision_layers_do_not_depend_on_combat_laboratory() {
         );
     }
 }
+
+#[test]
+fn durable_upgrade_consumers_do_not_depend_on_rest_vs_smith() {
+    for path in [
+        "src/ai/random_upgrade_opportunity_v1.rs",
+        "src/ai/shop_policy_v1/policy.rs",
+    ] {
+        let source = std::fs::read_to_string(path).expect("read durable upgrade consumer");
+        assert!(
+            !source.contains("rest_vs_smith.best_smith_debt_paid"),
+            "durable upgrade consumer '{path}' must read the plan-level Smith debt fact"
+        );
+    }
+}

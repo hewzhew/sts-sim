@@ -22,6 +22,7 @@ pub struct UpgradePlanV1 {
     pub debt_ledger: UpgradeDebtLedgerV1,
     pub rest_vs_smith: RestVsSmithPlanV1,
     pub best_smith: Option<usize>,
+    pub best_smith_debt_paid: Option<UpgradeDebtKindV1>,
     pub notes: Vec<String>,
 }
 
@@ -75,6 +76,7 @@ pub enum UpgradeSlotPressureV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpgradeCandidateV1 {
     pub deck_index: usize,
+    pub card_uuid: u32,
     pub card: CardId,
     pub upgrades: u8,
     pub label: String,
@@ -270,7 +272,8 @@ pub fn plan_upgrades_v1(run_state: &RunState) -> UpgradePlanV1 {
     }
     candidates.sort_by(compare_upgrade_candidates);
     let best_smith = candidates.first().map(|candidate| candidate.deck_index);
-    let rest_vs_smith = rest_vs_smith_plan(run_state, &candidates);
+    let best_smith_debt_paid = best_smith_debt_paid(&candidates);
+    let rest_vs_smith = rest_vs_smith_plan(run_state, best_smith_debt_paid);
     let mut notes = Vec::new();
     if candidates
         .iter()
@@ -291,6 +294,7 @@ pub fn plan_upgrades_v1(run_state: &RunState) -> UpgradePlanV1 {
         debt_ledger,
         rest_vs_smith,
         best_smith,
+        best_smith_debt_paid,
         notes,
     }
 }
@@ -303,6 +307,16 @@ pub fn upgrade_candidate_for_deck_index_v1(
         .candidates
         .into_iter()
         .find(|candidate| candidate.deck_index == deck_index)
+}
+
+pub fn upgrade_candidate_for_card_uuid_v1(
+    run_state: &RunState,
+    card_uuid: u32,
+) -> Option<UpgradeCandidateV1> {
+    plan_upgrades_v1(run_state)
+        .candidates
+        .into_iter()
+        .find(|candidate| candidate.card_uuid == card_uuid)
 }
 
 pub fn upgrade_candidate_score_hint_v1(candidate: &UpgradeCandidateV1) -> i32 {
@@ -406,8 +420,7 @@ pub fn upgrade_plan_evidence_for_deck_index_v1(
         "rest_vs_smith: {:?} effective_heal={} best_smith_debt={}",
         plan.rest_vs_smith.verdict,
         plan.rest_vs_smith.effective_rest_heal,
-        plan.rest_vs_smith
-            .best_smith_debt_paid
+        plan.best_smith_debt_paid
             .map(|debt| debt.label())
             .unwrap_or("-")
     ));
@@ -463,6 +476,7 @@ fn build_upgrade_candidate(
 
     let mut candidate = UpgradeCandidateV1 {
         deck_index,
+        card_uuid: card.uuid,
         card: card.id,
         upgrades: card.upgrades,
         label: card_label(card.id, card.upgrades),
@@ -1091,18 +1105,21 @@ fn apply_combat_upgrade_coverage(
     ));
 }
 
+fn best_smith_debt_paid(candidates: &[UpgradeCandidateV1]) -> Option<UpgradeDebtKindV1> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.verdict >= UpgradeVerdictV1::Useful)
+        .and_then(|candidate| candidate.pays_debts.first().copied())
+}
+
 fn rest_vs_smith_plan(
     run_state: &RunState,
-    candidates: &[UpgradeCandidateV1],
+    best_smith_debt_paid: Option<UpgradeDebtKindV1>,
 ) -> RestVsSmithPlanV1 {
     let rest_heal_cap = rest_heal_cap(run_state);
     let missing_hp = run_state.max_hp.saturating_sub(run_state.current_hp).max(0);
     let effective_rest_heal = missing_hp.min(rest_heal_cap);
     let recovery_sources = recovery_sources(run_state);
-    let best_smith_debt_paid = candidates
-        .iter()
-        .find(|candidate| candidate.verdict >= UpgradeVerdictV1::Useful)
-        .and_then(|candidate| candidate.pays_debts.first().copied());
     let mut reasons = Vec::new();
     reasons.push(format!(
         "effective rest heal is {effective_rest_heal}/{rest_heal_cap}"
@@ -1303,6 +1320,54 @@ mod tests {
             .debts
             .iter()
             .any(|debt| debt.kind == UpgradeDebtKindV1::ControlledExhaust));
+    }
+
+    #[test]
+    fn upgrade_candidates_bind_to_uuid_after_deck_reordering() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.boss_key = Some(EncounterId::TheChamp);
+        run.master_deck = vec![
+            CombatCard::new(CardId::Strike, 7001),
+            CombatCard::new(CardId::TrueGrit, 7002),
+            CombatCard::new(CardId::SecondWind, 7003),
+        ];
+
+        let candidate = plan_upgrades_v1(&run)
+            .candidates
+            .into_iter()
+            .find(|candidate| candidate.card_uuid == 7002)
+            .expect("True Grit should be found by stable card UUID");
+        assert_eq!(candidate.card_uuid, 7002);
+        assert_eq!(candidate.deck_index, 1);
+
+        run.master_deck.swap(0, 1);
+        let reordered = upgrade_candidate_for_card_uuid_v1(&run, 7002)
+            .expect("the same True Grit should survive deck reordering");
+        assert_eq!(reordered.card_uuid, 7002);
+        assert_eq!(reordered.deck_index, 0);
+    }
+
+    #[test]
+    fn best_smith_debt_is_owned_by_upgrade_plan_and_mirrored_for_legacy() {
+        let mut run = RunState::new(1, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.boss_key = Some(EncounterId::TheChamp);
+        run.master_deck = vec![
+            CombatCard::new(CardId::TrueGrit, 7002),
+            CombatCard::new(CardId::SecondWind, 7003),
+        ];
+
+        let plan = plan_upgrades_v1(&run);
+
+        assert_eq!(
+            plan.best_smith_debt_paid,
+            Some(UpgradeDebtKindV1::ControlledExhaust)
+        );
+        assert_eq!(
+            plan.best_smith_debt_paid,
+            plan.rest_vs_smith.best_smith_debt_paid
+        );
     }
 
     #[test]

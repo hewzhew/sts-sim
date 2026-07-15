@@ -110,7 +110,7 @@ pub fn evaluate_random_upgrade_opportunity_v1(
         hit_distribution.p_hit_at_least_one_important_or_better,
         hit_distribution.p_double_filler_or_low
     ));
-    if let Some(best_debt) = upgrade_plan.rest_vs_smith.best_smith_debt_paid {
+    if let Some(best_debt) = upgrade_plan.best_smith_debt_paid {
         evidence.push(format!(
             "random upgrade can hit current upgrade debt: {}",
             best_debt.label()

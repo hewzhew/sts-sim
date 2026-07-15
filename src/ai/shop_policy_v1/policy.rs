@@ -163,7 +163,7 @@ fn shop_upgrade_need_profile_from_run_state_v1(
             plan.debt_ledger.unpaid_core_count
         ));
     }
-    if let Some(debt) = plan.rest_vs_smith.best_smith_debt_paid {
+    if let Some(debt) = plan.best_smith_debt_paid {
         evidence.push(format!("best_smith_debt={}", debt.label()));
     }
     evidence.extend(plan.notes);
