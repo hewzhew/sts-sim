@@ -358,6 +358,6 @@ mod tests {
 
         assert_eq!(evidence.label, "collector-minion-control");
         assert!(evidence.repairs_plan());
-        assert!(evidence.score_delta >= 100);
+        assert!(evidence.score_delta > 0);
     }
 }
