@@ -676,6 +676,28 @@ fn live_decision_layers_do_not_depend_on_offline_laboratories() {
 }
 
 #[test]
+fn public_scenario_policy_bank_does_not_depend_on_legacy_search_or_rollout() {
+    let mut sources = Vec::new();
+    for root in [
+        "src/ai/combat_policy_v1/scenario",
+        "src/eval/combat_lab_v1/policy_bank",
+    ] {
+        collect_rust_sources(std::path::Path::new(root), &mut sources);
+    }
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read public scenario policy source");
+        for forbidden in ["run_combat_search_v2", "CombatSearchV2", "rollout"] {
+            assert!(
+                !source.contains(forbidden),
+                "public scenario policy source '{}' must not depend on legacy search detail '{forbidden}'",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn durable_upgrade_consumers_do_not_depend_on_rest_vs_smith() {
     for path in [
         "src/ai/random_upgrade_opportunity_v1.rs",

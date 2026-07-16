@@ -35,6 +35,8 @@ pub(crate) struct CombatScenarioTerminalOutcomeV1 {
     pub(crate) scenario_id: String,
     pub(crate) terminal: CombatTerminal,
     pub(crate) final_hp: i32,
+    pub(crate) player_block: i32,
+    pub(crate) enemy_effective_hp: i32,
     pub(crate) turn_count: u32,
     pub(crate) cards_played: u32,
 }
@@ -126,6 +128,21 @@ fn terminal_outcome(
         scenario_id: scenario_id.to_string(),
         terminal: stepped.terminal,
         final_hp: stepped.position.combat.entities.player.current_hp,
+        player_block: stepped.position.combat.entities.player.block,
+        enemy_effective_hp: stepped
+            .position
+            .combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| monster.is_alive_for_action())
+            .map(|monster| {
+                monster
+                    .current_hp
+                    .max(0)
+                    .saturating_add(monster.block.max(0))
+            })
+            .fold(0, i32::saturating_add),
         turn_count: stepped.position.combat.turn.turn_count,
         cards_played: stepped
             .position

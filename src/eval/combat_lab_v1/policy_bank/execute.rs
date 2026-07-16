@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ai::combat_policy_v1::{
     group_combat_scenarios_v1, step_combat_scenario_group_v1, CombatPublicActionV1,
-    CombatScenarioGroupV1, CombatScenarioParticleV1,
+    CombatScenarioActionPortfolioSessionV1, CombatScenarioGroupV1, CombatScenarioParticleV1,
 };
 use crate::sim::combat::{CombatStepLimits, CombatTerminal};
 
@@ -78,7 +78,8 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
         .map(|group| (0usize, group))
         .collect::<VecDeque<_>>();
     let mut information_set_decisions = 0usize;
-    let mut engine_steps = 0usize;
+    let mut policy_evaluation_engine_steps = 0usize;
+    let mut execution_engine_steps = 0usize;
     let mut max_frontier_information_sets = queue.len();
     let mut gaps = Vec::new();
 
@@ -119,11 +120,16 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
 
         let decision_index = information_set_decisions;
         information_set_decisions = information_set_decisions.saturating_add(1);
-        let action = match policy.choose_action(CombatLabPublicPolicyDecisionV1 {
+        let portfolio_session = CombatScenarioActionPortfolioSessionV1::new();
+        let policy_result = policy.choose_action(CombatLabPublicPolicyDecisionV1 {
             decision_index,
             depth,
             information_set: group.view(),
-        }) {
+            action_portfolio: portfolio_session.evaluator(&group),
+        });
+        policy_evaluation_engine_steps =
+            policy_evaluation_engine_steps.saturating_add(portfolio_session.engine_steps());
+        let action = match policy_result {
             Ok(action) => action,
             Err(gap) => {
                 mark_group_unresolved(
@@ -158,18 +164,26 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
             }
         }
 
-        let stepped = step_combat_scenario_group_v1(
-            &group,
-            &action,
-            CombatStepLimits {
-                max_engine_steps: limits.max_engine_steps_per_action,
-                deadline: None,
-            },
-        )
-        .map_err(|error| CombatLabPolicyBankErrorV1::ScenarioBoundary {
-            message: error.to_string(),
-        })?;
-        engine_steps = engine_steps.saturating_add(stepped.view.engine_steps);
+        let stepped = match portfolio_session.take_step(&action, limits.max_engine_steps_per_action)
+        {
+            Some(stepped) => stepped,
+            None => {
+                let stepped = step_combat_scenario_group_v1(
+                    &group,
+                    &action,
+                    CombatStepLimits {
+                        max_engine_steps: limits.max_engine_steps_per_action,
+                        deadline: None,
+                    },
+                )
+                .map_err(|error| CombatLabPolicyBankErrorV1::ScenarioBoundary {
+                    message: error.to_string(),
+                })?;
+                execution_engine_steps =
+                    execution_engine_steps.saturating_add(stepped.view.engine_steps);
+                stepped
+            }
+        };
 
         for terminal in stepped.terminal_outcomes {
             let accumulator = accumulators.get_mut(&terminal.scenario_id).ok_or_else(|| {
@@ -235,7 +249,9 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
         information_scope: CombatLabPolicyInformationScopeV1::PublicHistoryScenarioPolicy,
         scenario_count: outcomes.len(),
         information_set_decisions,
-        engine_steps,
+        engine_steps: policy_evaluation_engine_steps.saturating_add(execution_engine_steps),
+        policy_evaluation_engine_steps,
+        execution_engine_steps,
         max_frontier_information_sets,
         gaps,
         outcomes,

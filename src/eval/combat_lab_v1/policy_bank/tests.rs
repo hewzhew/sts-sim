@@ -1,8 +1,9 @@
-use crate::ai::combat_policy_v1::CombatPublicActionV1;
+use crate::ai::combat_policy_v1::{CombatPublicActionV1, CombatScenarioActionPortfolioLimitsV1};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::eval::fingerprint::combat_state_fingerprint_v1;
 use crate::runtime::combat::CombatCard;
+use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
 
@@ -33,12 +34,106 @@ fn shared_public_information_set_is_decided_once_for_all_samples() {
     assert_eq!(report.summary.wins, 2);
     assert_eq!(report.summary.losses, 0);
     assert_eq!(report.summary.unresolved, 0);
+    assert_eq!(report.policy_evaluation_engine_steps, 0);
+    assert!(report.execution_engine_steps > 0);
     assert_eq!(report.summary.win_rate_all_scenarios, Some(1.0));
     assert_eq!(report.outcomes[0].public_action_history.len(), 1);
     assert_eq!(report.outcomes[1].public_action_history.len(), 1);
 
     let json = serde_json::to_string(&report).expect("public policy report serialization");
     assert!(!json.contains("90001"));
+    assert!(!json.contains("uuid"));
+    assert!(!json.contains("rng"));
+}
+
+#[test]
+fn one_step_dominance_policy_resolves_clear_lethal_across_hidden_worlds() {
+    let first = lethal_sample(0, 10);
+    let mut second = lethal_sample(1, 90_001);
+    second.start.combat.rng.pool.shuffle_rng.counter += 1;
+    second.start.combat.rng.pool.shuffle_rng.seed0 ^= 0x55aa;
+    let mut policy = CombatLabOneStepDominancePolicyV1::new(portfolio_limits());
+
+    let report = execute_combat_lab_public_policy_bank_v1(&[first, second], &mut policy, limits())
+        .expect("clear lethal should be strictly dominant");
+
+    assert_eq!(report.summary.wins, 2);
+    assert_eq!(report.summary.losses, 0);
+    assert_eq!(report.summary.unresolved, 0);
+    assert!(report.policy_evaluation_engine_steps > 0);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert_eq!(
+        report.engine_steps,
+        report
+            .policy_evaluation_engine_steps
+            .saturating_add(report.execution_engine_steps)
+    );
+    assert!(report.outcomes.iter().all(|outcome| {
+        matches!(
+            outcome.public_action_history.as_slice(),
+            [CombatPublicActionV1::PlayCard { card_id, .. }] if card_id == "Bludgeon"
+        )
+    }));
+}
+
+#[test]
+fn one_step_dominance_policy_keeps_attack_defend_tradeoff_typed_and_unresolved() {
+    let mut policy = CombatLabOneStepDominancePolicyV1::new(portfolio_limits());
+
+    let report =
+        execute_combat_lab_public_policy_bank_v1(&[tradeoff_sample(0)], &mut policy, limits())
+            .expect("attack versus defend should remain a typed policy gap");
+
+    assert_eq!(report.summary.wins, 0);
+    assert_eq!(report.summary.losses, 0);
+    assert_eq!(report.summary.unresolved, 1);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert!(report.policy_evaluation_engine_steps > 0);
+    assert_eq!(
+        report.gaps[0].reason,
+        CombatLabPolicyUnresolvedReasonV1::PolicyGap {
+            gap: CombatLabPolicyDecisionGapV1::NoStrictDominance,
+        }
+    );
+    assert!(report.outcomes[0].public_action_history.is_empty());
+}
+
+#[test]
+fn one_step_dominance_policy_stops_before_evaluation_when_candidate_cap_is_exceeded() {
+    let mut policy =
+        CombatLabOneStepDominancePolicyV1::new(CombatScenarioActionPortfolioLimitsV1 {
+            max_candidates: 1,
+            max_engine_steps_per_action: 100,
+        });
+
+    let report =
+        execute_combat_lab_public_policy_bank_v1(&[lethal_sample(0, 10)], &mut policy, limits())
+            .expect("candidate cap should become a typed policy gap");
+
+    assert_eq!(report.policy_evaluation_engine_steps, 0);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert_eq!(
+        report.gaps[0].reason,
+        CombatLabPolicyUnresolvedReasonV1::PolicyGap {
+            gap: CombatLabPolicyDecisionGapV1::PortfolioTooLarge,
+        }
+    );
+}
+
+#[test]
+fn public_action_portfolio_serialization_does_not_expose_exact_world_identity() {
+    let first = lethal_sample(0, 10);
+    let mut second = lethal_sample(1, 90_001);
+    second.start.combat.rng.pool.shuffle_rng.counter += 1;
+    second.start.combat.rng.pool.shuffle_rng.seed0 ^= 0x55aa;
+    let mut policy = CapturePortfolioThenGap { json: None };
+
+    execute_combat_lab_public_policy_bank_v1(&[first, second], &mut policy, limits())
+        .expect("capture public action portfolio");
+
+    let json = policy.json.expect("captured public portfolio JSON");
+    assert!(!json.contains("90001"));
+    assert!(!json.contains("combat_lab_sample"));
     assert!(!json.contains("uuid"));
     assert!(!json.contains("rng"));
 }
@@ -161,14 +256,59 @@ impl CombatLabPublicPolicyV1 for RootBattleTranceThenGap {
     }
 }
 
+struct CapturePortfolioThenGap {
+    json: Option<String>,
+}
+
+impl CombatLabPublicPolicyV1 for CapturePortfolioThenGap {
+    fn choose_action(
+        &mut self,
+        decision: CombatLabPublicPolicyDecisionV1<'_>,
+    ) -> Result<CombatPublicActionV1, CombatLabPolicyDecisionGapV1> {
+        let portfolio = decision
+            .action_portfolio
+            .evaluate(portfolio_limits())
+            .map_err(|_| CombatLabPolicyDecisionGapV1::PortfolioEvaluationFailed)?;
+        self.json =
+            Some(serde_json::to_string(&portfolio).expect("serialize public action portfolio"));
+        Err(CombatLabPolicyDecisionGapV1::NoAcceptableAction)
+    }
+}
+
 fn lethal_sample(sample_index: u64, card_uuid: u32) -> CombatLabCompiledSampleV1 {
     let mut combat = crate::test_support::blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Bludgeon, card_uuid)];
-    combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    combat.entities.monsters = vec![deterministic_jaw_worm()];
     compiled_sample(
         sample_index,
         CombatPosition::new(EngineState::CombatPlayerTurn, combat),
     )
+}
+
+fn tradeoff_sample(sample_index: u64) -> CombatLabCompiledSampleV1 {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Defend, 11),
+    ];
+    combat.entities.monsters = vec![deterministic_jaw_worm()];
+    compiled_sample(
+        sample_index,
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat),
+    )
+}
+
+fn deterministic_jaw_worm() -> crate::runtime::combat::MonsterEntity {
+    let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+    let attack = MonsterMoveSpec::Attack(AttackSpec {
+        base_damage: 1,
+        hits: 1,
+        damage_kind: DamageKind::Normal,
+    });
+    monster.set_planned_move_id(1);
+    monster.set_planned_steps(attack.to_steps());
+    monster.set_planned_visible_spec(Some(attack));
+    monster
 }
 
 fn battle_trance_sample(sample_index: u64, draw_order: [CardId; 4]) -> CombatLabCompiledSampleV1 {
@@ -202,6 +342,13 @@ fn limits() -> CombatLabPolicyBankLimitsV1 {
     CombatLabPolicyBankLimitsV1 {
         max_information_set_decisions: 20,
         max_actions_per_scenario: 10,
+        max_engine_steps_per_action: 100,
+    }
+}
+
+fn portfolio_limits() -> CombatScenarioActionPortfolioLimitsV1 {
+    CombatScenarioActionPortfolioLimitsV1 {
+        max_candidates: 32,
         max_engine_steps_per_action: 100,
     }
 }
