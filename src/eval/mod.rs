@@ -11,7 +11,6 @@ pub mod combat_search_v2;
 pub(crate) mod event_boundary_classifier_v1;
 pub mod event_boundary_packet_v1;
 pub mod fingerprint;
-pub mod observation_boundary;
 pub mod reward_boundary_packet_v1;
 pub mod reward_semantic_live_sample_v1;
 pub mod run_control;

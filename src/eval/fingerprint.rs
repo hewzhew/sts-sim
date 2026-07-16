@@ -1,12 +1,12 @@
 use blake2::{Blake2b512, Digest};
 use serde::{Deserialize, Serialize};
 
+use crate::ai::combat_policy_v1::{combat_public_observation_v1, CombatPublicObservationV1};
 use crate::ai::combat_state_key::{
     combat_exact_state_hash_v1, stable_dominance_bucket_key, stable_outcome_key,
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
-use crate::eval::observation_boundary::CombatPublicObservationV1;
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
@@ -209,7 +209,7 @@ fn public_observation_input(
 ) -> CombatPublicObservationFingerprintInputV1 {
     CombatPublicObservationFingerprintInputV1 {
         boundary: boundary_fingerprint(&position.engine, &position.combat),
-        public: crate::eval::observation_boundary::combat_public_observation_v1(&position.combat),
+        public: combat_public_observation_v1(&position.combat),
     }
 }
 
