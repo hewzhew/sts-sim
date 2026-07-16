@@ -28,6 +28,15 @@ pub struct CombatScenarioStepViewV1 {
 pub struct CombatScenarioStepResultV1 {
     pub view: CombatScenarioStepViewV1,
     pub next_groups: Vec<CombatScenarioGroupV1>,
+    pub(crate) terminal_outcomes: Vec<CombatScenarioTerminalOutcomeV1>,
+}
+
+pub(crate) struct CombatScenarioTerminalOutcomeV1 {
+    pub(crate) scenario_id: String,
+    pub(crate) terminal: CombatTerminal,
+    pub(crate) final_hp: i32,
+    pub(crate) turn_count: u32,
+    pub(crate) cards_played: u32,
 }
 
 pub fn step_combat_scenario_group_v1(
@@ -41,6 +50,7 @@ pub fn step_combat_scenario_group_v1(
     let mut win_count = 0usize;
     let mut loss_count = 0usize;
     let mut engine_steps = 0usize;
+    let mut terminal_outcomes = Vec::new();
 
     for world in &group.worlds {
         let exact_input = exact_inputs
@@ -63,9 +73,11 @@ pub fn step_combat_scenario_group_v1(
         match stepped.terminal {
             CombatTerminal::Win => {
                 win_count = win_count.saturating_add(1);
+                terminal_outcomes.push(terminal_outcome(world.scenario_id(), &stepped));
             }
             CombatTerminal::Loss => {
                 loss_count = loss_count.saturating_add(1);
+                terminal_outcomes.push(terminal_outcome(world.scenario_id(), &stepped));
             }
             CombatTerminal::Unresolved => {
                 let boundary = policy_observation_envelope(world.scenario_id(), &stepped.position)?;
@@ -102,7 +114,29 @@ pub fn step_combat_scenario_group_v1(
             engine_steps,
         },
         next_groups,
+        terminal_outcomes,
     })
+}
+
+fn terminal_outcome(
+    scenario_id: &str,
+    stepped: &crate::sim::combat::CombatStepResult,
+) -> CombatScenarioTerminalOutcomeV1 {
+    CombatScenarioTerminalOutcomeV1 {
+        scenario_id: scenario_id.to_string(),
+        terminal: stepped.terminal,
+        final_hp: stepped.position.combat.entities.player.current_hp,
+        turn_count: stepped.position.combat.turn.turn_count,
+        cards_played: stepped
+            .position
+            .combat
+            .turn
+            .counters
+            .card_ids_played_this_combat
+            .len()
+            .try_into()
+            .unwrap_or(u32::MAX),
+    }
 }
 
 #[derive(Serialize)]

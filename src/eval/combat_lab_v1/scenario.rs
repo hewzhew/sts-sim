@@ -46,6 +46,18 @@ pub fn preflight_combat_lab_scenario_v1(
 }
 
 impl CombatLabScenarioCompilerV1 {
+    pub fn compile_bank(
+        &self,
+        sample_count: u64,
+    ) -> Result<Vec<CombatLabCompiledSampleV1>, String> {
+        if sample_count == 0 {
+            return Err("combat laboratory scenario bank must be nonempty".to_string());
+        }
+        (0..sample_count)
+            .map(|sample_index| self.compile_sample(sample_index))
+            .collect()
+    }
+
     pub fn compile_sample(&self, sample_index: u64) -> Result<CombatLabCompiledSampleV1, String> {
         let shuffle_seed = derive_shuffle_seed_v1(&self.resolved.schedule, sample_index);
         let (engine, combat) = compile_combat_start_spec_with_rng_overrides(

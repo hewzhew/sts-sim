@@ -101,6 +101,32 @@ commit one public selection across all grouped scenarios, resume exact engine
 resolution, and regroup at the next public boundary. This remains laboratory
 infrastructure; production combat ownership is still unchanged.
 
+## Fourth Slice
+
+The fourth executable slice connects compiled combat-laboratory samples to a
+shared public-policy scenario bank:
+
+- all samples enter one information-set queue rather than one exact-search
+  cell per sample;
+- the policy interface receives only the public information-set view, decision
+  index, and public-history depth;
+- one selected public action is applied to every exact world in the group;
+- newly revealed observations split later groups naturally, while hidden-only
+  differences continue sharing one decision;
+- per-sample outcomes retain public action history, observed HP loss, turns,
+  cards played, and potion usage without exposing exact UUIDs or RNG state;
+- the report is explicitly marked
+  `PublicHistoryScenarioPolicy` and separates win, loss, and typed unresolved
+  coverage;
+- distribution output includes resolution and win rates plus terminal, win,
+  and loss HP-loss summaries with median, p90, and maximum tail loss.
+
+This slice does not yet replace the existing journal/cell runner. The old
+runner still owns `ExactStateOracle` artifacts until the public-policy bank has
+its own durable manifest and a real scenario-aware action-selection policy.
+That cutover must replace the old executor rather than leave both as permanent
+owners.
+
 ## Migration Gates
 
 1. **Information-set foundation:** public grouping and single-action binding

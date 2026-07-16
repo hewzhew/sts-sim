@@ -21,6 +21,13 @@ impl CombatScenarioGroupV1 {
         &self.view
     }
 
+    pub(crate) fn scenario_ids(&self) -> Vec<&str> {
+        self.worlds
+            .iter()
+            .map(CombatScenarioParticleV1::scenario_id)
+            .collect()
+    }
+
     pub fn bind_action(
         &self,
         action: &CombatPublicActionV1,
