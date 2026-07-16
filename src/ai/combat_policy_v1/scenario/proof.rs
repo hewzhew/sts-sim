@@ -134,6 +134,9 @@ impl BoundedWinSearch<'_> {
                 ActionProof::Proven(plan) => proven.push(plan),
                 ActionProof::Refuted => {}
                 ActionProof::Inconclusive(gap) => {
+                    if is_hard_proof_gap(gap) {
+                        return NodeProof::Inconclusive(gap);
+                    }
                     first_inconclusive.get_or_insert(gap);
                 }
             }
@@ -416,4 +419,39 @@ fn validate_limits(
 
 fn saturating_i32(value: usize) -> i32 {
     value.try_into().unwrap_or(i32::MAX)
+}
+
+fn is_hard_proof_gap(gap: CombatScenarioBoundedWinProofGapV1) -> bool {
+    matches!(
+        gap,
+        CombatScenarioBoundedWinProofGapV1::InvalidLimit
+            | CombatScenarioBoundedWinProofGapV1::NoCandidates
+            | CombatScenarioBoundedWinProofGapV1::CandidateCountExceeds
+            | CombatScenarioBoundedWinProofGapV1::InformationSetBudget
+            | CombatScenarioBoundedWinProofGapV1::CandidateEvaluationBudget
+            | CombatScenarioBoundedWinProofGapV1::ActionEvaluationFailed
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn work_limit_and_evaluation_gaps_are_hard_stops() {
+        for gap in [
+            CombatScenarioBoundedWinProofGapV1::InformationSetBudget,
+            CombatScenarioBoundedWinProofGapV1::CandidateEvaluationBudget,
+            CombatScenarioBoundedWinProofGapV1::CandidateCountExceeds,
+            CombatScenarioBoundedWinProofGapV1::ActionEvaluationFailed,
+        ] {
+            assert!(is_hard_proof_gap(gap));
+        }
+        assert!(!is_hard_proof_gap(
+            CombatScenarioBoundedWinProofGapV1::DepthLimit
+        ));
+        assert!(!is_hard_proof_gap(
+            CombatScenarioBoundedWinProofGapV1::NoStrictDominance
+        ));
+    }
 }
