@@ -1,4 +1,4 @@
-use sts_simulator::eval::run_control::RunControlSession;
+use sts_simulator::eval::run_control::{BoundedRunStepContextV1, RunControlSession};
 
 use super::run_cutpoint::{RunCutpointKind, RunCutpointSnapshot};
 use super::run_cutpoint_store::{RunCutpointHandle, RunCutpointStore};
@@ -34,6 +34,7 @@ impl<'a> RunCutpointRecorder<'a> {
     pub(super) fn before_combat_search(
         &mut self,
         session: &RunControlSession,
+        context: &BoundedRunStepContextV1,
     ) -> Result<(), String> {
         if session.active_combat.is_none() || self.active_pre_combat.is_some() {
             return Ok(());
@@ -43,10 +44,14 @@ impl<'a> RunCutpointRecorder<'a> {
         };
         let mut branch = self.branch_template.clone();
         branch.session = session.clone();
+        branch.recent_progress_journal = context.committed_journal.clone();
+        branch.recent_planner_capture = context.planner_capture.clone();
+        branch.capture_recent_trajectory(self.generation)?;
         branch.status = BranchStatus::AwaitingAuto {
             boundary: "Combat".to_string(),
             reason: "resume pre-combat search cutpoint".to_string(),
         };
+        store.commit_cutpoint_trajectory(&mut branch)?;
         let snapshot = RunCutpointSnapshot::capture(
             RunCutpointKind::PreCombatSearch,
             self.generation,
@@ -118,7 +123,9 @@ mod tests {
         let (store, args, mut branch) = active_combat_branch();
         let expected_gold = branch.session.run_state.gold;
         let mut recorder = RunCutpointRecorder::new(Some(&store), args, 17, branch.id + 1, &branch);
-        recorder.before_combat_search(&branch.session).unwrap();
+        recorder
+            .before_combat_search(&branch.session, &empty_context())
+            .unwrap();
         branch.session.run_state.gold += 99;
 
         recorder
@@ -145,7 +152,9 @@ mod tests {
     fn successful_search_removes_its_inflight_pair() {
         let (store, args, branch) = active_combat_branch();
         let mut recorder = RunCutpointRecorder::new(Some(&store), args, 17, branch.id + 1, &branch);
-        recorder.before_combat_search(&branch.session).unwrap();
+        recorder
+            .before_combat_search(&branch.session, &empty_context())
+            .unwrap();
 
         recorder
             .after_combat_search(&BranchStatus::Running {
@@ -183,6 +192,16 @@ mod tests {
             args,
             branch,
         )
+    }
+
+    fn empty_context() -> BoundedRunStepContextV1 {
+        BoundedRunStepContextV1 {
+            applied_progress_steps: 0,
+            remaining_progress_steps: 1,
+            remaining_wall_ms: None,
+            committed_journal: Default::default(),
+            planner_capture: Default::default(),
+        }
     }
 
     fn unique_root(label: &str) -> PathBuf {

@@ -44,6 +44,7 @@ impl BranchRuntime {
                 combat_portfolio: advance.combat_portfolio,
                 recent_progress_journal: advance.progress_journal,
                 recent_planner_capture: advance.planner_capture,
+                trajectory: Default::default(),
                 combat_search: combat_search.clone(),
                 combat_search_history: combat_search,
                 comparison_search_start: None,

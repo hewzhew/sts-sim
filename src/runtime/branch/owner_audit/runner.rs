@@ -1,6 +1,6 @@
 use sts_simulator::eval::run_control::{
     build_decision_surface, capture_planner_boundary_yield_v1, BoundedRunDriveStopV1,
-    BoundedRunDriver, BoundedRunStepControlV1, CombatSearchTraceSummary,
+    BoundedRunDriver, BoundedRunStepContextV1, BoundedRunStepControlV1, CombatSearchTraceSummary,
     PlannerBoundaryCaptureSegmentV1, PlannerBoundaryYieldKindV1, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlRouteAutomationMode, RunControlSession,
     RunProgressJournalV1, RunProgressStepV1,
@@ -79,8 +79,8 @@ fn advance_to_owner_or_gap_impl(
         Err(error) => return advance_failed(error),
     };
     let mut log = AdvanceLog::default();
-    let drive = driver.drive_with(session, |session, _context| {
-        execute_one_owner_audit_step(session, args, deadline, &mut cutpoints, &mut log)
+    let drive = driver.drive_with(session, |session, context| {
+        execute_one_owner_audit_step(session, args, deadline, context, &mut cutpoints, &mut log)
     });
     let drive = match drive {
         Ok(drive) => drive,
@@ -158,6 +158,7 @@ fn execute_one_owner_audit_step(
     session: &mut RunControlSession,
     args: Args,
     deadline: RunDeadline,
+    context: BoundedRunStepContextV1,
     cutpoints: &mut Option<&mut RunCutpointRecorder<'_>>,
     log: &mut AdvanceLog,
 ) -> Result<BoundedRunStepControlV1<AdvanceResult>, String> {
@@ -167,7 +168,7 @@ fn execute_one_owner_audit_step(
     let run_args = deadline.cap_args(args, 1);
     if let Some(recorder) = cutpoints.as_deref_mut() {
         recorder
-            .before_combat_search(session)
+            .before_combat_search(session, &context)
             .map_err(|error| format!("cutpoint persistence failed: {error}"))?;
     }
     let portfolio = match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {

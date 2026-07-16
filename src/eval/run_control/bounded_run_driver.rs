@@ -22,11 +22,13 @@ pub struct BoundedRunResultV1 {
     pub planner_capture: PlannerBoundaryCaptureSegmentV1,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BoundedRunStepContextV1 {
     pub applied_progress_steps: usize,
     pub remaining_progress_steps: usize,
     pub remaining_wall_ms: Option<u64>,
+    pub committed_journal: RunProgressJournalV1,
+    pub planner_capture: PlannerBoundaryCaptureSegmentV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -222,6 +224,8 @@ impl BoundedRunDriver {
                 applied_progress_steps,
                 remaining_progress_steps,
                 remaining_wall_ms,
+                committed_journal: journal.clone(),
+                planner_capture: planner_capture.clone(),
             };
             let control = execute_one(session, context).map_err(|message| {
                 if let Some(pending) = pending_capture.clone() {

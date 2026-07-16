@@ -371,6 +371,9 @@ pub enum ArtifactKind {
     Terminal,
     CombatCase,
     TrajectoryEvidence,
+    TrajectoryObservation,
+    TrajectoryCandidateSet,
+    TrajectorySegment,
     AcceptedCombatDiagnostic,
 }
 
@@ -402,6 +405,12 @@ pub struct ArtifactWriteSummary {
     pub trajectory_evidence_ref: Option<ArtifactRef>,
     #[serde(default)]
     pub accepted_combat_diagnostic_refs: Vec<ArtifactRef>,
+    #[serde(default)]
+    pub trajectory_observation_refs: Vec<ArtifactRef>,
+    #[serde(default)]
+    pub trajectory_candidate_set_refs: Vec<ArtifactRef>,
+    #[serde(default)]
+    pub trajectory_segment_refs: Vec<ArtifactRef>,
 }
 
 impl ArtifactWriteSummary {
@@ -426,6 +435,12 @@ impl ArtifactWriteSummary {
             .or(self.trajectory_evidence_ref.take());
         self.accepted_combat_diagnostic_refs
             .extend(other.accepted_combat_diagnostic_refs);
+        self.trajectory_observation_refs
+            .extend(other.trajectory_observation_refs);
+        self.trajectory_candidate_set_refs
+            .extend(other.trajectory_candidate_set_refs);
+        self.trajectory_segment_refs
+            .extend(other.trajectory_segment_refs);
     }
 
     pub fn frontier_checkpoint_at(path: impl Into<PathBuf>) -> Self {
@@ -477,6 +492,15 @@ impl ArtifactWriteSummary {
                 self.trajectory_evidence_written = true;
                 self.trajectory_evidence_ref = Some(artifact);
             }
+            ArtifactKind::TrajectoryObservation => {
+                self.trajectory_observation_refs.push(artifact);
+            }
+            ArtifactKind::TrajectoryCandidateSet => {
+                self.trajectory_candidate_set_refs.push(artifact);
+            }
+            ArtifactKind::TrajectorySegment => {
+                self.trajectory_segment_refs.push(artifact);
+            }
             ArtifactKind::AcceptedCombatDiagnostic => {
                 self.accepted_combat_diagnostic_refs.push(artifact);
             }
@@ -497,6 +521,9 @@ impl ArtifactWriteSummary {
         .into_iter()
         .flatten()
         .chain(self.accepted_combat_diagnostic_refs.iter().cloned())
+        .chain(self.trajectory_observation_refs.iter().cloned())
+        .chain(self.trajectory_candidate_set_refs.iter().cloned())
+        .chain(self.trajectory_segment_refs.iter().cloned())
         .collect()
     }
 }

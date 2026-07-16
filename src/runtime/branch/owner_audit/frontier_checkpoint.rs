@@ -4,6 +4,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::{CombatSearchTraceSummary, RunControlSessionCheckpointV1};
+use sts_simulator::runtime::branch::RunTrajectoryHeadV1;
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
@@ -37,6 +38,8 @@ struct BranchCheckpoint {
     comparison_search_start: Option<usize>,
     #[serde(default)]
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
+    #[serde(default)]
+    trajectory_head: Option<RunTrajectoryHeadV1>,
 }
 
 pub(super) fn save(
@@ -56,7 +59,7 @@ pub(super) fn save(
             .iter()
             .filter(|branch| branch.status.is_resumable())
             .map(BranchCheckpoint::from_branch)
-            .collect(),
+            .collect::<Result<Vec<_>, _>>()?,
     };
     let value = serde_json::to_value(&checkpoint).map_err(|error| error.to_string())?;
     super::run_capsule_io::write_json(path, value)
@@ -86,10 +89,10 @@ impl FrontierCheckpoint {
 }
 
 impl BranchCheckpoint {
-    fn from_branch(branch: &Branch) -> Self {
+    fn from_branch(branch: &Branch) -> Result<Self, String> {
         let mut session = RunControlSessionCheckpointV1::from_session(&branch.session);
         session.clear_combat_diagnostics_for_external_checkpoint();
-        Self {
+        Ok(Self {
             id: branch.id,
             parent_id: branch.parent_id,
             path: branch.path.clone(),
@@ -99,7 +102,8 @@ impl BranchCheckpoint {
             combat_search_history: branch.combat_search_history.clone(),
             comparison_search_start: branch.comparison_search_start,
             accepted_high_loss_diagnostics: branch.accepted_high_loss_diagnostics.clone(),
-        }
+            trajectory_head: branch.trajectory.checkpoint_head()?,
+        })
     }
 
     fn into_branch(self) -> Result<Branch, String> {
@@ -113,6 +117,9 @@ impl BranchCheckpoint {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: super::branch_trajectory::BranchTrajectoryState::from_checkpoint_head(
+                self.trajectory_head,
+            ),
             combat_search: Vec::new(),
             combat_search_history: self.combat_search_history,
             comparison_search_start: self.comparison_search_start,

@@ -17,10 +17,11 @@ pub(super) fn expand_registered_owner(
     branch: &Branch,
     args: Args,
     deadline: RunDeadline,
+    generation: usize,
     choices: &[OwnerChoice],
     policy_expansions: &[PolicyExpansion],
     next_branch_id: &mut usize,
-) -> Vec<Branch> {
+) -> Result<Vec<Branch>, String> {
     let mut children = Vec::new();
     let comparison_search_start = branch
         .comparison_search_start
@@ -94,7 +95,7 @@ pub(super) fn expand_registered_owner(
         });
         let id = *next_branch_id;
         *next_branch_id += 1;
-        children.push(Branch {
+        let mut child = Branch {
             id,
             parent_id: Some(branch.id),
             path,
@@ -104,13 +105,16 @@ pub(super) fn expand_registered_owner(
             combat_portfolio: advance.combat_portfolio,
             recent_progress_journal: advance.progress_journal,
             recent_planner_capture: advance.planner_capture,
+            trajectory: branch.trajectory.clone(),
             combat_search,
             combat_search_history,
             comparison_search_start,
             accepted_high_loss_diagnostics,
-        });
+        };
+        child.capture_recent_trajectory(generation.saturating_add(1))?;
+        children.push(child);
     }
-    children
+    Ok(children)
 }
 
 fn owner_candidate_journal(outcome: &RunProgressOutcome) -> Result<RunProgressJournalV1, String> {
@@ -238,6 +242,7 @@ mod tests {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: vec![CombatSearchTraceSummary {
                 source: "shared-prefix".to_string(),
@@ -282,10 +287,12 @@ mod tests {
             &parent,
             sample_args(),
             RunDeadline::new(Instant::now(), None),
+            0,
             &choices,
             &plans,
             &mut next_branch_id,
-        );
+        )
+        .unwrap();
 
         assert_eq!(children.len(), 2);
         assert_eq!(children[0].policy_lane.label(), "baseline");

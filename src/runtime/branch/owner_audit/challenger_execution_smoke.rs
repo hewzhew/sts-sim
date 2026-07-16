@@ -132,6 +132,7 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
         combat_portfolio: None,
         recent_progress_journal: Default::default(),
         recent_planner_capture: Default::default(),
+        trajectory: Default::default(),
         combat_search: Vec::new(),
         combat_search_history: Vec::new(),
         comparison_search_start: None,
@@ -154,10 +155,12 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
         &root,
         args(),
         RunDeadline::new(Instant::now(), None),
+        0,
         &first_choices,
         &[first_challenger],
         &mut next_branch_id,
-    );
+    )
+    .unwrap();
     let mut challenger = first_children
         .pop()
         .expect("challenger child should execute");
@@ -189,10 +192,12 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
         &challenger,
         args(),
         RunDeadline::new(Instant::now(), None),
+        1,
         &second_choices,
         &second_plans,
         &mut next_branch_id,
-    );
+    )
+    .unwrap();
     let mut completed = second_children
         .pop()
         .expect("second challenger choice should execute");

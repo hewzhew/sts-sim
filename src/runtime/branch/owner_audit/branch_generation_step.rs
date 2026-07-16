@@ -27,7 +27,7 @@ pub(super) enum BranchWorkAdvance {
 }
 
 pub(super) fn advance_branch_work(
-    branch: Branch,
+    mut branch: Branch,
     expandable: bool,
     choices: Vec<OwnerChoice>,
     expanded_mask: Vec<bool>,
@@ -42,7 +42,11 @@ pub(super) fn advance_branch_work(
     capsule: Option<&RunCapsule>,
     human_output: bool,
 ) -> Result<BranchWorkAdvance, String> {
-    let mut artifacts = branch_observer::record_branch_node(
+    let mut artifacts = ArtifactWriteSummary::default();
+    if let Some(capsule) = capsule {
+        artifacts.merge(capsule.commit_branch_trajectory(&mut branch)?);
+    }
+    artifacts.merge(branch_observer::record_branch_node(
         args,
         generation,
         &branch,
@@ -51,7 +55,7 @@ pub(super) fn advance_branch_work(
         trace,
         combat_gap_case_dir,
         human_output,
-    )?;
+    )?);
     if !expandable {
         let outcome = branch_observer::record_stopped_branch(
             args,
@@ -76,14 +80,18 @@ pub(super) fn advance_branch_work(
     }
 
     let mut children = Vec::new();
-    for child in owner_choice_expander::expand_registered_owner(
+    for mut child in owner_choice_expander::expand_registered_owner(
         &branch,
         child_args,
         deadline,
+        generation,
         &choices,
         &policy_expansions,
         next_branch_id,
-    ) {
+    )? {
+        if let Some(capsule) = capsule {
+            artifacts.merge(capsule.commit_branch_trajectory(&mut child)?);
+        }
         let outcome = branch_observer::record_child_branch(
             args,
             generation + 1,

@@ -26,6 +26,24 @@ impl RunCutpointStore {
         self.root.join("latest_pre_combat_search.frontier.json")
     }
 
+    pub(super) fn commit_cutpoint_trajectory(&self, branch: &mut Branch) -> Result<(), String> {
+        let capsule_root = if self
+            .root
+            .file_name()
+            .is_some_and(|name| name == "cutpoints")
+        {
+            self.root
+                .parent()
+                .ok_or_else(|| format!("cutpoint root has no parent: {}", self.root.display()))?
+                .to_path_buf()
+        } else {
+            self.root.clone()
+        };
+        super::trajectory_artifact_store::TrajectoryArtifactStore::new(capsule_root)
+            .commit_branch(branch)?;
+        Ok(())
+    }
+
     pub(super) fn latest_pre_combat_manifest_path(&self) -> PathBuf {
         self.root.join("latest_pre_combat_search.manifest.json")
     }

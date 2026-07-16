@@ -1,8 +1,10 @@
 use super::accepted_high_loss_diagnostic::extend_unique_diagnostics;
 use super::owner_model::{OwnerChoice, OwnerDecision};
+use super::run_capsule::RunCapsule;
 use super::run_cutpoint_recorder::RunCutpointRecorder;
 use super::run_cutpoint_store::RunCutpointStore;
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{owners, runner, Args, Branch, BranchStatus};
 
 pub(super) fn prepare_branch_work(
@@ -11,14 +13,19 @@ pub(super) fn prepare_branch_work(
     generation: usize,
     deadline: RunDeadline,
     cutpoint_store: Option<&RunCutpointStore>,
+    capsule: Option<&RunCapsule>,
     next_branch_id: usize,
-) -> (Branch, bool, Vec<OwnerChoice>) {
+) -> Result<(Branch, bool, Vec<OwnerChoice>, ArtifactWriteSummary), String> {
+    let mut artifacts = ArtifactWriteSummary::default();
+    if let Some(capsule) = capsule {
+        artifacts.merge(capsule.commit_branch_trajectory(&mut branch)?);
+    }
     let mut cutpoints =
         RunCutpointRecorder::new(cutpoint_store, args, generation, next_branch_id, &branch);
     if let Err(error) = cutpoints.capture_owner_boundary(&branch) {
         branch.status =
             BranchStatus::AdvanceFailed(format!("cutpoint persistence failed: {error}"));
-        return (branch, false, Vec::new());
+        return Ok((branch, false, Vec::new(), artifacts));
     }
     let mut expandable = generation < args.generations && branch.status.is_expandable_now();
     let mut choices = if expandable {
@@ -40,6 +47,10 @@ pub(super) fn prepare_branch_work(
         branch.combat_portfolio = advance.combat_portfolio;
         branch.recent_progress_journal = advance.progress_journal;
         branch.recent_planner_capture = advance.planner_capture;
+        branch.capture_recent_trajectory(generation)?;
+        if let Some(capsule) = capsule {
+            artifacts.merge(capsule.commit_branch_trajectory(&mut branch)?);
+        }
         branch.combat_search = advance.combat_search;
         branch
             .combat_search_history
@@ -51,7 +62,7 @@ pub(super) fn prepare_branch_work(
         if let Err(error) = cutpoints.capture_owner_boundary(&branch) {
             branch.status =
                 BranchStatus::AdvanceFailed(format!("cutpoint persistence failed: {error}"));
-            return (branch, false, Vec::new());
+            return Ok((branch, false, Vec::new(), artifacts));
         }
         expandable = generation < args.generations && branch.status.is_expandable_now();
         choices = if expandable {
@@ -60,7 +71,7 @@ pub(super) fn prepare_branch_work(
             Vec::new()
         };
     }
-    (branch, expandable, choices)
+    Ok((branch, expandable, choices, artifacts))
 }
 
 fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
@@ -112,14 +123,16 @@ mod tests {
         let store = RunCutpointStore::new(unique_root().join("cutpoints"));
         let deadline = RunDeadline::new(std::time::Instant::now(), None);
 
-        let (_branch, expandable, choices) = prepare_branch_work(
+        let (_branch, expandable, choices, _artifacts) = prepare_branch_work(
             branch,
             args,
             args.generations,
             deadline,
             Some(&store),
+            None,
             next_branch_id,
-        );
+        )
+        .unwrap();
 
         assert!(!expandable);
         assert!(choices.is_empty());

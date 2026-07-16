@@ -243,6 +243,7 @@ mod tests {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

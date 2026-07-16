@@ -40,7 +40,7 @@ impl ContinueSliceRequest {
         let mut capsule_args;
         let mut generation_start = 0usize;
         let resume_frontier = self.resume.then(|| self.capsule_path.join("frontier.json"));
-        let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
+        let (mut frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
             let checkpoint = frontier_checkpoint::load(path)?;
             let requested_slice_generations = self
                 .overrides
@@ -62,6 +62,7 @@ impl ContinueSliceRequest {
             capsule_args = effective_args;
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
         };
+        run_capsule.prepare_trajectory_frontier(capsule_args, generation_start, &mut frontier)?;
         let artifact_writes = run_capsule.write_running_manifest(capsule_args)?;
         let request_kind = if self.resume {
             RunSliceRequestKind::ResumeFrontier

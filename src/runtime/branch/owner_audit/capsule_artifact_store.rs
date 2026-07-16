@@ -2,10 +2,12 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::{json, Value};
+use sts_simulator::ai::planner_core::stable_planner_id;
 
 use super::run_identity::{current_source_identity, SourceIdentity};
 use super::run_slice_result::{
@@ -22,17 +24,58 @@ pub(super) struct CapsuleArtifactStore {
     started_at_ms: u128,
     git_commit: Option<String>,
     source_identity: SourceIdentity,
+    trajectory_run_id: OnceLock<String>,
 }
 
 impl CapsuleArtifactStore {
     pub(super) fn new(root: PathBuf) -> Self {
         let source_identity = current_source_identity();
+        let (existing_run_id, existing_created_at_ms) = existing_manifest_identity(&root);
+        let trajectory_run_id = OnceLock::new();
+        if let Some(run_id) = existing_run_id {
+            let _ = trajectory_run_id.set(run_id);
+        }
         Self {
             root,
-            started_at_ms: now_ms(),
+            started_at_ms: existing_created_at_ms.unwrap_or_else(now_ms),
             git_commit: source_identity.git_commit.clone(),
             source_identity,
+            trajectory_run_id,
         }
+    }
+
+    pub(super) fn trajectory_run_id(&self, args: Args) -> Result<String, String> {
+        if let Some(run_id) = self.trajectory_run_id.get() {
+            return Ok(run_id.clone());
+        }
+        let root = absolute_normalized_path(&self.root)?;
+        let run_id = stable_planner_id(
+            "trajectory_run",
+            &(root, args.seed, args.ascension, self.started_at_ms),
+        )?;
+        let _ = self.trajectory_run_id.set(run_id);
+        Ok(self
+            .trajectory_run_id
+            .get()
+            .expect("trajectory run id was initialized")
+            .clone())
+    }
+
+    pub(super) fn commit_branch_trajectory(
+        &self,
+        branch: &mut Branch,
+    ) -> Result<ArtifactWriteSummary, String> {
+        super::trajectory_artifact_store::TrajectoryArtifactStore::new(self.root.clone())
+            .commit_branch(branch)
+    }
+
+    pub(super) fn verify_branch_trajectory(
+        &self,
+        run_id: &str,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        super::trajectory_artifact_store::TrajectoryArtifactStore::new(self.root.clone())
+            .verify_head(run_id, branch.trajectory.committed_head())
     }
 
     pub(super) fn root_path(&self) -> &Path {
@@ -396,12 +439,14 @@ impl CapsuleArtifactStore {
         reason: Option<&'static str>,
     ) -> Result<(), String> {
         ensure_dir(&self.root)?;
+        let trajectory_run_id = self.trajectory_run_id(args)?;
         write_json(
             &self.root.join("manifest.json"),
             run_capsule_format::manifest_value(
                 args,
                 status,
                 reason,
+                &trajectory_run_id,
                 self.started_at_ms,
                 now_ms(),
                 &self.git_commit,
@@ -505,6 +550,38 @@ impl CapsuleArtifactStore {
         )?;
         Ok(())
     }
+}
+
+fn existing_manifest_identity(root: &Path) -> (Option<String>, Option<u128>) {
+    let Ok(payload) = std::fs::read_to_string(root.join("manifest.json")) else {
+        return (None, None);
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&payload) else {
+        return (None, None);
+    };
+    let run_id = value
+        .get("trajectory_run_id")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let created_at = value
+        .get("created_at_epoch_ms")
+        .and_then(Value::as_u64)
+        .map(u128::from);
+    (run_id, created_at)
+}
+
+fn absolute_normalized_path(path: &Path) -> Result<String, String> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| format!("resolve capsule root: {error}"))?
+            .join(path)
+    };
+    Ok(absolute
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase())
 }
 
 fn accepted_combat_diagnostic_schema(path: &std::path::Path) -> String {
@@ -658,6 +735,7 @@ mod trajectory_artifact_tests {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

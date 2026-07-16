@@ -18,6 +18,7 @@ pub(super) struct PreparedGeneration {
     policy_expansions: Vec<Vec<PolicyExpansion>>,
     expanded_masks: Vec<Vec<bool>>,
     pub(super) total_expanded: usize,
+    pub(super) artifacts: ArtifactWriteSummary,
 }
 
 pub(super) enum GenerationAdvance {
@@ -44,18 +45,24 @@ pub(super) fn prepare_generation(
     generation: usize,
     deadline: RunDeadline,
     cutpoint_store: Option<&RunCutpointStore>,
+    capsule: Option<&RunCapsule>,
     next_branch_id: usize,
-) -> PreparedGeneration {
+) -> Result<PreparedGeneration, String> {
     let mut work = Vec::new();
+    let mut artifacts = ArtifactWriteSummary::default();
     while let Some(branch) = frontier.pop_front() {
-        work.push(branch_scheduler::prepare_branch_work(
-            branch,
-            args,
-            generation,
-            deadline,
-            cutpoint_store,
-            next_branch_id,
-        ));
+        let (branch, expandable, choices, branch_artifacts) =
+            branch_scheduler::prepare_branch_work(
+                branch,
+                args,
+                generation,
+                deadline,
+                cutpoint_store,
+                capsule,
+                next_branch_id,
+            )?;
+        artifacts.merge(branch_artifacts);
+        work.push((branch, expandable, choices));
     }
     let (policy_expansions, expanded_masks) = policy_expansion_plans(&work, args.max_branches);
     let total_expanded = expanded_masks
@@ -63,12 +70,13 @@ pub(super) fn prepare_generation(
         .flatten()
         .filter(|expanded| **expanded)
         .count();
-    PreparedGeneration {
+    Ok(PreparedGeneration {
         work,
         policy_expansions,
         expanded_masks,
         total_expanded,
-    }
+        artifacts,
+    })
 }
 
 fn policy_expansion_plans(
@@ -266,6 +274,7 @@ mod tests {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

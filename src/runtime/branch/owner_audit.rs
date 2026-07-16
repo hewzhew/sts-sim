@@ -30,6 +30,8 @@ mod branch_runtime;
 mod branch_scheduler;
 #[path = "owner_audit/branch_status_view.rs"]
 mod branch_status_view;
+#[path = "owner_audit/branch_trajectory.rs"]
+mod branch_trajectory;
 #[path = "owner_audit/campfire_owner.rs"]
 mod campfire_owner;
 #[path = "owner_audit/candidate_ir_adapter.rs"]
@@ -168,6 +170,8 @@ mod shop_tiny_owner;
 mod trace;
 #[path = "owner_audit/trace_format.rs"]
 mod trace_format;
+#[path = "owner_audit/trajectory_artifact_store.rs"]
+mod trajectory_artifact_store;
 #[path = "owner_audit/trajectory_evidence_store.rs"]
 mod trajectory_evidence_store;
 #[path = "owner_audit/trajectory_snapshot.rs"]
@@ -314,23 +318,41 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0]["schema"], "branch_tiny_capsule_ledger_event_v0");
-        assert_eq!(rows[0]["event"], "slice_started");
-        assert_eq!(rows[0]["request_kind"], "start");
-        assert_eq!(rows[0]["seed"], 123);
-        assert_eq!(rows[0]["generation_start"], 0);
-        assert!(rows[0]["generation_end"].is_null());
-        assert!(rows[0]["artifact_refs"]
+        let started = rows
+            .iter()
+            .find(|row| row["event"] == "slice_started")
+            .unwrap();
+        let committed = rows
+            .iter()
+            .find(|row| row["event"] == "trajectory_segment_committed")
+            .unwrap();
+        let finished = rows
+            .iter()
+            .find(|row| row["event"] == "slice_finished")
+            .unwrap();
+        assert_eq!(started["schema"], "branch_tiny_capsule_ledger_event_v0");
+        assert_eq!(started["request_kind"], "start");
+        assert_eq!(started["seed"], 123);
+        assert_eq!(started["generation_start"], 0);
+        assert!(started["generation_end"].is_null());
+        assert!(started["artifact_refs"]
             .as_array()
             .unwrap()
             .iter()
             .any(|artifact| artifact["kind"] == "manifest"));
-        assert_eq!(rows[1]["event"], "slice_finished");
-        assert_eq!(rows[1]["seed"], 123);
-        assert_eq!(rows[1]["generation_start"], 0);
-        assert_eq!(rows[1]["generation_end"], 0);
-        assert!(rows[1]["artifact_refs"]
+        assert_eq!(
+            committed["schema"],
+            "trajectory_segment_committed_ledger_event_v1"
+        );
+        assert_eq!(committed["depth"], 0);
+        assert!(committed["segment_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("trajectory_segment:"));
+        assert_eq!(finished["seed"], 123);
+        assert_eq!(finished["generation_start"], 0);
+        assert_eq!(finished["generation_end"], 0);
+        assert!(finished["artifact_refs"]
             .as_array()
             .unwrap()
             .iter()
@@ -338,6 +360,11 @@ mod tests {
                 artifact["kind"] == "frontier"
                     && artifact["schema"] == "branch_tiny_frontier_checkpoint"
             }));
+        assert!(finished["artifact_refs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["kind"] == "trajectory_segment"));
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -37,9 +37,13 @@ impl<'a> RunStopRecorder<'a> {
         args: Args,
         generation: usize,
         next_branch_id: usize,
-        frontier: &VecDeque<Branch>,
+        frontier: &mut VecDeque<Branch>,
         deadline: &RunDeadline,
     ) -> Result<(), String> {
+        if let Some(capsule) = self.capsule {
+            self.artifact_writes
+                .merge(capsule.commit_frontier_trajectories(frontier)?);
+        }
         let artifacts = run_persistence::save_context_wall_stop(
             self.frontier_checkpoint_path,
             self.resume_frontier,
@@ -60,9 +64,11 @@ impl<'a> RunStopRecorder<'a> {
         &mut self,
         args: Args,
         generation: usize,
-        branch: &Branch,
+        branch: &mut Branch,
     ) -> Result<(), String> {
         if let Some(capsule) = self.capsule {
+            self.artifact_writes
+                .merge(capsule.commit_branch_trajectory(branch)?);
             capsule.save_result(args, generation, branch)?;
             self.artifact_writes
                 .merge(capsule.artifact_writes(super::run_capsule::RunCapsuleSave::Result));
@@ -81,9 +87,11 @@ impl<'a> RunStopRecorder<'a> {
         args: Args,
         generation: usize,
         next_branch_id: usize,
-        frontier: &VecDeque<Branch>,
+        frontier: &mut VecDeque<Branch>,
     ) -> Result<ArtifactWriteSummary, String> {
         if let Some(capsule) = self.capsule.filter(|_| !self.frontier_saved) {
+            self.artifact_writes
+                .merge(capsule.commit_frontier_trajectories(frontier)?);
             let save = capsule.save_recovery(args, generation, next_branch_id, frontier)?;
             self.artifact_writes.merge(capsule.artifact_writes(save));
             run_persistence::print_capsule_save(save, capsule, self.human_output);

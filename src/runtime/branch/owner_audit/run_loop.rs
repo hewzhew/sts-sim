@@ -62,7 +62,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 capsule_args,
                 generation,
                 next_branch_id,
-                &frontier,
+                &mut frontier,
                 &deadline,
             )?;
             let summary = frontier_summary_from_branches(frontier.iter());
@@ -78,8 +78,10 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             generation,
             deadline,
             cutpoint_store.as_ref(),
+            run_capsule.as_ref(),
             next_branch_id,
-        );
+        )?;
+        artifact_writes.merge(prepared.artifacts.clone());
         if prepared.total_expanded > 0
             && deadline.would_cap_core_search(args, prepared.total_expanded)
         {
@@ -88,7 +90,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 capsule_args,
                 generation,
                 next_branch_id,
-                &frontier,
+                &mut frontier,
                 &deadline,
             )?;
             let summary = frontier_summary_from_branches(frontier.iter());
@@ -101,7 +103,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             break;
         }
         let child_args = deadline.cap_args(args, prepared.total_expanded.max(1));
-        let (mut next, generation_result) = match branch_generation::advance_generation(
+        let (mut next, mut generation_result) = match branch_generation::advance_generation(
             prepared,
             args,
             child_args,
@@ -139,7 +141,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         };
         branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
-            if let Some((result_generation, branch)) = generation_result.as_ref() {
+            if let Some((result_generation, branch)) = generation_result.as_mut() {
                 stop_recorder.save_generation_result(capsule_args, *result_generation, branch)?;
             }
             if let Some((result_generation, branch)) = generation_result {
@@ -178,7 +180,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 capsule_args,
                 generation + 1,
                 next_branch_id,
-                &frontier,
+                &mut frontier,
                 &deadline,
             )?;
             break;
@@ -194,7 +196,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 capsule_args,
                 generation + 1,
                 next_branch_id,
-                &frontier,
+                &mut frontier,
                 &deadline,
             )?;
             break;
@@ -207,7 +209,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         capsule_args,
         last_generation,
         next_branch_id,
-        &frontier,
+        &mut frontier,
     )?);
     let summary = frontier_summary_from_branches(frontier.iter());
     let stop = stop.unwrap_or_else(|| {

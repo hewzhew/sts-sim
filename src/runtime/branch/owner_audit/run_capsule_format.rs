@@ -16,6 +16,7 @@ pub(super) fn manifest_value(
     args: Args,
     status: &'static str,
     reason: Option<&'static str>,
+    trajectory_run_id: &str,
     created_at_ms: u128,
     updated_at_ms: u128,
     git_commit: &Option<String>,
@@ -27,6 +28,7 @@ pub(super) fn manifest_value(
         "ascension": args.ascension,
         "status": status,
         "reason": reason,
+        "trajectory_run_id": trajectory_run_id,
         "created_at_epoch_ms": created_at_ms,
         "updated_at_epoch_ms": updated_at_ms,
         "git_commit": git_commit,
@@ -410,6 +412,7 @@ mod tests {
             combat_portfolio: None,
             recent_progress_journal: Default::default(),
             recent_planner_capture: Default::default(),
+            trajectory: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,
@@ -582,6 +585,7 @@ mod tests {
             sample_args(),
             "running",
             None,
+            "trajectory_run:test",
             10,
             20,
             &Some("abc123".to_string()),
@@ -592,6 +596,7 @@ mod tests {
         );
 
         assert_eq!(value["run_contract"]["game"]["seed"], 99);
+        assert_eq!(value["trajectory_run_id"], "trajectory_run:test");
         assert_eq!(value["run_identity"]["run_contract"]["game"]["seed"], 99);
         assert_eq!(value["source_identity"]["git_commit"], "abc123");
         assert_eq!(value["source_identity"]["git_dirty"], true);

@@ -61,7 +61,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     let started = Instant::now();
     let mut generation_start = 0usize;
     let mut capsule_args;
-    let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
+    let (mut frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
         let (checkpoint, frontier, next_branch_id) = load_resume_frontier(path)?;
         let requested_slice_generations =
             overrides.generations.unwrap_or(checkpoint.args.generations);
@@ -82,6 +82,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     };
     let mut artifact_writes = ArtifactWriteSummary::default();
     if let Some(capsule) = run_capsule.as_ref() {
+        capsule.prepare_trajectory_frontier(capsule_args, generation_start, &mut frontier)?;
         artifact_writes.merge(capsule.write_running_manifest(capsule_args)?);
     }
     Ok(RunStartup::Ready(RunSliceRequest {
@@ -229,8 +230,10 @@ mod tests {
             args.generations,
             deadline,
             Some(&store),
+            None,
             next_branch_id,
-        );
+        )
+        .unwrap();
         let path = store.boss_relic_frontier_path(2, 32);
         let (checkpoint, restored_frontier, _) = load_resume_frontier(&path).unwrap();
         let restored = restored_frontier.front().unwrap();
