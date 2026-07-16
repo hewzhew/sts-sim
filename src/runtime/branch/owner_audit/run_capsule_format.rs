@@ -81,6 +81,7 @@ pub(super) fn branch_summary_value(
         .filter(|text| !text.is_empty());
     let (next_recommended_command, next_recommended_reason) =
         next_recommendation(capsule_path, args, &branch.status, combat_case);
+    let trajectory_snapshot = projected_trajectory_snapshot(branch, trajectory_evaluation);
     let mut value = json!({
         "schema": "branch_tiny_capsule_summary",
         "seed": args.seed,
@@ -94,7 +95,7 @@ pub(super) fn branch_summary_value(
         "policy_lane": &branch.policy_lane,
         "trajectory_head": branch.trajectory.committed_head(),
         "trajectory_projection_index": "trajectory/projection_index.json",
-        "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
+        "trajectory_snapshot": trajectory_snapshot,
         "trajectory_evaluation": trajectory_evaluation,
         "status": status,
         "act": run.act_num,
@@ -241,13 +242,14 @@ pub(super) fn result_value(
     trajectory_evaluation: &FrontierTrajectoryEvaluation,
 ) -> Value {
     let run = &branch.session.run_state;
+    let trajectory_snapshot = projected_trajectory_snapshot(branch, trajectory_evaluation);
     json!({
         "schema": "branch_tiny_run_result_v4",
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
-        "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
+        "trajectory_snapshot": trajectory_snapshot,
         "trajectory_evaluation": trajectory_evaluation,
         "trajectory_head": branch.trajectory.committed_head(),
         "trajectory_projection_index": "trajectory/projection_index.json",
@@ -280,6 +282,18 @@ pub(super) fn result_value(
         ),
         "failed_search": branch.combat_search.last(),
     })
+}
+
+fn projected_trajectory_snapshot(
+    branch: &Branch,
+    evaluation: &FrontierTrajectoryEvaluation,
+) -> sts_simulator::ai::strategy::trajectory_comparison::TrajectorySnapshot {
+    evaluation
+        .snapshots
+        .iter()
+        .find(|snapshot| snapshot.lane == branch.policy_lane.label())
+        .cloned()
+        .unwrap_or_else(|| trajectory_snapshot::trajectory_snapshot(branch))
 }
 
 pub(super) fn terminal_results_value(entries: Vec<Value>) -> Value {
@@ -370,7 +384,8 @@ mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
     use sts_simulator::ai::strategy::trajectory_comparison::{
-        TrajectoryPairEligibility, TrajectorySearchComparabilityStatus,
+        TrajectoryDeployabilityEvidence, TrajectoryPairEligibility,
+        TrajectorySearchComparabilityStatus,
     };
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
@@ -504,6 +519,49 @@ mod tests {
         );
         assert!(value.get("recent_progress_journal").is_none());
         assert!(value.get("recent_planner_capture").is_none());
+    }
+
+    #[test]
+    fn summary_and_result_reuse_the_projected_lane_snapshot() {
+        let branch = sample_branch();
+        let mut trajectory_evaluation = evaluation(vec![branch.clone()]);
+        trajectory_evaluation.snapshots[0].deployability =
+            TrajectoryDeployabilityEvidence::Comparable {
+                claimed_answers: 3,
+                timely_playable: 2,
+            };
+
+        let summary = branch_summary_value(
+            Path::new("target/test-capsule"),
+            sample_args(),
+            1,
+            &branch,
+            &Value::Null,
+            &json!([]),
+            &trajectory_evaluation,
+            "running",
+            None,
+            None,
+        );
+        let result = result_value(
+            1,
+            &branch,
+            Value::Null,
+            Value::Array(Vec::new()),
+            &trajectory_evaluation,
+        );
+
+        assert_eq!(
+            summary["trajectory_snapshot"]["deployability"],
+            json!(TrajectoryDeployabilityEvidence::Comparable {
+                claimed_answers: 3,
+                timely_playable: 2,
+            })
+        );
+        assert_eq!(
+            result["trajectory_snapshot"]["deployability"],
+            summary["trajectory_snapshot"]["deployability"]
+        );
     }
 
     #[test]
