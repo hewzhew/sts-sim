@@ -174,6 +174,8 @@ mod trace_format;
 mod trajectory_artifact_store;
 #[path = "owner_audit/trajectory_evidence_store.rs"]
 mod trajectory_evidence_store;
+#[path = "owner_audit/trajectory_projector.rs"]
+mod trajectory_projector;
 #[path = "owner_audit/trajectory_snapshot.rs"]
 mod trajectory_snapshot;
 

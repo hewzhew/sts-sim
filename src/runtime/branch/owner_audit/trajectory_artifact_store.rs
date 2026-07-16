@@ -5,9 +5,12 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use sts_simulator::ai::planner_core::{LegalCandidateSet, PlannerObservation};
 use sts_simulator::runtime::branch::{
     validate_run_trajectory_segment_id_v1, ArtifactKind, ArtifactRef, ArtifactWriteSummary,
-    RunTrajectoryHeadV1, RunTrajectorySegmentV1, RUN_TRAJECTORY_SEGMENT_SCHEMA_NAME,
+    RunTrajectoryHeadV1, RunTrajectoryReconstructionV1, RunTrajectorySegmentV1,
+    RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_NAME, RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_VERSION,
+    RUN_TRAJECTORY_SEGMENT_SCHEMA_NAME,
 };
 
 use super::branch_model::Branch;
@@ -143,6 +146,37 @@ impl TrajectoryArtifactStore {
 
     pub(super) fn read_segment(&self, segment_id: &str) -> Result<RunTrajectorySegmentV1, String> {
         read_json(&self.segment_path(segment_id)?)
+    }
+
+    pub(super) fn read_observation(&self, id: &str) -> Result<PlannerObservation, String> {
+        read_json(&self.observation_path(id)?)
+    }
+
+    pub(super) fn read_candidate_set(&self, id: &str) -> Result<LegalCandidateSet, String> {
+        read_json(&self.candidate_set_path(id)?)
+    }
+
+    pub(super) fn reconstruct(
+        &self,
+        run_id: &str,
+        head: &RunTrajectoryHeadV1,
+    ) -> Result<RunTrajectoryReconstructionV1, String> {
+        self.verify_head(run_id, Some(head))?;
+        let mut reversed = Vec::with_capacity(head.depth.saturating_add(1) as usize);
+        let mut next_id = Some(head.segment_id.clone());
+        while let Some(segment_id) = next_id {
+            let segment = self.read_segment(&segment_id)?;
+            next_id = segment.parent_segment_id.clone();
+            reversed.push(segment);
+        }
+        reversed.reverse();
+        Ok(RunTrajectoryReconstructionV1 {
+            schema_name: RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_NAME.to_string(),
+            schema_version: RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_VERSION,
+            run_id: run_id.to_string(),
+            head: head.clone(),
+            segments: reversed,
+        })
     }
 
     fn observation_path(&self, id: &str) -> Result<PathBuf, String> {

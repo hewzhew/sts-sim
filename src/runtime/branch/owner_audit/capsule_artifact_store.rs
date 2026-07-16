@@ -78,6 +78,21 @@ impl CapsuleArtifactStore {
             .verify_head(run_id, branch.trajectory.committed_head())
     }
 
+    pub(super) fn project_branch_trajectory(
+        &self,
+        branch: &Branch,
+    ) -> Result<Option<super::trajectory_projector::RunTrajectoryProjectionBundleV1>, String> {
+        let Some(run_id) = branch.trajectory.run_id() else {
+            return Ok(None);
+        };
+        let Some(head) = branch.trajectory.committed_head() else {
+            return Ok(None);
+        };
+        let store =
+            super::trajectory_artifact_store::TrajectoryArtifactStore::new(self.root.clone());
+        super::trajectory_projector::project_trajectory(&store, run_id, head).map(Some)
+    }
+
     pub(super) fn root_path(&self) -> &Path {
         &self.root
     }

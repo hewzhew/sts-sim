@@ -67,6 +67,13 @@ impl RunCapsule {
         Ok(summary)
     }
 
+    pub(super) fn project_branch_trajectory(
+        &self,
+        branch: &Branch,
+    ) -> Result<Option<super::trajectory_projector::RunTrajectoryProjectionBundleV1>, String> {
+        self.store.project_branch_trajectory(branch)
+    }
+
     pub(super) fn write_running_manifest(
         &self,
         args: Args,
@@ -297,6 +304,12 @@ mod tests {
             .store
             .verify_branch_trajectory(&run_id, resumed.front().unwrap())
             .unwrap();
+        let projection = resumed_capsule
+            .project_branch_trajectory(resumed.front().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(projection.reconstruction.segments.len(), 2);
+        assert_eq!(projection.behavior.events.len(), 2);
 
         let manifest: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())

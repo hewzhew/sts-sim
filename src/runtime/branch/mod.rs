@@ -7,6 +7,7 @@ mod panel;
 mod slice_result;
 mod status;
 mod trajectory_evidence;
+mod trajectory_projection;
 
 pub use artifact_store::*;
 pub use capsule_reuse::*;
@@ -17,3 +18,4 @@ pub use panel::*;
 pub use slice_result::*;
 pub use status::*;
 pub use trajectory_evidence::*;
+pub use trajectory_projection::*;
