@@ -2,11 +2,19 @@
 
 ## Status
 
-Accepted implementation direction. The 2026-07-16 live calibration proved
+Implemented on `codex/durable-trajectory-evidence`. The 2026-07-16 live calibration proved
 that planner boundary visits and committed progress records pair faithfully
 inside one bounded drive, but also proved that the evidence is not durable
 across capsule slices. This migration replaces the current recent-only handoff
 with an immutable trajectory-segment DAG owned by the capsule artifact store.
+
+The migration now covers normal advance, owner expansion, branch forks,
+pre-combat cutpoints, terminal branches, progress-budget stops, wall-deadline
+pauses, frontier checkpoints, and multi-slice resume. Capsules write immutable
+reconstruction, behavior, and raw-horizon outcome projections under
+`trajectory/projections`; `projection_index.json` identifies the current
+branch heads. Result/summary/trace schema v4 references durable heads and no
+longer dual-writes recent journal/capture payloads.
 
 This is an authority migration, not a new strategy feature. It must not change
 candidate enumeration, policy selection, combat search, or run outcomes.
@@ -75,6 +83,7 @@ RunTrajectorySegmentV1:
   segment_id
   run_id
   branch_id
+  policy_lane
   parent_segment_id
   generation
   depth
@@ -260,4 +269,3 @@ The migration is accepted only when:
 - behavior and outcome artifacts rebuild solely from committed segments;
 - the full library and architecture-boundary suites pass;
 - the old trace path is no longer required for evidence completeness.
-

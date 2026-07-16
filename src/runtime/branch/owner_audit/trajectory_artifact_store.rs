@@ -481,4 +481,32 @@ mod tests {
         );
         let _ = fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn verification_rejects_a_hash_mismatched_checkpoint_head() {
+        let root = std::env::temp_dir().join(format!(
+            "trajectory_artifact_corrupt_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let store = TrajectoryArtifactStore::new(root.clone());
+        let mut branch = evidence_branch();
+        store.commit_branch(&mut branch).unwrap();
+        let head = branch.trajectory.committed_head().unwrap().clone();
+        let path = store.segment_path(&head.segment_id).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        value["generation"] = serde_json::json!(99);
+        fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let error = store
+            .verify_head("trajectory_run:test", Some(&head))
+            .unwrap_err();
+        assert!(error.contains("segment integrity gap"));
+        let _ = fs::remove_dir_all(root);
+    }
 }

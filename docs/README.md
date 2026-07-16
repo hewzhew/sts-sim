@@ -9,7 +9,7 @@ notes are not kept searchable; use git history for archaeology.
 2. [RUNBOOK.md](RUNBOOK.md): maintained commands and local verification.
 3. [TESTING.md](TESTING.md): test ownership, cleanup, and review standards.
 
-## Review Drafts
+## Maintained Designs
 
 - [Durable Run Panel Architecture](design/2026-07-07-durable-run-panel-architecture-design.md):
   proposed scheduler/capsule contract for replacing rerun-style gap panels.
@@ -19,6 +19,9 @@ notes are not kept searchable; use git history for archaeology.
 - [Atomic Run Decision Execution and REPL Retirement](design/2026-07-15-atomic-run-decision-execution-design.md):
   active deletion-driven migration from human command transactions to typed
   jobs, atomic progress steps, and an append-only run journal.
+- [Durable Trajectory Evidence Migration](design/2026-07-16-durable-trajectory-evidence-migration.md):
+  implemented capsule segment DAG, verified checkpoint heads, and rebuildable
+  behavior/outcome projections across bounded slices.
 
 ## Rules
 

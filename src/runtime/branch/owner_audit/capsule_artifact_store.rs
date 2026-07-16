@@ -839,6 +839,15 @@ mod trajectory_artifact_tests {
             .committed_head()
             .unwrap()
             .clone();
+        let mut uninterrupted = frontier.front().unwrap().clone();
+        uninterrupted.capture_recent_trajectory(1).unwrap();
+        let uninterrupted_second_segment_id = uninterrupted
+            .trajectory
+            .pending_front()
+            .unwrap()
+            .segment
+            .segment_id
+            .clone();
         capsule
             .save_paused_recovery(args, 0, next_branch_id, &frontier, "test_slice_end")
             .unwrap();
@@ -870,7 +879,10 @@ mod trajectory_artifact_tests {
             .committed_head()
             .unwrap();
         assert_eq!(second_head.depth, first_head.depth + 1);
-        assert_ne!(second_head.segment_id, first_head.segment_id);
+        assert_eq!(
+            second_head.segment_id, uninterrupted_second_segment_id,
+            "splitting the same evidence across a resume must not change its segment identity"
+        );
         let resumed_store = CapsuleArtifactStore::new(root.clone());
         let run_id = resumed_store.trajectory_run_id(args).unwrap();
         resumed_store

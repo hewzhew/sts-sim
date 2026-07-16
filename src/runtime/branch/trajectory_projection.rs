@@ -7,7 +7,10 @@ use crate::ai::planner_core::{
 };
 use crate::eval::run_control::{RunCombatResolutionKindV1, RunDecisionSelectionSourceV1};
 
-use super::{RunTrajectoryHeadV1, RunTrajectorySegmentDispositionV1, RunTrajectorySegmentV1};
+use super::{
+    RunTrajectoryHeadV1, RunTrajectoryPolicyLaneV1, RunTrajectorySegmentDispositionV1,
+    RunTrajectorySegmentV1,
+};
 
 pub const RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_NAME: &str = "RunTrajectoryReconstruction";
 pub const RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_VERSION: u32 = 1;
@@ -47,6 +50,7 @@ pub struct RunTrajectoryBehaviorEventV1 {
     pub segment_depth: u64,
     pub journal_ordinal: usize,
     pub sequence: u64,
+    pub policy_lane: RunTrajectoryPolicyLaneV1,
     pub decision_step: u64,
     pub decision_id: String,
     pub observation_id: String,

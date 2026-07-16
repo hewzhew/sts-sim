@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
+use sts_simulator::runtime::branch::RunTrajectoryPolicyLaneV1;
 
 const MAX_CHALLENGER_IDENTITIES: u8 = 2;
 
@@ -45,6 +46,15 @@ impl BranchPolicyLane {
         match self {
             Self::Baseline { .. } => "baseline".to_string(),
             Self::Challenger { policy } => format!("challenger-{}", policy.lane_id),
+        }
+    }
+
+    pub(super) fn trajectory_lane(&self) -> RunTrajectoryPolicyLaneV1 {
+        match self {
+            Self::Baseline { .. } => RunTrajectoryPolicyLaneV1::Baseline,
+            Self::Challenger { policy } => RunTrajectoryPolicyLaneV1::Challenger {
+                lane_id: policy.lane_id,
+            },
         }
     }
 }

@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use sts_simulator::eval::run_control::{PlannerBoundaryCaptureSegmentV1, RunProgressJournalV1};
 use sts_simulator::runtime::branch::{
-    build_run_trajectory_segment_v1, RunTrajectoryHeadV1, RunTrajectorySegmentDispositionV1,
-    RunTrajectorySegmentDraftV1,
+    build_run_trajectory_segment_v1, RunTrajectoryHeadV1, RunTrajectoryPolicyLaneV1,
+    RunTrajectorySegmentDispositionV1, RunTrajectorySegmentDraftV1,
 };
 
 use super::branch_model::{BranchStatus, TerminalOutcome};
@@ -28,6 +28,7 @@ impl BranchTrajectoryState {
         &mut self,
         run_id: &str,
         branch_id: usize,
+        policy_lane: RunTrajectoryPolicyLaneV1,
         generation: usize,
         status: &BranchStatus,
         journal: &RunProgressJournalV1,
@@ -42,12 +43,13 @@ impl BranchTrajectoryState {
             Some(_) => return Ok(()),
             None => self.run_id = Some(run_id.to_string()),
         }
-        self.append_recent(branch_id, generation, status, journal, capture)
+        self.append_recent(branch_id, policy_lane, generation, status, journal, capture)
     }
 
     pub(super) fn append_recent(
         &mut self,
         branch_id: usize,
+        policy_lane: RunTrajectoryPolicyLaneV1,
         generation: usize,
         status: &BranchStatus,
         journal: &RunProgressJournalV1,
@@ -64,6 +66,7 @@ impl BranchTrajectoryState {
         let draft = build_run_trajectory_segment_v1(
             run_id,
             branch_id as u64,
+            policy_lane,
             generation as u64,
             parent.as_ref(),
             disposition(status),

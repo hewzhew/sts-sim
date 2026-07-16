@@ -39,6 +39,7 @@ impl Branch {
         self.trajectory.bind_run(
             run_id,
             self.id,
+            self.policy_lane.trajectory_lane(),
             generation,
             &self.status,
             &self.recent_progress_journal,
@@ -49,6 +50,7 @@ impl Branch {
     pub(super) fn capture_recent_trajectory(&mut self, generation: usize) -> Result<(), String> {
         self.trajectory.append_recent(
             self.id,
+            self.policy_lane.trajectory_lane(),
             generation,
             &self.status,
             &self.recent_progress_journal,

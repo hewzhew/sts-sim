@@ -164,6 +164,7 @@ fn project_behavior_events(
             segment_depth: loaded.segment_depth,
             journal_ordinal: *journal_ordinal,
             sequence,
+            policy_lane: segment.policy_lane,
             decision_step: loaded.occurrence.decision_step,
             decision_id: loaded.candidate_set.decision_id.clone(),
             observation_id: loaded.observation.observation_id.clone(),

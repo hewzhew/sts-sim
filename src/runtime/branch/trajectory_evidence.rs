@@ -20,6 +20,13 @@ pub enum RunTrajectorySegmentDispositionV1 {
     Stopped,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RunTrajectoryPolicyLaneV1 {
+    Baseline,
+    Challenger { lane_id: u8 },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunTrajectoryHeadV1 {
@@ -47,6 +54,7 @@ pub struct RunTrajectorySegmentV1 {
     pub segment_id: String,
     pub run_id: String,
     pub branch_id: u64,
+    pub policy_lane: RunTrajectoryPolicyLaneV1,
     pub parent_segment_id: Option<String>,
     pub generation: u64,
     pub depth: u64,
@@ -142,6 +150,7 @@ impl std::error::Error for RunTrajectoryIntegrityGapV1 {}
 pub fn build_run_trajectory_segment_v1(
     run_id: &str,
     branch_id: u64,
+    policy_lane: RunTrajectoryPolicyLaneV1,
     generation: u64,
     parent_head: Option<&RunTrajectoryHeadV1>,
     disposition: RunTrajectorySegmentDispositionV1,
@@ -182,6 +191,7 @@ pub fn build_run_trajectory_segment_v1(
             &(
                 run_id,
                 branch_id,
+                policy_lane,
                 generation,
                 parent_head.map(|head| head.segment_id.as_str()),
                 index,
@@ -215,6 +225,7 @@ pub fn build_run_trajectory_segment_v1(
         segment_id: String::new(),
         run_id: run_id.to_string(),
         branch_id,
+        policy_lane,
         parent_segment_id: parent_head.map(|head| head.segment_id.clone()),
         generation,
         depth,
@@ -484,7 +495,8 @@ fn validate_progress_pairing(
 mod tests {
     use super::*;
     use crate::eval::run_control::{
-        build_decision_surface, capture_planner_boundary_ticket_v1, RunControlSession,
+        build_decision_surface, capture_planner_boundary_ticket_v1,
+        capture_planner_boundary_yield_v1, PlannerBoundaryYieldKindV1, RunControlSession,
     };
 
     fn selected_evidence() -> (RunProgressJournalV1, PlannerBoundaryCaptureSegmentV1) {
@@ -510,6 +522,7 @@ mod tests {
         let first = build_run_trajectory_segment_v1(
             "run:test",
             7,
+            RunTrajectoryPolicyLaneV1::Baseline,
             3,
             None,
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -521,6 +534,7 @@ mod tests {
         let second = build_run_trajectory_segment_v1(
             "run:test",
             7,
+            RunTrajectoryPolicyLaneV1::Baseline,
             3,
             None,
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -544,6 +558,7 @@ mod tests {
         let parent = build_run_trajectory_segment_v1(
             "run:test",
             1,
+            RunTrajectoryPolicyLaneV1::Baseline,
             0,
             None,
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -555,6 +570,7 @@ mod tests {
         let child = build_run_trajectory_segment_v1(
             "run:test",
             2,
+            RunTrajectoryPolicyLaneV1::Baseline,
             1,
             Some(&parent.head()),
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -581,6 +597,7 @@ mod tests {
         let error = build_run_trajectory_segment_v1(
             "run:test",
             1,
+            RunTrajectoryPolicyLaneV1::Baseline,
             0,
             None,
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -600,6 +617,7 @@ mod tests {
         let segment = build_run_trajectory_segment_v1(
             "run:test",
             1,
+            RunTrajectoryPolicyLaneV1::Baseline,
             0,
             None,
             RunTrajectorySegmentDispositionV1::Resumable,
@@ -609,5 +627,36 @@ mod tests {
         .unwrap();
 
         assert!(segment.is_none());
+    }
+
+    #[test]
+    fn progress_budget_yield_is_a_durable_occurrence_without_a_fake_mutation() {
+        let session = RunControlSession::new(Default::default());
+        let capture = capture_planner_boundary_yield_v1(
+            &session,
+            PlannerBoundaryYieldKindV1::ProgressBudgetExhausted,
+        )
+        .unwrap();
+        let draft = build_run_trajectory_segment_v1(
+            "run:test",
+            1,
+            RunTrajectoryPolicyLaneV1::Baseline,
+            0,
+            None,
+            RunTrajectorySegmentDispositionV1::Stopped,
+            &RunProgressJournalV1::default(),
+            &capture,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(draft.segment.progress_journal.is_empty());
+        assert_eq!(draft.segment.boundary_visit_occurrences.len(), 1);
+        assert!(matches!(
+            draft.segment.boundary_visit_occurrences[0].outcome,
+            PlannerBoundaryVisitOutcomeV1::Yielded {
+                yield_kind: PlannerBoundaryYieldKindV1::ProgressBudgetExhausted
+            }
+        ));
     }
 }

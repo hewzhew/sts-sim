@@ -156,14 +156,23 @@ Checkpoint owns exact resume state. State owns scheduling data. Journal owns
 decision facts and candidate identity. Report is a cheap projection.
 Diagnostics are opt-in sidecars for large or narrow-use explanations.
 
-`SessionTraceV1` is the current typed decision-history carrier for interactive
-and automated run-control traces. Outcome-learned planner capture extends that
-one authority: observations and legal-candidate payloads live in deduplicated,
-content-addressed trace tables; step annotations contain behavior events that
-reference those payloads; outcome attachments reference the behavior event.
-These events are explicitly behavior-policy evidence, never teacher labels.
-Dataset and coverage exports are rebuildable projections and must not become a
-second decision-history authority.
+Capsule campaign history is an immutable `RunTrajectorySegmentV1` DAG. Each
+segment contains one ordered `RunProgressJournalV1` plus planner-boundary visit
+occurrences; large observations and legal-candidate sets live once in
+content-addressed payload tables. Branch checkpoints persist only a verified
+trajectory head id and depth. Every pending segment must be committed before a
+frontier, cutpoint, terminal result, or soft-pause checkpoint can be written.
+
+Behavior events and raw-horizon outcomes are read-only projections rebuilt by
+walking a durable head to its root. A resumable or prematurely stopped head
+produces typed censored outcomes, never a fabricated defeat. These events are
+behavior-policy evidence, not teacher labels.
+
+`SessionTraceV1` remains available for interactive trace consumers, but it is
+not capsule campaign-history authority. The optional `trace.jsonl` output may
+render durable head references and can truncate without losing capsule
+evidence. Result, summary, coverage, behavior, and outcome files are
+rebuildable projections and must not become a second decision-history owner.
 
 Default reports should reference state, journal, checkpoint, and diagnostics
 instead of inlining large payloads. Compression is not a license to store
