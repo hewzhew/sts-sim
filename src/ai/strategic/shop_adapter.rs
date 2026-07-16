@@ -1,10 +1,10 @@
 use super::{
-    add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
-    add_snecko_cost_conversion_delta_v1, add_startup_profile_pressure_to_ledger, compile_decision,
-    ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole, LedgerDelta,
-    OpportunityCost, PressureHorizon, PressureKind, PressureLedger, RunDebtCandidateSignalsV1,
-    StrategicBossTax, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
-    StrategicSnapshot, VerdictHint,
+    add_boss_matchup_shadow_pressure_to_ledger, add_run_debt_candidate_deltas_v1,
+    add_run_debt_pressure_to_ledger, add_snecko_cost_conversion_delta_v1,
+    add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
+    CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureHorizon,
+    PressureKind, PressureLedger, RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt,
+    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, CardComponentSignalContextV1,
@@ -20,8 +20,8 @@ use crate::ai::decision_tags_v1::{
 };
 use crate::ai::deck_startup_profile_v1::startup_energy_candidate_discounted_by_snecko_v1;
 use crate::ai::shop_policy_v1::{
-    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
-    ShopThreatWindowV1,
+    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseSignalV1,
+    ShopPurchaseTargetV1, ShopThreatWindowV1,
 };
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -30,6 +30,7 @@ use crate::state::rewards::RewardCard;
 pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::StrategicDecisionTrace {
     let snapshot = snapshot_from_shop_context(context);
     let mut ledger = ledger_from_snapshot(&snapshot);
+    add_boss_matchup_shadow_pressure_to_ledger(&mut ledger, &context.boss_matchup_pressures);
     add_shop_upgrade_pressure_to_ledger(context, &mut ledger);
     add_startup_profile_pressure_to_ledger(&mut ledger, &context.startup);
     add_run_debt_pressure_to_ledger(&mut ledger, &context.run_debt);
@@ -405,18 +406,41 @@ fn add_shop_card_purchase_deltas(
     candidate: &ShopCandidateEvidenceV1,
     delta: &mut CandidateDelta,
 ) {
-    if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) {
-        delta.role = CandidateRole::BossAnswer;
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
-            amount: SHOP_CARD_BOSS_ANSWER_SIGNAL,
-            reason: TAG_COLLECTOR_ANSWER.to_string(),
-        });
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::Block),
-            amount: 0.20,
-            reason: "collector_answer_reduces_minion_or_debuff_pressure".to_string(),
-        });
+    if candidate
+        .signals
+        .contains(&ShopPurchaseSignalV1::BossAnswer)
+    {
+        match context.need.boss {
+            Some(EncounterId::Collector)
+                if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) =>
+            {
+                delta.role = CandidateRole::BossAnswer;
+                delta.positive.push(LedgerDelta {
+                    kind: PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
+                    amount: SHOP_CARD_BOSS_ANSWER_SIGNAL,
+                    reason: TAG_COLLECTOR_ANSWER.to_string(),
+                });
+                delta.positive.push(LedgerDelta {
+                    kind: PressureKind::MissingJob(StrategicJob::Block),
+                    amount: 0.20,
+                    reason: "collector_answer_reduces_minion_or_debuff_pressure".to_string(),
+                });
+            }
+            Some(EncounterId::AwakenedOne)
+                if candidate_has_evidence(
+                    candidate,
+                    crate::ai::decision_tags_v1::TAG_AWAKENED_CULTIST_ANSWER,
+                ) =>
+            {
+                delta.role = CandidateRole::BossAnswer;
+                delta.positive.push(LedgerDelta {
+                    kind: PressureKind::BossTax(StrategicBossTax::AwakenedCultistPlan),
+                    amount: SHOP_CARD_BOSS_ANSWER_SIGNAL,
+                    reason: crate::ai::decision_tags_v1::TAG_AWAKENED_CULTIST_ANSWER.to_string(),
+                });
+            }
+            _ => {}
+        }
     }
 
     if candidate_has_evidence(candidate, TAG_ENGINE_CLOSURE) {

@@ -1799,6 +1799,122 @@ fn shop_dollys_mirror_priority_requires_premium_duplicate_target() {
     );
 }
 
+#[test]
+fn seed006_act_three_shop_exposes_awakened_cultist_answer_ranking() {
+    let mut run_state = RunState::new(20260713006, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 35;
+    run_state.current_hp = 74;
+    run_state.max_hp = 84;
+    run_state.gold = 175;
+    run_state.boss_key = Some(EncounterId::AwakenedOne);
+    run_state.relics = [
+        RelicId::BlackBlood,
+        RelicId::FrozenEgg,
+        RelicId::OddMushroom,
+        RelicId::ToxicEgg,
+        RelicId::RunicPyramid,
+        RelicId::ChampionBelt,
+        RelicId::Courier,
+    ]
+    .into_iter()
+    .map(RelicState::new)
+    .collect();
+    run_state.master_deck = [
+        (CardId::Defend, 0),
+        (CardId::Defend, 0),
+        (CardId::Defend, 0),
+        (CardId::Defend, 0),
+        (CardId::Bash, 1),
+        (CardId::Berserk, 0),
+        (CardId::ShrugItOff, 0),
+        (CardId::Clothesline, 1),
+        (CardId::PommelStrike, 1),
+        (CardId::BattleTrance, 1),
+        (CardId::Bloodletting, 1),
+        (CardId::Armaments, 1),
+        (CardId::SecondWind, 1),
+        (CardId::Feed, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (id, upgrades))| {
+        let mut card = crate::runtime::combat::CombatCard::new(id, index as u32);
+        card.upgrades = upgrades;
+        card
+    })
+    .collect();
+
+    let mut shop = ShopState::new();
+    shop.purge_available = false;
+    shop.cards = [
+        (CardId::Whirlwind, 0, 63),
+        (CardId::IronWave, 0, 43),
+        (CardId::Bloodletting, 1, 32),
+        (CardId::TrueGrit, 1, 42),
+        (CardId::FireBreathing, 1, 60),
+        (CardId::MindBlast, 0, 70),
+        (CardId::Panache, 1, 154),
+    ]
+    .into_iter()
+    .map(|(card_id, upgrades, price)| ShopCard {
+        card_id,
+        upgrades,
+        price,
+        can_buy: true,
+        blocked_reason: None,
+    })
+    .collect();
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead { max_plans: 8 },
+    );
+    let rollout = compiled
+        .rollout_head
+        .as_ref()
+        .and_then(|projection| {
+            compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+        })
+        .expect("seed006 shop should have a rollout head");
+
+    assert!(
+        matches!(
+            rollout.plan.steps.first(),
+            Some(ShopPlanStepV1::BuyCard {
+                card: CardId::Whirlwind,
+                ..
+            })
+        ),
+        "the typed Awakened Cultist deadline should make Whirlwind outrank generic access purchases, got {:?}",
+        rollout.plan
+    );
+    let whirlwind = compiled
+        .strategic_trace
+        .compiled
+        .iter()
+        .find(|decision| {
+            matches!(
+                decision.action,
+                CandidateAction::BuyCard {
+                    card: CardId::Whirlwind,
+                    ..
+                }
+            )
+        })
+        .expect("Whirlwind strategic decision should exist");
+    assert!(whirlwind
+        .matched_pressure_kinds
+        .contains(&PressureKind::BossTax(
+            StrategicBossTax::AwakenedCultistPlan
+        )));
+}
+
 fn shop_card_candidate(
     context: &crate::ai::shop_policy_v1::ShopDecisionContextV1,
     card: CardId,

@@ -5,7 +5,8 @@ mod risk;
 mod types;
 
 pub use awakened_one::{
-    awakened_one_evidence_frame, awakened_one_evidence_frame_from_deck, is_awakened_one_case,
+    awakened_one_cultist_cleanup_shadow_pressure_v1, awakened_one_evidence_frame,
+    awakened_one_evidence_frame_from_deck, is_awakened_one_case,
 };
 pub use pressure::{boss_matchup_acquisition_pressure_v0, BossMatchupAcquisitionPressureV0};
 pub use risk::{
@@ -15,5 +16,5 @@ pub use risk::{
 pub use types::{
     BossMatchupClaimConfidence, BossMatchupClaimScope, BossMatchupClaimStatus,
     BossMatchupEvidenceClaim, BossMatchupEvidenceFrame, BossMatchupInputSummary,
-    BossMatchupPolicyConsumability,
+    BossMatchupPolicyConsumability, BossMatchupShadowPressureKindV1, BossMatchupShadowPressureV1,
 };

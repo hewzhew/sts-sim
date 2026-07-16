@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
 
 pub const TAG_COLLECTOR_ANSWER: &str = "collector_answer";
+pub const TAG_AWAKENED_CULTIST_ANSWER: &str = "awakened_cultist_answer";
 pub const TAG_ENGINE_CLOSURE: &str = "engine_closure";
 pub const TAG_STARTUP_ACCESS: &str = "startup_access";
 pub const TAG_DECK_CLEANING: &str = "deck_cleaning";

@@ -7,10 +7,10 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardSemanticRoleV1,
 };
 use crate::ai::decision_tags_v1::{
-    combat_shape_change_tags_for_card_v1, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK,
-    TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
-    TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK, TAG_ENGINE_CLOSURE,
-    TAG_STARTUP_ACCESS,
+    combat_shape_change_tags_for_card_v1, TAG_AWAKENED_CULTIST_ANSWER,
+    TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK, TAG_COLLECTOR_ANSWER,
+    TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST, TAG_DIGEST_CAPACITY_STATUS,
+    TAG_DIGEST_CAPACITY_TOPDECK, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
 use crate::ai::deck_startup_profile_v1::{
     deck_startup_profile_v1, startup_energy_candidate_discounted_by_snecko_v1,
@@ -40,11 +40,18 @@ pub(crate) fn shop_purchase_strategy_analysis_v1(
     run_state: &RunState,
     strategy: &RunStrategySnapshotV2,
     strength: &StrengthProfileV1,
+    boss_matchup_pressures: &[crate::ai::boss_matchup::BossMatchupShadowPressureV1],
 ) -> ShopPurchaseStrategyAnalysisV1 {
     let mut analysis = ShopPurchaseStrategyAnalysisV1::default();
     match target {
         ShopPurchaseTargetV1::Card { card, .. } => {
-            analyze_shop_card(card, run_state, strategy, &mut analysis);
+            analyze_shop_card(
+                card,
+                run_state,
+                strategy,
+                boss_matchup_pressures,
+                &mut analysis,
+            );
         }
         ShopPurchaseTargetV1::Relic { relic, .. } => {
             analyze_shop_relic(relic, run_state, strength, &mut analysis);
@@ -58,6 +65,7 @@ fn analyze_shop_card(
     card: CardId,
     run_state: &RunState,
     strategy: &RunStrategySnapshotV2,
+    boss_matchup_pressures: &[crate::ai::boss_matchup::BossMatchupShadowPressureV1],
     analysis: &mut ShopPurchaseStrategyAnalysisV1,
 ) {
     let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
@@ -66,6 +74,14 @@ fn analyze_shop_card(
     if run_state.boss_key == Some(EncounterId::Collector) && collector_answer_card(card, &profile) {
         push_signal(analysis, ShopPurchaseSignalV1::BossAnswer);
         push_evidence(analysis, TAG_COLLECTOR_ANSWER);
+    }
+    if boss_matchup_pressures.iter().any(|pressure| {
+        pressure.kind
+            == crate::ai::boss_matchup::BossMatchupShadowPressureKindV1::AwakenedCultistCleanup
+    }) && has_role(&profile, CardRewardSemanticRoleV1::AoeDamage)
+    {
+        push_signal(analysis, ShopPurchaseSignalV1::BossAnswer);
+        push_evidence(analysis, TAG_AWAKENED_CULTIST_ANSWER);
     }
 
     if closes_or_supports_exhaust_engine(card, run_state, strategy) {

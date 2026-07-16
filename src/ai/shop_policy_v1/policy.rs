@@ -28,6 +28,16 @@ pub fn build_shop_decision_context_v1(
     let block_plan = crate::ai::block_plan_profile_v1::block_plan_profile_v1(run_state);
     let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
     let run_debt = crate::ai::strategic::run_debt_ledger_v1(run_state);
+    let boss_matchup_pressures = match run_state.boss_key {
+        Some(crate::content::monsters::factory::EncounterId::AwakenedOne) => {
+            crate::ai::boss_matchup::awakened_one_cultist_cleanup_shadow_pressure_v1(
+                &run_state.master_deck,
+            )
+            .into_iter()
+            .collect()
+        }
+        _ => Vec::new(),
+    };
     let upgrade_need = shop_upgrade_need_profile_from_run_state_v1(run_state);
     let need = crate::ai::shop_policy_v1::build_shop_need_profile_v1(run_state);
     let visit = ShopVisitFactsV1 {
@@ -73,7 +83,13 @@ pub fn build_shop_decision_context_v1(
             card.card_id,
             run_state,
         );
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
+        let analysis = shop_purchase_strategy_analysis_v1(
+            target,
+            run_state,
+            &strategy,
+            &strength,
+            &boss_matchup_pressures,
+        );
         let priority = legacy_purchase_estimate_with_strategy(target, base_priority, &strategy);
         purchase_candidate_evidence(
             format!(
@@ -97,7 +113,13 @@ pub fn build_shop_decision_context_v1(
             index,
             relic: relic.relic_id,
         };
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
+        let analysis = shop_purchase_strategy_analysis_v1(
+            target,
+            run_state,
+            &strategy,
+            &strength,
+            &boss_matchup_pressures,
+        );
         purchase_candidate_evidence(
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
@@ -119,7 +141,13 @@ pub fn build_shop_decision_context_v1(
             index,
             potion: potion.potion_id,
         };
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
+        let analysis = shop_purchase_strategy_analysis_v1(
+            target,
+            run_state,
+            &strategy,
+            &strength,
+            &boss_matchup_pressures,
+        );
         let potion_can_buy = shop_potion_purchase_block_reason_v1(run_state, potion).is_none();
         purchase_candidate_evidence(
             format!(
@@ -167,6 +195,7 @@ pub fn build_shop_decision_context_v1(
         block_plan,
         startup,
         run_debt,
+        boss_matchup_pressures,
         upgrade_need,
         need,
         visit,

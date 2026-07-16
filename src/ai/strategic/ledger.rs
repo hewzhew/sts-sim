@@ -31,6 +31,7 @@ pub enum StrategicDebt {
 #[serde(rename_all = "snake_case")]
 pub enum StrategicBossTax {
     AwakenedPowerTax,
+    AwakenedCultistPlan,
     AwakenedPhaseTwoBlock,
     AutomatonHyperbeamPlan,
     AutomatonOrbControl,
@@ -349,6 +350,26 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
     }
 
     ledger
+}
+
+pub fn add_boss_matchup_shadow_pressure_to_ledger(
+    ledger: &mut PressureLedger,
+    pressures: &[crate::ai::boss_matchup::BossMatchupShadowPressureV1],
+) {
+    for pressure in pressures {
+        match pressure.kind {
+            crate::ai::boss_matchup::BossMatchupShadowPressureKindV1::AwakenedCultistCleanup => {
+                ledger.push(
+                    "boss_tax:awakened_cultist_plan",
+                    PressureKind::BossTax(StrategicBossTax::AwakenedCultistPlan),
+                    PressureHorizon::ActBoss,
+                    0.70,
+                    0.70,
+                    pressure.evidence.clone(),
+                );
+            }
+        }
+    }
 }
 
 pub fn add_startup_profile_pressure_to_ledger(

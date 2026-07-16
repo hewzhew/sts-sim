@@ -20,10 +20,10 @@ pub use delta::{
     OpportunityCost, StrategicContraindication, VerdictHint,
 };
 pub use ledger::{
-    add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
-    add_startup_profile_pressure_to_ledger, ledger_from_snapshot, PressureHorizon, PressureItem,
-    PressureKind, PressureLedger, RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt,
-    StrategicJob,
+    add_boss_matchup_shadow_pressure_to_ledger, add_run_debt_candidate_deltas_v1,
+    add_run_debt_pressure_to_ledger, add_startup_profile_pressure_to_ledger, ledger_from_snapshot,
+    PressureHorizon, PressureItem, PressureKind, PressureLedger, RunDebtCandidateSignalsV1,
+    StrategicBossTax, StrategicDebt, StrategicJob,
 };
 pub use retention::{
     compact_branch_signature, compact_branch_signature_data, format_compact_branch_signature,

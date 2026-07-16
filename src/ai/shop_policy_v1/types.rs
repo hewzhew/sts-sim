@@ -22,6 +22,7 @@ pub struct ShopDecisionContextV1 {
     pub block_plan: BlockPlanProfileV1,
     pub startup: DeckStartupProfileV1,
     pub run_debt: RunDebtLedgerV1,
+    pub boss_matchup_pressures: Vec<crate::ai::boss_matchup::BossMatchupShadowPressureV1>,
     pub upgrade_need: ShopUpgradeNeedProfileV1,
     pub need: ShopNeedProfileV1,
     pub visit: ShopVisitFactsV1,

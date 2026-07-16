@@ -42,6 +42,17 @@ pub enum BossMatchupPolicyConsumability {
     ShadowPressure,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BossMatchupShadowPressureKindV1 {
+    AwakenedCultistCleanup,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BossMatchupShadowPressureV1 {
+    pub kind: BossMatchupShadowPressureKindV1,
+    pub evidence: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BossMatchupEvidenceClaim {
     pub id: &'static str,

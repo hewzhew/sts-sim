@@ -6,7 +6,7 @@ use super::awakened_one_signals::{card_labels, AwakenedOneDeckSignals};
 use super::types::{
     BossMatchupClaimConfidence, BossMatchupClaimScope, BossMatchupClaimStatus,
     BossMatchupEvidenceClaim, BossMatchupEvidenceFrame, BossMatchupInputSummary,
-    BossMatchupPolicyConsumability,
+    BossMatchupPolicyConsumability, BossMatchupShadowPressureKindV1, BossMatchupShadowPressureV1,
 };
 
 pub fn awakened_one_evidence_frame(combat: &CombatState) -> Option<BossMatchupEvidenceFrame> {
@@ -27,6 +27,19 @@ pub fn awakened_one_evidence_frame_from_deck(
         energy,
         has_runic_dome,
     ))
+}
+
+pub fn awakened_one_cultist_cleanup_shadow_pressure_v1(
+    deck: &[CombatCard],
+) -> Option<BossMatchupShadowPressureV1> {
+    let signals = AwakenedOneDeckSignals::from_deck(deck.to_vec(), 3, false);
+    signals.aoe.is_empty().then(|| BossMatchupShadowPressureV1 {
+        kind: BossMatchupShadowPressureKindV1::AwakenedCultistCleanup,
+        evidence: vec![
+            "Awakened One starts with two scaling Cultists".to_string(),
+            "current deck has no static AOE evidence for the Cultist deadline".to_string(),
+        ],
+    })
 }
 
 pub fn is_awakened_one_case(combat: &CombatState) -> bool {
@@ -446,4 +459,35 @@ fn power_counterevidence(signals: &AwakenedOneDeckSignals) -> Vec<String> {
         items.push("Demon Form is valuable scaling but triggers Curiosity and is slow".to_string());
     }
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_aoe_exposes_cultist_cleanup_shadow_pressure() {
+        let deck = vec![
+            CombatCard::new(CardId::Bash, 1),
+            CombatCard::new(CardId::ShrugItOff, 2),
+        ];
+
+        let pressure = awakened_one_cultist_cleanup_shadow_pressure_v1(&deck)
+            .expect("a deck without AOE should expose the Cultist cleanup pressure");
+
+        assert_eq!(
+            pressure.kind,
+            BossMatchupShadowPressureKindV1::AwakenedCultistCleanup
+        );
+    }
+
+    #[test]
+    fn existing_aoe_retires_cultist_cleanup_shadow_pressure() {
+        let deck = vec![
+            CombatCard::new(CardId::Bash, 1),
+            CombatCard::new(CardId::Whirlwind, 2),
+        ];
+
+        assert!(awakened_one_cultist_cleanup_shadow_pressure_v1(&deck).is_none());
+    }
 }
