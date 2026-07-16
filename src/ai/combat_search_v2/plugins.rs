@@ -20,6 +20,12 @@ pub struct CombatSearchEngineProfile {
     pub plugins: CombatSearchPluginStack,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CombatSearchRolloutBudgetSpec {
+    max_evaluations: usize,
+    max_actions: usize,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct CombatSearchAttemptPolicy {
     pub acceptance: CombatSearchAcceptancePluginId,
@@ -404,6 +410,7 @@ impl CombatSearchEngineProfile {
 
     pub fn to_config(self) -> CombatSearchV2Config {
         let defaults = CombatSearchV2Config::default();
+        let rollout_budget = CombatSearchRolloutBudgetSpec::for_engine_profile(self);
         CombatSearchV2Config {
             max_nodes: self.budget.max_nodes,
             wall_time: Some(Duration::from_millis(self.budget.wall_ms)),
@@ -415,7 +422,44 @@ impl CombatSearchEngineProfile {
             frontier_policy: self.plugins.frontier.into(),
             phase_guard_policy: self.plugins.phase_guard.into(),
             setup_bias_policy: self.plugins.action_prior.into(),
+            rollout_max_evaluations: rollout_budget.max_evaluations,
+            rollout_max_actions: rollout_budget.max_actions,
             ..defaults
+        }
+    }
+}
+
+impl CombatSearchRolloutBudgetSpec {
+    fn for_engine_profile(profile: CombatSearchEngineProfile) -> Self {
+        // Rollout is a bounded ordering hint, not the search itself. Long default
+        // rollouts can consume an entire short wall-clock lane before the frontier
+        // has a chance to expand, so named profiles scale rollout depth with the
+        // wall budget that already participates in their engine identity.
+        let max_actions = match profile.budget.wall_ms {
+            0..=1_000 => 6,
+            1_001..=2_500 => 8,
+            2_501..=5_000 => 12,
+            5_001..=10_000 => 16,
+            _ => 24,
+        };
+        let max_evaluations = match profile.plugins.child_rollout {
+            CombatSearchChildRolloutPluginId::Immediate => match profile.budget.wall_ms {
+                0..=1_000 => 24,
+                1_001..=2_500 => 48,
+                2_501..=5_000 => 96,
+                5_001..=10_000 => 128,
+                _ => 256,
+            },
+            CombatSearchChildRolloutPluginId::LazyOnPop => match profile.budget.wall_ms {
+                0..=1_000 => 64,
+                1_001..=2_500 => 128,
+                2_501..=5_000 => 256,
+                _ => 384,
+            },
+        };
+        Self {
+            max_evaluations,
+            max_actions,
         }
     }
 }
@@ -600,6 +644,79 @@ mod tests {
 
         assert_ne!(immediate.engine, lazy.engine);
         assert_ne!(immediate.engine_fingerprint(), lazy.engine_fingerprint());
+    }
+
+    #[test]
+    fn short_named_profiles_bound_rollout_horizon_below_legacy_defaults() {
+        let config = test_profile("short").to_config();
+
+        assert_eq!(config.rollout_max_evaluations, 64);
+        assert_eq!(config.rollout_max_actions, 6);
+        assert!(
+            config.rollout_max_evaluations
+                < crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS
+        );
+        assert!(
+            config.rollout_max_actions
+                < crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS
+        );
+    }
+
+    #[test]
+    fn immediate_rollout_profiles_receive_a_stricter_evaluation_budget() {
+        let lazy = CombatSearchProfile {
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 50_000,
+                    wall_ms: 2_000,
+                },
+                ..test_profile("lazy").engine
+            },
+            ..test_profile("lazy")
+        };
+        let immediate = lazy.with_child_rollout_plugin(CombatSearchChildRolloutPluginId::Immediate);
+
+        assert_eq!(lazy.to_config().rollout_max_evaluations, 128);
+        assert_eq!(immediate.to_config().rollout_max_evaluations, 48);
+        assert_eq!(lazy.to_config().rollout_max_actions, 8);
+        assert_eq!(immediate.to_config().rollout_max_actions, 8);
+    }
+
+    #[test]
+    fn medium_immediate_profiles_stay_below_the_legacy_quality_lane_volume() {
+        let immediate = CombatSearchProfile {
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 200_000,
+                    wall_ms: 7_500,
+                },
+                ..test_profile("medium_immediate").engine
+            },
+            ..test_profile("medium_immediate")
+        }
+        .with_child_rollout_plugin(CombatSearchChildRolloutPluginId::Immediate);
+        let config = immediate.to_config();
+
+        assert_eq!(config.rollout_max_evaluations, 128);
+        assert_eq!(config.rollout_max_actions, 16);
+    }
+
+    #[test]
+    fn longer_named_profiles_expand_rollout_horizon_without_restoring_unbounded_depth() {
+        let profile = CombatSearchProfile {
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 500_000,
+                    wall_ms: 20_000,
+                },
+                ..test_profile("long").engine
+            },
+            ..test_profile("long")
+        };
+        let config = profile.to_config();
+
+        assert_eq!(config.rollout_max_evaluations, 384);
+        assert_eq!(config.rollout_max_actions, 24);
     }
 
     #[test]
