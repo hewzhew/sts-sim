@@ -28,6 +28,15 @@ pub(super) fn performance_review(report: &CombatSearchV2Report) -> SearchPerform
             .performance
             .deferred_child_rollout_skipped_budget_share,
         turn_plan_seed_calls: report.performance.turn_plan_frontier_seed_calls,
+        turn_plan_seed_inner_nodes_expanded: report
+            .performance
+            .turn_plan_frontier_seed_inner_nodes_expanded,
+        turn_plan_seed_inner_nodes_generated: report
+            .performance
+            .turn_plan_frontier_seed_inner_nodes_generated,
+        turn_plan_seed_exact_state_skips: report
+            .performance
+            .turn_plan_frontier_seed_exact_state_skips,
         turn_plan_seed_us: report.performance.turn_plan_frontier_seed_elapsed_us,
         engine_step_us: report.performance.engine_step_elapsed_us,
         frontier_pop_us: report.performance.frontier_pop_elapsed_us,

@@ -40,6 +40,24 @@ pub(super) fn seed_turn_plan_frontier(
         .turn_plan_frontier_seed_elapsed_us
         .saturating_add(seed_started.elapsed().as_micros());
     loop_state
+        .performance
+        .turn_plan_frontier_seed_inner_nodes_expanded = loop_state
+        .performance
+        .turn_plan_frontier_seed_inner_nodes_expanded
+        .saturating_add(seeded_plans.inner_nodes_expanded as u64);
+    loop_state
+        .performance
+        .turn_plan_frontier_seed_inner_nodes_generated = loop_state
+        .performance
+        .turn_plan_frontier_seed_inner_nodes_generated
+        .saturating_add(seeded_plans.inner_nodes_generated as u64);
+    loop_state
+        .performance
+        .turn_plan_frontier_seed_exact_state_skips = loop_state
+        .performance
+        .turn_plan_frontier_seed_exact_state_skips
+        .saturating_add(seeded_plans.exact_state_skips as u64);
+    loop_state
         .diagnostics
         .observe_turn_plan_frontier_seeded_plans(&seeded_plans.plans);
     loop_state

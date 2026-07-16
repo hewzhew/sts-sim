@@ -15,6 +15,9 @@ const TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT: usize = 2;
 pub(in crate::ai::combat_search_v2) struct TurnPlanFrontierSeedResult {
     pub(in crate::ai::combat_search_v2) plans: Vec<TurnPlanV1>,
     pub(in crate::ai::combat_search_v2) turn_plan_prior_scored_plans: usize,
+    pub(in crate::ai::combat_search_v2) inner_nodes_expanded: usize,
+    pub(in crate::ai::combat_search_v2) inner_nodes_generated: usize,
+    pub(in crate::ai::combat_search_v2) exact_state_skips: usize,
 }
 
 pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
@@ -31,9 +34,13 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
         potion_policy: plugins.potion.policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
+        capture_step_trace: false,
     };
     let enumeration = enumerate_turn_plans(node, stepper, &turn_config, deadline);
     let turn_plan_prior_scored_plans = enumeration.turn_plan_prior_scored_plans;
+    let inner_nodes_expanded = enumeration.nodes_expanded;
+    let inner_nodes_generated = enumeration.nodes_generated;
+    let exact_state_skips = enumeration.exact_state_skips;
     let plans = enumeration
         .plans
         .into_iter()
@@ -43,6 +50,9 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
     TurnPlanFrontierSeedResult {
         plans,
         turn_plan_prior_scored_plans,
+        inner_nodes_expanded,
+        inner_nodes_generated,
+        exact_state_skips,
     }
 }
 

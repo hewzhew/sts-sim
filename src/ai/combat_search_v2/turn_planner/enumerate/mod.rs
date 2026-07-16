@@ -96,6 +96,12 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
             let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
             let ordered =
                 order_indexed_action_choices(&node.engine, &node.combat, equivalence.choices);
+            let before_step_trace = config.capture_step_trace.then(|| {
+                (
+                    combat_exact_state_hash_v1(&node.engine, &node.combat),
+                    summarize_state(&node.engine, &node.combat),
+                )
+            });
             for ordered_choice in ordered.choices {
                 if deadline.is_some_and(|limit| Instant::now() >= limit) {
                     break;
@@ -111,27 +117,30 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                 );
                 enumeration.nodes_generated = enumeration.nodes_generated.saturating_add(1);
 
-                let before_exact_state_hash =
-                    combat_exact_state_hash_v1(&node.engine, &node.combat);
-                let state_before = summarize_state(&node.engine, &node.combat);
-                let after_exact_state_hash =
-                    combat_exact_state_hash_v1(&step.position.engine, &step.position.combat);
-                let state_after = summarize_state(&step.position.engine, &step.position.combat);
-                let mut child = node
-                    .clone_for_child(step.position.engine.clone(), step.position.combat.clone());
                 let mut child_action_facts = action_facts.clone();
                 child_action_facts.push(summarize_action_facts_from_step(
                     &node.combat,
                     &ordered_choice.choice.input,
                     &step,
                 ));
+                let truncated = step.truncated;
+                let CombatPosition {
+                    engine: child_engine,
+                    combat: child_combat,
+                } = step.position;
+                let mut child = node.clone_for_child(child_engine, child_combat);
                 let mut child_step_states = step_states.clone();
-                child_step_states.push(TurnPlanStepStateV1 {
-                    before_exact_state_hash,
-                    before: state_before,
-                    after_exact_state_hash,
-                    after: state_after,
-                });
+                if let Some((before_exact_state_hash, state_before)) = before_step_trace.as_ref() {
+                    child_step_states.push(TurnPlanStepStateV1 {
+                        before_exact_state_hash: before_exact_state_hash.clone(),
+                        before: state_before.clone(),
+                        after_exact_state_hash: combat_exact_state_hash_v1(
+                            &child.engine,
+                            &child.combat,
+                        ),
+                        after: summarize_state(&child.engine, &child.combat),
+                    });
+                }
                 let transition = classify_turn_branch_transition(
                     &node.engine,
                     &node.combat,
@@ -150,7 +159,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     input: ordered_choice.choice.input,
                 });
 
-                if step.truncated {
+                if truncated {
                     enumeration.truncated_children =
                         enumeration.truncated_children.saturating_add(1);
                     candidates.push(plan_from_node(

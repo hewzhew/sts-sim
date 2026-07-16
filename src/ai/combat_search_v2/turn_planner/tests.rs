@@ -200,6 +200,50 @@ fn turn_planner_enumerates_same_turn_prefix_until_next_turn_boundary() {
 }
 
 #[test]
+fn turn_planner_step_trace_capture_does_not_change_selected_plans() {
+    let root = test_node(test_combat_with_hand(1));
+    let stepper = TestTurnStepper {
+        mode: TestTurnMode::PlayThenEnd,
+    };
+    let traced = enumerate_turn_plans(&root, &stepper, &TurnPlannerConfigV1::default(), None);
+    let untraced = enumerate_turn_plans(
+        &root,
+        &stepper,
+        &TurnPlannerConfigV1 {
+            capture_step_trace: false,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+    let plan_keys = |plans: &TurnPlanEnumeration| {
+        plans
+            .plans
+            .iter()
+            .map(|plan| {
+                (
+                    plan.bucket,
+                    plan.stop_reason,
+                    plan.actions
+                        .iter()
+                        .map(|action| action.action_key.clone())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(plan_keys(&traced), plan_keys(&untraced));
+    assert!(traced
+        .plans
+        .iter()
+        .all(|plan| plan.step_states.len() == plan.actions.len()));
+    assert!(untraced
+        .plans
+        .iter()
+        .all(|plan| plan.step_states.is_empty()));
+}
+
+#[test]
 fn turn_planner_reaches_deep_plan_within_wide_branching_budget() {
     let mut combat = test_combat_with_cards(&[
         CardId::Strike,

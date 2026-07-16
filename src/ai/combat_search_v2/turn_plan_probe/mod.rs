@@ -112,5 +112,6 @@ fn turn_planner_config(
         potion_policy: plugins.potion.policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
+        capture_step_trace: true,
     }
 }

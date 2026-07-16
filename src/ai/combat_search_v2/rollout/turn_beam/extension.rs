@@ -135,6 +135,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
                 per_bucket_limit: beam_width,
                 potion_policy: CombatSearchV2PotionPolicy::Never,
                 max_engine_steps_per_action: config.max_engine_steps_per_action,
+                capture_step_trace: false,
                 ..TurnPlannerConfigV1::default()
             };
             let plans = enumerate_turn_plans(&state.node, stepper, &turn_config, deadline);

@@ -78,6 +78,7 @@ impl TurnPlanDiagnosticsCollector {
             max_inner_nodes: TURN_PLAN_DIAGNOSTIC_MAX_INNER_NODES,
             max_end_states: TURN_PLAN_DIAGNOSTIC_MAX_END_STATES,
             per_bucket_limit: TURN_PLAN_DIAGNOSTIC_PER_BUCKET_LIMIT,
+            capture_step_trace: false,
             ..TurnPlannerConfigV1::default()
         };
         let enumeration = enumerate_turn_plans(root, stepper, &config, None);

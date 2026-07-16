@@ -19,6 +19,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlannerConfigV1 {
     pub(in crate::ai::combat_search_v2) potion_policy: CombatSearchV2PotionPolicy,
     pub(in crate::ai::combat_search_v2) max_engine_steps_per_action: usize,
     pub(in crate::ai::combat_search_v2) turn_plan_prior: Option<CombatSearchV2TurnPlanPrior>,
+    pub(in crate::ai::combat_search_v2) capture_step_trace: bool,
 }
 
 impl Default for TurnPlannerConfigV1 {
@@ -31,6 +32,7 @@ impl Default for TurnPlannerConfigV1 {
             max_engine_steps_per_action: CombatSearchV2Config::default()
                 .max_engine_steps_per_action,
             turn_plan_prior: None,
+            capture_step_trace: true,
         }
     }
 }
