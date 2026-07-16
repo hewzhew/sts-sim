@@ -6,6 +6,7 @@ mod owner_audit;
 mod panel;
 mod slice_result;
 mod status;
+mod trajectory_evidence;
 
 pub use artifact_store::*;
 pub use capsule_reuse::*;
@@ -15,3 +16,4 @@ pub use owner_audit::*;
 pub use panel::*;
 pub use slice_result::*;
 pub use status::*;
+pub use trajectory_evidence::*;

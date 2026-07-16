@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::RunProgressStepV1;
 
@@ -9,7 +9,8 @@ pub const RUN_PROGRESS_JOURNAL_SCHEMA_VERSION: u32 = 1;
 ///
 /// Stops are deliberately kept outside the journal: they describe why a drive
 /// yielded, while journal entries describe mutations that actually committed.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunProgressJournalV1 {
     schema_name: String,
     schema_version: u32,
