@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use sts_simulator::ai::planner_core::{LegalCandidateSet, PlannerObservation};
 use sts_simulator::runtime::branch::{
     validate_run_trajectory_segment_id_v1, ArtifactKind, ArtifactRef, ArtifactWriteSummary,
-    RunTrajectoryHeadV1, RunTrajectoryReconstructionV1, RunTrajectorySegmentV1,
-    RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_NAME, RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_VERSION,
-    RUN_TRAJECTORY_SEGMENT_SCHEMA_NAME,
+    RunTrajectoryHeadV1, RunTrajectoryProjectionIndexEntryV1, RunTrajectoryReconstructionV1,
+    RunTrajectorySegmentV1, RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_NAME,
+    RUN_TRAJECTORY_RECONSTRUCTION_SCHEMA_VERSION, RUN_TRAJECTORY_SEGMENT_SCHEMA_NAME,
 };
 
 use super::branch_model::Branch;
@@ -176,6 +176,34 @@ impl TrajectoryArtifactStore {
             run_id: run_id.to_string(),
             head: head.clone(),
             segments: reversed,
+        })
+    }
+
+    pub(super) fn write_projection_bundle(
+        &self,
+        branch_id: usize,
+        bundle: &super::trajectory_projector::RunTrajectoryProjectionBundleV1,
+    ) -> Result<RunTrajectoryProjectionIndexEntryV1, String> {
+        let component =
+            content_file_name(&bundle.reconstruction.head.segment_id, "trajectory_segment")?
+                .trim_end_matches(".json")
+                .to_string();
+        let relative_dir = PathBuf::from("projections").join(component);
+        let absolute_dir = self.capsule_root.join("trajectory").join(&relative_dir);
+        let reconstruction_path = absolute_dir.join("reconstruction.json");
+        let behavior_path = absolute_dir.join("behavior.json");
+        let outcome_path = absolute_dir.join("outcomes.json");
+        write_immutable(&reconstruction_path, &bundle.reconstruction)?;
+        write_immutable(&behavior_path, &bundle.behavior)?;
+        write_immutable(&outcome_path, &bundle.outcomes)?;
+        Ok(RunTrajectoryProjectionIndexEntryV1 {
+            branch_id: branch_id as u64,
+            head: bundle.reconstruction.head.clone(),
+            reconstruction_path: relative_dir.join("reconstruction.json"),
+            behavior_path: relative_dir.join("behavior.json"),
+            outcome_path: relative_dir.join("outcomes.json"),
+            behavior_event_count: bundle.behavior.events.len(),
+            outcome_attachment_count: bundle.outcomes.attachments.len(),
         })
     }
 

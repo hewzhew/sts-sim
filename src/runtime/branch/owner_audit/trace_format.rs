@@ -16,7 +16,7 @@ use super::{
 pub(super) fn run_start_event(args: Args) -> Value {
     json!({
         "event": "run_start",
-        "schema": "branch_tiny_trace_v3",
+        "schema": "branch_tiny_trace_v4",
         "seed": args.seed,
         "ascension": args.ascension,
         "generations": args.generations,
@@ -51,8 +51,7 @@ pub(super) fn node_event(
         },
         "status": status_value(&branch.status),
         "arrived": branch.path.last().map(path_step_value),
-        "recent_progress_journal": &branch.recent_progress_journal,
-        "recent_planner_capture": &branch.recent_planner_capture,
+        "trajectory_head": branch.trajectory.committed_head(),
         "combat_search": branch.combat_search,
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::trace_value),
         "choices": choices.iter().enumerate()
@@ -279,6 +278,7 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
             "strategic_deficit": run_state_json::strategic_deficit_value(run),
         },
         "status": status_value(&branch.status),
+        "trajectory_head": branch.trajectory.committed_head(),
         "deck": run_state_json::deck_value(run),
         "relics": run_state_json::relics_value(run),
         "potions": run_state_json::potions_value(run),
@@ -292,6 +292,8 @@ mod tests {
         RunControlSession, RunProgressJournalV1,
     };
     use sts_simulator::state::core::EngineState;
+
+    use super::*;
 
     #[test]
     fn route_auto_step_trace_retains_typed_map_decision_packet() {
@@ -323,5 +325,19 @@ mod tests {
         assert!(route_annotation["map_decision_packet"]["candidates"]
             .as_array()
             .is_some_and(|candidates| !candidates.is_empty()));
+    }
+
+    #[test]
+    fn trace_nodes_reference_durable_heads_without_recent_evidence_payloads() {
+        let args = crate::runtime::branch::default_branch_args(7);
+        let (frontier, _) = super::super::branch_runtime::BranchRuntime::initial_frontier(
+            args,
+            std::time::Instant::now(),
+        );
+        let value = node_event(0, frontier.front().unwrap(), &[], &[]);
+
+        assert!(value.get("trajectory_head").is_some());
+        assert!(value.get("recent_progress_journal").is_none());
+        assert!(value.get("recent_planner_capture").is_none());
     }
 }

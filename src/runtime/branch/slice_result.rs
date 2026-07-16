@@ -374,6 +374,7 @@ pub enum ArtifactKind {
     TrajectoryObservation,
     TrajectoryCandidateSet,
     TrajectorySegment,
+    TrajectoryProjection,
     AcceptedCombatDiagnostic,
 }
 
@@ -395,6 +396,8 @@ pub struct ArtifactWriteSummary {
     pub terminal_written: bool,
     pub combat_case_written: bool,
     pub trajectory_evidence_written: bool,
+    #[serde(default)]
+    pub trajectory_projection_written: bool,
     pub manifest_ref: Option<ArtifactRef>,
     pub frontier_ref: Option<ArtifactRef>,
     pub result_ref: Option<ArtifactRef>,
@@ -403,6 +406,8 @@ pub struct ArtifactWriteSummary {
     pub terminal_ref: Option<ArtifactRef>,
     pub combat_case_ref: Option<ArtifactRef>,
     pub trajectory_evidence_ref: Option<ArtifactRef>,
+    #[serde(default)]
+    pub trajectory_projection_ref: Option<ArtifactRef>,
     #[serde(default)]
     pub accepted_combat_diagnostic_refs: Vec<ArtifactRef>,
     #[serde(default)]
@@ -423,6 +428,7 @@ impl ArtifactWriteSummary {
         self.terminal_written |= other.terminal_written;
         self.combat_case_written |= other.combat_case_written;
         self.trajectory_evidence_written |= other.trajectory_evidence_written;
+        self.trajectory_projection_written |= other.trajectory_projection_written;
         self.manifest_ref = other.manifest_ref.or(self.manifest_ref.take());
         self.frontier_ref = other.frontier_ref.or(self.frontier_ref.take());
         self.result_ref = other.result_ref.or(self.result_ref.take());
@@ -433,6 +439,9 @@ impl ArtifactWriteSummary {
         self.trajectory_evidence_ref = other
             .trajectory_evidence_ref
             .or(self.trajectory_evidence_ref.take());
+        self.trajectory_projection_ref = other
+            .trajectory_projection_ref
+            .or(self.trajectory_projection_ref.take());
         self.accepted_combat_diagnostic_refs
             .extend(other.accepted_combat_diagnostic_refs);
         self.trajectory_observation_refs
@@ -501,6 +510,10 @@ impl ArtifactWriteSummary {
             ArtifactKind::TrajectorySegment => {
                 self.trajectory_segment_refs.push(artifact);
             }
+            ArtifactKind::TrajectoryProjection => {
+                self.trajectory_projection_written = true;
+                self.trajectory_projection_ref = Some(artifact);
+            }
             ArtifactKind::AcceptedCombatDiagnostic => {
                 self.accepted_combat_diagnostic_refs.push(artifact);
             }
@@ -517,6 +530,7 @@ impl ArtifactWriteSummary {
             self.terminal_ref.clone(),
             self.combat_case_ref.clone(),
             self.trajectory_evidence_ref.clone(),
+            self.trajectory_projection_ref.clone(),
         ]
         .into_iter()
         .flatten()

@@ -253,6 +253,7 @@ mod tests {
         assert!(result.artifacts.manifest_written);
         assert!(result.artifacts.frontier_written);
         assert!(result.artifacts.summary_written);
+        assert!(result.artifacts.trajectory_projection_written);
         assert!(!result.artifacts.result_written);
         assert_eq!(
             result
@@ -288,6 +289,24 @@ mod tests {
         assert!(root.join("manifest.json").exists());
         assert!(root.join("frontier.json").exists());
         assert!(root.join("summary.json").exists());
+        let projection_index: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("trajectory/projection_index.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            projection_index["schema_name"],
+            "RunTrajectoryProjectionIndex"
+        );
+        assert_eq!(projection_index["entries"].as_array().unwrap().len(), 1);
+        let behavior_path = projection_index["entries"][0]["behavior_path"]
+            .as_str()
+            .unwrap();
+        let behavior: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("trajectory").join(behavior_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(behavior["schema_name"], "RunTrajectoryBehaviorProjection");
+        assert_eq!(behavior["events"].as_array().unwrap().len(), 1);
 
         let _ = std::fs::remove_dir_all(root);
     }

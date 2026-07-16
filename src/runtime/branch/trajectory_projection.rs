@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::ai::planner_core::{
@@ -13,6 +15,8 @@ pub const RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_NAME: &str = "RunTrajectoryB
 pub const RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_VERSION: u32 = 1;
 pub const RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_NAME: &str = "RunTrajectoryOutcomeProjection";
 pub const RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_VERSION: u32 = 1;
+pub const RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_NAME: &str = "RunTrajectoryProjectionIndex";
+pub const RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -69,6 +73,27 @@ pub struct RunTrajectoryOutcomeProjectionV1 {
     pub run_id: String,
     pub head: RunTrajectoryHeadV1,
     pub attachments: Vec<RunTrajectoryOutcomeAttachmentV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunTrajectoryProjectionIndexV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub run_id: String,
+    pub entries: Vec<RunTrajectoryProjectionIndexEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunTrajectoryProjectionIndexEntryV1 {
+    pub branch_id: u64,
+    pub head: RunTrajectoryHeadV1,
+    pub reconstruction_path: PathBuf,
+    pub behavior_path: PathBuf,
+    pub outcome_path: PathBuf,
+    pub behavior_event_count: usize,
+    pub outcome_attachment_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -117,6 +117,10 @@ impl CapsuleArtifactStore {
         self.root.join("trajectory_state.json")
     }
 
+    pub(super) fn trajectory_projection_index_path(&self) -> PathBuf {
+        self.root.join("trajectory").join("projection_index.json")
+    }
+
     pub(super) fn running_manifest_summary(&self) -> ArtifactWriteSummary {
         ArtifactWriteSummary::single_ref(self.artifact_ref(
             ArtifactKind::Manifest,
@@ -143,6 +147,7 @@ impl CapsuleArtifactStore {
             "branch_tiny_capsule_summary",
         ));
         summary.record_ref(self.trajectory_evidence_ref());
+        summary.record_ref(self.trajectory_projection_ref());
         summary
     }
 
@@ -169,6 +174,7 @@ impl CapsuleArtifactStore {
             "branch_tiny_capsule_summary",
         ));
         summary.record_ref(self.trajectory_evidence_ref());
+        summary.record_ref(self.trajectory_projection_ref());
         self.record_accepted_combat_diagnostic_refs(&mut summary);
         summary
     }
@@ -184,6 +190,7 @@ impl CapsuleArtifactStore {
             "branch_tiny_terminal_results",
         ));
         summary.record_ref(self.trajectory_evidence_ref());
+        summary.record_ref(self.trajectory_projection_ref());
         self.record_accepted_combat_diagnostic_refs(&mut summary);
         summary
     }
@@ -238,6 +245,7 @@ impl CapsuleArtifactStore {
             generation,
             frontier,
         )?;
+        self.write_projection_index(args, frontier.iter())?;
         frontier_checkpoint::save(
             &self.root.join("frontier.json"),
             args,
@@ -278,6 +286,7 @@ impl CapsuleArtifactStore {
             generation,
             branch,
         )?;
+        self.write_projection_index(args, std::iter::once(branch))?;
         let trajectory_evaluation = self.current_trajectory_evaluation()?;
         entries.push(run_capsule_format::result_value(
             generation,
@@ -338,6 +347,7 @@ impl CapsuleArtifactStore {
             generation,
             branch,
         )?;
+        self.write_projection_index(args, std::iter::once(branch))?;
         let trajectory_evaluation = self.current_trajectory_evaluation()?;
         write_json(
             &self.root.join("result.json"),
@@ -545,6 +555,44 @@ impl CapsuleArtifactStore {
             "trajectory_state.json",
             "branch_tiny_trajectory_state_v0",
         )
+    }
+
+    fn trajectory_projection_ref(&self) -> ArtifactRef {
+        self.artifact_ref(
+            ArtifactKind::TrajectoryProjection,
+            "trajectory/projection_index.json",
+            "RunTrajectoryProjectionIndex",
+        )
+    }
+
+    fn write_projection_index<'a>(
+        &self,
+        args: Args,
+        branches: impl IntoIterator<Item = &'a Branch>,
+    ) -> Result<(), String> {
+        let run_id = self.trajectory_run_id(args)?;
+        let store =
+            super::trajectory_artifact_store::TrajectoryArtifactStore::new(self.root.clone());
+        let mut entries = Vec::new();
+        for branch in branches {
+            branch.trajectory.checkpoint_head()?;
+            if let Some(bundle) = self.project_branch_trajectory(branch)? {
+                entries.push(store.write_projection_bundle(branch.id, &bundle)?);
+            }
+        }
+        entries.sort_by_key(|entry| entry.branch_id);
+        let index = sts_simulator::runtime::branch::RunTrajectoryProjectionIndexV1 {
+            schema_name:
+                sts_simulator::runtime::branch::RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_NAME
+                    .to_string(),
+            schema_version:
+                sts_simulator::runtime::branch::RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_VERSION,
+            run_id,
+            entries,
+        };
+        let value = serde_json::to_value(index)
+            .map_err(|error| format!("serialize trajectory projection index: {error}"))?;
+        write_json(&self.trajectory_projection_index_path(), value)
     }
 
     fn current_trajectory_evaluation(

@@ -92,6 +92,8 @@ pub(super) fn branch_summary_value(
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
+        "trajectory_head": branch.trajectory.committed_head(),
+        "trajectory_projection_index": "trajectory/projection_index.json",
         "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
         "trajectory_evaluation": trajectory_evaluation,
         "status": status,
@@ -240,13 +242,15 @@ pub(super) fn result_value(
 ) -> Value {
     let run = &branch.session.run_state;
     json!({
-        "schema": "branch_tiny_run_result_v3",
+        "schema": "branch_tiny_run_result_v4",
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
         "policy_lane": &branch.policy_lane,
         "trajectory_snapshot": trajectory_snapshot::trajectory_snapshot(branch),
         "trajectory_evaluation": trajectory_evaluation,
+        "trajectory_head": branch.trajectory.committed_head(),
+        "trajectory_projection_index": "trajectory/projection_index.json",
         "status": status_value(&branch.status),
         "state": {
             "act": run.act_num,
@@ -261,8 +265,6 @@ pub(super) fn result_value(
         "relics": run_state_json::relics_value(run),
         "potions": run_state_json::potions_value(run),
         "path": path_value(branch),
-        "recent_progress_journal": &branch.recent_progress_journal,
-        "recent_planner_capture": &branch.recent_planner_capture,
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
@@ -480,6 +482,28 @@ mod tests {
 
     fn evaluation(branches: Vec<Branch>) -> FrontierTrajectoryEvaluation {
         trajectory_snapshot::frontier_trajectory_evaluation(&VecDeque::from(branches))
+    }
+
+    #[test]
+    fn result_references_durable_head_and_does_not_dual_write_recent_evidence() {
+        let branch = sample_branch();
+        let trajectory_evaluation = evaluation(vec![branch.clone()]);
+        let value = result_value(
+            1,
+            &branch,
+            Value::Null,
+            Value::Array(Vec::new()),
+            &trajectory_evaluation,
+        );
+
+        assert_eq!(value["schema"], "branch_tiny_run_result_v4");
+        assert!(value.get("trajectory_head").is_some());
+        assert_eq!(
+            value["trajectory_projection_index"],
+            "trajectory/projection_index.json"
+        );
+        assert!(value.get("recent_progress_journal").is_none());
+        assert!(value.get("recent_planner_capture").is_none());
     }
 
     #[test]
