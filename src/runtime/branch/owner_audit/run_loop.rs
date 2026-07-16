@@ -57,7 +57,10 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
     let mut selected_branch = None;
     for generation in generation_start..=args.generations {
         last_generation = generation;
-        if deadline.should_soft_stop(args) {
+        if should_soft_pause(
+            deadline.should_soft_stop(args),
+            frontier.iter().map(|branch| &branch.status),
+        ) {
             stop_recorder.save_soft_wall(
                 capsule_args,
                 generation,
@@ -186,7 +189,10 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             break;
         }
         frontier = next;
-        if deadline.should_soft_stop(args) {
+        if should_soft_pause(
+            deadline.should_soft_stop(args),
+            frontier.iter().map(|branch| &branch.status),
+        ) {
             let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
                 generation: generation + 1,
@@ -282,6 +288,13 @@ fn elapsed_ms(started: std::time::Instant) -> u64 {
     started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
 
+fn should_soft_pause<'a>(
+    deadline_reached: bool,
+    statuses: impl IntoIterator<Item = &'a super::BranchStatus>,
+) -> bool {
+    deadline_reached && statuses.into_iter().any(super::BranchStatus::is_resumable)
+}
+
 fn cutpoint_root_for_outputs(
     frontier_checkpoint_path: Option<&PathBuf>,
     resume_frontier: Option<&PathBuf>,
@@ -303,6 +316,7 @@ fn cutpoint_root_for_outputs(
 
 #[cfg(test)]
 mod tests {
+    use super::super::{BoundarySite, Owner, TerminalOutcome};
     use super::*;
 
     #[test]
@@ -328,6 +342,34 @@ mod tests {
     #[test]
     fn cutpoint_root_is_absent_without_artifact_outputs() {
         assert!(cutpoint_root_for_outputs(None, None, None).is_none());
+    }
+
+    #[test]
+    fn deadline_only_soft_pauses_resumable_work() {
+        let running = BranchStatus::Running {
+            boundary: "Reward".to_string(),
+            owner: Owner::CardReward,
+        };
+        let awaiting = BranchStatus::AwaitingAuto {
+            boundary: "Combat".to_string(),
+            reason: "owner handoff".to_string(),
+        };
+        let real_stops = [
+            BranchStatus::CombatGap {
+                boundary: "Combat".to_string(),
+                reason: "no accepted line".to_string(),
+            },
+            BranchStatus::AutomationGap {
+                boundary: "Event".to_string(),
+                site: BoundarySite::Unknown,
+            },
+            BranchStatus::Terminal(TerminalOutcome::Defeat),
+        ];
+
+        assert!(should_soft_pause(true, [&running]));
+        assert!(should_soft_pause(true, [&awaiting]));
+        assert!(!should_soft_pause(false, [&running]));
+        assert!(!should_soft_pause(true, real_stops.iter()));
     }
 
     fn temp_root() -> std::path::PathBuf {
