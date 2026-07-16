@@ -125,6 +125,7 @@ pub struct RunTrajectoryAnswerDeploymentV1 {
     pub deployment_id: String,
     pub segment_id: String,
     pub journal_ordinal: usize,
+    pub combat_sequence: u64,
     pub resolution_kind: RunCombatResolutionKindV1,
     pub source: CombatAutomationAnswerSourceV1,
     pub axis: PressureAxis,

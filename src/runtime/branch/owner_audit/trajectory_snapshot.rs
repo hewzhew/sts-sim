@@ -23,6 +23,13 @@ pub(super) struct FrontierTrajectoryEvaluation {
 }
 
 pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
+    trajectory_snapshot_with_deployability(branch, TrajectoryDeployabilityEvidence::Unknown)
+}
+
+pub(super) fn trajectory_snapshot_with_deployability(
+    branch: &Branch,
+    deployability: TrajectoryDeployabilityEvidence,
+) -> TrajectorySnapshot {
     let run = &branch.session.run_state;
     let plan = DeckPlanSnapshot::from_run_state(run);
     let decision_context = challenger_decision_context(run);
@@ -60,7 +67,7 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
             floor: run.floor_num,
         },
         pressure: pressure_evidence(&decision_context.current_pressure),
-        deployability: TrajectoryDeployabilityEvidence::Unknown,
+        deployability,
         resources: TrajectoryResources {
             hp: run.current_hp,
             max_hp: run.max_hp,

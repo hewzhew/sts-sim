@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,6 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_simulator::ai::planner_core::stable_planner_id;
+use sts_simulator::ai::strategy::trajectory_comparison::TrajectoryDeployabilityEvidence;
+use sts_simulator::runtime::branch::RunTrajectoryDeploymentSummaryV1;
 
 use super::run_identity::{current_source_identity, SourceIdentity};
 use super::run_slice_result::{
@@ -240,12 +242,13 @@ impl CapsuleArtifactStore {
         if running == 0 {
             return Ok(None);
         }
+        let deployment_by_branch = self.write_projection_index(args, frontier.iter())?;
         trajectory_evidence_store::record_frontier(
             &self.trajectory_state_path(),
             generation,
             frontier,
+            &deployment_by_branch,
         )?;
-        self.write_projection_index(args, frontier.iter())?;
         frontier_checkpoint::save(
             &self.root.join("frontier.json"),
             args,
@@ -281,12 +284,16 @@ impl CapsuleArtifactStore {
         let combat_case = self.combat_case_value(args, generation, branch);
         let accepted_high_loss_combat_diagnostics =
             self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
+        let deployment_by_branch = self.write_projection_index(args, std::iter::once(branch))?;
         trajectory_evidence_store::record_branch(
             &self.trajectory_state_path(),
             generation,
             branch,
+            deployment_by_branch
+                .get(&branch.id)
+                .copied()
+                .unwrap_or(TrajectoryDeployabilityEvidence::Unknown),
         )?;
-        self.write_projection_index(args, std::iter::once(branch))?;
         let trajectory_evaluation = self.current_trajectory_evaluation()?;
         entries.push(run_capsule_format::result_value(
             generation,
@@ -342,12 +349,16 @@ impl CapsuleArtifactStore {
         let combat_case = self.combat_case_value(args, generation, branch);
         let accepted_high_loss_combat_diagnostics =
             self.accepted_high_loss_combat_diagnostics_value(args, generation, branch)?;
+        let deployment_by_branch = self.write_projection_index(args, std::iter::once(branch))?;
         trajectory_evidence_store::record_branch(
             &self.trajectory_state_path(),
             generation,
             branch,
+            deployment_by_branch
+                .get(&branch.id)
+                .copied()
+                .unwrap_or(TrajectoryDeployabilityEvidence::Unknown),
         )?;
-        self.write_projection_index(args, std::iter::once(branch))?;
         let trajectory_evaluation = self.current_trajectory_evaluation()?;
         write_json(
             &self.root.join("result.json"),
@@ -569,14 +580,19 @@ impl CapsuleArtifactStore {
         &self,
         args: Args,
         branches: impl IntoIterator<Item = &'a Branch>,
-    ) -> Result<(), String> {
+    ) -> Result<BTreeMap<usize, TrajectoryDeployabilityEvidence>, String> {
         let run_id = self.trajectory_run_id(args)?;
         let store =
             super::trajectory_artifact_store::TrajectoryArtifactStore::new(self.root.clone());
         let mut entries = Vec::new();
+        let mut deployment_by_branch = BTreeMap::new();
         for branch in branches {
             branch.trajectory.checkpoint_head()?;
             if let Some(bundle) = self.project_branch_trajectory(branch)? {
+                deployment_by_branch.insert(
+                    branch.id,
+                    trajectory_deployability_evidence(bundle.deployment.summary),
+                );
                 entries.push(store.write_projection_bundle(branch.id, &bundle)?);
             }
         }
@@ -592,7 +608,8 @@ impl CapsuleArtifactStore {
         };
         let value = serde_json::to_value(index)
             .map_err(|error| format!("serialize trajectory projection index: {error}"))?;
-        write_json(&self.trajectory_projection_index_path(), value)
+        write_json(&self.trajectory_projection_index_path(), value)?;
+        Ok(deployment_by_branch)
     }
 
     fn current_trajectory_evaluation(
@@ -610,8 +627,57 @@ impl CapsuleArtifactStore {
             &self.trajectory_state_path(),
             generation,
             branch,
+            TrajectoryDeployabilityEvidence::Unknown,
         )?;
         Ok(())
+    }
+}
+
+fn trajectory_deployability_evidence(
+    summary: RunTrajectoryDeploymentSummaryV1,
+) -> TrajectoryDeployabilityEvidence {
+    if summary.claimed_answers == 0 || summary.censored_answers > 0 {
+        return TrajectoryDeployabilityEvidence::Unknown;
+    }
+    TrajectoryDeployabilityEvidence::Comparable {
+        claimed_answers: summary.claimed_answers.min(u16::MAX as u32) as u16,
+        timely_playable: summary.playable_answers.min(u16::MAX as u32) as u16,
+    }
+}
+
+#[cfg(test)]
+mod deployment_evidence_tests {
+    use super::*;
+
+    #[test]
+    fn complete_projection_summary_becomes_comparable_deployability() {
+        assert_eq!(
+            trajectory_deployability_evidence(RunTrajectoryDeploymentSummaryV1 {
+                claimed_answers: 7,
+                reached_answers: 6,
+                playable_answers: 4,
+                applied_answers: 2,
+                censored_answers: 0,
+            }),
+            TrajectoryDeployabilityEvidence::Comparable {
+                claimed_answers: 7,
+                timely_playable: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn censored_projection_summary_fails_closed() {
+        assert_eq!(
+            trajectory_deployability_evidence(RunTrajectoryDeploymentSummaryV1 {
+                claimed_answers: 7,
+                reached_answers: 3,
+                playable_answers: 2,
+                applied_answers: 1,
+                censored_answers: 1,
+            }),
+            TrajectoryDeployabilityEvidence::Unknown
+        );
     }
 }
 

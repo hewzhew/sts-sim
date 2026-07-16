@@ -24,6 +24,8 @@ use sts_simulator::runtime::branch::{
 };
 use sts_simulator::state::core::ClientInput;
 
+use std::collections::BTreeMap;
+
 use super::trajectory_artifact_store::TrajectoryArtifactStore;
 
 pub(super) struct RunTrajectoryProjectionBundleV1 {
@@ -83,6 +85,7 @@ fn project_deployment(
                         deployment_id: String::new(),
                         segment_id: segment.segment_id.clone(),
                         journal_ordinal,
+                        combat_sequence: resolution.before.combat_sequence,
                         resolution_kind: resolution.kind,
                         source: claim.source.clone(),
                         axis: *axis,
@@ -184,9 +187,8 @@ fn deployment_stage(
 fn deployment_summary(
     records: &[RunTrajectoryAnswerDeploymentV1],
 ) -> RunTrajectoryDeploymentSummaryV1 {
-    let mut summary = RunTrajectoryDeploymentSummaryV1::default();
+    let mut instances = BTreeMap::new();
     for record in records {
-        summary.claimed_answers = summary.claimed_answers.saturating_add(1);
         let (stage, censored) = match record.result {
             RunTrajectoryDeploymentResultV1::Observed { stage } => (stage, false),
             RunTrajectoryDeploymentResultV1::Censored {
@@ -194,6 +196,28 @@ fn deployment_summary(
                 ..
             } => (highest_observed_stage, true),
         };
+        let (source_kind, source_uuid) = match record.source {
+            CombatAutomationAnswerSourceV1::Card { uuid, .. } => (0_u8, uuid),
+            CombatAutomationAnswerSourceV1::Potion { uuid, .. } => (1_u8, uuid),
+        };
+        instances
+            .entry((
+                record.combat_sequence,
+                source_kind,
+                source_uuid,
+                record.axis,
+            ))
+            .and_modify(
+                |(highest_stage, latest_censored): &mut (RunTrajectoryDeploymentStageV1, bool)| {
+                    *highest_stage = (*highest_stage).max(stage);
+                    *latest_censored = censored;
+                },
+            )
+            .or_insert((stage, censored));
+    }
+    let mut summary = RunTrajectoryDeploymentSummaryV1::default();
+    for (stage, censored) in instances.into_values() {
+        summary.claimed_answers = summary.claimed_answers.saturating_add(1);
         if stage >= RunTrajectoryDeploymentStageV1::Reached {
             summary.reached_answers = summary.reached_answers.saturating_add(1);
         }
@@ -757,6 +781,51 @@ mod tests {
                 reason: RunTrajectoryDeploymentCensorReasonV1::OpportunityObservationUnavailable,
             }
         );
+    }
+
+    #[test]
+    fn deployment_summary_merges_turn_segments_into_the_closed_combat_window() {
+        let source = CombatAutomationAnswerSourceV1::Card {
+            id: sts_simulator::content::cards::CardId::Shockwave,
+            uuid: 10,
+            upgrades: 0,
+            origin: sts_simulator::eval::run_control::CombatAutomationCardOriginV1::MasterDeck,
+        };
+        let records = vec![
+            RunTrajectoryAnswerDeploymentV1 {
+                deployment_id: "turn-segment".to_string(),
+                segment_id: "segment-1".to_string(),
+                journal_ordinal: 0,
+                combat_sequence: 7,
+                resolution_kind: RunCombatResolutionKindV1::TurnSegment,
+                source: source.clone(),
+                axis: sts_simulator::ai::strategy::pressure_assessment::PressureAxis::DelayCapacity,
+                result: RunTrajectoryDeploymentResultV1::Censored {
+                    highest_observed_stage: RunTrajectoryDeploymentStageV1::Playable,
+                    reason: RunTrajectoryDeploymentCensorReasonV1::CombatResolutionContinues,
+                },
+            },
+            RunTrajectoryAnswerDeploymentV1 {
+                deployment_id: "complete".to_string(),
+                segment_id: "segment-2".to_string(),
+                journal_ordinal: 0,
+                combat_sequence: 7,
+                resolution_kind: RunCombatResolutionKindV1::CompleteVictory,
+                source,
+                axis: sts_simulator::ai::strategy::pressure_assessment::PressureAxis::DelayCapacity,
+                result: RunTrajectoryDeploymentResultV1::Observed {
+                    stage: RunTrajectoryDeploymentStageV1::Claimed,
+                },
+            },
+        ];
+
+        let summary = deployment_summary(&records);
+
+        assert_eq!(summary.claimed_answers, 1);
+        assert_eq!(summary.reached_answers, 1);
+        assert_eq!(summary.playable_answers, 1);
+        assert_eq!(summary.applied_answers, 0);
+        assert_eq!(summary.censored_answers, 0);
     }
 
     #[test]

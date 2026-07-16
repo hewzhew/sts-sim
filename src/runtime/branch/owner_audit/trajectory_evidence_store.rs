@@ -1,16 +1,19 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sts_simulator::ai::strategy::trajectory_comparison::TrajectorySnapshot;
+use sts_simulator::ai::strategy::trajectory_comparison::{
+    TrajectoryDeployabilityEvidence, TrajectorySnapshot,
+};
 
 use super::branch_model::Branch;
 use super::run_capsule_io::write_json;
 use super::trajectory_snapshot::{
-    trajectory_evaluation_from_snapshots, trajectory_snapshot, FrontierTrajectoryEvaluation,
+    trajectory_evaluation_from_snapshots, trajectory_snapshot_with_deployability,
+    FrontierTrajectoryEvaluation,
 };
 
 const TRAJECTORY_STATE_SCHEMA: &str = "branch_tiny_trajectory_state_v0";
@@ -40,14 +43,19 @@ impl TrajectoryEvidenceState {
         }
     }
 
-    fn observe(&mut self, generation: usize, branch: &Branch) -> Result<(), String> {
+    fn observe(
+        &mut self,
+        generation: usize,
+        branch: &Branch,
+        deployability: TrajectoryDeployabilityEvidence,
+    ) -> Result<(), String> {
         let observation = TrajectoryObservation {
             generation,
             branch_id: branch.id,
             parent_id: branch.parent_id,
             status: serde_json::to_value(&branch.status)
                 .map_err(|error| format!("serialize trajectory branch status: {error}"))?,
-            snapshot: trajectory_snapshot(branch),
+            snapshot: trajectory_snapshot_with_deployability(branch, deployability),
         };
         let lane = observation.snapshot.lane.as_str();
         match self
@@ -106,10 +114,18 @@ pub(super) fn record_frontier(
     path: &Path,
     generation: usize,
     frontier: &VecDeque<Branch>,
+    deployment_by_branch: &BTreeMap<usize, TrajectoryDeployabilityEvidence>,
 ) -> Result<TrajectoryEvidenceState, String> {
     let mut state = read_state(path)?;
     for branch in frontier {
-        state.observe(generation, branch)?;
+        state.observe(
+            generation,
+            branch,
+            deployment_by_branch
+                .get(&branch.id)
+                .copied()
+                .unwrap_or(TrajectoryDeployabilityEvidence::Unknown),
+        )?;
     }
     persist(path, &state)?;
     Ok(state)
@@ -119,9 +135,10 @@ pub(super) fn record_branch(
     path: &Path,
     generation: usize,
     branch: &Branch,
+    deployability: TrajectoryDeployabilityEvidence,
 ) -> Result<TrajectoryEvidenceState, String> {
     let mut state = read_state(path)?;
-    state.observe(generation, branch)?;
+    state.observe(generation, branch, deployability)?;
     persist(path, &state)?;
     Ok(state)
 }
@@ -191,21 +208,33 @@ mod tests {
             BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
         );
         let frontier = VecDeque::from([baseline.clone(), challenger.clone()]);
-        record_frontier(&path, 10, &frontier).unwrap();
+        record_frontier(&path, 10, &frontier, &BTreeMap::new()).unwrap();
 
         challenger.status = BranchStatus::CombatGap {
             boundary: "boss".to_string(),
             reason: "no win".to_string(),
         };
         challenger.session.run_state.current_hp = 47;
-        record_branch(&path, 40, &challenger).unwrap();
+        record_branch(
+            &path,
+            40,
+            &challenger,
+            TrajectoryDeployabilityEvidence::Unknown,
+        )
+        .unwrap();
 
         baseline.status = BranchStatus::CombatGap {
             boundary: "boss".to_string(),
             reason: "no win".to_string(),
         };
         baseline.session.run_state.current_hp = 42;
-        record_branch(&path, 42, &baseline).unwrap();
+        record_branch(
+            &path,
+            42,
+            &baseline,
+            TrajectoryDeployabilityEvidence::Unknown,
+        )
+        .unwrap();
 
         let state = read_state(&path).unwrap();
         assert_eq!(state.observations.len(), 2);
@@ -223,6 +252,25 @@ mod tests {
     }
 
     #[test]
+    fn projected_deployability_replaces_the_live_unknown_snapshot_layer() {
+        let root = std::env::temp_dir().join("trajectory_state_projected_deployability");
+        let path = root.join("trajectory_state.json");
+        let _ = std::fs::remove_dir_all(&root);
+        let branch = test_branch(1, BranchPolicyLane::default());
+        let frontier = VecDeque::from([branch]);
+        let evidence = TrajectoryDeployabilityEvidence::Comparable {
+            claimed_answers: 6,
+            timely_playable: 4,
+        };
+        let deployment_by_branch = BTreeMap::from([(1, evidence)]);
+
+        let state = record_frontier(&path, 10, &frontier, &deployment_by_branch).unwrap();
+
+        assert_eq!(state.evaluation.snapshots[0].deployability, evidence);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn legacy_trajectory_state_loads_and_refreshes_fail_closed() {
         let root = std::env::temp_dir().join("trajectory_state_legacy_comparability");
         let path = root.join("trajectory_state.json");
@@ -234,7 +282,7 @@ mod tests {
                 BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
             ),
         ]);
-        record_frontier(&path, 10, &frontier).expect("record current state");
+        record_frontier(&path, 10, &frontier, &BTreeMap::new()).expect("record current state");
 
         let mut value: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).expect("read current state"))
@@ -302,8 +350,13 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(&path, "not-json").unwrap();
 
-        let error =
-            record_branch(&path, 1, &test_branch(1, BranchPolicyLane::default())).unwrap_err();
+        let error = record_branch(
+            &path,
+            1,
+            &test_branch(1, BranchPolicyLane::default()),
+            TrajectoryDeployabilityEvidence::Unknown,
+        )
+        .unwrap_err();
 
         assert!(error.contains("trajectory_state.json"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not-json");
