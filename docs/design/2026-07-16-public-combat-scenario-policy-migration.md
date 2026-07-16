@@ -53,6 +53,31 @@ the current public observation schema is complete enough for production
 policy. Under-observation may reduce policy strength, but it must never reveal
 hidden state.
 
+## Second Slice
+
+The second executable slice establishes a policy-specific observation and the
+first closed-loop transition:
+
+- keeps `CombatPublicObservationV1` stable as the compatibility evidence and
+  fingerprint boundary;
+- adds `CombatPolicyObservationV1` for public, mechanically relevant combat
+  state: detailed card runtime without UUIDs, visible pile contents, turn
+  counters, stance, orbs, relic counters, powers, and public power timing;
+- keeps RNG streams, card UUIDs, monster entity IDs, and power instance IDs
+  outside the policy payload;
+- rejects half-resolved player turns with pending action queues, queued cards,
+  limbo cards, or active card resolution;
+- binds one public action across every exact world, steps each world to a
+  stable boundary, records a public-only history transition, and regroups by
+  the newly observed state;
+- proves that hidden RNG and hidden draw order stay grouped until an action
+  reveals a different public result, at which point the successor information
+  sets separate.
+
+Pending combat choices remain a typed unsupported successor in this slice.
+The closed loop supports only quiescent `CombatPlayerTurn` boundaries and
+terminal win/loss outcomes. Production combat ownership remains unchanged.
+
 ## Migration Gates
 
 1. **Information-set foundation:** public grouping and single-action binding

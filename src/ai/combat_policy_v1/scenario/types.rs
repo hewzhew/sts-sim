@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
 
-use super::super::CombatPublicObservationV1;
+use super::super::CombatPolicyObservationV1;
 
 pub const COMBAT_POLICY_INFORMATION_SET_SCHEMA_NAME: &str = "CombatPolicyInformationSetV1";
 pub const COMBAT_POLICY_INFORMATION_SET_SCHEMA_VERSION: u32 = 1;
@@ -29,7 +29,6 @@ impl CombatScenarioParticleV1 {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn from_public_history(
         scenario_id: impl Into<String>,
         public_history_id: impl Into<String>,
@@ -66,7 +65,7 @@ pub struct CombatPolicyObservationEnvelopeV1 {
     pub schema_version: u32,
     pub engine_state: String,
     pub turn_count: u32,
-    pub observation: CombatPublicObservationV1,
+    pub observation: CombatPolicyObservationV1,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -139,6 +138,19 @@ pub enum CombatScenarioPolicyErrorV1 {
         scenario_id: String,
         engine_state: String,
     },
+    NonQuiescentBoundary {
+        scenario_id: String,
+        pending_work: Vec<String>,
+    },
+    UnsupportedSuccessorBoundary {
+        scenario_id: String,
+        engine_state: String,
+    },
+    StepTruncated {
+        scenario_id: String,
+        engine_steps: usize,
+        timed_out: bool,
+    },
     UnsupportedAction {
         scenario_id: String,
         input: String,
@@ -177,6 +189,29 @@ impl fmt::Display for CombatScenarioPolicyErrorV1 {
             } => write!(
                 formatter,
                 "combat scenario '{scenario_id}' has unsupported policy boundary {engine_state}"
+            ),
+            Self::NonQuiescentBoundary {
+                scenario_id,
+                pending_work,
+            } => write!(
+                formatter,
+                "combat scenario '{scenario_id}' is not at a quiescent policy boundary: {}",
+                pending_work.join(", ")
+            ),
+            Self::UnsupportedSuccessorBoundary {
+                scenario_id,
+                engine_state,
+            } => write!(
+                formatter,
+                "combat scenario '{scenario_id}' stepped to unsupported policy boundary {engine_state}"
+            ),
+            Self::StepTruncated {
+                scenario_id,
+                engine_steps,
+                timed_out,
+            } => write!(
+                formatter,
+                "combat scenario '{scenario_id}' did not reach a stable policy boundary after {engine_steps} engine steps (timed_out={timed_out})"
             ),
             Self::UnsupportedAction { scenario_id, input } => write!(
                 formatter,

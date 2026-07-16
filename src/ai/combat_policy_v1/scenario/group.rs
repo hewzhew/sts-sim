@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use blake2::{Blake2b512, Digest};
-use serde::Serialize;
-
 use crate::state::core::EngineState;
 
-use super::super::combat_public_observation_v1;
+use super::super::combat_policy_observation_v1;
 use super::actions::exact_actions_for_particle;
+use super::hash::stable_hash;
 use super::types::{
     CombatPolicyInformationSetKeyV1, CombatPolicyObservationEnvelopeV1,
     CombatPolicyObservationGroupV1, CombatPublicActionV1, CombatScenarioDecisionBindingV1,
@@ -17,7 +15,7 @@ use super::types::{
 #[derive(Clone)]
 pub struct CombatScenarioGroupV1 {
     view: CombatPolicyObservationGroupV1,
-    worlds: Vec<CombatScenarioParticleV1>,
+    pub(super) worlds: Vec<CombatScenarioParticleV1>,
     exact_actions: BTreeMap<String, ExactActionMap>,
 }
 
@@ -85,13 +83,20 @@ pub fn group_combat_scenarios_v1(
                 engine_state: format!("{:?}", particle.position.engine),
             });
         }
+        let pending_work = non_quiescent_work(&particle.position.combat);
+        if !pending_work.is_empty() {
+            return Err(CombatScenarioPolicyErrorV1::NonQuiescentBoundary {
+                scenario_id: particle.scenario_id,
+                pending_work,
+            });
+        }
 
         let envelope = CombatPolicyObservationEnvelopeV1 {
             schema_name: COMBAT_POLICY_INFORMATION_SET_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_POLICY_INFORMATION_SET_SCHEMA_VERSION,
             engine_state: "combat_player_turn".to_string(),
             turn_count: particle.position.combat.turn.turn_count,
-            observation: combat_public_observation_v1(&particle.position.combat),
+            observation: combat_policy_observation_v1(&particle.position.combat),
         };
         let exact_actions = exact_actions_for_particle(&particle)?;
         let candidates = exact_actions.keys().cloned().collect::<Vec<_>>();
@@ -146,13 +151,22 @@ pub fn group_combat_scenarios_v1(
         .collect())
 }
 
-fn stable_hash<T: Serialize>(value: &T) -> String {
-    let bytes = serde_json::to_vec(value).expect("public combat policy input should serialize");
-    let mut hasher = Blake2b512::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    digest[..32]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+fn non_quiescent_work(combat: &crate::runtime::combat::CombatState) -> Vec<String> {
+    let mut pending = Vec::new();
+    if !combat.engine.action_queue.is_empty() {
+        pending.push("action_queue".to_string());
+    }
+    if !combat.zones.queued_cards.is_empty() {
+        pending.push("queued_cards".to_string());
+    }
+    if !combat.zones.limbo.is_empty() {
+        pending.push("limbo".to_string());
+    }
+    if combat.runtime.using_card {
+        pending.push("using_card".to_string());
+    }
+    if !combat.runtime.card_queue.is_empty() {
+        pending.push("runtime_card_queue".to_string());
+    }
+    pending
 }

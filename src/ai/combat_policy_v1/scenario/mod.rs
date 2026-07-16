@@ -1,8 +1,13 @@
 mod actions;
 mod group;
+mod hash;
+mod step;
 mod types;
 
 pub use group::{group_combat_scenarios_v1, CombatScenarioGroupV1};
+pub use step::{
+    step_combat_scenario_group_v1, CombatScenarioStepResultV1, CombatScenarioStepViewV1,
+};
 pub use types::{
     CombatPolicyInformationSetKeyV1, CombatPolicyObservationEnvelopeV1,
     CombatPolicyObservationGroupV1, CombatPublicActionV1, CombatPublicTargetV1,
