@@ -180,7 +180,9 @@ pub(super) fn apply_search_combat(
 mod tests {
     use std::time::Duration;
 
-    use super::super::combat_line_trace::combat_automation_step_state_v1;
+    use super::super::combat_line_trace::{
+        combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
+    };
     use super::super::combat_no_win_fallback::segment_mode_allows_turn_segment;
     use super::super::combat_search_setup::{
         effective_hp_loss_limit, high_stakes_search_options, search_config,
@@ -276,6 +278,37 @@ mod tests {
         assert_eq!(snapshot.monsters[0].label, "Time Eater");
         assert_eq!(snapshot.monsters[0].time_warp, 11);
         assert_eq!(snapshot.monsters[0].strength, 2);
+    }
+
+    #[test]
+    fn combat_automation_opportunity_uses_exact_legal_card_and_potion_masks() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.turn.energy = 0;
+        combat.zones.hand = vec![
+            CombatCard::new(crate::content::cards::CardId::Strike, 10),
+            CombatCard::new(crate::content::cards::CardId::Anger, 20),
+        ];
+        combat.entities.potions = vec![
+            Some(Potion::new(PotionId::BlockPotion, 30)),
+            Some(Potion::new(PotionId::FairyPotion, 40)),
+        ];
+        let session = session_with_active_combat(combat);
+
+        let snapshot = combat_automation_opportunity_state_v1(&session)
+            .expect("active combat should expose an opportunity snapshot");
+
+        assert_eq!(
+            snapshot
+                .hand
+                .iter()
+                .map(|card| card.uuid)
+                .collect::<Vec<_>>(),
+            vec![10, 20]
+        );
+        assert_eq!(snapshot.playable_card_uuids, vec![20]);
+        assert_eq!(snapshot.usable_potion_uuids, vec![30]);
+        assert_eq!(snapshot.potions[0].as_ref().unwrap().uuid, 30);
+        assert_eq!(snapshot.potions[1].as_ref().unwrap().uuid, 40);
     }
 
     fn session_with_combat_flags(is_boss_fight: bool, is_elite_fight: bool) -> RunControlSession {
@@ -392,6 +425,7 @@ mod tests {
                 step_index: 7,
                 action_key: "combat/end_turn".to_string(),
                 input: ClientInput::EndTurn,
+                opportunity_before: None,
                 drawn_cards: Vec::new(),
                 combat_after: None,
             }],

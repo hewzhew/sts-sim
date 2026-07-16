@@ -4,22 +4,85 @@ use crate::ai::combat_search_v2::{
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
 use crate::sim::combat::{CombatPosition, CombatTerminal};
-use crate::state::core::{EngineState, RunResult};
+use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::combat_candidate_line::CombatCandidateLine;
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::session::RunControlSession;
 use super::trace_annotation::{
-    CombatAutomationMonsterStateV1, CombatAutomationStepStateV1, CombatSearchPerformanceSnapshotV1,
+    CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
+    CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatSearchPerformanceSnapshotV1,
     CombatSearchTerminalLineSummary, RunControlTraceAnnotationV1,
 };
-use super::transition_report::RunApplyStatus;
+use super::transition_report::{CardSnapshot, RunApplyStatus};
 
 #[derive(Clone, Copy)]
 pub(super) struct CombatCandidateLinePerformance {
     pub(super) nodes_expanded: u64,
     pub(super) nodes_generated: u64,
     pub(super) total_us: u64,
+}
+
+pub(super) fn combat_automation_opportunity_state_v1(
+    session: &RunControlSession,
+) -> Option<CombatAutomationOpportunityStateV1> {
+    let active = session.active_combat.as_ref()?;
+    let combat = &active.combat_state;
+    let legal_moves = get_legal_moves(&active.engine_state, combat);
+    let mut playable_card_uuids = legal_moves
+        .iter()
+        .filter_map(|input| match input {
+            ClientInput::PlayCard { card_index, .. } => {
+                combat.zones.hand.get(*card_index).map(|card| card.uuid)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    playable_card_uuids.sort_unstable();
+    playable_card_uuids.dedup();
+    let mut usable_potion_uuids = legal_moves
+        .iter()
+        .filter_map(|input| match input {
+            ClientInput::UsePotion { potion_index, .. } => combat
+                .entities
+                .potions
+                .get(*potion_index)
+                .and_then(Option::as_ref)
+                .map(|potion| potion.uuid),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    usable_potion_uuids.sort_unstable();
+    usable_potion_uuids.dedup();
+
+    Some(CombatAutomationOpportunityStateV1 {
+        turn: combat.turn.turn_count,
+        energy: combat.turn.energy,
+        hand: combat
+            .zones
+            .hand
+            .iter()
+            .map(|card| CardSnapshot {
+                id: card.id,
+                uuid: card.uuid,
+                upgrades: card.upgrades,
+            })
+            .collect(),
+        potions: combat
+            .entities
+            .potions
+            .iter()
+            .map(|slot| {
+                slot.as_ref().map(|potion| CombatAutomationPotionStateV1 {
+                    id: potion.id,
+                    uuid: potion.uuid,
+                })
+            })
+            .collect(),
+        playable_card_uuids,
+        usable_potion_uuids,
+    })
 }
 
 pub(super) fn combat_automation_step_state_v1(

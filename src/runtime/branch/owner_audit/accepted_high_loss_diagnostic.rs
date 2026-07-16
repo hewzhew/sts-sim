@@ -304,6 +304,7 @@ mod tests {
                         step_index,
                         action_key: format!("combat/test/{step_index}"),
                         input: ClientInput::EndTurn,
+                        opportunity_before: None,
                         drawn_cards: Vec::new(),
                         combat_after: hp.map(|player_hp| CombatAutomationStepStateV1 {
                             player_hp,

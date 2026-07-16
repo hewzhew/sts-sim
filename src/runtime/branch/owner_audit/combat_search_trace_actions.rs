@@ -72,6 +72,7 @@ mod tests {
                 step_index: 0,
                 action_key: action_key.to_string(),
                 input: ClientInput::EndTurn,
+                opportunity_before: None,
                 drawn_cards: Vec::new(),
                 combat_after: None,
             }],

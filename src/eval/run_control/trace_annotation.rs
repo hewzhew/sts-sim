@@ -11,6 +11,7 @@ use crate::ai::planner_core::{
     PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
 };
 use crate::ai::route_planner_v1::MapDecisionPacketV1;
+use crate::content::potions::PotionId;
 use crate::state::core::ClientInput;
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
@@ -58,10 +59,30 @@ pub struct CombatAutomationActionV1 {
     pub step_index: usize,
     pub action_key: String,
     pub input: ClientInput,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opportunity_before: Option<CombatAutomationOpportunityStateV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drawn_cards: Vec<CardSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combat_after: Option<CombatAutomationStepStateV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationOpportunityStateV1 {
+    pub turn: u32,
+    pub energy: u8,
+    pub hand: Vec<CardSnapshot>,
+    pub potions: Vec<Option<CombatAutomationPotionStateV1>>,
+    pub playable_card_uuids: Vec<u32>,
+    pub usable_potion_uuids: Vec<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationPotionStateV1 {
+    pub id: PotionId,
+    pub uuid: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -639,6 +660,7 @@ mod tests {
             step_index: 3,
             action_key: "combat/end_turn".to_string(),
             input: ClientInput::EndTurn,
+            opportunity_before: None,
             drawn_cards: Vec::new(),
             combat_after: None,
         };
@@ -671,6 +693,7 @@ mod tests {
             step_index: 0,
             action_key: "combat/end_turn".to_string(),
             input: ClientInput::EndTurn,
+            opportunity_before: None,
             drawn_cards: Vec::new(),
             combat_after: None,
         };
@@ -711,6 +734,7 @@ mod tests {
                     step_index: 0,
                     action_key: "combat/end_turn".to_string(),
                     input: ClientInput::EndTurn,
+                    opportunity_before: None,
                     drawn_cards: Vec::new(),
                     combat_after: None,
                 }],
@@ -737,6 +761,7 @@ mod tests {
                 step_index: 1,
                 action_key: "combat/end_turn".to_string(),
                 input: ClientInput::EndTurn,
+                opportunity_before: None,
                 drawn_cards: Vec::new(),
                 combat_after: None,
             }],

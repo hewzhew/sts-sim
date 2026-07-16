@@ -7,9 +7,9 @@ use crate::state::core::ClientInput;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
 use super::combat_line_trace::{
-    combat_automation_step_state_v1, combat_line_performance_trace_annotation,
-    combat_search_performance_trace_annotation, current_run_apply_status,
-    CombatCandidateLinePerformance,
+    combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
+    combat_line_performance_trace_annotation, combat_search_performance_trace_annotation,
+    current_run_apply_status, CombatCandidateLinePerformance,
 };
 use super::combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
@@ -181,20 +181,24 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let mut automation_actions = Vec::new();
     trial.mark_current_combat_search_resolved();
+    let opportunity_before = combat_automation_opportunity_state_v1(&trial);
     let outcome = trial.apply_combat_resolution_input(smoke_input.clone())?;
     automation_actions.push(CombatAutomationActionV1 {
         step_index: 0,
         action_key: "combat/use_smoke_bomb_survival".to_string(),
         input: smoke_input,
+        opportunity_before,
         drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
         combat_after: combat_automation_step_state_v1(&trial),
     });
     if active_combat_is_waiting_for_smoke_escape_turn_end(&trial) {
+        let opportunity_before = combat_automation_opportunity_state_v1(&trial);
         let end_turn_outcome = trial.apply_combat_resolution_input(ClientInput::EndTurn)?;
         automation_actions.push(CombatAutomationActionV1 {
             step_index: 1,
             action_key: "combat/end_turn_after_smoke_bomb".to_string(),
             input: ClientInput::EndTurn,
+            opportunity_before,
             drawn_cards: drawn_cards_from_action_result(end_turn_outcome.action_result.as_ref()),
             combat_after: combat_automation_step_state_v1(&trial),
         });
@@ -251,11 +255,13 @@ fn apply_combat_action_traces(
     actions
         .iter()
         .map(|action| {
+            let opportunity_before = combat_automation_opportunity_state_v1(session);
             let outcome = session.apply_combat_resolution_input(action.input.clone())?;
             Ok(CombatAutomationActionV1 {
                 step_index: action.step_index,
                 action_key: action.action_key.clone(),
                 input: action.input.clone(),
+                opportunity_before,
                 drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
                 combat_after: combat_automation_step_state_v1(session),
             })
