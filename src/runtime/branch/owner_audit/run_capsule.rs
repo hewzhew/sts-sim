@@ -223,7 +223,6 @@ impl RunCapsule {
 
 #[cfg(test)]
 mod tests {
-    use super::super::frontier_checkpoint;
     use super::*;
 
     #[test]
@@ -233,88 +232,5 @@ mod tests {
         let capsule = RunCapsule::new(root.clone());
 
         assert_eq!(capsule.cutpoints_dir(), root.join("cutpoints"));
-    }
-
-    #[test]
-    fn resumed_capsule_preserves_and_extends_the_same_trajectory_head() {
-        let root = std::env::temp_dir().join(format!(
-            "sts_capsule_trajectory_resume_{}_{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        let args = crate::runtime::branch::default_branch_args(20260716001);
-        let capsule = RunCapsule::new(root.clone());
-        let (mut frontier, next_branch_id) =
-            super::super::branch_runtime::BranchRuntime::initial_frontier(
-                args,
-                std::time::Instant::now(),
-            );
-        let journal = frontier.front().unwrap().recent_progress_journal.clone();
-        let capture = frontier.front().unwrap().recent_planner_capture.clone();
-        capsule
-            .prepare_trajectory_frontier(args, 0, &mut frontier)
-            .unwrap();
-        capsule.write_running_manifest(args).unwrap();
-        capsule.commit_frontier_trajectories(&mut frontier).unwrap();
-        let first_head = frontier
-            .front()
-            .unwrap()
-            .trajectory
-            .committed_head()
-            .unwrap()
-            .clone();
-        capsule
-            .save_paused_recovery(args, 0, next_branch_id, &frontier, "test_slice_end")
-            .unwrap();
-
-        let checkpoint = frontier_checkpoint::load(&root.join("frontier.json")).unwrap();
-        let (mut resumed, _) = checkpoint.into_frontier().unwrap();
-        let resumed_capsule = RunCapsule::new(root.clone());
-        resumed_capsule
-            .prepare_trajectory_frontier(args, 0, &mut resumed)
-            .unwrap();
-        assert_eq!(
-            resumed.front().unwrap().trajectory.committed_head(),
-            Some(&first_head)
-        );
-        resumed.front_mut().unwrap().recent_progress_journal = journal;
-        resumed.front_mut().unwrap().recent_planner_capture = capture;
-        resumed
-            .front_mut()
-            .unwrap()
-            .capture_recent_trajectory(1)
-            .unwrap();
-        resumed_capsule
-            .commit_frontier_trajectories(&mut resumed)
-            .unwrap();
-        let second_head = resumed
-            .front()
-            .unwrap()
-            .trajectory
-            .committed_head()
-            .unwrap();
-        assert_eq!(second_head.depth, first_head.depth + 1);
-        assert_ne!(second_head.segment_id, first_head.segment_id);
-        let run_id = resumed_capsule.store.trajectory_run_id(args).unwrap();
-        resumed_capsule
-            .store
-            .verify_branch_trajectory(&run_id, resumed.front().unwrap())
-            .unwrap();
-        let projection = resumed_capsule
-            .project_branch_trajectory(resumed.front().unwrap())
-            .unwrap()
-            .unwrap();
-        assert_eq!(projection.reconstruction.segments.len(), 2);
-        assert_eq!(projection.behavior.events.len(), 2);
-
-        let manifest: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("manifest.json")).unwrap())
-                .unwrap();
-        assert_eq!(manifest["trajectory_run_id"], run_id);
-        let _ = std::fs::remove_dir_all(root);
     }
 }

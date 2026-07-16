@@ -464,14 +464,13 @@ fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
 
     let trace = std::fs::read_to_string("src/runtime/branch/owner_audit/trace_format.rs")
         .expect("read owner-audit trace schema");
-    assert!(trace.contains("branch_tiny_trace_v3"));
-    assert!(trace.contains("recent_progress_journal"));
-    assert!(trace.contains("recent_planner_capture"));
+    assert!(trace.contains("branch_tiny_trace_v4"));
+    assert!(trace.contains("trajectory_head"));
     let capsule = std::fs::read_to_string("src/runtime/branch/owner_audit/run_capsule_format.rs")
         .expect("read owner-audit capsule schema");
-    assert!(capsule.contains("branch_tiny_run_result_v3"));
-    assert!(capsule.contains("recent_progress_journal"));
-    assert!(capsule.contains("recent_planner_capture"));
+    assert!(capsule.contains("branch_tiny_run_result_v4"));
+    assert!(capsule.contains("trajectory_head"));
+    assert!(capsule.contains("trajectory_projection_index"));
 }
 
 #[test]
