@@ -1,11 +1,13 @@
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatState;
 use crate::sim::combat_legal_actions::get_legal_moves;
-use crate::state::core::ClientInput;
+use crate::state::core::{ClientInput, EngineState};
 
+use super::pending_choice::{exact_pending_choice_inputs, public_pending_choice_action};
 use super::types::{
     CombatPublicActionV1, CombatPublicTargetV1, CombatScenarioParticleV1,
     CombatScenarioPolicyErrorV1, ExactActionMap,
@@ -15,14 +17,35 @@ pub(super) fn exact_actions_for_particle(
     particle: &CombatScenarioParticleV1,
 ) -> Result<ExactActionMap, CombatScenarioPolicyErrorV1> {
     let mut exact_actions = BTreeMap::new();
-    for input in get_legal_moves(&particle.position.engine, &particle.position.combat) {
-        let public_action =
-            public_action(particle.scenario_id(), &particle.position.combat, &input)?;
-        if exact_actions.insert(public_action.clone(), input).is_some() {
-            return Err(CombatScenarioPolicyErrorV1::AmbiguousPublicAction {
-                scenario_id: particle.scenario_id().to_string(),
-                action: format!("{public_action:?}"),
-            });
+    let inputs = match &particle.position.engine {
+        EngineState::PendingChoice(choice) => {
+            exact_pending_choice_inputs(particle.scenario_id(), choice)?
+        }
+        _ => get_legal_moves(&particle.position.engine, &particle.position.combat),
+    };
+    for input in inputs {
+        let public_action = public_action(
+            particle.scenario_id(),
+            &particle.position.engine,
+            &particle.position.combat,
+            &input,
+        )?;
+        match exact_actions.entry(public_action.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(input);
+            }
+            Entry::Occupied(_) if matches!(input, ClientInput::SubmitSelection(_)) => {
+                // Multiple exact UUID combinations may be the same public
+                // card multiset. The policy may choose the multiset, not a
+                // hidden UUID identity, so one exact representative is kept
+                // privately for this world.
+            }
+            Entry::Occupied(_) => {
+                return Err(CombatScenarioPolicyErrorV1::AmbiguousPublicAction {
+                    scenario_id: particle.scenario_id().to_string(),
+                    action: format!("{public_action:?}"),
+                });
+            }
         }
     }
     Ok(exact_actions)
@@ -30,9 +53,13 @@ pub(super) fn exact_actions_for_particle(
 
 fn public_action(
     scenario_id: &str,
+    engine: &EngineState,
     combat: &CombatState,
     input: &ClientInput,
 ) -> Result<CombatPublicActionV1, CombatScenarioPolicyErrorV1> {
+    if let EngineState::PendingChoice(choice) = engine {
+        return public_pending_choice_action(scenario_id, combat, choice, input);
+    }
     match input {
         ClientInput::PlayCard { card_index, target } => {
             let card = combat.zones.hand.get(*card_index).ok_or_else(|| {

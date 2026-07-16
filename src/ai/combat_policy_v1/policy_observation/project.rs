@@ -96,7 +96,12 @@ pub fn combat_policy_observation_v1(combat: &CombatState) -> CombatPolicyObserva
             powers: policy_powers(combat, player_id),
         },
         zones: CombatPolicyZonesV1 {
-            hand: combat.zones.hand.iter().map(policy_card).collect(),
+            hand: combat
+                .zones
+                .hand
+                .iter()
+                .map(combat_policy_card_v1)
+                .collect(),
             draw: policy_pile(
                 &combat.zones.draw_pile,
                 if draw_order_visible {
@@ -187,7 +192,7 @@ fn policy_power(power: &Power) -> CombatPolicyPowerV1 {
         payload: match &power.payload {
             PowerPayload::None => CombatPolicyPowerPayloadV1::None,
             PowerPayload::Card(card) => CombatPolicyPowerPayloadV1::Card {
-                card: policy_card(card),
+                card: combat_policy_card_v1(card),
             },
         },
     }
@@ -198,7 +203,7 @@ fn policy_pile(
     evidence: ObservationEvidenceKindV1,
     hidden_reason: Option<HiddenInformationReasonV1>,
 ) -> CombatPolicyCardPileV1 {
-    let mut public_cards = cards.iter().map(policy_card).collect::<Vec<_>>();
+    let mut public_cards = cards.iter().map(combat_policy_card_v1).collect::<Vec<_>>();
     if evidence == ObservationEvidenceKindV1::PublicUnorderedCollection {
         public_cards.sort();
     }
@@ -210,7 +215,7 @@ fn policy_pile(
     }
 }
 
-fn policy_card(card: &CombatCard) -> CombatPolicyCardV1 {
+pub(crate) fn combat_policy_card_v1(card: &CombatCard) -> CombatPolicyCardV1 {
     CombatPolicyCardV1 {
         card_id: java_id(card.id).to_string(),
         upgrades: card.upgrades,

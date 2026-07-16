@@ -3,12 +3,14 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::sim::combat::{apply_combat_input_to_stable, CombatStepLimits, CombatTerminal};
-use crate::state::core::EngineState;
 
-use super::super::combat_policy_observation_v1;
+use super::boundary::policy_observation_envelope;
 use super::group::{group_combat_scenarios_v1, CombatScenarioGroupV1};
 use super::hash::stable_hash;
-use super::types::{CombatPublicActionV1, CombatScenarioParticleV1, CombatScenarioPolicyErrorV1};
+use super::types::{
+    CombatPolicyObservationEnvelopeV1, CombatPublicActionV1, CombatScenarioParticleV1,
+    CombatScenarioPolicyErrorV1,
+};
 
 const COMBAT_POLICY_HISTORY_TRANSITION_SCHEMA_NAME: &str = "CombatPolicyPublicHistoryTransitionV1";
 const COMBAT_POLICY_HISTORY_TRANSITION_SCHEMA_VERSION: u32 = 1;
@@ -66,20 +68,13 @@ pub fn step_combat_scenario_group_v1(
                 loss_count = loss_count.saturating_add(1);
             }
             CombatTerminal::Unresolved => {
-                if !matches!(stepped.position.engine, EngineState::CombatPlayerTurn) {
-                    return Err(CombatScenarioPolicyErrorV1::UnsupportedSuccessorBoundary {
-                        scenario_id: world.scenario_id().to_string(),
-                        engine_state: format!("{:?}", stepped.position.engine),
-                    });
-                }
-                let observation = combat_policy_observation_v1(&stepped.position.combat);
+                let boundary = policy_observation_envelope(world.scenario_id(), &stepped.position)?;
                 let history_id = stable_hash(&PublicHistoryTransitionV1 {
                     schema_name: COMBAT_POLICY_HISTORY_TRANSITION_SCHEMA_NAME,
                     schema_version: COMBAT_POLICY_HISTORY_TRANSITION_SCHEMA_VERSION,
                     previous_history_id: world.public_history_id(),
                     action,
-                    engine_state: "combat_player_turn",
-                    observation: &observation,
+                    boundary: &boundary,
                 });
                 next_particles.push(CombatScenarioParticleV1::from_public_history(
                     world.scenario_id().to_string(),
@@ -116,6 +111,5 @@ struct PublicHistoryTransitionV1<'a> {
     schema_version: u32,
     previous_history_id: &'a str,
     action: &'a CombatPublicActionV1,
-    engine_state: &'static str,
-    observation: &'a super::super::CombatPolicyObservationV1,
+    boundary: &'a CombatPolicyObservationEnvelopeV1,
 }

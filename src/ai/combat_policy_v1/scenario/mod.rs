@@ -1,10 +1,19 @@
 mod actions;
+mod boundary;
 mod group;
 mod hash;
+mod pending_choice;
 mod step;
 mod types;
 
 pub use group::{group_combat_scenarios_v1, CombatScenarioGroupV1};
+pub use pending_choice::{
+    CombatPublicCardDestinationV1, CombatPublicCardMultiplicityV1,
+    CombatPublicCardSelectionContextV1, CombatPublicGeneratedCardOptionV1,
+    CombatPublicGeneratedChoiceKindV1, CombatPublicGridSelectionReasonV1,
+    CombatPublicHandSelectionReasonV1, CombatPublicPendingChoiceKindV1,
+    CombatPublicPendingChoiceV1, CombatPublicPileV1, CombatPublicStanceV1,
+};
 pub use step::{
     step_combat_scenario_group_v1, CombatScenarioStepResultV1, CombatScenarioStepViewV1,
 };

@@ -78,6 +78,29 @@ Pending combat choices remain a typed unsupported successor in this slice.
 The closed loop supports only quiescent `CombatPlayerTurn` boundaries and
 terminal win/loss outcomes. Production combat ownership remains unchanged.
 
+## Third Slice
+
+The third executable slice extends the same information-set loop across every
+combat-local pending-choice kind:
+
+- hand and grid selections use public card-state multiplicities rather than
+  card UUIDs;
+- Scry uses the publicly revealed card order and public reveal indices;
+- Discovery, combat card rewards, Foreign Influence, Choose One, and stance
+  choices expose typed public options;
+- exact selection UUIDs remain private bindings inside each scenario;
+- duplicate exact selections that represent the same public card multiset are
+  collapsed before the policy sees them;
+- pending-choice action enumeration is complete up to an explicit 4096-action
+  safety boundary and returns `CandidateSpaceTooLarge` above it;
+- the scenario policy no longer inherits the legacy Hand/Grid enumeration
+  path that silently retained at most sixteen combinations.
+
+The closed loop can now transition from a player action into a pending choice,
+commit one public selection across all grouped scenarios, resume exact engine
+resolution, and regroup at the next public boundary. This remains laboratory
+infrastructure; production combat ownership is still unchanged.
+
 ## Migration Gates
 
 1. **Information-set foundation:** public grouping and single-action binding

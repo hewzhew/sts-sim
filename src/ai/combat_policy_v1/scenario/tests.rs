@@ -2,9 +2,13 @@ use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::content::relics::{RelicId, RelicState};
+use crate::runtime::action::CardDestination;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::sim::combat::{CombatPosition, CombatStepLimits};
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::{
+    ChooseOneCardChoice, ClientInput, DiscoveryChoiceState, EngineState, GridSelectReason,
+    HandSelectReason, PendingChoice, PileType,
+};
 
 use super::*;
 
@@ -323,6 +327,296 @@ fn newly_observed_draws_split_successor_information_sets() {
     );
 }
 
+#[test]
+fn pending_hand_choice_groups_different_uuids_and_collapses_identical_cards() {
+    let first = pending_hand_select_position(
+        vec![
+            CombatCard::new(CardId::Strike, 10),
+            CombatCard::new(CardId::Strike, 20),
+        ],
+        1,
+        1,
+    );
+    let second = pending_hand_select_position(
+        vec![
+            CombatCard::new(CardId::Strike, 70_001),
+            CombatCard::new(CardId::Strike, 99_001),
+        ],
+        1,
+        1,
+    );
+
+    let groups =
+        group_combat_scenarios_v1(vec![particle("first", first), particle("second", second)])
+            .expect("publicly identical hand choices should group");
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].view().scenario_count, 2);
+    assert_eq!(groups[0].view().candidates.len(), 1);
+    let pending = groups[0]
+        .view()
+        .observation
+        .pending_choice
+        .as_ref()
+        .expect("pending choice observation");
+    let CombatPublicPendingChoiceV1::HandSelect { candidates, .. } = pending else {
+        panic!("expected hand selection, got {pending:?}");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].count, 2);
+
+    let binding = groups[0]
+        .bind_action(&groups[0].view().candidates[0])
+        .expect("public multiset selection should bind in both worlds");
+    assert_eq!(binding.scenario_count(), 2);
+    let public_json =
+        serde_json::to_string(groups[0].view()).expect("public pending choice serialization");
+    assert!(!public_json.contains("70001"));
+    assert!(!public_json.contains("99001"));
+    assert!(!public_json.contains("uuid"));
+}
+
+#[test]
+fn pending_selection_enumerates_all_combinations_beyond_legacy_sixteen_cap() {
+    let cards = [
+        CardId::Bash,
+        CardId::Defend,
+        CardId::Strike,
+        CardId::Anger,
+        CardId::Cleave,
+        CardId::ShrugItOff,
+        CardId::PommelStrike,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, card_id)| CombatCard::new(card_id, 100 + index as u32))
+    .collect();
+    let position = pending_hand_select_position(cards, 2, 2);
+
+    let groups = group_combat_scenarios_v1(vec![particle("all-pairs", position)])
+        .expect("seven choose two should be fully enumerated");
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].view().candidates.len(), 21);
+}
+
+#[test]
+fn hidden_draw_order_does_not_leak_through_grid_selection_candidates() {
+    let mut first = position_with_monster_id(7);
+    first.combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::Bash, 10),
+        CombatCard::new(CardId::Defend, 20),
+    ];
+    first.engine = EngineState::PendingChoice(PendingChoice::GridSelect {
+        source_pile: PileType::Draw,
+        candidate_uuids: vec![10, 20],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: GridSelectReason::DrawPileToHand,
+    });
+    let mut second = first.clone();
+    second.combat.zones.draw_pile.swap(0, 1);
+    if let EngineState::PendingChoice(PendingChoice::GridSelect {
+        candidate_uuids, ..
+    }) = &mut second.engine
+    {
+        candidate_uuids.swap(0, 1);
+    }
+
+    let groups =
+        group_combat_scenarios_v1(vec![particle("first", first), particle("second", second)])
+            .expect("grid presentation must not reveal hidden draw order");
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].view().scenario_count, 2);
+}
+
+#[test]
+fn step_loop_crosses_hand_choice_without_exposing_uuid() {
+    let mut position = position_with_monster_id(7);
+    position.combat.zones.hand = vec![
+        CombatCard::new(CardId::Armaments, 10),
+        CombatCard::new(CardId::Strike, 20),
+        CombatCard::new(CardId::Defend, 30),
+    ];
+    let groups = group_combat_scenarios_v1(vec![particle("armaments", position)])
+        .expect("Armaments root information set");
+    let armaments = groups[0]
+        .view()
+        .candidates
+        .iter()
+        .find(|action| {
+            matches!(
+                action,
+                CombatPublicActionV1::PlayCard { card_id, .. } if card_id == "Armaments"
+            )
+        })
+        .expect("Armaments play")
+        .clone();
+
+    let pending = step_combat_scenario_group_v1(
+        &groups[0],
+        &armaments,
+        CombatStepLimits {
+            max_engine_steps: 100,
+            deadline: None,
+        },
+    )
+    .expect("Armaments should step to a public hand choice");
+
+    assert_eq!(pending.next_groups.len(), 1);
+    assert_eq!(
+        pending.next_groups[0].view().observation.engine_state,
+        "combat_pending_choice"
+    );
+    let choose_strike = pending.next_groups[0]
+        .view()
+        .candidates
+        .iter()
+        .find(|action| {
+            matches!(
+                action,
+                CombatPublicActionV1::SelectCards { selected, .. }
+                    if selected.len() == 1 && selected[0].card.card_id == "Strike_R"
+            )
+        })
+        .expect("public Strike selection")
+        .clone();
+
+    let resumed = step_combat_scenario_group_v1(
+        &pending.next_groups[0],
+        &choose_strike,
+        CombatStepLimits {
+            max_engine_steps: 100,
+            deadline: None,
+        },
+    )
+    .expect("public selection should resume card resolution");
+
+    assert_eq!(resumed.next_groups.len(), 1);
+    assert_eq!(
+        resumed.next_groups[0].view().observation.engine_state,
+        "combat_player_turn"
+    );
+    assert!(resumed.next_groups[0]
+        .view()
+        .observation
+        .pending_choice
+        .is_none());
+}
+
+#[test]
+fn oversized_pending_choice_fails_with_typed_gap() {
+    let mut position = position_with_monster_id(7);
+    position.combat.zones.draw_pile = (0..13)
+        .map(|index| CombatCard::new(CardId::Strike, 500 + index))
+        .collect();
+    position.engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike; 13],
+        card_uuids: (0..13).map(|index| 500 + index).collect(),
+    });
+
+    let error = match group_combat_scenarios_v1(vec![particle("wide-scry", position)]) {
+        Ok(_) => panic!("wide Scry should not silently truncate its action set"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        CombatScenarioPolicyErrorV1::CandidateSpaceTooLarge {
+            scenario_id: "wide-scry".to_string(),
+            choice_kind: CombatPublicPendingChoiceKindV1::ScrySelect,
+            candidate_count: 13,
+            action_count: 8_192,
+            cap: 4_096,
+        }
+    );
+}
+
+#[test]
+fn remaining_pending_choice_kinds_expose_typed_public_actions() {
+    let cases = vec![
+        (
+            "discovery",
+            PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::Anger, CardId::Cleave],
+                colorless: false,
+                card_type: None,
+                amount: 1,
+                can_skip: true,
+            }),
+            3,
+        ),
+        (
+            "card-reward",
+            PendingChoice::CardRewardSelect {
+                cards: vec![CardId::Bash],
+                destination: CardDestination::Hand,
+                can_skip: true,
+            },
+            2,
+        ),
+        (
+            "foreign-influence",
+            PendingChoice::ForeignInfluenceSelect {
+                cards: vec![CardId::Strike],
+                upgraded: true,
+            },
+            1,
+        ),
+        (
+            "choose-one",
+            PendingChoice::ChooseOneSelect {
+                choices: vec![ChooseOneCardChoice {
+                    card_id: CardId::Anger,
+                    upgrades: 1,
+                }],
+            },
+            1,
+        ),
+        ("stance", PendingChoice::StanceChoice, 2),
+    ];
+
+    for (scenario_id, choice, expected_actions) in cases {
+        let mut position = position_with_monster_id(7);
+        position.engine = EngineState::PendingChoice(choice);
+        let groups = group_combat_scenarios_v1(vec![particle(scenario_id, position)])
+            .expect("typed pending choice should project");
+        assert_eq!(
+            groups[0].view().candidates.len(),
+            expected_actions,
+            "{scenario_id}"
+        );
+        assert!(
+            groups[0].view().observation.pending_choice.is_some(),
+            "{scenario_id}"
+        );
+    }
+
+    let mut scry = position_with_monster_id(7);
+    scry.combat.zones.draw_pile = vec![
+        CombatCard::new(CardId::Strike, 80_001),
+        CombatCard::new(CardId::Defend, 80_002),
+    ];
+    scry.engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike, CardId::Defend],
+        card_uuids: vec![80_001, 80_002],
+    });
+    let groups = group_combat_scenarios_v1(vec![particle("scry", scry)])
+        .expect("Scry should expose every discard subset");
+    assert_eq!(groups[0].view().candidates.len(), 4);
+    assert!(groups[0]
+        .view()
+        .candidates
+        .iter()
+        .all(|action| matches!(action, CombatPublicActionV1::ScryDiscard { .. })));
+    let json = serde_json::to_string(groups[0].view()).expect("public Scry serialization");
+    assert!(!json.contains("80001"));
+    assert!(!json.contains("80002"));
+    assert!(!json.contains("uuid"));
+}
+
 fn particle(scenario_id: &str, position: CombatPosition) -> CombatScenarioParticleV1 {
     CombatScenarioParticleV1::root(scenario_id, position)
 }
@@ -365,4 +659,22 @@ fn power(power_id: PowerId, amount: i32) -> Power {
         payload: PowerPayload::None,
         just_applied: false,
     }
+}
+
+fn pending_hand_select_position(
+    hand: Vec<CombatCard>,
+    min_cards: u8,
+    max_cards: u8,
+) -> CombatPosition {
+    let mut position = position_with_monster_id(7);
+    let candidate_uuids = hand.iter().map(|card| card.uuid).collect();
+    position.combat.zones.hand = hand;
+    position.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids,
+        min_cards,
+        max_cards,
+        can_cancel: false,
+        reason: HandSelectReason::Discard,
+    });
+    position
 }

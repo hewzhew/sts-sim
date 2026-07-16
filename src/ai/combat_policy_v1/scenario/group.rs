@@ -1,15 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::state::core::EngineState;
-
-use super::super::combat_policy_observation_v1;
 use super::actions::exact_actions_for_particle;
+use super::boundary::policy_observation_envelope;
 use super::hash::stable_hash;
 use super::types::{
-    CombatPolicyInformationSetKeyV1, CombatPolicyObservationEnvelopeV1,
-    CombatPolicyObservationGroupV1, CombatPublicActionV1, CombatScenarioDecisionBindingV1,
-    CombatScenarioParticleV1, CombatScenarioPolicyErrorV1, ExactActionMap,
-    COMBAT_POLICY_INFORMATION_SET_SCHEMA_NAME, COMBAT_POLICY_INFORMATION_SET_SCHEMA_VERSION,
+    CombatPolicyInformationSetKeyV1, CombatPolicyObservationGroupV1, CombatPublicActionV1,
+    CombatScenarioDecisionBindingV1, CombatScenarioParticleV1, CombatScenarioPolicyErrorV1,
+    ExactActionMap,
 };
 
 #[derive(Clone)]
@@ -77,27 +74,7 @@ pub fn group_combat_scenarios_v1(
                 scenario_id: particle.scenario_id,
             });
         }
-        if !matches!(particle.position.engine, EngineState::CombatPlayerTurn) {
-            return Err(CombatScenarioPolicyErrorV1::UnsupportedBoundary {
-                scenario_id: particle.scenario_id,
-                engine_state: format!("{:?}", particle.position.engine),
-            });
-        }
-        let pending_work = non_quiescent_work(&particle.position.combat);
-        if !pending_work.is_empty() {
-            return Err(CombatScenarioPolicyErrorV1::NonQuiescentBoundary {
-                scenario_id: particle.scenario_id,
-                pending_work,
-            });
-        }
-
-        let envelope = CombatPolicyObservationEnvelopeV1 {
-            schema_name: COMBAT_POLICY_INFORMATION_SET_SCHEMA_NAME.to_string(),
-            schema_version: COMBAT_POLICY_INFORMATION_SET_SCHEMA_VERSION,
-            engine_state: "combat_player_turn".to_string(),
-            turn_count: particle.position.combat.turn.turn_count,
-            observation: combat_policy_observation_v1(&particle.position.combat),
-        };
+        let envelope = policy_observation_envelope(particle.scenario_id(), &particle.position)?;
         let exact_actions = exact_actions_for_particle(&particle)?;
         let candidates = exact_actions.keys().cloned().collect::<Vec<_>>();
         let key = CombatPolicyInformationSetKeyV1 {
@@ -149,24 +126,4 @@ pub fn group_combat_scenarios_v1(
             }
         })
         .collect())
-}
-
-fn non_quiescent_work(combat: &crate::runtime::combat::CombatState) -> Vec<String> {
-    let mut pending = Vec::new();
-    if !combat.engine.action_queue.is_empty() {
-        pending.push("action_queue".to_string());
-    }
-    if !combat.zones.queued_cards.is_empty() {
-        pending.push("queued_cards".to_string());
-    }
-    if !combat.zones.limbo.is_empty() {
-        pending.push("limbo".to_string());
-    }
-    if combat.runtime.using_card {
-        pending.push("using_card".to_string());
-    }
-    if !combat.runtime.card_queue.is_empty() {
-        pending.push("runtime_card_queue".to_string());
-    }
-    pending
 }

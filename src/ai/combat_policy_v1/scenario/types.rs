@@ -8,6 +8,11 @@ use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
 
 use super::super::CombatPolicyObservationV1;
+use super::pending_choice::{
+    CombatPublicCardMultiplicityV1, CombatPublicCardSelectionContextV1,
+    CombatPublicGeneratedChoiceKindV1, CombatPublicPendingChoiceKindV1,
+    CombatPublicPendingChoiceV1, CombatPublicStanceV1,
+};
 
 pub const COMBAT_POLICY_INFORMATION_SET_SCHEMA_NAME: &str = "CombatPolicyInformationSetV1";
 pub const COMBAT_POLICY_INFORMATION_SET_SCHEMA_VERSION: u32 = 1;
@@ -66,6 +71,8 @@ pub struct CombatPolicyObservationEnvelopeV1 {
     pub engine_state: String,
     pub turn_count: u32,
     pub observation: CombatPolicyObservationV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_choice: Option<CombatPublicPendingChoiceV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -93,6 +100,22 @@ pub enum CombatPublicActionV1 {
     DiscardPotion {
         potion_slot: usize,
         potion_id: String,
+    },
+    SelectCards {
+        context: CombatPublicCardSelectionContextV1,
+        selected: Vec<CombatPublicCardMultiplicityV1>,
+    },
+    ScryDiscard {
+        revealed_indices: Vec<usize>,
+    },
+    ChooseGeneratedCard {
+        choice_kind: CombatPublicGeneratedChoiceKindV1,
+        option_index: usize,
+        card_id: String,
+        upgrades: u8,
+    },
+    ChooseStance {
+        stance: CombatPublicStanceV1,
     },
     EndTurn,
     Proceed,
@@ -142,9 +165,17 @@ pub enum CombatScenarioPolicyErrorV1 {
         scenario_id: String,
         pending_work: Vec<String>,
     },
-    UnsupportedSuccessorBoundary {
+    InvalidPendingChoice {
         scenario_id: String,
-        engine_state: String,
+        choice_kind: CombatPublicPendingChoiceKindV1,
+        detail: String,
+    },
+    CandidateSpaceTooLarge {
+        scenario_id: String,
+        choice_kind: CombatPublicPendingChoiceKindV1,
+        candidate_count: usize,
+        action_count: usize,
+        cap: usize,
     },
     StepTruncated {
         scenario_id: String,
@@ -198,12 +229,23 @@ impl fmt::Display for CombatScenarioPolicyErrorV1 {
                 "combat scenario '{scenario_id}' is not at a quiescent policy boundary: {}",
                 pending_work.join(", ")
             ),
-            Self::UnsupportedSuccessorBoundary {
+            Self::InvalidPendingChoice {
                 scenario_id,
-                engine_state,
+                choice_kind,
+                detail,
             } => write!(
                 formatter,
-                "combat scenario '{scenario_id}' stepped to unsupported policy boundary {engine_state}"
+                "combat scenario '{scenario_id}' has invalid {choice_kind:?} state: {detail}"
+            ),
+            Self::CandidateSpaceTooLarge {
+                scenario_id,
+                choice_kind,
+                candidate_count,
+                action_count,
+                cap,
+            } => write!(
+                formatter,
+                "combat scenario '{scenario_id}' {choice_kind:?} exposes {action_count} exact actions from {candidate_count} candidates, above cap {cap}"
             ),
             Self::StepTruncated {
                 scenario_id,
@@ -258,3 +300,4 @@ impl fmt::Display for CombatScenarioPolicyErrorV1 {
 impl Error for CombatScenarioPolicyErrorV1 {}
 
 pub(super) type ExactActionMap = BTreeMap<CombatPublicActionV1, ClientInput>;
+pub(super) type ExactActionInputs = Vec<ClientInput>;
