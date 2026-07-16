@@ -27,6 +27,8 @@ mod key_card_lifecycle;
 mod line_lab;
 #[path = "combat_case_review/options.rs"]
 mod options;
+#[path = "combat_case_review/power_setup_counterfactual.rs"]
+mod power_setup_counterfactual;
 #[path = "combat_case_review/quality_lanes.rs"]
 mod quality_lanes;
 #[path = "combat_case_review/review_pipeline.rs"]

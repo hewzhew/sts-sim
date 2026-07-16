@@ -21,6 +21,7 @@ use super::super::counterfactual_hp::CounterfactualHpProbe;
 use super::super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
 use super::super::frozen_panel_lanes::FrozenPanelLaneReview;
 use super::super::key_card_lifecycle::KeyCardLifecycleReport;
+use super::super::power_setup_counterfactual::PowerSetupCounterfactualProbe;
 use super::super::quality_lanes::CombatQualityLaneReview;
 use super::super::search_types::SearchReview;
 use super::super::strategic_feedback::CombatStrategicFeedbackReport;
@@ -56,6 +57,7 @@ pub(crate) struct CombatCaseReview {
     pub(super) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(super) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(super) awakened_opening_probe: Option<CombatTurnPoolOpeningReport>,
+    pub(super) power_setup_counterfactual: Option<PowerSetupCounterfactualProbe>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
@@ -77,6 +79,7 @@ pub(crate) struct CombatCaseReviewArtifacts {
     pub(crate) awakened_one_failure_evidence: Option<AwakenedOneFailureEvidenceFrame>,
     pub(crate) awakened_one_path_audit_v0: Option<AwakenedOnePathAuditV0>,
     pub(crate) awakened_opening_probe: Option<CombatTurnPoolOpeningReport>,
+    pub(crate) power_setup_counterfactual: Option<PowerSetupCounterfactualProbe>,
     pub(crate) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(crate) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(crate) champ_phase_audit: Option<ChampPhaseAudit>,

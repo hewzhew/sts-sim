@@ -31,6 +31,7 @@ pub(super) struct ReviewOptions {
     pub(super) awakened_opening_probe: bool,
     pub(super) awakened_opening_probe_ms: u64,
     pub(super) awakened_opening_probe_turns: usize,
+    pub(super) power_setup_counterfactual: bool,
     immediate_child_rollout: bool,
     lazy_child_rollout: bool,
 }
@@ -64,6 +65,7 @@ impl ReviewOptions {
             awakened_opening_probe: args.awakened_opening_probe,
             awakened_opening_probe_ms: args.awakened_opening_probe_ms,
             awakened_opening_probe_turns: args.awakened_opening_probe_turns.max(1),
+            power_setup_counterfactual: args.power_setup_counterfactual,
             immediate_child_rollout: args.immediate_child_rollout,
             lazy_child_rollout: args.lazy_child_rollout,
         }

@@ -25,6 +25,7 @@ use super::focus::{focus_witness_line, review_focus, witness_prior_rerun};
 use super::frozen_panel_lanes::run_frozen_panel_lanes;
 use super::line_lab::run_line_lab;
 use super::options::ReviewOptions;
+use super::power_setup_counterfactual::run_power_setup_counterfactual;
 use super::quality_lanes::run_quality_lanes;
 use ladder::{run_review_ladder, ReviewLadderRun};
 
@@ -102,6 +103,11 @@ pub(super) fn build_review(
     let awakened_one_failure_evidence =
         awakened_one_failure_evidence(&case, counterfactual_hp_probe.as_ref());
     let awakened_opening_probe = run_awakened_opening_probe(&options, &case);
+    let power_setup_counterfactual = if options.power_setup_counterfactual {
+        Some(run_power_setup_counterfactual(&options, &case))
+    } else {
+        None
+    };
     let champ_phase_audit = review_focus
         .as_ref()
         .and_then(|focus| champ_phase_audit(&case.position, focus));
@@ -123,6 +129,7 @@ pub(super) fn build_review(
             awakened_one_failure_evidence,
             awakened_one_path_audit_v0,
             awakened_opening_probe,
+            power_setup_counterfactual,
             boss_pressure_lens,
             frozen_panel_lanes,
             champ_phase_audit,

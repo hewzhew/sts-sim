@@ -84,6 +84,11 @@ pub(super) struct Args {
     pub(super) awakened_opening_probe_ms: u64,
     #[arg(long, default_value_t = 4)]
     pub(super) awakened_opening_probe_turns: usize,
+    #[arg(
+        long,
+        help = "Run free-play and optimistic-preinstalled all-Power-card combat counterfactuals"
+    )]
+    pub(super) power_setup_counterfactual: bool,
 }
 
 fn parse_rollout_plugin(value: &str) -> Result<CombatSearchRolloutPluginId, String> {
@@ -201,5 +206,18 @@ mod tests {
         assert!(args.awakened_opening_probe);
         assert_eq!(args.awakened_opening_probe_ms, 1234);
         assert_eq!(args.awakened_opening_probe_turns, 3);
+    }
+
+    #[test]
+    fn power_setup_counterfactual_flag_parses() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--power-setup-counterfactual",
+        ])
+        .expect("parse Power setup counterfactual");
+
+        assert!(args.power_setup_counterfactual);
     }
 }
