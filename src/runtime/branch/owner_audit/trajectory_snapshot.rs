@@ -1,10 +1,12 @@
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
+use sts_simulator::ai::strategy::challenger_decision_context::challenger_decision_context;
 use sts_simulator::ai::strategy::challenger_policy_state::CommitmentStatus;
 use sts_simulator::ai::strategy::challenger_signature::DeckBurdenBand;
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::deck_strategic_deficit::StrategicBurdenLevel;
+use sts_simulator::ai::strategy::pressure_assessment::{PressureCoverage, PressureHypothesis};
 use sts_simulator::ai::strategy::trajectory_comparison::{
     compare_trajectories, TrajectoryComparison, TrajectoryConstruction,
     TrajectoryDeployabilityEvidence, TrajectoryPressureEvidence, TrajectoryProgress,
@@ -23,6 +25,7 @@ pub(super) struct FrontierTrajectoryEvaluation {
 pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
     let run = &branch.session.run_state;
     let plan = DeckPlanSnapshot::from_run_state(run);
+    let decision_context = challenger_decision_context(run);
     let burden = match plan.strategic_deficit.deck_burden {
         StrategicBurdenLevel::Clean => DeckBurdenBand::Clean,
         StrategicBurdenLevel::Watch => DeckBurdenBand::Watch,
@@ -56,7 +59,7 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
             act: run.act_num,
             floor: run.floor_num,
         },
-        pressure: TrajectoryPressureEvidence::Unknown,
+        pressure: pressure_evidence(&decision_context.current_pressure),
         deployability: TrajectoryDeployabilityEvidence::Unknown,
         resources: TrajectoryResources {
             hp: run.current_hp,
@@ -80,6 +83,20 @@ pub(super) fn trajectory_snapshot(branch: &Branch) -> TrajectorySnapshot {
         ),
         full_search_comparability: classify_search_comparability(&branch.combat_search_history),
     }
+}
+
+fn pressure_evidence(hypotheses: &[PressureHypothesis]) -> TrajectoryPressureEvidence {
+    let open = hypotheses
+        .iter()
+        .filter(|hypothesis| hypothesis.coverage == PressureCoverage::Open)
+        .count()
+        .min(u16::MAX as usize) as u16;
+    let covered = hypotheses
+        .iter()
+        .filter(|hypothesis| hypothesis.coverage == PressureCoverage::Covered)
+        .count()
+        .min(u16::MAX as usize) as u16;
+    TrajectoryPressureEvidence::Comparable { open, covered }
 }
 
 pub(super) fn frontier_trajectory_evaluation(
@@ -192,12 +209,15 @@ mod tests {
     }
 
     #[test]
-    fn baseline_snapshot_keeps_uninstrumented_layers_unknown() {
+    fn baseline_snapshot_projects_typed_pressure_but_keeps_deployability_unknown() {
         let branch = test_branch(BranchPolicyLane::default());
         let snapshot = trajectory_snapshot(&branch);
 
         assert_eq!(snapshot.lane, "baseline");
-        assert_eq!(snapshot.pressure, TrajectoryPressureEvidence::Unknown);
+        assert!(matches!(
+            snapshot.pressure,
+            TrajectoryPressureEvidence::Comparable { open, covered: 0 } if open > 0
+        ));
         assert_eq!(
             snapshot.deployability,
             TrajectoryDeployabilityEvidence::Unknown
