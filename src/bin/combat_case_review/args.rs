@@ -86,7 +86,7 @@ pub(super) struct Args {
     pub(super) awakened_opening_probe_turns: usize,
     #[arg(
         long,
-        help = "Run free-play and optimistic-preinstalled all-Power-card combat counterfactuals"
+        help = "Run all-Power free-play, Feel-No-Pain-only, and optimistic-preinstalled combat counterfactuals"
     )]
     pub(super) power_setup_counterfactual: bool,
 }

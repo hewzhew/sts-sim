@@ -3,7 +3,7 @@ use sts_simulator::ai::combat_search_v2::{
     replay_combat_search_witness_line_v0, run_combat_turn_pool_opening_report_v0,
     CombatSearchV2WitnessReplay, CombatTurnPoolOpeningReport, SearchTerminalLabel,
 };
-use sts_simulator::content::cards::{self, CardType};
+use sts_simulator::content::cards::{self, CardId, CardType};
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::content::powers::{store, PowerId};
 use sts_simulator::eval::combat_case::CombatCase;
@@ -29,6 +29,8 @@ pub(crate) struct PowerSetupCounterfactualProbe {
 
 #[derive(Clone, Serialize)]
 struct PowerSetupCard {
+    #[serde(skip)]
+    card_id: CardId,
     card: String,
     uuid: u32,
     upgrades: u8,
@@ -66,6 +68,7 @@ struct PowerSetupSnapshot {
 #[derive(Clone, Copy)]
 enum PowerSetupSemantics {
     FreePlay,
+    FreePlayFeelNoPain,
     OptimisticPreinstalled,
 }
 
@@ -73,6 +76,7 @@ impl PowerSetupSemantics {
     fn label(self) -> &'static str {
         match self {
             Self::FreePlay => "free_play_all_powers",
+            Self::FreePlayFeelNoPain => "free_play_feel_no_pain_only",
             Self::OptimisticPreinstalled => "optimistic_preinstalled_all_powers",
         }
     }
@@ -82,9 +86,19 @@ impl PowerSetupSemantics {
             Self::FreePlay => {
                 "move every active-zone Power card to hand and play it for zero energy through normal engine semantics; Curiosity, Berserk Vulnerable, card-play counters, and card/relic triggers remain"
             }
+            Self::FreePlayFeelNoPain => {
+                "move only active-zone Feel No Pain cards to hand and play them for zero energy through normal engine semantics; Curiosity remains, while Berserk stays in the combat zones for search to time or skip"
+            }
             Self::OptimisticPreinstalled => {
                 "start from the free-play result, restore original enemy powers and player Vulnerable/card-play counters, then grant current-turn Berserk energy; this is an intentionally optimistic deck upper-bound probe"
             }
+        }
+    }
+
+    fn applies(self, card: &PowerSetupCard) -> bool {
+        match self {
+            Self::FreePlay | Self::OptimisticPreinstalled => true,
+            Self::FreePlayFeelNoPain => card.card_id == CardId::FeelNoPain,
         }
     }
 }
@@ -96,6 +110,7 @@ pub(super) fn run_power_setup_counterfactual(
     let power_cards = collect_power_cards(&case.position.combat);
     let variants = [
         PowerSetupSemantics::FreePlay,
+        PowerSetupSemantics::FreePlayFeelNoPain,
         PowerSetupSemantics::OptimisticPreinstalled,
     ]
     .into_iter()
@@ -197,14 +212,26 @@ fn transform_case(
         return Err("power setup counterfactual requires a player-turn combat root".to_string());
     }
 
+    let applied_cards = power_cards
+        .iter()
+        .filter(|power| semantics.applies(power))
+        .cloned()
+        .collect::<Vec<_>>();
+    if applied_cards.is_empty() {
+        return Err(format!(
+            "no active-zone Power cards matched {}",
+            semantics.label()
+        ));
+    }
+
     let mut case = original.clone();
-    for power in power_cards {
+    for power in &applied_cards {
         free_play_power(&mut case.position, power)?;
     }
     if matches!(semantics, PowerSetupSemantics::OptimisticPreinstalled) {
         remove_free_play_costs(original, &mut case);
     }
-    let setup = setup_snapshot(&case.position.combat, power_cards.to_vec());
+    let setup = setup_snapshot(&case.position.combat, applied_cards);
     Ok((case, setup))
 }
 
@@ -325,6 +352,7 @@ fn collect_power_cards(combat: &CombatState) -> Vec<PowerSetupCard> {
 fn power_card_evidence(card: &CombatCard, original_zone: &'static str) -> PowerSetupCard {
     let definition = cards::get_card_definition(card.id);
     PowerSetupCard {
+        card_id: card.id,
         card: format!("{}+{}", definition.name, card.upgrades),
         uuid: card.uuid,
         upgrades: card.upgrades,
@@ -368,6 +396,7 @@ mod tests {
 
     use super::{
         collect_power_cards, free_play_power, restore_monster_powers, restore_player_vulnerable,
+        PowerSetupSemantics,
     };
 
     fn awakened_power_fixture() -> CombatPosition {
@@ -456,5 +485,43 @@ mod tests {
             store::power_amount(&position.combat, 0, PowerId::Berserk),
             1
         );
+    }
+
+    #[test]
+    fn feel_no_pain_only_setup_keeps_berserk_unplayed() {
+        let mut position = awakened_power_fixture();
+        let powers = collect_power_cards(&position.combat);
+        let selected = powers
+            .iter()
+            .filter(|power| PowerSetupSemantics::FreePlayFeelNoPain.applies(power))
+            .collect::<Vec<_>>();
+        for power in selected {
+            free_play_power(&mut position, power).expect("free Feel No Pain play should resolve");
+        }
+
+        assert_eq!(
+            store::power_amount(&position.combat, 0, PowerId::FeelNoPain),
+            8
+        );
+        assert_eq!(
+            store::power_amount(&position.combat, 0, PowerId::Berserk),
+            0
+        );
+        assert_eq!(
+            store::power_amount(&position.combat, 0, PowerId::Vulnerable),
+            0
+        );
+        assert_eq!(
+            store::power_amount(&position.combat, 1, PowerId::Strength),
+            2
+        );
+        assert!(position
+            .combat
+            .zones
+            .hand
+            .iter()
+            .any(|card| card.id == CardId::Berserk));
+        assert_eq!(position.combat.turn.energy, 3);
+        assert_eq!(position.combat.turn.counters.cards_played_this_turn, 2);
     }
 }
