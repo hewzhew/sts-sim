@@ -8,6 +8,7 @@ use crate::state::run::RunState;
 
 use super::session::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlSession};
 use super::transition_report::{ActionResult, ActionResultChange};
+use super::RunProgressStepV1;
 
 pub fn render_run_control_state(session: &RunControlSession) -> String {
     super::panels::render_run_control_main(session)
@@ -212,6 +213,30 @@ pub fn render_auto_applied_step_compact_v1(step: &RunControlAutoAppliedStepV1) -
     parts.join(" | ")
 }
 
+pub fn render_progress_step_compact_v1(step: &RunProgressStepV1) -> String {
+    match step {
+        RunProgressStepV1::Decision(transaction) => format!(
+            "decision:{:?} | {}",
+            transaction.selection.source,
+            render_action_result_compact_v1(&transaction.result)
+        ),
+        RunProgressStepV1::ForcedTransition(transition) => format!(
+            "forced:{:?} | {}",
+            transition.kind,
+            render_action_result_compact_v1(&transition.result)
+        ),
+        RunProgressStepV1::CombatResolution(resolution) => format!(
+            "combat:{:?} | actions={} | {}",
+            resolution.kind,
+            resolution.trajectory.action_count,
+            render_action_result_compact_v1(&resolution.result)
+        ),
+        RunProgressStepV1::Stop(stop) => {
+            format!("stop:{:?} | {}", stop.kind, compact_one_line(&stop.reason))
+        }
+    }
+}
+
 fn render_action_result_compact_v1(result: &ActionResult) -> String {
     let mut parts = Vec::new();
     for change in &result.changes {
@@ -268,7 +293,7 @@ fn render_action_result_compact_v1(result: &ActionResult) -> String {
 
 fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'static str {
     match kind {
-        RunControlAutoAppliedKindV1::RewardAutomation => "reward",
+        RunControlAutoAppliedKindV1::RewardPolicyCandidate => "reward",
         RunControlAutoAppliedKindV1::CombatSearch => "combat",
         RunControlAutoAppliedKindV1::RoutePlanner => "route",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",

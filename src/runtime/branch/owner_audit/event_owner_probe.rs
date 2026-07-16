@@ -36,21 +36,24 @@ pub(super) fn run(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> 
     }
 
     match owners::owner_decision(&session, Owner::Event(probe.event_id), &surface) {
-        OwnerDecision::Routine(OwnerRoutine::Action(action)) => {
-            println!("  owner_decision=action {action:?}");
+        OwnerDecision::Routine(OwnerRoutine::Candidate {
+            candidate_id,
+            action,
+        }) => {
+            println!("  owner_decision=candidate id={candidate_id} action={action:?}");
         }
-        OwnerDecision::Routine(OwnerRoutine::RewardTinyAutomation) => {
-            println!("  owner_decision=unexpected_reward_tiny_automation");
+        OwnerDecision::Routine(OwnerRoutine::RewardPolicyStep) => {
+            println!("  owner_decision=unexpected_reward_policy_step");
         }
-        OwnerDecision::Routine(OwnerRoutine::AdvanceEmptyCampfire) => {
-            println!("  owner_decision=unexpected_advance_empty_campfire");
+        OwnerDecision::Routine(OwnerRoutine::ForcedTransition(kind)) => {
+            println!("  owner_decision=unexpected_forced_transition kind={kind:?}");
         }
         OwnerDecision::Candidates(choices) => {
             println!("  owner_decision=candidates count={}", choices.len());
             for choice in choices {
                 println!(
-                    "    choice key={:?} label={} action={:?}",
-                    choice.key, choice.label, choice.action
+                    "    choice id={} key={:?} label={} action={:?}",
+                    choice.candidate_id, choice.key, choice.label, choice.action
                 );
             }
         }

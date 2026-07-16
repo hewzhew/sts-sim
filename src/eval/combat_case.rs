@@ -347,8 +347,7 @@ mod tests {
             "candidate_pool": [{"rank": 1, "selected": true}],
             "annotation": {"kind": "candidate"},
             "decision_delta": {"gold_delta": -50},
-            "shop_boss_preview_candidates": [{"rank": 1}],
-            "shop_boss_preview_bundles": [{"rank": 1}]
+            "shop_boss_preview_candidates": [{"rank": 1}]
         }));
 
         let restored: CombatCase =

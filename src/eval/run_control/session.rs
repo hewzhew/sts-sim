@@ -18,6 +18,7 @@ use crate::state::selection::DomainEvent;
 use super::auto_capture::AutoCombatCaptureConfig;
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::outcome::CombatOutcomeTracker;
+use super::progress_step::{RunControlAutoStopV1, RunProgressStepV1};
 use super::reward_auto::RewardAutomationConfig;
 use super::trace_annotation::{CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1};
 use super::transition_report::ActionResult;
@@ -414,10 +415,10 @@ pub struct RunProgressOutcome {
     pub action_result: Option<ActionResult>,
     pub combat_search_rejection: Option<RunControlCombatSearchRejection>,
     pub execution_adjudication: Option<CombatLineAdjudicationV1>,
-    pub auto_stop: Option<RunControlAutoStopV1>,
     pub auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
     pub decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+    pub progress_steps: Vec<RunProgressStepV1>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -438,31 +439,13 @@ pub struct RunControlAutoAppliedStepV1 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunControlAutoAppliedKindV1 {
-    RewardAutomation,
+    RewardPolicyCandidate,
     CombatSearch,
     RoutePlanner,
     RewardOverlay,
     RoutineCandidate,
     AutoCapture,
     OwnerRoutine,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RunControlAutoStopV1 {
-    pub kind: RunControlAutoStopKind,
-    pub reason: String,
-    pub applied_operations: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunControlAutoStopKind {
-    HpLossGateRequired,
-    CombatSearchNoCompleteWin,
-    RoutePlannerNoMutation,
-    RoutePlannerDeclined,
-    AutoCandidateNotExecutable,
-    HumanBoundary,
-    ProgressApplied,
 }
 
 impl RunProgressOutcome {
@@ -472,10 +455,10 @@ impl RunProgressOutcome {
             action_result: None,
             combat_search_rejection: None,
             execution_adjudication: None,
-            auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
+            progress_steps: Vec::new(),
         }
     }
 
@@ -492,10 +475,10 @@ impl RunProgressOutcome {
             action_result: Some(action_result),
             combat_search_rejection: None,
             execution_adjudication: None,
-            auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
+            progress_steps: Vec::new(),
         }
     }
 
@@ -532,12 +515,75 @@ impl RunProgressOutcome {
         self
     }
 
-    pub(in crate::eval::run_control) fn with_auto_stop(
+    pub(in crate::eval::run_control) fn with_progress_step(
         mut self,
-        auto_stop: RunControlAutoStopV1,
+        step: RunProgressStepV1,
     ) -> Self {
-        self.auto_stop = Some(auto_stop);
+        assert!(
+            !self
+                .progress_steps
+                .iter()
+                .any(|step| matches!(step, RunProgressStepV1::Stop(_))),
+            "progress steps cannot be appended after Stop"
+        );
+        self.progress_steps.push(step);
         self
+    }
+
+    pub(in crate::eval::run_control) fn with_progress_steps(
+        mut self,
+        progress_steps: Vec<RunProgressStepV1>,
+    ) -> Self {
+        assert!(
+            !self
+                .progress_steps
+                .iter()
+                .any(|step| matches!(step, RunProgressStepV1::Stop(_))),
+            "progress steps cannot be appended after Stop"
+        );
+        assert!(
+            progress_steps
+                .iter()
+                .enumerate()
+                .all(|(index, step)| !matches!(step, RunProgressStepV1::Stop(_))
+                    || index + 1 == progress_steps.len()),
+            "Stop must be the final progress step"
+        );
+        self.progress_steps.extend(progress_steps);
+        self
+    }
+
+    pub fn auto_stop(&self) -> Option<&RunControlAutoStopV1> {
+        self.progress_steps
+            .last()
+            .and_then(RunProgressStepV1::as_stop)
+    }
+
+    pub fn single_decision_transaction(&self) -> Option<&super::RunDecisionTransactionV1> {
+        let mut decisions = self
+            .progress_steps
+            .iter()
+            .filter_map(RunProgressStepV1::as_decision);
+        let decision = decisions.next()?;
+        decisions.next().is_none().then_some(decision)
+    }
+
+    pub fn single_forced_transition(&self) -> Option<&super::RunForcedTransitionV1> {
+        let mut transitions = self
+            .progress_steps
+            .iter()
+            .filter_map(RunProgressStepV1::as_forced_transition);
+        let transition = transitions.next()?;
+        transitions.next().is_none().then_some(transition)
+    }
+
+    pub fn single_combat_resolution(&self) -> Option<&super::RunCombatResolutionV1> {
+        let mut resolutions = self
+            .progress_steps
+            .iter()
+            .filter_map(RunProgressStepV1::as_combat_resolution);
+        let resolution = resolutions.next()?;
+        resolutions.next().is_none().then_some(resolution)
     }
 
     pub(in crate::eval::run_control) fn with_combat_search_rejection(

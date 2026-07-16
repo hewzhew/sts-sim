@@ -2,7 +2,6 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use sts_simulator::eval::combat_case::combat_summary;
-use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::sim::combat::CombatPosition;
 
 use super::branch_path::BranchPathStep;
@@ -239,7 +238,7 @@ pub(super) fn result_value(
 ) -> Value {
     let run = &branch.session.run_state;
     json!({
-        "schema": "branch_tiny_run_result",
+        "schema": "branch_tiny_run_result_v3",
         "generation": generation,
         "branch_id": branch.id,
         "parent_id": branch.parent_id,
@@ -260,10 +259,8 @@ pub(super) fn result_value(
         "relics": run_state_json::relics_value(run),
         "potions": run_state_json::potions_value(run),
         "path": path_value(branch),
-        "auto": branch.auto_steps.iter()
-            .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
-            .map(|step| json!({"kind": format!("{:?}", step.kind), "label": step.label}))
-            .collect::<Vec<_>>(),
+        "recent_progress_journal": &branch.recent_progress_journal,
+        "recent_planner_capture": &branch.recent_planner_capture,
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
@@ -317,8 +314,6 @@ fn path_step_value((index, step): (usize, &BranchPathStep)) -> Value {
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
         "candidate_pool": serde_json::to_value(&step.candidate_pool).unwrap_or(Value::Null),
         "shop_boss_preview_candidates": serde_json::to_value(&step.shop_boss_preview_candidates)
-            .unwrap_or(Value::Null),
-        "shop_boss_preview_bundles": serde_json::to_value(&step.shop_boss_preview_bundles)
             .unwrap_or(Value::Null),
     })
 }
@@ -396,8 +391,6 @@ mod tests {
             boss_search_ms: 600,
             wall_ms: Some(700),
             checkpoint_before_combat_portfolio: true,
-            shop_boss_preview_bundle_limit: 0,
-            shop_boss_preview_target_floor: None,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -415,7 +408,8 @@ mod tests {
             },
             policy_lane: super::super::branch_policy_lane::BranchPolicyLane::default(),
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

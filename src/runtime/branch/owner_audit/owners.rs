@@ -24,6 +24,6 @@ pub(super) fn owner_decision(
         Owner::Event(_) => event_owner_decision(session, surface),
         Owner::RewardTiny => reward_tiny_owner_decision(surface),
         Owner::Campfire => campfire_owner_decision(session, surface),
-        Owner::RunChoice => run_choice_owner_decision(session),
+        Owner::RunChoice => run_choice_owner_decision(session, surface),
     }
 }

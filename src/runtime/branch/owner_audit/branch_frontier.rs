@@ -153,7 +153,8 @@ mod tests {
             },
             policy_lane,
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,
@@ -182,6 +183,7 @@ mod tests {
         branch.path.push(BranchPathStep {
             policy_lane: branch.policy_lane.label(),
             policy_selection: None,
+            candidate_id: None,
             key: Some(DecisionCandidateKey::BossRelicPick {
                 option_index: lane_id as usize,
                 relic,
@@ -193,7 +195,6 @@ mod tests {
             decision_delta: None,
             candidate_pool: Vec::new(),
             shop_boss_preview_candidates: Vec::new(),
-            shop_boss_preview_bundles: Vec::new(),
         });
         branch
     }

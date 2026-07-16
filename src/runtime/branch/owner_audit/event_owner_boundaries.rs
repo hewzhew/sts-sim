@@ -30,7 +30,7 @@ fn event_owner_action(session: &RunControlSession, event_id: EventId) -> RunDeci
     ));
     let surface = build_decision_surface(session);
     match owners::owner_decision(session, Owner::Event(event_id), &surface) {
-        OwnerDecision::Routine(OwnerRoutine::Action(action)) => action,
+        OwnerDecision::Routine(OwnerRoutine::Candidate { action, .. }) => action,
         _ => panic!("{event_id:?} owner must produce one executable routine action"),
     }
 }

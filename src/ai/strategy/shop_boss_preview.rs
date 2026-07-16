@@ -21,21 +21,6 @@ pub struct ShopBossPreviewCandidate {
     pub reason: &'static str,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ShopBossPreviewBundleReason {
-    Baseline,
-    Single,
-    MultiItem,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShopBossPreviewBundle {
-    pub items: Vec<DecisionCandidateKind>,
-    pub total_cost: i32,
-    pub gold_after: i32,
-    pub reason: ShopBossPreviewBundleReason,
-}
-
 pub fn shop_boss_preview_candidates(
     candidates: impl IntoIterator<Item = DecisionCandidateKind>,
 ) -> Vec<ShopBossPreviewCandidate> {
@@ -54,39 +39,6 @@ pub fn shop_boss_preview_candidates(
         preview_candidates.push(candidate);
     }
     preview_candidates
-}
-
-pub fn shop_boss_preview_bundles(
-    candidates: impl IntoIterator<Item = DecisionCandidateKind>,
-    current_gold: i32,
-    max_bundles: usize,
-) -> Vec<ShopBossPreviewBundle> {
-    let preview = shop_boss_preview_candidates(candidates);
-    if preview.is_empty() {
-        return Vec::new();
-    }
-    let mut bundles = vec![ShopBossPreviewBundle {
-        items: Vec::new(),
-        total_cost: 0,
-        gold_after: current_gold,
-        reason: ShopBossPreviewBundleReason::Baseline,
-    }];
-    let items = preview
-        .into_iter()
-        .filter(|candidate| candidate.class != ShopBossPreviewClass::BaselineLeave)
-        .collect::<Vec<_>>();
-
-    for size in 1..=3 {
-        let mut current = Vec::new();
-        generate_bundle_combinations(&items, size, 0, &mut current, current_gold, &mut bundles);
-    }
-    bundles[1..].sort_by(|a, b| {
-        bundle_score(b)
-            .cmp(&bundle_score(a))
-            .then_with(|| a.total_cost.cmp(&b.total_cost))
-    });
-    bundles.truncate(max_bundles.max(1));
-    bundles
 }
 
 pub fn classify_shop_boss_preview_candidate(
@@ -191,147 +143,6 @@ pub fn classify_shop_boss_preview_candidate(
     }
 }
 
-fn generate_bundle_combinations(
-    items: &[ShopBossPreviewCandidate],
-    target_size: usize,
-    start: usize,
-    current: &mut Vec<ShopBossPreviewCandidate>,
-    current_gold: i32,
-    bundles: &mut Vec<ShopBossPreviewBundle>,
-) {
-    if current.len() == target_size {
-        if !is_valid_bundle(current) {
-            return;
-        }
-        let total_cost = current.iter().map(|item| candidate_cost(item.kind)).sum();
-        if total_cost > current_gold {
-            return;
-        }
-        let kinds = current.iter().map(|item| item.kind).collect::<Vec<_>>();
-        if bundles.iter().any(|bundle| bundle.items == kinds) {
-            return;
-        }
-        bundles.push(ShopBossPreviewBundle {
-            items: kinds,
-            total_cost,
-            gold_after: current_gold - total_cost,
-            reason: if target_size == 1 {
-                ShopBossPreviewBundleReason::Single
-            } else {
-                ShopBossPreviewBundleReason::MultiItem
-            },
-        });
-        return;
-    }
-    for index in start..items.len() {
-        current.push(items[index]);
-        generate_bundle_combinations(
-            items,
-            target_size,
-            index + 1,
-            current,
-            current_gold,
-            bundles,
-        );
-        current.pop();
-    }
-}
-
-fn is_valid_bundle(items: &[ShopBossPreviewCandidate]) -> bool {
-    if items.is_empty() {
-        return true;
-    }
-    if count_by_slot(items, ShopBossPreviewSlot::Cleanup) > 1 {
-        return false;
-    }
-    if count_by_slot(items, ShopBossPreviewSlot::Potion) > 1 {
-        return false;
-    }
-    if count_by_slot(items, ShopBossPreviewSlot::BossDamageCard) > 1 {
-        return false;
-    }
-    if items.len() > 1
-        && items
-            .iter()
-            .all(|item| preview_slot(item.kind) == ShopBossPreviewSlot::Support)
-    {
-        return false;
-    }
-    true
-}
-
-fn count_by_slot(items: &[ShopBossPreviewCandidate], slot: ShopBossPreviewSlot) -> usize {
-    items
-        .iter()
-        .filter(|item| preview_slot(item.kind) == slot)
-        .count()
-}
-
-fn bundle_score(bundle: &ShopBossPreviewBundle) -> i32 {
-    bundle
-        .items
-        .iter()
-        .map(|item| match preview_slot(*item) {
-            ShopBossPreviewSlot::BossDamageCard => 120,
-            ShopBossPreviewSlot::Potion => 80,
-            ShopBossPreviewSlot::Cleanup => 70,
-            ShopBossPreviewSlot::Support => 45,
-            ShopBossPreviewSlot::Leave | ShopBossPreviewSlot::Unsupported => 0,
-        })
-        .sum::<i32>()
-        + (bundle.items.len() as i32 * 5)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ShopBossPreviewSlot {
-    Leave,
-    BossDamageCard,
-    Potion,
-    Cleanup,
-    Support,
-    Unsupported,
-}
-
-fn preview_slot(kind: DecisionCandidateKind) -> ShopBossPreviewSlot {
-    match kind {
-        DecisionCandidateKind::ShopLeave => ShopBossPreviewSlot::Leave,
-        DecisionCandidateKind::ShopPurge { .. } => ShopBossPreviewSlot::Cleanup,
-        DecisionCandidateKind::ShopBuyPotion { .. } => ShopBossPreviewSlot::Potion,
-        DecisionCandidateKind::ShopBuyCard { card, .. }
-            if matches!(
-                card,
-                CardId::DemonForm
-                    | CardId::FiendFire
-                    | CardId::Bludgeon
-                    | CardId::Immolate
-                    | CardId::Reaper
-            ) =>
-        {
-            ShopBossPreviewSlot::BossDamageCard
-        }
-        DecisionCandidateKind::ShopBuyCard { .. } | DecisionCandidateKind::ShopBuyRelic { .. } => {
-            ShopBossPreviewSlot::Support
-        }
-        _ => ShopBossPreviewSlot::Unsupported,
-    }
-}
-
-fn candidate_cost(kind: DecisionCandidateKind) -> i32 {
-    match kind {
-        DecisionCandidateKind::ShopBuyCard { price, .. }
-        | DecisionCandidateKind::ShopBuyRelic { price, .. }
-        | DecisionCandidateKind::ShopBuyPotion { price, .. } => price,
-        DecisionCandidateKind::ShopPurge { .. } => 75,
-        DecisionCandidateKind::ShopLeave
-        | DecisionCandidateKind::ShopOpenRewards
-        | DecisionCandidateKind::CardRewardPick { .. }
-        | DecisionCandidateKind::CardRewardSkip
-        | DecisionCandidateKind::BossRelicPick { .. }
-        | DecisionCandidateKind::BossRelicSkip
-        | DecisionCandidateKind::Unsupported => 0,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::ai::strategy::decision_pipeline::{CleanupTarget, DecisionCandidateKind};
@@ -340,8 +151,7 @@ mod tests {
     use crate::content::relics::RelicId;
 
     use super::{
-        classify_shop_boss_preview_candidate, shop_boss_preview_bundles,
-        shop_boss_preview_candidates, ShopBossPreviewBundleReason, ShopBossPreviewClass,
+        classify_shop_boss_preview_candidate, shop_boss_preview_candidates, ShopBossPreviewClass,
     };
 
     #[test]
@@ -465,63 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn generates_affordable_multi_item_bundles_for_boss_preview() {
-        let bundles = shop_boss_preview_bundles(
-            [
-                DecisionCandidateKind::ShopLeave,
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                },
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::Bludgeon,
-                    upgrades: 0,
-                    price: 162,
-                },
-                DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::FirePotion,
-                    price: 51,
-                },
-                DecisionCandidateKind::ShopPurge {
-                    target: CleanupTarget::StarterStrike,
-                },
-                DecisionCandidateKind::ShopBuyRelic {
-                    relic: RelicId::Vajra,
-                    price: 153,
-                },
-            ],
-            338,
-            12,
-        );
-
-        assert!(bundles
-            .iter()
-            .any(|bundle| bundle.reason == ShopBossPreviewBundleReason::Baseline));
-        assert!(bundles.iter().any(|bundle| {
-            bundle.items.contains(&DecisionCandidateKind::ShopBuyCard {
-                card: CardId::FiendFire,
-                upgrades: 0,
-                price: 152,
-            }) && bundle.items.contains(&DecisionCandidateKind::ShopPurge {
-                target: CleanupTarget::StarterStrike,
-            })
-        }));
-        assert!(bundles.iter().any(|bundle| {
-            bundle.items.contains(&DecisionCandidateKind::ShopBuyCard {
-                card: CardId::FiendFire,
-                upgrades: 0,
-                price: 152,
-            }) && bundle
-                .items
-                .contains(&DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::FirePotion,
-                    price: 51,
-                })
-        }));
-    }
-
-    #[test]
     fn includes_power_potion_as_high_ceiling_boss_preview_candidate() {
         let power = classify_shop_boss_preview_candidate(DecisionCandidateKind::ShopBuyPotion {
             potion: PotionId::PowerPotion,
@@ -530,48 +283,6 @@ mod tests {
         assert_eq!(power.class, ShopBossPreviewClass::RandomOrDeferred);
         assert!(power.include_in_v0);
         assert_eq!(power.reason, "HighCeilingPowerDiscoveryPotion");
-
-        let bundles = shop_boss_preview_bundles(
-            [
-                DecisionCandidateKind::ShopLeave,
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                },
-                DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::PowerPotion,
-                    price: 78,
-                },
-                DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::AttackPotion,
-                    price: 51,
-                },
-            ],
-            240,
-            12,
-        );
-
-        assert!(bundles.iter().any(|bundle| {
-            bundle.items.contains(&DecisionCandidateKind::ShopBuyCard {
-                card: CardId::FiendFire,
-                upgrades: 0,
-                price: 152,
-            }) && bundle
-                .items
-                .contains(&DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::PowerPotion,
-                    price: 78,
-                })
-        }));
-        assert!(bundles.iter().all(|bundle| {
-            !bundle
-                .items
-                .contains(&DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::AttackPotion,
-                    price: 51,
-                })
-        }));
     }
 
     #[test]
@@ -588,68 +299,5 @@ mod tests {
         );
         assert!(demon_form.include_in_v0);
         assert_eq!(demon_form.reason, "DeterministicBossScalingRepair");
-    }
-
-    #[test]
-    fn bundle_generation_excludes_unaffordable_and_duplicate_cleanup_sequences() {
-        let bundles = shop_boss_preview_bundles(
-            [
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 300,
-                },
-                DecisionCandidateKind::ShopPurge {
-                    target: CleanupTarget::StarterStrike,
-                },
-                DecisionCandidateKind::ShopPurge {
-                    target: CleanupTarget::StarterDefend,
-                },
-                DecisionCandidateKind::ShopBuyPotion {
-                    potion: PotionId::AttackPotion,
-                    price: 50,
-                },
-            ],
-            120,
-            12,
-        );
-
-        assert!(bundles.iter().all(|bundle| bundle.total_cost <= 120));
-        assert!(bundles.iter().all(|bundle| {
-            bundle
-                .items
-                .iter()
-                .filter(|item| matches!(item, DecisionCandidateKind::ShopPurge { .. }))
-                .count()
-                <= 1
-        }));
-        assert!(bundles
-            .iter()
-            .all(|bundle| !bundle.items.iter().any(|item| {
-                matches!(
-                    item,
-                    DecisionCandidateKind::ShopBuyPotion {
-                        potion: PotionId::AttackPotion,
-                        ..
-                    }
-                )
-            })));
-    }
-
-    #[test]
-    fn does_not_emit_baseline_bundle_without_shop_preview_candidates() {
-        let bundles = shop_boss_preview_bundles(
-            [
-                DecisionCandidateKind::CardRewardPick {
-                    card: CardId::Cleave,
-                    upgrades: 0,
-                },
-                DecisionCandidateKind::CardRewardSkip,
-            ],
-            100,
-            12,
-        );
-
-        assert!(bundles.is_empty());
     }
 }

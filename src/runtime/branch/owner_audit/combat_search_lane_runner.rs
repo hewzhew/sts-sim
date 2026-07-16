@@ -1,6 +1,5 @@
 use sts_simulator::eval::run_control::{
-    apply_owner_audit_progress_step, CombatSearchTraceSummary, RunControlAutoStopKind,
-    RunControlHpLossLimit, RunControlSession, RunProgressOutcome,
+    CombatSearchTraceSummary, RunControlHpLossLimit, RunControlSession, RunProgressOutcome,
 };
 
 use super::accepted_high_loss_diagnostic::{
@@ -33,8 +32,6 @@ pub(super) struct CombatSearchLaneAttempt {
     pub(super) incumbent_reason: &'static str,
     pub(super) candidate_facts: Option<CombatSearchCandidateFacts>,
     pub(super) engine_fingerprint: String,
-    pub(super) auto_stop_kind: Option<RunControlAutoStopKind>,
-    pub(super) applied_operations: usize,
     pub(super) accepted_high_loss_diagnostic: Option<AcceptedHighLossDiagnosticDraft>,
 }
 
@@ -82,7 +79,7 @@ pub(super) fn run_lane_attempt(
     });
     let internal_no_win_rescue_enabled =
         !options.search.disable_no_win_rescue || options.search.allow_smoke_bomb_survival_fallback;
-    let outcome = match apply_owner_audit_progress_step(&mut trial, options) {
+    let outcome = match trial.apply_combat_search(options.search) {
         Ok(outcome) => outcome,
         Err(err) => {
             return Ok(CombatSearchLaneAttempt {
@@ -101,21 +98,13 @@ pub(super) fn run_lane_attempt(
                 incumbent_reason: "invalid_result",
                 candidate_facts: None,
                 engine_fingerprint,
-                auto_stop_kind: None,
-                applied_operations: 0,
                 accepted_high_loss_diagnostic: None,
             });
         }
     };
     let status = lane_status(&trial, &outcome);
-    let auto_stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
-    let applied_operations = outcome
-        .auto_stop
-        .as_ref()
-        .map(|stop| stop.applied_operations)
-        .unwrap_or(0);
     let action_keys = complete_search_action_keys(&outcome.trace_annotations);
-    let applicable = lane_commits(lane.commit_policy(), &status, auto_stop_kind);
+    let applicable = lane_commits(lane.commit_policy(), &status);
     let candidate_facts = applicable.then(|| {
         candidate_facts(
             &trial,
@@ -155,8 +144,6 @@ pub(super) fn run_lane_attempt(
         },
         candidate_facts,
         engine_fingerprint,
-        auto_stop_kind,
-        applied_operations,
         accepted_high_loss_diagnostic,
     })
 }
@@ -219,8 +206,6 @@ impl CombatSearchLaneAttempt {
                 .profile
                 .map(|profile| profile.engine_fingerprint())
                 .unwrap_or_else(|| "manual_default".to_string()),
-            auto_stop_kind: None,
-            applied_operations: 0,
             accepted_high_loss_diagnostic: None,
         }
     }
@@ -252,8 +237,6 @@ impl CombatSearchLaneAttempt {
             incumbent_reason: "not_evaluated",
             candidate_facts: Some(candidate_facts),
             engine_fingerprint: "synthetic".to_string(),
-            auto_stop_kind: None,
-            applied_operations: 1,
             accepted_high_loss_diagnostic: None,
         }
     }
@@ -430,8 +413,6 @@ mod tests {
             boss_search_ms: 1,
             wall_ms: None,
             checkpoint_before_combat_portfolio: false,
-            shop_boss_preview_bundle_limit: 0,
-            shop_boss_preview_target_floor: None,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -505,9 +486,24 @@ mod tests {
                 room_type: RoomType::MonsterRoom,
             }),
         ));
-        let request = CombatSearchRequest::from_session(&root, test_args());
-        let mut attempt = run_lane_attempt(&root, &request, CombatSearchLane::primary())
-            .expect("terminal blank combat should produce a trial");
+        let mut attempt = CombatSearchLaneAttempt {
+            trial_session: Some(root.clone()),
+            outcome: None,
+            status: BranchStatus::Terminal(super::super::TerminalOutcome::Victory),
+            label: "primary",
+            max_nodes: 0,
+            wall_ms: 0,
+            potion_policy: None,
+            max_potions_used: None,
+            action_keys: Vec::new(),
+            internal_no_win_rescue_enabled: false,
+            applicable: true,
+            selected: false,
+            incumbent_reason: "test_fixture",
+            candidate_facts: None,
+            engine_fingerprint: "test_fixture".to_string(),
+            accepted_high_loss_diagnostic: None,
+        };
         let root_engine = format!("{:?}", root.engine_state);
         let mut committed = root.clone();
         committed.run_state.current_hp = -123;

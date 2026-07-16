@@ -1,4 +1,4 @@
-use sts_simulator::eval::run_control::{DecisionSurface, RunDecisionAction};
+use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunDecisionAction};
 use sts_simulator::state::core::ClientInput;
 
 use super::owner_model::{
@@ -17,15 +17,61 @@ pub(super) fn visible_input_decision(
     surface: &DecisionSurface,
     input: ClientInput,
 ) -> OwnerDecision {
-    if surface
-        .visible_executable_inputs
-        .iter()
-        .any(|visible| visible == &input)
-    {
-        OwnerDecision::Routine(OwnerRoutine::Action(RunDecisionAction::Input(input)))
-    } else {
-        OwnerDecision::Gap(format!("routine input {input:?} is not visible"))
+    let action = RunDecisionAction::Input(input);
+    match owner_candidate_id_for_action(surface, &action) {
+        Ok(candidate_id) => OwnerDecision::Routine(OwnerRoutine::Candidate {
+            candidate_id,
+            action,
+        }),
+        Err(err) => OwnerDecision::Gap(err),
     }
+}
+
+pub(super) fn owner_candidate_id_for_action(
+    surface: &DecisionSurface,
+    action: &RunDecisionAction,
+) -> Result<String, String> {
+    let exact = surface
+        .view
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.action.executable_action().as_ref() == Some(action))
+        .collect::<Vec<_>>();
+    if let [candidate] = exact.as_slice() {
+        return Ok(candidate.id.clone());
+    }
+    if exact.len() > 1 {
+        return Err(format!(
+            "owner action {action:?} matches {} public candidates",
+            exact.len()
+        ));
+    }
+
+    if matches!(
+        action,
+        RunDecisionAction::Input(ClientInput::SubmitSelection(_))
+    ) {
+        let parameterized = surface
+            .view
+            .candidates
+            .iter()
+            .filter(|candidate| {
+                matches!(
+                    candidate.key.as_ref(),
+                    Some(DecisionCandidateKey::SelectionSubmit { .. })
+                )
+            })
+            .collect::<Vec<_>>();
+        if let [candidate] = parameterized.as_slice() {
+            return Ok(candidate.id.clone());
+        }
+        return Err(format!(
+            "owner selection binding found {} public SelectionSubmit candidates",
+            parameterized.len()
+        ));
+    }
+
+    Err(format!("owner action {action:?} is not a public candidate"))
 }
 
 fn executable_choices_with_cancel(
@@ -42,6 +88,7 @@ fn executable_choices_with_cancel(
                 return None;
             }
             Some(OwnerChoice {
+                candidate_id: candidate.id.clone(),
                 key: candidate.key.clone(),
                 action,
                 label: candidate.label.clone(),

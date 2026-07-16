@@ -2,12 +2,18 @@
 
 ## Status
 
-Typed core implemented; live capture integration remains provisional. The
-first bounded calibration showed that command-level capture misses decisions
-performed inside aggregate run-control automation and that the current
-coverage denominator counts only finalized captures. Gate 1 is therefore not
-accepted yet. The required atomic execution migration and physical deletion of
-live auto-run are defined in
+Typed core and live boundary-visit capture are implemented. Command-level
+capture has been retired: every planner-visible visit seen by the bounded run
+driver is captured before execution, including visits that yield at a human
+boundary, progress budget, or wall deadline. Explicit owner selections and
+each freshly enumerated shop transaction use the same capture ticket. The
+branch-only boss-preview bundle experiment is retired; shop execution commits
+one visible transaction and then observes the next boundary again. Coverage
+now uses visits rather than finalized behavior events as its
+denominator. Gate 1 is still not accepted because trajectory-scoped behavior
+event projection and outcome attachment from these visits remain future work.
+The atomic execution migration and physical deletion of live auto-run are
+defined in
 `docs/design/2026-07-15-atomic-run-decision-execution-design.md`.
 
 These contracts do not change production decisions and do not authorize a
@@ -15,12 +21,15 @@ model or a new planner to control a run. Gates 2 through 4 remain future work
 and require faithful evidence from atomic decision traces before an owner is
 selected.
 
-The implemented capture boundary lives in `src/ai/planner_core` and
-`src/eval/run_control/planner_capture.rs`. SessionTrace schema v15 stores its
-observations, legal candidate sets, and outcome attachments as
-content-addressed payloads; behavior events contain references rather than
-duplicating those payloads. The legacy policy is recorded explicitly as a
-behavior policy, never as teacher authority.
+The representation boundary lives in `src/ai/planner_core`. Current live
+capture lives in
+`src/eval/run_control/planner_boundary_capture.rs`; the similarly named
+`planner_capture.rs` is a compatibility projection for historical
+`SessionTraceV1` schema-v15 artifacts only. Branch trace/capsule schema v3
+serializes the current capture segment alongside the committed progress
+journal. A selected visit records its typed selection source, but it does not
+pretend to be a trajectory-scoped behavior event until branch identity and
+continuation provenance can be attached faithfully.
 
 This document supersedes the assumption in the deletion-driven Campfire
 prospect design that Campfire should be the first production boundary or that a
@@ -428,12 +437,14 @@ path; it does not call the deleted owner.
 ## Trajectory And Label Contract
 
 Learning data is append-only evidence linked by stable ids. The maintained
-campaign-artifact contract keeps one authority for decision history. In the
-current implementation, that authority is carried by `SessionTraceV1` steps,
-boundary annotations, and outcome attachments; it is not a separate generic
-`journal.jsonl` file. This contract extends that typed decision history and
-does not create a second learning journal. A behavior decision event contains
-at least:
+campaign-artifact contract keeps one authority for committed mutation history:
+`RunProgressJournalV1`, whose decision entries are
+`RunDecisionTransactionV1`. `PlannerBoundaryCaptureSegmentV1` is a distinct
+observation sidecar because unexecuted visits are not mutations; it links a
+selected visit back to the transaction's public candidate id and selection
+source. It is not a second executor or a second mutation truth. Historical
+`SessionTraceV1` is compatibility input only. A future trajectory-scoped
+behavior decision event contains at least:
 
 ```text
 BehaviorDecisionRecord:
@@ -456,8 +467,9 @@ small or content-addressed when large. The authoritative decision history owns
 their ids and hashes. Dataset files and analysis reports are rebuildable
 projections from typed decision events, referenced immutable payloads,
 capsules, and outcome attachments; they are never a second evidence authority.
-If storage later moves from `SessionTraceV1` to an append-only journal, that is
-an authority migration with compatibility reading, not permanent dual-write.
+Dataset files and coverage reports are rebuildable projections from the typed
+journal, boundary visits, capsules, and outcome attachments; they are never a
+second evidence authority.
 
 `selection_probability` is recorded as known stochastic, known deterministic,
 or unknown. It is never fabricated. Deterministic incumbent behavior provides
@@ -650,17 +662,18 @@ reported afterward.
 The first code slice implements contracts and capture only. It does not train a
 model or alter a decision:
 
-1. Add an unversioned planner-core module for `PlannerObservation`,
+1. **Complete.** Add an unversioned planner-core module for `PlannerObservation`,
    `LegalCandidateSet`, behavior manifests, and typed label provenance.
-2. Build one sanitized observation serializer from public facts and prove that
+2. **Complete.** Build one sanitized observation serializer from public facts and prove that
    hidden RNG and scheduled encounter queues are absent.
-3. Add a typed behavior annotation and outcome linkage to the existing
-   `SessionTraceV1` decision-history boundary without importing current
-   strategic scores or reasons.
-4. Write immutable payloads and rebuildable dataset exports under
-   `artifacts/runs`, outside Cargo target directories; do not add another
-   decision-history, checkpoint, or report authority.
-5. Produce a coverage report showing which decision sites can already provide
+3. **Complete for boundary visits and transaction linkage.** Capture each
+   planner-visible boundary before execution and link selected visits to the
+   committed transaction without importing current strategic scores or
+   reasons. Trajectory-scoped behavior events and outcomes remain pending.
+4. **Complete for current branch artifacts.** Serialize the live capture
+   segment in branch trace/capsule schema v3 beside the committed progress
+   journal; do not add another executor, checkpoint, or mutation authority.
+5. **Complete.** Produce a coverage report showing which decision sites can already provide
    complete candidates and which still have typed gaps.
 6. Use that report to select, in a later reviewed change, the first owner and
    the smallest outcome-prediction experiment.
@@ -674,8 +687,7 @@ size.
 Tests protect contracts rather than strategic opinions:
 
 - identical public states serialize identically;
-- harmless reordering of owned entities does not alter the canonical
-  observation;
+- public entity ordering whose mechanics are order-sensitive remains explicit;
 - hidden RNG cursors and future queues cannot affect the observation;
 - engine legality and recorded candidate completeness agree;
 - candidate ids survive display reordering;

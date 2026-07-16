@@ -372,6 +372,16 @@ mod tests {
             "fallback outcome should be explicit, got: {}",
             outcome.message
         );
+        let Some(resolution) = outcome.single_combat_resolution() else {
+            panic!("Smoke Bomb fallback should preserve one combat resolution");
+        };
+        assert_eq!(
+            resolution.kind,
+            crate::eval::run_control::RunCombatResolutionKindV1::SmokeBombEscape
+        );
+        assert_eq!(resolution.before.decision_step, 0);
+        assert_eq!(resolution.after.decision_step, 0);
+        assert_eq!(session.decision_step, 0);
     }
 
     #[test]

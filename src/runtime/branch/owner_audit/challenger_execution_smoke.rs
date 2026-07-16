@@ -106,8 +106,6 @@ fn args() -> Args {
         boss_search_ms: 1,
         wall_ms: None,
         checkpoint_before_combat_portfolio: false,
-        shop_boss_preview_bundle_limit: 0,
-        shop_boss_preview_target_floor: None,
         wall_capped_search_budget: false,
         wall_capped_boss_budget: false,
     }
@@ -132,7 +130,8 @@ fn challenger_diverges_twice_and_resumes_without_restarting_session() {
         },
         policy_lane: BranchPolicyLane::default(),
         combat_portfolio: None,
-        auto_steps: Vec::new(),
+        recent_progress_journal: Default::default(),
+        recent_planner_capture: Default::default(),
         combat_search: Vec::new(),
         combat_search_history: Vec::new(),
         comparison_search_start: None,

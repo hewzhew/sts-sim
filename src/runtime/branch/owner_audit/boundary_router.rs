@@ -13,15 +13,31 @@ pub(super) fn classify_auto_outcome(
     if let Some(result) = terminal_outcome(session) {
         return BranchStatus::Terminal(result);
     }
-    outcome
-        .auto_stop
-        .as_ref()
-        .map(|stop| classify_boundary(session, stop))
-        .unwrap_or_else(|| {
-            BranchStatus::AdvanceFailed(
-                "auto_run returned non-terminal success without auto_stop".to_string(),
-            )
-        })
+    if let Some(stop) = outcome.auto_stop() {
+        return classify_boundary(session, stop);
+    }
+    if outcome.progress_steps.len() == 1 {
+        let surface = build_decision_surface(session);
+        let boundary = surface.view.header.title.clone();
+        if let Some(owner) = owner_for_current_boundary(session) {
+            return BranchStatus::Running { boundary, owner };
+        }
+        return BranchStatus::OperationBudgetExhausted {
+            boundary,
+            reason: "one atomic progress step applied".to_string(),
+        };
+    }
+    if session.current_active_combat_position().is_ok() && outcome.combat_search_rejection.is_some()
+    {
+        let boundary = build_decision_surface(session).view.header.title;
+        return BranchStatus::CombatGap {
+            boundary,
+            reason: outcome.message.clone(),
+        };
+    }
+    BranchStatus::AdvanceFailed(
+        "atomic progress returned neither one mutation nor one typed stop".to_string(),
+    )
 }
 
 pub(super) fn classify_boundary(
@@ -33,11 +49,17 @@ pub(super) fn classify_boundary(
     }
     let surface = build_decision_surface(session);
     let boundary = surface.view.header.title.clone();
-    if stop.kind == RunControlAutoStopKind::ProgressApplied {
+    if stop.kind == RunControlAutoStopKind::ProgressBudgetExhausted {
         if let Some(owner) = owner_for_current_boundary(session) {
             return BranchStatus::Running { boundary, owner };
         }
         return BranchStatus::OperationBudgetExhausted {
+            boundary,
+            reason: stop.reason.clone(),
+        };
+    }
+    if stop.kind == RunControlAutoStopKind::WallDeadlineReached {
+        return BranchStatus::BudgetGap {
             boundary,
             reason: stop.reason.clone(),
         };

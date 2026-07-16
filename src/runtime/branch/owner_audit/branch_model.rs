@@ -1,5 +1,6 @@
 use sts_simulator::eval::run_control::{
-    CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlSession,
+    CombatSearchTraceSummary, PlannerBoundaryCaptureSegmentV1, RunControlSession,
+    RunProgressJournalV1,
 };
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
@@ -19,7 +20,8 @@ pub(super) struct Branch {
     pub(super) status: BranchStatus,
     pub(super) policy_lane: BranchPolicyLane,
     pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
-    pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    pub(super) recent_progress_journal: RunProgressJournalV1,
+    pub(super) recent_planner_capture: PlannerBoundaryCaptureSegmentV1,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
     pub(super) combat_search_history: Vec<CombatSearchTraceSummary>,
     pub(super) comparison_search_start: Option<usize>,

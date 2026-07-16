@@ -218,6 +218,7 @@ mod tests {
             _ => None,
         };
         OwnerChoice {
+            candidate_id: "test".to_string(),
             key: None,
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
@@ -263,7 +264,8 @@ mod tests {
             },
             policy_lane: BranchPolicyLane::default(),
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

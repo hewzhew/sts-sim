@@ -25,52 +25,29 @@ pub(super) fn run_combat_portfolio_step(
         primary.incumbent_reason = "primary_fast_path";
         primary.commit_into(session)?;
     }
-    output.collect_attempt(&primary);
+    output.collect_attempt(&primary)?;
     let mut status = primary.status.clone();
-    let primary_stop_kind = primary.auto_stop_kind;
-    if primary_operation_budget_exhausted(&status, primary_stop_kind)
-        && !matches!(status, BranchStatus::Terminal(_))
-    {
-        return Ok(combat_search_result(
-            status,
-            primary_stop_kind,
-            None,
-            output,
-        ));
+    if primary_operation_budget_exhausted(&status) && !matches!(status, BranchStatus::Terminal(_)) {
+        return Ok(combat_search_result(status, None, output));
     }
     let saw_primary_combat_gap = matches!(status, BranchStatus::CombatGap { .. });
     if request.should_report() && saw_primary_combat_gap {
         lane_reports.push(lane_attempt_report(&primary));
     }
     if !saw_primary_combat_gap {
-        return Ok(combat_search_result(
-            status,
-            primary_stop_kind,
-            None,
-            output,
-        ));
+        return Ok(combat_search_result(status, None, output));
     }
 
     let schedule = request.portfolio_after_primary(session);
     if schedule.lanes.is_empty() {
         let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(
-            status,
-            primary_stop_kind,
-            report,
-            output,
-        ));
+        return Ok(combat_search_result(status, report, output));
     }
 
     if request.combat_budget_capped() {
         status = combat_budget_capped_status(&request);
         let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(
-            status,
-            primary_stop_kind,
-            report,
-            output,
-        ));
+        return Ok(combat_search_result(status, report, output));
     }
     if request.stakes() == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio {
         status = awaiting_auto_boundary(
@@ -78,12 +55,7 @@ pub(super) fn run_combat_portfolio_step(
             "checkpoint before combat portfolio after primary search gap".to_string(),
         );
         let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(
-            status,
-            primary_stop_kind,
-            report,
-            output,
-        ));
+        return Ok(combat_search_result(status, report, output));
     }
 
     let suppressed_attempts = schedule
@@ -96,19 +68,14 @@ pub(super) fn run_combat_portfolio_step(
     })?;
     status = arbitration.status;
     for attempt in arbitration.attempts.into_iter().chain(suppressed_attempts) {
-        output.collect_attempt(&attempt);
+        output.collect_attempt(&attempt)?;
         if request.should_report() {
             lane_reports.push(lane_attempt_report(&attempt));
         }
     }
 
     let report = portfolio_report(&request, status.clone(), lane_reports);
-    Ok(combat_search_result(
-        status,
-        primary_stop_kind,
-        report,
-        output,
-    ))
+    Ok(combat_search_result(status, report, output))
 }
 
 struct PostPrimaryArbitration {

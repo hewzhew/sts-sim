@@ -6,7 +6,6 @@ use sts_simulator::ai::strategy::decision_pipeline::{
 };
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_candidate;
-use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 
 use super::branch_path::BranchPathStep;
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
@@ -17,7 +16,7 @@ use super::{
 pub(super) fn run_start_event(args: Args) -> Value {
     json!({
         "event": "run_start",
-        "schema": "branch_tiny_trace_v1",
+        "schema": "branch_tiny_trace_v3",
         "seed": args.seed,
         "ascension": args.ascension,
         "generations": args.generations,
@@ -52,10 +51,8 @@ pub(super) fn node_event(
         },
         "status": status_value(&branch.status),
         "arrived": branch.path.last().map(path_step_value),
-        "auto": branch.auto_steps.iter()
-            .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
-            .map(auto_step_value)
-            .collect::<Vec<_>>(),
+        "recent_progress_journal": &branch.recent_progress_journal,
+        "recent_planner_capture": &branch.recent_planner_capture,
         "combat_search": branch.combat_search,
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::trace_value),
         "choices": choices.iter().enumerate()
@@ -87,39 +84,6 @@ pub(super) fn frontier_snapshot_event(generation: usize, frontier: &VecDeque<Bra
     })
 }
 
-fn auto_step_value(step: &RunControlAutoAppliedStepV1) -> Value {
-    let Some(result) = step.action_result.as_ref() else {
-        return json!({"kind": auto_step_kind_value(step.kind)});
-    };
-    let mut value = json!({
-        "kind": auto_step_kind_value(step.kind),
-        "status": result.status,
-        "changes": result.changes,
-    });
-    if let Some(packet) = step.route_decision_packet.as_ref() {
-        value
-            .as_object_mut()
-            .expect("auto step trace value must be an object")
-            .insert(
-                "map_decision_packet".to_string(),
-                serde_json::to_value(packet).expect("map decision packet must serialize"),
-            );
-    }
-    value
-}
-
-fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
-    match kind {
-        RunControlAutoAppliedKindV1::RewardAutomation => "reward_automation",
-        RunControlAutoAppliedKindV1::CombatSearch => "combat_search",
-        RunControlAutoAppliedKindV1::RoutePlanner => "route_planner",
-        RunControlAutoAppliedKindV1::RewardOverlay => "reward_overlay",
-        RunControlAutoAppliedKindV1::RoutineCandidate => "routine_candidate",
-        RunControlAutoAppliedKindV1::AutoCapture => "auto_capture",
-        RunControlAutoAppliedKindV1::OwnerRoutine => "owner_routine",
-    }
-}
-
 fn choice_value(index: usize, choice: &OwnerChoice, expanded: bool) -> Value {
     json!({
         "rank": index + 1,
@@ -139,8 +103,6 @@ fn path_step_value(step: &BranchPathStep) -> Value {
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
         "candidate_pool": serde_json::to_value(&step.candidate_pool).unwrap_or(Value::Null),
         "shop_boss_preview_candidates": serde_json::to_value(&step.shop_boss_preview_candidates)
-            .unwrap_or(Value::Null),
-        "shop_boss_preview_bundles": serde_json::to_value(&step.shop_boss_preview_bundles)
             .unwrap_or(Value::Null),
     })
 }
@@ -325,10 +287,9 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use sts_simulator::eval::run_control::{
-        apply_owner_audit_progress_step, RunControlAutoStepOptions, RunControlConfig,
-        RunControlRouteAutomationMode, RunControlSession,
+        RunControlAutoStepOptions, RunControlConfig, RunControlRouteAutomationMode,
+        RunControlSession, RunProgressJournalV1,
     };
     use sts_simulator::state::core::EngineState;
 
@@ -338,32 +299,28 @@ mod tests {
         session.run_state.event_state = None;
         session.engine_state = EngineState::MapNavigation;
 
-        let outcome = apply_owner_audit_progress_step(
-            &mut session,
-            RunControlAutoStepOptions {
+        let outcome = session
+            .apply_progress_step(RunControlAutoStepOptions {
                 route: RunControlRouteAutomationMode::Planner,
                 ..RunControlAutoStepOptions::default()
-            },
-        )
-        .expect("owner progress step should select one route");
-        let route_step = outcome
-            .auto_applied_steps
-            .iter()
-            .find(|step| step.kind == RunControlAutoAppliedKindV1::RoutePlanner)
-            .expect("progress step should record the route step");
-
-        let packet = route_step
-            .route_decision_packet
-            .as_ref()
-            .expect("route auto step should retain its typed map decision packet");
-        assert_eq!(packet.selected_index, Some(0));
-
-        let value = auto_step_value(route_step);
+            })
+            .expect("owner progress step should select one route");
+        let journal = RunProgressJournalV1::from_committed_steps(outcome.progress_steps)
+            .expect("route progress should form one journal segment");
+        let value = serde_json::to_value(journal).expect("journal should serialize");
+        let route_annotation = value["entries"][0]["record"]["trace_annotations"]
+            .as_array()
+            .and_then(|annotations| {
+                annotations
+                    .iter()
+                    .find(|annotation| annotation["kind"] == "route_planner_selection")
+            })
+            .expect("decision transaction should retain route planner evidence");
         assert_eq!(
-            value["map_decision_packet"]["schema_name"],
+            route_annotation["map_decision_packet"]["schema_name"],
             serde_json::json!("MapDecisionPacketV1")
         );
-        assert!(value["map_decision_packet"]["candidates"]
+        assert!(route_annotation["map_decision_packet"]["candidates"]
             .as_array()
             .is_some_and(|candidates| !candidates.is_empty()));
     }

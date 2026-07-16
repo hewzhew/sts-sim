@@ -2,12 +2,13 @@ use sts_simulator::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerRequestV1,
 };
 use sts_simulator::content::cards::get_card_definition;
-use sts_simulator::eval::run_control::{RunControlSession, RunDecisionAction};
+use sts_simulator::eval::run_control::{DecisionSurface, RunControlSession, RunDecisionAction};
 use sts_simulator::state::core::{
     ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState,
 };
 use sts_simulator::state::selection::{SelectionResolution, SelectionScope};
 
+use super::owner_commands::owner_candidate_id_for_action;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion, OwnerDecision};
 
 pub(super) fn can_handle(reason: RunPendingChoiceReason) -> bool {
@@ -26,7 +27,10 @@ pub(super) fn can_handle(reason: RunPendingChoiceReason) -> bool {
     )
 }
 
-pub(super) fn run_choice_owner_decision(session: &RunControlSession) -> OwnerDecision {
+pub(super) fn run_choice_owner_decision(
+    session: &RunControlSession,
+    surface: &DecisionSurface,
+) -> OwnerDecision {
     let EngineState::RunPendingChoice(choice) = &session.engine_state else {
         return OwnerDecision::Gap("RunChoice owner requires RunPendingChoice state".to_string());
     };
@@ -36,11 +40,12 @@ pub(super) fn run_choice_owner_decision(session: &RunControlSession) -> OwnerDec
             choice.reason
         ));
     }
-    deck_mutation_owner_decision(session, choice)
+    deck_mutation_owner_decision(session, surface, choice)
 }
 
 fn deck_mutation_owner_decision(
     session: &RunControlSession,
+    surface: &DecisionSurface,
     choice: &RunPendingChoiceState,
 ) -> OwnerDecision {
     if choice.min_choices != choice.max_choices {
@@ -108,11 +113,18 @@ fn deck_mutation_owner_decision(
         format!(" risks={}", selected_plan.risks.join("; "))
     };
 
+    let action = RunDecisionAction::Input(ClientInput::SubmitSelection(
+        SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
+    ));
+    let candidate_id = match owner_candidate_id_for_action(surface, &action) {
+        Ok(candidate_id) => candidate_id,
+        Err(err) => return OwnerDecision::Gap(err),
+    };
+
     OwnerDecision::Candidates(vec![OwnerChoice {
+        candidate_id,
         key: None,
-        action: RunDecisionAction::Input(ClientInput::SubmitSelection(
-            SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
-        )),
+        action,
         label: format!(
             "{:?} {} role={:?} confidence={:.2}{}",
             choice.reason,
@@ -130,7 +142,9 @@ fn deck_mutation_owner_decision(
 mod tests {
     use super::*;
     use sts_simulator::content::cards::CardId;
-    use sts_simulator::eval::run_control::{RunControlConfig, RunDecisionAction};
+    use sts_simulator::eval::run_control::{
+        RunControlConfig, RunDecisionAction, RunDecisionSelectionSourceV1,
+    };
     use sts_simulator::state::events::EventId;
     use sts_simulator::state::selection::{DomainEventSource, SelectionScope};
 
@@ -146,7 +160,9 @@ mod tests {
             return_state: Box::new(EngineState::EventRoom),
         });
 
-        let OwnerDecision::Candidates(choices) = run_choice_owner_decision(&session) else {
+        let surface = sts_simulator::eval::run_control::build_decision_surface(&session);
+        let OwnerDecision::Candidates(choices) = run_choice_owner_decision(&session, &surface)
+        else {
             panic!("event-origin upgrade must be owned by RunChoice");
         };
         let [choice] = choices.as_slice() else {
@@ -158,5 +174,16 @@ mod tests {
         };
         assert_eq!(resolution.scope, SelectionScope::Deck);
         assert_eq!(resolution.selected_card_uuids().len(), 1);
+
+        let outcome = session
+            .apply_owner_candidate(&choice.candidate_id, choice.action.clone())
+            .expect("RunChoice owner candidate should execute through its public id");
+        let Some(transaction) = outcome.single_decision_transaction() else {
+            panic!("owner candidate should preserve exactly one decision transaction");
+        };
+        assert_eq!(
+            transaction.selection.source,
+            RunDecisionSelectionSourceV1::OwnerPolicy
+        );
     }
 }

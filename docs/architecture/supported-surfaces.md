@@ -140,7 +140,9 @@ future liquidity, and leaving.
 
 The retirement delivery removed 1,527 net Rust lines. The subsequent owner migration makes
 `shop_policy_v1` the production ShopTiny planner: it compiles a whole-visit plan, executes only the
-current plan head, and recompiles after each state change. Typed visit facts carry Maw Bank state,
+current plan head, and recompiles after each state change. Its portfolio is non-binding lookahead,
+not a committed basket: overlays, repricing, restocks, selections, and all other mutations are
+observed before another purchase can execute. Typed visit facts carry Maw Bank state,
 visible future-shop distance, and the nearest visible elite-or-boss window. The generic decision
 pipeline still supplies candidate annotations for challenger/audit evidence, but it no longer
 sorts or selects the production ShopTiny action. A missing or stale compiled plan head is
@@ -319,6 +321,20 @@ manifest. These are active consumers, not speculative external users.
   `shop_policy_v1`; `decision_pipeline` and diagnostic boss preview must not regain production
   cross-candidate purchase policy.
 - Recovery: repository history and `origin/backup/pre-cleanup-20260712`.
+
+### Branch boss-preview shop bundle experiment
+
+- Removal delivery: the 2026-07-16 single-transaction shop-boundary cleanup recorded here.
+- Removed contracts: `ShopBossPreviewBundle`, bundle generation and scoring, the owner-audit
+  multi-purchase executor, its CLI and runtime-contract knobs, BranchPath bundle snapshots, and
+  trace/capsule/combat-gap bundle evidence.
+- Surviving contracts: individual typed boss-preview candidates remain diagnostic evidence.
+  `shop_policy_v1` may use a portfolio as non-binding lookahead, but ShopTiny executes only the
+  freshly compiled plan head and re-enumerates the public surface after every transaction.
+- Replacement boundary: a future multi-step planner must model ordered public successor states
+  and contingent choices. It must not restore an unordered basket or execute a stored tail across
+  decision boundaries.
+- Recovery: repository history.
 
 ## Test Retention Contract
 

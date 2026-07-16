@@ -2,7 +2,8 @@ use super::suggestion::render_route_suggestion;
 use super::*;
 use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
 use crate::eval::run_control::trace_annotation::RunControlTraceAnnotationV1;
-use crate::state::core::EngineState;
+use crate::eval::run_control::{decision_surface, RunDecisionSelectionSourceV1};
+use crate::state::core::{ClientInput, EngineState};
 
 #[test]
 fn route_suggestion_is_read_only_before_map_navigation() {
@@ -71,6 +72,70 @@ fn route_plan_executes_selected_map_target() {
     assert!(outcome.action_result.is_some());
     assert!(session.run_state.map.current_y > before_y);
     assert_eq!(session.decision_step, 1);
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("route planning should preserve exactly one decision transaction");
+    };
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::RoutePolicy
+    );
+    assert!(transaction
+        .before
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id == transaction.selection.candidate_id));
+    assert_eq!(
+        transaction.after.decision_step,
+        transaction.before.decision_step + 1
+    );
+    assert!(transaction
+        .trace_annotations
+        .iter()
+        .any(|annotation| matches!(
+            annotation,
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        )));
+}
+
+#[test]
+fn public_map_boundary_exposes_every_wing_boots_route_target() {
+    let mut session = RunControlSession::new(RunControlConfig {
+        seed: 521,
+        ..Default::default()
+    });
+    session.run_state.event_state = None;
+    session.engine_state = EngineState::MapNavigation;
+    session.run_state.map.current_x = 0;
+    session.run_state.map.current_y = 0;
+    session
+        .run_state
+        .relics
+        .push(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::WingBoots,
+        ));
+
+    let wing_targets = crate::ai::route_planner_v1::route_targets(&session.run_state)
+        .into_iter()
+        .filter(|target| {
+            target.move_kind == crate::ai::route_planner_v1::RouteMoveKindV1::WingBootsJump
+        })
+        .collect::<Vec<_>>();
+    assert!(!wing_targets.is_empty());
+    let surface = decision_surface::build_decision_surface(&session);
+
+    for target in wing_targets {
+        let input = ClientInput::FlyToNode(target.x as usize, target.y as usize);
+        assert!(
+            surface
+                .view
+                .candidates
+                .iter()
+                .any(|candidate| candidate.action.executable_input() == Some(input.clone())),
+            "public boundary must expose Wing Boots target ({}, {})",
+            target.x,
+            target.y
+        );
+    }
 }
 
 #[test]

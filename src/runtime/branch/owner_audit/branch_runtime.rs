@@ -42,7 +42,8 @@ impl BranchRuntime {
                 status: advance.status,
                 policy_lane: BranchPolicyLane::default(),
                 combat_portfolio: advance.combat_portfolio,
-                auto_steps: advance.auto_steps,
+                recent_progress_journal: advance.progress_journal,
+                recent_planner_capture: advance.planner_capture,
                 combat_search: combat_search.clone(),
                 combat_search_history: combat_search,
                 comparison_search_start: None,
@@ -78,8 +79,6 @@ mod tests {
             boss_search_ms: 1,
             wall_ms: None,
             checkpoint_before_combat_portfolio: false,
-            shop_boss_preview_bundle_limit: 0,
-            shop_boss_preview_target_floor: None,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }

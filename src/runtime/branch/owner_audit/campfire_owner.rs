@@ -3,6 +3,7 @@ use sts_simulator::ai::campfire_policy_v1::{
     CampfirePolicyActionV1, CampfirePolicyConfigV1,
 };
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
+use sts_simulator::eval::run_control::RunForcedTransitionKindV1;
 use sts_simulator::eval::run_control::{DecisionSurface, RunControlSession};
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
 
@@ -19,7 +20,9 @@ pub(super) fn campfire_owner_decision(
     let options =
         sts_simulator::engine::campfire_handler::get_available_options(&session.run_state);
     if options.is_empty() {
-        return OwnerDecision::Routine(OwnerRoutine::AdvanceEmptyCampfire);
+        return OwnerDecision::Routine(OwnerRoutine::ForcedTransition(
+            RunForcedTransitionKindV1::EmptyCampfireExit,
+        ));
     }
     match choose_campfire_owner_action(session, surface, &options) {
         Ok(choice) => visible_input_decision(surface, ClientInput::CampfireOption(choice)),
@@ -263,9 +266,10 @@ mod tests {
     fn owner_choice(session: &RunControlSession) -> CampfireChoice {
         let surface = build_decision_surface(session);
         match campfire_owner_decision(session, &surface) {
-            OwnerDecision::Routine(OwnerRoutine::Action(RunDecisionAction::Input(
-                ClientInput::CampfireOption(choice),
-            ))) => choice,
+            OwnerDecision::Routine(OwnerRoutine::Candidate {
+                action: RunDecisionAction::Input(ClientInput::CampfireOption(choice)),
+                ..
+            }) => choice,
             _ => panic!("expected visible campfire input"),
         }
     }

@@ -1,26 +1,16 @@
-use sts_simulator::eval::run_control::RunControlAutoStopKind;
-
 use super::combat_search_lanes::CombatSearchLaneCommitPolicy;
 use super::{BranchStatus, TerminalOutcome};
 
-pub(super) fn lane_commits(
-    policy: CombatSearchLaneCommitPolicy,
-    status: &BranchStatus,
-    stop_kind: Option<RunControlAutoStopKind>,
-) -> bool {
+pub(super) fn lane_commits(policy: CombatSearchLaneCommitPolicy, status: &BranchStatus) -> bool {
     lane_accepted(status)
         || matches!(
             policy,
             CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk
-        ) && primary_operation_budget_exhausted(status, stop_kind)
+        ) && primary_operation_budget_exhausted(status)
 }
 
-pub(super) fn primary_operation_budget_exhausted(
-    status: &BranchStatus,
-    primary_stop_kind: Option<RunControlAutoStopKind>,
-) -> bool {
-    primary_stop_kind == Some(RunControlAutoStopKind::ProgressApplied)
-        || matches!(status, BranchStatus::OperationBudgetExhausted { .. })
+pub(super) fn primary_operation_budget_exhausted(status: &BranchStatus) -> bool {
+    matches!(status, BranchStatus::OperationBudgetExhausted { .. })
 }
 
 fn lane_accepted(status: &BranchStatus) -> bool {
@@ -48,13 +38,9 @@ mod tests {
 
         assert!(lane_commits(
             CombatSearchLaneCommitPolicy::AcceptedLineOrPrimaryChunk,
-            &status,
-            Some(RunControlAutoStopKind::ProgressApplied)
+            &status
         ));
-        assert!(primary_operation_budget_exhausted(
-            &status,
-            Some(RunControlAutoStopKind::ProgressApplied)
-        ));
+        assert!(primary_operation_budget_exhausted(&status));
     }
 
     #[test]
@@ -66,8 +52,7 @@ mod tests {
 
         assert!(!lane_commits(
             CombatSearchLaneCommitPolicy::AcceptedLineOnly,
-            &status,
-            Some(RunControlAutoStopKind::CombatSearchNoCompleteWin)
+            &status
         ));
     }
 
@@ -77,8 +62,7 @@ mod tests {
 
         assert!(lane_commits(
             CombatSearchLaneCommitPolicy::AcceptedLineOnly,
-            &status,
-            None
+            &status
         ));
     }
 }

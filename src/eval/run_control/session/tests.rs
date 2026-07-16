@@ -1,9 +1,14 @@
 use super::*;
 use crate::content::monsters::factory::EncounterId;
 use crate::eval::run_control::decision_surface;
+use crate::eval::run_control::view_model::CandidateAction;
 use crate::eval::run_control::{
     render_run_control_details, render_run_control_state, CombatBaselineOutcomeV1,
-    RunDecisionAction,
+    RunCombatResolutionKindV1, RunControlAutoStopKind, RunDecisionAction,
+    RunDecisionSelectionSourceV1, RunForcedTransitionKindV1, RunProgressStepV1,
+    RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
+    RUN_DECISION_TRANSACTION_SCHEMA_NAME, RUN_DECISION_TRANSACTION_SCHEMA_VERSION,
+    RUN_FORCED_TRANSITION_SCHEMA_NAME, RUN_FORCED_TRANSITION_SCHEMA_VERSION,
 };
 use crate::state::core::ClientInput;
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -39,6 +44,23 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
     assert!(outcome.message.contains("turn_plan_seeded="));
     assert!(outcome.message.contains("pending_high_fanout="));
     assert!(outcome.action_result.is_some());
+    let Some(resolution) = outcome.single_combat_resolution() else {
+        panic!("committed winning search should preserve one combat resolution");
+    };
+    assert!(matches!(
+        outcome.progress_steps.as_slice(),
+        [RunProgressStepV1::CombatResolution(_)]
+    ));
+    assert_eq!(resolution.schema_name, RUN_COMBAT_RESOLUTION_SCHEMA_NAME);
+    assert_eq!(
+        resolution.schema_version,
+        RUN_COMBAT_RESOLUTION_SCHEMA_VERSION
+    );
+    assert_eq!(resolution.kind, RunCombatResolutionKindV1::CompleteVictory);
+    assert_eq!(resolution.before.decision_step, 1);
+    assert_eq!(resolution.after.decision_step, 1);
+    assert_eq!(session.decision_step, 1);
+    assert!(!resolution.trajectory.actions.is_empty());
     let accepted =
         crate::eval::run_control::accepted_combat_line_evidence_v1(&outcome.trace_annotations)
             .expect("applied search combat should expose original and selected line evidence");
@@ -63,9 +85,27 @@ fn run_control_auto_step_advances_routine_neow_intro_only() {
     assert!(outcome.message.contains("routine: Proceed"));
     assert!(outcome
         .message
-        .contains("Reason: one atomic progress step applied"));
+        .contains("Result: one atomic progress step applied"));
     assert!(outcome.message.contains("Next: choose a Neow bonus id"));
     assert!(outcome.action_result.is_some());
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("routine auto-step should preserve exactly one decision transaction");
+    };
+    assert!(matches!(
+        outcome.progress_steps.as_slice(),
+        [RunProgressStepV1::Decision(_)]
+    ));
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::RoutinePolicy
+    );
+    assert_eq!(transaction.before.title, "Neow Intro");
+    assert_eq!(transaction.after.title, "Neow Bonus");
+    assert!(transaction
+        .before
+        .candidates
+        .iter()
+        .any(|candidate| candidate.candidate_id == transaction.selection.candidate_id));
     assert!(matches!(session.engine_state, EngineState::EventRoom));
     assert_eq!(
         session
@@ -78,12 +118,17 @@ fn run_control_auto_step_advances_routine_neow_intro_only() {
 }
 
 #[test]
-fn run_control_auto_step_neow_stop_exports_human_boundary_record() {
+fn bounded_run_driver_neow_stop_exports_human_boundary_record() {
     let mut session = RunControlSession::new(RunControlConfig::default());
 
-    let outcome = session
-        .apply_progress_step(Default::default())
-        .expect("auto-step should advance intro and stop at Neow bonus");
+    let result = crate::eval::run_control::BoundedRunDriver::new(4, None)
+        .expect("bounded driver config")
+        .run(&mut session, Default::default())
+        .expect("bounded driver should advance intro and stop at Neow bonus");
+    let outcome = result
+        .entries
+        .last()
+        .expect("bounded driver should preserve the final stop entry");
 
     let record = noncombat_human_boundary_record(&outcome);
     assert_eq!(
@@ -184,7 +229,7 @@ fn run_control_progress_step_stops_at_event_owner_boundary() {
         .expect("progress step should stop at the event owner boundary");
 
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     assert!(outcome.action_result.is_none());
@@ -336,7 +381,7 @@ fn run_control_progress_step_stops_at_low_hp_campfire_without_choosing() {
         .expect("progress step should stop at the campfire owner boundary");
 
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     assert!(outcome.action_result.is_none());
@@ -371,7 +416,7 @@ fn run_control_progress_step_stops_at_shop_owner_boundary() {
         .expect("progress step should stop at the shop owner boundary");
 
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     assert!(outcome.action_result.is_none());
@@ -469,6 +514,65 @@ fn branch_skip_card_reward_consumes_last_non_skippable_reward_item() {
 }
 
 #[test]
+fn visible_card_reward_skip_executes_as_one_decision_transaction() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::TwinStrike,
+        crate::content::cards::CardId::ShrugItOff,
+    ]);
+    let before_step = session.decision_step;
+
+    let outcome = session
+        .apply_candidate_id("skip-card-reward")
+        .expect("visible card reward skip should execute atomically");
+
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("visible card reward skip should preserve exactly one transaction");
+    };
+    assert_eq!(transaction.before.decision_step, before_step);
+    assert_eq!(transaction.after.decision_step, before_step + 1);
+    assert_eq!(
+        transaction.action,
+        RunDecisionAction::SkipCardReward {
+            reward_item_index: 0
+        }
+    );
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::ExplicitCandidate
+    );
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert_eq!(session.run_state.master_deck.len(), 10);
+}
+
+#[test]
+fn visible_overlay_card_reward_skip_returns_to_overlay_parent_atomically() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::TwinStrike,
+        crate::content::cards::CardId::ShrugItOff,
+    ]);
+    let EngineState::RewardScreen(reward) =
+        std::mem::replace(&mut session.engine_state, EngineState::MapNavigation)
+    else {
+        panic!("fixture should expose a reward screen");
+    };
+    session.engine_state = EngineState::reward_overlay(reward, EngineState::MapNavigation);
+
+    let outcome = session
+        .apply_candidate_id("skip-card-reward")
+        .expect("overlay card reward skip should return to its parent boundary");
+
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert_eq!(
+        outcome
+            .single_decision_transaction()
+            .expect("reward exit should preserve one transaction")
+            .after
+            .decision_step,
+        1
+    );
+}
+
+#[test]
 fn run_control_progress_step_stops_at_run_choice_owner_boundary() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
@@ -496,7 +600,7 @@ fn run_control_progress_step_stops_at_run_choice_owner_boundary() {
         .expect("progress step should stop at the run-choice owner boundary");
 
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     assert!(outcome.action_result.is_none());
@@ -815,7 +919,7 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
         .contains("route planner declined automatic map selection"));
     assert!(outcome
         .message
-        .contains("Reason: one atomic progress step applied"));
+        .contains("Result: one atomic progress step applied"));
     assert!(matches!(session.engine_state, EngineState::RewardScreen(_)));
 }
 
@@ -832,10 +936,10 @@ fn run_control_progress_step_can_use_route_planner() {
 
     assert!(outcome
         .message
-        .contains("Advanced to human boundary: Combat"));
+        .contains("Applied one atomic progress step: Combat"));
     assert!(outcome
         .message
-        .contains("Reason: one atomic progress step applied"));
+        .contains("Result: one atomic progress step applied"));
     assert!(outcome.message.contains("route planner:"));
     assert!(outcome
         .message
@@ -958,7 +1062,7 @@ fn run_control_progress_step_stops_on_card_reward_with_singing_bowl() {
         .message
         .contains("Reason: card reward requires human choice"));
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     let record = noncombat_human_boundary_record(&outcome);
@@ -1055,7 +1159,7 @@ fn run_control_progress_step_does_not_open_card_reward_item_with_singing_bowl() 
         .message
         .contains("Reason: card reward requires human choice"));
     assert_eq!(
-        outcome.auto_stop.as_ref().map(|stop| stop.kind),
+        outcome.auto_stop().map(|stop| stop.kind),
         Some(RunControlAutoStopKind::HumanBoundary)
     );
     let record = noncombat_human_boundary_record(&outcome);
@@ -1091,19 +1195,25 @@ fn visible_singing_bowl_candidate_consumes_unopened_card_reward_item() {
             crate::content::relics::RelicId::SingingBowl,
         ));
     let before_max_hp = session.run_state.max_hp;
+    let before_step = session.decision_step;
 
-    let bowl_action = crate::eval::run_control::build_decision_surface(&session)
-        .view
-        .candidates
-        .into_iter()
-        .find(|candidate| candidate.id == "bowl")
-        .and_then(|candidate| candidate.action.executable_action())
-        .expect("bowl should be an executable typed action");
-    session
-        .apply_decision_action(bowl_action)
+    let outcome = session
+        .apply_candidate_id("bowl")
         .expect("bowl should consume the visible card reward item");
 
     assert_eq!(session.run_state.max_hp, before_max_hp + 2);
+    assert_eq!(session.decision_step, before_step + 1);
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("Singing Bowl should preserve exactly one decision transaction");
+    };
+    assert_eq!(transaction.before.decision_step, before_step);
+    assert_eq!(transaction.after.decision_step, before_step + 1);
+    assert_eq!(
+        transaction.action,
+        RunDecisionAction::SingingBowlCardReward {
+            reward_item_index: 0
+        }
+    );
     assert!(session
         .run_state
         .master_deck
@@ -1134,13 +1244,20 @@ fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
         .contains("label_role=behavior_policy_not_teacher"));
     assert!(outcome
         .message
-        .contains("Reason: one atomic progress step applied"));
+        .contains("Result: one atomic progress step applied"));
     assert!(outcome.action_result.is_some());
     assert!(matches!(
         session.engine_state,
         EngineState::CombatPlayerTurn
     ));
     assert_eq!(session.run_state.map.current_y, 0);
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("route auto-step should preserve exactly one decision transaction");
+    };
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::RoutePolicy
+    );
 }
 
 #[test]
@@ -1194,7 +1311,7 @@ fn run_control_auto_step_leaves_empty_shop() {
 }
 
 #[test]
-fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
+fn run_control_auto_step_claims_one_low_risk_reward_per_atomic_step() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut rewards = crate::state::rewards::RewardState::new();
     rewards.items = vec![
@@ -1213,7 +1330,7 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
 
     let outcome = session
         .apply_progress_step(Default::default())
-        .expect("auto-step should claim deterministic rewards");
+        .expect("first auto-step should claim deterministic gold");
 
     let changes = auto_reward_changes(&outcome).expect("reward automation should report changes");
     assert!(changes.contains(
@@ -1222,23 +1339,42 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
             after: 118
         }
     ));
-    assert!(changes.contains(
+    assert!(!changes.iter().any(|change| matches!(
+        change,
+        crate::eval::run_control::RunActionResultChangeV1::PotionGained { .. }
+    )));
+    assert!(outcome
+        .message
+        .contains("Result: one atomic progress step applied"));
+    assert_eq!(session.run_state.gold, 118);
+    assert!(session.run_state.potions[0].is_none());
+    let transaction = outcome
+        .single_decision_transaction()
+        .expect("gold reward should preserve one decision transaction");
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::RewardPolicy
+    );
+
+    let potion_outcome = session
+        .apply_progress_step(Default::default())
+        .expect("second auto-step should claim the potion from the next boundary");
+    let potion_changes =
+        auto_reward_changes(&potion_outcome).expect("potion policy step should report changes");
+    assert!(potion_changes.contains(
         &crate::eval::run_control::RunActionResultChangeV1::PotionGained {
             potion: crate::content::potions::PotionId::EssenceOfSteel,
             slot: 0
         }
     ));
-    assert!(outcome
-        .message
-        .contains("Reason: one atomic progress step applied"));
-    assert_eq!(session.run_state.gold, 118);
     assert_eq!(
         session.run_state.potions[0]
             .as_ref()
             .map(|potion| potion.id),
         Some(crate::content::potions::PotionId::EssenceOfSteel)
     );
-    assert!(outcome.action_result.is_some());
+    assert!(potion_outcome.single_decision_transaction().is_some());
+    assert_eq!(session.decision_step, 2);
 }
 
 #[test]
@@ -1264,8 +1400,18 @@ fn run_control_auto_step_resolves_one_starter_combat() {
         .contains("combat search: search-combat applied"));
     assert!(outcome
         .message
-        .contains("Reason: one atomic progress step applied"));
+        .contains("Result: one atomic progress step applied"));
     assert!(outcome.action_result.is_some());
+    let Some(resolution) = outcome.single_combat_resolution() else {
+        panic!("atomic progress projection should retain one combat resolution");
+    };
+    assert!(matches!(
+        outcome.progress_steps.as_slice(),
+        [RunProgressStepV1::CombatResolution(_)]
+    ));
+    assert_eq!(resolution.kind, RunCombatResolutionKindV1::CompleteVictory);
+    assert_eq!(resolution.before.decision_step, 1);
+    assert_eq!(resolution.after.decision_step, 1);
     assert!(session.active_combat.is_none());
     assert_eq!(
         session
@@ -1276,24 +1422,45 @@ fn run_control_auto_step_resolves_one_starter_combat() {
 }
 
 #[test]
-fn run_control_visible_candidate_command_advances_current_screen() {
+fn only_candidate_transaction_records_neow_boundary_action_and_result() {
     let mut session = RunControlSession::new(RunControlConfig::default());
-    let outcome = session
-        .apply_only_candidate()
-        .expect("single visible Neow intro action should execute");
+    let transaction = session
+        .execute_only_candidate_transaction()
+        .expect("single visible Neow intro action should execute as one transaction");
 
-    assert!(outcome.message.contains("Neow Bonus"));
-    let action_result = outcome
-        .action_result
-        .as_ref()
-        .expect("state-changing commands should return a structured action result");
-    assert!(action_result.changes.iter().any(|change| matches!(
+    assert_eq!(
+        transaction.schema_name,
+        RUN_DECISION_TRANSACTION_SCHEMA_NAME
+    );
+    assert_eq!(
+        transaction.schema_version,
+        RUN_DECISION_TRANSACTION_SCHEMA_VERSION
+    );
+    assert_eq!(transaction.before.decision_step, 0);
+    assert_eq!(transaction.before.title, "Neow Intro");
+    assert_eq!(transaction.before.candidates.len(), 1);
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::OnlyVisibleCandidate
+    );
+    assert_eq!(
+        transaction.selection.candidate_id,
+        transaction.before.candidates[0].candidate_id
+    );
+    assert_eq!(
+        transaction.before.candidates[0].action,
+        CandidateAction::Execute(transaction.action.clone())
+    );
+    assert!(transaction.result.changes.iter().any(|change| matches!(
         change,
         crate::eval::run_control::RunActionResultChangeV1::AdvancedTo { title }
             if title == "Neow Bonus"
     )));
-    let json = serde_json::to_string(action_result)
-        .expect("structured action result should be serializable");
+    assert_eq!(transaction.after.decision_step, 1);
+    assert_eq!(transaction.after.title, "Neow Bonus");
+    let json =
+        serde_json::to_string(&transaction).expect("decision transaction should be serializable");
+    assert!(json.contains("RunDecisionTransaction"));
     assert!(json.contains("advanced_to"));
     assert_eq!(session.decision_step, 1);
     assert_eq!(
@@ -1304,6 +1471,107 @@ fn run_control_visible_candidate_command_advances_current_screen() {
             .map(|event| event.current_screen),
         Some(1)
     );
+}
+
+#[test]
+fn owner_can_bind_typed_multi_selection_to_parameterized_public_candidate() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let selected = session
+        .run_state
+        .master_deck
+        .iter()
+        .take(2)
+        .map(|card| card.uuid)
+        .collect::<Vec<_>>();
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 2,
+            max_choices: 2,
+            reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
+            source: crate::state::selection::DomainEventSource::DeckMutation,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+    let action = RunDecisionAction::Input(ClientInput::SubmitSelection(
+        crate::state::selection::SelectionResolution::card_uuids(
+            crate::state::selection::SelectionScope::Deck,
+            selected,
+        ),
+    ));
+
+    let outcome = session
+        .apply_owner_candidate("select", action.clone())
+        .expect("owner should bind a legal typed selection to the public parameterized candidate");
+
+    let Some(transaction) = outcome.single_decision_transaction() else {
+        panic!("bound owner selection should preserve one transaction");
+    };
+    assert_eq!(
+        transaction.selection.source,
+        RunDecisionSelectionSourceV1::OwnerPolicy
+    );
+    assert_eq!(transaction.selection.candidate_id, "select");
+    assert_eq!(transaction.action, action);
+    assert!(matches!(
+        transaction.before.candidates[0].action,
+        CandidateAction::Parameterized { .. }
+    ));
+    assert_eq!(transaction.after.decision_step, 1);
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert_eq!(session.run_state.master_deck.len(), 8);
+}
+
+#[test]
+fn empty_campfire_exit_is_recorded_as_forced_without_advancing_decision_step() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.relics = [
+        crate::content::relics::RelicId::CoffeeDripper,
+        crate::content::relics::RelicId::FusionHammer,
+    ]
+    .into_iter()
+    .map(crate::content::relics::RelicState::new)
+    .collect();
+    session.engine_state = EngineState::Campfire;
+
+    let outcome = session
+        .apply_forced_transition(RunForcedTransitionKindV1::EmptyCampfireExit)
+        .expect("campfire without legal options should auto-exit as a forced transition");
+
+    let Some(transition) = outcome.single_forced_transition() else {
+        panic!("empty campfire should preserve one typed forced transition");
+    };
+    assert!(matches!(
+        outcome.progress_steps.as_slice(),
+        [RunProgressStepV1::ForcedTransition(_)]
+    ));
+    assert_eq!(transition.schema_name, RUN_FORCED_TRANSITION_SCHEMA_NAME);
+    assert_eq!(
+        transition.schema_version,
+        RUN_FORCED_TRANSITION_SCHEMA_VERSION
+    );
+    assert_eq!(
+        transition.kind,
+        RunForcedTransitionKindV1::EmptyCampfireExit
+    );
+    assert!(transition.before.candidates.is_empty());
+    assert_eq!(transition.before.decision_step, 0);
+    assert_eq!(transition.after.decision_step, 0);
+    assert!(outcome.single_decision_transaction().is_none());
+    assert!(matches!(session.engine_state, EngineState::MapNavigation));
+    assert_eq!(session.decision_step, 0);
+}
+
+#[test]
+fn empty_campfire_exit_rejects_boundaries_with_real_choices_without_mutating() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+
+    let err = session
+        .execute_forced_transition(RunForcedTransitionKindV1::EmptyCampfireExit)
+        .expect_err("campfire with Rest or Smith must remain a decision boundary");
+
+    assert!(err.contains("campfire options exist"));
+    assert!(matches!(session.engine_state, EngineState::Campfire));
+    assert_eq!(session.decision_step, 0);
 }
 
 #[test]
@@ -1583,7 +1851,8 @@ fn auto_reward_changes(
         .auto_applied_steps
         .iter()
         .find(|step| {
-            step.kind == crate::eval::run_control::RunControlAutoAppliedKindV1::RewardAutomation
+            step.kind
+                == crate::eval::run_control::RunControlAutoAppliedKindV1::RewardPolicyCandidate
         })
         .and_then(|step| step.action_result.as_ref())
         .map(|result| result.changes.as_slice())

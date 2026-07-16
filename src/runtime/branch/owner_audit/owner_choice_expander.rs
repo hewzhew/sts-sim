@@ -1,19 +1,17 @@
-use sts_simulator::ai::strategy::decision_pipeline::DecisionCandidateKind;
-use sts_simulator::ai::strategy::shop_boss_preview::shop_boss_preview_bundles;
+use sts_simulator::eval::run_control::{
+    capture_planner_boundary_ticket_v1, PlannerBoundaryCaptureSegmentV1, RunProgressJournalV1,
+    RunProgressOutcome, RunProgressStepV1,
+};
 
 use super::accepted_high_loss_diagnostic::extend_unique_diagnostics;
 use super::branch_path::{
-    BranchPathCandidateSnapshot, BranchPathPolicySelectionSnapshot,
-    BranchPathShopBossPreviewBundleSnapshot, BranchPathShopBossPreviewSnapshot, BranchPathState,
+    BranchPathCandidateSnapshot, BranchPathPolicySelectionSnapshot, BranchPathState,
     BranchPathStep, ChoiceAnnotationSnapshot,
 };
-use super::candidate_ir_adapter::shop_tiny_kind;
 use super::owner_model::OwnerChoice;
 use super::policy_expansion_plan::PolicyExpansion;
 use super::run_deadline::RunDeadline;
-use super::{
-    decision_delta, runner, shop_boss_preview_bundle_expansion, Args, Branch, BranchStatus,
-};
+use super::{decision_delta, runner, Args, Branch, BranchStatus};
 
 pub(super) fn expand_registered_owner(
     branch: &Branch,
@@ -36,25 +34,40 @@ pub(super) fn expand_registered_owner(
             BranchPathPolicySelectionSnapshot::from_evidence(&expansion.selection_evidence);
         let policy_lane_label = expansion.child_lane.label();
         let mut session = branch.session.clone();
-        let (advance, decision_delta) = match session.apply_decision_action(choice.action.clone()) {
-            Ok(_) => {
-                let delta =
-                    decision_delta::decision_delta(&branch.session.run_state, &session.run_state);
-                (
-                    runner::advance_to_owner_or_gap(&mut session, args, deadline),
-                    delta,
-                )
+        let capture_ticket = capture_planner_boundary_ticket_v1(&session);
+        let (advance, decision_delta) = match capture_ticket {
+            Ok(capture_ticket) => {
+                match session.apply_owner_candidate(&choice.candidate_id, choice.action.clone()) {
+                    Ok(outcome) => {
+                        let planner_prefix = capture_ticket
+                            .map(|ticket| ticket.finish_for_progress(&outcome.progress_steps))
+                            .unwrap_or_default();
+                        let delta = decision_delta::decision_delta(
+                            &branch.session.run_state,
+                            &session.run_state,
+                        );
+                        let advance = match owner_candidate_journal(&outcome) {
+                            Ok(prefix) => prepend_progress_evidence(
+                                prefix,
+                                planner_prefix,
+                                runner::advance_to_owner_or_gap(&mut session, args, deadline),
+                            ),
+                            Err(error) => failed_advance_with_capture(error, planner_prefix),
+                        };
+                        (advance, delta)
+                    }
+                    Err(err) => (
+                        failed_advance_with_capture(
+                            err,
+                            capture_ticket
+                                .map(|ticket| ticket.finish_failed())
+                                .unwrap_or_default(),
+                        ),
+                        None,
+                    ),
+                }
             }
-            Err(err) => (
-                runner::AdvanceResult {
-                    status: BranchStatus::ApplyFailed(err),
-                    combat_portfolio: None,
-                    auto_steps: Vec::new(),
-                    combat_search: Vec::new(),
-                    accepted_high_loss_diagnostics: Vec::new(),
-                },
-                None,
-            ),
+            Err(error) => (failed_advance(error), None),
         };
         let combat_search = advance.combat_search;
         let mut combat_search_history = branch.combat_search_history.clone();
@@ -68,6 +81,7 @@ pub(super) fn expand_registered_owner(
         path.push(BranchPathStep {
             policy_lane: policy_lane_label,
             policy_selection: Some(policy_selection),
+            candidate_id: Some(choice.candidate_id.clone()),
             key: choice.key,
             action_debug: format!("{:?}", choice.action),
             label: choice.label,
@@ -77,11 +91,6 @@ pub(super) fn expand_registered_owner(
             candidate_pool: BranchPathCandidateSnapshot::from_choices(choices, choice_index),
             shop_boss_preview_candidates:
                 super::branch_path::BranchPathShopBossPreviewSnapshot::from_choices(choices),
-            shop_boss_preview_bundles:
-                super::branch_path::BranchPathShopBossPreviewBundleSnapshot::from_choices(
-                    choices,
-                    branch.session.run_state.gold,
-                ),
         });
         let id = *next_branch_id;
         *next_branch_id += 1;
@@ -93,163 +102,58 @@ pub(super) fn expand_registered_owner(
             status: advance.status,
             policy_lane: expansion.child_lane,
             combat_portfolio: advance.combat_portfolio,
-            auto_steps: advance.auto_steps,
+            recent_progress_journal: advance.progress_journal,
+            recent_planner_capture: advance.planner_capture,
             combat_search,
             combat_search_history,
             comparison_search_start,
             accepted_high_loss_diagnostics,
         });
     }
-    children.extend(expand_shop_boss_preview_bundle_children(
-        branch,
-        args,
-        deadline,
-        choices,
-        next_branch_id,
-    ));
     children
 }
 
-fn expand_shop_boss_preview_bundle_children(
-    branch: &Branch,
-    args: Args,
-    deadline: RunDeadline,
-    choices: &[OwnerChoice],
-    next_branch_id: &mut usize,
-) -> Vec<Branch> {
-    if !matches!(
-        branch.policy_lane,
-        super::branch_policy_lane::BranchPolicyLane::Baseline { .. }
-    ) {
-        return Vec::new();
-    }
-    if args.shop_boss_preview_bundle_limit == 0 {
-        return Vec::new();
-    }
-    if let Some(target_floor) = args.shop_boss_preview_target_floor {
-        if branch.session.run_state.floor_num != target_floor {
-            return Vec::new();
+fn owner_candidate_journal(outcome: &RunProgressOutcome) -> Result<RunProgressJournalV1, String> {
+    match outcome.progress_steps.as_slice() {
+        [step @ RunProgressStepV1::Decision(_)] => {
+            RunProgressJournalV1::from_committed_steps(vec![step.clone()])
         }
+        _ => Err("owner candidate did not produce exactly one decision transaction".to_string()),
     }
-    let kinds = shop_boss_preview_bundle_kinds(choices);
-    let bundles = shop_boss_preview_bundles(
-        kinds,
-        branch.session.run_state.gold,
-        args.shop_boss_preview_bundle_limit + 1,
-    );
-    let all_bundle_snapshots = BranchPathShopBossPreviewBundleSnapshot::from_choices(
-        choices,
-        branch.session.run_state.gold,
-    );
-    let preview_candidates = BranchPathShopBossPreviewSnapshot::from_choices(choices);
-    let candidate_pool = BranchPathCandidateSnapshot::from_choices(choices, usize::MAX);
-    let mut children = Vec::new();
-    for bundle in bundles
-        .into_iter()
-        .filter(|bundle| !bundle.items.is_empty())
-        .take(args.shop_boss_preview_bundle_limit)
-    {
-        let mut session = branch.session.clone();
-        let (advance, delta) =
-            match shop_boss_preview_bundle_expansion::apply_shop_boss_preview_bundle(
-                &mut session,
-                &bundle.items,
-            ) {
-                Ok(()) => {
-                    let delta = decision_delta::decision_delta(
-                        &branch.session.run_state,
-                        &session.run_state,
-                    );
-                    (
-                        runner::advance_to_owner_or_gap(&mut session, args, deadline),
-                        delta,
-                    )
-                }
-                Err(err) => (
-                    runner::AdvanceResult {
-                        status: BranchStatus::ApplyFailed(err),
-                        combat_portfolio: None,
-                        auto_steps: Vec::new(),
-                        combat_search: Vec::new(),
-                        accepted_high_loss_diagnostics: Vec::new(),
-                    },
-                    None,
-                ),
-            };
-        let combat_search = advance.combat_search;
-        let mut combat_search_history = branch.combat_search_history.clone();
-        combat_search_history.extend(combat_search.clone());
-        let mut accepted_high_loss_diagnostics = branch.accepted_high_loss_diagnostics.clone();
-        extend_unique_diagnostics(
-            &mut accepted_high_loss_diagnostics,
-            advance.accepted_high_loss_diagnostics,
-        );
-        let mut path = branch.path.clone();
-        path.push(BranchPathStep {
-            policy_lane: branch.policy_lane.label(),
-            policy_selection: None,
-            key: None,
-            action_debug: format!("ShopBossPreviewBundle({:?})", bundle.items),
-            label: format!(
-                "Shop preview bundle: {}",
-                bundle_label(choices, &bundle.items)
-            ),
-            annotation: ChoiceAnnotationSnapshot::None,
-            state_before: Some(BranchPathState::from_branch(branch)),
-            decision_delta: delta,
-            candidate_pool: candidate_pool.clone(),
-            shop_boss_preview_candidates: preview_candidates.clone(),
-            shop_boss_preview_bundles: all_bundle_snapshots.clone(),
-        });
-        let id = *next_branch_id;
-        *next_branch_id += 1;
-        children.push(Branch {
-            id,
-            parent_id: Some(branch.id),
-            path,
-            session,
-            status: advance.status,
-            policy_lane: branch.policy_lane.clone(),
-            combat_portfolio: advance.combat_portfolio,
-            auto_steps: advance.auto_steps,
-            combat_search,
-            combat_search_history,
-            comparison_search_start: branch.comparison_search_start,
-            accepted_high_loss_diagnostics,
-        });
-    }
-    children
 }
 
-fn bundle_label(choices: &[OwnerChoice], items: &[DecisionCandidateKind]) -> String {
-    items
-        .iter()
-        .map(|item| {
-            choices
-                .iter()
-                .find_map(|choice| {
-                    if shop_tiny_kind(&choice.key) == *item {
-                        Some(choice.label.clone())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| format!("{item:?}"))
-        })
-        .collect::<Vec<_>>()
-        .join(" + ")
+fn prepend_progress_evidence(
+    mut prefix: RunProgressJournalV1,
+    mut planner_prefix: PlannerBoundaryCaptureSegmentV1,
+    mut advance: runner::AdvanceResult,
+) -> runner::AdvanceResult {
+    if let Err(error) = prefix.append(advance.progress_journal) {
+        advance.status = BranchStatus::ApplyFailed(error);
+    }
+    advance.progress_journal = prefix;
+    planner_prefix.append(advance.planner_capture);
+    advance.planner_capture = planner_prefix;
+    advance
 }
 
-fn shop_boss_preview_bundle_kinds(choices: &[OwnerChoice]) -> Vec<DecisionCandidateKind> {
-    choices
-        .iter()
-        .filter_map(|choice| {
-            choice
-                .annotation
-                .candidate()
-                .map(|decision| decision.evaluation.candidate.kind)
-        })
-        .collect()
+fn failed_advance(error: String) -> runner::AdvanceResult {
+    runner::AdvanceResult {
+        status: BranchStatus::ApplyFailed(error),
+        combat_portfolio: None,
+        progress_journal: RunProgressJournalV1::default(),
+        planner_capture: PlannerBoundaryCaptureSegmentV1::default(),
+        combat_search: Vec::new(),
+        accepted_high_loss_diagnostics: Vec::new(),
+    }
+}
+
+fn failed_advance_with_capture(
+    error: String,
+    planner_capture: PlannerBoundaryCaptureSegmentV1,
+) -> runner::AdvanceResult {
+    let mut advance = failed_advance(error);
+    advance.planner_capture = planner_capture;
+    advance
 }
 
 #[cfg(test)]
@@ -259,9 +163,8 @@ mod tests {
     use sts_simulator::ai::strategy::challenger_policy_state::ChallengerPolicyState;
     use sts_simulator::ai::strategy::decision_pipeline::{
         CandidateEvaluation, CandidateLane, CandidateLaneAdjudication, DecisionCandidateIr,
-        ExpansionPlan,
+        DecisionCandidateKind, ExpansionPlan,
     };
-    use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::run_control::{
         CombatSearchTraceSummary, DecisionCandidateKey, RunDecisionAction,
     };
@@ -277,6 +180,7 @@ mod tests {
         expansion: super::super::owner_model::OwnerChoiceExpansion,
     ) -> OwnerChoice {
         OwnerChoice {
+            candidate_id: "test".to_string(),
             key: Some(key),
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
@@ -296,43 +200,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shop_preview_bundle_kinds_include_inspect_only_choices_for_review() {
-        let leave = candidate_choice(
-            DecisionCandidateKind::ShopLeave,
-            DecisionCandidateKey::ShopLeave,
-            super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
-        );
-        let blocked_fiend_fire = candidate_choice(
-            DecisionCandidateKind::ShopBuyCard {
-                card: CardId::FiendFire,
-                upgrades: 0,
-                price: 152,
-            },
-            DecisionCandidateKey::ShopBuyCard {
-                shop_slot: 0,
-                card: CardId::FiendFire,
-                upgrades: 0,
-                price: 152,
-            },
-            super::super::owner_model::OwnerChoiceExpansion::InspectOnly("blocked"),
-        );
-
-        let kinds = shop_boss_preview_bundle_kinds(&[leave, blocked_fiend_fire]);
-
-        assert_eq!(
-            kinds,
-            vec![
-                DecisionCandidateKind::ShopLeave,
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                }
-            ]
-        );
-    }
-
     fn sample_args() -> Args {
         Args {
             seed: 1,
@@ -349,8 +216,6 @@ mod tests {
             boss_search_ms: 1,
             wall_ms: None,
             checkpoint_before_combat_portfolio: false,
-            shop_boss_preview_bundle_limit: 0,
-            shop_boss_preview_target_floor: None,
             wall_capped_search_budget: false,
             wall_capped_boss_budget: false,
         }
@@ -371,7 +236,8 @@ mod tests {
             },
             policy_lane: BranchPolicyLane::default(),
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: vec![CombatSearchTraceSummary {
                 source: "shared-prefix".to_string(),
@@ -439,61 +305,31 @@ mod tests {
     }
 
     #[test]
-    fn challenger_lane_does_not_spawn_shop_preview_bundle_children() {
+    fn committed_owner_candidate_starts_a_typed_progress_journal() {
         let mut session = sts_simulator::eval::run_control::RunControlSession::new(
             sts_simulator::eval::run_control::RunControlConfig::default(),
         );
-        session.run_state.gold = 200;
-        let parent = Branch {
-            id: 0,
-            parent_id: None,
-            path: Vec::new(),
-            session,
-            status: BranchStatus::Running {
-                owner: Owner::ShopTiny,
-                boundary: "test".to_string(),
-            },
-            policy_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
-            combat_portfolio: None,
-            auto_steps: Vec::new(),
-            combat_search: Vec::new(),
-            combat_search_history: Vec::new(),
-            comparison_search_start: None,
-            accepted_high_loss_diagnostics: Vec::new(),
-        };
-        let choices = vec![
-            candidate_choice(
-                DecisionCandidateKind::ShopLeave,
-                DecisionCandidateKey::ShopLeave,
-                super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
-            ),
-            candidate_choice(
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                },
-                DecisionCandidateKey::ShopBuyCard {
-                    shop_slot: 0,
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                },
-                super::super::owner_model::OwnerChoiceExpansion::AutoAllowed,
-            ),
-        ];
-        let mut args = sample_args();
-        args.shop_boss_preview_bundle_limit = 1;
-        let mut next_branch_id = 1;
+        let surface = sts_simulator::eval::run_control::build_decision_surface(&session);
+        let candidate = surface
+            .view
+            .candidates
+            .iter()
+            .find_map(|candidate| {
+                candidate
+                    .action
+                    .executable_action()
+                    .map(|action| (candidate.id.clone(), action))
+            })
+            .expect("initial boundary should expose one executable candidate");
 
-        let children = expand_shop_boss_preview_bundle_children(
-            &parent,
-            args,
-            RunDeadline::new(Instant::now(), None),
-            &choices,
-            &mut next_branch_id,
-        );
+        let outcome = session
+            .apply_owner_candidate(&candidate.0, candidate.1)
+            .expect("owner candidate should commit");
+        let journal = owner_candidate_journal(&outcome).expect("decision should form a journal");
 
-        assert!(children.is_empty());
+        assert!(matches!(
+            journal.entries(),
+            [RunProgressStepV1::Decision(_)]
+        ));
     }
 }

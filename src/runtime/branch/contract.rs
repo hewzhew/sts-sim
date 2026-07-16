@@ -26,10 +26,6 @@ pub struct Args {
     pub wall_ms: Option<u64>,
     #[serde(skip)]
     pub checkpoint_before_combat_portfolio: bool,
-    #[serde(default)]
-    pub shop_boss_preview_bundle_limit: usize,
-    #[serde(default)]
-    pub shop_boss_preview_target_floor: Option<i32>,
     #[serde(skip)]
     pub wall_capped_search_budget: bool,
     #[serde(skip)]
@@ -82,8 +78,6 @@ pub struct SliceContract {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeFeatureContract {
     pub checkpoint_before_combat_portfolio: bool,
-    pub shop_boss_preview_bundle_limit: usize,
-    pub shop_boss_preview_target_floor: Option<i32>,
 }
 
 impl RunObjective {
@@ -127,8 +121,6 @@ impl RunContract {
             },
             features: RuntimeFeatureContract {
                 checkpoint_before_combat_portfolio: args.checkpoint_before_combat_portfolio,
-                shop_boss_preview_bundle_limit: args.shop_boss_preview_bundle_limit,
-                shop_boss_preview_target_floor: args.shop_boss_preview_target_floor,
             },
         }
     }
@@ -154,8 +146,6 @@ pub fn default_branch_args(seed: u64) -> Args {
         boss_search_ms: 10_000,
         wall_ms: None,
         checkpoint_before_combat_portfolio: false,
-        shop_boss_preview_bundle_limit: 0,
-        shop_boss_preview_target_floor: None,
         wall_capped_search_budget: false,
         wall_capped_boss_budget: false,
     }
@@ -181,8 +171,6 @@ mod tests {
             boss_search_ms: 606,
             wall_ms: Some(707),
             checkpoint_before_combat_portfolio: true,
-            shop_boss_preview_bundle_limit: 4,
-            shop_boss_preview_target_floor: Some(13),
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -206,8 +194,6 @@ mod tests {
         assert_eq!(contract.combat_search.boss_ms, 606);
         assert_eq!(contract.slice.slice_ms, Some(707));
         assert!(contract.features.checkpoint_before_combat_portfolio);
-        assert_eq!(contract.features.shop_boss_preview_bundle_limit, 4);
-        assert_eq!(contract.features.shop_boss_preview_target_floor, Some(13));
     }
 
     #[test]
@@ -237,8 +223,6 @@ mod tests {
         assert_eq!(args.boss_search_ms, 10_000);
         assert_eq!(args.wall_ms, None);
         assert!(!args.checkpoint_before_combat_portfolio);
-        assert_eq!(args.shop_boss_preview_bundle_limit, 0);
-        assert_eq!(args.shop_boss_preview_target_floor, None);
         assert!(!args.wall_capped_search_budget);
         assert!(!args.wall_capped_boss_budget);
     }

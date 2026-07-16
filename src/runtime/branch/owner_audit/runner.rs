@@ -1,5 +1,9 @@
 use sts_simulator::eval::run_control::{
-    CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlSession,
+    build_decision_surface, capture_planner_boundary_yield_v1, BoundedRunDriveStopV1,
+    BoundedRunDriver, BoundedRunStepControlV1, CombatSearchTraceSummary,
+    PlannerBoundaryCaptureSegmentV1, PlannerBoundaryYieldKindV1, RunControlAutoStepOptions,
+    RunControlAutoStopKind, RunControlAutoStopV1, RunControlRouteAutomationMode, RunControlSession,
+    RunProgressJournalV1, RunProgressStepV1,
 };
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
@@ -9,26 +13,21 @@ use super::combat_search_report::CombatSearchPortfolioReport;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_cutpoint_recorder::RunCutpointRecorder;
 use super::run_deadline::RunDeadline;
-use super::{Args, BranchStatus, Owner};
+use super::{Args, BranchStatus, TerminalOutcome};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
     pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
-    pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    pub(super) progress_journal: RunProgressJournalV1,
+    pub(super) planner_capture: PlannerBoundaryCaptureSegmentV1,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
     pub(super) accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
-enum PortfolioTransition {
-    ContinueAuto,
-    Stop {
-        status: BranchStatus,
-        combat_portfolio: Option<CombatSearchPortfolioReport>,
-    },
-    OwnerBoundary {
-        status: BranchStatus,
-        owner: Owner,
-    },
+#[derive(Default)]
+struct AdvanceLog {
+    combat_search: Vec<CombatSearchTraceSummary>,
+    accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 }
 
 pub(super) fn advance_to_owner_or_gap(
@@ -54,90 +53,93 @@ fn advance_to_owner_or_gap_impl(
     deadline: RunDeadline,
     mut cutpoints: Option<&mut RunCutpointRecorder<'_>>,
 ) -> AdvanceResult {
-    let mut policy_steps = 0usize;
-    let mut auto_ops_used = 0usize;
-    let mut auto_steps = Vec::new();
-    let mut combat_search = Vec::new();
-    let mut accepted_high_loss_diagnostics = Vec::new();
-    loop {
-        let run_args = deadline.cap_args(args, 1);
-        if let Some(recorder) = cutpoints.as_deref_mut() {
-            if let Err(error) = recorder.before_combat_search(session) {
-                return advance_failed(format!("cutpoint persistence failed: {error}"));
-            }
+    if args.auto_ops == 0 {
+        let planner_capture = match capture_planner_boundary_yield_v1(
+            session,
+            PlannerBoundaryYieldKindV1::ProgressBudgetExhausted,
+        ) {
+            Ok(capture) => capture,
+            Err(error) => return advance_failed(error),
+        };
+        let mut result = advance_result(
+            BranchStatus::OperationBudgetExhausted {
+                boundary: build_decision_surface(session).view.header.title,
+                reason: "progress-step budget exhausted".to_string(),
+            },
+            None,
+            RunProgressJournalV1::default(),
+            Vec::new(),
+            Vec::new(),
+        );
+        result.planner_capture = planner_capture;
+        return result;
+    }
+    let driver = match BoundedRunDriver::new(args.auto_ops, deadline.remaining_ms()) {
+        Ok(driver) => driver,
+        Err(error) => return advance_failed(error),
+    };
+    let mut log = AdvanceLog::default();
+    let drive = driver.drive_with(session, |session, _context| {
+        execute_one_owner_audit_step(session, args, deadline, &mut cutpoints, &mut log)
+    });
+    let drive = match drive {
+        Ok(drive) => drive,
+        Err(error) => {
+            let mut result = log.finish(
+                BranchStatus::AdvanceFailed(error.message),
+                None,
+                error.journal,
+            );
+            result.planner_capture = error.planner_capture;
+            return result;
         }
-        match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
-            Ok(portfolio) => {
-                if let Some(recorder) = cutpoints.as_deref_mut() {
-                    if let Err(error) = recorder.after_combat_search(&portfolio.status) {
-                        return advance_failed(format!("cutpoint persistence failed: {error}"));
-                    }
-                }
-                let transition = absorb_portfolio_result(
-                    portfolio,
-                    args,
-                    deadline,
-                    &mut auto_ops_used,
-                    &mut auto_steps,
-                    &mut combat_search,
-                    &mut accepted_high_loss_diagnostics,
-                );
-                let (status, owner) = match transition {
-                    PortfolioTransition::ContinueAuto => continue,
-                    PortfolioTransition::Stop {
-                        status,
-                        combat_portfolio,
-                    } => {
-                        return advance_result(
-                            status,
-                            combat_portfolio,
-                            auto_steps,
-                            combat_search,
-                            accepted_high_loss_diagnostics,
-                        )
-                    }
-                    PortfolioTransition::OwnerBoundary { status, owner } => (status, owner),
-                };
-                match orchestrate_owner_boundary(session, owner, &mut policy_steps) {
-                    OwnerOrchestration::StopAtCandidates => {
-                        return advance_result(
-                            status,
-                            None,
-                            auto_steps,
-                            combat_search,
-                            accepted_high_loss_diagnostics,
-                        );
-                    }
-                    OwnerOrchestration::Stop(status) => {
-                        return advance_result(
-                            status,
-                            None,
-                            auto_steps,
-                            combat_search,
-                            accepted_high_loss_diagnostics,
-                        );
-                    }
-                    OwnerOrchestration::AppliedRoutine(step) => {
-                        auto_steps.push(step);
-                    }
-                }
-            }
-            Err(err) => {
-                if let Some(recorder) = cutpoints.as_deref_mut() {
-                    if let Err(cutpoint_error) = recorder.retain_on_error() {
-                        return advance_failed(format!(
-                            "combat search failed: {err}; cutpoint persistence failed: {cutpoint_error}"
-                        ));
-                    }
-                }
-                return advance_result(
-                    BranchStatus::AdvanceFailed(err),
-                    None,
-                    auto_steps,
-                    combat_search,
-                    accepted_high_loss_diagnostics,
-                );
-            }
+    };
+    let applied_progress_steps = drive.applied_progress_steps();
+    let planner_capture = drive.planner_capture;
+    let journal = drive.journal;
+    match drive.stop {
+        BoundedRunDriveStopV1::Step(mut result) => {
+            result.progress_journal = journal;
+            result.planner_capture = planner_capture;
+            result
+        }
+        BoundedRunDriveStopV1::ProgressBudgetExhausted => {
+            let stop = RunControlAutoStopV1 {
+                kind: RunControlAutoStopKind::ProgressBudgetExhausted,
+                reason: format!(
+                    "progress-step budget exhausted at {}",
+                    applied_progress_steps
+                ),
+                applied_operations: applied_progress_steps,
+            };
+            let status = super::boundary_router::classify_boundary(session, &stop);
+            let mut result = log.finish(status, None, journal);
+            result.planner_capture = planner_capture;
+            result
+        }
+        BoundedRunDriveStopV1::WallDeadlineReached => {
+            let stop = RunControlAutoStopV1 {
+                kind: RunControlAutoStopKind::WallDeadlineReached,
+                reason: "bounded run wall deadline reached".to_string(),
+                applied_operations: applied_progress_steps,
+            };
+            let status = super::boundary_router::classify_boundary(session, &stop);
+            let mut result = log.finish(status, None, journal);
+            result.planner_capture = planner_capture;
+            result
+        }
+        BoundedRunDriveStopV1::RunCompleted { victory } => {
+            let mut result = log.finish(
+                BranchStatus::Terminal(if victory {
+                    TerminalOutcome::Victory
+                } else {
+                    TerminalOutcome::Defeat
+                }),
+                None,
+                journal,
+            );
+            result.planner_capture = planner_capture;
+            result
         }
     }
 }
@@ -146,66 +148,148 @@ fn advance_failed(message: String) -> AdvanceResult {
     advance_result(
         BranchStatus::AdvanceFailed(message),
         None,
-        Vec::new(),
+        RunProgressJournalV1::default(),
         Vec::new(),
         Vec::new(),
     )
 }
 
-fn absorb_portfolio_result(
-    portfolio: CombatSearchPortfolioResult,
+fn execute_one_owner_audit_step(
+    session: &mut RunControlSession,
     args: Args,
     deadline: RunDeadline,
-    auto_ops_used: &mut usize,
-    auto_steps: &mut Vec<RunControlAutoAppliedStepV1>,
-    combat_search: &mut Vec<CombatSearchTraceSummary>,
-    accepted_high_loss_diagnostics: &mut Vec<AcceptedHighLossDiagnosticDraft>,
-) -> PortfolioTransition {
-    let next_auto_ops_used = auto_ops_used.saturating_add(portfolio.applied_operations);
-    let continue_operation_budget_chunk = portfolio.should_continue_operation_budget_chunk(
-        next_auto_ops_used,
-        args.auto_ops,
-        deadline.should_stop(),
-    );
-    *auto_ops_used = next_auto_ops_used;
-    combat_search.extend(portfolio.combat_search);
-    accepted_high_loss_diagnostics.extend(portfolio.accepted_high_loss_diagnostics);
-    auto_steps.extend(portfolio.auto_steps);
-    if continue_operation_budget_chunk {
-        return PortfolioTransition::ContinueAuto;
+    cutpoints: &mut Option<&mut RunCutpointRecorder<'_>>,
+    log: &mut AdvanceLog,
+) -> Result<BoundedRunStepControlV1<AdvanceResult>, String> {
+    if session.active_combat.is_none() {
+        return execute_one_noncombat_step(session, log);
     }
-    let combat_portfolio = portfolio.report;
+    let run_args = deadline.cap_args(args, 1);
+    if let Some(recorder) = cutpoints.as_deref_mut() {
+        recorder
+            .before_combat_search(session)
+            .map_err(|error| format!("cutpoint persistence failed: {error}"))?;
+    }
+    let portfolio = match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
+        Ok(portfolio) => portfolio,
+        Err(error) => {
+            if let Some(recorder) = cutpoints.as_deref_mut() {
+                recorder.retain_on_error().map_err(|cutpoint_error| {
+                    format!(
+                        "combat search failed: {error}; cutpoint persistence failed: {cutpoint_error}"
+                    )
+                })?;
+            }
+            return Err(format!("combat search failed: {error}"));
+        }
+    };
+    absorb_portfolio_output(log, &portfolio);
+    let progress_steps = portfolio.progress_steps.clone();
+    if let Some(recorder) = cutpoints.as_deref_mut() {
+        if let Err(error) = recorder.after_combat_search(&portfolio.status) {
+            return Ok(BoundedRunStepControlV1::Stop {
+                progress_steps,
+                output: log.finish(
+                    BranchStatus::AdvanceFailed(format!("cutpoint persistence failed: {error}")),
+                    None,
+                    RunProgressJournalV1::default(),
+                ),
+            });
+        }
+    }
+    let applied = progress_steps.len();
     let status = portfolio.status;
-    if combat_portfolio.is_some() {
-        return PortfolioTransition::Stop {
+    if portfolio.report.is_some() || applied == 0 {
+        return Ok(BoundedRunStepControlV1::Stop {
+            progress_steps,
+            output: log.finish(status, portfolio.report, RunProgressJournalV1::default()),
+        });
+    }
+    Ok(BoundedRunStepControlV1::Continue { progress_steps })
+}
+
+fn execute_one_noncombat_step(
+    session: &mut RunControlSession,
+    log: &mut AdvanceLog,
+) -> Result<BoundedRunStepControlV1<AdvanceResult>, String> {
+    let outcome = session.apply_progress_step(RunControlAutoStepOptions {
+        route: RunControlRouteAutomationMode::Planner,
+        ..RunControlAutoStepOptions::default()
+    })?;
+    match outcome.progress_steps.as_slice() {
+        [RunProgressStepV1::Decision(_)
+        | RunProgressStepV1::ForcedTransition(_)
+        | RunProgressStepV1::CombatResolution(_)] => {
+            return Ok(BoundedRunStepControlV1::Continue {
+                progress_steps: outcome.progress_steps.clone(),
+            });
+        }
+        [RunProgressStepV1::Stop(_)] => {}
+        _ => {
+            return Err(
+                "owner-audit atomic progress produced neither one mutation nor one stop"
+                    .to_string(),
+            )
+        }
+    }
+    let status = super::boundary_router::classify_auto_outcome(session, &outcome);
+    let BranchStatus::Running { owner, .. } = status else {
+        return Ok(BoundedRunStepControlV1::Stop {
+            progress_steps: Vec::new(),
+            output: log.finish(status, None, RunProgressJournalV1::default()),
+        });
+    };
+    match orchestrate_owner_boundary(session, owner) {
+        OwnerOrchestration::StopAtCandidates => Ok(BoundedRunStepControlV1::Stop {
+            progress_steps: Vec::new(),
+            output: log.finish(status, None, RunProgressJournalV1::default()),
+        }),
+        OwnerOrchestration::Stop(status) => Ok(BoundedRunStepControlV1::Stop {
+            progress_steps: Vec::new(),
+            output: log.finish(status, None, RunProgressJournalV1::default()),
+        }),
+        OwnerOrchestration::AppliedRoutine(step) => Ok(BoundedRunStepControlV1::Continue {
+            progress_steps: vec![step],
+        }),
+    }
+}
+
+fn absorb_portfolio_output(log: &mut AdvanceLog, portfolio: &CombatSearchPortfolioResult) {
+    log.combat_search
+        .extend(portfolio.combat_search.iter().cloned());
+    log.accepted_high_loss_diagnostics
+        .extend(portfolio.accepted_high_loss_diagnostics.iter().cloned());
+}
+
+impl AdvanceLog {
+    fn finish(
+        &mut self,
+        status: BranchStatus,
+        combat_portfolio: Option<CombatSearchPortfolioReport>,
+        progress_journal: RunProgressJournalV1,
+    ) -> AdvanceResult {
+        advance_result(
             status,
             combat_portfolio,
-        };
-    }
-    let owner = match &status {
-        BranchStatus::Running { owner, .. } => Some(*owner),
-        _ => None,
-    };
-    match owner {
-        Some(owner) => PortfolioTransition::OwnerBoundary { status, owner },
-        None => PortfolioTransition::Stop {
-            status,
-            combat_portfolio: None,
-        },
+            progress_journal,
+            std::mem::take(&mut self.combat_search),
+            std::mem::take(&mut self.accepted_high_loss_diagnostics),
+        )
     }
 }
 
 fn advance_result(
     status: BranchStatus,
     combat_portfolio: Option<CombatSearchPortfolioReport>,
-    auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    progress_journal: RunProgressJournalV1,
     combat_search: Vec<CombatSearchTraceSummary>,
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,
 ) -> AdvanceResult {
     AdvanceResult {
         status,
         combat_portfolio,
-        auto_steps,
+        progress_journal,
+        planner_capture: PlannerBoundaryCaptureSegmentV1::default(),
         combat_search,
         accepted_high_loss_diagnostics,
     }

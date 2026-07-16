@@ -137,16 +137,34 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     let Some(row) = session.run_state.map.graph.get(target_y as usize) else {
         return with_map_overlay_back_candidate(session, Vec::new());
     };
+    let has_wing_boots_charge = session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::WingBoots && relic.counter > 0);
     let candidates = row
         .iter()
-        .filter(|node| session.run_state.map.can_travel_to(node.x, node.y, false))
-        .map(|node| {
-            candidate(
-                node.x.to_string(),
-                format!("y={} {}", node.y, room_type_label(node.class)),
-                ClientInput::SelectMapNode(node.x as usize),
-                node.has_emerald_key.then_some("emerald elite"),
-            )
+        .filter_map(|node| {
+            let normal = session.run_state.map.can_travel_to(node.x, node.y, false);
+            let wing_boots =
+                has_wing_boots_charge && session.run_state.map.can_travel_to(node.x, node.y, true);
+            if normal {
+                Some(candidate(
+                    node.x.to_string(),
+                    format!("y={} {}", node.y, room_type_label(node.class)),
+                    ClientInput::SelectMapNode(node.x as usize),
+                    node.has_emerald_key.then_some("emerald elite"),
+                ))
+            } else if wing_boots {
+                Some(candidate(
+                    format!("fly-{}-{}", node.x, node.y),
+                    format!("y={} {} (Wing Boots)", node.y, room_type_label(node.class)),
+                    ClientInput::FlyToNode(node.x as usize, node.y as usize),
+                    node.has_emerald_key.then_some("emerald elite"),
+                ))
+            } else {
+                None
+            }
         })
         .collect();
     with_map_overlay_back_candidate(session, candidates)

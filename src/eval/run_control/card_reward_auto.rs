@@ -1,14 +1,14 @@
 use crate::content::relics::RelicId;
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardItem};
 
-use super::session::{RunControlSession, RunProgressOutcome};
+use super::session::RunControlSession;
 use super::trace_annotation::RunControlTraceAnnotationV1;
 
-pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
-    session: &mut RunControlSession,
+pub(in crate::eval::run_control) fn ensure_singing_bowl_card_reward_action(
+    session: &RunControlSession,
     reward_index: usize,
-) -> Result<RunProgressOutcome, String> {
+) -> Result<(), String> {
     if !session
         .run_state
         .relics
@@ -18,16 +18,7 @@ pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
         return Err("Singing Bowl card reward requires Singing Bowl relic".to_string());
     }
 
-    ensure_visible_card_reward_item_at(session, reward_index)?;
-
-    session.apply_input(ClientInput::ClaimReward(reward_index))?;
-    let Some(opened_cards) = active_pending_reward_cards(session) else {
-        return Err(
-            "Singing Bowl opened a reward item but no pending card choice appeared".to_string(),
-        );
-    };
-    let bowl_index = opened_cards.len();
-    session.apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(bowl_index))
+    ensure_visible_card_reward_item_at(session, reward_index)
 }
 
 fn ensure_visible_card_reward_item_at(
@@ -161,7 +152,9 @@ fn card_reward_policy_trace_annotation(
     })
 }
 
-fn active_pending_reward_cards(session: &RunControlSession) -> Option<Vec<RewardCard>> {
+pub(in crate::eval::run_control) fn active_pending_reward_cards(
+    session: &RunControlSession,
+) -> Option<Vec<RewardCard>> {
     let cards = match &session.engine_state {
         EngineState::RewardScreen(reward) => reward.pending_card_choice.as_ref()?,
         EngineState::RewardOverlay { reward_state, .. } => {

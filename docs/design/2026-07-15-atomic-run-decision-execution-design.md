@@ -12,7 +12,9 @@ Historical schema-v6-through-v15 traces remain available through a data-only
 reader for validation and dataset export. Their string command fields are
 compatibility data, not executable instructions: the reader imports no parser
 or run executor. The typed run-job journal and boundary-visit denominator remain
-incomplete.
+incomplete. The first `BoundedRunDriver` slice now owns noncombat repetition,
+progress-step and wall budgets, terminal stops, and the handoff at a combat
+boundary. Owner-audit combat lanes call the combat resolution port directly.
 
 This design was triggered by the first live calibration of the typed planner
 capture boundary. It supersedes any plan that preserves `ar`, `AutoRun`, or a
@@ -237,15 +239,78 @@ absent. It proceeds in the following order:
    boundary-visit trace record. Extract one loop iteration from
    `apply_guarded_auto_step` without preserving an internal loop in the new
    API.
-2. **In progress.** Candidate and owner execution now share a typed atomic
-   action port. Route selection, routine transitions, and combat resolution
-   still need to return the full typed transaction record from that executor.
-3. Add the outer `BoundedRunDriver` and move repeated scheduling in
-   `branch_tiny` and owner-audit onto it. Replace combat-lane auto-run calls with
-   the direct combat resolution port.
-4. Move planner capture from command preparation/finalization onto atomic
-   boundary visits and completed transactions. Bump the trace schema and make
-   coverage count visits.
+2. **In progress, ten vertical slices complete.** Ordinary executable input
+   candidates now produce `RunDecisionTransactionV1`: the complete before
+   boundary and candidate set, canonical selected candidate, selection source,
+   typed action, observed result, after boundary, and trace annotations. The
+   compatibility `RunProgressOutcome` is projected from that transaction rather
+   than owning this path. The routine policy now selects its one automatic
+   candidate through the same transaction executor, and aggregate progress
+   projection preserves that transaction for a future journal consumer. Route
+   policy selections now resolve back to one public candidate id and execute
+   through that transaction boundary; the public map surface also enumerates
+   legal Wing Boots jumps instead of relying on a hidden input-gate exception.
+   The custom `SkipCardReward` and `SingingBowlCardReward` candidates now use the
+   same executor. Singing Bowl's two engine inputs are internal forced
+   transitions committed as one decision step, and custom composite execution
+   is trialed on a cloned session before commit. Owner-visible decisions now
+   also preserve their public candidate id through policy selection, branch
+   path evidence, and atomic execution. This includes a constrained binding
+   from the parameterized `SelectionSubmit` candidate to the owner's typed
+   multi-card selection; arbitrary parameterized actions remain rejected.
+   Reward policy now selects and executes exactly one public reward candidate
+   per call, records a `RewardPolicy` transaction, and returns control before
+   considering the next reward. Candidate execution no longer triggers hidden
+   follow-up reward claims, and unavailable potion rewards are preserved for an
+   explicit public exit instead of being deleted. Empty-campfire exit is now a
+   separately typed forced transition: it requires an empty candidate set,
+   preserves the decision-step counter, and is not emitted as a behavior
+   decision. Committed combat search execution now produces a separate typed
+   combat-resolution record for a complete victory, partial turn segment, or
+   Smoke Bomb escape. Its internal card and potion inputs preserve the
+   run-level decision-step counter, and the complete trajectory is applied to a
+   cloned session before one atomic commit. Search rejection and diagnostic-only
+   trials produce no combat-resolution record. Decision transactions, forced
+   transitions, combat resolutions, and automatic stops now share one ordered
+   `RunProgressStepV1` sum type. `RunProgressOutcome` carries only that sequence;
+   the four parallel semantic fields have been deleted, and a stop is required
+   to be the final step. A successful atomic executor result no longer emits
+   the fake `ProgressApplied` stop: it carries exactly one mutation variant,
+   while actual boundaries and budgets carry one typed stop. Other non-candidate forced
+   transitions still need migration or explicit classification outside the
+   candidate-decision contract.
+3. **Complete for owner-audit progression.** The outer
+   `BoundedRunDriver` now owns bounded noncombat repetition, the progress-step
+   budget, wall deadline, terminal stop, and an explicit stop-before-combat
+   handoff. Owner-audit uses it for noncombat progression, while combat lanes
+   call the direct combat resolution port. Its callback protocol now also owns
+   repetition across combat portfolio chunks and owner routines. `runner.rs`
+   performs one dispatch at a time and contains no loop, operation counter, or
+   separate owner-routine budget; every committed routine or combat chunk
+   consumes the same driver-owned progress budget. The driver also owns one
+   ordered `RunProgressJournalV1` segment for each bounded drive. Callback
+   progress is reported as actual `RunProgressStepV1` records rather than a
+   parallel integer count, so journal length is the budget truth. Owner-audit
+   branches retain only the most recent segment to avoid duplicating ancestral
+   history across every branch; trace and capsule schema v3 serialize that
+   typed segment directly instead of flattening it into legacy `auto_steps`.
+   Explicit owner selections are prepended to the same segment before the
+   following automatic progression. Stops remain outside the committed journal
+   because they describe why the drive yielded rather than a state mutation.
+   Other branch-level
+   generation and process-slice loops remain separate orchestration horizons,
+   not run-progress executors.
+4. **Complete for live boundary capture.** Planner capture no longer depends on
+   command preparation/finalization. `BoundedRunDriver` captures the public
+   boundary before each callback and retains selected, yielded, forced, and
+   failed outcomes. Explicit owner selections and each freshly enumerated
+   single shop transaction use the same typed capture ticket. The former
+   branch-only boss-preview bundle executor is retired; no stored purchase
+   sequence may cross a decision boundary. Trace/capsule schema v3
+   serializes the recent segment, and live coverage counts deduplicated visits
+   rather than finalized behavior events. Projection into trajectory-scoped
+   behavior events and outcome attachments remains a later planner-data slice,
+   not a reason to restore command capture.
 5. **Complete.** Delete the command enum, parser, help, dispatcher, raw replay,
    recorder, aliases, command-only panels, and tests that asserted that shell.
 6. **Complete for the deleted kernel.** Architecture guards reject the retired
@@ -266,9 +331,10 @@ The migration is accepted only when all of the following hold:
    dispatcher, recorder, and raw replay source files are absent.
 3. One selected run candidate produces exactly one decision transaction, and
    its id belongs to the recorded candidate set.
-4. A bounded driver that performs N decisions persists N separately linked
-   decision transactions; forced transitions and combat resolutions remain
-   separately typed.
+4. A bounded driver that performs N mutations persists N separately linked
+   records in one ordered committed-progress journal; decisions, forced
+   transitions, and combat resolutions are typed variants, while the typed
+   yield/stop remains separate from committed mutation history.
 5. A visited map or reward boundary whose selection cannot be linked increases
    the coverage denominator and reports a typed gap.
 6. Owner-audit combat lanes cannot advance into rewards, routes, or later

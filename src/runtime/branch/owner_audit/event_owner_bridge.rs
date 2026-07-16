@@ -44,11 +44,17 @@ fn visible_event_option_decision(
             if option.ui.disabled || !selector.matches(option_index, &option.semantics) {
                 return None;
             }
-            candidate.action.executable_action()
+            candidate
+                .action
+                .executable_action()
+                .map(|action| (candidate.id.clone(), action))
         })
         .collect::<Vec<_>>();
     match matches.as_slice() {
-        [action] => OwnerDecision::Routine(OwnerRoutine::Action(action.clone())),
+        [(candidate_id, action)] => OwnerDecision::Routine(OwnerRoutine::Candidate {
+            candidate_id: candidate_id.clone(),
+            action: action.clone(),
+        }),
         [] => OwnerDecision::Gap(format!("event selector {selector:?} has no visible option")),
         _ => OwnerDecision::Gap(format!(
             "event selector {selector:?} matched {} visible options",

@@ -48,10 +48,6 @@ impl RunControlSession {
                 .current_combat_position_for_actions()
                 .map(|position| get_legal_moves(&position.engine, &position.combat).contains(input))
                 .unwrap_or(false),
-            (
-                EngineState::MapNavigation | EngineState::MapOverlay { .. },
-                ClientInput::FlyToNode(target_x, target_y),
-            ) => self.map_flight_is_allowed(*target_x, *target_y),
             (EngineState::MapOverlay { .. }, ClientInput::Cancel) => true,
             (EngineState::RunPendingChoice(choice), ClientInput::SubmitSelection(resolution)) => {
                 self.run_pending_resolution_is_allowed(choice, resolution)
@@ -68,17 +64,6 @@ impl RunControlSession {
             }
             _ => false,
         }
-    }
-
-    fn map_flight_is_allowed(&self, target_x: usize, target_y: usize) -> bool {
-        let has_flight = self.run_state.relics.iter().any(|relic| {
-            relic.id == crate::content::relics::RelicId::WingBoots && relic.counter > 0
-        });
-        has_flight
-            && self
-                .run_state
-                .map
-                .can_travel_to(target_x as i32, target_y as i32, true)
     }
 
     pub(in crate::eval::run_control) fn run_pending_selection_is_allowed(

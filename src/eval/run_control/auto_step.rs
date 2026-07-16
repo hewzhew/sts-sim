@@ -6,9 +6,8 @@ use super::progress_options::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{
-    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStopKind,
-    RunControlAutoStopV1, RunControlCombatSearchRejection, RunControlDecisionParentSnapshotV1,
-    RunControlSession, RunProgressOutcome,
+    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlCombatSearchRejection,
+    RunControlDecisionParentSnapshotV1, RunControlSession, RunProgressOutcome,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
@@ -16,6 +15,7 @@ use super::transition_report::{
     TransitionAction,
 };
 use super::view_model::{build_run_control_view_model, DecisionCandidate, RunControlViewModel};
+use super::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AutoAdvanceClass {
@@ -33,11 +33,15 @@ struct AutoAdvanceCandidate<'a> {
 
 struct AutoAppliedLog {
     steps: Vec<RunControlAutoAppliedStepV1>,
+    progress_steps: Vec<RunProgressStepV1>,
 }
 
 impl AutoAppliedLog {
     fn new() -> Self {
-        Self { steps: Vec::new() }
+        Self {
+            steps: Vec::new(),
+            progress_steps: Vec::new(),
+        }
     }
 
     fn push_step(
@@ -61,6 +65,8 @@ impl AutoAppliedLog {
         label: impl Into<String>,
         outcome: &RunProgressOutcome,
     ) {
+        self.progress_steps
+            .extend(outcome.progress_steps.iter().cloned());
         self.steps.push(RunControlAutoAppliedStepV1 {
             kind,
             label: label.into(),
@@ -112,24 +118,13 @@ pub(super) fn apply_guarded_auto_step(
     let mut trace_annotations = Vec::new();
     let mut decision_parent_snapshots = Vec::new();
 
-    let reward_before = RunVisibleSnapshot::capture(session);
-    let reward_report = super::reward_auto::apply_reward_automation(session)?;
-    if !reward_report.is_empty() {
-        let reward_after = RunVisibleSnapshot::capture(session);
-        let action_result = action_result_from_transition(
-            TransitionAction {
-                label: "reward automation".to_string(),
-            },
-            &reward_before,
-            &reward_after,
-            current_run_apply_status(session),
+    if let Some(outcome) = super::reward_auto::apply_reward_policy_step(session)? {
+        applied.push_outcome(
+            RunControlAutoAppliedKindV1::RewardPolicyCandidate,
+            "reward policy candidate",
+            &outcome,
         );
-        applied.push_step(
-            RunControlAutoAppliedKindV1::RewardAutomation,
-            "reward automation",
-            Some(action_result),
-        );
-        trace_annotations.extend(reward_report.trace_annotations);
+        trace_annotations.extend(outcome.trace_annotations);
         return finish_applied_progress_step(
             session,
             &before,
@@ -385,7 +380,7 @@ pub(super) fn apply_guarded_auto_step(
 
     let view = build_run_control_view_model(session);
     if let Some(auto_candidate) = auto_advance_candidate(session, &view) {
-        let Some(input) = auto_candidate.candidate.action.executable_input() else {
+        if auto_candidate.candidate.action.executable_input().is_none() {
             return finish_auto_step(
                 session,
                 &before,
@@ -396,8 +391,10 @@ pub(super) fn apply_guarded_auto_step(
                 "auto-selected candidate is not executable",
                 None,
             );
-        };
-        let outcome = session.apply_input(input)?;
+        }
+        let transaction =
+            session.execute_routine_candidate_transaction(&auto_candidate.candidate.id)?;
+        let outcome = transaction.project_progress_outcome(session);
         let label = outcome
             .action_result
             .as_ref()
@@ -437,13 +434,6 @@ pub(super) fn apply_guarded_auto_step(
     )
 }
 
-pub fn apply_owner_audit_progress_step(
-    session: &mut RunControlSession,
-    options: RunControlAutoStepOptions,
-) -> Result<RunProgressOutcome, String> {
-    apply_guarded_auto_step(session, options)
-}
-
 fn finish_applied_progress_step(
     session: &RunControlSession,
     before: &RunVisibleSnapshot,
@@ -451,13 +441,13 @@ fn finish_applied_progress_step(
     trace_annotations: Vec<RunControlTraceAnnotationV1>,
     decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
 ) -> Result<RunProgressOutcome, String> {
-    finish_auto_step(
+    finish_progress_outcome(
         session,
         before,
         applied,
         trace_annotations,
         decision_parent_snapshots,
-        RunControlAutoStopKind::ProgressApplied,
+        None,
         "one atomic progress step applied",
         None,
     )
@@ -885,23 +875,43 @@ fn finish_auto_step(
     session: &RunControlSession,
     before: &RunVisibleSnapshot,
     applied: AutoAppliedLog,
-    mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    trace_annotations: Vec<RunControlTraceAnnotationV1>,
     decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
     stop_kind: RunControlAutoStopKind,
     reason: impl Into<String>,
     detail: Option<String>,
 ) -> Result<RunProgressOutcome, String> {
+    finish_progress_outcome(
+        session,
+        before,
+        applied,
+        trace_annotations,
+        decision_parent_snapshots,
+        Some(stop_kind),
+        reason,
+        detail,
+    )
+}
+
+fn finish_progress_outcome(
+    session: &RunControlSession,
+    before: &RunVisibleSnapshot,
+    applied: AutoAppliedLog,
+    mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+    stop_kind: Option<RunControlAutoStopKind>,
+    reason: impl Into<String>,
+    detail: Option<String>,
+) -> Result<RunProgressOutcome, String> {
     let reason = reason.into();
-    let auto_stop = RunControlAutoStopV1 {
-        kind: stop_kind,
-        reason: reason.clone(),
-        applied_operations: applied.len(),
-    };
+    let applied_operations = applied.len();
     let view = build_run_control_view_model(session);
-    let mut lines = vec![
-        format!("Advanced to human boundary: {}", view.header.title),
-        "Applied:".to_string(),
-    ];
+    let mut lines = vec![if stop_kind.is_some() {
+        format!("Stopped at boundary: {}", view.header.title)
+    } else {
+        format!("Applied one atomic progress step: {}", view.header.title)
+    }];
+    lines.push("Applied:".to_string());
     if applied.is_empty() {
         lines.push("  none".to_string());
     } else {
@@ -909,25 +919,44 @@ fn finish_auto_step(
             lines.push(format!("  - {}", step.label));
         }
     }
-    lines.push(format!("Reason: {reason}"));
+    lines.push(format!(
+        "{}: {reason}",
+        if stop_kind.is_some() {
+            "Reason"
+        } else {
+            "Result"
+        }
+    ));
     lines.push(super::next_hint::run_control_next_hint(session).to_string());
     if let Some(detail) = detail.filter(|detail| !detail.trim().is_empty()) {
         lines.push("Detail:".to_string());
         lines.extend(detail.lines().map(|line| format!("  {line}")));
     }
-    if let Some(annotation) =
-        super::noncombat_boundary::noncombat_human_boundary_annotation(session, &reason)?
-    {
-        trace_annotations.push(annotation);
+    if stop_kind.is_some() {
+        if let Some(annotation) =
+            super::noncombat_boundary::noncombat_human_boundary_annotation(session, &reason)?
+        {
+            trace_annotations.push(annotation);
+        }
     }
 
     if applied.is_empty() {
         lines.push(super::render::render_run_control_state(session));
-        return Ok(RunProgressOutcome::message(lines.join("\n"))
-            .with_auto_stop(auto_stop)
+        let outcome = RunProgressOutcome::message(lines.join("\n"))
             .with_auto_applied_steps(applied.steps)
             .with_trace_annotations(trace_annotations)
-            .with_decision_parent_snapshots(decision_parent_snapshots));
+            .with_decision_parent_snapshots(decision_parent_snapshots)
+            .with_progress_steps(applied.progress_steps);
+        return Ok(match stop_kind {
+            Some(kind) => {
+                outcome.with_progress_step(RunProgressStepV1::Stop(RunControlAutoStopV1 {
+                    kind,
+                    reason,
+                    applied_operations,
+                }))
+            }
+            None => outcome,
+        });
     }
 
     let after = RunVisibleSnapshot::capture(session);
@@ -944,11 +973,19 @@ fn finish_auto_step(
     );
     lines.push(render_action_result(&action_result));
     lines.push(super::render::render_run_control_state(session));
-    Ok(RunProgressOutcome::action(lines.join("\n"), action_result)
-        .with_auto_stop(auto_stop)
+    let outcome = RunProgressOutcome::action(lines.join("\n"), action_result)
         .with_auto_applied_steps(applied.steps)
         .with_trace_annotations(trace_annotations)
-        .with_decision_parent_snapshots(decision_parent_snapshots))
+        .with_decision_parent_snapshots(decision_parent_snapshots)
+        .with_progress_steps(applied.progress_steps);
+    Ok(match stop_kind {
+        Some(kind) => outcome.with_progress_step(RunProgressStepV1::Stop(RunControlAutoStopV1 {
+            kind,
+            reason,
+            applied_operations,
+        })),
+        None => outcome,
+    })
 }
 
 fn combat_search_stop_reason(
@@ -1080,7 +1117,7 @@ mod tests {
         .expect("owner audit auto step should stop cleanly at card reward");
 
         assert_eq!(
-            outcome.auto_stop.as_ref().map(|stop| stop.kind),
+            outcome.auto_stop().map(|stop| stop.kind),
             Some(crate::eval::run_control::RunControlAutoStopKind::HumanBoundary)
         );
         assert!(outcome.action_result.is_none());

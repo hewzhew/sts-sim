@@ -3,9 +3,7 @@ use serde_json::{json, Value};
 use sts_simulator::ai::strategy::candidate_pressure_response::assess_candidate_pressure_response;
 use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
-use sts_simulator::ai::strategy::shop_boss_preview::{
-    classify_shop_boss_preview_candidate, shop_boss_preview_bundles,
-};
+use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_candidate;
 use sts_simulator::content::cards::CardId;
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::ShopVisitContextV1;
@@ -20,6 +18,8 @@ pub(super) struct BranchPathStep {
     pub(super) policy_lane: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) policy_selection: Option<BranchPathPolicySelectionSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) candidate_id: Option<String>,
     pub(super) key: Option<DecisionKey>,
     pub(super) action_debug: String,
     pub(super) label: String,
@@ -33,8 +33,6 @@ pub(super) struct BranchPathStep {
     pub(super) candidate_pool: Vec<BranchPathCandidateSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) shop_boss_preview_candidates: Vec<BranchPathShopBossPreviewSnapshot>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) shop_boss_preview_bundles: Vec<BranchPathShopBossPreviewBundleSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -172,6 +170,8 @@ pub(super) struct LaneCapSnapshot {
 pub(super) struct BranchPathCandidateSnapshot {
     rank: usize,
     selected: bool,
+    #[serde(default)]
+    candidate_id: String,
     auto_expand: bool,
     inspect_only: Option<String>,
     key: Option<DecisionKey>,
@@ -188,27 +188,6 @@ pub(super) struct BranchPathShopBossPreviewSnapshot {
     pub(super) reason: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct BranchPathShopBossPreviewBundleSnapshot {
-    pub(super) rank: usize,
-    pub(super) label: String,
-    pub(super) total_cost: i32,
-    pub(super) gold_after: i32,
-    pub(super) reason: String,
-    pub(super) items: Vec<BranchPathShopBossPreviewBundleItemSnapshot>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct BranchPathShopBossPreviewBundleItemSnapshot {
-    pub(super) label: String,
-    pub(super) candidate: Value,
-    pub(super) cost: i32,
-    #[serde(default)]
-    pub(super) auto_expand: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) blocked_reason: Option<String>,
-}
-
 impl BranchPathCandidateSnapshot {
     pub(super) fn from_choices(choices: &[OwnerChoice], selected_index: usize) -> Vec<Self> {
         choices
@@ -217,6 +196,7 @@ impl BranchPathCandidateSnapshot {
             .map(|(index, choice)| Self {
                 rank: index + 1,
                 selected: index == selected_index,
+                candidate_id: choice.candidate_id.clone(),
                 auto_expand: choice.auto_expand_allowed(),
                 inspect_only: choice.inspect_only_reason().map(str::to_string),
                 key: choice.key.clone(),
@@ -251,119 +231,6 @@ impl BranchPathShopBossPreviewSnapshot {
         }
         preview_candidates
     }
-}
-
-impl BranchPathShopBossPreviewBundleSnapshot {
-    pub(super) fn from_choices(choices: &[OwnerChoice], current_gold: i32) -> Vec<Self> {
-        let kinds = choices
-            .iter()
-            .filter_map(|choice| {
-                choice
-                    .annotation
-                    .candidate()
-                    .map(|decision| decision.evaluation.candidate.kind)
-            })
-            .collect::<Vec<_>>();
-        shop_boss_preview_bundles(kinds, current_gold, 12)
-            .into_iter()
-            .filter_map(|bundle| {
-                let items = bundle
-                    .items
-                    .iter()
-                    .map(|kind| preview_item_snapshot(choices, *kind))
-                    .collect::<Vec<_>>();
-                let total_cost = items.iter().map(|item| item.cost).sum::<i32>();
-                if total_cost > current_gold {
-                    return None;
-                }
-                Some((bundle, items, total_cost))
-            })
-            .enumerate()
-            .map(|(index, (bundle, items, total_cost))| Self {
-                rank: index + 1,
-                label: if items.is_empty() {
-                    "Leave".to_string()
-                } else {
-                    items
-                        .iter()
-                        .map(|item| item.label.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" + ")
-                },
-                total_cost,
-                gold_after: current_gold - total_cost,
-                reason: format!("{:?}", bundle.reason),
-                items,
-            })
-            .collect()
-    }
-}
-
-fn preview_item_label(choices: &[OwnerChoice], kind: DecisionCandidateKind) -> String {
-    choices
-        .iter()
-        .find_map(|choice| {
-            let decision = choice.annotation.candidate()?;
-            if decision.evaluation.candidate.kind == kind {
-                Some(choice.label.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| format!("{kind:?}"))
-}
-
-fn preview_item_snapshot(
-    choices: &[OwnerChoice],
-    kind: DecisionCandidateKind,
-) -> BranchPathShopBossPreviewBundleItemSnapshot {
-    choices
-        .iter()
-        .find_map(|choice| {
-            let decision = choice.annotation.candidate()?;
-            if decision.evaluation.candidate.kind == kind {
-                Some(BranchPathShopBossPreviewBundleItemSnapshot {
-                    label: choice.label.clone(),
-                    candidate: trace::candidate_kind_value(kind),
-                    cost: choice_cost(choice, kind),
-                    auto_expand: choice.auto_expand_allowed(),
-                    blocked_reason: choice.inspect_only_reason().map(str::to_string),
-                })
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| BranchPathShopBossPreviewBundleItemSnapshot {
-            label: format!("{kind:?}"),
-            candidate: trace::candidate_kind_value(kind),
-            cost: candidate_kind_cost_hint(kind),
-            auto_expand: false,
-            blocked_reason: Some("missing source choice".to_string()),
-        })
-}
-
-fn choice_cost(choice: &OwnerChoice, kind: DecisionCandidateKind) -> i32 {
-    match kind {
-        DecisionCandidateKind::ShopPurge { .. } => {
-            parse_gold_cost_from_label(&choice.label).unwrap_or(75)
-        }
-        _ => candidate_kind_cost_hint(kind),
-    }
-}
-
-fn candidate_kind_cost_hint(kind: DecisionCandidateKind) -> i32 {
-    match kind {
-        DecisionCandidateKind::ShopBuyCard { price, .. }
-        | DecisionCandidateKind::ShopBuyRelic { price, .. }
-        | DecisionCandidateKind::ShopBuyPotion { price, .. } => price,
-        DecisionCandidateKind::ShopPurge { .. } => 75,
-        _ => 0,
-    }
-}
-
-fn parse_gold_cost_from_label(label: &str) -> Option<i32> {
-    let (_, suffix) = label.rsplit_once('|')?;
-    suffix.trim().strip_suffix(" gold")?.trim().parse().ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -624,6 +491,7 @@ mod tests {
     fn candidate_snapshot_keeps_selected_and_inspect_reason() {
         let choices = vec![
             OwnerChoice {
+                candidate_id: "take".to_string(),
                 key: None,
                 action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: "take".to_string(),
@@ -631,6 +499,7 @@ mod tests {
                 expansion: OwnerChoiceExpansion::AutoAllowed,
             },
             OwnerChoice {
+                candidate_id: "skip".to_string(),
                 key: None,
                 action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: "skip".to_string(),
@@ -768,6 +637,7 @@ mod tests {
 
         fn purge_choice(target: CleanupTarget) -> OwnerChoice {
             OwnerChoice {
+                candidate_id: "purge".to_string(),
                 key: None,
                 action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
                 label: format!("Remove {target:?}"),
@@ -802,59 +672,6 @@ mod tests {
     }
 
     #[test]
-    fn shop_boss_preview_bundle_summary_includes_blocked_choices_for_review() {
-        fn choice(kind: DecisionCandidateKind, expansion: OwnerChoiceExpansion) -> OwnerChoice {
-            OwnerChoice {
-                key: None,
-                action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
-                label: format!("{kind:?}"),
-                annotation: ChoiceAnnotation::Candidate(OwnerCandidateDecision {
-                    evaluation: CandidateEvaluation {
-                        candidate: DecisionCandidateIr { kind },
-                        lane: CandidateLane::Mainline,
-                        adjudication: CandidateLaneAdjudication::uncapped(CandidateLane::Mainline),
-                        expansion: ExpansionPlan::Auto,
-                        scores: Vec::new(),
-                    },
-                    admission: None,
-                }),
-                expansion,
-            }
-        }
-
-        let choices = vec![
-            choice(
-                DecisionCandidateKind::ShopLeave,
-                OwnerChoiceExpansion::AutoAllowed,
-            ),
-            choice(
-                DecisionCandidateKind::ShopBuyCard {
-                    card: CardId::FiendFire,
-                    upgrades: 0,
-                    price: 152,
-                },
-                OwnerChoiceExpansion::InspectOnly("blocked"),
-            ),
-        ];
-
-        let bundles = BranchPathShopBossPreviewBundleSnapshot::from_choices(&choices, 200);
-
-        assert_eq!(bundles.len(), 2);
-        assert!(bundles[0].items.is_empty());
-        assert_eq!(
-            bundles[1].label,
-            "ShopBuyCard { card: FiendFire, upgrades: 0, price: 152 }"
-        );
-        assert_eq!(bundles[1].total_cost, 152);
-        assert_eq!(bundles[1].gold_after, 48);
-        assert_eq!(
-            bundles[1].items[0].blocked_reason.as_deref(),
-            Some("blocked")
-        );
-        assert!(!bundles[1].items[0].auto_expand);
-    }
-
-    #[test]
     fn path_state_exposes_relic_status_for_timeline_review() {
         use sts_simulator::content::relics::{RelicId, RelicState};
         use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
@@ -883,7 +700,8 @@ mod tests {
             },
             policy_lane: super::super::branch_policy_lane::BranchPolicyLane::default(),
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

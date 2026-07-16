@@ -388,6 +388,7 @@ mod tests {
     ) -> OwnerChoice {
         let auto = lane != CandidateLane::Probe;
         OwnerChoice {
+            candidate_id: "test".to_string(),
             key: None,
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("{kind:?}"),
@@ -423,6 +424,7 @@ mod tests {
 
     fn boss_relic_choice(option_index: usize, relic: RelicId) -> OwnerChoice {
         OwnerChoice {
+            candidate_id: option_index.to_string(),
             key: Some(DecisionCandidateKey::BossRelicPick {
                 option_index,
                 relic,
@@ -436,6 +438,7 @@ mod tests {
 
     fn boss_relic_skip_choice() -> OwnerChoice {
         OwnerChoice {
+            candidate_id: "skip".to_string(),
             key: Some(DecisionCandidateKey::BossRelicSkip),
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: "Skip boss relic".to_string(),
@@ -458,6 +461,7 @@ mod tests {
 
     fn shop_leave_choice() -> OwnerChoice {
         OwnerChoice {
+            candidate_id: "leave".to_string(),
             key: None,
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: "Leave".to_string(),
@@ -483,6 +487,7 @@ mod tests {
         reasons: Vec<RewardAdmissionReason>,
     ) -> OwnerChoice {
         OwnerChoice {
+            candidate_id: "test".to_string(),
             key: None,
             action: RunDecisionAction::Input(sts_simulator::state::core::ClientInput::Proceed),
             label: format!("Buy {card:?}"),

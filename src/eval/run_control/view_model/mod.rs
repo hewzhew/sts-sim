@@ -118,7 +118,7 @@ pub enum DecisionCandidateKey {
     ShopLeave,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum CandidateAction {
     Execute(RunDecisionAction),
     Parameterized { template: String },

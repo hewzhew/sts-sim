@@ -72,6 +72,7 @@ fn apply_route_plan_with_safety_mode(
     let selection = render_route_plan_selection(&candidate);
     let auto_step_summary = render_route_plan_auto_step_summary(&candidate);
     let trace_annotation = route_plan_trace_annotation(&trace, selected_index, &candidate)?;
+    let candidate_id = public_route_candidate_id(session, &input)?;
     let parent_snapshot = RunControlDecisionParentSnapshotV1 {
         source: "route_planner".to_string(),
         command: candidate
@@ -80,16 +81,38 @@ fn apply_route_plan_with_safety_mode(
             .unwrap_or_else(|| route_candidate_input_label(&candidate)),
         snapshot: RunControlSessionCheckpointV1::from_session(session),
     };
-    let outcome = session.apply_input(input)?;
+    let transaction =
+        session.execute_route_candidate_transaction(&candidate_id, trace_annotation)?;
+    let outcome = transaction.project_progress_outcome(session);
     Ok(RoutePlanApplied {
         auto_step_summary,
         outcome: RunProgressOutcome {
             message: format!("{selection}\n{}", outcome.message),
             ..outcome
         }
-        .with_trace_annotations(vec![trace_annotation])
         .with_decision_parent_snapshots(vec![parent_snapshot]),
     })
+}
+
+fn public_route_candidate_id(
+    session: &RunControlSession,
+    input: &ClientInput,
+) -> Result<String, String> {
+    let surface = super::super::decision_surface::build_decision_surface(session);
+    let matches = surface
+        .view
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.action.executable_input().as_ref() == Some(input))
+        .collect::<Vec<_>>();
+    let [candidate] = matches.as_slice() else {
+        return Err(format!(
+            "route policy selected `{}` but the public boundary exposes {} matching candidates",
+            super::super::view_model::client_input_hint(input),
+            matches.len()
+        ));
+    };
+    Ok(candidate.id.clone())
 }
 
 pub(in crate::eval::run_control) fn route_policy_stop_for_session(

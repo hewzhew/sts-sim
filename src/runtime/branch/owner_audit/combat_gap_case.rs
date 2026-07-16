@@ -101,7 +101,6 @@ fn path_step(step: &BranchPathStep) -> CombatCasePathStep {
             "decision_delta": &step.decision_delta,
             "candidate_pool": &step.candidate_pool,
             "shop_boss_preview_candidates": &step.shop_boss_preview_candidates,
-            "shop_boss_preview_bundles": &step.shop_boss_preview_bundles,
         })),
     }
 }
@@ -164,7 +163,6 @@ mod tests {
     use crate::runtime::branch::owner_audit::branch_model::BranchStatus;
     use crate::runtime::branch::owner_audit::branch_path::{
         BranchPathCandidateSnapshot, BranchPathPolicySelectionSnapshot,
-        BranchPathShopBossPreviewBundleItemSnapshot, BranchPathShopBossPreviewBundleSnapshot,
         BranchPathShopBossPreviewSnapshot, BranchPathStep, ChoiceAnnotationSnapshot,
     };
     use crate::runtime::branch::owner_audit::branch_policy_lane::BranchPolicyLane;
@@ -190,6 +188,7 @@ mod tests {
                     checkpoint_ref: "branch-0/step-0".to_string(),
                 },
             )),
+            candidate_id: None,
             key: None,
             action_debug: "Noop".to_string(),
             label: "candidate".to_string(),
@@ -209,6 +208,7 @@ mod tests {
             }),
             candidate_pool: BranchPathCandidateSnapshot::from_choices(
                 &[OwnerChoice {
+                    candidate_id: "combat-gap".to_string(),
                     key: None,
                     action: RunDecisionAction::Input(
                         sts_simulator::state::core::ClientInput::Proceed,
@@ -226,20 +226,6 @@ mod tests {
                 class: "safe".to_string(),
                 reason: "fixture".to_string(),
             }],
-            shop_boss_preview_bundles: vec![BranchPathShopBossPreviewBundleSnapshot {
-                rank: 1,
-                label: "bundle".to_string(),
-                total_cost: 0,
-                gold_after: 100,
-                reason: "fixture".to_string(),
-                items: vec![BranchPathShopBossPreviewBundleItemSnapshot {
-                    label: "leave".to_string(),
-                    candidate: json!({"kind": "shop_leave"}),
-                    cost: 0,
-                    auto_expand: true,
-                    blocked_reason: None,
-                }],
-            }],
         }
     }
 
@@ -255,7 +241,8 @@ mod tests {
             },
             policy_lane: BranchPolicyLane::challenger(ChallengerPolicyState::new(1)),
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,
@@ -272,13 +259,6 @@ mod tests {
         assert_eq!(evidence["candidate_pool"].as_array().unwrap().len(), 1);
         assert_eq!(
             evidence["shop_boss_preview_candidates"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
-            evidence["shop_boss_preview_bundles"]
                 .as_array()
                 .unwrap()
                 .len(),

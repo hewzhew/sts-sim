@@ -639,8 +639,6 @@ mod trajectory_artifact_tests {
             boss_search_ms: 1,
             wall_ms: Some(1_000),
             checkpoint_before_combat_portfolio: true,
-            shop_boss_preview_bundle_limit: 0,
-            shop_boss_preview_target_floor: None,
             wall_capped_search_budget: true,
             wall_capped_boss_budget: true,
         }
@@ -658,7 +656,8 @@ mod trajectory_artifact_tests {
             },
             policy_lane,
             combat_portfolio: None,
-            auto_steps: Vec::new(),
+            recent_progress_journal: Default::default(),
+            recent_planner_capture: Default::default(),
             combat_search: Vec::new(),
             combat_search_history: Vec::new(),
             comparison_search_start: None,

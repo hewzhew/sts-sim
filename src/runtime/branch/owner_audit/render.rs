@@ -1,6 +1,5 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, render_auto_applied_step_compact_v1, RunControlAutoAppliedStepV1,
-    RunControlSession,
+    build_decision_surface, render_progress_step_compact_v1, RunControlSession,
 };
 
 use super::branch_status_view;
@@ -33,7 +32,7 @@ pub(super) fn print_branch_timeline(
             render_choice::render_timeline_step(previous)
         );
     }
-    print_auto_steps(&branch.auto_steps);
+    print_progress_journal(&branch.recent_progress_journal);
     if let Some(report) = branch.combat_portfolio.as_ref() {
         print_combat_portfolio(report);
     }
@@ -80,17 +79,17 @@ pub(super) fn one_line(text: &str) -> String {
         .collect()
 }
 
-fn print_auto_steps(steps: &[RunControlAutoAppliedStepV1]) {
-    if steps.is_empty() {
+fn print_progress_journal(journal: &sts_simulator::eval::run_control::RunProgressJournalV1) {
+    if journal.is_empty() {
         return;
     }
-    let shown = steps.iter().take(12).collect::<Vec<_>>();
-    println!("  auto:");
+    let shown = journal.entries().iter().take(12).collect::<Vec<_>>();
+    println!("  recent_progress:");
     for step in shown {
-        println!("    - {}", render_auto_applied_step_compact_v1(step));
+        println!("    - {}", render_progress_step_compact_v1(step));
     }
-    if steps.len() > 12 {
-        println!("    ... {} more auto steps", steps.len() - 12);
+    if journal.len() > 12 {
+        println!("    ... {} more progress steps", journal.len() - 12);
     }
 }
 

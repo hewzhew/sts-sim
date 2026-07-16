@@ -38,7 +38,8 @@ pub(super) fn prepare_branch_work(
         );
         branch.status = advance.status;
         branch.combat_portfolio = advance.combat_portfolio;
-        branch.auto_steps = advance.auto_steps;
+        branch.recent_progress_journal = advance.progress_journal;
+        branch.recent_planner_capture = advance.planner_capture;
         branch.combat_search = advance.combat_search;
         branch
             .combat_search_history

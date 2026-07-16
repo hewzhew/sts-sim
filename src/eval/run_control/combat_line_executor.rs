@@ -11,6 +11,9 @@ use super::combat_line_trace::{
     combat_search_performance_trace_annotation, current_run_apply_status,
     CombatCandidateLinePerformance,
 };
+use super::combat_resolution::{
+    RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
+};
 use super::combat_search_render::{
     render_complete_line_solver_application, render_search_application, render_segment_application,
 };
@@ -43,12 +46,14 @@ pub(super) fn apply_selected_combat_candidate_line(
         ));
     }
     selected_line = replay.line;
-    let before_snapshot = RunVisibleSnapshot::capture(session);
+    let mut trial = session.clone();
+    let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
+    let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let applied = selected_line.actions.clone();
-    session.mark_current_combat_search_resolved();
-    let automation_actions = apply_combat_action_traces(session, &applied)?;
-    let after_snapshot = RunVisibleSnapshot::capture(session);
-    let status = current_run_apply_status(session);
+    trial.mark_current_combat_search_resolved();
+    let automation_actions = apply_combat_action_traces(&mut trial, &applied)?;
+    let after_snapshot = RunVisibleSnapshot::capture(&trial);
+    let status = current_run_apply_status(&trial);
     let action_result = action_result_from_transition(
         TransitionAction {
             label: transition_label,
@@ -71,22 +76,33 @@ pub(super) fn apply_selected_combat_candidate_line(
         "{}\n{}\n{}",
         application,
         render_action_result(&action_result),
-        super::render::render_run_control_state(session)
+        super::render::render_run_control_state(&trial)
     );
     let automation_record =
         CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions);
-    session.remember_combat_automation_trajectory(automation_record.clone());
-    let outcome = RunProgressOutcome::action(message, action_result).with_trace_annotations(vec![
-        automation_record.into_annotation(),
-        combat_line_performance_trace_annotation(
-            trajectory_source.label(),
-            session,
-            start,
-            report,
-            &selected_line,
-            line_performance,
-        ),
-    ]);
+    trial.remember_combat_automation_trajectory(automation_record.clone());
+    let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
+    let resolution = RunCombatResolutionV1::new(
+        RunCombatResolutionKindV1::CompleteVictory,
+        resolution_before,
+        automation_record.clone(),
+        action_result.clone(),
+        resolution_after,
+    )?;
+    let outcome = RunProgressOutcome::action(message, action_result)
+        .with_trace_annotations(vec![
+            automation_record.into_annotation(),
+            combat_line_performance_trace_annotation(
+                trajectory_source.label(),
+                &trial,
+                start,
+                report,
+                &selected_line,
+                line_performance,
+            ),
+        ])
+        .with_progress_step(super::RunProgressStepV1::CombatResolution(resolution));
+    *session = trial;
     Ok(outcome)
 }
 
@@ -101,12 +117,14 @@ pub(super) fn apply_combat_turn_segment(
         .selected
         .as_ref()
         .expect("caller only applies after selecting a segment");
-    let before_snapshot = RunVisibleSnapshot::capture(session);
+    let mut trial = session.clone();
+    let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
+    let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let applied = trajectory.actions.clone();
-    session.mark_current_combat_search_resolved();
-    let automation_actions = apply_combat_action_traces(session, &applied)?;
-    let after_snapshot = RunVisibleSnapshot::capture(session);
-    let status = current_run_apply_status(session);
+    trial.mark_current_combat_search_resolved();
+    let automation_actions = apply_combat_action_traces(&mut trial, &applied)?;
+    let after_snapshot = RunVisibleSnapshot::capture(&trial);
+    let status = current_run_apply_status(&trial);
     let transition_label = format!(
         "search-combat segment applied {} actions (partial turn; not terminal claim)",
         applied.len()
@@ -123,22 +141,33 @@ pub(super) fn apply_combat_turn_segment(
         "{}\n{}\n{}",
         render_segment_application(search_report, segment_report, rejection_result),
         render_action_result(&action_result),
-        super::render::render_run_control_state(session)
+        super::render::render_run_control_state(&trial)
     );
     let automation_record = CombatAutomationTrajectoryRecordV1::new(
         CombatAutomationTrajectorySource::SearchCombatTurnSegment,
         automation_actions,
     );
-    session.remember_combat_automation_trajectory(automation_record.clone());
-    let outcome = RunProgressOutcome::action(message, action_result).with_trace_annotations(vec![
-        automation_record.into_annotation(),
-        combat_search_performance_trace_annotation(
-            "search_combat_turn_segment",
-            session,
-            start,
-            search_report,
-        ),
-    ]);
+    trial.remember_combat_automation_trajectory(automation_record.clone());
+    let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
+    let resolution = RunCombatResolutionV1::new(
+        RunCombatResolutionKindV1::TurnSegment,
+        resolution_before,
+        automation_record.clone(),
+        action_result.clone(),
+        resolution_after,
+    )?;
+    let outcome = RunProgressOutcome::action(message, action_result)
+        .with_trace_annotations(vec![
+            automation_record.into_annotation(),
+            combat_search_performance_trace_annotation(
+                "search_combat_turn_segment",
+                &trial,
+                start,
+                search_report,
+            ),
+        ])
+        .with_progress_step(super::RunProgressStepV1::CombatResolution(resolution));
+    *session = trial;
     Ok(outcome)
 }
 
@@ -147,28 +176,31 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     smoke_input: ClientInput,
     rejection_result: &'static str,
 ) -> Result<RunProgressOutcome, String> {
-    let before_snapshot = RunVisibleSnapshot::capture(session);
+    let mut trial = session.clone();
+    let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
+    let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let mut automation_actions = Vec::new();
-    let outcome = session.apply_input(smoke_input.clone())?;
+    trial.mark_current_combat_search_resolved();
+    let outcome = trial.apply_combat_resolution_input(smoke_input.clone())?;
     automation_actions.push(CombatAutomationActionV1 {
         step_index: 0,
         action_key: "combat/use_smoke_bomb_survival".to_string(),
         input: smoke_input,
         drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
-        combat_after: combat_automation_step_state_v1(session),
+        combat_after: combat_automation_step_state_v1(&trial),
     });
-    if active_combat_is_waiting_for_smoke_escape_turn_end(session) {
-        let end_turn_outcome = session.apply_input(ClientInput::EndTurn)?;
+    if active_combat_is_waiting_for_smoke_escape_turn_end(&trial) {
+        let end_turn_outcome = trial.apply_combat_resolution_input(ClientInput::EndTurn)?;
         automation_actions.push(CombatAutomationActionV1 {
             step_index: 1,
             action_key: "combat/end_turn_after_smoke_bomb".to_string(),
             input: ClientInput::EndTurn,
             drawn_cards: drawn_cards_from_action_result(end_turn_outcome.action_result.as_ref()),
-            combat_after: combat_automation_step_state_v1(session),
+            combat_after: combat_automation_step_state_v1(&trial),
         });
     }
-    let after_snapshot = RunVisibleSnapshot::capture(session);
-    let status = current_run_apply_status(session);
+    let after_snapshot = RunVisibleSnapshot::capture(&trial);
+    let status = current_run_apply_status(&trial);
     let transition_label = format!(
         "Smoke Bomb survival fallback after {rejection_result} (not a combat victory claim)"
     );
@@ -183,15 +215,25 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     let message = format!(
         "Search combat did not find a complete win; used Smoke Bomb as a survival fallback after {rejection_result}.\n{}\n{}",
         render_action_result(&action_result),
-        super::render::render_run_control_state(session)
+        super::render::render_run_control_state(&trial)
     );
     let automation_record = CombatAutomationTrajectoryRecordV1::new(
         CombatAutomationTrajectorySource::SearchCombatSmokeBombSurvival,
         automation_actions,
     );
-    session.remember_combat_automation_trajectory(automation_record.clone());
+    trial.remember_combat_automation_trajectory(automation_record.clone());
+    let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
+    let resolution = RunCombatResolutionV1::new(
+        RunCombatResolutionKindV1::SmokeBombEscape,
+        resolution_before,
+        automation_record.clone(),
+        action_result.clone(),
+        resolution_after,
+    )?;
     let outcome = RunProgressOutcome::action(message, action_result)
-        .with_trace_annotations(vec![automation_record.into_annotation()]);
+        .with_trace_annotations(vec![automation_record.into_annotation()])
+        .with_progress_step(super::RunProgressStepV1::CombatResolution(resolution));
+    *session = trial;
     Ok(outcome)
 }
 
@@ -209,7 +251,7 @@ fn apply_combat_action_traces(
     actions
         .iter()
         .map(|action| {
-            let outcome = session.apply_input(action.input.clone())?;
+            let outcome = session.apply_combat_resolution_input(action.input.clone())?;
             Ok(CombatAutomationActionV1 {
                 step_index: action.step_index,
                 action_key: action.action_key.clone(),

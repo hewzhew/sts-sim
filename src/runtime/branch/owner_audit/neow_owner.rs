@@ -51,6 +51,7 @@ pub(super) fn neow_owner_decision(
                 rank,
                 option_index,
                 OwnerChoice {
+                    candidate_id: candidate.id.clone(),
                     key: candidate.key.clone(),
                     action,
                     label: format!("{} [neow:{}]", candidate.label, rank.reason),

@@ -1,6 +1,7 @@
 mod accepted_combat_line_evidence;
 mod auto_capture;
 mod auto_step;
+mod bounded_run_driver;
 mod card_reward_auto;
 mod combat_auto_policy;
 mod combat_candidate_line;
@@ -18,6 +19,7 @@ mod combat_line_repair;
 mod combat_line_selector;
 mod combat_line_trace;
 mod combat_no_win_fallback;
+mod combat_resolution;
 mod combat_search;
 mod combat_search_rejection;
 mod combat_search_render;
@@ -28,6 +30,8 @@ mod decision_case;
 mod decision_surface;
 #[cfg(test)]
 mod decision_surface_tests;
+mod decision_transaction;
+mod forced_transition;
 mod input_gate;
 mod next_hint;
 mod noncombat_boundary;
@@ -37,8 +41,11 @@ mod panels;
 #[cfg(test)]
 mod pending_choice_card_contract_tests;
 mod persistent_burden_cutpoint_probe;
+mod planner_boundary_capture;
 mod planner_capture;
+mod progress_journal;
 mod progress_options;
+mod progress_step;
 pub mod registry;
 mod render;
 mod reward_auto;
@@ -55,7 +62,10 @@ pub use accepted_combat_line_evidence::{
     accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
 };
 pub use auto_capture::AutoCombatCaptureConfig;
-pub use auto_step::apply_owner_audit_progress_step;
+pub use bounded_run_driver::{
+    BoundedRunDriveErrorV1, BoundedRunDriveResultV1, BoundedRunDriveStopV1, BoundedRunDriver,
+    BoundedRunResultV1, BoundedRunStepContextV1, BoundedRunStepControlV1,
+};
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,
 };
@@ -68,12 +78,25 @@ pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
     CombatLineRejectionReasonV1,
 };
+pub use combat_resolution::{
+    RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
+    RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
+};
 pub use decision_action::RunDecisionAction;
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
     RUN_DECISION_CASE_SCHEMA_NAME, RUN_DECISION_CASE_SCHEMA_VERSION,
 };
 pub use decision_surface::{build_decision_surface, DecisionSurface};
+pub use decision_transaction::{
+    RunDecisionBoundaryV1, RunDecisionCandidateSnapshotV1, RunDecisionSelectionSourceV1,
+    RunDecisionSelectionV1, RunDecisionTransactionV1, RUN_DECISION_TRANSACTION_SCHEMA_NAME,
+    RUN_DECISION_TRANSACTION_SCHEMA_VERSION,
+};
+pub use forced_transition::{
+    RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
+    RUN_FORCED_TRANSITION_SCHEMA_VERSION,
+};
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
     COMBAT_BASELINE_OUTCOME_SCHEMA_NAME, COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
@@ -85,24 +108,38 @@ pub use persistent_burden_cutpoint_probe::{
     PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
     PersistentBurdenGainedCurseCountV1, PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
 };
+pub use planner_boundary_capture::{
+    build_planner_boundary_capture_coverage_report_v1, capture_planner_boundary_ticket_v1,
+    capture_planner_boundary_yield_v1, PlannerBoundaryCandidateLinkV1,
+    PlannerBoundaryCaptureCoverageReportV1, PlannerBoundaryCaptureSegmentV1,
+    PlannerBoundaryCaptureTicketV1, PlannerBoundaryMutationKindV1, PlannerBoundarySiteCoverageV1,
+    PlannerBoundaryVisitOutcomeV1, PlannerBoundaryVisitV1, PlannerBoundaryYieldKindV1,
+    PLANNER_BOUNDARY_CAPTURE_SEGMENT_SCHEMA_NAME, PLANNER_BOUNDARY_CAPTURE_SEGMENT_SCHEMA_VERSION,
+};
 pub use planner_capture::{
     build_planner_capture_coverage_report, build_planner_capture_dataset,
     PlannerCaptureCoverageReport, PlannerCaptureDataset, PlannerDecisionSiteCoverage,
+};
+pub use progress_journal::{
+    RunProgressJournalV1, RUN_PROGRESS_JOURNAL_SCHEMA_NAME, RUN_PROGRESS_JOURNAL_SCHEMA_VERSION,
 };
 pub use progress_options::{
     RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlHpLossLimit,
     RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
+pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{
-    render_auto_applied_step_compact_v1, render_combat_actions, render_run_control_details,
-    render_run_control_raw, render_run_control_state,
+    render_auto_applied_step_compact_v1, render_combat_actions, render_progress_step_compact_v1,
+    render_run_control_details, render_run_control_raw, render_run_control_state,
 };
-pub use reward_auto::{apply_reward_tiny_automation, RewardAutomationConfig};
+pub use reward_auto::{
+    apply_reward_policy_step, reward_surface_has_only_unclaimable_potions, RewardAutomationConfig,
+};
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStopKind, RunControlAutoStopV1, RunControlConfig, RunControlSession,
-    RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
+    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1, RunProgressOutcome,
+    ShopVisitContextV1,
 };
 pub use session_trace::{
     load_session_trace_v1, SessionTraceArtifactKind, SessionTraceArtifactRefV1,

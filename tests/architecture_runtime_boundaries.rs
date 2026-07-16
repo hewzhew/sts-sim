@@ -107,6 +107,132 @@ fn run_control_has_no_legacy_command_parser_recorder_or_replay_executor() {
 }
 
 #[test]
+fn live_planner_boundary_capture_uses_only_public_typed_state() {
+    let source = std::fs::read_to_string("src/eval/run_control/planner_boundary_capture.rs")
+        .expect("read live planner boundary capture");
+    let production = source
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production capture source");
+
+    for forbidden in [
+        "raw_command",
+        "RunControlCommandStream",
+        "rng_pool",
+        "neow_rng",
+        "monster_list",
+        "elite_monster_list",
+        "boss_list",
+        "event_generator",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "live planner boundary capture must not read hidden or retired `{forbidden}`"
+        );
+    }
+    for required in [
+        "capture_planner_boundary_v1",
+        "PlannerBoundaryCaptureSegmentV1",
+        "CandidateCompletenessBasis::RunControlBoundaryEnumerator",
+        "SelectionNotRepresented",
+        "ProgressBudgetExhausted",
+        "WallDeadlineReached",
+    ] {
+        assert!(
+            production.contains(required),
+            "live planner boundary capture must retain typed contract `{required}`"
+        );
+    }
+}
+
+#[test]
+fn visible_input_candidates_execute_as_atomic_decision_transactions() {
+    let transaction = std::fs::read_to_string("src/eval/run_control/decision_transaction.rs")
+        .expect("read decision transaction contract");
+    for required in [
+        "selected candidate is absent from the before boundary",
+        "selected candidate action disagrees with the executed action",
+        "decision transaction did not advance exactly one decision step",
+    ] {
+        assert!(
+            transaction.contains(required),
+            "decision transaction must fail closed on `{required}`"
+        );
+    }
+
+    let executor = std::fs::read_to_string("src/eval/run_control/session/apply.rs")
+        .expect("read run decision executor");
+    assert!(executor.contains("let before = RunDecisionBoundaryV1::capture(self);"));
+    assert!(
+        executor.contains("self.execute_decision_action_inner(action.clone(), candidate_label)?")
+    );
+    assert!(executor.contains("let after = RunDecisionBoundaryV1::capture(self);"));
+    assert!(executor.contains("transaction.project_progress_outcome(self)"));
+    assert!(executor.contains("execute_custom_decision_atomically"));
+    assert!(executor.contains("execute_singing_bowl_card_reward_inner"));
+    assert!(!executor.contains("transaction v1 currently supports ordinary input candidates only"));
+
+    let card_reward_executor = std::fs::read_to_string("src/eval/run_control/card_reward_auto.rs")
+        .expect("read card reward executor");
+    assert!(!card_reward_executor.contains("apply_singing_bowl_to_visible_card_reward_item"));
+
+    let progress_outcome = std::fs::read_to_string("src/eval/run_control/session.rs")
+        .expect("read progress outcome contract");
+    assert!(progress_outcome.contains("pub progress_steps: Vec<RunProgressStepV1>"));
+    for retired_parallel_field in [
+        "pub auto_stop:",
+        "pub decision_transactions:",
+        "pub forced_transitions:",
+        "pub combat_resolutions:",
+    ] {
+        assert!(
+            !progress_outcome.contains(retired_parallel_field),
+            "RunProgressOutcome must not restore parallel semantic field `{retired_parallel_field}`"
+        );
+    }
+
+    let progress_step = std::fs::read_to_string("src/eval/run_control/progress_step.rs")
+        .expect("read typed progress-step contract");
+    for required_variant in [
+        "Decision(RunDecisionTransactionV1)",
+        "ForcedTransition(RunForcedTransitionV1)",
+        "CombatResolution(RunCombatResolutionV1)",
+        "Stop(RunControlAutoStopV1)",
+    ] {
+        assert!(progress_step.contains(required_variant));
+    }
+    assert!(progress_outcome.contains("Stop must be the final progress step"));
+
+    let auto_step = std::fs::read_to_string("src/eval/run_control/auto_step.rs")
+        .expect("read atomic auto-step executor");
+    assert!(auto_step.contains("execute_routine_candidate_transaction"));
+    assert!(auto_step.contains(".extend(outcome.progress_steps.iter().cloned())"));
+    assert!(auto_step.contains(".with_progress_steps(applied.progress_steps)"));
+    assert!(!auto_step.contains("RunControlAutoStopKind::ProgressApplied"));
+
+    let bounded_driver = std::fs::read_to_string("src/eval/run_control/bounded_run_driver.rs")
+        .expect("read bounded run driver");
+    assert!(bounded_driver.contains("max_progress_steps"));
+    assert!(bounded_driver.contains("WallDeadlineReached"));
+    assert!(bounded_driver.contains("ProgressBudgetExhausted"));
+    assert!(bounded_driver.contains("CombatBoundary"));
+    assert!(bounded_driver.contains("session.apply_progress_step(options.clone())"));
+
+    let route_executor = std::fs::read_to_string("src/eval/run_control/route_policy/apply.rs")
+        .expect("read route policy executor");
+    assert!(route_executor.contains("public_route_candidate_id(session, &input)"));
+    assert!(route_executor.contains("execute_route_candidate_transaction"));
+    assert!(!route_executor.contains("session.apply_input(input)"));
+
+    let map_candidates = std::fs::read_to_string("src/eval/run_control/view_model/candidates.rs")
+        .expect("read public candidate enumeration");
+    assert!(map_candidates.contains("ClientInput::FlyToNode"));
+    let input_gate = std::fs::read_to_string("src/eval/run_control/input_gate.rs")
+        .expect("read input legality gate");
+    assert!(!input_gate.contains("fn map_flight_is_allowed"));
+}
+
+#[test]
 fn owner_audit_executes_typed_actions_without_the_legacy_command_kernel() {
     let mut sources = Vec::new();
     collect_rust_sources(
@@ -126,6 +252,8 @@ fn owner_audit_executes_typed_actions_without_the_legacy_command_kernel() {
             ".apply_command(",
             ".executable_command(",
             "OwnerRoutine::Command",
+            "OwnerRoutine::Action",
+            "OwnerRoutine::RewardTinyAutomation",
         ] {
             assert!(
                 !source.contains(forbidden),
@@ -134,6 +262,47 @@ fn owner_audit_executes_typed_actions_without_the_legacy_command_kernel() {
             );
         }
     }
+
+    for path in [
+        "src/runtime/branch/owner_audit/owner_choice_expander.rs",
+        "src/runtime/branch/owner_audit/owner_routines.rs",
+    ] {
+        let source = std::fs::read_to_string(path).expect("read owner execution source");
+        assert!(source.contains("apply_owner_candidate"));
+        assert!(
+            !source.contains("apply_decision_action"),
+            "owner execution source '{path}' must preserve a public candidate id"
+        );
+    }
+
+    let owner_model = std::fs::read_to_string("src/runtime/branch/owner_audit/owner_model.rs")
+        .expect("read owner choice contract");
+    assert!(owner_model.contains("pub(super) candidate_id: String"));
+
+    let owner_executor = std::fs::read_to_string("src/eval/run_control/session/apply.rs")
+        .expect("read owner transaction executor");
+    assert!(owner_executor.contains("RunDecisionSelectionSourceV1::OwnerPolicy"));
+    assert!(owner_executor.contains("DecisionCandidateKey::SelectionSubmit"));
+
+    let owner_routines =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/owner_routines.rs")
+            .expect("read owner routine executor");
+    assert!(owner_routines.contains("apply_forced_transition"));
+    assert!(!owner_routines.contains("tick_run_active_with_observer"));
+    assert!(owner_routines.contains("apply_reward_policy_step"));
+    assert!(!owner_routines.contains("apply_reward_tiny_automation"));
+    assert!(!owner_model.contains("AdvanceEmptyCampfire"));
+
+    let reward_policy_step = std::fs::read_to_string("src/eval/run_control/reward_auto.rs")
+        .expect("read reward policy step executor");
+    assert!(reward_policy_step.contains("execute_reward_candidate_transaction"));
+    assert!(!reward_policy_step.contains("tick_run_active_with_observer"));
+    assert!(!reward_policy_step.contains("MAX_AUTO_REWARD_CLAIMS"));
+
+    let forced_transition = std::fs::read_to_string("src/eval/run_control/forced_transition.rs")
+        .expect("read forced transition contract");
+    assert!(forced_transition.contains("RunForcedTransitionKindV1"));
+    assert!(forced_transition.contains("before.candidates.is_empty()"));
 
     let candidate_model = std::fs::read_to_string("src/eval/run_control/view_model/mod.rs")
         .expect("read decision candidate model");
@@ -161,6 +330,148 @@ fn owner_audit_executes_typed_actions_without_the_legacy_command_kernel() {
             "machine decision surface must not carry retired REPL field `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn shop_execution_stays_single_step_and_boss_preview_bundles_stay_retired() {
+    let retired_executor = "src/runtime/branch/owner_audit/shop_boss_preview_bundle_expansion.rs";
+    assert!(
+        !std::path::Path::new(retired_executor).exists(),
+        "retired multi-purchase shop executor must stay deleted"
+    );
+
+    let mut sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut sources);
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read production Rust source");
+        for forbidden in [
+            "ShopBossPreviewBundle",
+            "shop_boss_preview_bundles",
+            "shop_boss_preview_bundle_limit",
+            "shop_boss_preview_target_floor",
+            "--shop-boss-preview-bundles",
+            "--shop-boss-preview-target-floor",
+            "expand_shop_boss_preview_bundle_children",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "production source '{}' must not restore retired shop bundle contract `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+
+    let shop_owner = std::fs::read_to_string("src/runtime/branch/owner_audit/shop_tiny_owner.rs")
+        .expect("read production shop owner");
+    let production = shop_owner
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or(&shop_owner);
+    assert!(production.contains("compiled_rollout_plan(&compiled)?.steps.first().cloned()"));
+    assert!(production.contains("shop_plan_step_matches_choice"));
+    assert!(
+        !production.contains("for step in"),
+        "shop owner may execute only the freshly compiled plan head, never a stored step sequence"
+    );
+}
+
+#[test]
+fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
+    let executor = std::fs::read_to_string("src/eval/run_control/combat_line_executor.rs")
+        .expect("read combat line executor");
+    assert!(executor.contains("RunCombatResolutionV1::new"));
+    assert!(executor.contains("apply_combat_resolution_input"));
+    assert!(executor.contains("let mut trial = session.clone()"));
+    assert!(!executor.contains("session.apply_input("));
+
+    let contract = std::fs::read_to_string("src/eval/run_control/combat_resolution.rs")
+        .expect("read combat resolution contract");
+    assert!(contract.contains("RunCombatResolutionKindV1"));
+    assert!(contract.contains("after.decision_step != before.decision_step"));
+    assert!(contract.contains("ActionResultChange::CombatEnded"));
+
+    let progress = std::fs::read_to_string("src/eval/run_control/auto_step.rs")
+        .expect("read atomic progress step projection");
+    assert!(progress.contains("outcome.progress_steps.iter().cloned()"));
+    assert!(progress.contains("with_progress_steps"));
+
+    let lane_runner =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_lane_runner.rs")
+            .expect("read owner-audit combat lane runner");
+    assert!(lane_runner.contains("trial.apply_combat_search(options.search)"));
+    assert!(!lane_runner.contains("apply_progress_step"));
+    assert!(!lane_runner.contains("apply_owner_audit_progress_step"));
+
+    let owner_runner = std::fs::read_to_string("src/runtime/branch/owner_audit/runner.rs")
+        .expect("read owner-audit bounded runner integration");
+    assert!(owner_runner.contains("BoundedRunDriver::new"));
+    assert!(owner_runner.contains(".drive_with(session"));
+    assert!(owner_runner.contains("RunProgressJournalV1"));
+    for retired_loop_owner in [
+        "loop {",
+        "auto_ops_used",
+        "policy_steps",
+        "should_continue_operation_budget_chunk",
+    ] {
+        assert!(
+            !owner_runner.contains(retired_loop_owner),
+            "owner-audit runner must not restore parallel repetition owner `{retired_loop_owner}`"
+        );
+    }
+
+    let owner_orchestrator =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/owner_orchestrator.rs")
+            .expect("read owner routine orchestrator");
+    assert!(!owner_orchestrator.contains("OWNER_ROUTINE_STEP_LIMIT"));
+    assert!(!owner_orchestrator.contains("owner routine step budget exhausted"));
+
+    let portfolio_result =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_portfolio_result.rs")
+            .expect("read combat portfolio result");
+    assert!(!portfolio_result.contains("should_continue_operation_budget_chunk"));
+    assert!(!portfolio_result.contains("applied_operations"));
+    let portfolio_output =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_portfolio_output.rs")
+            .expect("read combat portfolio output");
+    assert!(!portfolio_output.contains("applied_operations"));
+
+    let journal = std::fs::read_to_string("src/eval/run_control/progress_journal.rs")
+        .expect("read typed progress journal");
+    assert!(journal.contains("RUN_PROGRESS_JOURNAL_SCHEMA_VERSION"));
+    assert!(journal.contains("run progress journal cannot contain stop records"));
+
+    let driver = std::fs::read_to_string("src/eval/run_control/bounded_run_driver.rs")
+        .expect("read bounded run driver");
+    assert!(driver.contains("let applied_progress_steps = journal.len()"));
+    assert!(!driver.contains("let mut applied_progress_steps"));
+
+    for path in [
+        "src/runtime/branch/owner_audit/runner.rs",
+        "src/runtime/branch/owner_audit/branch_model.rs",
+        "src/runtime/branch/owner_audit/owner_orchestrator.rs",
+        "src/runtime/branch/owner_audit/combat_search_portfolio_output.rs",
+        "src/runtime/branch/owner_audit/combat_search_portfolio_result.rs",
+        "src/runtime/branch/owner_audit/render.rs",
+        "src/runtime/branch/owner_audit/trace_format.rs",
+        "src/runtime/branch/owner_audit/run_capsule_format.rs",
+    ] {
+        let source = std::fs::read_to_string(path).expect("read owner-audit journal consumer");
+        assert!(
+            !source.contains("auto_steps") && !source.contains("RunControlAutoAppliedStepV1"),
+            "owner-audit progress must not be flattened back into legacy auto summaries in {path}"
+        );
+    }
+
+    let trace = std::fs::read_to_string("src/runtime/branch/owner_audit/trace_format.rs")
+        .expect("read owner-audit trace schema");
+    assert!(trace.contains("branch_tiny_trace_v3"));
+    assert!(trace.contains("recent_progress_journal"));
+    assert!(trace.contains("recent_planner_capture"));
+    let capsule = std::fs::read_to_string("src/runtime/branch/owner_audit/run_capsule_format.rs")
+        .expect("read owner-audit capsule schema");
+    assert!(capsule.contains("branch_tiny_run_result_v3"));
+    assert!(capsule.contains("recent_progress_journal"));
+    assert!(capsule.contains("recent_planner_capture"));
 }
 
 #[test]
