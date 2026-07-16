@@ -17,6 +17,7 @@ pub(crate) struct SearchPerformanceReview {
     pub(crate) deferred_child_rollout_admitted_periodic: u64,
     pub(crate) deferred_child_rollout_skipped_low_signal: u64,
     pub(crate) deferred_child_rollout_skipped_budget_share: u64,
+    pub(crate) turn_plan_seed_calls: u64,
     pub(crate) turn_plan_seed_us: u128,
     pub(crate) engine_step_us: u128,
     pub(crate) frontier_pop_us: u128,

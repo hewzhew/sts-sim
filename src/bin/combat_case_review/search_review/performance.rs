@@ -27,6 +27,7 @@ pub(super) fn performance_review(report: &CombatSearchV2Report) -> SearchPerform
         deferred_child_rollout_skipped_budget_share: report
             .performance
             .deferred_child_rollout_skipped_budget_share,
+        turn_plan_seed_calls: report.performance.turn_plan_frontier_seed_calls,
         turn_plan_seed_us: report.performance.turn_plan_frontier_seed_elapsed_us,
         engine_step_us: report.performance.engine_step_elapsed_us,
         frontier_pop_us: report.performance.frontier_pop_elapsed_us,

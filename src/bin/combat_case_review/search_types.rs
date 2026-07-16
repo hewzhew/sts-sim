@@ -127,6 +127,7 @@ mod tests {
             deferred_child_rollout_admitted_periodic: 0,
             deferred_child_rollout_skipped_low_signal: 0,
             deferred_child_rollout_skipped_budget_share: 0,
+            turn_plan_seed_calls: 0,
             turn_plan_seed_us: 0,
             engine_step_us: 0,
             frontier_pop_us: 0,

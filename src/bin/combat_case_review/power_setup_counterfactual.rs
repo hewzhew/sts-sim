@@ -1,7 +1,8 @@
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
     replay_combat_search_witness_line_v0, run_combat_turn_pool_opening_report_v0,
-    CombatSearchV2WitnessReplay, CombatTurnPoolOpeningReport, SearchTerminalLabel,
+    CombatSearchV2Config, CombatSearchV2WitnessReplay, CombatTurnPoolOpeningReport,
+    SearchTerminalLabel,
 };
 use sts_simulator::content::cards::{self, CardId, CardType};
 use sts_simulator::content::monsters::EnemyId;
@@ -108,14 +109,19 @@ pub(super) fn run_power_setup_counterfactual(
     case: &CombatCase,
 ) -> PowerSetupCounterfactualProbe {
     let power_cards = collect_power_cards(&case.position.combat);
-    let variants = [
-        PowerSetupSemantics::FreePlay,
-        PowerSetupSemantics::FreePlayFeelNoPain,
-        PowerSetupSemantics::OptimisticPreinstalled,
-    ]
-    .into_iter()
-    .map(|semantics| run_variant(options, case, &power_cards, semantics))
-    .collect::<Vec<_>>();
+    let semantics = if options.power_setup_optimistic_only {
+        vec![PowerSetupSemantics::OptimisticPreinstalled]
+    } else {
+        vec![
+            PowerSetupSemantics::FreePlay,
+            PowerSetupSemantics::FreePlayFeelNoPain,
+            PowerSetupSemantics::OptimisticPreinstalled,
+        ]
+    };
+    let variants = semantics
+        .into_iter()
+        .map(|semantics| run_variant(options, case, &power_cards, semantics))
+        .collect::<Vec<_>>();
     let any_win = variants.iter().any(|variant| variant.complete_win_found);
     let all_setups_failed = variants.iter().all(|variant| variant.setup.is_none());
 
@@ -162,7 +168,10 @@ fn run_variant(
         options.slow_ms,
         options,
     );
-    let config = profile.to_config();
+    let config = existential_search_config(
+        profile.to_config(),
+        case.position.combat.entities.player.current_hp,
+    );
     let (whole_combat_search, report) = run_config_search(
         semantics.label(),
         &case,
@@ -173,15 +182,20 @@ fn run_variant(
         let witness = witness_line_from_trajectory(semantics.label(), trajectory);
         replay_combat_search_witness_line_v0(&case.position, &witness)
     });
-    let turn_pool =
-        run_combat_turn_pool_opening_report_v0(&case.position, options.slow_ms, 40, Some(&config));
-    let turn_pool_win = turn_pool
-        .lanes
-        .iter()
-        .any(|line| line.terminal == SearchTerminalLabel::Win);
     let replayed_whole_combat_win = whole_combat_win_replay
         .as_ref()
         .is_some_and(|replay| replay.terminal == CombatTerminal::Win);
+    // Once ordinary-engine replay has proved a complete win, the fallback
+    // turn-pool cannot add evidence for this existential probe.
+    let turn_pool = should_run_fallback_turn_pool(replayed_whole_combat_win).then(|| {
+        run_combat_turn_pool_opening_report_v0(&case.position, options.slow_ms, 40, Some(&config))
+    });
+    let turn_pool_win = turn_pool.as_ref().is_some_and(|turn_pool| {
+        turn_pool
+            .lanes
+            .iter()
+            .any(|line| line.terminal == SearchTerminalLabel::Win)
+    });
     let complete_win_found =
         (whole_combat_search.complete_win && replayed_whole_combat_win) || turn_pool_win;
 
@@ -192,9 +206,25 @@ fn run_variant(
         setup_failure: None,
         whole_combat_search: Some(whole_combat_search),
         whole_combat_win_replay,
-        turn_pool: Some(turn_pool),
+        turn_pool,
         complete_win_found,
     }
+}
+
+fn existential_search_config(
+    mut config: CombatSearchV2Config,
+    initial_hp: i32,
+) -> CombatSearchV2Config {
+    // This probe asks whether the transformed exact state has any replayable
+    // complete win. Continuing after proof only optimizes final HP and makes
+    // calibration needlessly expensive.
+    config.stop_on_win_hp_loss_at_most = Some(initial_hp.max(0) as u32);
+    config.min_win_candidates_before_stop = 1;
+    config
+}
+
+fn should_run_fallback_turn_pool(replayed_whole_combat_win: bool) -> bool {
+    !replayed_whole_combat_win
 }
 
 fn transform_case(
@@ -386,6 +416,7 @@ fn setup_snapshot(combat: &CombatState, applied_cards: Vec<PowerSetupCard>) -> P
 
 #[cfg(test)]
 mod tests {
+    use sts_simulator::ai::combat_search_v2::CombatSearchV2Config;
     use sts_simulator::content::cards::CardId;
     use sts_simulator::content::monsters::EnemyId;
     use sts_simulator::content::powers::{store, PowerId};
@@ -395,8 +426,8 @@ mod tests {
     use sts_simulator::test_support::{blank_test_combat, test_monster};
 
     use super::{
-        collect_power_cards, free_play_power, restore_monster_powers, restore_player_vulnerable,
-        PowerSetupSemantics,
+        collect_power_cards, existential_search_config, free_play_power, restore_monster_powers,
+        restore_player_vulnerable, should_run_fallback_turn_pool, PowerSetupSemantics,
     };
 
     fn awakened_power_fixture() -> CombatPosition {
@@ -423,6 +454,20 @@ mod tests {
         second_fnp.upgrades = 1;
         combat.zones.draw_pile = vec![first_fnp, second_fnp];
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    #[test]
+    fn power_setup_search_stops_after_first_replayable_win() {
+        let config = existential_search_config(CombatSearchV2Config::default(), 87);
+
+        assert_eq!(config.stop_on_win_hp_loss_at_most, Some(87));
+        assert_eq!(config.min_win_candidates_before_stop, 1);
+    }
+
+    #[test]
+    fn replayed_win_skips_redundant_turn_pool() {
+        assert!(!should_run_fallback_turn_pool(true));
+        assert!(should_run_fallback_turn_pool(false));
     }
 
     #[test]

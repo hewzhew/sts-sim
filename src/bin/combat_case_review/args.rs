@@ -89,6 +89,12 @@ pub(super) struct Args {
         help = "Run all-Power free-play, Feel-No-Pain-only, and optimistic-preinstalled combat counterfactuals"
     )]
     pub(super) power_setup_counterfactual: bool,
+    #[arg(
+        long,
+        requires = "power_setup_counterfactual",
+        help = "Restrict the Power setup counterfactual to the optimistic-preinstalled calibration variant"
+    )]
+    pub(super) power_setup_optimistic_only: bool,
 }
 
 fn parse_rollout_plugin(value: &str) -> Result<CombatSearchRolloutPluginId, String> {
@@ -219,5 +225,20 @@ mod tests {
         .expect("parse Power setup counterfactual");
 
         assert!(args.power_setup_counterfactual);
+    }
+
+    #[test]
+    fn power_setup_optimistic_only_flag_parses() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--power-setup-counterfactual",
+            "--power-setup-optimistic-only",
+        ])
+        .expect("parse optimistic-only Power setup probe");
+
+        assert!(args.power_setup_counterfactual);
+        assert!(args.power_setup_optimistic_only);
     }
 }
