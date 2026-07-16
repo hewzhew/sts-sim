@@ -195,6 +195,31 @@ test binary as long as no source/configuration input changes between commands;
 at completion, prefer one full `cargo test --lib` rather than relinking after
 each edit.
 
+### Deferred Build-Boundary Debt
+
+The remaining optimized rebuild delay is primarily a crate-boundary problem,
+not a linker problem. A July 2026 `fast-run` timing of
+`combat_case_review` measured about 77.9 seconds in the monolithic
+`sts_simulator` library and about 3.3 seconds in the final binary/link unit.
+Roughly half of the library time was metadata analysis and half was code
+generation. The library currently contains the stable simulator together with
+the frequently edited search and evaluation layers, so a local combat-search
+change still invalidates one roughly 312k-line crate.
+
+Until a deliberate migration is scheduled:
+
+- use `fast-run` for iterative optimized runs;
+- build an executable once and invoke it directly for every cell in a panel;
+- reserve `release` or `release-final` for final performance confirmation;
+- do not add another linker override or disable diagnostics/PDB generation
+  expecting a material fix.
+
+The deferred root-cause investigation is to design measured crate boundaries
+between stable simulator/domain code, combat search, and evaluation/runtime
+tools. It must first audit reverse dependencies and establish compile-time,
+runtime, and architecture-boundary baselines. Do not move modules piecemeal or
+create a second strategic owner merely to shorten builds.
+
 For documentation-only changes:
 
 ```powershell
