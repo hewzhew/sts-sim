@@ -3,19 +3,26 @@ use sts_simulator::ai::planner_core::{
     PlannerTerminalKind, SelectionProbability,
 };
 use sts_simulator::eval::run_control::{
-    PlannerBoundaryVisitOutcomeV1, RunDecisionSelectionSourceV1, RunProgressStepV1,
+    CombatAutomationActionV1, CombatAutomationAnswerSourceV1, PlannerBoundaryVisitOutcomeV1,
+    RunCombatResolutionKindV1, RunDecisionSelectionSourceV1, RunProgressStepV1,
 };
 use sts_simulator::runtime::branch::{
-    RunTrajectoryBehaviorEventV1, RunTrajectoryBehaviorLabelRoleV1,
-    RunTrajectoryBehaviorProjectionV1, RunTrajectoryCensorReasonV1, RunTrajectoryHeadV1,
+    RunTrajectoryAnswerDeploymentV1, RunTrajectoryBehaviorEventV1,
+    RunTrajectoryBehaviorLabelRoleV1, RunTrajectoryBehaviorProjectionV1,
+    RunTrajectoryCensorReasonV1, RunTrajectoryDeploymentCensorReasonV1,
+    RunTrajectoryDeploymentProjectionV1, RunTrajectoryDeploymentResultV1,
+    RunTrajectoryDeploymentStageV1, RunTrajectoryDeploymentSummaryV1, RunTrajectoryHeadV1,
     RunTrajectoryOutcomeAttachmentV1, RunTrajectoryOutcomeFactV1, RunTrajectoryOutcomeHorizonV1,
     RunTrajectoryOutcomeProjectionV1, RunTrajectoryOutcomeResultV1, RunTrajectoryReconstructionV1,
     RunTrajectorySegmentDispositionV1, RunTrajectoryTerminalOutcomeV1,
     RunTrajectoryVisitOccurrenceV1, RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_NAME,
     RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_VERSION,
+    RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_NAME,
+    RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_VERSION,
     RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_NAME,
     RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_VERSION,
 };
+use sts_simulator::state::core::ClientInput;
 
 use super::trajectory_artifact_store::TrajectoryArtifactStore;
 
@@ -23,6 +30,7 @@ pub(super) struct RunTrajectoryProjectionBundleV1 {
     pub(super) reconstruction: RunTrajectoryReconstructionV1,
     pub(super) behavior: RunTrajectoryBehaviorProjectionV1,
     pub(super) outcomes: RunTrajectoryOutcomeProjectionV1,
+    pub(super) deployment: RunTrajectoryDeploymentProjectionV1,
 }
 
 pub(super) fn project_trajectory(
@@ -41,11 +49,165 @@ pub(super) fn project_trajectory(
         events: projected.iter().map(|item| item.event.clone()).collect(),
     };
     let outcomes = project_outcomes(&reconstruction, &occurrences, &projected)?;
+    let deployment = project_deployment(&reconstruction)?;
     Ok(RunTrajectoryProjectionBundleV1 {
         reconstruction,
         behavior,
         outcomes,
+        deployment,
     })
+}
+
+fn project_deployment(
+    reconstruction: &RunTrajectoryReconstructionV1,
+) -> Result<RunTrajectoryDeploymentProjectionV1, String> {
+    let mut records = Vec::new();
+    for segment in &reconstruction.segments {
+        for (journal_ordinal, step) in segment.progress_journal.entries().iter().enumerate() {
+            let RunProgressStepV1::CombatResolution(resolution) = step else {
+                continue;
+            };
+            if resolution.kind == RunCombatResolutionKindV1::SmokeBombEscape {
+                continue;
+            }
+            let has_opportunity = resolution
+                .trajectory
+                .actions
+                .iter()
+                .any(|action| action.opportunity_before.is_some());
+            for claim in &resolution.trajectory.answer_claims {
+                let stage = deployment_stage(&claim.source, &resolution.trajectory.actions);
+                let result = deployment_result(resolution.kind, has_opportunity, stage);
+                for axis in &claim.axes {
+                    let mut record = RunTrajectoryAnswerDeploymentV1 {
+                        deployment_id: String::new(),
+                        segment_id: segment.segment_id.clone(),
+                        journal_ordinal,
+                        resolution_kind: resolution.kind,
+                        source: claim.source.clone(),
+                        axis: *axis,
+                        result: result.clone(),
+                    };
+                    record.deployment_id = stable_planner_id("trajectory_deployment", &record)?;
+                    records.push(record);
+                }
+            }
+        }
+    }
+    let summary = deployment_summary(&records);
+    Ok(RunTrajectoryDeploymentProjectionV1 {
+        schema_name: RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_NAME.to_string(),
+        schema_version: RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_VERSION,
+        run_id: reconstruction.run_id.clone(),
+        head: reconstruction.head.clone(),
+        records,
+        summary,
+    })
+}
+
+fn deployment_result(
+    resolution_kind: RunCombatResolutionKindV1,
+    has_opportunity: bool,
+    stage: RunTrajectoryDeploymentStageV1,
+) -> RunTrajectoryDeploymentResultV1 {
+    if stage == RunTrajectoryDeploymentStageV1::Applied {
+        RunTrajectoryDeploymentResultV1::Observed { stage }
+    } else if !has_opportunity {
+        RunTrajectoryDeploymentResultV1::Censored {
+            highest_observed_stage: stage,
+            reason: RunTrajectoryDeploymentCensorReasonV1::OpportunityObservationUnavailable,
+        }
+    } else if resolution_kind == RunCombatResolutionKindV1::TurnSegment {
+        RunTrajectoryDeploymentResultV1::Censored {
+            highest_observed_stage: stage,
+            reason: RunTrajectoryDeploymentCensorReasonV1::CombatResolutionContinues,
+        }
+    } else {
+        RunTrajectoryDeploymentResultV1::Observed { stage }
+    }
+}
+
+fn deployment_stage(
+    source: &CombatAutomationAnswerSourceV1,
+    actions: &[CombatAutomationActionV1],
+) -> RunTrajectoryDeploymentStageV1 {
+    let mut stage = RunTrajectoryDeploymentStageV1::Claimed;
+    for action in actions {
+        let Some(opportunity) = action.opportunity_before.as_ref() else {
+            continue;
+        };
+        match source {
+            CombatAutomationAnswerSourceV1::Card { uuid, .. } => {
+                if opportunity.hand.iter().any(|card| card.uuid == *uuid) {
+                    stage = stage.max(RunTrajectoryDeploymentStageV1::Reached);
+                }
+                if opportunity.playable_card_uuids.contains(uuid) {
+                    stage = stage.max(RunTrajectoryDeploymentStageV1::Playable);
+                }
+                if matches!(
+                    action.input,
+                    ClientInput::PlayCard { card_index, .. }
+                        if opportunity.hand.get(card_index).is_some_and(|card| card.uuid == *uuid)
+                ) {
+                    stage = RunTrajectoryDeploymentStageV1::Applied;
+                }
+            }
+            CombatAutomationAnswerSourceV1::Potion { uuid, .. } => {
+                if opportunity
+                    .potions
+                    .iter()
+                    .flatten()
+                    .any(|potion| potion.uuid == *uuid)
+                {
+                    stage = stage.max(RunTrajectoryDeploymentStageV1::Reached);
+                }
+                if opportunity.usable_potion_uuids.contains(uuid) {
+                    stage = stage.max(RunTrajectoryDeploymentStageV1::Playable);
+                }
+                if matches!(
+                    action.input,
+                    ClientInput::UsePotion { potion_index, .. }
+                        if opportunity
+                            .potions
+                            .get(potion_index)
+                            .and_then(Option::as_ref)
+                            .is_some_and(|potion| potion.uuid == *uuid)
+                ) {
+                    stage = RunTrajectoryDeploymentStageV1::Applied;
+                }
+            }
+        }
+    }
+    stage
+}
+
+fn deployment_summary(
+    records: &[RunTrajectoryAnswerDeploymentV1],
+) -> RunTrajectoryDeploymentSummaryV1 {
+    let mut summary = RunTrajectoryDeploymentSummaryV1::default();
+    for record in records {
+        summary.claimed_answers = summary.claimed_answers.saturating_add(1);
+        let (stage, censored) = match record.result {
+            RunTrajectoryDeploymentResultV1::Observed { stage } => (stage, false),
+            RunTrajectoryDeploymentResultV1::Censored {
+                highest_observed_stage,
+                ..
+            } => (highest_observed_stage, true),
+        };
+        if stage >= RunTrajectoryDeploymentStageV1::Reached {
+            summary.reached_answers = summary.reached_answers.saturating_add(1);
+        }
+        if stage >= RunTrajectoryDeploymentStageV1::Playable {
+            summary.playable_answers = summary.playable_answers.saturating_add(1);
+        }
+        if stage >= RunTrajectoryDeploymentStageV1::Applied {
+            summary.applied_answers = summary.applied_answers.saturating_add(1);
+        }
+        if censored {
+            summary.censored_answers = summary.censored_answers.saturating_add(1);
+        }
+    }
+    summary
 }
 
 struct LoadedOccurrence {
@@ -450,6 +612,7 @@ mod tests {
 
         assert_eq!(first.behavior, second.behavior);
         assert_eq!(first.outcomes, second.outcomes);
+        assert_eq!(first.deployment, second.deployment);
         assert_eq!(first.reconstruction.segments.len(), 2);
         assert_eq!(first.behavior.events.len(), 2);
         assert_eq!(first.behavior.events[0].sequence, 0);
@@ -488,6 +651,112 @@ mod tests {
                 )
         }));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn deployment_stage_uses_instance_legal_mask_and_committed_input() {
+        let action = CombatAutomationActionV1 {
+            step_index: 0,
+            action_key: "combat/play".to_string(),
+            input: ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            opportunity_before: Some(
+                sts_simulator::eval::run_control::CombatAutomationOpportunityStateV1 {
+                    turn: 1,
+                    energy: 1,
+                    hand: vec![sts_simulator::eval::run_control::RunActionCardSnapshotV1 {
+                        id: sts_simulator::content::cards::CardId::Anger,
+                        uuid: 10,
+                        upgrades: 0,
+                    }],
+                    potions: vec![Some(
+                        sts_simulator::eval::run_control::CombatAutomationPotionStateV1 {
+                            id: sts_simulator::content::potions::PotionId::BlockPotion,
+                            uuid: 20,
+                        },
+                    )],
+                    playable_card_uuids: vec![10],
+                    usable_potion_uuids: vec![20],
+                },
+            ),
+            drawn_cards: Vec::new(),
+            combat_after: None,
+        };
+
+        assert_eq!(
+            deployment_stage(
+                &CombatAutomationAnswerSourceV1::Card {
+                    id: sts_simulator::content::cards::CardId::Anger,
+                    uuid: 10,
+                    upgrades: 0,
+                    origin:
+                        sts_simulator::eval::run_control::CombatAutomationCardOriginV1::MasterDeck,
+                },
+                std::slice::from_ref(&action),
+            ),
+            RunTrajectoryDeploymentStageV1::Applied
+        );
+        assert_eq!(
+            deployment_stage(
+                &CombatAutomationAnswerSourceV1::Potion {
+                    id: sts_simulator::content::potions::PotionId::BlockPotion,
+                    uuid: 20,
+                },
+                std::slice::from_ref(&action),
+            ),
+            RunTrajectoryDeploymentStageV1::Playable
+        );
+        assert_eq!(
+            deployment_stage(
+                &CombatAutomationAnswerSourceV1::Card {
+                    id: sts_simulator::content::cards::CardId::Defend,
+                    uuid: 30,
+                    upgrades: 0,
+                    origin:
+                        sts_simulator::eval::run_control::CombatAutomationCardOriginV1::MasterDeck,
+                },
+                &[action],
+            ),
+            RunTrajectoryDeploymentStageV1::Claimed
+        );
+    }
+
+    #[test]
+    fn unfinished_combat_censors_unapplied_answers_but_not_applied_facts() {
+        assert_eq!(
+            deployment_result(
+                RunCombatResolutionKindV1::TurnSegment,
+                true,
+                RunTrajectoryDeploymentStageV1::Playable,
+            ),
+            RunTrajectoryDeploymentResultV1::Censored {
+                highest_observed_stage: RunTrajectoryDeploymentStageV1::Playable,
+                reason: RunTrajectoryDeploymentCensorReasonV1::CombatResolutionContinues,
+            }
+        );
+        assert_eq!(
+            deployment_result(
+                RunCombatResolutionKindV1::TurnSegment,
+                true,
+                RunTrajectoryDeploymentStageV1::Applied,
+            ),
+            RunTrajectoryDeploymentResultV1::Observed {
+                stage: RunTrajectoryDeploymentStageV1::Applied,
+            }
+        );
+        assert_eq!(
+            deployment_result(
+                RunCombatResolutionKindV1::CompleteVictory,
+                false,
+                RunTrajectoryDeploymentStageV1::Claimed,
+            ),
+            RunTrajectoryDeploymentResultV1::Censored {
+                highest_observed_stage: RunTrajectoryDeploymentStageV1::Claimed,
+                reason: RunTrajectoryDeploymentCensorReasonV1::OpportunityObservationUnavailable,
+            }
+        );
     }
 
     #[test]

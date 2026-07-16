@@ -193,17 +193,22 @@ impl TrajectoryArtifactStore {
         let reconstruction_path = absolute_dir.join("reconstruction.json");
         let behavior_path = absolute_dir.join("behavior.json");
         let outcome_path = absolute_dir.join("outcomes.json");
+        let deployment_path = absolute_dir.join("deployment.json");
         write_immutable(&reconstruction_path, &bundle.reconstruction)?;
         write_immutable(&behavior_path, &bundle.behavior)?;
         write_immutable(&outcome_path, &bundle.outcomes)?;
+        write_immutable(&deployment_path, &bundle.deployment)?;
         Ok(RunTrajectoryProjectionIndexEntryV1 {
             branch_id: branch_id as u64,
             head: bundle.reconstruction.head.clone(),
             reconstruction_path: relative_dir.join("reconstruction.json"),
             behavior_path: relative_dir.join("behavior.json"),
             outcome_path: relative_dir.join("outcomes.json"),
+            deployment_path: relative_dir.join("deployment.json"),
             behavior_event_count: bundle.behavior.events.len(),
             outcome_attachment_count: bundle.outcomes.attachments.len(),
+            deployment_record_count: bundle.deployment.records.len(),
+            deployment_summary: bundle.deployment.summary,
         })
     }
 

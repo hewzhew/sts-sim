@@ -307,6 +307,18 @@ mod tests {
         .unwrap();
         assert_eq!(behavior["schema_name"], "RunTrajectoryBehaviorProjection");
         assert_eq!(behavior["events"].as_array().unwrap().len(), 1);
+        let deployment_path = projection_index["entries"][0]["deployment_path"]
+            .as_str()
+            .unwrap();
+        let deployment: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("trajectory").join(deployment_path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            deployment["schema_name"],
+            "RunTrajectoryDeploymentProjection"
+        );
+        assert!(deployment["records"].is_array());
 
         let _ = std::fs::remove_dir_all(root);
     }

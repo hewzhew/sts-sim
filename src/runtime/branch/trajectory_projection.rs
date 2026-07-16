@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::ai::planner_core::{
     PlannerMechanicsManifest, PlannerOutcomeSnapshot, SelectionProbability,
 };
+use crate::ai::strategy::pressure_assessment::PressureAxis;
+use crate::eval::run_control::CombatAutomationAnswerSourceV1;
 use crate::eval::run_control::{RunCombatResolutionKindV1, RunDecisionSelectionSourceV1};
 
 use super::{
@@ -18,8 +20,11 @@ pub const RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_NAME: &str = "RunTrajectoryB
 pub const RUN_TRAJECTORY_BEHAVIOR_PROJECTION_SCHEMA_VERSION: u32 = 1;
 pub const RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_NAME: &str = "RunTrajectoryOutcomeProjection";
 pub const RUN_TRAJECTORY_OUTCOME_PROJECTION_SCHEMA_VERSION: u32 = 1;
+pub const RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_NAME: &str =
+    "RunTrajectoryDeploymentProjection";
+pub const RUN_TRAJECTORY_DEPLOYMENT_PROJECTION_SCHEMA_VERSION: u32 = 1;
 pub const RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_NAME: &str = "RunTrajectoryProjectionIndex";
-pub const RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_VERSION: u32 = 1;
+pub const RUN_TRAJECTORY_PROJECTION_INDEX_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -96,8 +101,72 @@ pub struct RunTrajectoryProjectionIndexEntryV1 {
     pub reconstruction_path: PathBuf,
     pub behavior_path: PathBuf,
     pub outcome_path: PathBuf,
+    pub deployment_path: PathBuf,
     pub behavior_event_count: usize,
     pub outcome_attachment_count: usize,
+    pub deployment_record_count: usize,
+    pub deployment_summary: RunTrajectoryDeploymentSummaryV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunTrajectoryDeploymentProjectionV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub run_id: String,
+    pub head: RunTrajectoryHeadV1,
+    pub records: Vec<RunTrajectoryAnswerDeploymentV1>,
+    pub summary: RunTrajectoryDeploymentSummaryV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunTrajectoryAnswerDeploymentV1 {
+    pub deployment_id: String,
+    pub segment_id: String,
+    pub journal_ordinal: usize,
+    pub resolution_kind: RunCombatResolutionKindV1,
+    pub source: CombatAutomationAnswerSourceV1,
+    pub axis: PressureAxis,
+    pub result: RunTrajectoryDeploymentResultV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrajectoryDeploymentStageV1 {
+    Claimed,
+    Reached,
+    Playable,
+    Applied,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum RunTrajectoryDeploymentResultV1 {
+    Observed {
+        stage: RunTrajectoryDeploymentStageV1,
+    },
+    Censored {
+        highest_observed_stage: RunTrajectoryDeploymentStageV1,
+        reason: RunTrajectoryDeploymentCensorReasonV1,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrajectoryDeploymentCensorReasonV1 {
+    CombatResolutionContinues,
+    OpportunityObservationUnavailable,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunTrajectoryDeploymentSummaryV1 {
+    pub claimed_answers: u32,
+    pub reached_answers: u32,
+    pub playable_answers: u32,
+    pub applied_answers: u32,
+    pub censored_answers: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

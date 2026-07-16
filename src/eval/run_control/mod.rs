@@ -153,10 +153,12 @@ pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
 pub(crate) use trace_annotation::combat_automation_trajectories_v1;
 pub use trace_annotation::{
     annotations_have_combat_automation_trajectory_v1, combat_search_trace_summaries,
-    CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
-    CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatAutomationTrajectoryRecordV1,
-    CombatAutomationTrajectorySource, CombatSearchPerformanceSnapshotV1,
-    CombatSearchTerminalLineSummary, CombatSearchTraceSummary, RunControlTraceAnnotationV1,
+    CombatAutomationActionV1, CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1,
+    CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
+    CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1, CombatAutomationStepStateV1,
+    CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+    CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary, CombatSearchTraceSummary,
+    RunControlTraceAnnotationV1,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

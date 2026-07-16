@@ -11,6 +11,8 @@ use crate::ai::planner_core::{
     PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
 };
 use crate::ai::route_planner_v1::MapDecisionPacketV1;
+use crate::ai::strategy::pressure_assessment::PressureAxis;
+use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::state::core::ClientInput;
 
@@ -116,7 +118,38 @@ pub struct CombatAutomationTrajectoryRecordV1 {
     pub source: CombatAutomationTrajectorySource,
     pub action_count: usize,
     pub actions: Vec<CombatAutomationActionV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answer_claims: Vec<CombatAutomationAnswerClaimV1>,
     pub label_role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationAnswerClaimV1 {
+    pub source: CombatAutomationAnswerSourceV1,
+    pub axes: Vec<PressureAxis>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CombatAutomationAnswerSourceV1 {
+    Card {
+        id: CardId,
+        uuid: u32,
+        upgrades: u8,
+        origin: CombatAutomationCardOriginV1,
+    },
+    Potion {
+        id: PotionId,
+        uuid: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatAutomationCardOriginV1 {
+    MasterDeck,
+    CombatGenerated,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -407,6 +440,8 @@ pub enum RunControlTraceAnnotationV1 {
         source: CombatAutomationTrajectorySource,
         action_count: usize,
         actions: Vec<CombatAutomationActionV1>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        answer_claims: Vec<CombatAutomationAnswerClaimV1>,
         label_role: String,
     },
     CombatSearchPerformance {
@@ -422,6 +457,7 @@ pub struct CombatAutomationTrajectoryRefV1<'a> {
     pub source: CombatAutomationTrajectorySource,
     pub action_count: usize,
     pub actions: &'a [CombatAutomationActionV1],
+    pub answer_claims: &'a [CombatAutomationAnswerClaimV1],
     pub label_role: &'a str,
 }
 
@@ -434,8 +470,14 @@ impl CombatAutomationTrajectoryRecordV1 {
             source,
             action_count: actions.len(),
             actions,
+            answer_claims: Vec::new(),
             label_role: "simulator_generated_not_teacher_label".to_string(),
         }
+    }
+
+    pub fn with_answer_claims(mut self, answer_claims: Vec<CombatAutomationAnswerClaimV1>) -> Self {
+        self.answer_claims = answer_claims;
+        self
     }
 
     pub fn from_ref(value: CombatAutomationTrajectoryRefV1<'_>) -> Self {
@@ -443,6 +485,7 @@ impl CombatAutomationTrajectoryRecordV1 {
             source: value.source,
             action_count: value.action_count,
             actions: value.actions.to_vec(),
+            answer_claims: value.answer_claims.to_vec(),
             label_role: value.label_role.to_string(),
         }
     }
@@ -452,6 +495,7 @@ impl CombatAutomationTrajectoryRecordV1 {
             source: self.source,
             action_count: self.action_count,
             actions: self.actions,
+            answer_claims: self.answer_claims,
             label_role: self.label_role,
         }
     }
@@ -465,6 +509,7 @@ impl RunControlTraceAnnotationV1 {
             source,
             action_count,
             actions,
+            answer_claims,
             label_role,
         } = self
         else {
@@ -474,6 +519,7 @@ impl RunControlTraceAnnotationV1 {
             source: *source,
             action_count: *action_count,
             actions,
+            answer_claims,
             label_role,
         })
     }
@@ -668,6 +714,7 @@ mod tests {
             source: CombatAutomationTrajectorySource::SearchCombat,
             action_count: 1,
             actions: vec![action],
+            answer_claims: Vec::new(),
             label_role: "simulator_generated_not_teacher_label".to_string(),
         };
 
@@ -708,6 +755,7 @@ mod tests {
                 source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 1,
                 actions: vec![action],
+                answer_claims: Vec::new(),
                 label_role: "simulator_generated_not_teacher_label".to_string(),
             },
         ];
@@ -738,6 +786,7 @@ mod tests {
                     drawn_cards: Vec::new(),
                     combat_after: None,
                 }],
+                answer_claims: Vec::new(),
                 label_role: "simulator_generated_not_teacher_label".to_string(),
             },
         ];

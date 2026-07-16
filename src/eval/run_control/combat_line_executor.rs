@@ -7,9 +7,10 @@ use crate::state::core::ClientInput;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
 use super::combat_line_trace::{
-    combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
-    combat_line_performance_trace_annotation, combat_search_performance_trace_annotation,
-    current_run_apply_status, CombatCandidateLinePerformance,
+    combat_automation_answer_claims_v1, combat_automation_opportunity_state_v1,
+    combat_automation_step_state_v1, combat_line_performance_trace_annotation,
+    combat_search_performance_trace_annotation, current_run_apply_status,
+    CombatCandidateLinePerformance,
 };
 use super::combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
@@ -47,6 +48,7 @@ pub(super) fn apply_selected_combat_candidate_line(
     }
     selected_line = replay.line;
     let mut trial = session.clone();
+    let master_deck = active_combat_master_deck(&trial);
     let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
     let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let applied = selected_line.actions.clone();
@@ -78,8 +80,10 @@ pub(super) fn apply_selected_combat_candidate_line(
         render_action_result(&action_result),
         super::render::render_run_control_state(&trial)
     );
+    let answer_claims = combat_automation_answer_claims_v1(&master_deck, &automation_actions);
     let automation_record =
-        CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions);
+        CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions)
+            .with_answer_claims(answer_claims);
     trial.remember_combat_automation_trajectory(automation_record.clone());
     let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
     let resolution = RunCombatResolutionV1::new(
@@ -118,6 +122,7 @@ pub(super) fn apply_combat_turn_segment(
         .as_ref()
         .expect("caller only applies after selecting a segment");
     let mut trial = session.clone();
+    let master_deck = active_combat_master_deck(&trial);
     let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
     let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let applied = trajectory.actions.clone();
@@ -143,10 +148,12 @@ pub(super) fn apply_combat_turn_segment(
         render_action_result(&action_result),
         super::render::render_run_control_state(&trial)
     );
+    let answer_claims = combat_automation_answer_claims_v1(&master_deck, &automation_actions);
     let automation_record = CombatAutomationTrajectoryRecordV1::new(
         CombatAutomationTrajectorySource::SearchCombatTurnSegment,
         automation_actions,
-    );
+    )
+    .with_answer_claims(answer_claims);
     trial.remember_combat_automation_trajectory(automation_record.clone());
     let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
     let resolution = RunCombatResolutionV1::new(
@@ -177,6 +184,7 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
     rejection_result: &'static str,
 ) -> Result<RunProgressOutcome, String> {
     let mut trial = session.clone();
+    let master_deck = active_combat_master_deck(&trial);
     let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
     let before_snapshot = RunVisibleSnapshot::capture(&trial);
     let mut automation_actions = Vec::new();
@@ -221,10 +229,12 @@ pub(super) fn apply_smoke_bomb_survival_fallback(
         render_action_result(&action_result),
         super::render::render_run_control_state(&trial)
     );
+    let answer_claims = combat_automation_answer_claims_v1(&master_deck, &automation_actions);
     let automation_record = CombatAutomationTrajectoryRecordV1::new(
         CombatAutomationTrajectorySource::SearchCombatSmokeBombSurvival,
         automation_actions,
-    );
+    )
+    .with_answer_claims(answer_claims);
     trial.remember_combat_automation_trajectory(automation_record.clone());
     let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
     let resolution = RunCombatResolutionV1::new(
@@ -246,6 +256,16 @@ fn active_combat_is_waiting_for_smoke_escape_turn_end(session: &RunControlSessio
         .active_combat
         .as_ref()
         .is_some_and(|active| active.combat_state.turn.counters.player_escaping)
+}
+
+fn active_combat_master_deck(
+    session: &RunControlSession,
+) -> Vec<crate::runtime::combat::CombatCard> {
+    session
+        .active_combat
+        .as_ref()
+        .map(|active| active.combat_state.meta.master_deck_snapshot.clone())
+        .unwrap_or_default()
 }
 
 fn apply_combat_action_traces(

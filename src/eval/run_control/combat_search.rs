@@ -181,7 +181,8 @@ mod tests {
     use std::time::Duration;
 
     use super::super::combat_line_trace::{
-        combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
+        combat_automation_answer_claims_v1, combat_automation_opportunity_state_v1,
+        combat_automation_step_state_v1,
     };
     use super::super::combat_no_win_fallback::segment_mode_allows_turn_segment;
     use super::super::combat_search_setup::{
@@ -197,8 +198,10 @@ mod tests {
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
-        CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1,
-        CombatAutomationTrajectorySource, RunControlTraceAnnotationV1,
+        CombatAutomationActionV1, CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1,
+        CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1,
+        CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+        RunControlTraceAnnotationV1,
     };
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
@@ -309,6 +312,76 @@ mod tests {
         assert_eq!(snapshot.usable_potion_uuids, vec![30]);
         assert_eq!(snapshot.potions[0].as_ref().unwrap().uuid, 30);
         assert_eq!(snapshot.potions[1].as_ref().unwrap().uuid, 40);
+    }
+
+    #[test]
+    fn combat_automation_claims_cover_master_generated_and_active_potion_answers() {
+        let master_deck = vec![CombatCard::new(
+            crate::content::cards::CardId::Shockwave,
+            10,
+        )];
+        let actions = vec![CombatAutomationActionV1 {
+            step_index: 0,
+            action_key: "combat/test".to_string(),
+            input: ClientInput::EndTurn,
+            opportunity_before: Some(CombatAutomationOpportunityStateV1 {
+                turn: 1,
+                energy: 3,
+                hand: vec![
+                    crate::eval::run_control::RunActionCardSnapshotV1 {
+                        id: crate::content::cards::CardId::Shockwave,
+                        uuid: 10,
+                        upgrades: 0,
+                    },
+                    crate::eval::run_control::RunActionCardSnapshotV1 {
+                        id: crate::content::cards::CardId::Corruption,
+                        uuid: 20,
+                        upgrades: 0,
+                    },
+                ],
+                potions: vec![
+                    Some(CombatAutomationPotionStateV1 {
+                        id: PotionId::BlockPotion,
+                        uuid: 30,
+                    }),
+                    Some(CombatAutomationPotionStateV1 {
+                        id: PotionId::SmokeBomb,
+                        uuid: 40,
+                    }),
+                ],
+                playable_card_uuids: vec![10, 20],
+                usable_potion_uuids: vec![30, 40],
+            }),
+            drawn_cards: Vec::new(),
+            combat_after: None,
+        }];
+
+        let claims = combat_automation_answer_claims_v1(&master_deck, &actions);
+
+        assert!(claims.iter().any(|claim| matches!(
+            claim.source,
+            CombatAutomationAnswerSourceV1::Card {
+                uuid: 10,
+                origin: CombatAutomationCardOriginV1::MasterDeck,
+                ..
+            }
+        )));
+        assert!(claims.iter().any(|claim| matches!(
+            claim.source,
+            CombatAutomationAnswerSourceV1::Card {
+                uuid: 20,
+                origin: CombatAutomationCardOriginV1::CombatGenerated,
+                ..
+            }
+        )));
+        assert!(claims.iter().any(|claim| matches!(
+            claim.source,
+            CombatAutomationAnswerSourceV1::Potion { uuid: 30, .. }
+        )));
+        assert!(!claims.iter().any(|claim| matches!(
+            claim.source,
+            CombatAutomationAnswerSourceV1::Potion { uuid: 40, .. }
+        )));
     }
 
     fn session_with_combat_flags(is_boss_fight: bool, is_elite_fight: bool) -> RunControlSession {
@@ -436,6 +509,7 @@ mod tests {
             source,
             action_count,
             actions,
+            answer_claims,
             label_role,
         } = annotation
         else {
@@ -446,6 +520,7 @@ mod tests {
         assert_eq!(actions[0].step_index, 7);
         assert_eq!(actions[0].action_key, "combat/end_turn");
         assert_eq!(actions[0].input, ClientInput::EndTurn);
+        assert!(answer_claims.is_empty());
         assert_eq!(label_role, "simulator_generated_not_teacher_label");
     }
 

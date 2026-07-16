@@ -1,8 +1,13 @@
+use crate::ai::card_semantics_v1::{potion_acquisition_traits_v1, PotionAcquisitionTraitV1};
 use crate::ai::combat_search_v2::{
     has_external_payoff_opportunity, CombatSearchV2Report, SearchTerminalLabel,
 };
+use crate::ai::strategy::candidate_pressure_response::assess_candidate_pressure_response;
+use crate::ai::strategy::pressure_assessment::PressureAxis;
+use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
+use crate::runtime::combat::CombatCard;
 use crate::sim::combat::{CombatPosition, CombatTerminal};
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{ClientInput, EngineState, RunResult};
@@ -11,9 +16,11 @@ use super::combat_candidate_line::CombatCandidateLine;
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
 use super::session::RunControlSession;
 use super::trace_annotation::{
-    CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
-    CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatSearchPerformanceSnapshotV1,
-    CombatSearchTerminalLineSummary, RunControlTraceAnnotationV1,
+    CombatAutomationActionV1, CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1,
+    CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
+    CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1, CombatAutomationStepStateV1,
+    CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary,
+    RunControlTraceAnnotationV1,
 };
 use super::transition_report::{CardSnapshot, RunApplyStatus};
 
@@ -83,6 +90,118 @@ pub(super) fn combat_automation_opportunity_state_v1(
         playable_card_uuids,
         usable_potion_uuids,
     })
+}
+
+pub(super) fn combat_automation_answer_claims_v1(
+    master_deck: &[CombatCard],
+    actions: &[CombatAutomationActionV1],
+) -> Vec<CombatAutomationAnswerClaimV1> {
+    let mut claims = Vec::new();
+    for card in master_deck {
+        let peers = master_deck
+            .iter()
+            .filter(|peer| peer.uuid != card.uuid)
+            .cloned()
+            .collect::<Vec<_>>();
+        push_card_claim(
+            &mut claims,
+            &peers,
+            card.id,
+            card.uuid,
+            card.upgrades,
+            CombatAutomationCardOriginV1::MasterDeck,
+        );
+    }
+
+    for opportunity in actions
+        .iter()
+        .filter_map(|action| action.opportunity_before.as_ref())
+    {
+        for card in &opportunity.hand {
+            if !claims.iter().any(|claim| {
+                matches!(claim.source, CombatAutomationAnswerSourceV1::Card { uuid, .. } if uuid == card.uuid)
+            }) {
+                push_card_claim(
+                    &mut claims,
+                    master_deck,
+                    card.id,
+                    card.uuid,
+                    card.upgrades,
+                    CombatAutomationCardOriginV1::CombatGenerated,
+                );
+            }
+        }
+        for potion in opportunity.potions.iter().flatten() {
+            if claims.iter().any(|claim| {
+                matches!(claim.source, CombatAutomationAnswerSourceV1::Potion { uuid, .. } if uuid == potion.uuid)
+            }) {
+                continue;
+            }
+            let axes = potion_answer_axes(potion.id);
+            if !axes.is_empty() {
+                claims.push(CombatAutomationAnswerClaimV1 {
+                    source: CombatAutomationAnswerSourceV1::Potion {
+                        id: potion.id,
+                        uuid: potion.uuid,
+                    },
+                    axes,
+                });
+            }
+        }
+    }
+    claims
+}
+
+fn push_card_claim(
+    claims: &mut Vec<CombatAutomationAnswerClaimV1>,
+    deck_context: &[CombatCard],
+    id: crate::content::cards::CardId,
+    uuid: u32,
+    upgrades: u8,
+    origin: CombatAutomationCardOriginV1,
+) {
+    let admission = assess_reward_admission_from_master_deck(deck_context, id, upgrades);
+    let axes = assess_candidate_pressure_response(Some((id, upgrades)), &admission).axes;
+    if axes.is_empty() {
+        return;
+    }
+    claims.push(CombatAutomationAnswerClaimV1 {
+        source: CombatAutomationAnswerSourceV1::Card {
+            id,
+            uuid,
+            upgrades,
+            origin,
+        },
+        axes,
+    });
+}
+
+fn potion_answer_axes(potion: crate::content::potions::PotionId) -> Vec<PressureAxis> {
+    let mut axes = Vec::new();
+    for trait_ in potion_acquisition_traits_v1(potion) {
+        let axis = match trait_ {
+            PotionAcquisitionTraitV1::CombatDamage | PotionAcquisitionTraitV1::VulnerableSetup => {
+                Some(PressureAxis::ResolutionTempo)
+            }
+            PotionAcquisitionTraitV1::AoeDamage => Some(PressureAxis::MultiTargetControl),
+            PotionAcquisitionTraitV1::CombatBlock
+            | PotionAcquisitionTraitV1::WeakControl
+            | PotionAcquisitionTraitV1::DeathInsurance => Some(PressureAxis::DelayCapacity),
+            PotionAcquisitionTraitV1::EnergyBurst
+            | PotionAcquisitionTraitV1::CardAccess
+            | PotionAcquisitionTraitV1::ActionAmplifier
+            | PotionAcquisitionTraitV1::DebuffControl => Some(PressureAxis::Deployability),
+            PotionAcquisitionTraitV1::StrengthGain => Some(PressureAxis::GrowthHorizon),
+            PotionAcquisitionTraitV1::EscapeTool => None,
+        };
+        if let Some(axis) = axis {
+            if !axes.contains(&axis) {
+                axes.push(axis);
+            }
+        }
+    }
+    axes.sort();
+    axes
 }
 
 pub(super) fn combat_automation_step_state_v1(
