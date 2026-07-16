@@ -89,23 +89,16 @@ fn lane_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
-            CombatSearchChildRolloutPluginId::Immediate,
-            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+            CombatSearchChildRolloutPluginId::LazyOnPop,
+            CombatSearchPhaseGuardPluginId::Default,
         )
         .with_max_potions_used(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED),
-        CombatSearchLaneKind::HallwayQualityPotionRescue => quality_profile(
-            lane.label(),
-            request.args,
-            LaneSearchBudget::HallwayQuality,
-            CombatSearchChildRolloutPluginId::Immediate,
-            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
-        ),
         CombatSearchLaneKind::HallwaySurvivalFallback => quality_profile(
             lane.label(),
             request.args,
             LaneSearchBudget::HallwayQuality,
             CombatSearchChildRolloutPluginId::LazyOnPop,
-            CombatSearchPhaseGuardPluginId::ChampSplitGuard,
+            CombatSearchPhaseGuardPluginId::Default,
         ),
         CombatSearchLaneKind::BossNoPotion => profile_with_budget(
             lane.label(),
@@ -367,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn all_post_primary_hallway_lanes_generate_relaxed_candidates() {
+    fn hallway_survival_fallback_generates_relaxed_semantic_potion_candidates() {
         let mut session = session_with_combat_stakes(false, false);
         let player = &mut session
             .active_combat
@@ -380,11 +373,6 @@ mod tests {
         player.max_hp = 74;
         let request = CombatSearchRequest::from_session(&session, test_args());
 
-        let quality = lane_options(
-            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue),
-            &request,
-            &session,
-        );
         let fallback = lane_options(
             CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
             &request,
@@ -392,10 +380,6 @@ mod tests {
         );
         let fallback_config = fallback.search.profile.expect("profile").to_config();
 
-        assert_eq!(
-            quality.search.max_hp_loss,
-            Some(RunControlHpLossLimit::Unlimited)
-        );
         assert_eq!(
             fallback.search.max_hp_loss,
             Some(RunControlHpLossLimit::Unlimited)
@@ -408,17 +392,9 @@ mod tests {
     }
 
     #[test]
-    fn hallway_quality_and_survival_use_complementary_engines_at_same_budget() {
+    fn hallway_survival_uses_lazy_encounter_neutral_search() {
         let session = session_with_combat_stakes(false, false);
         let request = CombatSearchRequest::from_session(&session, test_args());
-        let quality = lane_options(
-            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue),
-            &request,
-            &session,
-        )
-        .search
-        .profile
-        .expect("quality profile");
         let survival = lane_options(
             CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
             &request,
@@ -429,15 +405,13 @@ mod tests {
         .expect("survival profile");
 
         assert_eq!(
-            quality.engine.plugins.child_rollout,
-            CombatSearchChildRolloutPluginId::Immediate
-        );
-        assert_eq!(
             survival.engine.plugins.child_rollout,
             CombatSearchChildRolloutPluginId::LazyOnPop
         );
-        assert_eq!(quality.engine.budget, survival.engine.budget);
-        assert_ne!(quality.engine_fingerprint(), survival.engine_fingerprint());
+        assert_eq!(
+            survival.engine.plugins.phase_guard,
+            CombatSearchPhaseGuardPluginId::Default
+        );
     }
 
     #[test]
@@ -651,7 +625,11 @@ mod tests {
         );
         assert_eq!(
             config.child_rollout_policy,
-            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::Immediate
+            sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy::LazyOnPop
+        );
+        assert_eq!(
+            config.phase_guard_policy,
+            CombatSearchV2PhaseGuardPolicy::Default
         );
         assert_eq!(
             config.rollout_policy,
@@ -694,9 +672,6 @@ mod tests {
         ));
         assert!(lane_allows_smoke_bomb_survival_fallback(
             CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback)
-        ));
-        assert!(!lane_allows_smoke_bomb_survival_fallback(
-            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue)
         ));
         assert!(!lane_allows_smoke_bomb_survival_fallback(
             CombatSearchLane::new(CombatSearchLaneKind::BossPotionRescue)

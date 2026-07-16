@@ -22,7 +22,6 @@ pub(super) enum CombatSearchLaneKind {
     DiagnosticRescue,
     PrimaryImmediateEscalation,
     EliteSurvivalFallback,
-    HallwayQualityPotionRescue,
     HallwaySurvivalFallback,
     BossNoPotion,
     BossPotionRescue,
@@ -138,8 +137,8 @@ mod tests {
     use sts_simulator::ai::combat_search_v2::CombatSearchAcceptancePluginId;
 
     #[test]
-    fn dirty_rejecting_lane_exposes_clean_win_acceptance_plugin() {
-        let lane = CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue);
+    fn survival_fallback_exposes_clean_win_acceptance_plugin() {
+        let lane = CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback);
 
         assert_eq!(
             lane.acceptance_plugin(),

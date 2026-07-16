@@ -19,9 +19,6 @@ impl CombatSearchPortfolioPlan {
                 )];
                 if context.nonboss_potion_rescue_signal {
                     lanes.push(CombatSearchLane::new(
-                        CombatSearchLaneKind::HallwayQualityPotionRescue,
-                    ));
-                    lanes.push(CombatSearchLane::new(
                         CombatSearchLaneKind::HallwaySurvivalFallback,
                     ));
                 }
@@ -130,18 +127,14 @@ mod tests {
 
         assert_eq!(
             plan.lane_labels(),
-            vec![
-                "primary_immediate_escalation",
-                "hallway_quality_potion_rescue",
-                "hallway_survival_fallback",
-            ]
+            vec!["primary_immediate_escalation", "hallway_survival_fallback"]
         );
         assert!(!plan.should_report());
     }
 
     #[test]
     fn duplicate_producer_is_suppressed_in_stable_order() {
-        let duplicate = CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue);
+        let duplicate = CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback);
         let plan = CombatSearchPortfolioPlan {
             lanes: vec![duplicate, duplicate],
         };

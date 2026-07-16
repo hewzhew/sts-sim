@@ -204,7 +204,6 @@ mod tests {
         let lanes = [
             CombatSearchLane::new(CombatSearchLaneKind::DiagnosticRescue),
             CombatSearchLane::new(CombatSearchLaneKind::PrimaryImmediateEscalation),
-            CombatSearchLane::new(CombatSearchLaneKind::HallwayQualityPotionRescue),
             CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
         ];
         let candidates = [
@@ -218,7 +217,6 @@ mod tests {
                 48,
                 2,
             ),
-            candidate(CombatSearchCandidateTier::RelaxedCompleteWin, 60, 0),
             candidate(
                 CombatSearchCandidateTier::ReserveCompliantCompleteWin,
                 60,
@@ -247,8 +245,8 @@ mod tests {
         )
         .expect("portfolio arbitration");
 
-        assert_eq!(calls, 4);
-        assert_eq!(result.attempts.len(), 4);
+        assert_eq!(calls, 3);
+        assert_eq!(result.attempts.len(), 3);
         assert_eq!(session.run_state.current_hp, 48);
         assert_eq!(
             result
@@ -259,9 +257,8 @@ mod tests {
             1
         );
         assert!(result.attempts[1].selected);
-        assert_eq!(result.attempts[2].incumbent_reason, "lower_candidate_tier");
         assert_eq!(
-            result.attempts[3].incumbent_reason,
+            result.attempts[2].incumbent_reason,
             "incomparable_resource_trade"
         );
     }
