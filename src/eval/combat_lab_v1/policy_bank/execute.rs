@@ -79,6 +79,8 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
         .collect::<VecDeque<_>>();
     let mut information_set_decisions = 0usize;
     let mut policy_evaluation_engine_steps = 0usize;
+    let mut policy_proof_information_sets = 0usize;
+    let mut policy_proof_candidate_evaluations = 0usize;
     let mut execution_engine_steps = 0usize;
     let mut max_frontier_information_sets = queue.len();
     let mut gaps = Vec::new();
@@ -129,6 +131,10 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
         });
         policy_evaluation_engine_steps =
             policy_evaluation_engine_steps.saturating_add(portfolio_session.engine_steps());
+        policy_proof_information_sets = policy_proof_information_sets
+            .saturating_add(portfolio_session.proof_information_sets());
+        policy_proof_candidate_evaluations = policy_proof_candidate_evaluations
+            .saturating_add(portfolio_session.proof_candidate_evaluations());
         let action = match policy_result {
             Ok(action) => action,
             Err(gap) => {
@@ -164,8 +170,11 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
             }
         }
 
-        let stepped = match portfolio_session.take_step(&action, limits.max_engine_steps_per_action)
-        {
+        let stepped = match portfolio_session.take_step(
+            &group,
+            &action,
+            limits.max_engine_steps_per_action,
+        ) {
             Some(stepped) => stepped,
             None => {
                 let stepped = step_combat_scenario_group_v1(
@@ -251,6 +260,8 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
         information_set_decisions,
         engine_steps: policy_evaluation_engine_steps.saturating_add(execution_engine_steps),
         policy_evaluation_engine_steps,
+        policy_proof_information_sets,
+        policy_proof_candidate_evaluations,
         execution_engine_steps,
         max_frontier_information_sets,
         gaps,

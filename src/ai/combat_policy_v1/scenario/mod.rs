@@ -4,6 +4,7 @@ mod group;
 mod hash;
 mod pending_choice;
 mod portfolio;
+mod proof;
 mod step;
 mod types;
 
@@ -23,6 +24,10 @@ pub use portfolio::{
     CombatScenarioActionPortfolioSelectionBasisV1, CombatScenarioActionPortfolioSelectionGapV1,
     CombatScenarioActionPortfolioSelectionV1, CombatScenarioActionPortfolioV1,
     COMBAT_SCENARIO_ACTION_PORTFOLIO_SCHEMA_VERSION,
+};
+pub use proof::{
+    CombatScenarioBoundedWinProofGapV1, CombatScenarioBoundedWinProofLimitsV1,
+    CombatScenarioBoundedWinProofSelectionV1, COMBAT_SCENARIO_BOUNDED_WIN_PROOF_SCHEMA_VERSION,
 };
 pub use step::{
     step_combat_scenario_group_v1, CombatScenarioStepResultV1, CombatScenarioStepViewV1,

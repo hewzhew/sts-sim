@@ -1,4 +1,7 @@
 use crate::ai::combat_policy_v1::{CombatPublicActionV1, CombatScenarioActionPortfolioLimitsV1};
+use crate::ai::combat_policy_v1::{
+    CombatScenarioBoundedWinProofGapV1, CombatScenarioBoundedWinProofLimitsV1,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::eval::fingerprint::combat_state_fingerprint_v1;
@@ -35,6 +38,8 @@ fn shared_public_information_set_is_decided_once_for_all_samples() {
     assert_eq!(report.summary.losses, 0);
     assert_eq!(report.summary.unresolved, 0);
     assert_eq!(report.policy_evaluation_engine_steps, 0);
+    assert_eq!(report.policy_proof_information_sets, 0);
+    assert_eq!(report.policy_proof_candidate_evaluations, 0);
     assert!(report.execution_engine_steps > 0);
     assert_eq!(report.summary.win_rate_all_scenarios, Some(1.0));
     assert_eq!(report.outcomes[0].public_action_history.len(), 1);
@@ -118,6 +123,150 @@ fn one_step_dominance_policy_stops_before_evaluation_when_candidate_cap_is_excee
             gap: CombatLabPolicyDecisionGapV1::PortfolioTooLarge,
         }
     );
+}
+
+#[test]
+fn bounded_win_policy_proves_flame_barrier_then_end_turn() {
+    let mut policy = bounded_win_policy(2, 16);
+
+    let report = execute_combat_lab_public_policy_bank_v1(
+        &[flame_barrier_proof_sample(0)],
+        &mut policy,
+        limits(),
+    )
+    .expect("bounded public proof should execute a two-action win");
+
+    assert_eq!(report.summary.wins, 1);
+    assert_eq!(report.summary.losses, 0);
+    assert_eq!(report.summary.unresolved, 0);
+    assert_eq!(report.information_set_decisions, 2);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert!(report.policy_evaluation_engine_steps > 0);
+    assert!(report.policy_proof_information_sets >= 2);
+    assert!(report.policy_proof_candidate_evaluations >= 3);
+    assert!(matches!(
+        report.outcomes[0].public_action_history.as_slice(),
+        [
+            CombatPublicActionV1::PlayCard { card_id, .. },
+            CombatPublicActionV1::EndTurn
+        ] if card_id == "Flame Barrier"
+    ));
+}
+
+#[test]
+fn bounded_win_policy_reports_depth_limit_without_executing_a_guess() {
+    let mut policy = bounded_win_policy(1, 16);
+
+    let report = execute_combat_lab_public_policy_bank_v1(
+        &[flame_barrier_proof_sample(0)],
+        &mut policy,
+        limits(),
+    )
+    .expect("insufficient proof depth should remain typed and unresolved");
+
+    assert_eq!(report.summary.unresolved, 1);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert!(report.outcomes[0].public_action_history.is_empty());
+    assert_eq!(
+        report.gaps[0].reason,
+        CombatLabPolicyUnresolvedReasonV1::PolicyGap {
+            gap: CombatLabPolicyDecisionGapV1::BoundedWinProof {
+                gap: CombatScenarioBoundedWinProofGapV1::DepthLimit,
+            },
+        }
+    );
+}
+
+#[test]
+fn bounded_win_policy_reports_information_set_budget_before_guessing() {
+    let mut policy = bounded_win_policy(2, 1);
+
+    let report = execute_combat_lab_public_policy_bank_v1(
+        &[flame_barrier_proof_sample(0)],
+        &mut policy,
+        limits(),
+    )
+    .expect("proof information-set budget should remain a typed gap");
+
+    assert_eq!(report.summary.unresolved, 1);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert_eq!(
+        report.gaps[0].reason,
+        CombatLabPolicyUnresolvedReasonV1::PolicyGap {
+            gap: CombatLabPolicyDecisionGapV1::BoundedWinProof {
+                gap: CombatScenarioBoundedWinProofGapV1::InformationSetBudget,
+            },
+        }
+    );
+}
+
+#[test]
+fn bounded_win_policy_reports_candidate_evaluation_budget_before_guessing() {
+    let mut proof_limits = bounded_proof_limits(2, 16);
+    proof_limits.max_candidate_evaluations = 1;
+    let mut policy = CombatLabBoundedWinProofPolicyV1::new(portfolio_limits(), proof_limits);
+
+    let report = execute_combat_lab_public_policy_bank_v1(
+        &[flame_barrier_proof_sample(0)],
+        &mut policy,
+        limits(),
+    )
+    .expect("proof candidate-evaluation budget should remain a typed gap");
+
+    assert_eq!(report.summary.unresolved, 1);
+    assert_eq!(report.execution_engine_steps, 0);
+    assert_eq!(
+        report.gaps[0].reason,
+        CombatLabPolicyUnresolvedReasonV1::PolicyGap {
+            gap: CombatLabPolicyDecisionGapV1::BoundedWinProof {
+                gap: CombatScenarioBoundedWinProofGapV1::CandidateEvaluationBudget,
+            },
+        }
+    );
+}
+
+#[test]
+fn bounded_win_policy_requires_every_revealed_public_branch_to_have_a_win() {
+    let first = battle_trance_proof_sample(0, [CardId::Bludgeon, CardId::Dazed, CardId::Burn]);
+    let second = battle_trance_proof_sample(1, [CardId::Dazed, CardId::Bludgeon, CardId::Burn]);
+    let mut policy = bounded_win_policy(2, 16);
+
+    let report = execute_combat_lab_public_policy_bank_v1(&[first, second], &mut policy, limits())
+        .expect("both revealed public branches have a deployable lethal");
+
+    assert_eq!(report.summary.wins, 2);
+    assert_eq!(report.summary.losses, 0);
+    assert_eq!(report.summary.unresolved, 0);
+    assert_eq!(report.information_set_decisions, 3);
+    assert_eq!(report.max_frontier_information_sets, 2);
+    assert!(report.outcomes.iter().all(|outcome| {
+        outcome.public_action_history.len() == 2
+            && matches!(
+                &outcome.public_action_history[0],
+                CombatPublicActionV1::PlayCard { card_id, .. } if card_id == "Battle Trance"
+            )
+            && matches!(
+                &outcome.public_action_history[1],
+                CombatPublicActionV1::PlayCard { card_id, .. } if card_id == "Bludgeon"
+            )
+    }));
+}
+
+#[test]
+fn bounded_win_selection_serialization_does_not_expose_exact_world_identity() {
+    let mut policy = CaptureBoundedProofThenGap { json: None };
+
+    execute_combat_lab_public_policy_bank_v1(
+        &[flame_barrier_proof_sample(0)],
+        &mut policy,
+        limits(),
+    )
+    .expect("capture bounded public win proof");
+
+    let json = policy.json.expect("captured bounded proof JSON");
+    assert!(!json.contains("combat_lab_sample"));
+    assert!(!json.contains("uuid"));
+    assert!(!json.contains("rng"));
 }
 
 #[test]
@@ -260,6 +409,25 @@ struct CapturePortfolioThenGap {
     json: Option<String>,
 }
 
+struct CaptureBoundedProofThenGap {
+    json: Option<String>,
+}
+
+impl CombatLabPublicPolicyV1 for CaptureBoundedProofThenGap {
+    fn choose_action(
+        &mut self,
+        decision: CombatLabPublicPolicyDecisionV1<'_>,
+    ) -> Result<CombatPublicActionV1, CombatLabPolicyDecisionGapV1> {
+        let selection = decision
+            .action_portfolio
+            .prove_bounded_public_win(bounded_proof_limits(2, 16))
+            .map_err(|gap| CombatLabPolicyDecisionGapV1::BoundedWinProof { gap })?;
+        self.json =
+            Some(serde_json::to_string(&selection).expect("serialize bounded public win proof"));
+        Err(CombatLabPolicyDecisionGapV1::NoAcceptableAction)
+    }
+}
+
 impl CombatLabPublicPolicyV1 for CapturePortfolioThenGap {
     fn choose_action(
         &mut self,
@@ -291,6 +459,39 @@ fn tradeoff_sample(sample_index: u64) -> CombatLabCompiledSampleV1 {
         CombatCard::new(CardId::Strike, 10),
         CombatCard::new(CardId::Defend, 11),
     ];
+    combat.entities.monsters = vec![deterministic_jaw_worm()];
+    compiled_sample(
+        sample_index,
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat),
+    )
+}
+
+fn flame_barrier_proof_sample(sample_index: u64) -> CombatLabCompiledSampleV1 {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.entities.player.current_hp = 1;
+    combat.zones.hand = vec![CombatCard::new(CardId::FlameBarrier, 10)];
+    let mut monster = deterministic_jaw_worm();
+    monster.current_hp = 4;
+    monster.max_hp = 4;
+    combat.entities.monsters = vec![monster];
+    compiled_sample(
+        sample_index,
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat),
+    )
+}
+
+fn battle_trance_proof_sample(
+    sample_index: u64,
+    draw_order: [CardId; 3],
+) -> CombatLabCompiledSampleV1 {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.entities.player.current_hp = 1;
+    combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 10)];
+    combat.zones.draw_pile = draw_order
+        .into_iter()
+        .enumerate()
+        .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
+        .collect();
     combat.entities.monsters = vec![deterministic_jaw_worm()];
     compiled_sample(
         sample_index,
@@ -349,6 +550,29 @@ fn limits() -> CombatLabPolicyBankLimitsV1 {
 fn portfolio_limits() -> CombatScenarioActionPortfolioLimitsV1 {
     CombatScenarioActionPortfolioLimitsV1 {
         max_candidates: 32,
+        max_engine_steps_per_action: 100,
+    }
+}
+
+fn bounded_win_policy(
+    max_depth: usize,
+    max_information_sets: usize,
+) -> CombatLabBoundedWinProofPolicyV1 {
+    CombatLabBoundedWinProofPolicyV1::new(
+        portfolio_limits(),
+        bounded_proof_limits(max_depth, max_information_sets),
+    )
+}
+
+fn bounded_proof_limits(
+    max_depth: usize,
+    max_information_sets: usize,
+) -> CombatScenarioBoundedWinProofLimitsV1 {
+    CombatScenarioBoundedWinProofLimitsV1 {
+        max_depth,
+        max_candidates_per_information_set: 32,
+        max_information_sets,
+        max_candidate_evaluations: 128,
         max_engine_steps_per_action: 100,
     }
 }

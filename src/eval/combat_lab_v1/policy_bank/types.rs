@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_policy_v1::{
     CombatPolicyInformationSetKeyV1, CombatPolicyObservationGroupV1, CombatPublicActionV1,
-    CombatScenarioActionPortfolioEvaluatorV1,
+    CombatScenarioActionPortfolioEvaluatorV1, CombatScenarioBoundedWinProofGapV1,
 };
 
-pub const COMBAT_LAB_POLICY_BANK_REPORT_SCHEMA_VERSION: u32 = 2;
+pub const COMBAT_LAB_POLICY_BANK_REPORT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +45,9 @@ pub enum CombatLabPolicyDecisionGapV1 {
     NoStrictDominance,
     PortfolioTooLarge,
     PortfolioEvaluationFailed,
+    BoundedWinProof {
+        gap: CombatScenarioBoundedWinProofGapV1,
+    },
     UnsupportedInformationSet,
     ExternalStop,
 }
@@ -129,6 +132,8 @@ pub struct CombatLabPolicyBankReportV1 {
     pub information_set_decisions: usize,
     pub engine_steps: usize,
     pub policy_evaluation_engine_steps: usize,
+    pub policy_proof_information_sets: usize,
+    pub policy_proof_candidate_evaluations: usize,
     pub execution_engine_steps: usize,
     pub max_frontier_information_sets: usize,
     pub gaps: Vec<CombatLabPolicyGapRecordV1>,

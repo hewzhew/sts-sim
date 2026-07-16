@@ -94,13 +94,20 @@ impl Error for CombatScenarioActionPortfolioErrorV1 {}
 
 #[derive(Clone, Copy)]
 pub struct CombatScenarioActionPortfolioEvaluatorV1<'a> {
-    group: &'a CombatScenarioGroupV1,
-    session: &'a CombatScenarioActionPortfolioSessionV1,
+    pub(super) group: &'a CombatScenarioGroupV1,
+    pub(super) session: &'a CombatScenarioActionPortfolioSessionV1,
 }
 
 pub(crate) struct CombatScenarioActionPortfolioSessionV1 {
-    steps: RefCell<BTreeMap<(CombatPublicActionV1, usize), CombatScenarioStepResultV1>>,
+    steps: RefCell<
+        BTreeMap<
+            (CombatPolicyInformationSetKeyV1, CombatPublicActionV1, usize),
+            CombatScenarioStepResultV1,
+        >,
+    >,
     engine_steps: Cell<usize>,
+    proof_information_sets: Cell<usize>,
+    proof_candidate_evaluations: Cell<usize>,
 }
 
 impl CombatScenarioActionPortfolioSessionV1 {
@@ -108,6 +115,8 @@ impl CombatScenarioActionPortfolioSessionV1 {
         Self {
             steps: RefCell::new(BTreeMap::new()),
             engine_steps: Cell::new(0),
+            proof_information_sets: Cell::new(0),
+            proof_candidate_evaluations: Cell::new(0),
         }
     }
 
@@ -125,14 +134,53 @@ impl CombatScenarioActionPortfolioSessionV1 {
         self.engine_steps.get()
     }
 
+    pub(crate) fn proof_information_sets(&self) -> usize {
+        self.proof_information_sets.get()
+    }
+
+    pub(crate) fn proof_candidate_evaluations(&self) -> usize {
+        self.proof_candidate_evaluations.get()
+    }
+
     pub(crate) fn take_step(
         &self,
+        group: &CombatScenarioGroupV1,
         action: &CombatPublicActionV1,
         max_engine_steps: usize,
     ) -> Option<CombatScenarioStepResultV1> {
-        self.steps
-            .borrow_mut()
-            .remove(&(action.clone(), max_engine_steps))
+        self.steps.borrow_mut().remove(&(
+            group.view().key.clone(),
+            action.clone(),
+            max_engine_steps,
+        ))
+    }
+
+    pub(super) fn put_step(
+        &self,
+        group: &CombatScenarioGroupV1,
+        action: &CombatPublicActionV1,
+        max_engine_steps: usize,
+        stepped: CombatScenarioStepResultV1,
+    ) {
+        self.steps.borrow_mut().insert(
+            (group.view().key.clone(), action.clone(), max_engine_steps),
+            stepped,
+        );
+    }
+
+    pub(super) fn record_engine_steps(&self, engine_steps: usize) {
+        self.engine_steps
+            .set(self.engine_steps.get().saturating_add(engine_steps));
+    }
+
+    pub(super) fn record_proof_information_set(&self) {
+        self.proof_information_sets
+            .set(self.proof_information_sets.get().saturating_add(1));
+    }
+
+    pub(super) fn record_proof_candidate_evaluation(&self) {
+        self.proof_candidate_evaluations
+            .set(self.proof_candidate_evaluations.get().saturating_add(1));
     }
 }
 
@@ -155,7 +203,11 @@ impl CombatScenarioActionPortfolioEvaluatorV1<'_> {
         let root_hp = view.observation.observation.compatibility_public.player.hp;
         let mut evaluations = Vec::with_capacity(view.candidates.len());
         for action in &view.candidates {
-            let cache_key = (action.clone(), limits.max_engine_steps_per_action);
+            let cache_key = (
+                view.key.clone(),
+                action.clone(),
+                limits.max_engine_steps_per_action,
+            );
             if !self.session.steps.borrow().contains_key(&cache_key) {
                 let stepped = step_combat_scenario_group_v1(
                     self.group,
@@ -170,12 +222,7 @@ impl CombatScenarioActionPortfolioEvaluatorV1<'_> {
                         action: action.clone(),
                     }
                 })?;
-                self.session.engine_steps.set(
-                    self.session
-                        .engine_steps
-                        .get()
-                        .saturating_add(stepped.view.engine_steps),
-                );
+                self.session.record_engine_steps(stepped.view.engine_steps);
                 self.session
                     .steps
                     .borrow_mut()
@@ -315,7 +362,7 @@ fn validate_limits(
     Ok(())
 }
 
-fn metric_summary(mut values: Vec<i32>) -> CombatScenarioActionPortfolioMetricV1 {
+pub(super) fn metric_summary(mut values: Vec<i32>) -> CombatScenarioActionPortfolioMetricV1 {
     values.sort_unstable();
     let count = values.len();
     debug_assert!(count > 0);
