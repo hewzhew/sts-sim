@@ -42,9 +42,6 @@ pub(crate) fn score_shop_plan_components_v1(
             ShopPlanComponentKindV1::LegacyEstimate => {
                 has_legacy_estimate = true;
             }
-            ShopPlanComponentKindV1::BranchExploration => {
-                has_non_legacy_signal = true;
-            }
             ShopPlanComponentKindV1::DeckBloatCost => {
                 negative += 70.0 * component.amount.max(0.0);
                 has_non_legacy_signal = true;

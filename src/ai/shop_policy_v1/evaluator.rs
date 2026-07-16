@@ -7,8 +7,8 @@ use super::component_scorer::score_shop_plan_components_v1;
 use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopFutureShopV1, ShopMawBankStateV1,
     ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentV1,
-    ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1,
-    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseTargetV1, ShopThreatWindowV1,
+    ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanStepV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseRiskV1, ShopPurchaseTargetV1, ShopThreatWindowV1,
 };
 
 pub(crate) fn evaluate_shop_plan_candidate_v1(
@@ -25,17 +25,6 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
             context,
             strategic_trace,
             ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone()),
-            candidate_plan,
-        );
-    }
-
-    if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative
-        || candidate_plan.plan.source == ShopPlanSourceV1::PortfolioCandidate
-    {
-        return attach_components_and_score_v1(
-            context,
-            strategic_trace,
-            evaluate_portfolio_plan_v1(context, config, strategic_trace, candidate_plan),
             candidate_plan,
         );
     }
@@ -207,6 +196,13 @@ fn evaluate_purchase_v1(
     let Some(priority) = candidate.legacy_estimate else {
         return ShopPlanEvaluationV1::block(None, "purchase legacy estimate missing");
     };
+    if let ShopPurchaseTargetV1::Relic { relic, .. } = target {
+        if let Some(evaluation) =
+            evaluate_immediate_recovery_relic_v1(context, candidate, relic, priority)
+        {
+            return evaluation;
+        }
+    }
     let threshold = config.high_impact_relic_legacy_estimate_threshold;
     if config.allow_high_impact_purchase && priority >= threshold {
         return ShopPlanEvaluationV1::allow(
@@ -224,6 +220,40 @@ fn evaluate_purchase_v1(
         Some(priority),
         format!("purchase legacy estimate {priority} does not clear legacy shop evaluator gates"),
     )
+}
+
+fn evaluate_immediate_recovery_relic_v1(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+    relic: crate::content::relics::RelicId,
+    legacy_priority: i32,
+) -> Option<ShopPlanEvaluationV1> {
+    if !candidate
+        .signals
+        .contains(&super::types::ShopPurchaseSignalV1::ImmediateRecovery)
+        || relic != crate::content::relics::RelicId::Waffle
+        || context.need.max_hp <= 0
+        || context.need.hp.saturating_mul(2) > context.need.max_hp
+    {
+        return None;
+    }
+
+    let recovered_hp = context
+        .need
+        .max_hp
+        .saturating_add(7)
+        .saturating_sub(context.need.hp)
+        .max(0);
+    Some(ShopPlanEvaluationV1::allow(
+        340,
+        legacy_priority.saturating_add(recovered_hp.saturating_mul(10)),
+        0.92,
+        Some(legacy_priority),
+        format!(
+            "typed immediate recovery: Waffle restores {recovered_hp} current HP including its +7 max HP at {}/{} HP",
+            context.need.hp, context.need.max_hp
+        ),
+    ))
 }
 
 fn evaluate_temporary_potion_purchase_v1(
@@ -365,114 +395,6 @@ fn evaluate_starter_purge_v1(
     }
 
     strategic_starter_purge_evaluation_v1(candidate, strategic_decision)
-}
-
-fn evaluate_portfolio_plan_v1(
-    context: &ShopDecisionContextV1,
-    config: &ShopPolicyConfigV1,
-    strategic_trace: &StrategicDecisionTrace,
-    candidate_plan: &ShopPlanCandidateV1,
-) -> ShopPlanEvaluationV1 {
-    if candidate_plan.plan.steps.is_empty() {
-        return ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
-    }
-    if !candidate_plan
-        .plan
-        .steps
-        .iter()
-        .all(|step| !matches!(step, ShopPlanStepV1::LeaveShop))
-    {
-        return ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
-    }
-    if candidate_plan.plan.candidate_ids.is_empty() {
-        return ShopPlanEvaluationV1::block(
-            candidate_plan.plan.legacy_priority,
-            "portfolio plan has no candidate ids for unified shop evaluation",
-        );
-    }
-
-    let mut step_evaluations = Vec::new();
-    let mut branch_only_step_count = 0usize;
-    for candidate_id in &candidate_plan.plan.candidate_ids {
-        let Some(candidate) = context
-            .candidates
-            .iter()
-            .find(|candidate| &candidate.candidate_id == candidate_id)
-        else {
-            return ShopPlanEvaluationV1::block(
-                candidate_plan.plan.legacy_priority,
-                format!("portfolio plan candidate id {candidate_id} is no longer visible"),
-            );
-        };
-        let evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
-        if !evaluation.branch_admission.is_admitted() {
-            let reason = evaluation
-                .reasons
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "candidate blocked by unified shop gate".to_string());
-            return ShopPlanEvaluationV1::block(
-                candidate
-                    .legacy_estimate
-                    .or(candidate_plan.plan.legacy_priority),
-                format!("portfolio step {candidate_id} failed shop branch admission: {reason}"),
-            );
-        }
-        if !evaluation.rollout_admission.is_admitted() {
-            branch_only_step_count += 1;
-        }
-        if candidate_plan.plan.steps.len() > 1
-            && candidate
-                .purchase_target
-                .is_some_and(|target| matches!(target, ShopPurchaseTargetV1::Card { .. }))
-            && evaluation.rollout_admission.is_admitted()
-            && evaluation.tier < 320
-        {
-            return ShopPlanEvaluationV1::block(
-                candidate
-                    .legacy_estimate
-                    .or(candidate_plan.plan.legacy_priority),
-                format!(
-                    "portfolio step {candidate_id} is a context card purchase; keep it as a single-step branch probe instead of a multi-buy combo"
-                ),
-            );
-        }
-        step_evaluations.push(evaluation);
-    }
-
-    let confidence = step_evaluations
-        .iter()
-        .map(|evaluation| evaluation.confidence)
-        .fold(0.50_f32, f32::min);
-    let tier = step_evaluations
-        .iter()
-        .map(|evaluation| evaluation.tier)
-        .max()
-        .unwrap_or(150);
-    let legacy_priority = candidate_plan.plan.legacy_priority.unwrap_or_default();
-    let score = step_evaluations
-        .iter()
-        .map(|evaluation| evaluation.score)
-        .sum::<i32>()
-        .max(legacy_priority);
-    if branch_only_step_count > 0 {
-        return ShopPlanEvaluationV1::block(
-            Some(score),
-            format!(
-                "multi-step shop plan contains {branch_only_step_count} branch-frontier-only step(s); keep as branch frontier, not rollout head"
-            ),
-        )
-        .with_branch_admission(
-            "multi-step shop plan admitted to branch frontier because every step passed branch admission",
-        );
-    }
-    ShopPlanEvaluationV1::allow(
-        tier,
-        score,
-        confidence,
-        candidate_plan.plan.legacy_priority,
-        "multi-step shop plan passed unified shop gates; strongest step tier retained for plan comparison",
-    )
 }
 
 fn blocking_purchase_risk_reason_v1(candidate: &ShopCandidateEvidenceV1) -> Option<String> {
@@ -700,13 +622,6 @@ fn plan_components_v1(
             ShopPlanComponentKindV1::LegacyEstimate,
             priority as f32,
             "legacy purchase estimate retained as an audit component",
-        ));
-    }
-    if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative {
-        components.push(component_v1(
-            ShopPlanComponentKindV1::BranchExploration,
-            1.0,
-            "portfolio plan is retained for branch exploration",
         ));
     }
     if shop_plan_matches_pressure_v1(candidate_plan, strategic_trace, |kind| {

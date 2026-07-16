@@ -3,7 +3,6 @@ mod component_scorer;
 mod conversion;
 mod evaluator;
 mod policy;
-mod portfolio;
 mod strategy_tags;
 mod types;
 
@@ -30,7 +29,7 @@ pub use types::{
     ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentScoreV1, ShopPlanComponentV1,
     ShopPlanEvaluationV1, ShopPlanFrontierV1, ShopPlanKindV1, ShopPlanLaneGroupV1, ShopPlanLaneV1,
     ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanRolloutAdmissionStatusV1,
-    ShopPlanRolloutAdmissionV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseSignalV1,
-    ShopPurchaseTargetV1, ShopThreatWindowV1, ShopVisitFactsV1,
+    ShopPlanRolloutAdmissionV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1,
+    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseSignalV1, ShopPurchaseTargetV1,
+    ShopThreatWindowV1, ShopVisitFactsV1,
 };

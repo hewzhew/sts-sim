@@ -109,7 +109,7 @@ fn compiled_shop_rollout_step(session: &RunControlSession) -> Option<ShopPlanSte
     let compiled = compile_shop_decision_v1(
         &context,
         &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecutePlanHead { max_plans: 8 },
+        ShopCompileModeV1::ExecutePlanHead,
     );
     compiled_rollout_plan(&compiled)?.steps.first().cloned()
 }

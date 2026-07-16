@@ -1,12 +1,11 @@
 use super::evaluator::evaluate_shop_plan_candidate_v1;
 use super::policy::stop_reason;
-use super::portfolio::evaluated_shop_portfolio_combo_plans_v1;
 use super::types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
     ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanEvaluationV1,
     ShopPlanFrontierV1, ShopPlanKindV1, ShopPlanLaneGroupV1, ShopPlanLaneV1,
-    ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
-    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateDelta, CandidateRole, StrategicDecisionTrace};
 
@@ -18,7 +17,7 @@ pub fn compile_shop_decision_v1(
     let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(context);
     let mut candidate_plans = enumerate_single_action_plan_candidates_v1(context);
     candidate_plans.push(stop_candidate_plan_v1(stop_reason(context)));
-    let mut candidate_plans = candidate_plans
+    let candidate_plans = candidate_plans
         .into_iter()
         .map(|mut candidate| {
             candidate.evaluation =
@@ -26,31 +25,6 @@ pub fn compile_shop_decision_v1(
             candidate
         })
         .collect::<Vec<_>>();
-    let portfolio_limit = match mode {
-        ShopCompileModeV1::ExecutePlanHead { max_plans }
-        | ShopCompileModeV1::BranchTopK { max_plans } => max_plans,
-        ShopCompileModeV1::ExecuteOne => 0,
-    };
-    if portfolio_limit > 0 {
-        let portfolio_candidates =
-            evaluated_shop_portfolio_combo_plans_v1(context, &candidate_plans, portfolio_limit)
-                .into_iter()
-                .map(|plan| {
-                    let mut candidate = ShopPlanCandidateV1 {
-                        plan,
-                        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
-                        evaluation: ShopPlanEvaluationV1::pending(),
-                    };
-                    candidate.evaluation = evaluate_shop_plan_candidate_v1(
-                        context,
-                        config,
-                        &strategic_trace,
-                        &candidate,
-                    );
-                    candidate
-                });
-        candidate_plans.extend(portfolio_candidates);
-    }
     let frontier = shop_plan_frontier_v1(&strategic_trace, &candidate_plans);
     let rollout_head = select_rollout_head_v1(&strategic_trace, &candidate_plans, mode);
     let compat_selected_plan = rollout_head
@@ -62,7 +36,7 @@ pub fn compile_shop_decision_v1(
             stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
         });
     let branch_frontier = match mode {
-        ShopCompileModeV1::ExecuteOne | ShopCompileModeV1::ExecutePlanHead { .. } => Vec::new(),
+        ShopCompileModeV1::ExecuteOne | ShopCompileModeV1::ExecutePlanHead => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
             branch_frontier_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
         }
@@ -208,7 +182,7 @@ fn shop_plan_is_rollout_eligible_in_mode_v1(
     match mode {
         ShopCompileModeV1::BranchTopK { .. } => true,
         ShopCompileModeV1::ExecuteOne => !shop_plan_is_context_card_purchase_v1(candidate),
-        ShopCompileModeV1::ExecutePlanHead { .. } => true,
+        ShopCompileModeV1::ExecutePlanHead => true,
     }
 }
 
@@ -234,9 +208,6 @@ fn select_branch_compat_alternatives_with_effect_coverage_v1<'a>(
     let mut selected = Vec::new();
     let mut represented = std::collections::BTreeSet::<String>::new();
     for effect_kind in [
-        // Keep primitive actions ahead of portfolio probes. Multi-step shop
-        // combos are useful coverage probes, but they should not consume the
-        // fanout budget before a cleanup or single-purchase branch can appear.
         ShopPlanLaneV1::Purge,
         ShopPlanLaneV1::BuyRelic,
         ShopPlanLaneV1::BuyPotion,
@@ -244,7 +215,6 @@ fn select_branch_compat_alternatives_with_effect_coverage_v1<'a>(
         ShopPlanLaneV1::BuyCardMissingCeiling,
         ShopPlanLaneV1::BuyCardFutureSustain,
         ShopPlanLaneV1::BuyCardScalingEngine,
-        ShopPlanLaneV1::BuyCombo,
         ShopPlanLaneV1::BuyCardDrawAccess,
         ShopPlanLaneV1::BuyCardExhaustAccess,
         ShopPlanLaneV1::BuyCardDefense,
@@ -281,9 +251,6 @@ fn shop_plan_lane_v1(
     candidate: &ShopPlanCandidateV1,
 ) -> ShopPlanLaneV1 {
     let plan = &candidate.plan;
-    if plan.steps.len() > 1 {
-        return ShopPlanLaneV1::BuyCombo;
-    }
     match plan.steps.first() {
         Some(ShopPlanStepV1::BuyCard { .. }) => shop_card_buy_frontier_lane_projection_v1(
             plan_delta_from_strategic_trace_v1(strategic_trace, plan),
@@ -399,7 +366,7 @@ fn role_rank_v1(candidate: &ShopPlanCandidateV1, mode: ShopCompileModeV1) -> i32
     if candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
         && matches!(
             mode,
-            ShopCompileModeV1::ExecutePlanHead { .. } | ShopCompileModeV1::BranchTopK { .. }
+            ShopCompileModeV1::ExecutePlanHead | ShopCompileModeV1::BranchTopK { .. }
         )
         && plan_has_leave_shop_step_v1(candidate)
     {
@@ -410,7 +377,6 @@ fn role_rank_v1(candidate: &ShopPlanCandidateV1, mode: ShopCompileModeV1) -> i32
         (ShopPlanVerdictV1::Stop, _) => 1,
         (_, ShopPlanCandidateRoleV1::SingleAction) => 3,
         (_, ShopPlanCandidateRoleV1::StopFallback) => 2,
-        (_, ShopPlanCandidateRoleV1::PortfolioAlternative) => 1,
     }
 }
 
@@ -441,12 +407,10 @@ fn enumerate_single_action_plan_candidates_v1(
         .candidates
         .iter()
         .filter_map(|candidate| {
-            single_candidate_plan_v1(candidate, ShopPlanSourceV1::CandidateEvidence).map(|plan| {
-                ShopPlanCandidateV1 {
-                    plan,
-                    role: ShopPlanCandidateRoleV1::SingleAction,
-                    evaluation: ShopPlanEvaluationV1::pending(),
-                }
+            single_candidate_plan_v1(candidate).map(|plan| ShopPlanCandidateV1 {
+                plan,
+                role: ShopPlanCandidateRoleV1::SingleAction,
+                evaluation: ShopPlanEvaluationV1::pending(),
             })
         })
         .collect()
@@ -472,10 +436,7 @@ fn plan_with_evaluation_by_id_v1(
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
 }
 
-pub(super) fn single_candidate_plan_v1(
-    candidate: &ShopCandidateEvidenceV1,
-    source: ShopPlanSourceV1,
-) -> Option<ShopPlanV1> {
+pub(super) fn single_candidate_plan_v1(candidate: &ShopCandidateEvidenceV1) -> Option<ShopPlanV1> {
     let step = match (
         candidate.deck_index,
         candidate.card,
@@ -518,7 +479,6 @@ pub(super) fn single_candidate_plan_v1(
         steps: vec![step],
         total_gold_spent,
         candidate_ids: vec![candidate.candidate_id.clone()],
-        source,
         legacy_priority: candidate.legacy_estimate,
         legacy_confidence: None,
         suppressed_count: 0,
@@ -535,7 +495,6 @@ fn stop_candidate_plan_v1(reason: String) -> ShopPlanCandidateV1 {
             steps: Vec::new(),
             total_gold_spent: 0,
             candidate_ids: Vec::new(),
-            source: ShopPlanSourceV1::CandidateEvidence,
             legacy_priority: None,
             legacy_confidence: None,
             suppressed_count: 0,

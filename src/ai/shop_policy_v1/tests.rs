@@ -7,9 +7,9 @@ use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1,
     legacy_shop_card_purchase_estimate_v1, ShopCompileModeV1, ShopDecisionSourceV1,
     ShopFutureShopV1, ShopMawBankStateV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
-    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseRiskV1,
-    ShopPurchaseTargetV1, ShopThreatWindowV1, ShopVisitFactsV1,
+    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1,
+    ShopPolicyConfigV1, ShopPurchaseRiskV1, ShopPurchaseTargetV1, ShopThreatWindowV1,
+    ShopVisitFactsV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -723,7 +723,7 @@ fn compiled_shop_plan_modes_use_executable_leave_when_no_purchase_is_selected() 
     let plan_head = compile_shop_decision_v1(
         &context,
         &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+        ShopCompileModeV1::ExecutePlanHead,
     );
 
     assert_eq!(execute.compat_selected_plan.kind, ShopPlanKindV1::Stop);
@@ -1023,7 +1023,7 @@ fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
     let compiled = compile_shop_decision_v1(
         &context,
         &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+        ShopCompileModeV1::ExecutePlanHead,
     );
     let potion = compiled
         .candidate_plans
@@ -1076,20 +1076,13 @@ fn compiled_shop_candidate_pool_preserves_effect_coverage() {
     let candidate_effect_kinds = compiled
         .candidate_plans
         .iter()
-        .map(|candidate| {
-            let plan = &candidate.plan;
-            if plan.steps.len() > 1 {
-                "shop_buy_combo"
-            } else {
-                match plan.steps.first() {
-                    Some(ShopPlanStepV1::BuyCard { .. }) => "shop_buy_card",
-                    Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
-                    Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
-                    Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
-                    Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
-                    None => "shop_stop",
-                }
-            }
+        .map(|candidate| match candidate.plan.steps.first() {
+            Some(ShopPlanStepV1::BuyCard { .. }) => "shop_buy_card",
+            Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
+            Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
+            Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
+            Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
+            None => "shop_stop",
         })
         .collect::<std::collections::BTreeSet<_>>();
 
@@ -1205,7 +1198,7 @@ fn compiled_shop_branch_compat_alternatives_suppress_leave_under_conversion_pres
 }
 
 #[test]
-fn compiled_shop_branch_compat_alternatives_are_not_limited_to_legacy_portfolio() {
+fn compiled_shop_branch_compat_alternatives_include_atomic_candidates() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -1249,7 +1242,7 @@ fn compiled_shop_branch_compat_alternatives_are_not_limited_to_legacy_portfolio(
 
     assert!(
         alternative_roles.contains(&ShopPlanCandidateRoleV1::SingleAction),
-        "branch compat_alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
+        "branch compat_alternatives should come from the evaluated atomic candidate pool: {alternative_roles:?}"
     );
 }
 
@@ -1298,7 +1291,7 @@ fn compiled_shop_branch_candidate_plan_ids_are_unique() {
 }
 
 #[test]
-fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
+fn compiled_shop_branch_frontier_excludes_blocked_atomic_candidates() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -1333,20 +1326,18 @@ fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
                 && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
         })
         .expect("single-action card candidate should exist");
-    let blocked_portfolio = compiled.candidate_plans.iter().find(|candidate| {
-        candidate.role == crate::ai::shop_policy_v1::ShopPlanCandidateRoleV1::PortfolioAlternative
-            && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
-    });
-
     assert_eq!(single.evaluation.verdict, ShopPlanVerdictV1::Block);
     assert!(
-        blocked_portfolio.is_none(),
-        "portfolio compat_alternatives are generated from evaluated Allow single-action candidates only"
+        compiled
+            .branch_frontier
+            .iter()
+            .all(|projection| projection.plan_id != single.plan.plan_id),
+        "blocked current-state actions must not enter the branch frontier"
     );
 }
 
 #[test]
-fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
+fn compiled_shop_candidates_are_atomic_current_state_actions() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 5;
@@ -1367,46 +1358,27 @@ fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
     );
 
     assert!(
-        compiled.compat_selected_plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                ShopPlanStepV1::RemoveCard {
-                    card: CardId::Strike,
-                    ..
-                }
-            )
-        }),
-        "selected shop plan should retain the deck-cleaning step, got {:?}",
-        compiled.compat_selected_plan
-    );
-    assert!(
-        compiled.compat_selected_plan.steps.iter().any(|step| {
-            matches!(
-                step,
-                ShopPlanStepV1::BuyRelic {
-                    relic: RelicId::OrangePellets,
-                    ..
-                }
-            )
-        }),
-        "selected shop plan should include the high-value relic conversion, got {:?}",
-        compiled.compat_selected_plan
-    );
-    assert!(
-        compiled.compat_selected_plan.steps.len() >= 2,
-        "shop compiler should compare complete multi-step plans instead of forcing local single-step selection"
+        compiled
+            .candidate_plans
+            .iter()
+            .all(|candidate| candidate.plan.steps.len() <= 1),
+        "shop candidates must describe only an action executable from the current shop state"
     );
     assert!(
         compiled
-            .compat_alternatives
+            .branch_frontier
             .iter()
-            .all(|plan| plan.plan_id != compiled.compat_selected_plan.plan_id),
-        "branch compat_alternatives should not duplicate the selected multi-step shop plan"
+            .all(
+                |projection| compiled.candidate_plans.iter().any(|candidate| {
+                    candidate.plan.plan_id == projection.plan_id && candidate.plan.steps.len() == 1
+                })
+            ),
+        "branch exploration must branch on one exact current-state action and recompile afterward"
     );
 }
 
 #[test]
-fn compiled_shop_noncombat_record_keeps_complete_multi_step_command() {
+fn compiled_shop_noncombat_record_exposes_only_atomic_commands() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 5;
@@ -1426,33 +1398,18 @@ fn compiled_shop_noncombat_record_keeps_complete_multi_step_command() {
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
     let record = compiled.to_noncombat_decision_record_v1();
-    let selected_descriptor = record
-        .candidates
-        .iter()
-        .find(|candidate| candidate.candidate_id == compiled.compat_selected_plan.plan_id)
-        .expect("selected shop plan should have a public candidate descriptor");
-    let command = selected_descriptor
-        .action_plan
-        .command
-        .as_deref()
-        .expect("multi-step shop plan should expose a complete public command");
-
     assert!(
-        command.contains("purge 0"),
-        "complete shop command should include the purge step, got {command}"
-    );
-    assert!(
-        command.contains("buy-relic 0"),
-        "complete shop command should include the relic purchase step, got {command}"
-    );
-    assert!(
-        command.contains("&&"),
-        "multi-step shop command should make sequencing explicit, got {command}"
+        record.candidates.iter().all(|candidate| candidate
+            .action_plan
+            .command
+            .as_deref()
+            .is_none_or(|command| !command.contains("&&"))),
+        "public shop commands must never claim that an unobserved follow-up action is executable"
     );
 }
 
 #[test]
-fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
+fn compiled_shop_branch_frontier_retains_distinct_atomic_purchase_lanes() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 5;
@@ -1478,87 +1435,32 @@ fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
         ShopCompileModeV1::BranchTopK { max_plans: 6 },
     );
 
-    let multi_step_portfolio = compiled
+    let atomic_relic_candidates = compiled
         .candidate_plans
         .iter()
         .filter(|candidate| {
-            candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
-                && candidate.plan.steps.len() >= 2
-                && candidate.evaluation.rollout_admission.is_admitted()
+            matches!(
+                candidate.plan.steps.as_slice(),
+                [ShopPlanStepV1::BuyRelic { .. }]
+            )
         })
         .collect::<Vec<_>>();
-    let distinct_plan_ids = multi_step_portfolio
+    let distinct_plan_ids = atomic_relic_candidates
         .iter()
         .map(|candidate| candidate.plan.plan_id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert!(
-        multi_step_portfolio.len() >= 2,
-        "shop compiler should retain multiple complete portfolio plans for branch/inspect comparison, got {:?}",
-        multi_step_portfolio
-            .iter()
-            .map(|candidate| candidate.plan.label.as_str())
-            .collect::<Vec<_>>()
-    );
     assert_eq!(
         distinct_plan_ids.len(),
-        multi_step_portfolio.len(),
-        "multi-step portfolio candidates should have stable distinct plan ids"
+        2,
+        "distinct current relic slots should remain distinct atomic candidates"
     );
-}
-
-#[test]
-fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 1;
-    run_state.floor_num = 4;
-    run_state.gold = 125;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::ShrugItOff,
-        upgrades: 0,
-        price: 47,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(&context);
-    let candidate_plan = crate::ai::shop_policy_v1::ShopPlanCandidateV1 {
-        plan: ShopPlanV1 {
-            plan_id: "test:portfolio-zero-legacy".to_string(),
-            label: "portfolio Shrug It Off".to_string(),
-            kind: ShopPlanKindV1::Execute,
-            steps: vec![ShopPlanStepV1::BuyCard {
-                index: 0,
-                card: CardId::ShrugItOff,
-                cost: 47,
-            }],
-            total_gold_spent: 47,
-            candidate_ids: vec!["shop:card-0".to_string()],
-            source: ShopPlanSourceV1::PortfolioCandidate,
-            legacy_priority: Some(0),
-            legacy_confidence: None,
-            suppressed_count: 0,
-            reason: "test portfolio plan with zero legacy estimate".to_string(),
-        },
-        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
-        evaluation: crate::ai::shop_policy_v1::ShopPlanEvaluationV1::pending(),
-    };
-
-    let evaluation = super::evaluator::evaluate_shop_plan_candidate_v1(
-        &context,
-        &ShopPolicyConfigV1::default(),
-        &strategic_trace,
-        &candidate_plan,
-    );
-
-    assert_eq!(evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
-        evaluation.rollout_admission.is_admitted()
-            && evaluation.branch_admission.is_admitted()
-            && evaluation.score > 0,
-        "portfolio candidates should be judged by their typed step admissions, not a diagnostic reason or raw legacy plan gate"
+        compiled
+            .candidate_plans
+            .iter()
+            .all(|candidate| candidate.plan.steps.len() <= 1),
+        "branch compilation must not synthesize future purchases from the initial shop snapshot"
     );
 }
 
@@ -1668,7 +1570,7 @@ fn far_threat_does_not_admit_temporary_potion_rollout() {
     let compiled = compile_shop_decision_v1(
         &context,
         &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecutePlanHead { max_plans: 4 },
+        ShopCompileModeV1::ExecutePlanHead,
     );
     let potion = compiled
         .candidate_plans
@@ -1870,7 +1772,7 @@ fn seed006_act_three_shop_exposes_awakened_cultist_answer_ranking() {
     let compiled = compile_shop_decision_v1(
         &context,
         &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecutePlanHead { max_plans: 8 },
+        ShopCompileModeV1::ExecutePlanHead,
     );
     let rollout = compiled
         .rollout_head

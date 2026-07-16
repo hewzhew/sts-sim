@@ -120,6 +120,7 @@ pub enum ShopPurchaseSignalV1 {
     StartupAccess,
     CoreDefenseOrSurvival,
     CoreCardAccess,
+    ImmediateRecovery,
     CombatShapeChange,
     DigestCapacity,
 }
@@ -176,15 +177,9 @@ pub enum ShopDecisionSourceV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ShopPlanSourceV1 {
-    CandidateEvidence,
-    PortfolioCandidate,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopCompileModeV1 {
     ExecuteOne,
-    ExecutePlanHead { max_plans: usize },
+    ExecutePlanHead,
     BranchTopK { max_plans: usize },
 }
 
@@ -252,7 +247,6 @@ pub enum ShopPlanLaneV1 {
     BuyCardDefense,
     BuyCardFrontload,
     BuyCardGeneric,
-    BuyCombo,
     Leave,
     Stop,
 }
@@ -267,7 +261,6 @@ pub struct ShopPlanCandidateV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopPlanCandidateRoleV1 {
     SingleAction,
-    PortfolioAlternative,
     StopFallback,
 }
 
@@ -385,7 +378,6 @@ pub enum ShopPlanComponentKindV1 {
     DeckBloatCost,
     GoldSpend,
     LegacyEstimate,
-    BranchExploration,
     BossAnswer,
     ImmediateThreatCoverage,
     MawBankOpportunityCost,
@@ -472,11 +464,6 @@ impl ShopPlanEvaluationV1 {
             component_score: ShopPlanComponentScoreV1::neutral("component score not attached yet"),
         }
     }
-
-    pub(crate) fn with_branch_admission(mut self, reason: impl Into<String>) -> Self {
-        self.branch_admission = ShopPlanBranchAdmissionV1::admit(reason);
-        self
-    }
 }
 
 impl ShopPlanComponentScoreV1 {
@@ -499,7 +486,6 @@ pub struct ShopPlanV1 {
     pub steps: Vec<ShopPlanStepV1>,
     pub total_gold_spent: i32,
     pub candidate_ids: Vec<String>,
-    pub source: ShopPlanSourceV1,
     /// Legacy estimate copied from candidate/evaluation for trace continuity.
     /// It must not be used as a direct rollout path.
     pub legacy_priority: Option<i32>,
@@ -672,14 +658,13 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
         kind: EvidenceKindV1::PolicyGate,
         candidate_id: Some(candidate.plan.plan_id.clone()),
         label: format!(
-            "shop plan role={:?} verdict={:?} rollout={:?} branch={:?} tier={} score={} source={:?}",
+            "shop plan role={:?} verdict={:?} rollout={:?} branch={:?} tier={} score={}",
             candidate.role,
             evaluation.verdict,
             evaluation.rollout_admission.status,
             evaluation.branch_admission.status,
             evaluation.tier,
-            evaluation.score,
-            candidate.plan.source
+            evaluation.score
         ),
         information_class: InformationClassV1::Belief,
         components,
@@ -705,16 +690,15 @@ fn compiled_shop_value_estimate(candidate: &ShopPlanCandidateV1) -> ValueEstimat
 }
 
 fn compiled_shop_plan_command(plan: &ShopPlanV1) -> Option<String> {
-    if plan.steps.is_empty() {
-        return None;
+    match plan.steps.as_slice() {
+        [] => None,
+        [step] => Some(compiled_shop_step_command(step)),
+        // A multi-step plan cannot be executed truthfully from one observed
+        // shop state because each purchase may change prices, inventory, or
+        // follow-up interactions. Such a plan must be decomposed and
+        // recompiled after the exact engine transition.
+        _ => None,
     }
-    Some(
-        plan.steps
-            .iter()
-            .map(compiled_shop_step_command)
-            .collect::<Vec<_>>()
-            .join(" && "),
-    )
 }
 
 fn compiled_shop_step_command(step: &ShopPlanStepV1) -> String {

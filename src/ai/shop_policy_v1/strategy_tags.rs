@@ -6,6 +6,7 @@ use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::{relic_acquisition_traits_v1, RelicAcquisitionTraitV1};
 use crate::ai::decision_tags_v1::{
     combat_shape_change_tags_for_card_v1, TAG_AWAKENED_CULTIST_ANSWER,
     TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK, TAG_COLLECTOR_ANSWER,
@@ -124,6 +125,10 @@ fn analyze_shop_relic(
     if mechanics.core_card_access {
         push_signal(analysis, ShopPurchaseSignalV1::CoreCardAccess);
         push_evidence(analysis, "shop_relic_core_card_access");
+    }
+    if relic_acquisition_traits_v1(relic).contains(&RelicAcquisitionTraitV1::ImmediateRecovery) {
+        push_signal(analysis, ShopPurchaseSignalV1::ImmediateRecovery);
+        push_evidence(analysis, "shop_relic_immediate_recovery");
     }
     if relic == RelicId::MedicalKit
         && deck_has_role(run_state, CardRewardSemanticRoleV1::StatusGenerator)
