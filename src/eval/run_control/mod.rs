@@ -103,10 +103,11 @@ pub use outcome::{
 };
 pub use persistent_burden_cutpoint_probe::{
     probe_combat_case_persistent_burden_cutpoints_v1, CombatCasePersistentBurdenCutpointProbeV1,
-    PersistentBurdenCutpointAggregateV1, PersistentBurdenCutpointConclusionV1,
-    PersistentBurdenCutpointInputOutcomeKindV1, PersistentBurdenCutpointInputOutcomeV1,
-    PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
-    PersistentBurdenGainedCurseCountV1, PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
+    PersistentBurdenCutpointActionDomainV1, PersistentBurdenCutpointAggregateV1,
+    PersistentBurdenCutpointConclusionV1, PersistentBurdenCutpointInputOutcomeKindV1,
+    PersistentBurdenCutpointInputOutcomeV1, PersistentBurdenCutpointSummaryV1,
+    PersistentBurdenEnemyPlanChangeV1, PersistentBurdenGainedCurseCountV1,
+    PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,
 };
 pub use planner_boundary_capture::{
     build_planner_boundary_capture_coverage_report_v1, capture_planner_boundary_ticket_v1,
@@ -130,7 +131,7 @@ pub use progress_options::{
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{
-    render_auto_applied_step_compact_v1, render_combat_actions, render_progress_step_compact_v1,
+    render_auto_applied_step_compact_v1, render_progress_step_compact_v1,
     render_run_control_details, render_run_control_raw, render_run_control_state,
 };
 pub use reward_auto::{

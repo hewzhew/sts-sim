@@ -14,6 +14,8 @@ pub enum SearchCoverageStatus {
     Exhaustive,
     AcceptedCompleteCandidate,
     NodeBudgetLimited,
+    ActionPrefixBudgetLimited,
+    ActionSurfaceIncomplete,
     TimeBudgetLimited,
     FrontierOpen,
 }
@@ -28,5 +30,10 @@ mod tests {
             serde_json::from_str("\"node_budget_limited\"").expect("artifact status should parse");
 
         assert_eq!(status, SearchCoverageStatus::NodeBudgetLimited);
+
+        let incomplete: SearchCoverageStatus =
+            serde_json::from_str("\"action_surface_incomplete\"")
+                .expect("new action-surface status should parse");
+        assert_eq!(incomplete, SearchCoverageStatus::ActionSurfaceIncomplete);
     }
 }

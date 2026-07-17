@@ -117,11 +117,17 @@ pub(super) fn surface_legal_visibility_violations(session: &RunControlSession) -
                 }
                 return violations;
             }
-            let legal_moves = crate::sim::combat_legal_actions::get_legal_moves(
+            let legal_surface = crate::sim::combat_action_surface::combat_legal_action_surface_v2(
                 &position.engine,
                 &position.combat,
             );
-            for legal in legal_moves {
+            if !legal_surface.selection_families.is_empty() {
+                violations.push(
+                    "pending choice symbolic action family has no compact visible surface"
+                        .to_string(),
+                );
+            }
+            for legal in legal_surface.atomic_actions {
                 if !surface_allows_visible_input(&surface, &legal) {
                     violations.push(format!(
                         "pending choice legal input '{}' is not visible",

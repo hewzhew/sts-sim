@@ -1,11 +1,20 @@
 use std::time::Instant;
 
 use super::super::super::frontier::{QueueEntry, SearchNode};
+use super::super::super::PendingChoiceActionWork;
 use super::SearchLoopState;
 
 impl SearchLoopState {
     pub(in crate::ai::combat_search_v2::search) fn push_frontier(&mut self, node: SearchNode) {
         self.frontier.push_node(node);
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn push_pending_choice_work(
+        &mut self,
+        node: SearchNode,
+        work: PendingChoiceActionWork,
+    ) {
+        self.frontier.push_pending_choice_work(node, work);
     }
 
     pub(in crate::ai::combat_search_v2::search) fn pop_frontier(&mut self) -> Option<QueueEntry> {

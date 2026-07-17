@@ -1,0 +1,44 @@
+[package]
+name = "sts_simulator_control"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+autobins = false
+autotests = false
+
+[lib]
+name = "sts_simulator"
+path = "src/lib.rs"
+
+[dependencies]
+sts_core = { package = "sts_simulator", path = "../.." }
+blake2 = "0.10"
+flate2 = "1.0"
+smallvec = { version = "1.11", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+
+[[bin]]
+name = "branch_panel"
+path = "../../src/bin/branch_panel.rs"
+
+[[bin]]
+name = "branch_tiny"
+path = "../../src/bin/branch_tiny.rs"
+
+[[bin]]
+name = "combat_case_review"
+path = "../../src/bin/combat_case_review.rs"
+
+[[bin]]
+name = "combat_search_v2_driver"
+path = "../../src/bin/combat_search_v2_driver/main.rs"
+
+[[bin]]
+name = "rl_dataset_export"
+path = "../../src/bin/rl_dataset_export.rs"

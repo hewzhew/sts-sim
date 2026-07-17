@@ -156,7 +156,7 @@ mod tests {
     struct SegmentTestStepper;
 
     impl CombatStepper for SegmentTestStepper {
-        fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
             if !matches!(position.engine, EngineState::CombatPlayerTurn) {
                 return Vec::new();
             }

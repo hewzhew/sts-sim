@@ -19,7 +19,16 @@ pub(super) fn summarize_policy_bank(
             )
         })
         .count();
-    let unresolved = outcomes.len().saturating_sub(wins + losses);
+    let escapes = outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome.resolution,
+                CombatLabPolicyScenarioResolutionV1::Escape
+            )
+        })
+        .count();
+    let unresolved = outcomes.len().saturating_sub(wins + losses + escapes);
     let terminal_hp_loss = outcomes
         .iter()
         .filter(|outcome| {
@@ -27,6 +36,7 @@ pub(super) fn summarize_policy_bank(
                 outcome.resolution,
                 CombatLabPolicyScenarioResolutionV1::Win
                     | CombatLabPolicyScenarioResolutionV1::Loss
+                    | CombatLabPolicyScenarioResolutionV1::Escape
             )
         })
         .map(|outcome| outcome.observed_hp_loss)
@@ -47,12 +57,13 @@ pub(super) fn summarize_policy_bank(
         .map(|outcome| outcome.observed_hp_loss)
         .collect::<Vec<_>>();
     let scenario_count = outcomes.len();
-    let resolved = wins + losses;
+    let resolved = wins + losses + escapes;
 
     CombatLabPolicyBankSummaryV1 {
         scenario_count,
         wins,
         losses,
+        escapes,
         unresolved,
         resolution_rate: rate(resolved, scenario_count),
         win_rate_all_scenarios: rate(wins, scenario_count),

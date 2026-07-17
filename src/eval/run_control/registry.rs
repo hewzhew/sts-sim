@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::eval::artifact::ArtifactTrustLevel;
-use crate::eval::combat_capture::load_combat_capture_v1;
-use crate::eval::combat_search_v2::CombatSearchV2BenchmarkExpectedFingerprints;
+use crate::eval::combat_capture::load_combat_capture_v2;
+use crate::eval::combat_search_v2::{
+    validate_combat_search_v2_benchmark_schema_header, CombatSearchV2BenchmarkExpectedFingerprints,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BenchmarkCasePaths {
@@ -31,9 +33,7 @@ impl BenchmarkCasePaths {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RegistryManifest {
-    #[serde(default = "default_benchmark_schema_name")]
     schema_name: String,
-    #[serde(default = "default_benchmark_schema_version")]
     schema_version: u32,
     name: String,
     #[serde(default = "default_min_trust_level")]
@@ -66,7 +66,7 @@ pub fn add_case_to_benchmark_registry(
             paths.capture_path.display()
         ));
     }
-    let capture = load_combat_capture_v1(&paths.capture_path)?;
+    let capture = load_combat_capture_v2(&paths.capture_path)?;
 
     let mut manifest = load_or_new_manifest(&paths.benchmark_manifest, root)?;
     let capture_rel = format!("captures/{case_id}.capture.json");
@@ -77,13 +77,14 @@ pub fn add_case_to_benchmark_registry(
     let case = RegistryCase {
         id: case_id.to_string(),
         combat_snapshot: capture_rel,
-        expected_fingerprints: capture.fingerprints.as_ref().map(|fingerprints| {
-            CombatSearchV2BenchmarkExpectedFingerprints {
-                public_observation_hash: fingerprints.public_observation_hash.clone(),
-                legal_candidate_set_hash: fingerprints.legal_candidate_set_hash.clone(),
-                legal_candidate_order_hash: Some(fingerprints.legal_candidate_order_hash.clone()),
-                exact_state_hash: Some(fingerprints.exact_state_hash.clone()),
-            }
+        expected_fingerprints: Some(CombatSearchV2BenchmarkExpectedFingerprints {
+            public_observation_hash: capture.fingerprints.public_observation_hash.clone(),
+            legal_input_language_hash: capture.fingerprints.legal_input_language_hash.clone(),
+            action_enumeration_domain_hash: capture
+                .fingerprints
+                .action_enumeration_domain_hash
+                .clone(),
+            exact_state_hash: Some(capture.fingerprints.exact_state_hash.clone()),
         }),
         baseline,
     };
@@ -108,6 +109,7 @@ pub fn add_case_to_benchmark_registry(
 fn load_or_new_manifest(path: &Path, root: &Path) -> Result<RegistryManifest, String> {
     if path.exists() {
         let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
+        validate_combat_search_v2_benchmark_schema_header(&payload)?;
         let manifest: RegistryManifest =
             serde_json::from_str(&payload).map_err(|err| err.to_string())?;
         if manifest.schema_name != default_benchmark_schema_name() {
@@ -143,11 +145,11 @@ fn load_or_new_manifest(path: &Path, root: &Path) -> Result<RegistryManifest, St
 }
 
 fn default_benchmark_schema_name() -> String {
-    "CombatSearchV2BenchmarkSuiteV1".to_string()
+    "CombatSearchV2BenchmarkSuiteV2".to_string()
 }
 
 fn default_benchmark_schema_version() -> u32 {
-    1
+    2
 }
 
 fn default_min_trust_level() -> ArtifactTrustLevel {
@@ -157,7 +159,7 @@ fn default_min_trust_level() -> ArtifactTrustLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eval::combat_capture::{capture_combat_position_v1, save_combat_capture_v1};
+    use crate::eval::combat_capture::{capture_combat_position_v2, save_combat_capture_v2};
     use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
     use crate::sim::combat::CombatPosition;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -167,15 +169,16 @@ mod tests {
         let root = unique_temp_dir("run_control_registry");
         let paths = BenchmarkCasePaths::for_case(&root, "case_a");
         let position = jaw_worm_position();
-        let capture = capture_combat_position_v1(Some("case_a".to_string()), &position)
+        let capture = capture_combat_position_v2(Some("case_a".to_string()), &position)
             .expect("capture should build");
-        save_combat_capture_v1(&paths.capture_path, &capture).expect("capture should be saved");
+        save_combat_capture_v2(&paths.capture_path, &capture).expect("capture should be saved");
 
         let written =
             add_case_to_benchmark_registry(&root, "case_a").expect("registry should update");
         let payload = fs::read_to_string(&written.benchmark_manifest).expect("manifest readable");
 
-        assert!(payload.contains("\"schema_name\": \"CombatSearchV2BenchmarkSuiteV1\""));
+        assert!(payload.contains("\"schema_name\": \"CombatSearchV2BenchmarkSuiteV2\""));
+        assert!(payload.contains("\"schema_version\": 2"));
         assert!(payload.contains("\"min_trust_level\": \"restorable\""));
         assert!(payload.contains("\"combat_snapshot\": \"captures/case_a.capture.json\""));
         assert!(payload.contains("\"expected_fingerprints\""));
@@ -191,9 +194,9 @@ mod tests {
         let root = unique_temp_dir("run_control_registry_baseline");
         let paths = BenchmarkCasePaths::for_case(&root, "case_a");
         let position = jaw_worm_position();
-        let capture = capture_combat_position_v1(Some("case_a".to_string()), &position)
+        let capture = capture_combat_position_v2(Some("case_a".to_string()), &position)
             .expect("capture should build");
-        save_combat_capture_v1(&paths.capture_path, &capture).expect("capture should be saved");
+        save_combat_capture_v2(&paths.capture_path, &capture).expect("capture should be saved");
         fs::create_dir_all(paths.baseline_path.parent().unwrap()).expect("baseline dir");
         fs::write(
             &paths.baseline_path,

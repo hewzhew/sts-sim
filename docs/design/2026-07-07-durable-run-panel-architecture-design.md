@@ -695,7 +695,7 @@ edit summary by hand
 The panel command calls a Rust scheduler, not a Python scheduler:
 
 ```powershell
-cargo run --bin branch_panel -- panel drain `
+cargo run -p sts_simulator_control --bin branch_panel -- panel drain `
   --seeds 1552225671..1552225675 `
   --capsule-root tools/artifacts/panels/current `
   --slice-ms 15000 `

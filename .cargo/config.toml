@@ -3,3 +3,12 @@
 # reduces relink time for the large library-test binary without a machine-
 # specific absolute path.
 linker = "rust-lld"
+
+[alias]
+# Source-architecture checks deliberately live in a dependency-free helper
+# package. Keeping them out of the main package prevents a 0.9 MiB source scan
+# from compiling the entire simulator as an unused integration-test dependency.
+architecture = ["run", "--quiet", "-p", "sts_architecture_checks", "--"]
+test-core = ["test", "-p", "sts_simulator", "--lib"]
+test-control = ["test", "-p", "sts_simulator_control", "--lib"]
+check-workspace = ["check", "--workspace", "--all-targets"]

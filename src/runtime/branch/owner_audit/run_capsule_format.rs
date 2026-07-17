@@ -223,12 +223,12 @@ fn next_recommendation(
 }
 
 fn combat_case_review_command(case: &str) -> String {
-    format!("cargo run --quiet --bin combat_case_review -- --case \"{case}\" --ladder --compact")
+    format!("cargo run --quiet -p sts_simulator_control --bin combat_case_review -- --case \"{case}\" --ladder --compact")
 }
 
 fn branch_tiny_continue_command(capsule_path: &Path, wall_ms: u64) -> String {
     format!(
-        "cargo run --quiet --bin branch_tiny -- --continue-capsule \"{}\" --continue-slices 1 --wall-ms {}",
+        "cargo run --quiet -p sts_simulator_control --bin branch_tiny -- --continue-capsule \"{}\" --continue-slices 1 --wall-ms {}",
         capsule_path.display(),
         wall_ms
     )
@@ -696,7 +696,7 @@ mod tests {
 
         assert_eq!(
             command,
-            "cargo run --quiet --bin branch_tiny -- --continue-capsule \"target/capsule\" --continue-slices 1 --wall-ms 60000"
+            "cargo run --quiet -p sts_simulator_control --bin branch_tiny -- --continue-capsule \"target/capsule\" --continue-slices 1 --wall-ms 60000"
         );
         assert!(!command.contains("target\\debug"));
         assert!(!command.contains("branch_tiny.exe"));
@@ -708,7 +708,7 @@ mod tests {
 
         assert_eq!(
             command,
-            "cargo run --quiet --bin combat_case_review -- --case \"target/cases/case.json\" --ladder --compact"
+            "cargo run --quiet -p sts_simulator_control --bin combat_case_review -- --case \"target/cases/case.json\" --ladder --compact"
         );
         assert!(!command.contains("target\\debug"));
         assert!(!command.contains("combat_case_review.exe"));

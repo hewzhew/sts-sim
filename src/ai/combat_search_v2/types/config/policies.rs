@@ -24,6 +24,28 @@ impl CombatSearchV2SetupBiasPolicy {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2ExpansionPolicy {
+    AtomicActions,
+    HierarchicalTurnBoundary,
+}
+
+impl Default for CombatSearchV2ExpansionPolicy {
+    fn default() -> Self {
+        Self::AtomicActions
+    }
+}
+
+impl CombatSearchV2ExpansionPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::AtomicActions => "atomic_actions",
+            Self::HierarchicalTurnBoundary => "hierarchical_turn_boundary",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2PhaseGuardPolicy {
     Default,
     ChampSplitGuard,

@@ -7,7 +7,8 @@ pub(super) fn should_seed_turn_plan_at_node(
     config: &CombatSearchV2Config,
     plugins: &CombatSearchPluginStack,
 ) -> bool {
-    if !plugins.turn_plan.seeds_turn_boundary_frontier()
+    if plugins.expansion.owns_turn_boundaries()
+        || !plugins.turn_plan.seeds_turn_boundary_frontier()
         || !matches!(node.engine, EngineState::CombatPlayerTurn)
         || node.turn_prefix.prefix_length() != 0
         || terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Unresolved

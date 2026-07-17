@@ -9,8 +9,10 @@ use crate::runtime::combat::{CombatCard, MetaChange, MonsterEntity};
 use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::{CombatPosition, CombatTerminal};
 use crate::sim::combat_action::CombatActionChoice;
+use crate::sim::combat_action_surface::CombatSelectionInputEncodingV2;
 use crate::state::core::{
-    ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
+    ActiveCombat, ClientInput, CombatContext, EngineState, GridSelectReason, PendingChoice,
+    PileType, RoomCombatContext,
 };
 use crate::state::map::node::RoomType;
 use crate::state::{HandSelectFilter, HandSelectReason};
@@ -20,10 +22,11 @@ use super::burden::{newly_gained_persistent_curses, PersistentCurseBurdenSnapsho
 use super::cutpoint::{
     cutpoint_identity, group_cutpoints, locate_candidate_cutpoint, LocatedBurdenCutpoint,
 };
-use super::outcomes::probe_cutpoint_actions;
+use super::outcomes::{probe_cutpoint_actions, probe_grouped_cutpoint};
 use super::{
-    conclusion_from_aggregate, PersistentBurdenCutpointAggregateV1,
-    PersistentBurdenCutpointConclusionV1, PersistentBurdenCutpointInputOutcomeKindV1,
+    aggregate_cutpoints, conclusion_from_aggregate, PersistentBurdenCutpointActionDomainV1,
+    PersistentBurdenCutpointAggregateV1, PersistentBurdenCutpointConclusionV1,
+    PersistentBurdenCutpointInputOutcomeKindV1,
 };
 use crate::eval::run_control::combat_line_outcome::newly_gained_curses;
 use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
@@ -344,6 +347,7 @@ fn unresolved_pending_curse_action_is_classified_as_new_curse() {
         .expect("replay")
         .expect("burden cutpoint");
     let outcome = probe_cutpoint_actions(&located, &config)
+        .outcomes
         .into_iter()
         .find(|outcome| outcome.input == trajectory.actions[0].input)
         .expect("trigger outcome");
@@ -411,13 +415,90 @@ fn equivalent_cutpoints_group_and_keep_first_report_order() {
 #[test]
 fn writhing_mass_reactive_attack_is_a_clean_plan_change() {
     let cutpoint = fixture_writhing_mass_reactive_cutpoint();
-    let outcomes = probe_cutpoint_actions(&cutpoint, &CombatSearchV2Config::default());
+    let action_probe = probe_cutpoint_actions(&cutpoint, &CombatSearchV2Config::default());
 
-    assert!(outcomes.iter().any(|outcome| {
+    assert_eq!(
+        action_probe.action_domain,
+        PersistentBurdenCutpointActionDomainV1::AtomicActionsComplete
+    );
+
+    assert!(action_probe.outcomes.iter().any(|outcome| {
         outcome.kind == PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged
             && matches!(outcome.input, ClientInput::PlayCard { .. })
             && outcome.gained_curse_counts.is_empty()
     }));
+}
+
+#[test]
+fn structured_pending_choices_fail_closed_and_are_explicit_in_report_schema() {
+    let cases = [
+        (
+            PendingChoice::HandSelect {
+                candidate_uuids: vec![31],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: true,
+                reason: HandSelectReason::Discard,
+            },
+            CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids,
+        ),
+        (
+            PendingChoice::GridSelect {
+                source_pile: PileType::Discard,
+                candidate_uuids: vec![31],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: true,
+                reason: GridSelectReason::DiscardToHand,
+            },
+            CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids,
+        ),
+        (
+            PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike],
+                card_uuids: vec![31],
+            },
+            CombatSelectionInputEncodingV2::SubmitScryDiscardIndices,
+        ),
+    ];
+    let mut summaries = Vec::new();
+
+    for (choice, expected_encoding) in cases {
+        let mut cutpoint = fixture_located_cutpoint(0, "same");
+        let card = CombatCard::new(CardId::Strike, 31);
+        cutpoint.position.combat.zones.hand = vec![card.clone()];
+        cutpoint.position.combat.zones.discard_pile = vec![card.clone()];
+        cutpoint.position.combat.zones.draw_pile = vec![card];
+        cutpoint.position.engine = EngineState::PendingChoice(choice);
+        let grouped = group_cutpoints(vec![cutpoint])
+            .pop()
+            .expect("grouped cutpoint");
+        let summary = probe_grouped_cutpoint(grouped, &CombatSearchV2Config::default());
+
+        assert_eq!(
+            summary.action_domain,
+            PersistentBurdenCutpointActionDomainV1::UnsupportedStructuredActionDomain {
+                selection_input_encodings: vec![expected_encoding],
+            }
+        );
+        assert!(
+            summary.outcomes.is_empty(),
+            "atomic Cancel must not be probed"
+        );
+        let json = serde_json::to_value(&summary).expect("serialize cutpoint summary");
+        assert_eq!(
+            json["action_domain"]["status"],
+            "unsupported_structured_action_domain"
+        );
+        summaries.push(summary);
+    }
+
+    let aggregate = aggregate_cutpoints(&summaries);
+    assert_eq!(aggregate.unsupported_structured_action_domain_count, 3);
+    assert_eq!(
+        conclusion_from_aggregate(&aggregate, 0),
+        PersistentBurdenCutpointConclusionV1::IncompleteDueToUnsupportedStructuredActionDomain
+    );
 }
 
 #[test]
@@ -448,6 +529,7 @@ fn input_failure_cannot_report_no_one_action_escape() {
         living_enemy_plan_change_count: 0,
         neutral_count: 4,
         input_failure_count: 1,
+        unsupported_structured_action_domain_count: 0,
     };
     assert_eq!(
         conclusion_from_aggregate(&aggregate, 0),

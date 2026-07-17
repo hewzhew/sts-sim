@@ -59,9 +59,9 @@ impl DiscardOrderShadowAuditExactSummary {
         self.checked_actions += result.checked_actions;
         self.verified_actions += result.verified_actions;
         self.blocked_actions += result.blocked_actions;
-        if result.blocked_actions == 0 {
+        if result.status == "sample_verified_one_step" {
             self.sample_verified_groups += 1;
-        } else {
+        } else if result.blocked_actions > 0 {
             self.blocked_groups += 1;
         }
         self.group_results.insert(key, result);

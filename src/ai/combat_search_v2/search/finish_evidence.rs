@@ -3,6 +3,7 @@ use super::super::*;
 pub(super) fn evidence_reliability_report(
     invalid_card_identity_observed: bool,
     exhaustive: bool,
+    action_surface_incomplete: bool,
 ) -> CombatSearchV2EvidenceReport {
     CombatSearchV2EvidenceReport {
         hidden_info_policy: "uses_only_the_supplied_engine_state; if that state contains hidden draw/rng truth, the report is engine-evidence rather than public-agent evidence",
@@ -15,11 +16,14 @@ pub(super) fn evidence_reliability_report(
         } else {
             "partial_budgeted_evidence"
         },
-        warnings: evidence_warnings(invalid_card_identity_observed),
+        warnings: evidence_warnings(invalid_card_identity_observed, action_surface_incomplete),
     }
 }
 
-fn evidence_warnings(invalid_card_identity_observed: bool) -> Vec<&'static str> {
+fn evidence_warnings(
+    invalid_card_identity_observed: bool,
+    action_surface_incomplete: bool,
+) -> Vec<&'static str> {
     let mut warnings = vec![
         "unresolved_cannot_be_claimed_better_than_a_complete_baseline",
         "no_stepwise_human_action_agreement_objective",
@@ -30,6 +34,11 @@ fn evidence_warnings(invalid_card_identity_observed: bool) -> Vec<&'static str> 
     if invalid_card_identity_observed {
         warnings.push(
             "duplicate_active_card_uuid_with_conflicting_card_ids_observed_input_or_rollout_state_invalid_until_investigated",
+        );
+    }
+    if action_surface_incomplete {
+        warnings.push(
+            "ordered_variants_of_multi_card_pending_choices_are_not_yet_covered_by_the_canonical_member_set_prefix_surface",
         );
     }
     warnings

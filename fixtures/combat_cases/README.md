@@ -42,8 +42,8 @@ potions=Blessing of the Forge, Blessing of the Forge, Block Potion
 Baseline checks:
 
 ```powershell
-cargo run --quiet --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact
-cargo run --quiet --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact --disable-rollout
+cargo run --quiet -p sts_simulator_control --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact
+cargo run --quiet -p sts_simulator_control --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact --disable-rollout
 ```
 
 Expected current behavior:

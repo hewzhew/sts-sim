@@ -26,7 +26,7 @@ pub(super) fn root_action_mask_report(
     CombatSearchV2TurnPlanProbeActionMaskReport {
         data_role: "ObservedExact",
         availability: "RootOnly",
-        complete_legal_mask: true,
+        complete_legal_mask: matches!(engine, EngineState::CombatPlayerTurn),
         legal_action_count: legal_actions.len(),
         candidate_eligible_action_count: candidate_eligible.len(),
         equivalence_representative_action_count: equivalence.choices.len(),
@@ -40,7 +40,7 @@ pub(super) fn root_action_mask_report(
             preselection_first_action_summaries,
         ),
         notes: vec![
-            "legal_actions is the complete root legal action list from the combat stepper",
+            "legal_actions is complete only for the CombatPlayerTurn boundary owned by this turn-plan probe",
             "candidate_eligible_actions applies the current combat search potion policy before turn-plan enumeration",
             "equivalence_representative_actions applies root action equivalence compression before turn-plan enumeration",
             "preselection_first_actions are first actions present before bucket selection truncates turn-plan candidates",

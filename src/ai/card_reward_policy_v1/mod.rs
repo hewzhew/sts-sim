@@ -29,7 +29,7 @@ pub use replay::{
     CardRewardDecisionReplayV1, PublicRewardDecisionPacketV1,
 };
 pub use semantics::card_reward_semantic_profile_v1;
-pub(crate) use threat_response::candidate_response_threat_tags_v1;
+pub use threat_response::candidate_response_threat_tags_v1;
 pub use types::{
     CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionApprovalV1,
     CardRewardDecisionContextV1, CardRewardDecisionV1, CardRewardEstimatorArbitrationV1,

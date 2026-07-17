@@ -14,7 +14,7 @@ pub(super) fn candidate_report(
     plugins: CombatSearchActionOrderingPlugins<'_>,
     choice: &IndexedActionChoice,
     ordered_index: usize,
-    selected_identity: Option<(usize, &str)>,
+    selected_action_key: Option<&str>,
 ) -> CombatSearchV2DecisionCandidateReport {
     let input = choice.choice.input.clone();
     let role = combat_search_action_ordering_role_label_for_state_with_plugins(
@@ -23,8 +23,8 @@ pub(super) fn candidate_report(
         &input,
         plugins,
     );
-    let selected_by_best_complete = selected_identity
-        .map(|(id, key)| id == choice.original_action_id && key == choice.choice.action_key)
+    let selected_by_best_complete = selected_action_key
+        .map(|key| key == choice.choice.action_key)
         .unwrap_or(false);
     let step = stepper.apply_to_stable(
         &CombatPosition::new(root.engine.clone(), root.combat.clone()),

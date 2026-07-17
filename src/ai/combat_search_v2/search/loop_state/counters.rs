@@ -13,6 +13,15 @@ impl SearchLoopState {
         self.exhausted = true;
     }
 
+    pub(in crate::ai::combat_search_v2::search) fn mark_action_prefix_budget_hit(&mut self) {
+        self.stats.action_prefix_budget_hit = true;
+        self.exhausted = true;
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn mark_action_surface_incomplete(&mut self) {
+        self.stats.action_surface_incomplete = true;
+    }
+
     pub(in crate::ai::combat_search_v2::search) fn mark_accepted_complete_candidate(&mut self) {
         self.accepted_complete_candidate = true;
     }
@@ -23,6 +32,21 @@ impl SearchLoopState {
 
     pub(in crate::ai::combat_search_v2::search) fn record_node_generated(&mut self) {
         self.stats.nodes_generated = self.stats.nodes_generated.saturating_add(1);
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn record_turn_boundary_work(
+        &mut self,
+        nodes_expanded: usize,
+        nodes_generated: usize,
+    ) {
+        self.stats.nodes_expanded = self
+            .stats
+            .nodes_expanded
+            .saturating_add(nodes_expanded as u64);
+        self.stats.nodes_generated = self
+            .stats
+            .nodes_generated
+            .saturating_add(nodes_generated as u64);
     }
 
     pub(in crate::ai::combat_search_v2::search) fn record_first_generated_win_if_needed(

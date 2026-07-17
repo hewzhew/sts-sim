@@ -3,8 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::ai::combat_policy_v1::{
     group_combat_scenarios_v1, step_combat_scenario_group_v1, CombatPublicActionV1,
     CombatScenarioActionPortfolioSessionV1, CombatScenarioGroupV1, CombatScenarioParticleV1,
+    CombatScenarioTerminalV1,
 };
-use crate::sim::combat::{CombatStepLimits, CombatTerminal};
+use crate::sim::combat::CombatStepLimits;
 
 use super::summary::summarize_policy_bank;
 use super::types::{
@@ -209,16 +210,9 @@ pub fn execute_combat_lab_public_policy_bank_v1<P: CombatLabPublicPolicyV1>(
             accumulator.turn_count = terminal.turn_count;
             accumulator.cards_played = terminal.cards_played;
             accumulator.resolution = Some(match terminal.terminal {
-                CombatTerminal::Win => CombatLabPolicyScenarioResolutionV1::Win,
-                CombatTerminal::Loss => CombatLabPolicyScenarioResolutionV1::Loss,
-                CombatTerminal::Unresolved => {
-                    return Err(CombatLabPolicyBankErrorV1::ScenarioBoundary {
-                        message: format!(
-                            "scenario '{}' was reported as a terminal unresolved outcome",
-                            terminal.scenario_id
-                        ),
-                    });
-                }
+                CombatScenarioTerminalV1::Win => CombatLabPolicyScenarioResolutionV1::Win,
+                CombatScenarioTerminalV1::Loss => CombatLabPolicyScenarioResolutionV1::Loss,
+                CombatScenarioTerminalV1::Escape => CombatLabPolicyScenarioResolutionV1::Escape,
             });
         }
 

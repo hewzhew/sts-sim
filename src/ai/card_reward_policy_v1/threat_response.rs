@@ -259,7 +259,7 @@ pub(crate) fn threat_response_delta(
     response
 }
 
-pub(crate) fn candidate_response_threat_tags_v1(
+pub fn candidate_response_threat_tags_v1(
     candidate: &CardRewardCandidateEvidenceV1,
 ) -> Vec<StrategyThreatTagV1> {
     let mut tags = Vec::new();

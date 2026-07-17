@@ -719,7 +719,7 @@ fn accepted_combat_diagnostic_schema(path: &std::path::Path) -> String {
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.ends_with(".capture.json"))
     {
-        return "CombatCaptureV1".to_string();
+        return "CombatCaptureV2".to_string();
     }
     std::fs::read_to_string(path)
         .ok()

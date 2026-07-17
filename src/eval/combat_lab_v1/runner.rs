@@ -290,7 +290,7 @@ fn validate_resolved_contract_v1(resolved: &ResolvedCombatLabSpecV1) -> Result<(
 }
 
 fn resolve_lab_output_dir_v1(output_dir: &Path) -> Result<PathBuf, String> {
-    let repository_root = fs::canonicalize(env!("CARGO_MANIFEST_DIR")).map_err(|error| {
+    let repository_root = fs::canonicalize(crate::eval::repository_root()).map_err(|error| {
         format!("failed to canonicalize combat laboratory repository root: {error}")
     })?;
     let artifact_root =

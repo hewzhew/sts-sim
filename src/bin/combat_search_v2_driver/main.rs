@@ -10,7 +10,7 @@ use sts_simulator::ai::combat_search_v2::{
 use sts_simulator::eval::campfire_threat_panel::{
     run_campfire_threat_panel_v1, CampfireThreatPanelRunRequestV1,
 };
-use sts_simulator::eval::combat_capture::load_combat_capture_v1;
+use sts_simulator::eval::combat_capture::load_combat_capture_v2;
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
 use sts_simulator::eval::combat_search_v2::{
@@ -22,7 +22,7 @@ use sts_simulator::eval::combat_search_v2::{
     run_combat_search_v2_loaded_start, run_combat_turn_plan_guidance_lab_benchmark_v1,
     run_combat_turn_plan_guidance_lab_v1, CombatSearchV2LoadedStart, CombatSearchV2RunOptions,
 };
-use sts_simulator::eval::fingerprint::{combat_state_fingerprint_v1, StateFingerprintV1};
+use sts_simulator::eval::fingerprint::{combat_state_fingerprint_v2, StateFingerprintV2};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -518,7 +518,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             load_combat_search_v2_snapshot(path)?
         } else if let Some(path) = args.combat_case.as_ref() {
             let case = load_combat_case(path)?;
-            let fingerprints = combat_state_fingerprint_v1(&case.position);
+            let fingerprints = combat_state_fingerprint_v2(&case.position);
             CombatSearchV2LoadedStart {
                 label: format!("combat_case:{}", path.display()),
                 position: case.position,
@@ -1310,25 +1310,30 @@ mod tests {
 
 fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
     let payload = if let Some(path) = args.combat_snapshot.as_ref() {
-        let capture = load_combat_capture_v1(path)?;
+        let capture = load_combat_capture_v2(path)?;
         serde_json::json!({
             "schema_name": "CombatSearchV2InputValidationReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "valid",
             "input_kind": "combat_snapshot",
             "input_path": path.display().to_string(),
             "trust_level": capture.trust_level,
             "provenance": capture.provenance,
-            "fingerprints": capture.fingerprints.as_ref().map(compact_fingerprint_report),
-            "legal_action_count": capture.legal_actions.as_ref().map(|actions| actions.count),
+            "fingerprints": compact_fingerprint_report(&capture.fingerprints),
+            "legal_action_surface": {
+                "atomic_actions": capture.legal_action_surface.atomic_action_count,
+                "action_families": capture.legal_action_surface.action_family_count,
+                "legal_input_language_digest": capture.legal_action_surface.legal_input_language_digest,
+                "enumeration_domain_digest": capture.legal_action_surface.enumeration_domain_digest,
+            },
             "summary": capture.summary,
         })
     } else if let Some(path) = args.combat_case.as_ref() {
         let case = load_combat_case(path)?;
-        let fingerprints = combat_state_fingerprint_v1(&case.position);
+        let fingerprints = combat_state_fingerprint_v2(&case.position);
         serde_json::json!({
             "schema_name": "CombatSearchV2InputValidationReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "valid",
             "input_kind": "combat_case",
             "input_path": path.display().to_string(),
@@ -1360,7 +1365,7 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
             .collect::<Vec<_>>();
         serde_json::json!({
             "schema_name": "CombatSearchV2InputValidationReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "valid",
             "input_kind": "benchmark_spec",
             "input_path": path.display().to_string(),
@@ -1377,7 +1382,7 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
         let start = load_combat_search_v2_start(path)?;
         serde_json::json!({
             "schema_name": "CombatSearchV2InputValidationReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "valid",
             "input_kind": "start_spec",
             "input_path": path.display().to_string(),
@@ -1585,12 +1590,12 @@ fn compact_guidance_tactical_trace(tactical: &serde_json::Value) -> serde_json::
     })
 }
 
-fn compact_fingerprint_report(fingerprints: &StateFingerprintV1) -> serde_json::Value {
+fn compact_fingerprint_report(fingerprints: &StateFingerprintV2) -> serde_json::Value {
     serde_json::json!({
         "boundary": fingerprints.boundary,
         "public_observation_hash": fingerprints.public_observation_hash,
-        "legal_candidate_set_hash": fingerprints.legal_candidate_set_hash,
-        "legal_candidate_order_hash": fingerprints.legal_candidate_order_hash,
+        "legal_input_language_hash": fingerprints.legal_input_language_hash,
+        "action_enumeration_domain_hash": fingerprints.action_enumeration_domain_hash,
         "exact_state_hash": fingerprints.exact_state_hash,
         "stable_outcome_hash": fingerprints.stable_outcome_hash,
         "rng_boundary": {

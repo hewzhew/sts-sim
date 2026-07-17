@@ -24,7 +24,7 @@ use discovery::{
 use victory::settle_victory_if_ready;
 
 use pending_choice_resolution::resolve_pending_choice;
-pub(crate) fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
+pub fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
     let mut draw_count: i32 = 5 + combat_state.turn.turn_start_draw_modifier;
     if combat_state
         .entities

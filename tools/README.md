@@ -42,8 +42,8 @@ or analyze artifacts.
 Use Rust binaries for normal run/panel work:
 
 ```powershell
-cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
-cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
+cargo run -p sts_simulator_control --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
+cargo run -p sts_simulator_control --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 The retired `tools/gap_panel.py` wrapper should not return. `branch_panel` is

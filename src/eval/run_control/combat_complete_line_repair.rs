@@ -1,12 +1,14 @@
-use crate::ai::combat_search_v2::{CombatSearchV2ActionTrace, CombatSearchV2Config};
+use crate::ai::combat_search_v2::{
+    filter_combat_search_legal_actions, CombatSearchV2ActionTrace, CombatSearchV2Config,
+};
 use crate::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 
 use super::combat_complete_line_scoring::played_power;
 use super::combat_complete_line_search::{
-    legal_non_potion_choices, line_from, line_search_from, reindex_actions, Line, LineSearchConfig,
-    LineSearchSeed, LineSearchStopReason, LINE_BEAM,
+    line_from, line_search_from, reindex_actions, Line, LineSearchConfig, LineSearchSeed,
+    LineSearchStopReason, LINE_BEAM,
 };
 
 const REPAIR_CUTS: usize = 4;
@@ -125,10 +127,21 @@ fn replay_prefix(
     let mut position = root.clone();
     let mut setup_seen = false;
     for action in actions {
-        let choices = legal_non_potion_choices(&position, config, stepper);
-        let choice = choices.into_iter().find(|choice| {
-            choice.input == action.input && choice.action_key == action.action_key
-        })?;
+        let candidate = stepper.choice_for_legal_input(&position, &action.input)?;
+        let choice = filter_combat_search_legal_actions(
+            vec![candidate],
+            config.potion_policy,
+            &position.combat,
+        )
+        .into_iter()
+        .filter(|choice| {
+            !matches!(
+                choice.input,
+                crate::state::core::ClientInput::UsePotion { .. }
+                    | crate::state::core::ClientInput::DiscardPotion(_)
+            )
+        })
+        .find(|choice| choice.action_key == action.action_key)?;
         setup_seen |= played_power(&position, &choice.input);
         let step = stepper.apply_to_stable(
             &position,

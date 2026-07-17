@@ -48,6 +48,7 @@ pub(in crate::ai::combat_search_v2) enum RolloutStopReason {
     Deadline,
     NoLegalActions,
     PolicyDeclined,
+    StructuredPendingChoice,
     EngineStepLimit,
     HighFanoutPendingChoice,
 }

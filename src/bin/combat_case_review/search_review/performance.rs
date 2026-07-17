@@ -38,6 +38,21 @@ pub(super) fn performance_review(report: &CombatSearchV2Report) -> SearchPerform
             .performance
             .turn_plan_frontier_seed_exact_state_skips,
         turn_plan_seed_us: report.performance.turn_plan_frontier_seed_elapsed_us,
+        turn_boundary_macro_calls: report.performance.turn_boundary_macro_calls,
+        turn_boundary_macro_candidates: report.performance.turn_boundary_macro_candidates,
+        turn_boundary_macro_inner_nodes_expanded: report
+            .performance
+            .turn_boundary_macro_inner_nodes_expanded,
+        turn_boundary_macro_inner_nodes_generated: report
+            .performance
+            .turn_boundary_macro_inner_nodes_generated,
+        turn_boundary_macro_exact_state_skips: report
+            .performance
+            .turn_boundary_macro_exact_state_skips,
+        turn_boundary_macro_atomic_fallbacks: report
+            .performance
+            .turn_boundary_macro_atomic_fallbacks,
+        turn_boundary_macro_us: report.performance.turn_boundary_macro_elapsed_us,
         engine_step_us: report.performance.engine_step_elapsed_us,
         frontier_pop_us: report.performance.frontier_pop_elapsed_us,
         expansion_us: report.performance.expansion_elapsed_us,

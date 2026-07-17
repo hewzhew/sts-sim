@@ -4,7 +4,7 @@ use crate::ai::combat_policy_v1::{
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
-use crate::eval::fingerprint::combat_state_fingerprint_v1;
+use crate::eval::fingerprint::combat_state_fingerprint_v2;
 use crate::runtime::combat::CombatCard;
 use crate::semantics::combat::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::CombatPosition;
@@ -297,7 +297,7 @@ fn newly_revealed_draw_order_creates_two_later_policy_decisions() {
     second.sample_index = 1;
     second.shuffle_seed = 10_001;
     second.start.combat.zones.draw_pile.swap(0, 1);
-    second.state_fingerprint = combat_state_fingerprint_v1(&second.start);
+    second.state_fingerprint = combat_state_fingerprint_v2(&second.start);
     let mut policy = RootBattleTranceThenGap { calls: 0 };
 
     let report = execute_combat_lab_public_policy_bank_v1(&[first, second], &mut policy, limits())
@@ -531,7 +531,7 @@ fn compiled_sample(sample_index: u64, start: CombatPosition) -> CombatLabCompile
     CombatLabCompiledSampleV1 {
         sample_index,
         shuffle_seed: 10_000 + sample_index,
-        state_fingerprint: combat_state_fingerprint_v1(&start),
+        state_fingerprint: combat_state_fingerprint_v2(&start),
         start,
         non_shuffle_rng_hash: "non-shuffle".to_string(),
         shuffle_rng_hash: format!("shuffle-{sample_index}"),

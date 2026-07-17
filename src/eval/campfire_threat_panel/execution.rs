@@ -12,7 +12,7 @@ use crate::eval::combat_lab_v1::{
     classify_combat_lab_outcome_v1, exact_replay_combat_search_trajectory_v1, profile_config_v1,
     CombatLabOutcomeClassV1, CombatLabReplayedCandidateV1,
 };
-use crate::eval::fingerprint::{hash_serializable, StateFingerprintV1};
+use crate::eval::fingerprint::{hash_serializable, StateFingerprintV2};
 use crate::state::run::RunState;
 
 use super::{
@@ -34,7 +34,7 @@ pub struct CampfireThreatPanelCellV1 {
     pub analysis_seed: u64,
     pub shuffle_seed: u64,
     pub profile_id: String,
-    pub state_fingerprint: StateFingerprintV1,
+    pub state_fingerprint: StateFingerprintV2,
     pub start_hp: i32,
     pub search_terminal: Option<SearchTerminalLabel>,
     pub coverage_status: SearchCoverageStatus,

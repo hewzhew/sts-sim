@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::loop_state::SearchLoopState;
+use super::pending_choice_expansion::pending_choice_prefix_owned;
 use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
 
 pub(super) fn child_rollout_estimate(
@@ -23,6 +24,13 @@ pub(super) fn child_rollout_estimate(
             Some("terminal_child_no_rollout"),
             super::super::rollout_pending_choice::RolloutPendingChoiceProgress::default(),
         );
+    }
+    if pending_choice_prefix_owned(loop_state, &child.engine) {
+        loop_state.performance.pending_choice_rollout_skips = loop_state
+            .performance
+            .pending_choice_rollout_skips
+            .saturating_add(1);
+        return RolloutNodeEstimate::unevaluated();
     }
     if loop_state.plugins.child_rollout == CombatSearchChildRolloutPluginId::LazyOnPop
         && loop_state.plugins.rollout != CombatSearchRolloutPluginId::Disabled

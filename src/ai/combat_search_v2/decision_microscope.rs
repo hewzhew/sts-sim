@@ -1,5 +1,7 @@
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 
+use super::pending_choice_action_prefix::canonical_pending_choice_inputs;
+use super::pending_choice_fanout::pending_choice_fanout;
 use super::*;
 
 mod candidate_probe;
@@ -40,28 +42,24 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
         &plugin_stack,
     );
     let search_report = run_combat_search_v2_with_stepper(engine, combat, config.clone(), stepper);
+    let selected_trace = selected_first_trace(&search_report);
     let selected_first_action =
         selected_first_action(engine, combat, action_ordering_plugins, &search_report);
-    let selected_identity = selected_first_action
+    let selected_action_key = selected_first_action
         .as_ref()
-        .map(|action| (action.action_id, action.action_key.as_str()));
+        .map(|action| action.action_key.as_str());
     let initial_node = SearchNode::root(engine.clone(), combat.clone());
     let position = CombatPosition::new(engine.clone(), combat.clone());
-    let legal = filtered_legal_actions(
-        stepper.legal_action_choices(&position),
-        plugin_stack.potion.policy,
-        combat,
-    );
-    let equivalence = compress_equivalent_actions(engine, combat, legal);
-    let ordered = order_indexed_action_choices_with_plugins(
+    let (candidate_count, ordered_choices) = microscope_candidate_sample(
         engine,
         combat,
-        equivalence.choices,
+        &position,
+        stepper,
+        plugin_stack.potion.policy,
         action_ordering_plugins,
+        selected_trace,
     );
-    let candidate_count = ordered.choices.len();
-    let candidates = ordered
-        .choices
+    let candidates = ordered_choices
         .iter()
         .take(CANDIDATE_REPORT_LIMIT)
         .enumerate()
@@ -73,7 +71,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
                 action_ordering_plugins,
                 choice,
                 ordered_index,
-                selected_identity,
+                selected_action_key,
             )
         })
         .collect();
@@ -110,9 +108,80 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
             "selected_first_action comes from the best complete trajectory found under the current budget",
             "candidate one-step probes are exact simulator transitions to the next stable boundary",
             "one-step values explain local consequences, not whole-combat outcome ranking",
+            "combinatorial pending choices report closed-form canonical fanout and probe only a bounded lazy sample that tries to include the selected action",
             "use this before changing global frontier ordering; if the failure is only a vague ordering preference, do not patch blindly",
         ],
     }
+}
+
+fn selected_first_trace(report: &CombatSearchV2Report) -> Option<&CombatSearchV2ActionTrace> {
+    report
+        .best_win_trajectory
+        .as_ref()
+        .and_then(|trajectory| trajectory.actions.first())
+        .or_else(|| {
+            report
+                .best_complete_trajectory
+                .as_ref()
+                .and_then(|trajectory| trajectory.actions.first())
+        })
+}
+
+fn microscope_candidate_sample(
+    engine: &EngineState,
+    combat: &CombatState,
+    position: &CombatPosition,
+    stepper: &impl CombatStepper,
+    potion_policy: CombatSearchV2PotionPolicy,
+    plugins: CombatSearchActionOrderingPlugins<'_>,
+    selected_trace: Option<&CombatSearchV2ActionTrace>,
+) -> (usize, Vec<IndexedActionChoice>) {
+    if stepper.supports_canonical_pending_choice_actions() {
+        if let EngineState::PendingChoice(choice) = engine {
+            if let Some(inputs) = canonical_pending_choice_inputs(choice) {
+                let mut sample = inputs
+                    .take(CANDIDATE_REPORT_LIMIT)
+                    .filter_map(|input| stepper.choice_for_legal_input(position, &input))
+                    .collect::<Vec<_>>();
+                if let Some(trace) = selected_trace {
+                    if !sample
+                        .iter()
+                        .any(|choice| choice.action_key == trace.action_key)
+                    {
+                        if let Some(selected) =
+                            stepper.choice_for_legal_input(position, &trace.input)
+                        {
+                            if sample.len() == CANDIDATE_REPORT_LIMIT {
+                                sample.pop();
+                            }
+                            sample.push(selected);
+                        }
+                    }
+                }
+                let equivalence = compress_equivalent_actions(engine, combat, sample);
+                let ordered = order_indexed_action_choices_with_plugins(
+                    engine,
+                    combat,
+                    equivalence.choices,
+                    plugins,
+                );
+                return (
+                    pending_choice_fanout(choice).estimated_action_fanout,
+                    ordered.choices,
+                );
+            }
+        }
+    }
+
+    let legal = filtered_legal_actions(
+        stepper.atomic_action_choices(position),
+        potion_policy,
+        combat,
+    );
+    let equivalence = compress_equivalent_actions(engine, combat, legal);
+    let ordered =
+        order_indexed_action_choices_with_plugins(engine, combat, equivalence.choices, plugins);
+    (ordered.choices.len(), ordered.choices)
 }
 
 #[cfg(test)]
@@ -208,5 +277,30 @@ mod tests {
 
         assert_eq!(demon_form.action_role, "key_setup_card");
         assert!(demon_form.ordered_index < strike.ordered_index);
+    }
+
+    #[test]
+    fn microscope_samples_large_scry_without_materializing_its_power_set() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
+        combat.zones.draw_pile = (0..13)
+            .map(|index| CombatCard::new(CardId::Strike, 10_000 + index))
+            .collect();
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+            cards: vec![CardId::Strike; 13],
+            card_uuids: (10_000..10_013).collect(),
+        });
+        let config = CombatSearchV2Config {
+            max_nodes: 8,
+            max_actions_per_line: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        };
+
+        let report = explain_combat_search_v2_initial_decision(&engine, &combat, config);
+
+        assert_eq!(report.candidate_count, 1 << 13);
+        assert!(report.candidates.len() <= CANDIDATE_REPORT_LIMIT);
+        assert!(!report.candidates.is_empty());
     }
 }

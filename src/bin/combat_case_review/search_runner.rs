@@ -24,6 +24,7 @@ pub(crate) fn review_search_profile(
                 wall_ms,
             },
             plugins: CombatSearchPluginStack {
+                expansion: options.expansion_plugin(),
                 turn_plan: options.turn_plan_plugin(),
                 rollout: review_rollout_plugin(options),
                 child_rollout: options.child_rollout_plugin(),

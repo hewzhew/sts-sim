@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+    CombatSearchExpansionPluginId, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
 };
 
 #[derive(Parser)]
@@ -53,6 +53,12 @@ pub(super) struct Args {
         help = "Override the review turn-plan policy: disabled|diagnostic|root-frontier|turn-boundary|tactical-boundary"
     )]
     pub(super) turn_plan_policy: Option<CombatSearchTurnPlanPluginId>,
+    #[arg(
+        long,
+        value_parser = parse_expansion_plugin,
+        help = "Override search topology: atomic|hierarchical-turn-boundary"
+    )]
+    pub(super) expansion_policy: Option<CombatSearchExpansionPluginId>,
     #[arg(long)]
     pub(super) rollout_max_actions: Option<usize>,
     #[arg(long)]
@@ -149,6 +155,22 @@ fn parse_turn_plan_plugin(value: &str) -> Result<CombatSearchTurnPlanPluginId, S
     }
 }
 
+fn parse_expansion_plugin(value: &str) -> Result<CombatSearchExpansionPluginId, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "atomic" | "atomic-actions" | "atomic_actions" => {
+            Ok(CombatSearchExpansionPluginId::AtomicActions)
+        }
+        "hierarchical"
+        | "hierarchical-turn-boundary"
+        | "hierarchical_turn_boundary"
+        | "turn-boundary-macro"
+        | "turn_boundary_macro" => Ok(CombatSearchExpansionPluginId::HierarchicalTurnBoundary),
+        _ => Err(format!(
+            "invalid expansion policy '{value}', expected atomic|hierarchical-turn-boundary"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +214,23 @@ mod tests {
         assert_eq!(
             args.turn_plan_policy,
             Some(CombatSearchTurnPlanPluginId::RootFrontierSeed)
+        );
+    }
+
+    #[test]
+    fn expansion_policy_flag_parses_hierarchical_turn_boundary() {
+        let args = Args::try_parse_from([
+            "combat_case_review",
+            "--case",
+            "case.json",
+            "--expansion-policy",
+            "hierarchical-turn-boundary",
+        ])
+        .expect("parse expansion policy");
+
+        assert_eq!(
+            args.expansion_policy,
+            Some(CombatSearchExpansionPluginId::HierarchicalTurnBoundary)
         );
     }
 

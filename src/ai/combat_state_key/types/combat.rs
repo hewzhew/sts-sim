@@ -23,13 +23,13 @@ pub(crate) use self::runtime::*;
 pub(crate) use self::turn::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CombatExactStateKey {
+pub struct CombatExactStateKey {
     pub(crate) common: CombatRuntimeKey,
     pub(crate) player: CombatExactPlayerKey,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CombatDominanceKey {
+pub struct CombatDominanceKey {
     pub(crate) common: CombatRuntimeKey,
     pub(crate) player: CombatDominancePlayerKey,
 }

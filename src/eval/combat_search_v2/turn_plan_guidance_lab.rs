@@ -7,7 +7,7 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2Report, CombatSearchV2TurnPlanProbeCandidateReport,
     CombatSearchV2TurnPlanProbeRootReport, SearchTerminalLabel,
 };
-use crate::eval::fingerprint::combat_state_fingerprint_v1;
+use crate::eval::fingerprint::combat_state_fingerprint_v2;
 use crate::sim::combat::CombatPosition;
 
 use super::{
@@ -255,7 +255,7 @@ pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
     let summary = summarize_benchmark(&cases, loaded.cases.len());
     CombatTurnPlanGuidanceLabBenchmarkV1Report {
         schema_name: "CombatTurnPlanGuidanceLabBenchmarkV1Report",
-        schema_version: 5,
+        schema_version: 6,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         benchmark_name: loaded.name.clone(),
@@ -336,7 +336,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 9,
+        schema_version: 10,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -361,7 +361,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 fn fingerprint_report_for_position(
     position: &CombatPosition,
 ) -> CombatSearchV2InputFingerprintReport {
-    CombatSearchV2InputFingerprintReport::from(&combat_state_fingerprint_v1(position))
+    CombatSearchV2InputFingerprintReport::from(&combat_state_fingerprint_v2(position))
 }
 
 fn child_search_report(report: &CombatSearchV2Report) -> CombatSearchGuidanceLabChildSearchV1 {
@@ -1666,7 +1666,7 @@ mod tests {
 
     fn fingerprint_report(plan_index: usize) -> CombatSearchV2InputFingerprintReport {
         CombatSearchV2InputFingerprintReport {
-            boundary: crate::eval::fingerprint::DecisionBoundaryFingerprintV1 {
+            boundary: crate::eval::fingerprint::DecisionBoundaryFingerprintV2 {
                 engine_state: "CombatPlayerTurn".to_string(),
                 decision_kind: "combat".to_string(),
                 terminal: crate::sim::combat::CombatTerminal::Unresolved,
@@ -1674,8 +1674,8 @@ mod tests {
                 turn_count: 1,
             },
             public_observation_hash: format!("public-{plan_index}"),
-            legal_candidate_set_hash: format!("set-{plan_index}"),
-            legal_candidate_order_hash: format!("order-{plan_index}"),
+            legal_input_language_hash: format!("language-{plan_index}"),
+            action_enumeration_domain_hash: format!("domain-{plan_index}"),
             exact_state_hash: format!("hash-{plan_index}"),
             stable_outcome_hash: Some(format!("stable-{plan_index}")),
             rng_boundary_status: crate::eval::fingerprint::RngFingerprintStatus::Complete,

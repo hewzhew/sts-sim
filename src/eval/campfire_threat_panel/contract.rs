@@ -12,7 +12,7 @@ use crate::eval::fingerprint::hash_serializable;
 use crate::state::map::node::RoomType;
 
 pub const CAMPFIRE_THREAT_PANEL_SCHEMA_VERSION: u32 = 1;
-pub const CAMPFIRE_THREAT_PANEL_CELL_SCHEMA_VERSION: u32 = 1;
+pub const CAMPFIRE_THREAT_PANEL_CELL_SCHEMA_VERSION: u32 = 2;
 pub const CAMPFIRE_THREAT_PANEL_SUMMARY_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -4,7 +4,10 @@ use super::super::{CombatSearchV2StateSummary, SearchTerminalLabel};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2FrontierReport {
+    /// Number of unique concrete engine states retained by the frontier.
     pub remaining_states: usize,
+    /// Search-only residual work that has not crossed the engine boundary.
+    pub pending_choice_work_items: usize,
     pub unresolved_leaf_count: u64,
     pub max_actions_cut_count: u64,
     pub engine_step_limit_count: u64,

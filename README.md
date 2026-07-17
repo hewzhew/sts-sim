@@ -36,19 +36,19 @@ Run one owner-audit seed:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
+cargo run -p sts_simulator_control --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
 Run a small seed panel:
 
 ```powershell
-cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
+cargo run -p sts_simulator_control --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 Review a saved combat case:
 
 ```powershell
-cargo run --bin combat_case_review -- --case <case.json> --ladder
+cargo run -p sts_simulator_control --bin combat_case_review -- --case <case.json> --ladder
 ```
 
 Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained bounded-run commands,
@@ -92,6 +92,7 @@ archaeology.
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
 | `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
 | `src/bin` | maintained command entrypoints |
+| `crates/sts_simulator_control` | Cargo owner for combat search, evaluation, run-control, branch runtime, and all binaries; source files remain under `src/` during layout migration |
 | `tools` | offline scripts, datasets, panels, and generated artifacts |
 | `docs` | maintained architecture, runbook, testing notes, and current drafts |
 

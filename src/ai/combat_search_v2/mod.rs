@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::ai::combat_state_key::{
-    combat_dominance_key, combat_exact_state_hash_v1, combat_exact_state_key, CombatDominanceKey,
-    CombatExactStateKey,
+    combat_dominance_diagnostic_parts_v1, combat_dominance_key, combat_exact_state_hash_v1,
+    combat_exact_state_key, CombatDominanceKey, CombatExactStateKey,
 };
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatState, MonsterEntity};
@@ -68,6 +68,7 @@ mod phase_profile;
 mod timed_enemy_threat;
 
 // Pending choice and potion boundaries.
+pub(crate) mod pending_choice_action_prefix;
 mod pending_choice_fanout;
 mod pending_choice_ordering;
 mod pending_choice_profile;
@@ -116,6 +117,9 @@ use expansion::{
 };
 use frontier::{is_resource_covered, ResourceVector, SearchNode};
 use outcome_score::CombatOutcomeScore;
+use pending_choice_action_prefix::{
+    PendingChoiceActionFamily, PendingChoiceActionPrefix, PendingChoiceActionWork,
+};
 use pending_choice_ordering::pending_choice_ordering_hint;
 use pending_choice_profile::{
     summarize_pending_choice, PendingChoiceDiagnosticsCollector, PendingChoiceProfile,
@@ -137,7 +141,9 @@ use turn_branching::{
 use turn_local_dominance::{
     TurnLocalDominanceDiagnosticsCollector, TurnLocalDominanceStateObservation,
 };
-use turn_planner::{turn_plan_frontier_seed, TurnPlanDiagnosticsCollector};
+use turn_planner::{
+    build_turn_boundary_portfolio, turn_plan_frontier_seed, TurnPlanDiagnosticsCollector,
+};
 use turn_prefix::{
     advance_turn_prefix, summarize_turn_prefix, TurnPrefixDiagnosticsCollector, TurnPrefixState,
     TurnPrefixSummary,
@@ -180,12 +186,12 @@ pub use plugins::{
     CombatSearchActionOrderingPlugins, CombatSearchActionPriorPlugin,
     CombatSearchActionPriorPluginId, CombatSearchArtifactPlugin, CombatSearchArtifactPluginId,
     CombatSearchAttemptPolicy, CombatSearchBudgetSpec, CombatSearchChildRolloutPlugin,
-    CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchFrontierPlugin,
-    CombatSearchFrontierPluginId, CombatSearchNodeEvaluatorPlugin,
-    CombatSearchNodeEvaluatorPluginId, CombatSearchPhaseGuardPlugin,
-    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
-    CombatSearchProfile, CombatSearchRolloutPlugin, CombatSearchRolloutPluginId,
-    CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
+    CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchExpansionPlugin,
+    CombatSearchExpansionPluginId, CombatSearchFrontierPlugin, CombatSearchFrontierPluginId,
+    CombatSearchNodeEvaluatorPlugin, CombatSearchNodeEvaluatorPluginId,
+    CombatSearchPhaseGuardPlugin, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
+    CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPlugin,
+    CombatSearchRolloutPluginId, CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};

@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::loop_state::SearchLoopState;
+use super::pending_choice_expansion::pending_choice_prefix_owned;
 use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
 
 #[derive(Default)]
@@ -88,7 +89,13 @@ fn turn_plan_seed_rollout_estimate(
     deadline: Option<Instant>,
     nodes_generated_at_discovery: u64,
 ) -> RolloutNodeEstimate {
-    if terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Unresolved {
+    if pending_choice_prefix_owned(loop_state, &seed.engine) {
+        loop_state.performance.pending_choice_rollout_skips = loop_state
+            .performance
+            .pending_choice_rollout_skips
+            .saturating_add(1);
+        RolloutNodeEstimate::unevaluated()
+    } else if terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Unresolved {
         timed_rollout_estimate(
             &mut loop_state.rollout_cache,
             seed,

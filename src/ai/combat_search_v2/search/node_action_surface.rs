@@ -13,7 +13,7 @@ pub(super) fn collect_node_action_surface(
     stepper: &impl CombatStepper,
 ) -> NodeActionSurface {
     let legal = filtered_legal_actions(
-        stepper.legal_action_choices(position),
+        stepper.atomic_action_choices(position),
         loop_state.plugins.potion.policy,
         &node.combat,
     );

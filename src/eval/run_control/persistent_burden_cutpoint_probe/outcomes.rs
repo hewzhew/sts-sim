@@ -6,18 +6,43 @@ use crate::sim::combat_action::CombatActionChoice;
 use super::burden::{newly_gained_persistent_curses, PersistentCurseBurdenSnapshot};
 use super::cutpoint::{GroupedBurdenCutpoint, LocatedBurdenCutpoint};
 use super::{
-    PersistentBurdenCutpointInputOutcomeKindV1, PersistentBurdenCutpointInputOutcomeV1,
-    PersistentBurdenCutpointSummaryV1, PersistentBurdenEnemyPlanChangeV1,
+    PersistentBurdenCutpointActionDomainV1, PersistentBurdenCutpointInputOutcomeKindV1,
+    PersistentBurdenCutpointInputOutcomeV1, PersistentBurdenCutpointSummaryV1,
+    PersistentBurdenEnemyPlanChangeV1,
 };
 use crate::eval::run_control::combat_candidate_line::enforce_replay_potion_budget;
+
+pub(super) struct ProbedCutpointActions {
+    pub(super) action_domain: PersistentBurdenCutpointActionDomainV1,
+    pub(super) outcomes: Vec<PersistentBurdenCutpointInputOutcomeV1>,
+}
 
 pub(super) fn probe_cutpoint_actions(
     cutpoint: &LocatedBurdenCutpoint,
     config: &CombatSearchV2Config,
-) -> Vec<PersistentBurdenCutpointInputOutcomeV1> {
-    enforce_replay_potion_budget(
+) -> ProbedCutpointActions {
+    let surface = EngineCombatStepper.legal_action_surface(&cutpoint.position);
+    if !surface.selection_families.is_empty() {
+        return ProbedCutpointActions {
+            action_domain:
+                PersistentBurdenCutpointActionDomainV1::UnsupportedStructuredActionDomain {
+                    selection_input_encodings: surface
+                        .selection_families
+                        .into_iter()
+                        .map(|family| family.input_encoding)
+                        .collect(),
+                },
+            outcomes: Vec::new(),
+        };
+    }
+
+    let outcomes = enforce_replay_potion_budget(
         filter_combat_search_legal_actions(
-            EngineCombatStepper.legal_action_choices(&cutpoint.position),
+            surface
+                .atomic_actions
+                .into_iter()
+                .map(|input| CombatActionChoice::from_input(&cutpoint.position.combat, input))
+                .collect(),
             config.potion_policy,
             &cutpoint.position.combat,
         ),
@@ -26,7 +51,11 @@ pub(super) fn probe_cutpoint_actions(
     )
     .into_iter()
     .map(|choice| probe_one_action(cutpoint, config, choice))
-    .collect()
+    .collect();
+    ProbedCutpointActions {
+        action_domain: PersistentBurdenCutpointActionDomainV1::AtomicActionsComplete,
+        outcomes,
+    }
 }
 
 fn probe_one_action(
@@ -129,7 +158,7 @@ pub(super) fn probe_grouped_cutpoint(
     cutpoint: GroupedBurdenCutpoint,
     config: &CombatSearchV2Config,
 ) -> PersistentBurdenCutpointSummaryV1 {
-    let outcomes = probe_cutpoint_actions(&cutpoint.representative, config);
+    let action_probe = probe_cutpoint_actions(&cutpoint.representative, config);
     PersistentBurdenCutpointSummaryV1 {
         cutpoint_state_hash: cutpoint.representative.identity.state_hash.clone(),
         candidate_frequency: cutpoint.candidate_frequency,
@@ -161,6 +190,7 @@ pub(super) fn probe_grouped_cutpoint(
             .iter()
             .map(|monster| monster.current_hp)
             .collect(),
-        outcomes,
+        action_domain: action_probe.action_domain,
+        outcomes: action_probe.outcomes,
     }
 }

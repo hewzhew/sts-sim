@@ -26,7 +26,11 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     let turn_config = turn_planner_config(config, &plugins);
     let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
     let position = CombatPosition::new(engine.clone(), combat.clone());
-    let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
+    let legal_action_choices = if matches!(engine, EngineState::CombatPlayerTurn) {
+        EngineCombatStepper.atomic_action_choices(&position)
+    } else {
+        Vec::new()
+    };
     let root_action_mask = action_mask::root_action_mask_report(
         engine,
         combat,

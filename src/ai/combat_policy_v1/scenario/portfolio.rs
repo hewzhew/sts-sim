@@ -39,6 +39,7 @@ pub struct CombatScenarioActionPortfolioEvaluationV1 {
     pub scenario_count: usize,
     pub wins: usize,
     pub losses: usize,
+    pub escapes: usize,
     pub continuing: usize,
     pub next_information_set_count: usize,
     pub observed_hp_loss: CombatScenarioActionPortfolioMetricV1,
@@ -98,7 +99,7 @@ pub struct CombatScenarioActionPortfolioEvaluatorV1<'a> {
     pub(super) session: &'a CombatScenarioActionPortfolioSessionV1,
 }
 
-pub(crate) struct CombatScenarioActionPortfolioSessionV1 {
+pub struct CombatScenarioActionPortfolioSessionV1 {
     steps: RefCell<
         BTreeMap<
             (CombatPolicyInformationSetKeyV1, CombatPublicActionV1, usize),
@@ -111,7 +112,7 @@ pub(crate) struct CombatScenarioActionPortfolioSessionV1 {
 }
 
 impl CombatScenarioActionPortfolioSessionV1 {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             steps: RefCell::new(BTreeMap::new()),
             engine_steps: Cell::new(0),
@@ -120,7 +121,7 @@ impl CombatScenarioActionPortfolioSessionV1 {
         }
     }
 
-    pub(crate) fn evaluator<'a>(
+    pub fn evaluator<'a>(
         &'a self,
         group: &'a CombatScenarioGroupV1,
     ) -> CombatScenarioActionPortfolioEvaluatorV1<'a> {
@@ -130,19 +131,19 @@ impl CombatScenarioActionPortfolioSessionV1 {
         }
     }
 
-    pub(crate) fn engine_steps(&self) -> usize {
+    pub fn engine_steps(&self) -> usize {
         self.engine_steps.get()
     }
 
-    pub(crate) fn proof_information_sets(&self) -> usize {
+    pub fn proof_information_sets(&self) -> usize {
         self.proof_information_sets.get()
     }
 
-    pub(crate) fn proof_candidate_evaluations(&self) -> usize {
+    pub fn proof_candidate_evaluations(&self) -> usize {
         self.proof_candidate_evaluations.get()
     }
 
-    pub(crate) fn take_step(
+    pub fn take_step(
         &self,
         group: &CombatScenarioGroupV1,
         action: &CombatPublicActionV1,
@@ -268,6 +269,7 @@ impl CombatScenarioActionPortfolioEvaluatorV1<'_> {
                 scenario_count: stepped.view.scenario_count,
                 wins: stepped.view.win_count,
                 losses: stepped.view.loss_count,
+                escapes: stepped.view.escape_count,
                 continuing: stepped.view.continuing_scenario_count,
                 next_information_set_count: stepped.view.next_information_set_count,
                 observed_hp_loss: metric_summary(hp_losses),
@@ -494,6 +496,7 @@ mod tests {
             wins,
             losses,
             continuing,
+            escapes: 0,
             next_information_set_count: usize::from(continuing > 0),
             observed_hp_loss: metric_summary(vec![hp_loss; scenario_count]),
             player_block: metric_summary(vec![player_block; scenario_count]),

@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use super::policies::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2ExpansionPolicy, CombatSearchV2FrontierPolicy,
+    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use super::prior::{CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPrior};
 
@@ -23,6 +23,7 @@ pub struct CombatSearchV2Config {
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
     pub rollout_beam_width: usize,
+    pub expansion_policy: CombatSearchV2ExpansionPolicy,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     pub frontier_policy: CombatSearchV2FrontierPolicy,
     pub phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
@@ -52,6 +53,7 @@ impl Default for CombatSearchV2Config {
                 crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: crate::ai::combat_search_v2::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: crate::ai::combat_search_v2::rollout::DEFAULT_TURN_BEAM_WIDTH,
+            expansion_policy: CombatSearchV2ExpansionPolicy::default(),
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::default(),
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,

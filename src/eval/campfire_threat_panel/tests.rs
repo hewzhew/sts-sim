@@ -320,6 +320,12 @@ fn artifact_store_repairs_partial_tail_and_rejects_duplicate_append() {
         let mut store =
             CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest.clone())
                 .unwrap();
+        let mut legacy = record.clone();
+        legacy.schema_version = 1;
+        let error = store
+            .append_cell(&legacy)
+            .expect_err("legacy fingerprint cell must be rejected");
+        assert!(error.contains("unsupported Campfire threat panel cell schema_version"));
         store.append_cell(&record).unwrap();
         assert!(store.append_cell(&record).is_err());
     }
@@ -331,13 +337,24 @@ fn artifact_store_repairs_partial_tail_and_rejects_duplicate_append() {
         .unwrap();
 
     let recovered =
-        CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest).unwrap();
+        CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest.clone()).unwrap();
 
     assert_eq!(recovered.cells().len(), 1);
     assert!(recovered.contains_cell(&record.cell_key));
     assert!(fs::read(output.join("cells.jsonl"))
         .unwrap()
         .ends_with(b"\n"));
+    drop(recovered);
+
+    fs::write(
+        output.join("cells.jsonl"),
+        b"{\"schema_version\":1,\"legacy_fingerprint\":{}}\n",
+    )
+    .expect("write legacy panel journal");
+    let error = CampfireThreatPanelArtifactStoreV1::create_or_resume(&output, manifest)
+        .err()
+        .expect("legacy panel cell must fail resume");
+    assert!(error.contains("unsupported Campfire threat panel cell schema_version"));
     fs::remove_dir_all(output).unwrap();
 }
 

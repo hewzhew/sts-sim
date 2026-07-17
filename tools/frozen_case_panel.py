@@ -83,6 +83,8 @@ def review_command(case_path: Path, review_path: Path, args: argparse.Namespace)
         "cargo",
         "run",
         "--quiet",
+        "-p",
+        "sts_simulator_control",
         "--bin",
         "combat_case_review",
         "--",

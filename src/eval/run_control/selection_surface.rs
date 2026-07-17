@@ -225,75 +225,14 @@ pub(super) fn pending_choice_input_is_allowed(
     choice: &PendingChoice,
     input: &ClientInput,
 ) -> bool {
-    match (choice, input) {
-        (
-            PendingChoice::HandSelect {
-                candidate_uuids,
-                min_cards,
-                max_cards,
-                ..
-            },
-            ClientInput::SubmitSelection(resolution),
-        ) => {
-            if resolution.scope != SelectionScope::Hand {
-                return false;
-            }
-            let uuids = resolution.selected_card_uuids();
-            uuid_selection_is_allowed(
-                &uuids,
-                candidate_uuids,
-                *min_cards as usize,
-                *max_cards as usize,
-            ) && hand_contains_all(session, &uuids)
-        }
-        (
-            PendingChoice::GridSelect {
-                candidate_uuids,
-                min_cards,
-                max_cards,
-                source_pile,
-                ..
-            },
-            ClientInput::SubmitSelection(resolution),
-        ) => {
-            if resolution.scope != SelectionScope::Grid {
-                return false;
-            }
-            let uuids = resolution.selected_card_uuids();
-            uuid_selection_is_allowed(
-                &uuids,
-                candidate_uuids,
-                *min_cards as usize,
-                *max_cards as usize,
-            ) && grid_source_contains_all(session, *source_pile, &uuids)
-        }
-        (
-            PendingChoice::HandSelect { can_cancel, .. }
-            | PendingChoice::GridSelect { can_cancel, .. },
-            ClientInput::Cancel,
-        ) => *can_cancel,
-        (PendingChoice::ScrySelect { cards, .. }, ClientInput::SubmitScryDiscard(indices)) => {
-            validate_indices_in_range(cards.len(), indices).is_ok()
-                && reject_duplicate_indices(indices).is_ok()
-        }
-        (PendingChoice::DiscoverySelect(choice), ClientInput::SubmitDiscoverChoice(idx)) => {
-            *idx < choice.cards.len()
-        }
-        (PendingChoice::DiscoverySelect(choice), ClientInput::Cancel) => choice.can_skip,
-        (PendingChoice::CardRewardSelect { cards, .. }, ClientInput::SubmitDiscoverChoice(idx)) => {
-            *idx < cards.len()
-        }
-        (PendingChoice::CardRewardSelect { can_skip, .. }, ClientInput::Cancel) => *can_skip,
-        (
-            PendingChoice::ForeignInfluenceSelect { cards, .. },
-            ClientInput::SubmitDiscoverChoice(idx),
-        ) => *idx < cards.len(),
-        (PendingChoice::ChooseOneSelect { choices }, ClientInput::SubmitDiscoverChoice(idx)) => {
-            *idx < choices.len()
-        }
-        (PendingChoice::StanceChoice, ClientInput::SubmitDiscoverChoice(idx)) => *idx < 2,
-        _ => false,
-    }
+    let Some(combat) = session
+        .active_combat
+        .as_ref()
+        .map(|active| &active.combat_state)
+    else {
+        return false;
+    };
+    crate::sim::combat_action_surface::pending_choice_input_is_legal(choice, combat, input)
 }
 
 fn run_pending_resolution_is_allowed(
@@ -317,77 +256,6 @@ fn run_pending_resolution_is_allowed(
         .collect::<Vec<_>>();
     indices.len() == resolution.selected.len()
         && session.run_pending_selection_is_allowed(choice, &indices)
-}
-
-fn validate_indices_in_range(item_count: usize, indices: &[usize]) -> Result<(), String> {
-    for idx in indices {
-        if *idx >= item_count {
-            return Err(format!(
-                "selection index {idx} out of range; visible indices are 0..{}",
-                item_count.saturating_sub(1)
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn reject_duplicate_indices(indices: &[usize]) -> Result<(), String> {
-    let mut sorted = indices.to_vec();
-    sorted.sort_unstable();
-    if sorted.windows(2).any(|pair| pair[0] == pair[1]) {
-        return Err("selection indices must be unique".to_string());
-    }
-    Ok(())
-}
-
-fn uuid_selection_is_allowed(
-    uuids: &[u32],
-    candidate_uuids: &[u32],
-    min_choices: usize,
-    max_choices: usize,
-) -> bool {
-    uuids.len() >= min_choices
-        && uuids.len() <= max_choices
-        && all_unique(uuids)
-        && uuids.iter().all(|uuid| candidate_uuids.contains(uuid))
-}
-
-fn all_unique(values: &[u32]) -> bool {
-    let mut sorted = values.to_vec();
-    sorted.sort_unstable();
-    !sorted.windows(2).any(|pair| pair[0] == pair[1])
-}
-
-fn hand_contains_all(session: &RunControlSession, uuids: &[u32]) -> bool {
-    let Some(combat) = session
-        .active_combat
-        .as_ref()
-        .map(|active| &active.combat_state)
-    else {
-        return false;
-    };
-    pile_contains_all(&combat.zones.hand, uuids)
-}
-
-fn grid_source_contains_all(
-    session: &RunControlSession,
-    source_pile: PileType,
-    uuids: &[u32],
-) -> bool {
-    let Some(combat) = session
-        .active_combat
-        .as_ref()
-        .map(|active| &active.combat_state)
-    else {
-        return false;
-    };
-    pile_contains_all(grid_source_cards(combat, source_pile), uuids)
-}
-
-fn pile_contains_all(cards: &[CombatCard], uuids: &[u32]) -> bool {
-    uuids
-        .iter()
-        .all(|uuid| cards.iter().any(|card| card.uuid == *uuid))
 }
 
 fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> &[CombatCard] {

@@ -9,10 +9,8 @@ pub mod card_analysis_v1;
 pub mod card_component_signal_v1;
 pub mod card_reward_policy_v1;
 pub mod card_semantics_v1;
-pub mod combat_auto_policy_v1;
 pub mod combat_belief;
 pub mod combat_policy_v1;
-pub mod combat_search_v2;
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod combat_state_key;
 pub mod combat_state_snapshot;

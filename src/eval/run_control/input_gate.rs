@@ -1,4 +1,4 @@
-use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::sim::combat_legal_actions::is_legal_move;
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
@@ -46,7 +46,7 @@ impl RunControlSession {
                 _,
             ) => self
                 .current_combat_position_for_actions()
-                .map(|position| get_legal_moves(&position.engine, &position.combat).contains(input))
+                .map(|position| is_legal_move(&position.engine, &position.combat, input))
                 .unwrap_or(false),
             (EngineState::MapOverlay { .. }, ClientInput::Cancel) => true,
             (EngineState::RunPendingChoice(choice), ClientInput::SubmitSelection(resolution)) => {

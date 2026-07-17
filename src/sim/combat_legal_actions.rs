@@ -1,10 +1,13 @@
 use crate::engine::targeting;
 use crate::runtime::combat::CombatState;
-use crate::state::core::{ClientInput, PendingChoice};
-use crate::state::selection::{SelectionResolution, SelectionScope};
+use crate::state::core::ClientInput;
 use crate::state::EngineState;
 
-pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
+/// Returns only the finite, explicit actions at this engine boundary.
+///
+/// Combinatorial Hand/Grid/Scry submissions live in the typed action surface;
+/// this function must stay linear in the visible combat state.
+pub fn engine_atomic_actions(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
     let mut moves = Vec::new();
 
     match engine {
@@ -64,59 +67,12 @@ pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<Cli
                 }
             }
         }
-        EngineState::PendingChoice(choice) => match choice {
-            PendingChoice::HandSelect {
-                min_cards,
-                max_cards,
-                candidate_uuids,
-                ..
-            } => {
-                extend_hand_select_moves(&mut moves, candidate_uuids, *min_cards, *max_cards);
-            }
-            PendingChoice::GridSelect {
-                min_cards,
-                candidate_uuids,
-                max_cards,
-                ..
-            } => {
-                extend_grid_select_moves(&mut moves, candidate_uuids, *min_cards, *max_cards);
-            }
-            PendingChoice::DiscoverySelect(choice) => {
-                for index in 0..choice.cards.len() {
-                    moves.push(ClientInput::SubmitDiscoverChoice(index));
-                }
-                if choice.can_skip {
-                    moves.push(ClientInput::Cancel);
-                }
-            }
-            PendingChoice::ScrySelect { card_uuids, .. } => {
-                extend_scry_moves(&mut moves, card_uuids.len());
-            }
-            PendingChoice::CardRewardSelect {
-                cards, can_skip, ..
-            } => {
-                for index in 0..cards.len() {
-                    moves.push(ClientInput::SubmitDiscoverChoice(index));
-                }
-                if *can_skip {
-                    moves.push(ClientInput::Cancel);
-                }
-            }
-            PendingChoice::ForeignInfluenceSelect { cards, .. } => {
-                for index in 0..cards.len() {
-                    moves.push(ClientInput::SubmitDiscoverChoice(index));
-                }
-            }
-            PendingChoice::ChooseOneSelect { choices } => {
-                for index in 0..choices.len() {
-                    moves.push(ClientInput::SubmitDiscoverChoice(index));
-                }
-            }
-            PendingChoice::StanceChoice => {
-                moves.push(ClientInput::SubmitDiscoverChoice(0));
-                moves.push(ClientInput::SubmitDiscoverChoice(1));
-            }
-        },
+        EngineState::PendingChoice(_) => {
+            return crate::sim::combat_action_surface::combat_legal_action_surface_v2(
+                engine, combat,
+            )
+            .atomic_actions;
+        }
         _ => {
             moves.push(ClientInput::Proceed);
         }
@@ -125,219 +81,15 @@ pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<Cli
     moves
 }
 
-pub fn get_legal_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
-    engine_local_moves(engine, combat)
-}
-
-pub fn legal_moves_for_audit(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
-    get_legal_moves(engine, combat)
-}
-
-fn extend_hand_select_moves(
-    moves: &mut Vec<ClientInput>,
-    candidate_uuids: &[u32],
-    min_cards: u8,
-    max_cards: u8,
-) {
-    let effective_max = candidate_uuids.len().min(max_cards as usize);
-    if min_cards == 0 {
-        push_unique_hand_select(moves, Vec::new());
-    }
-    if candidate_uuids.is_empty() || effective_max == 0 {
-        return;
-    }
-
-    let combo_pool = candidate_uuids
-        .iter()
-        .copied()
-        .take(selection_pool_cap(
-            min_cards,
-            max_cards,
-            candidate_uuids.len(),
-        ))
-        .collect::<Vec<_>>();
-    let min_select = if min_cards == 0 {
-        1
-    } else {
-        min_cards as usize
+/// Checks membership without requiring a complete eager candidate list.
+///
+/// Pending-choice membership is validated from the frozen domain state rather
+/// than by pretending the atomic action list is the complete input language.
+pub fn is_legal_move(engine: &EngineState, combat: &CombatState, input: &ClientInput) -> bool {
+    let EngineState::PendingChoice(choice) = engine else {
+        return engine_atomic_actions(engine, combat).contains(input);
     };
-    let max_select = selection_generation_max(min_cards, max_cards, combo_pool.len());
-
-    for selection in generate_ranked_combinations(&combo_pool, min_select, max_select, 16) {
-        push_unique_hand_select(moves, selection);
-    }
-}
-
-fn extend_grid_select_moves(
-    moves: &mut Vec<ClientInput>,
-    candidate_uuids: &[u32],
-    min_cards: u8,
-    max_cards: u8,
-) {
-    let effective_max = candidate_uuids.len().min(max_cards as usize);
-    if min_cards == 0 {
-        push_unique_grid_select(moves, Vec::new());
-    }
-    if candidate_uuids.is_empty() || effective_max == 0 {
-        return;
-    }
-
-    let combo_pool = candidate_uuids
-        .iter()
-        .copied()
-        .take(selection_pool_cap(
-            min_cards,
-            max_cards,
-            candidate_uuids.len(),
-        ))
-        .collect::<Vec<_>>();
-    let min_select = if min_cards == 0 {
-        1
-    } else {
-        min_cards as usize
-    };
-    let max_select = selection_generation_max(min_cards, max_cards, combo_pool.len());
-
-    for selection in generate_ranked_combinations(&combo_pool, min_select, max_select, 16) {
-        push_unique_grid_select(moves, selection);
-    }
-}
-
-fn extend_scry_moves(moves: &mut Vec<ClientInput>, candidate_count: usize) {
-    moves.push(ClientInput::SubmitScryDiscard(Vec::new()));
-    for target_size in 1..=candidate_count {
-        let mut selected = Vec::with_capacity(target_size);
-        collect_scry_index_combinations(moves, candidate_count, target_size, 0, &mut selected);
-    }
-}
-
-fn collect_scry_index_combinations(
-    moves: &mut Vec<ClientInput>,
-    candidate_count: usize,
-    target_size: usize,
-    start: usize,
-    selected: &mut Vec<usize>,
-) {
-    if selected.len() == target_size {
-        moves.push(ClientInput::SubmitScryDiscard(selected.clone()));
-        return;
-    }
-
-    let remaining_needed = target_size - selected.len();
-    if candidate_count.saturating_sub(start) < remaining_needed {
-        return;
-    }
-
-    let max_start = candidate_count.saturating_sub(remaining_needed);
-    for idx in start..=max_start {
-        selected.push(idx);
-        collect_scry_index_combinations(moves, candidate_count, target_size, idx + 1, selected);
-        selected.pop();
-    }
-}
-
-fn selection_pool_cap(min_cards: u8, max_cards: u8, available: usize) -> usize {
-    let cap_hint = if min_cards == 0 {
-        (max_cards as usize).saturating_add(3)
-    } else {
-        (min_cards as usize).saturating_add(4)
-    };
-    available.min(cap_hint.clamp(4, 8))
-}
-
-fn selection_generation_max(min_cards: u8, max_cards: u8, available: usize) -> usize {
-    let effective_max = available.min(max_cards as usize);
-    if min_cards == 0 {
-        effective_max.min(4)
-    } else {
-        effective_max.min((min_cards as usize).saturating_add(2))
-    }
-}
-
-fn generate_ranked_combinations(
-    ordered: &[u32],
-    min_size: usize,
-    max_size: usize,
-    max_results: usize,
-) -> Vec<Vec<u32>> {
-    let mut out = Vec::new();
-    let mut current = Vec::new();
-    if ordered.is_empty() || min_size == 0 || min_size > max_size {
-        return out;
-    }
-
-    for target_size in min_size..=max_size.min(ordered.len()) {
-        collect_ranked_combinations(ordered, target_size, 0, &mut current, &mut out, max_results);
-        if out.len() >= max_results {
-            break;
-        }
-    }
-
-    out
-}
-
-fn collect_ranked_combinations(
-    ordered: &[u32],
-    target_size: usize,
-    start: usize,
-    current: &mut Vec<u32>,
-    out: &mut Vec<Vec<u32>>,
-    max_results: usize,
-) {
-    if out.len() >= max_results {
-        return;
-    }
-    if current.len() == target_size {
-        out.push(current.clone());
-        return;
-    }
-    if start >= ordered.len() {
-        return;
-    }
-
-    let remaining_needed = target_size - current.len();
-    let max_start = ordered.len().saturating_sub(remaining_needed);
-    for idx in start..=max_start {
-        current.push(ordered[idx]);
-        collect_ranked_combinations(ordered, target_size, idx + 1, current, out, max_results);
-        current.pop();
-        if out.len() >= max_results {
-            return;
-        }
-    }
-}
-
-fn push_unique_hand_select(moves: &mut Vec<ClientInput>, selection: Vec<u32>) {
-    if !contains_hand_select(moves, &selection) {
-        moves.push(selection_input(SelectionScope::Hand, selection));
-    }
-}
-
-fn push_unique_grid_select(moves: &mut Vec<ClientInput>, selection: Vec<u32>) {
-    if !contains_grid_select(moves, &selection) {
-        moves.push(selection_input(SelectionScope::Grid, selection));
-    }
-}
-
-fn contains_hand_select(moves: &[ClientInput], selection: &[u32]) -> bool {
-    contains_selection(moves, SelectionScope::Hand, selection)
-}
-
-fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
-    contains_selection(moves, SelectionScope::Grid, selection)
-}
-
-fn selection_input(scope: SelectionScope, selection: Vec<u32>) -> ClientInput {
-    ClientInput::SubmitSelection(SelectionResolution::card_uuids(scope, selection))
-}
-
-fn contains_selection(moves: &[ClientInput], scope: SelectionScope, selection: &[u32]) -> bool {
-    moves.iter().any(|move_input| match move_input {
-        ClientInput::SubmitSelection(resolution) if resolution.scope == scope => {
-            resolution.selected_card_uuids() == selection
-        }
-        _ => false,
-    })
+    crate::sim::combat_action_surface::pending_choice_input_is_legal(choice, combat, input)
 }
 
 #[cfg(test)]
@@ -345,6 +97,9 @@ mod tests {
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::content::potions::{Potion, PotionId};
+    use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
+    use crate::state::core::PendingChoice;
+    use crate::state::selection::{SelectionResolution, SelectionScope};
     use crate::test_support::{blank_test_combat, test_monster};
 
     fn build_fixture_combat() -> CombatState {
@@ -354,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_skip_unusable_potions() {
+    fn engine_atomic_actions_skip_unusable_potions() {
         let mut combat = build_fixture_combat();
         combat.entities.potions = vec![
             Some(Potion::with_affordance_truth(
@@ -367,7 +122,7 @@ mod tests {
             None,
             None,
         ];
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs
                 .iter()
@@ -389,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_skip_passive_fairy_potion_even_if_local_affordance_is_stale() {
+    fn engine_atomic_actions_skip_passive_fairy_potion_even_if_local_affordance_is_stale() {
         let mut combat = build_fixture_combat();
         combat.entities.potions = vec![
             Some(Potion::with_affordance_truth(
@@ -403,7 +158,7 @@ mod tests {
             None,
         ];
 
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs.iter().any(|input| matches!(
                 input,
@@ -417,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_skip_smoke_bomb_during_boss_combat() {
+    fn engine_atomic_actions_skip_smoke_bomb_during_boss_combat() {
         let mut combat = build_fixture_combat();
         combat.meta.is_boss_fight = true;
         combat.entities.potions = vec![
@@ -432,7 +187,7 @@ mod tests {
             None,
         ];
 
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs.iter().any(|input| matches!(
                 input,
@@ -446,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_skip_smoke_bomb_when_visible_monster_is_boss() {
+    fn engine_atomic_actions_skip_smoke_bomb_when_visible_monster_is_boss() {
         let mut combat = build_fixture_combat();
         combat.meta.is_boss_fight = false;
         combat.entities.monsters = vec![test_monster(EnemyId::SlimeBoss)];
@@ -462,7 +217,7 @@ mod tests {
             None,
         ];
 
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs.iter().any(|input| matches!(
                 input,
@@ -476,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_local_moves_keeps_liquid_memories_with_empty_discard_pile() {
+    fn engine_atomic_actions_keep_liquid_memories_with_empty_discard_pile() {
         let mut combat = build_fixture_combat();
         combat.zones.discard_pile.clear();
         combat.entities.potions = vec![
@@ -491,7 +246,7 @@ mod tests {
             None,
         ];
 
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             inputs.iter().any(|input| matches!(
                 input,
@@ -573,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_scry_legal_moves_cover_keep_and_all_discard_subsets() {
+    fn pending_scry_stays_symbolic_instead_of_materializing_subsets() {
         let mut combat = build_fixture_combat();
         combat.zones.draw_pile = vec![
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 10),
@@ -587,25 +342,97 @@ mod tests {
             card_uuids: vec![10, 20],
         });
 
-        let inputs = engine_local_moves(&engine, &combat);
+        let surface =
+            crate::sim::combat_action_surface::combat_legal_action_surface_v2(&engine, &combat);
 
-        assert_eq!(
-            inputs,
-            vec![
-                ClientInput::SubmitScryDiscard(vec![]),
-                ClientInput::SubmitScryDiscard(vec![0]),
-                ClientInput::SubmitScryDiscard(vec![1]),
-                ClientInput::SubmitScryDiscard(vec![0, 1]),
-            ]
-        );
-        assert!(
-            !inputs.contains(&ClientInput::Proceed),
-            "pending Scry must not fall back to a fake proceed action"
-        );
+        assert!(surface.atomic_actions.is_empty());
+        assert_eq!(surface.selection_families.len(), 1);
+        assert!(is_legal_move(
+            &engine,
+            &combat,
+            &ClientInput::SubmitScryDiscard(vec![])
+        ));
+        assert!(is_legal_move(
+            &engine,
+            &combat,
+            &ClientInput::SubmitScryDiscard(vec![0, 1])
+        ));
     }
 
     #[test]
-    fn pending_choice_legal_moves_never_use_fake_proceed_fallback() {
+    fn pending_selection_membership_accepts_the_full_symbolic_domain() {
+        let mut combat = build_fixture_combat();
+        combat.zones.hand = (0..10)
+            .map(|index| {
+                crate::runtime::combat::CombatCard::new(
+                    crate::content::cards::CardId::Strike,
+                    100 + index,
+                )
+            })
+            .collect();
+        let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids: (100..110).collect(),
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: true,
+            reason: crate::state::HandSelectReason::Discard,
+        });
+        let last_candidate = ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+            SelectionScope::Hand,
+            [109],
+        ));
+
+        assert!(is_legal_move(&engine, &combat, &last_candidate));
+        assert!(is_legal_move(&engine, &combat, &ClientInput::Cancel));
+    }
+
+    #[test]
+    fn pending_membership_rejects_scry_indices_that_alias_one_card_uuid() {
+        let mut combat = build_fixture_combat();
+        combat.zones.draw_pile = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            42,
+        )];
+        let engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
+            cards: vec![
+                crate::content::cards::CardId::Strike,
+                crate::content::cards::CardId::Strike,
+            ],
+            card_uuids: vec![42, 42],
+        });
+
+        assert!(!is_legal_move(
+            &engine,
+            &combat,
+            &ClientInput::SubmitScryDiscard(vec![0, 1]),
+        ));
+    }
+
+    #[test]
+    fn pending_membership_rejects_grid_reason_source_mismatch() {
+        let mut combat = build_fixture_combat();
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            42,
+        )];
+        let engine = EngineState::PendingChoice(PendingChoice::GridSelect {
+            source_pile: crate::state::core::PileType::Hand,
+            candidate_uuids: vec![42],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::GridSelectReason::MoveToDrawPile,
+        });
+        let input = ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+            SelectionScope::Grid,
+            [42],
+        ));
+
+        assert!(!is_legal_move(&engine, &combat, &input));
+    }
+
+    #[test]
+    fn pending_choice_surfaces_never_use_fake_proceed_fallback() {
         let mut combat = build_fixture_combat();
         combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::Strike,
@@ -668,20 +495,22 @@ mod tests {
         ];
 
         for choice in choices {
-            let inputs = engine_local_moves(&EngineState::PendingChoice(choice.clone()), &combat);
+            let position =
+                CombatPosition::new(EngineState::PendingChoice(choice.clone()), combat.clone());
+            let surface = EngineCombatStepper.legal_action_surface(&position);
             assert!(
-                !inputs.is_empty(),
-                "pending choice {choice:?} should expose at least one legal input"
+                !surface.atomic_actions.is_empty() || !surface.selection_families.is_empty(),
+                "pending choice {choice:?} should expose an atomic action or a symbolic family"
             );
             assert!(
-                !inputs.contains(&ClientInput::Proceed),
-                "pending choice {choice:?} must not fall back to fake proceed: {inputs:?}"
+                !surface.atomic_actions.contains(&ClientInput::Proceed),
+                "pending choice {choice:?} must not fall back to fake proceed: {surface:?}"
             );
         }
     }
 
     #[test]
-    fn engine_local_moves_skip_cards_when_velvet_choker_locked() {
+    fn engine_atomic_actions_skip_cards_when_velvet_choker_locked() {
         let mut combat = build_fixture_combat();
         combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::Apparition,
@@ -697,7 +526,7 @@ mod tests {
                 crate::content::relics::RelicId::VelvetChoker,
             ));
 
-        let inputs = engine_local_moves(&EngineState::CombatPlayerTurn, &combat);
+        let inputs = engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat);
         assert!(
             !inputs
                 .iter()

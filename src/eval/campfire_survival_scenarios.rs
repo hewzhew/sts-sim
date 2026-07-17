@@ -5,7 +5,7 @@ use crate::engine::campfire_candidates::CampfireCandidate;
 use crate::eval::campfire_evaluation::CampfireEvaluationBatch;
 use crate::eval::campfire_projection::CampfireProjection;
 use crate::eval::combat_lab_v1::{derive_shuffle_seed_v1, CombatLabShuffleScheduleV1};
-use crate::eval::fingerprint::{combat_state_fingerprint_v1, StateFingerprintV1};
+use crate::eval::fingerprint::{combat_state_fingerprint_v2, StateFingerprintV2};
 use crate::runtime::combat::CombatCard;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::CombatPosition;
@@ -67,7 +67,7 @@ pub struct CampfireSurvivalScenarioCell {
     pub analysis_seed: u64,
     pub shuffle_seed: u64,
     pub start: CombatPosition,
-    pub state_fingerprint: StateFingerprintV1,
+    pub state_fingerprint: StateFingerprintV2,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -183,7 +183,7 @@ pub fn compile_aligned_campfire_survival_sample(
                 lens,
                 analysis_seed: spec.analysis_seed,
                 shuffle_seed,
-                state_fingerprint: combat_state_fingerprint_v1(&start),
+                state_fingerprint: combat_state_fingerprint_v2(&start),
                 start,
             });
         }

@@ -25,7 +25,7 @@ struct TestTurnStepper {
 }
 
 impl CombatStepper for TestTurnStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         match self.mode {
             TestTurnMode::PlayThenEnd => {
                 if !matches!(position.engine, EngineState::CombatPlayerTurn)

@@ -7,7 +7,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 struct FirstActionWinsStepper;
 
 impl CombatStepper for FirstActionWinsStepper {
-    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
         vec![ClientInput::EndTurn]
     }
 
@@ -42,7 +42,7 @@ impl CombatStepper for FirstActionWinsStepper {
 struct PendingChoiceWinsStepper;
 
 impl CombatStepper for PendingChoiceWinsStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if matches!(position.engine, EngineState::PendingChoice(_)) {
             vec![
                 ClientInput::SubmitDiscoverChoice(0),
@@ -84,7 +84,7 @@ impl CombatStepper for PendingChoiceWinsStepper {
 struct StalledEndTurnStepper;
 
 impl CombatStepper for StalledEndTurnStepper {
-    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
         vec![ClientInput::EndTurn]
     }
 
@@ -348,6 +348,56 @@ fn conservative_rollout_stops_before_large_pending_choice_branch() {
     assert_eq!(estimate.last_pending_choice_kind, Some("scry_select"));
     assert!(estimate.stopped_on_high_fanout_pending_choice);
     assert_eq!(estimate.actions_simulated, 0);
+}
+
+#[test]
+fn engine_rollout_stops_at_small_structured_pending_choice_without_calling_it_no_legal_actions() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        10,
+    )];
+    let node = SearchNode {
+        engine: EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+            candidate_uuids: vec![10],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::HandSelectReason::Discard,
+        }),
+        combat,
+        actions: Vec::new(),
+        turn_prefix: TurnPrefixState::default(),
+        initial_hp: 80,
+        potions_used: 0,
+        potions_discarded: 0,
+        cards_played: 0,
+        potion_tactical_priority: 0,
+        last_turn_branch_priority: 0,
+        action_prior_score: None,
+        action_ordering_frontier_hint: 0,
+        rollout_estimate: RolloutNodeEstimate::unevaluated(),
+    };
+    let config = CombatSearchV2Config::default();
+    let mut performance = RolloutPerformanceCounters::default();
+
+    let estimate = conservative_no_potion_rollout(
+        &node,
+        &EngineCombatStepper,
+        &config,
+        4,
+        None,
+        &mut performance,
+    );
+
+    assert_eq!(
+        estimate.stop_reason,
+        RolloutStopReason::StructuredPendingChoice
+    );
+    assert_eq!(estimate.actions_simulated, 0);
+    assert_eq!(estimate.pending_choices_seen, 1);
+    assert_eq!(estimate.pending_choice_actions_simulated, 0);
 }
 
 #[test]

@@ -9,6 +9,7 @@ impl RolloutStopReason {
             RolloutStopReason::Deadline => "deadline",
             RolloutStopReason::NoLegalActions => "no_legal_actions",
             RolloutStopReason::PolicyDeclined => "policy_declined",
+            RolloutStopReason::StructuredPendingChoice => "structured_pending_choice",
             RolloutStopReason::EngineStepLimit => "engine_step_limit",
             RolloutStopReason::HighFanoutPendingChoice => "high_fanout_pending_choice",
         }

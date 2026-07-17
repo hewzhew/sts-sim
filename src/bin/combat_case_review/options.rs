@@ -1,5 +1,6 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchChildRolloutPluginId, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+    CombatSearchChildRolloutPluginId, CombatSearchExpansionPluginId, CombatSearchRolloutPluginId,
+    CombatSearchTurnPlanPluginId,
 };
 
 use super::args::Args;
@@ -17,6 +18,7 @@ pub(super) struct ReviewOptions {
     pub(super) disable_rollout: bool,
     rollout_plugin: Option<CombatSearchRolloutPluginId>,
     turn_plan_plugin: Option<CombatSearchTurnPlanPluginId>,
+    expansion_plugin: Option<CombatSearchExpansionPluginId>,
     pub(super) rollout_max_actions: Option<usize>,
     pub(super) rollout_max_evaluations: Option<usize>,
     pub(super) line_lab: bool,
@@ -52,6 +54,7 @@ impl ReviewOptions {
             disable_rollout: args.disable_rollout,
             rollout_plugin: args.rollout_policy,
             turn_plan_plugin: args.turn_plan_policy,
+            expansion_plugin: args.expansion_policy,
             rollout_max_actions: args.rollout_max_actions,
             rollout_max_evaluations: args.rollout_max_evaluations,
             line_lab: args.line_lab,
@@ -93,5 +96,10 @@ impl ReviewOptions {
     pub(super) fn turn_plan_plugin(&self) -> CombatSearchTurnPlanPluginId {
         self.turn_plan_plugin
             .unwrap_or(CombatSearchTurnPlanPluginId::Disabled)
+    }
+
+    pub(super) fn expansion_plugin(&self) -> CombatSearchExpansionPluginId {
+        self.expansion_plugin
+            .unwrap_or(CombatSearchExpansionPluginId::AtomicActions)
     }
 }

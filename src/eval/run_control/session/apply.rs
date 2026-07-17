@@ -355,18 +355,16 @@ impl RunControlSession {
     ) -> Result<AppliedDecisionEffect, String> {
         let before = RunVisibleSnapshot::capture(self);
         let next_state = match &mut self.engine_state {
-            EngineState::RewardScreen(reward) => {
-                crate::engine::reward_handler::skip_card_reward_item(
-                    &mut self.run_state,
-                    reward,
-                    reward_index,
-                    None,
-                )?
-            }
+            EngineState::RewardScreen(reward) => crate::engine::skip_card_reward_item(
+                &mut self.run_state,
+                reward,
+                reward_index,
+                None,
+            )?,
             EngineState::RewardOverlay {
                 reward_state,
                 return_state,
-            } => crate::engine::reward_handler::skip_card_reward_item(
+            } => crate::engine::skip_card_reward_item(
                 &mut self.run_state,
                 reward_state,
                 reward_index,

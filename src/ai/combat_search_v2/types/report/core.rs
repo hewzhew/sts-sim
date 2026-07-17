@@ -8,7 +8,7 @@ use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 13;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 16;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
@@ -38,6 +38,8 @@ pub struct CombatSearchV2PolicyReport {
     pub kind: &'static str,
     pub terminal_policy: &'static str,
     pub expansion_order: &'static str,
+    pub expansion_policy: &'static str,
+    pub pending_choice_action_surface: &'static str,
     pub action_prior_policy: &'static str,
     pub phase_guard_policy: &'static str,
     pub frontier_value: &'static str,
@@ -56,6 +58,7 @@ pub struct CombatSearchV2PolicyReport {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2BudgetReport {
     pub max_nodes: usize,
+    pub max_pending_choice_prefixes: usize,
     pub max_actions_per_line: usize,
     pub max_engine_steps_per_action: usize,
     pub wall_time_ms: Option<u128>,
@@ -88,6 +91,8 @@ pub struct CombatSearchV2Stats {
     pub transposition_prunes: u64,
     pub deadline_hit: bool,
     pub node_budget_hit: bool,
+    pub action_prefix_budget_hit: bool,
+    pub action_surface_incomplete: bool,
     pub elapsed_ms: u128,
 }
 
@@ -117,11 +122,24 @@ pub struct CombatSearchV2PerformanceReport {
     pub pre_expand_elapsed_us: u128,
     pub expansion_elapsed_us: u128,
     pub child_bookkeeping_elapsed_us: u128,
+    pub pending_choice_transactions_started: u64,
+    pub pending_choice_prefixes_expanded: u64,
+    pub pending_choice_prefixes_generated: u64,
+    pub pending_choice_complete_actions_submitted: u64,
+    pub pending_choice_complete_prefixes_rejected: u64,
+    pub pending_choice_rollout_skips: u64,
     pub turn_plan_frontier_seed_calls: u64,
     pub turn_plan_frontier_seed_inner_nodes_expanded: u64,
     pub turn_plan_frontier_seed_inner_nodes_generated: u64,
     pub turn_plan_frontier_seed_exact_state_skips: u64,
     pub turn_plan_frontier_seed_elapsed_us: u128,
+    pub turn_boundary_macro_calls: u64,
+    pub turn_boundary_macro_candidates: u64,
+    pub turn_boundary_macro_inner_nodes_expanded: u64,
+    pub turn_boundary_macro_inner_nodes_generated: u64,
+    pub turn_boundary_macro_exact_state_skips: u64,
+    pub turn_boundary_macro_atomic_fallbacks: u64,
+    pub turn_boundary_macro_elapsed_us: u128,
     pub shadow_audit_elapsed_us: u128,
     pub root_turn_plan_diagnostics_elapsed_us: u128,
 }

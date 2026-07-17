@@ -1,8 +1,6 @@
 use crate::content::cards::java_id;
 use crate::runtime::combat::Intent;
 use crate::sim::combat::{combat_terminal, stable_boundary};
-use crate::sim::combat_action::combat_action_key;
-use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
@@ -305,27 +303,6 @@ fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'s
 
 fn compact_one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-pub fn render_combat_actions(session: &RunControlSession) -> Result<String, String> {
-    let position = session.current_combat_position_for_actions()?;
-    let actions = get_legal_moves(&position.engine, &position.combat);
-    if actions.is_empty() {
-        return Ok("no legal combat actions".to_string());
-    }
-
-    let mut out = String::new();
-    for (idx, action) in actions.iter().enumerate() {
-        push_line(
-            &mut out,
-            format!(
-                "action[{idx}] {} {:?}",
-                combat_action_key(&position.combat, action),
-                action
-            ),
-        );
-    }
-    Ok(out)
 }
 
 fn render_map_state(session: &RunControlSession, out: &mut String) {

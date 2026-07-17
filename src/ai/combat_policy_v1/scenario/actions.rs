@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatState;
-use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::sim::combat_legal_actions::engine_atomic_actions;
 use crate::state::core::{ClientInput, EngineState};
 
 use super::pending_choice::{exact_pending_choice_inputs, public_pending_choice_action};
@@ -21,7 +21,7 @@ pub(super) fn exact_actions_for_particle(
         EngineState::PendingChoice(choice) => {
             exact_pending_choice_inputs(particle.scenario_id(), choice)?
         }
-        _ => get_legal_moves(&particle.position.engine, &particle.position.combat),
+        _ => engine_atomic_actions(&particle.position.engine, &particle.position.combat),
     };
     for input in inputs {
         let public_action = public_action(

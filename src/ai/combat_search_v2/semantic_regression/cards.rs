@@ -79,10 +79,12 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
         other => panic!("Headbutt should suspend on a discard grid select, got {other:?}"),
     }
 
-    let legal = legal_actions(&after_headbutt.position);
-    assert!(legal.contains(&grid_select([202])));
+    assert!(is_legal_action(
+        &after_headbutt.position,
+        &grid_select([202])
+    ));
     assert!(
-        !legal.contains(&ClientInput::Proceed),
+        !is_legal_action(&after_headbutt.position, &ClientInput::Proceed),
         "pending grid select must not expose fake Proceed to search"
     );
 
@@ -137,10 +139,12 @@ fn stepper_armaments_base_resolves_upgrade_pending_choice() {
         other => panic!("base Armaments should suspend on an upgrade hand select, got {other:?}"),
     }
 
-    let legal = legal_actions(&after_armaments.position);
-    assert!(legal.contains(&hand_select([102])));
+    assert!(is_legal_action(
+        &after_armaments.position,
+        &hand_select([102])
+    ));
     assert!(
-        !legal.contains(&ClientInput::Proceed),
+        !is_legal_action(&after_armaments.position, &ClientInput::Proceed),
         "pending hand select must not expose fake Proceed to search"
     );
 

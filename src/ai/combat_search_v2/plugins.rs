@@ -3,9 +3,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2ExpansionPolicy,
+    CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -43,6 +43,7 @@ pub struct CombatSearchProfile {
 pub struct CombatSearchPluginStack {
     pub action_prior: CombatSearchActionPriorPluginId,
     pub node_evaluator: CombatSearchNodeEvaluatorPluginId,
+    pub expansion: CombatSearchExpansionPluginId,
     pub turn_plan: CombatSearchTurnPlanPluginId,
     pub child_rollout: CombatSearchChildRolloutPluginId,
     pub rollout: CombatSearchRolloutPluginId,
@@ -56,6 +57,7 @@ impl Default for CombatSearchPluginStack {
         Self {
             action_prior: CombatSearchActionPriorPluginId::Default,
             node_evaluator: CombatSearchNodeEvaluatorPluginId::CombatOutcomeScore,
+            expansion: CombatSearchExpansionPluginId::AtomicActions,
             turn_plan: CombatSearchTurnPlanPluginId::Disabled,
             child_rollout: CombatSearchChildRolloutPluginId::LazyOnPop,
             rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
@@ -71,6 +73,7 @@ impl CombatSearchPluginStack {
         Self {
             action_prior: config.setup_bias_policy.into(),
             node_evaluator: CombatSearchNodeEvaluatorPluginId::CombatOutcomeScore,
+            expansion: config.expansion_policy.into(),
             turn_plan: config.turn_plan_policy.into(),
             child_rollout: config.child_rollout_policy.into(),
             rollout: config.rollout_policy.into(),
@@ -123,6 +126,23 @@ impl CombatSearchActionPriorPluginId {
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchNodeEvaluatorPluginId {
     CombatOutcomeScore,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchExpansionPluginId {
+    AtomicActions,
+    HierarchicalTurnBoundary,
+}
+
+impl CombatSearchExpansionPluginId {
+    pub fn label(self) -> &'static str {
+        CombatSearchV2ExpansionPolicy::from(self).label()
+    }
+
+    pub(in crate::ai::combat_search_v2) fn owns_turn_boundaries(self) -> bool {
+        matches!(self, Self::HierarchicalTurnBoundary)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -230,6 +250,10 @@ pub trait CombatSearchNodeEvaluatorPlugin {
     fn id(&self) -> CombatSearchNodeEvaluatorPluginId;
 }
 
+pub trait CombatSearchExpansionPlugin {
+    fn id(&self) -> CombatSearchExpansionPluginId;
+}
+
 pub trait CombatSearchTurnPlanPlugin {
     fn id(&self) -> CombatSearchTurnPlanPluginId;
 }
@@ -300,6 +324,12 @@ impl CombatSearchNodeEvaluatorPlugin for CombatSearchNodeEvaluatorPluginId {
     }
 }
 
+impl CombatSearchExpansionPlugin for CombatSearchExpansionPluginId {
+    fn id(&self) -> CombatSearchExpansionPluginId {
+        *self
+    }
+}
+
 impl CombatSearchTurnPlanPlugin for CombatSearchTurnPlanPluginId {
     fn id(&self) -> CombatSearchTurnPlanPluginId {
         *self
@@ -361,6 +391,11 @@ impl CombatSearchProfile {
         self
     }
 
+    pub fn with_expansion_plugin(mut self, expansion: CombatSearchExpansionPluginId) -> Self {
+        self.engine.plugins.expansion = expansion;
+        self
+    }
+
     pub fn with_child_rollout_plugin(
         mut self,
         child_rollout: CombatSearchChildRolloutPluginId,
@@ -418,6 +453,7 @@ impl CombatSearchEngineProfile {
             max_potions_used: self.plugins.potion.max_potions_used,
             rollout_policy: self.plugins.rollout.into(),
             child_rollout_policy: self.plugins.child_rollout.into(),
+            expansion_policy: self.plugins.expansion.into(),
             turn_plan_policy: self.plugins.turn_plan.into(),
             frontier_policy: self.plugins.frontier.into(),
             phase_guard_policy: self.plugins.phase_guard.into(),
@@ -425,6 +461,28 @@ impl CombatSearchEngineProfile {
             rollout_max_evaluations: rollout_budget.max_evaluations,
             rollout_max_actions: rollout_budget.max_actions,
             ..defaults
+        }
+    }
+}
+
+impl From<CombatSearchExpansionPluginId> for CombatSearchV2ExpansionPolicy {
+    fn from(plugin: CombatSearchExpansionPluginId) -> Self {
+        match plugin {
+            CombatSearchExpansionPluginId::AtomicActions => Self::AtomicActions,
+            CombatSearchExpansionPluginId::HierarchicalTurnBoundary => {
+                Self::HierarchicalTurnBoundary
+            }
+        }
+    }
+}
+
+impl From<CombatSearchV2ExpansionPolicy> for CombatSearchExpansionPluginId {
+    fn from(policy: CombatSearchV2ExpansionPolicy) -> Self {
+        match policy {
+            CombatSearchV2ExpansionPolicy::AtomicActions => Self::AtomicActions,
+            CombatSearchV2ExpansionPolicy::HierarchicalTurnBoundary => {
+                Self::HierarchicalTurnBoundary
+            }
         }
     }
 }

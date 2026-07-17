@@ -11,8 +11,8 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
-use crate::eval::combat_capture::load_combat_capture_v1;
-use crate::eval::fingerprint::StateFingerprintV1;
+use crate::eval::combat_capture::load_combat_capture_v2;
+use crate::eval::fingerprint::StateFingerprintV2;
 use crate::fixtures::combat_start_spec::{compile_combat_start_spec, CombatStartSpec};
 use crate::sim::combat::CombatPosition;
 
@@ -72,6 +72,7 @@ impl CombatSearchV2RunOptions {
             rollout_beam_width: self
                 .rollout_beam_width
                 .unwrap_or(defaults.rollout_beam_width),
+            expansion_policy: defaults.expansion_policy,
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
             frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
             phase_guard_policy: defaults.phase_guard_policy,
@@ -116,7 +117,7 @@ pub struct CombatSearchV2LoadedStart {
     pub label: String,
     pub position: CombatPosition,
     pub artifact_trust_level: Option<ArtifactTrustLevel>,
-    pub fingerprints: Option<StateFingerprintV1>,
+    pub fingerprints: Option<StateFingerprintV2>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -137,7 +138,7 @@ pub fn load_combat_search_v2_start(path: &Path) -> Result<CombatSearchV2LoadedSt
 }
 
 pub fn load_combat_search_v2_snapshot(path: &Path) -> Result<CombatSearchV2LoadedStart, String> {
-    let capture = load_combat_capture_v1(path)?;
+    let capture = load_combat_capture_v2(path)?;
     let label = match capture.label.as_deref().filter(|label| !label.is_empty()) {
         Some(label) => format!("combat_snapshot:{}:{label}", path.display()),
         None => format!("combat_snapshot:{}", path.display()),
@@ -146,7 +147,7 @@ pub fn load_combat_search_v2_snapshot(path: &Path) -> Result<CombatSearchV2Loade
         label,
         position: capture.position,
         artifact_trust_level: Some(capture.trust_level),
-        fingerprints: capture.fingerprints,
+        fingerprints: Some(capture.fingerprints),
     })
 }
 

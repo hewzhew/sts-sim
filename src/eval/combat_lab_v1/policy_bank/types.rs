@@ -8,7 +8,7 @@ use crate::ai::combat_policy_v1::{
     CombatScenarioActionPortfolioEvaluatorV1, CombatScenarioBoundedWinProofGapV1,
 };
 
-pub const COMBAT_LAB_POLICY_BANK_REPORT_SCHEMA_VERSION: u32 = 3;
+pub const COMBAT_LAB_POLICY_BANK_REPORT_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -65,6 +65,7 @@ pub enum CombatLabPolicyUnresolvedReasonV1 {
 pub enum CombatLabPolicyScenarioResolutionV1 {
     Win,
     Loss,
+    Escape,
     Unresolved {
         reason: CombatLabPolicyUnresolvedReasonV1,
     },
@@ -102,6 +103,7 @@ pub struct CombatLabPolicyBankSummaryV1 {
     pub scenario_count: usize,
     pub wins: usize,
     pub losses: usize,
+    pub escapes: usize,
     pub unresolved: usize,
     pub resolution_rate: Option<f64>,
     pub win_rate_all_scenarios: Option<f64>,

@@ -31,19 +31,19 @@ typed simulator state
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
+cargo run -p sts_simulator_control --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
 跑一个小 seed panel：
 
 ```powershell
-cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
+cargo run -p sts_simulator_control --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 复盘保存下来的 combat case：
 
 ```powershell
-cargo run --bin combat_case_review -- --case <case.json> --ladder
+cargo run -p sts_simulator_control --bin combat_case_review -- --case <case.json> --ladder
 ```
 
 当前维护的有界运行、续跑、combat search driver 和验证方式见
@@ -84,6 +84,7 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
 | `src/eval` | run-control、benchmark artifact、diagnostics、report |
 | `src/bin` | 当前维护的命令入口 |
+| `crates/sts_simulator_control` | combat search、evaluation、run-control、branch runtime 和全部 binary 的 Cargo owner；布局迁移期间源码仍留在 `src/` |
 | `tools` | 离线脚本、dataset、panel 和生成 artifact |
 | `docs` | 当前架构、runbook、测试说明和设计草稿 |
 

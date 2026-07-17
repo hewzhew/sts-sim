@@ -4,10 +4,12 @@ use super::super::value::{
     combat_eval_from_rollout_estimate, CombatEvalOutcomeClass, CombatEvalProgressBucket,
     CombatEvalSurvivalBucket,
 };
+use super::super::PendingChoiceActionWork;
 use super::super::SearchTerminalLabel;
 use super::node::SearchNode;
 use super::priority::{priority_for_node, QueueEntry};
-use std::collections::BinaryHeap;
+use crate::ai::combat_state_key::combat_exact_state_key;
+use std::collections::{BinaryHeap, HashSet};
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
     policy: CombatSearchFrontierPluginId,
@@ -29,10 +31,27 @@ impl FrontierQueue {
     }
 
     pub(in crate::ai::combat_search_v2) fn push_node(&mut self, node: SearchNode) {
+        self.push_work_item(node, None);
+    }
+
+    pub(in crate::ai::combat_search_v2) fn push_pending_choice_work(
+        &mut self,
+        node: SearchNode,
+        work: PendingChoiceActionWork,
+    ) {
+        self.push_work_item(node, Some(work));
+    }
+
+    fn push_work_item(
+        &mut self,
+        node: SearchNode,
+        pending_choice_work: Option<PendingChoiceActionWork>,
+    ) {
         let entry = QueueEntry {
             priority: priority_for_node(&node),
             sequence_id: self.next_sequence_id,
             node,
+            pending_choice_work,
         };
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
         self.push_entry(entry);
@@ -57,6 +76,22 @@ impl FrontierQueue {
             CombatSearchFrontierPluginId::SingleQueue => self.single.len(),
             CombatSearchFrontierPluginId::RoundRobinEvalBuckets => self.lanes.len(),
         }
+    }
+
+    /// Concrete engine states and virtual action-prefix work are different
+    /// units.  Multiple residual entries may carry clones of the same parent;
+    /// reports count that parent once.
+    pub(in crate::ai::combat_search_v2) fn concrete_state_count(&self) -> usize {
+        self.iter()
+            .map(|entry| combat_exact_state_key(&entry.node.engine, &entry.node.combat))
+            .collect::<HashSet<_>>()
+            .len()
+    }
+
+    pub(in crate::ai::combat_search_v2) fn pending_choice_work_item_count(&self) -> usize {
+        self.iter()
+            .filter(|entry| entry.pending_choice_work.is_some())
+            .count()
     }
 
     pub(in crate::ai::combat_search_v2) fn is_empty(&self) -> bool {

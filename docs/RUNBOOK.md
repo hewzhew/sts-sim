@@ -13,13 +13,13 @@ Run one seed:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
+cargo run -p sts_simulator_control --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
 Run a small panel:
 
 ```powershell
-cargo run --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
+cargo run -p sts_simulator_control --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
@@ -27,7 +27,7 @@ Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
 For bounded continuation, use `drain`:
 
 ```powershell
-cargo run --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
+cargo run -p sts_simulator_control --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
 ```
 
 The retired `tools/gap_panel.py` compatibility wrapper has been removed. Use
@@ -39,7 +39,7 @@ When a capsule soft-stops with a frontier, continue from the capsule instead of
 rerunning from Neow:
 
 ```powershell
-cargo run --bin branch_tiny -- --continue-capsule <capsule-dir>
+cargo run -p sts_simulator_control --bin branch_tiny -- --continue-capsule <capsule-dir>
 ```
 
 Continuation may inherit relevant run-contract values such as `wall_ms` from
@@ -51,7 +51,7 @@ contract.
 For saved combat gaps, start from the case:
 
 ```powershell
-cargo run --bin combat_case_review -- --case <case.json> --ladder
+cargo run -p sts_simulator_control --bin combat_case_review -- --case <case.json> --ladder
 ```
 
 Review output is diagnostic. It does not mutate runner policy and does not
@@ -63,7 +63,7 @@ Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark
 suites:
 
 ```powershell
-cargo run --release --bin combat_search_v2_driver -- --start-spec <path>
+cargo run -p sts_simulator_control --release --bin combat_search_v2_driver -- --start-spec <path>
 ```
 
 Common investigation switches include:
@@ -86,7 +86,7 @@ new binary or a live run-control component. Run the maintained seed006-derived
 Reptomancer `8 x 2` pilot with:
 
 ```powershell
-cargo run --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
+cargo run -p sts_simulator_control --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
 ```
 
 Rerun the same command and output directory to resume without repeating journaled
@@ -133,7 +133,7 @@ recorded search result rather than measuring scheduler noise twice.
 Run the reconstructed seed006 pre-Transient pilot with:
 
 ```powershell
-cargo run --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
+cargo run -p sts_simulator_control --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
 ```
 
 The fixture is explicitly reconstructed from recorded public deck/resources;
@@ -167,7 +167,7 @@ atomic run-job journal. A rebuildable dataset and coverage report can still be
 exported from an existing typed trace under `artifacts/runs` with:
 
 ```powershell
-cargo run --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
+cargo run -p sts_simulator_control --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
 ```
 
 The coverage report measures representation and linkage only. It does not rank
@@ -176,49 +176,50 @@ correct-action label.
 
 ## Verification
 
-For core code changes:
+For code changes:
 
 ```powershell
-cargo fmt --check
-cargo check --all-targets
-cargo check --release --all-targets
-cargo build --release --bin combat_search_v2_driver
+cargo fmt --all -- --check
+cargo check-workspace
+cargo test-core
+cargo test-control
+cargo architecture
+cargo check --workspace --release --all-targets
+cargo build -p sts_simulator_control --release --bin combat_search_v2_driver
 git diff --check
 ```
 
 On `x86_64-pc-windows-msvc`, the repository uses rustup's bundled `rust-lld`
-through `.cargo/config.toml`. This is intentional: the monolithic library test
-target is large, and LLD substantially reduces its relink latency without a
-machine-specific tool path. Do not override the linker in routine test scripts.
-Several focused `cargo test --lib <filter>` commands reuse the same compiled
-test binary as long as no source/configuration input changes between commands;
-at completion, prefer one full `cargo test --lib` rather than relinking after
-each edit.
+through `.cargo/config.toml`. Keep that override: it remains useful, but the
+primary rebuild fix is now the workspace boundary rather than a linker flag.
 
-### Deferred Build-Boundary Debt
+### Compilation Boundaries
 
-The remaining optimized rebuild delay is primarily a crate-boundary problem,
-not a linker problem. A July 2026 `fast-run` timing of
-`combat_case_review` measured about 77.9 seconds in the monolithic
-`sts_simulator` library and about 3.3 seconds in the final binary/link unit.
-Roughly half of the library time was metadata analysis and half was code
-generation. The library currently contains the stable simulator together with
-the frequently edited search and evaluation layers, so a local combat-search
-change still invalidates one roughly 312k-line crate.
+The workspace has two production compilation units:
 
-Until a deliberate migration is scheduled:
+- `sts_simulator` owns the stable simulator/domain and lower policy layers;
+- `sts_simulator_control` owns combat search, evaluation, run-control,
+  `runtime::branch`, and all supported binaries.
 
-- use `fast-run` for iterative optimized runs;
-- build an executable once and invoke it directly for every cell in a panel;
-- reserve `release` or `release-final` for final performance confirmation;
-- do not add another linker override or disable diagnostics/PDB generation
-  expecting a material fix.
+The root package deliberately keeps `autobins = false`, `autotests = false`,
+and remains the sole default member. Therefore bare `cargo test --lib` tests
+only the core package; it is not the complete workspace check. Use
+`cargo test-core <filter>` for core tests and `cargo test-control <filter>` for
+search/evaluation/run-control tests. Use both aliases plus `cargo architecture`
+before handoff.
 
-The deferred root-cause investigation is to design measured crate boundaries
-between stable simulator/domain code, combat search, and evaluation/runtime
-tools. It must first audit reverse dependencies and establish compile-time,
-runtime, and architecture-boundary baselines. Do not move modules piecemeal or
-create a second strategic owner merely to shorten builds.
+On the migration baseline, the old 2,808-test / 54.76 MiB harness became a
+1,889-test / 17.86 MiB core harness and a 919-test / 46.80 MiB control harness.
+A real `combat_search_v2` source edit rebuilt the control harness in 8.23
+seconds while the core package stayed fresh; two unchanged filtered commands
+then completed in 0.40 and 0.37 seconds. These numbers are evidence from one
+Windows machine, not performance assertions for CI.
+
+Use `fast-run` for iterative optimized runs, build a binary once for repeated
+panel cells, and reserve `release` or `release-final` for final confirmation.
+Further package splits should be justified by a new measured invalidation
+boundary; do not replace this boundary with test features or many integration
+test executables.
 
 For documentation-only changes:
 

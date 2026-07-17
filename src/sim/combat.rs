@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
 use crate::runtime::combat::CombatState;
 use crate::sim::combat_action::CombatActionChoice;
+use crate::sim::combat_action_surface::CombatLegalActionSurfaceV2;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::DomainCardSnapshot;
 
@@ -51,10 +52,48 @@ pub struct CombatObservedStepResultV1 {
 }
 
 pub trait CombatStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput>;
+    /// Returns the finite, explicitly materialized part of this boundary.
+    ///
+    /// For the engine stepper this deliberately excludes combinatorial
+    /// Hand/Grid/Scry payload families.  Callers that need the complete input
+    /// language must inspect `legal_action_surface` and schedule structured
+    /// families under their own budget.
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput>;
 
-    fn legal_action_choices(&self, position: &CombatPosition) -> Vec<CombatActionChoice> {
-        self.legal_actions(position)
+    /// Describes the complete legal-input domain without forcing structured
+    /// selection families into an eager `Vec`.
+    fn legal_action_surface(&self, position: &CombatPosition) -> CombatLegalActionSurfaceV2 {
+        CombatLegalActionSurfaceV2 {
+            atomic_actions: self.atomic_actions(position),
+            selection_families: Vec::new(),
+        }
+    }
+
+    /// Opts into search-owned factorization of the engine's canonical
+    /// Hand/Grid/Scry pending-choice surface. Custom steppers retain full
+    /// ownership of their action model unless they explicitly opt in.
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        false
+    }
+
+    /// Membership is deliberately separate from candidate generation.
+    /// Custom steppers default to a finite explicit domain; the engine
+    /// override validates structured selection payloads symbolically.
+    fn is_legal_action(&self, position: &CombatPosition, input: &ClientInput) -> bool {
+        self.atomic_actions(position).contains(input)
+    }
+
+    fn choice_for_legal_input(
+        &self,
+        position: &CombatPosition,
+        input: &ClientInput,
+    ) -> Option<CombatActionChoice> {
+        self.is_legal_action(position, input)
+            .then(|| CombatActionChoice::from_input(&position.combat, input.clone()))
+    }
+
+    fn atomic_action_choices(&self, position: &CombatPosition) -> Vec<CombatActionChoice> {
+        self.atomic_actions(position)
             .into_iter()
             .map(|input| CombatActionChoice::from_input(&position.combat, input))
             .collect()
@@ -74,8 +113,23 @@ pub trait CombatStepper {
 pub struct EngineCombatStepper;
 
 impl CombatStepper for EngineCombatStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
-        crate::sim::combat_legal_actions::get_legal_moves(&position.engine, &position.combat)
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        self.legal_action_surface(position).atomic_actions
+    }
+
+    fn legal_action_surface(&self, position: &CombatPosition) -> CombatLegalActionSurfaceV2 {
+        crate::sim::combat_action_surface::combat_legal_action_surface_v2(
+            &position.engine,
+            &position.combat,
+        )
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        true
+    }
+
+    fn is_legal_action(&self, position: &CombatPosition, input: &ClientInput) -> bool {
+        crate::sim::combat_legal_actions::is_legal_move(&position.engine, &position.combat, input)
     }
 
     fn apply_to_stable(

@@ -74,7 +74,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
 
             let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
             let legal = filtered_legal_actions(
-                stepper.legal_action_choices(&position),
+                stepper.atomic_action_choices(&position),
                 config.potion_policy,
                 &node.combat,
             );

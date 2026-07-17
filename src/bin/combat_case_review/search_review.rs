@@ -26,6 +26,7 @@ pub(super) fn search_review(
         label,
         nodes,
         wall_ms,
+        expansion_policy: report.search_policy.expansion_policy,
         rollout_policy: report.search_policy.rollout_policy,
         turn_plan_policy: report.search_policy.turn_plan_policy,
         phase_guard_policy: report.search_policy.phase_guard_policy,

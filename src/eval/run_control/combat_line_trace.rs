@@ -9,7 +9,7 @@ use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::{CombatPosition, CombatTerminal};
-use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::sim::combat_legal_actions::engine_atomic_actions;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 
 use super::combat_candidate_line::CombatCandidateLine;
@@ -36,7 +36,16 @@ pub(super) fn combat_automation_opportunity_state_v1(
 ) -> Option<CombatAutomationOpportunityStateV1> {
     let active = session.active_combat.as_ref()?;
     let combat = &active.combat_state;
-    let legal_moves = get_legal_moves(&active.engine_state, combat);
+    // This trace field describes actions that can be taken directly from the
+    // player-turn boundary.  A PendingChoice temporarily owns input, so cards
+    // and potions are not playable there.  The trace therefore reads only the
+    // finite player-turn actions and never asks a selection family to become a
+    // candidate vector.
+    let legal_moves = if matches!(active.engine_state, EngineState::CombatPlayerTurn) {
+        engine_atomic_actions(&active.engine_state, combat)
+    } else {
+        Vec::new()
+    };
     let mut playable_card_uuids = legal_moves
         .iter()
         .filter_map(|input| match input {

@@ -55,6 +55,7 @@ pub(super) fn state_estimate(
     if let Some(estimate) = &state.estimate_override {
         return estimate.clone();
     }
+    let stop_reason = state.stalled_stop_reason.unwrap_or(stop_reason);
     RolloutNodeEstimate::from_node(
         &state.node,
         state.node.actions.len().saturating_sub(root_action_count),
@@ -85,4 +86,43 @@ pub(super) fn merge_prior_pending_choice_progress(
     }
     estimate.stopped_on_high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
     estimate.high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::blank_test_combat;
+
+    use super::*;
+
+    #[test]
+    fn mixed_stalled_states_keep_the_selected_states_stop_reason() {
+        let combat = blank_test_combat();
+        let better = SearchNode::root(EngineState::CombatPlayerTurn, combat.clone());
+        let mut worse = better.clone();
+        worse.combat.entities.player.current_hp = 1;
+
+        let stalled = vec![
+            TurnBeamState {
+                node: better,
+                progress: RolloutPendingChoiceProgress::default(),
+                last_action_reason: None,
+                estimate_override: None,
+                stalled_stop_reason: Some(RolloutStopReason::HighFanoutPendingChoice),
+            },
+            TurnBeamState {
+                node: worse,
+                progress: RolloutPendingChoiceProgress::default(),
+                last_action_reason: None,
+                estimate_override: None,
+                stalled_stop_reason: Some(RolloutStopReason::NoLegalActions),
+            },
+        ];
+
+        let estimate = best_estimate(&stalled, 0, RolloutStopReason::MaxActions);
+
+        assert_eq!(
+            estimate.stop_reason,
+            RolloutStopReason::HighFanoutPendingChoice
+        );
+    }
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs;
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, CombatSearchV2ActionTrace, CombatSearchV2Config,
     CombatSearchV2TrajectoryReport,
@@ -105,10 +106,7 @@ fn line_from_trajectory(
     let mut position = start.clone();
     let mut replayed = Vec::new();
     for action in actions {
-        let choices = legal_choices(&position, config, stepper);
-        let choice = choices.into_iter().find(|choice| {
-            choice.input == action.input && choice.action_key == action.action_key
-        })?;
+        let choice = replay_choice(&position, action, config, stepper)?;
         let step = stepper.apply_to_stable(
             &position,
             choice.input.clone(),
@@ -205,9 +203,12 @@ fn line_search_from(
                 continue;
             }
             nodes += 1;
-            let mut choices = legal_choices(&line.position, config, stepper);
-            order_choices(&mut choices);
-            for (action_id, choice) in choices.into_iter().enumerate() {
+            for (action_id, choice) in
+                ordered_repair_choices(&line.position, config, stepper).enumerate()
+            {
+                if nodes + next.len() >= search.nodes || Instant::now() >= deadline {
+                    break;
+                }
                 let step = stepper.apply_to_stable(
                     &line.position,
                     choice.input.clone(),
@@ -288,7 +289,7 @@ fn legal_choices(
     stepper: &EngineCombatStepper,
 ) -> Vec<CombatActionChoice> {
     filter_combat_search_legal_actions(
-        stepper.legal_action_choices(position),
+        stepper.atomic_action_choices(position),
         config.potion_policy,
         &position.combat,
     )
@@ -300,6 +301,24 @@ fn legal_choices(
         )
     })
     .collect()
+}
+
+fn ordered_repair_choices<'a>(
+    position: &'a CombatPosition,
+    config: &CombatSearchV2Config,
+    stepper: &'a EngineCombatStepper,
+) -> Box<dyn Iterator<Item = CombatActionChoice> + 'a> {
+    if let crate::state::core::EngineState::PendingChoice(choice) = &position.engine {
+        if let Some(inputs) = canonical_pending_choice_inputs(choice) {
+            return Box::new(
+                inputs.filter_map(move |input| stepper.choice_for_legal_input(position, &input)),
+            );
+        }
+    }
+
+    let mut choices = legal_choices(position, config, stepper);
+    order_choices(&mut choices);
+    Box::new(choices.into_iter())
 }
 
 fn repair_cut_points(len: usize, limit: usize) -> Vec<usize> {
@@ -315,10 +334,7 @@ fn replay_prefix(
 ) -> Option<CombatPosition> {
     let mut position = root.clone();
     for action in actions {
-        let choices = legal_choices(&position, config, stepper);
-        let choice = choices.into_iter().find(|choice| {
-            choice.input == action.input && choice.action_key == action.action_key
-        })?;
+        let choice = replay_choice(&position, action, config, stepper)?;
         let step = stepper.apply_to_stable(
             &position,
             choice.input,
@@ -336,6 +352,24 @@ fn replay_prefix(
         }
     }
     Some(position)
+}
+
+fn replay_choice(
+    position: &CombatPosition,
+    action: &CombatSearchV2ActionTrace,
+    config: &CombatSearchV2Config,
+    stepper: &EngineCombatStepper,
+) -> Option<CombatActionChoice> {
+    let candidate = stepper.choice_for_legal_input(position, &action.input)?;
+    filter_combat_search_legal_actions(vec![candidate], config.potion_policy, &position.combat)
+        .into_iter()
+        .filter(|choice| {
+            !matches!(
+                choice.input,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            )
+        })
+        .find(|choice| choice.action_key == action.action_key)
 }
 
 fn splice_line(

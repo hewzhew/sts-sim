@@ -6,6 +6,8 @@ mod pending_choice;
 mod portfolio;
 mod proof;
 mod step;
+mod turn_option;
+mod turn_option_composition;
 mod types;
 
 pub use group::{group_combat_scenarios_v1, CombatScenarioGroupV1};
@@ -16,7 +18,7 @@ pub use pending_choice::{
     CombatPublicHandSelectionReasonV1, CombatPublicPendingChoiceKindV1,
     CombatPublicPendingChoiceV1, CombatPublicPileV1, CombatPublicStanceV1,
 };
-pub(crate) use portfolio::CombatScenarioActionPortfolioSessionV1;
+pub use portfolio::CombatScenarioActionPortfolioSessionV1;
 pub use portfolio::{
     select_forced_or_strictly_dominant_combat_action_v1, CombatScenarioActionPortfolioErrorV1,
     CombatScenarioActionPortfolioEvaluationV1, CombatScenarioActionPortfolioEvaluatorV1,
@@ -30,7 +32,24 @@ pub use proof::{
     CombatScenarioBoundedWinProofSelectionV1, COMBAT_SCENARIO_BOUNDED_WIN_PROOF_SCHEMA_VERSION,
 };
 pub use step::{
-    step_combat_scenario_group_v1, CombatScenarioStepResultV1, CombatScenarioStepViewV1,
+    step_combat_scenario_group_v1, CombatScenarioStepErrorV1, CombatScenarioStepFailureV1,
+    CombatScenarioStepResultV1, CombatScenarioStepViewV1, CombatScenarioTerminalOutcomeV1,
+    CombatScenarioTerminalV1,
+};
+pub use turn_option::{
+    CombatTurnOptionExpansionBudgetGrantV1, CombatTurnOptionExpansionBudgetLimitsV1,
+    CombatTurnOptionExpansionBudgetSnapshotV1, CombatTurnOptionExpansionBudgetV1,
+    CombatTurnOptionExpansionErrorV1, CombatTurnOptionPrefixCandidateV1,
+    CombatTurnOptionPrefixExpansionSessionV1, CombatTurnOptionPrefixExpansionStatusV1,
+    CombatTurnOptionPrefixExpansionStopV1, CombatTurnOptionPrefixExpansionV1,
+    CombatTurnOptionPrefixSuccessorV1, COMBAT_TURN_OPTION_PREFIX_EXPANSION_SCHEMA_VERSION,
+};
+pub use turn_option_composition::{
+    CombatPublicTurnOptionCompletionV1, CombatPublicTurnOptionCompositionErrorV1,
+    CombatPublicTurnOptionCompositionSessionV1, CombatPublicTurnOptionDecisionV1,
+    CombatPublicTurnOptionOpenLeafV1, CombatPublicTurnOptionSuccessorV1,
+    CombatPublicTurnOptionTerminalV1, CombatPublicTurnOptionV1,
+    COMBAT_PUBLIC_TURN_OPTION_SCHEMA_VERSION,
 };
 pub use types::{
     CombatPolicyInformationSetKeyV1, CombatPolicyObservationEnvelopeV1,

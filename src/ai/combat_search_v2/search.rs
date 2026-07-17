@@ -27,8 +27,10 @@ mod node_expansion;
 mod node_preflight;
 mod node_pruning;
 mod node_terminal;
+mod pending_choice_expansion;
 mod rollout_terminal_promotion;
 mod rollout_timing;
+mod turn_boundary_expansion;
 mod turn_plan_seed_gate;
 mod turn_plan_seeding;
 mod win_acceptance;
@@ -40,6 +42,7 @@ use finish_diagnostics::finish_diagnostics_and_timing;
 use loop_state::SearchLoopState;
 use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
+use pending_choice_expansion::{expand_pending_choice_prefix, PendingChoicePrefixOutcome};
 use rollout_terminal_promotion::promote_replayable_terminal_rollout;
 #[cfg(test)]
 use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
@@ -49,7 +52,7 @@ pub fn run_combat_search_v2(
     combat: &CombatState,
     config: CombatSearchV2Config,
 ) -> CombatSearchV2Report {
-    run_combat_search_v2_with_stepper(engine, combat, config, &EngineCombatStepper)
+    run_combat_search_v2_inner(engine, combat, config, &EngineCombatStepper)
 }
 
 pub fn run_combat_search_v2_with_stepper(
@@ -58,10 +61,20 @@ pub fn run_combat_search_v2_with_stepper(
     config: CombatSearchV2Config,
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2Report {
+    run_combat_search_v2_inner(engine, combat, config, stepper)
+}
+
+fn run_combat_search_v2_inner(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: CombatSearchV2Config,
+    stepper: &impl CombatStepper,
+) -> CombatSearchV2Report {
     let started = Instant::now();
     let deadline = config.wall_time.map(|duration| started + duration);
     let policy_evidence = combat_search_policy_evidence_for_combat(combat);
-    let mut loop_state = SearchLoopState::new(&config);
+    let mut loop_state =
+        SearchLoopState::new(&config, stepper.supports_canonical_pending_choice_actions());
     let root_for_turn_plan_diagnostics =
         initialize_root_frontier(&mut loop_state, engine, combat, stepper, &config, deadline);
 
@@ -69,6 +82,21 @@ pub fn run_combat_search_v2_with_stepper(
         let Some(entry) = loop_state.pop_frontier() else {
             break;
         };
+
+        if let Some(work) = entry.pending_choice_work {
+            if expand_pending_choice_prefix(
+                &mut loop_state,
+                entry.node,
+                work,
+                stepper,
+                &config,
+                deadline,
+            ) == PendingChoicePrefixOutcome::Stop
+            {
+                break;
+            }
+            continue;
+        }
 
         let node = match prepare_node_for_expansion(
             &mut loop_state,

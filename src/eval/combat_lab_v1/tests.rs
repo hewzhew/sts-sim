@@ -4,7 +4,7 @@ use super::{
     CombatLabManifestV1, CombatLabOutcomeClassV1, CombatLabShuffleGeneratorV1,
     CombatLabShuffleScheduleV1, CombatLabSpecV1,
 };
-use crate::eval::fingerprint::combat_state_fingerprint_v1;
+use crate::eval::fingerprint::combat_state_fingerprint_v2;
 use crate::fixtures::combat_start_spec::compile_combat_start_spec;
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -13,8 +13,8 @@ use std::io::Write;
 
 #[test]
 fn seed006_derived_fixture_resolves() {
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures/combat_lab/seed006_reptomancer_8x2.lab.json");
+    let fixture =
+        crate::eval::repository_root().join("fixtures/combat_lab/seed006_reptomancer_8x2.lab.json");
 
     let resolved = load_and_resolve_combat_lab_spec_v1(&fixture)
         .expect("seed006-derived laboratory fixture should resolve");
@@ -71,7 +71,7 @@ fn seed006_derived_fixture_resolves() {
 
 #[test]
 fn seed006_feasibility_fixture_resolves_with_any_surviving_win_threshold() {
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/combat_lab");
+    let fixtures = crate::eval::repository_root().join("fixtures/combat_lab");
     let feasibility = load_and_resolve_combat_lab_spec_v1(
         &fixtures.join("seed006_reptomancer_feasibility_4x2.lab.json"),
     )
@@ -156,6 +156,48 @@ fn artifact_new_run_writes_manifest_before_cells() {
     assert!(!output.join("cells.jsonl").exists());
     assert!(store.cells().is_empty());
     assert_eq!(store.manifest().created_at_unix_ms, 123);
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_store_rejects_legacy_cell_schema_before_append() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_rejects_legacy_cell");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 123);
+    let mut store = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .expect("create artifact store");
+    let mut legacy = artifact_cell(&resolved, 0);
+    legacy.schema_version = 1;
+
+    let error = store
+        .append_cell(&legacy)
+        .expect_err("legacy cell schema must not enter a V2-fingerprint journal");
+
+    assert!(error.contains("unsupported combat laboratory cell schema_version"));
+    assert!(!output.join("cells.jsonl").exists());
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn artifact_resume_rejects_legacy_cell_schema_in_journal() {
+    let (directory, resolved) = resolved_lab_fixture("artifact_rejects_legacy_journal_cell");
+    let output = directory.join("run");
+    let manifest = artifact_manifest(resolved.clone(), 123);
+    drop(
+        CombatLabArtifactStoreV1::create_or_resume(&output, manifest.clone())
+            .expect("create artifact store"),
+    );
+    fs::write(
+        output.join("cells.jsonl"),
+        b"{\"schema_version\":1,\"legacy_fingerprint\":{}}\n",
+    )
+    .expect("write legacy journal fixture");
+
+    let error = CombatLabArtifactStoreV1::create_or_resume(&output, manifest)
+        .err()
+        .expect("legacy journal cell must fail resume");
+
+    assert!(error.contains("unsupported combat laboratory cell schema_version"));
     fs::remove_dir_all(directory).expect("remove test directory");
 }
 
@@ -707,7 +749,7 @@ fn sample_is_shared_across_profiles() {
     let baseline = compile_combat_start_spec(&resolved.start_spec_snapshot)
         .map(|(engine, combat)| crate::sim::combat::CombatPosition::new(engine, combat))
         .expect("compile no-override baseline");
-    let baseline_fingerprint = combat_state_fingerprint_v1(&baseline);
+    let baseline_fingerprint = combat_state_fingerprint_v2(&baseline);
     let changed_rng_streams = baseline_fingerprint
         .rng_boundary
         .streams
@@ -1050,6 +1092,8 @@ fn cell_coverage_limits_are_never_resolved_losses() {
 
     for coverage in [
         SearchCoverageStatus::NodeBudgetLimited,
+        SearchCoverageStatus::ActionPrefixBudgetLimited,
+        SearchCoverageStatus::ActionSurfaceIncomplete,
         SearchCoverageStatus::TimeBudgetLimited,
         SearchCoverageStatus::FrontierOpen,
     ] {
@@ -1127,7 +1171,7 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
     assert!(trajectory_json.get("outcome_order_key").is_some());
     assert_eq!(
         crate::ai::combat_search_v2::COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
-        13
+        16
     );
 
     fs::remove_dir_all(directory).expect("remove test directory");
@@ -2667,7 +2711,7 @@ fn replayable_win_sample() -> (
     let sample = super::CombatLabCompiledSampleV1 {
         sample_index: 7,
         shuffle_seed: 99,
-        state_fingerprint: combat_state_fingerprint_v1(&start),
+        state_fingerprint: combat_state_fingerprint_v2(&start),
         start,
         non_shuffle_rng_hash: "non-shuffle".to_string(),
         shuffle_rng_hash: "shuffle".to_string(),
@@ -2738,7 +2782,7 @@ fn replayable_loss_sample() -> (
     let sample = super::CombatLabCompiledSampleV1 {
         sample_index: 8,
         shuffle_seed: 100,
-        state_fingerprint: combat_state_fingerprint_v1(&start),
+        state_fingerprint: combat_state_fingerprint_v2(&start),
         start,
         non_shuffle_rng_hash: "non-shuffle".to_string(),
         shuffle_rng_hash: "shuffle".to_string(),
@@ -2845,7 +2889,7 @@ fn summary_manifest(
 ) -> (
     std::path::PathBuf,
     CombatLabManifestV1,
-    crate::eval::fingerprint::StateFingerprintV1,
+    crate::eval::fingerprint::StateFingerprintV2,
 ) {
     let (directory, mut resolved) = resolved_lab_fixture(label);
     let prototype = resolved.profiles[0].clone();
@@ -2862,13 +2906,13 @@ fn summary_manifest(
     let (engine, combat) = compile_combat_start_spec(&resolved.start_spec_snapshot)
         .expect("compile summary start state");
     let fingerprint =
-        combat_state_fingerprint_v1(&crate::sim::combat::CombatPosition::new(engine, combat));
+        combat_state_fingerprint_v2(&crate::sim::combat::CombatPosition::new(engine, combat));
     (directory, artifact_manifest(resolved, 123), fingerprint)
 }
 
 fn summary_cell(
     manifest: &CombatLabManifestV1,
-    fingerprint: &crate::eval::fingerprint::StateFingerprintV1,
+    fingerprint: &crate::eval::fingerprint::StateFingerprintV2,
     sample_index: u64,
     profile_id: &str,
     outcome_class: CombatLabOutcomeClassV1,
@@ -2886,7 +2930,7 @@ fn summary_cell(
         CombatLabOutcomeClassV1::ResolvedWin | CombatLabOutcomeClassV1::ResolvedLoss
     );
     CombatLabCellRecordV1 {
-        schema_version: 1,
+        schema_version: super::COMBAT_LAB_CELL_SCHEMA_VERSION,
         cell_key: format!("summary-cell-{sample_index}-{profile_id}"),
         experiment_hash: manifest.experiment_hash.clone(),
         sample_index,
@@ -3095,7 +3139,7 @@ fn runner_fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf, std::
     );
     write_json(&lab_spec_path, &lab);
 
-    let output_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let output_dir = crate::eval::repository_root()
         .join("artifacts")
         .join("runs")
         .join(format!("combat-lab-test-{label}-{}", std::process::id()));

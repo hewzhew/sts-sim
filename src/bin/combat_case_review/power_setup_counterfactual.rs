@@ -284,7 +284,7 @@ fn free_play_power(position: &mut CombatPosition, evidence: &PowerSetupCard) -> 
         target: None,
     };
     let stepper = EngineCombatStepper;
-    if !stepper.legal_actions(position).contains(&input) {
+    if !stepper.is_legal_action(position, &input) {
         return Err(format!(
             "free Power play was not legal for {}",
             evidence.card

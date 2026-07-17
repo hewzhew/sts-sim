@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs;
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, CombatSearchV2ActionTrace, CombatSearchV2Config,
 };
@@ -125,9 +126,12 @@ pub(super) fn line_search_from(
                 continue;
             }
             nodes_expanded += 1;
-            let mut choices = legal_non_potion_choices(&line.position, config, stepper);
-            order_choices(&mut choices);
-            for (action_id, choice) in choices.into_iter().enumerate() {
+            for (action_id, choice) in
+                ordered_line_choices(&line.position, config, stepper).enumerate()
+            {
+                if nodes_generated >= search.nodes || Instant::now() >= deadline {
+                    break;
+                }
                 let step = stepper.apply_to_stable(
                     &line.position,
                     choice.input.clone(),
@@ -186,6 +190,31 @@ pub(super) fn line_search_from(
     }
 }
 
+fn ordered_line_choices<'a>(
+    position: &'a CombatPosition,
+    config: &CombatSearchV2Config,
+    stepper: &'a EngineCombatStepper,
+) -> Box<dyn Iterator<Item = CombatActionChoice> + 'a> {
+    if let crate::state::core::EngineState::PendingChoice(choice) = &position.engine {
+        if let Some(inputs) = canonical_pending_choice_inputs(choice) {
+            return Box::new(inputs.filter_map(move |input| {
+                stepper
+                    .choice_for_legal_input(position, &input)
+                    .filter(|choice| {
+                        !matches!(
+                            choice.input,
+                            ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                        )
+                    })
+            }));
+        }
+    }
+
+    let mut choices = legal_non_potion_choices(position, config, stepper);
+    order_choices(&mut choices);
+    Box::new(choices.into_iter())
+}
+
 fn line_search_stop_reason(
     frontier: &[Line],
     nodes_expanded: usize,
@@ -229,7 +258,7 @@ pub(super) fn legal_non_potion_choices(
     stepper: &EngineCombatStepper,
 ) -> Vec<CombatActionChoice> {
     filter_combat_search_legal_actions(
-        stepper.legal_action_choices(position),
+        stepper.atomic_action_choices(position),
         config.potion_policy,
         &position.combat,
     )

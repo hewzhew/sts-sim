@@ -124,9 +124,17 @@ pub(super) fn replay_candidate_line(
     let mut replayed = Vec::new();
     let mut potions_used = 0u32;
     for action in actions {
+        let Some(candidate) = stepper.choice_for_legal_input(&position, &action.input) else {
+            return Err(format!(
+                "combat candidate line replay drift at step {}: expected {} ({})",
+                action.step_index,
+                action.action_key,
+                client_input_hint(&action.input)
+            ));
+        };
         let choices = enforce_replay_potion_budget(
             filter_combat_search_legal_actions(
-                stepper.legal_action_choices(&position),
+                vec![candidate],
                 config.potion_policy,
                 &position.combat,
             ),
@@ -134,7 +142,7 @@ pub(super) fn replay_candidate_line(
             potions_used,
         );
         let Some(choice) = choices
-            .iter()
+            .into_iter()
             .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
         else {
             return Err(format!(

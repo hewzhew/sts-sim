@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use crate::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs;
 use crate::content::cards::{get_card_definition, CardType};
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper};
 use crate::sim::combat_action::CombatActionChoice;
@@ -153,7 +154,10 @@ fn expand_one_turn(
     let mut deadline_hit = false;
     let boundary_limit = beam.saturating_mul(4).max(beam);
 
-    while !frontier.is_empty() && nodes_expanded < max_nodes as u64 {
+    while !frontier.is_empty()
+        && nodes_expanded < max_nodes as u64
+        && nodes_generated < max_nodes as u64
+    {
         if Instant::now() >= deadline {
             deadline_hit = true;
             break;
@@ -167,18 +171,13 @@ fn expand_one_turn(
                 continue;
             }
             nodes_expanded = nodes_expanded.saturating_add(1);
-            let choices = match plugins {
-                Some(plugins) => filter_combat_search_legal_actions(
-                    stepper.legal_action_choices(&node.position),
-                    plugins.potion.policy,
-                    &node.position.combat,
-                ),
-                None => stepper.legal_action_choices(&node.position),
-            };
-            let choices = filter_turn_pool_potion_budget(choices, plugins, node.potions_used);
-            for (action_id, choice) in choices.into_iter().enumerate() {
+            let choices = turn_pool_choices(&node.position, stepper, plugins, node.potions_used);
+            for (action_id, choice) in choices.enumerate() {
                 if Instant::now() >= deadline {
                     deadline_hit = true;
+                    break;
+                }
+                if nodes_generated >= max_nodes as u64 {
                     break;
                 }
                 let played_power = match choice.input {
@@ -244,6 +243,31 @@ fn expand_one_turn(
         nodes_generated,
         deadline_hit,
     }
+}
+
+fn turn_pool_choices<'a>(
+    position: &'a CombatPosition,
+    stepper: &'a EngineCombatStepper,
+    plugins: Option<&CombatSearchPluginStack>,
+    potions_used: u32,
+) -> Box<dyn Iterator<Item = CombatActionChoice> + 'a> {
+    if let crate::state::core::EngineState::PendingChoice(choice) = &position.engine {
+        if let Some(inputs) = canonical_pending_choice_inputs(choice) {
+            return Box::new(
+                inputs.filter_map(move |input| stepper.choice_for_legal_input(position, &input)),
+            );
+        }
+    }
+
+    let choices = match plugins {
+        Some(plugins) => filter_combat_search_legal_actions(
+            stepper.atomic_action_choices(position),
+            plugins.potion.policy,
+            &position.combat,
+        ),
+        None => stepper.atomic_action_choices(position),
+    };
+    Box::new(filter_turn_pool_potion_budget(choices, plugins, potions_used).into_iter())
 }
 
 fn filter_turn_pool_potion_budget(

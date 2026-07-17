@@ -137,7 +137,16 @@ def review_command(
 def executable_command(path: Path) -> list[str]:
     if path.exists():
         return [str(path)]
-    return ["cargo", "run", "--quiet", "--bin", "combat_case_review", "--"]
+    return [
+        "cargo",
+        "run",
+        "--quiet",
+        "-p",
+        "sts_simulator_control",
+        "--bin",
+        "combat_case_review",
+        "--",
+    ]
 
 
 def run_command(command: list[str], stdout_path: Path, stderr_path: Path) -> int:

@@ -20,6 +20,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         loop_state,
     } = input;
     let SearchLoopState {
+        owns_engine_pending_choice_prefixes,
         stats,
         diagnostics,
         exact_transpositions,
@@ -36,15 +37,24 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         accepted_complete_candidate,
         ..
     } = loop_state;
-    let exhaustive = !accepted_complete_candidate && !exhausted && frontier.is_empty();
+    let exhaustive = !accepted_complete_candidate
+        && !exhausted
+        && frontier.is_empty()
+        && unresolved_leaf_count == 0
+        && max_actions_cut_count == 0
+        && engine_step_limit_count == 0
+        && potion_budget_cut_count == 0
+        && !stats.action_surface_incomplete;
     let coverage_status =
         coverage_status_for_finished_search(&stats, exhaustive, accepted_complete_candidate);
     let coverage_reason = coverage_status_reason(coverage_status);
     let sample_states = frontier_sample_states(&frontier);
+    let frontier_remaining_states = frontier.concrete_state_count();
+    let pending_choice_work_items = frontier.pending_choice_work_item_count();
     let diagnostics = diagnostics.finish(SearchDiagnosticsFinish {
         exact_transpositions: &exact_transpositions,
         dominance: &dominance,
-        frontier_remaining_states: frontier.len(),
+        frontier_remaining_states,
         frontier_sample_count: sample_states.len(),
         stats: &stats,
         coverage_status,
@@ -55,7 +65,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
     });
     let invalid_card_identity_observed =
         diagnostics.card_identity.states_with_uuid_card_id_conflict > 0;
-    let search_policy = search_policy_report(&config);
+    let action_surface_incomplete = stats.action_surface_incomplete;
+    let search_policy = search_policy_report(&config, owns_engine_pending_choice_prefixes);
     let budget = budget_report(&config);
     let rollout = rollout_cache.finish(trajectories.best_frontier.as_ref());
     let trajectory_reports = trajectory_reports(trajectories);
@@ -80,7 +91,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         win_candidate_trajectories: trajectory_reports.win_candidate_trajectories,
         best_frontier_trajectory: trajectory_reports.best_frontier_trajectory,
         frontier: CombatSearchV2FrontierReport {
-            remaining_states: frontier.len(),
+            remaining_states: frontier_remaining_states,
+            pending_choice_work_items,
             unresolved_leaf_count,
             max_actions_cut_count,
             engine_step_limit_count,
@@ -95,6 +107,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         evidence_reliability: evidence_reliability_report(
             invalid_card_identity_observed,
             exhaustive,
+            action_surface_incomplete,
         ),
     }
 }

@@ -12,9 +12,8 @@ use crate::eval::artifact::{
     ArtifactHeaderV1, ArtifactProvenanceV1, ArtifactTrustLevel, ARTIFACT_PRODUCER,
 };
 use crate::eval::fingerprint::{
-    combat_legal_action_set_fingerprint_v1, combat_state_fingerprint_v1,
-    CombatActionFingerprintDescriptorV1, StateFingerprintV1, FINGERPRINT_ALGORITHM_DEBUG,
-    FINGERPRINT_ALGORITHM_JSON,
+    combat_fingerprint_bundle_v2, CombatLegalActionSurfaceFingerprintV2, StateFingerprintV2,
+    FINGERPRINT_ALGORITHM_DEBUG,
 };
 use crate::runtime::combat::Intent;
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
@@ -22,49 +21,47 @@ use crate::sim::combat_identity::validate_combat_card_identity_for_capture;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
-pub const COMBAT_CAPTURE_SCHEMA_NAME: &str = "CombatCaptureV1";
-pub const COMBAT_CAPTURE_SCHEMA_VERSION: u32 = 1;
+pub const COMBAT_CAPTURE_SCHEMA_NAME: &str = "CombatCaptureV2";
+pub const COMBAT_CAPTURE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureV1 {
+pub struct CombatCaptureV2 {
     pub schema_name: String,
     pub schema_version: u32,
     #[serde(default = "default_combat_capture_header")]
     pub header: ArtifactHeaderV1,
-    pub capture_kind: CombatCaptureKind,
+    pub capture_kind: CombatCaptureKindV2,
     #[serde(default = "default_combat_capture_trust_level")]
     pub trust_level: ArtifactTrustLevel,
     pub information_boundary: String,
     pub label: Option<String>,
     #[serde(default = "default_combat_capture_provenance")]
     pub provenance: ArtifactProvenanceV1,
-    pub source: CombatCaptureSourceV1,
-    pub integrity: CombatCaptureIntegrityV1,
-    #[serde(default)]
-    pub fingerprints: Option<StateFingerprintV1>,
-    #[serde(default)]
-    pub legal_actions: Option<CombatCaptureLegalActionsV1>,
-    pub summary: CombatCaptureSummaryV1,
+    pub source: CombatCaptureSourceV2,
+    pub integrity: CombatCaptureIntegrityV2,
+    pub fingerprints: StateFingerprintV2,
+    pub legal_action_surface: CombatLegalActionSurfaceFingerprintV2,
+    pub summary: CombatCaptureSummaryV2,
     pub position: CombatPosition,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CombatCaptureKind {
+pub enum CombatCaptureKindV2 {
     CombatPosition,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureSourceV1 {
+pub struct CombatCaptureSourceV2 {
     pub producer: String,
     pub capture_method: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureIntegrityV1 {
+pub struct CombatCaptureIntegrityV2 {
     pub fingerprint_algorithm: String,
     pub exact_state_fingerprint: String,
     pub stable_outcome_fingerprint: Option<String>,
@@ -72,17 +69,7 @@ pub struct CombatCaptureIntegrityV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureLegalActionsV1 {
-    pub fingerprint_algorithm: String,
-    pub count: usize,
-    pub candidate_set_hash: String,
-    pub candidate_order_hash: String,
-    pub descriptors: Vec<CombatActionFingerprintDescriptorV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct CombatCaptureSummaryV1 {
+pub struct CombatCaptureSummaryV2 {
     pub engine_state: String,
     pub terminal: CombatTerminal,
     pub stable_boundary: bool,
@@ -93,19 +80,19 @@ pub struct CombatCaptureSummaryV1 {
     pub player_block: i32,
     pub energy: u8,
     pub turn_count: u32,
-    pub hand: Vec<CombatCaptureCardSummaryV1>,
+    pub hand: Vec<CombatCaptureCardSummaryV2>,
     pub draw_count: usize,
     pub discard_count: usize,
     pub exhaust_count: usize,
     pub limbo_count: usize,
     pub queued_cards_count: usize,
-    pub potions: Vec<Option<CombatCapturePotionSummaryV1>>,
-    pub monsters: Vec<CombatCaptureMonsterSummaryV1>,
+    pub potions: Vec<Option<CombatCapturePotionSummaryV2>>,
+    pub monsters: Vec<CombatCaptureMonsterSummaryV2>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureCardSummaryV1 {
+pub struct CombatCaptureCardSummaryV2 {
     pub uuid: u32,
     pub card_id: String,
     pub upgrades: u8,
@@ -114,7 +101,7 @@ pub struct CombatCaptureCardSummaryV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCapturePotionSummaryV1 {
+pub struct CombatCapturePotionSummaryV2 {
     pub uuid: u32,
     pub potion_id: String,
     pub can_use: bool,
@@ -124,7 +111,7 @@ pub struct CombatCapturePotionSummaryV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatCaptureMonsterSummaryV1 {
+pub struct CombatCaptureMonsterSummaryV2 {
     pub slot: u8,
     pub entity_id: usize,
     pub enemy_id: String,
@@ -140,96 +127,94 @@ pub struct CombatCaptureMonsterSummaryV1 {
     pub preview_damage_per_hit: i32,
 }
 
-impl CombatCaptureV1 {
+impl CombatCaptureV2 {
     pub fn position(&self) -> &CombatPosition {
         &self.position
     }
 }
 
-pub fn capture_combat_position_v1(
+pub fn capture_combat_position_v2(
     label: Option<String>,
     position: &CombatPosition,
-) -> Result<CombatCaptureV1, String> {
-    capture_combat_position_with_provenance_v1(
+) -> Result<CombatCaptureV2, String> {
+    capture_combat_position_with_provenance_v2(
         label,
         position,
         ArtifactProvenanceV1::exact_combat_position(),
     )
 }
 
-pub fn capture_combat_position_from_run_v1(
+pub fn capture_combat_position_from_run_v2(
     label: Option<String>,
     position: &CombatPosition,
     run_state: &RunState,
-) -> Result<CombatCaptureV1, String> {
-    capture_combat_position_with_provenance_v1(
+) -> Result<CombatCaptureV2, String> {
+    capture_combat_position_with_provenance_v2(
         label,
         position,
         ArtifactProvenanceV1::manual_run_control(run_state),
     )
 }
 
-pub fn capture_combat_position_from_runtime_progress_v1(
+pub fn capture_combat_position_from_runtime_progress_v2(
     label: Option<String>,
     position: &CombatPosition,
     run_state: &RunState,
-) -> Result<CombatCaptureV1, String> {
-    capture_combat_position_with_provenance_v1(
+) -> Result<CombatCaptureV2, String> {
+    capture_combat_position_with_provenance_v2(
         label,
         position,
         ArtifactProvenanceV1::runtime_progress(run_state),
     )
 }
 
-pub fn capture_combat_position_with_provenance_v1(
+pub fn capture_combat_position_with_provenance_v2(
     label: Option<String>,
     position: &CombatPosition,
     provenance: ArtifactProvenanceV1,
-) -> Result<CombatCaptureV1, String> {
+) -> Result<CombatCaptureV2, String> {
     if !active_combat_capture_boundary(&position.engine, &position.combat) {
         return Err(
-            "CombatCaptureV1 requires an active stable combat decision boundary".to_string(),
+            "CombatCaptureV2 requires an active stable combat decision boundary".to_string(),
         );
     }
     validate_combat_card_identity_for_capture(&position.combat)?;
 
     let integrity = integrity_for_position(&position);
-    let fingerprints = combat_state_fingerprint_v1(position);
-    let legal_actions = legal_actions_for_position(position);
+    let fingerprint_bundle = combat_fingerprint_bundle_v2(position);
     let summary = summary_for_position(&position);
     let source_capture_method = provenance.capture_method.clone();
-    Ok(CombatCaptureV1 {
+    Ok(CombatCaptureV2 {
         schema_name: COMBAT_CAPTURE_SCHEMA_NAME.to_string(),
         schema_version: COMBAT_CAPTURE_SCHEMA_VERSION,
         header: default_combat_capture_header(),
-        capture_kind: CombatCaptureKind::CombatPosition,
+        capture_kind: CombatCaptureKindV2::CombatPosition,
         trust_level: ArtifactTrustLevel::Restorable,
         information_boundary: "engine_truth_exact_combat_position".to_string(),
         label,
         provenance,
-        source: CombatCaptureSourceV1 {
+        source: CombatCaptureSourceV2 {
             producer: ARTIFACT_PRODUCER.to_string(),
             capture_method: source_capture_method,
         },
         integrity,
-        fingerprints: Some(fingerprints),
-        legal_actions: Some(legal_actions),
+        fingerprints: fingerprint_bundle.state,
+        legal_action_surface: fingerprint_bundle.legal_action_surface,
         summary,
         position: position.clone(),
     })
 }
 
-pub fn load_combat_capture_v1(path: &Path) -> Result<CombatCaptureV1, String> {
+pub fn load_combat_capture_v2(path: &Path) -> Result<CombatCaptureV2, String> {
     let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let mut capture: CombatCaptureV1 =
-        serde_json::from_str(&payload).map_err(|err| err.to_string())?;
-    repair_combat_capture_lineage_v1(&mut capture);
-    validate_combat_capture_v1(&capture)?;
+    reject_legacy_capture_schema(&payload)?;
+    let capture: CombatCaptureV2 = serde_json::from_str(&payload).map_err(|err| err.to_string())?;
+    validate_combat_capture_v2(&capture)?;
     Ok(capture)
 }
 
-pub fn save_combat_capture_v1(path: &Path, capture: &CombatCaptureV1) -> Result<(), String> {
-    validate_combat_capture_v1(capture)?;
+pub fn save_combat_capture_v2(path: &Path, capture: &CombatCaptureV2) -> Result<(), String> {
+    validate_combat_capture_v2(capture)?;
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -240,7 +225,7 @@ pub fn save_combat_capture_v1(path: &Path, capture: &CombatCaptureV1) -> Result<
     fs::write(path, payload).map_err(|err| err.to_string())
 }
 
-pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), String> {
+pub fn validate_combat_capture_v2(capture: &CombatCaptureV2) -> Result<(), String> {
     if capture.schema_name != COMBAT_CAPTURE_SCHEMA_NAME {
         return Err(format!(
             "unsupported combat capture schema '{}'",
@@ -253,7 +238,7 @@ pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), Strin
             capture.schema_version
         ));
     }
-    if capture.capture_kind != CombatCaptureKind::CombatPosition {
+    if capture.capture_kind != CombatCaptureKindV2::CombatPosition {
         return Err("unsupported combat capture kind".to_string());
     }
     if capture.header != default_combat_capture_header() {
@@ -271,13 +256,12 @@ pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), Strin
     if capture.integrity != expected {
         return Err("combat capture integrity fingerprints do not match position".to_string());
     }
-    let expected_fingerprints = combat_state_fingerprint_v1(&capture.position);
-    if capture.fingerprints.as_ref() != Some(&expected_fingerprints) {
+    let expected_fingerprint_bundle = combat_fingerprint_bundle_v2(&capture.position);
+    if capture.fingerprints != expected_fingerprint_bundle.state {
         return Err("combat capture state fingerprints do not match position".to_string());
     }
-    let expected_legal_actions = legal_actions_for_position(&capture.position);
-    if capture.legal_actions.as_ref() != Some(&expected_legal_actions) {
-        return Err("combat capture legal action fingerprints do not match position".to_string());
+    if capture.legal_action_surface != expected_fingerprint_bundle.legal_action_surface {
+        return Err("combat capture legal action surface does not match position".to_string());
     }
     if capture.summary != summary_for_position(&capture.position) {
         return Err("combat capture summary does not match position".to_string());
@@ -285,35 +269,33 @@ pub fn validate_combat_capture_v1(capture: &CombatCaptureV1) -> Result<(), Strin
     Ok(())
 }
 
-fn integrity_for_position(position: &CombatPosition) -> CombatCaptureIntegrityV1 {
+fn integrity_for_position(position: &CombatPosition) -> CombatCaptureIntegrityV2 {
     let exact = combat_exact_state_key(&position.engine, &position.combat);
     let stable = stable_dominance_bucket_key(&position.engine, &position.combat)
         .map(|_| stable_outcome_key(&position.engine, &position.combat));
-    CombatCaptureIntegrityV1 {
+    CombatCaptureIntegrityV2 {
         fingerprint_algorithm: FINGERPRINT_ALGORITHM_DEBUG.to_string(),
         exact_state_fingerprint: fingerprint_debug(&exact),
         stable_outcome_fingerprint: stable.as_ref().map(fingerprint_debug),
     }
 }
 
-fn legal_actions_for_position(position: &CombatPosition) -> CombatCaptureLegalActionsV1 {
-    let legal = combat_legal_action_set_fingerprint_v1(&position.engine, &position.combat);
-    CombatCaptureLegalActionsV1 {
-        fingerprint_algorithm: FINGERPRINT_ALGORITHM_JSON.to_string(),
-        count: legal.count,
-        candidate_set_hash: legal.candidate_set_hash,
-        candidate_order_hash: legal.candidate_order_hash,
-        descriptors: legal.descriptors,
+fn reject_legacy_capture_schema(payload: &str) -> Result<(), String> {
+    #[derive(Deserialize)]
+    struct CaptureSchemaProbe {
+        schema_name: String,
+        schema_version: u32,
     }
-}
-
-fn repair_combat_capture_lineage_v1(capture: &mut CombatCaptureV1) {
-    if capture.fingerprints.is_none() {
-        capture.fingerprints = Some(combat_state_fingerprint_v1(&capture.position));
+    let probe: CaptureSchemaProbe = serde_json::from_str(payload).map_err(|err| err.to_string())?;
+    if probe.schema_name == COMBAT_CAPTURE_SCHEMA_NAME
+        && probe.schema_version == COMBAT_CAPTURE_SCHEMA_VERSION
+    {
+        return Ok(());
     }
-    if capture.legal_actions.is_none() {
-        capture.legal_actions = Some(legal_actions_for_position(&capture.position));
-    }
+    Err(format!(
+        "unsupported combat capture schema '{}'/{}; production accepts CombatCaptureV2 only because V1 legal-action fingerprints were incomplete and could require eager combination enumeration",
+        probe.schema_name, probe.schema_version
+    ))
 }
 
 fn validate_capture_provenance(provenance: &ArtifactProvenanceV1) -> Result<(), String> {
@@ -343,9 +325,9 @@ fn active_combat_capture_boundary(
         )
 }
 
-fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
+fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV2 {
     let combat = &position.combat;
-    CombatCaptureSummaryV1 {
+    CombatCaptureSummaryV2 {
         engine_state: format!("{:?}", position.engine),
         terminal: combat_terminal(&position.engine, combat),
         stable_boundary: stable_boundary(&position.engine, combat),
@@ -360,7 +342,7 @@ fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
             .zones
             .hand
             .iter()
-            .map(|card| CombatCaptureCardSummaryV1 {
+            .map(|card| CombatCaptureCardSummaryV2 {
                 uuid: card.uuid,
                 card_id: java_id(card.id).to_string(),
                 upgrades: card.upgrades,
@@ -377,7 +359,7 @@ fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
             .potions
             .iter()
             .map(|slot| {
-                slot.as_ref().map(|potion| CombatCapturePotionSummaryV1 {
+                slot.as_ref().map(|potion| CombatCapturePotionSummaryV2 {
                     uuid: potion.uuid,
                     potion_id: format!("{:?}", potion.id),
                     can_use: potion.can_use,
@@ -397,7 +379,7 @@ fn summary_for_position(position: &CombatPosition) -> CombatCaptureSummaryV1 {
                     .get(&monster.id)
                     .map(|protocol| &protocol.observation);
                 let turn_plan = monster.turn_plan();
-                CombatCaptureMonsterSummaryV1 {
+                CombatCaptureMonsterSummaryV2 {
                     slot: monster.slot,
                     entity_id: monster.id,
                     enemy_id: EnemyId::from_id(monster.monster_type)
@@ -456,15 +438,21 @@ mod tests {
     #[test]
     fn combat_capture_roundtrips_exact_position() {
         let position = jaw_worm_position();
-        let capture = capture_combat_position_v1(Some("jaw_worm_capture".to_string()), &position)
+        let capture = capture_combat_position_v2(Some("jaw_worm_capture".to_string()), &position)
             .expect("stable combat start should capture");
 
         let payload = serde_json::to_string_pretty(&capture).expect("capture should serialize");
-        let loaded: CombatCaptureV1 =
+        let loaded: CombatCaptureV2 =
             serde_json::from_str(&payload).expect("capture should deserialize");
 
-        validate_combat_capture_v1(&loaded).expect("loaded capture should validate");
+        validate_combat_capture_v2(&loaded).expect("loaded capture should validate");
         assert_eq!(loaded.position, position);
+        assert_eq!(loaded.schema_name, "CombatCaptureV2");
+        assert_eq!(loaded.schema_version, 2);
+        assert_eq!(loaded.header.schema_name, "CombatCaptureV2");
+        assert_eq!(loaded.header.schema_version, 2);
+        assert_eq!(loaded.fingerprints.schema_name, "StateFingerprintV2");
+        assert_eq!(loaded.fingerprints.schema_version, 2);
         assert_eq!(loaded.header, default_combat_capture_header());
         assert_eq!(loaded.trust_level, ArtifactTrustLevel::Restorable);
         assert_eq!(
@@ -473,22 +461,28 @@ mod tests {
         );
         assert_eq!(loaded.integrity, capture.integrity);
         assert_eq!(loaded.fingerprints, capture.fingerprints);
-        assert_eq!(loaded.legal_actions, capture.legal_actions);
-        assert!(loaded
-            .legal_actions
-            .as_ref()
-            .is_some_and(|actions| actions.count > 0 && !actions.descriptors.is_empty()));
+        assert_eq!(loaded.legal_action_surface, capture.legal_action_surface);
+        assert_eq!(
+            loaded.fingerprints.legal_input_language_hash,
+            loaded.legal_action_surface.legal_input_language_digest
+        );
+        assert_eq!(
+            loaded.fingerprints.action_enumeration_domain_hash,
+            loaded.legal_action_surface.enumeration_domain_digest
+        );
+        assert!(loaded.legal_action_surface.atomic_action_count > 0);
+        assert!(!loaded.legal_action_surface.atomic_actions.is_empty());
         assert_eq!(loaded.summary, capture.summary);
     }
 
     #[test]
     fn combat_capture_validation_rejects_tampered_summary() {
         let position = jaw_worm_position();
-        let mut capture = capture_combat_position_v1(None, &position).expect("capture should work");
+        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
         capture.summary.player_hp -= 1;
 
         let err =
-            validate_combat_capture_v1(&capture).expect_err("tampered summary should be rejected");
+            validate_combat_capture_v2(&capture).expect_err("tampered summary should be rejected");
 
         assert!(err.contains("summary"));
     }
@@ -496,11 +490,11 @@ mod tests {
     #[test]
     fn combat_capture_validation_rejects_tampered_fingerprint() {
         let position = jaw_worm_position();
-        let mut capture = capture_combat_position_v1(None, &position).expect("capture should work");
+        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
         capture.integrity.exact_state_fingerprint =
             "0000000000000000000000000000000000000000000000000000000000000000".to_string();
 
-        let err = validate_combat_capture_v1(&capture)
+        let err = validate_combat_capture_v2(&capture)
             .expect_err("tampered fingerprint should be rejected");
 
         assert!(err.contains("fingerprints"));
@@ -509,18 +503,89 @@ mod tests {
     #[test]
     fn combat_capture_validation_rejects_tampered_state_fingerprint() {
         let position = jaw_worm_position();
-        let mut capture = capture_combat_position_v1(None, &position).expect("capture should work");
-        capture
-            .fingerprints
-            .as_mut()
-            .expect("capture should have fingerprints")
-            .public_observation_hash =
+        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
+        capture.fingerprints.public_observation_hash =
             "0000000000000000000000000000000000000000000000000000000000000000".to_string();
 
-        let err = validate_combat_capture_v1(&capture)
+        let err = validate_combat_capture_v2(&capture)
             .expect_err("tampered state fingerprint should be rejected");
 
         assert!(err.contains("state fingerprints"));
+    }
+
+    #[test]
+    fn combat_capture_roundtrips_large_symbolic_scry_without_action_enumeration() {
+        let mut position = jaw_worm_position();
+        let first_uuid = position
+            .combat
+            .meta
+            .master_deck_snapshot
+            .iter()
+            .chain(position.combat.zones.hand.iter())
+            .map(|card| card.uuid)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        let card_uuids = (first_uuid..first_uuid.saturating_add(64)).collect::<Vec<_>>();
+        position.combat.zones.draw_pile = card_uuids
+            .iter()
+            .map(|uuid| {
+                crate::runtime::combat::CombatCard::new(
+                    crate::content::cards::CardId::Strike,
+                    *uuid,
+                )
+            })
+            .collect();
+        position.combat.zones.card_uuid_counter = first_uuid.saturating_add(64);
+        position.engine =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![crate::content::cards::CardId::Strike; 64],
+                card_uuids,
+            });
+
+        let capture = capture_combat_position_v2(None, &position)
+            .expect("large Scry should capture through one symbolic family");
+        assert_eq!(capture.legal_action_surface.atomic_action_count, 0);
+        assert_eq!(capture.legal_action_surface.action_family_count, 1);
+        assert_eq!(
+            capture.legal_action_surface.selection_families[0].raw_domain_count,
+            64
+        );
+
+        let payload = serde_json::to_string(&capture).expect("capture should serialize");
+        let loaded: CombatCaptureV2 =
+            serde_json::from_str(&payload).expect("capture should deserialize");
+        validate_combat_capture_v2(&loaded).expect("symbolic capture should validate");
+    }
+
+    #[test]
+    fn combat_capture_validation_rejects_tampered_action_family() {
+        let position = jaw_worm_position();
+        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
+        capture.legal_action_surface.legal_input_language_digest = "0".repeat(64);
+
+        let err = validate_combat_capture_v2(&capture)
+            .expect_err("tampered action surface should be rejected");
+
+        assert!(err.contains("legal action surface"));
+    }
+
+    #[test]
+    fn legacy_capture_schema_is_rejected_before_v1_action_cache_validation() {
+        let payload = r#"{
+            "schema_name": "CombatCaptureV1",
+            "schema_version": 1,
+            "legal_actions": {"count": 18446744073709551615}
+        }"#;
+        let path = unique_temp_capture_path("legacy_v1");
+        fs::write(&path, payload).expect("write legacy capture fixture");
+
+        let err = load_combat_capture_v2(&path)
+            .expect_err("V1 action caches are not authoritative migration evidence");
+        let _ = fs::remove_file(path);
+
+        assert!(err.contains("unsupported combat capture schema"));
+        assert!(err.contains("CombatCaptureV1"));
     }
 
     #[test]
@@ -536,7 +601,7 @@ mod tests {
                 uuid,
             ));
 
-        let err = capture_combat_position_v1(None, &position)
+        let err = capture_combat_position_v2(None, &position)
             .expect_err("capture should reject same uuid mapping to different card ids");
 
         assert!(err.contains("card identity conflict"));
@@ -556,7 +621,7 @@ mod tests {
             .expect("test deck should contain cards");
         position.combat.zones.card_uuid_counter = max_uuid - 1;
 
-        let err = capture_combat_position_v1(None, &position)
+        let err = capture_combat_position_v2(None, &position)
             .expect_err("capture should reject stale future card uuid counter");
 
         assert!(err.contains("card_uuid_counter"));
@@ -568,7 +633,7 @@ mod tests {
         let mut position = jaw_worm_position();
         position.engine = EngineState::RewardScreen(crate::state::rewards::RewardState::new());
 
-        let err = capture_combat_position_v1(None, &position)
+        let err = capture_combat_position_v2(None, &position)
             .expect_err("postcombat boundary should not be a search start capture");
 
         assert!(err.contains("active stable combat decision boundary"));
@@ -586,7 +651,7 @@ mod tests {
             crate::state::core::PostCombatReturn::MapNavigation,
         ));
 
-        let err = capture_combat_position_v1(None, &position)
+        let err = capture_combat_position_v2(None, &position)
             .expect_err("CombatStart should not be a search start capture");
 
         assert!(err.contains("active stable combat decision boundary"));
@@ -614,5 +679,17 @@ mod tests {
         let (engine, combat) =
             compile_combat_start_spec(&spec).expect("test start spec should compile");
         CombatPosition::new(engine, combat)
+    }
+
+    fn unique_temp_capture_path(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should follow Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sts_simulator_{label}_{}_{}.json",
+            std::process::id(),
+            nonce
+        ))
     }
 }

@@ -8,6 +8,14 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let profile = env::var("PROFILE").expect("Cargo should provide PROFILE to build.rs");
     println!("cargo:rustc-env=STS_CARGO_PROFILE={profile}");
+    let repository_root = fs::canonicalize(
+        env::var_os("CARGO_MANIFEST_DIR").expect("Cargo should provide CARGO_MANIFEST_DIR"),
+    )
+    .expect("repository root should be canonicalizable");
+    println!(
+        "cargo:rustc-env=STS_REPOSITORY_ROOT={}",
+        repository_root.display()
+    );
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");
@@ -21,7 +29,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=tools/compiled_protocol_schema.json");
 
-    let schema_content = fs::read_to_string(full_schema_path).unwrap();
+    let schema_content = fs::read_to_string(&full_schema_path).unwrap();
     let parsed: Value = serde_json::from_str(&schema_content).unwrap();
 
     let mut generated_code = String::new();

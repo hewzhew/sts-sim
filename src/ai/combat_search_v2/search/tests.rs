@@ -13,6 +13,225 @@ use crate::test_support::{blank_test_combat, test_monster};
 struct PotionWinStepper;
 
 #[test]
+fn production_search_factors_scry_without_materializing_the_power_set() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.draw_pile = (0..13)
+        .map(|index| CombatCard::new(CardId::Strike, 1_000 + index))
+        .collect();
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike; 13],
+        card_uuids: (1_000..1_013).collect(),
+    });
+    let config = CombatSearchV2Config {
+        max_nodes: 8,
+        max_actions_per_line: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let report = run_combat_search_v2(&engine, &combat, config);
+
+    assert!(report.stats.action_prefix_budget_hit);
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::ActionPrefixBudgetLimited
+    );
+    assert_eq!(report.performance.pending_choice_prefixes_expanded, 8);
+    assert_eq!(report.performance.engine_step_calls, 0);
+    assert!(report.frontier.remaining_states > 0);
+    assert_eq!(report.frontier.remaining_states, 1);
+    assert_eq!(report.frontier.pending_choice_work_items, 1);
+    assert!(report.best_frontier_trajectory.is_some());
+}
+
+#[test]
+fn production_search_steps_only_completed_scry_prefixes() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.draw_pile = (0..3)
+        .map(|index| CombatCard::new(CardId::Strike, 2_000 + index))
+        .collect();
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike; 3],
+        card_uuids: (2_000..2_003).collect(),
+    });
+    let config = CombatSearchV2Config {
+        max_nodes: 100,
+        max_actions_per_line: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let report = run_combat_search_v2(&engine, &combat, config);
+
+    assert_eq!(
+        report.performance.pending_choice_complete_actions_submitted,
+        8
+    );
+    assert_eq!(report.performance.engine_step_calls, 8);
+    assert_eq!(report.stats.nodes_generated, 8);
+    assert!(!report.stats.action_prefix_budget_hit);
+    assert!(report.stats.action_surface_incomplete);
+    assert!(!report.outcome.exhaustive);
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::ActionSurfaceIncomplete
+    );
+}
+
+#[test]
+fn production_search_covers_canonical_hand_choices_and_cancel() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = (0..10)
+        .map(|index| CombatCard::new(CardId::Strike, 3_000 + index))
+        .collect();
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: (3_000..3_010).collect(),
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: true,
+        reason: crate::state::core::HandSelectReason::Discard,
+    });
+    let config = CombatSearchV2Config {
+        max_nodes: 100,
+        max_actions_per_line: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let report = run_combat_search_v2(&engine, &combat, config);
+
+    assert_eq!(
+        report.performance.pending_choice_complete_actions_submitted, 11,
+        "ten canonical single-card selections plus the independent Cancel leaf must be reachable"
+    );
+    assert_eq!(report.performance.engine_step_calls, 11);
+    assert_eq!(
+        report.search_policy.pending_choice_action_surface,
+        "canonical_member_set_prefix_with_explicit_order_variant_gap_v2"
+    );
+}
+
+#[test]
+fn production_search_submits_cancel_before_a_deep_selection_residual() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = (0..10)
+        .map(|index| CombatCard::new(CardId::Strike, 4_000 + index))
+        .collect();
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: (4_000..4_010).collect(),
+        min_cards: 0,
+        max_cards: 10,
+        can_cancel: true,
+        reason: crate::state::core::HandSelectReason::GamblingChip,
+    });
+    let config = CombatSearchV2Config {
+        max_nodes: 1,
+        max_actions_per_line: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let report = run_combat_search_v2(&engine, &combat, config);
+
+    assert!(report.stats.node_budget_hit || report.stats.action_prefix_budget_hit);
+    assert_eq!(report.performance.pending_choice_prefixes_expanded, 1);
+    assert_eq!(
+        report.performance.pending_choice_complete_actions_submitted,
+        1
+    );
+    assert_eq!(report.performance.engine_step_calls, 1);
+    assert!(report.frontier.remaining_states > 0);
+}
+
+#[test]
+fn production_search_records_one_unresolved_parent_for_an_infeasible_selection() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 5_100)];
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
+        source_pile: crate::state::core::PileType::Discard,
+        candidate_uuids: vec![5_100],
+        min_cards: 2,
+        max_cards: 2,
+        can_cancel: false,
+        reason: crate::state::core::GridSelectReason::MoveToDrawPile,
+    });
+
+    let report = run_combat_search_v2(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+    );
+
+    assert_eq!(report.frontier.unresolved_leaf_count, 1);
+    assert_eq!(report.performance.engine_step_calls, 0);
+    assert!(!report.outcome.exhaustive);
+}
+
+#[test]
+fn rejected_complete_prefixes_do_not_inflate_concrete_unresolved_leaves() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: vec![6_000, 6_001, 6_002, 6_003],
+        min_cards: 1,
+        max_cards: 4,
+        can_cancel: false,
+        reason: crate::state::core::HandSelectReason::Discard,
+    });
+
+    let report = run_combat_search_v2(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 100,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+    );
+
+    assert!(report.performance.pending_choice_complete_prefixes_rejected > 0);
+    assert_eq!(report.frontier.unresolved_leaf_count, 1);
+    assert_eq!(report.performance.engine_step_calls, 0);
+}
+
+#[test]
+fn production_search_submits_duplicate_uuid_selection_once() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 5_000)];
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: vec![5_000, 5_000],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: crate::state::core::HandSelectReason::Discard,
+    });
+    let config = CombatSearchV2Config {
+        max_nodes: 20,
+        max_actions_per_line: 1,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        ..CombatSearchV2Config::default()
+    };
+
+    let report = run_combat_search_v2(&engine, &combat, config);
+
+    assert_eq!(
+        report.performance.pending_choice_complete_actions_submitted,
+        1
+    );
+    assert_eq!(report.performance.engine_step_calls, 1);
+}
+
+#[test]
 fn node_ordering_carries_only_the_best_retaliation_protection_into_frontier() {
     let mut combat = blank_test_combat();
     combat.turn.energy = 4;
@@ -43,9 +262,9 @@ fn node_ordering_carries_only_the_best_retaliation_protection_into_frontier() {
     );
     let node = SearchNode::root(EngineState::CombatPlayerTurn, combat.clone());
     let position = CombatPosition::new(node.engine.clone(), combat);
-    let legal = EngineCombatStepper.legal_action_choices(&position);
+    let legal = EngineCombatStepper.atomic_action_choices(&position);
     let config = CombatSearchV2Config::default();
-    let mut loop_state = SearchLoopState::new(&config);
+    let mut loop_state = SearchLoopState::new(&config, false);
 
     let ordered = super::node_action_ordering::order_node_actions(
         &mut loop_state,
@@ -71,7 +290,7 @@ fn node_ordering_carries_only_the_best_retaliation_protection_into_frontier() {
 }
 
 impl CombatStepper for PotionWinStepper {
-    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
         vec![
             ClientInput::UsePotion {
                 potion_index: 0,
@@ -112,7 +331,7 @@ impl CombatStepper for PotionWinStepper {
 struct ReversePotionWinStepper;
 
 impl CombatStepper for ReversePotionWinStepper {
-    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
         vec![
             ClientInput::EndTurn,
             ClientInput::UsePotion {
@@ -153,7 +372,7 @@ impl CombatStepper for ReversePotionWinStepper {
 struct PendingChoiceResolveStepper;
 
 impl CombatStepper for PendingChoiceResolveStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if matches!(position.engine, EngineState::PendingChoice(_)) {
             vec![
                 ClientInput::SubmitDiscoverChoice(0),
@@ -192,10 +411,186 @@ impl CombatStepper for PendingChoiceResolveStepper {
 }
 
 #[derive(Clone, Copy)]
+struct TimedOutPendingChoiceStepper {
+    engine_steps: usize,
+    mutate_partial_position: bool,
+}
+
+#[derive(Clone, Copy)]
+struct TerminalPendingChoiceStepper;
+
+impl CombatStepper for TerminalPendingChoiceStepper {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+        Vec::new()
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        true
+    }
+
+    fn is_legal_action(&self, _position: &CombatPosition, input: &ClientInput) -> bool {
+        matches!(input, ClientInput::SubmitSelection(_))
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        _input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let terminal_position = CombatPosition::new(
+            EngineState::GameOver(crate::state::core::RunResult::Defeat),
+            position.combat.clone(),
+        );
+        crate::sim::combat::CombatStepResult {
+            terminal: CombatTerminal::Loss,
+            alive: false,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position: terminal_position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+impl CombatStepper for TimedOutPendingChoiceStepper {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+        Vec::new()
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        true
+    }
+
+    fn is_legal_action(&self, _position: &CombatPosition, input: &ClientInput) -> bool {
+        matches!(input, ClientInput::SubmitSelection(_))
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        _input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut partial = position.clone();
+        if self.mutate_partial_position {
+            partial.engine = EngineState::CombatProcessing;
+            partial.combat.entities.player.current_hp = 1;
+        }
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&partial.engine, &partial.combat),
+            alive: true,
+            truncated: true,
+            timed_out: true,
+            engine_steps: self.engine_steps,
+            position: partial,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[test]
+fn timed_out_pending_choice_steps_requeue_the_atomic_leaf_without_a_fake_child() {
+    for stepper in [
+        TimedOutPendingChoiceStepper {
+            engine_steps: 0,
+            mutate_partial_position: false,
+        },
+        TimedOutPendingChoiceStepper {
+            engine_steps: 1,
+            mutate_partial_position: true,
+        },
+    ] {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 6_100)];
+        let initial_hp = combat.entities.player.current_hp;
+        let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+            candidate_uuids: vec![6_100],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: crate::state::core::HandSelectReason::Discard,
+        });
+
+        let report = run_combat_search_v2_with_stepper(
+            &engine,
+            &combat,
+            CombatSearchV2Config {
+                max_nodes: 20,
+                rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+                ..CombatSearchV2Config::default()
+            },
+            &stepper,
+        );
+
+        assert_eq!(
+            report.outcome.coverage_status,
+            SearchCoverageStatus::TimeBudgetLimited
+        );
+        assert_eq!(report.performance.engine_step_calls, 1);
+        assert_eq!(
+            report.performance.pending_choice_complete_actions_submitted,
+            0
+        );
+        assert_eq!(report.stats.nodes_generated, 0);
+        assert_eq!(report.frontier.remaining_states, 1);
+        assert_eq!(report.frontier.pending_choice_work_items, 1);
+        let frontier = report
+            .best_frontier_trajectory
+            .expect("the concrete parent must remain recoverable");
+        assert!(frontier.actions.is_empty());
+        assert_eq!(frontier.final_hp, initial_hp);
+    }
+}
+
+#[test]
+fn single_card_pending_choice_surface_can_still_be_exhaustive() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 6_200),
+        CombatCard::new(CardId::Defend, 6_201),
+    ];
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: vec![6_200, 6_201],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: crate::state::core::HandSelectReason::Discard,
+    });
+
+    let report = run_combat_search_v2_with_stepper(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+        &TerminalPendingChoiceStepper,
+    );
+
+    assert!(!report.stats.action_surface_incomplete);
+    assert!(report.outcome.exhaustive);
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::Exhaustive
+    );
+}
+
+#[derive(Clone, Copy)]
 struct OneCardWinStepper;
 
 impl CombatStepper for OneCardWinStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if !matches!(position.engine, EngineState::CombatPlayerTurn)
             || position.combat.zones.hand.is_empty()
         {
@@ -248,7 +643,7 @@ impl CombatStepper for OneCardWinStepper {
 struct DuplicateUnresolvedChildStepper;
 
 impl CombatStepper for DuplicateUnresolvedChildStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if matches!(position.engine, EngineState::CombatPlayerTurn) {
             vec![ClientInput::EndTurn, ClientInput::Proceed]
         } else {
@@ -281,7 +676,7 @@ impl CombatStepper for DuplicateUnresolvedChildStepper {
 struct TwoTurnWinStepper;
 
 impl CombatStepper for TwoTurnWinStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if !matches!(position.engine, EngineState::CombatPlayerTurn) {
             return Vec::new();
         }
@@ -344,7 +739,7 @@ impl CombatStepper for TwoTurnWinStepper {
 struct WinOrDelayStepper;
 
 impl CombatStepper for WinOrDelayStepper {
-    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
         if !matches!(position.engine, EngineState::CombatPlayerTurn) {
             return Vec::new();
         }
@@ -463,7 +858,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 13);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 16);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
@@ -661,6 +1056,46 @@ fn pending_choice_contract_counts_exact_child_resolution() {
 }
 
 #[test]
+fn custom_stepper_keeps_hand_pending_choice_ownership_without_opt_in() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 7_000)];
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+        candidate_uuids: vec![7_000],
+        min_cards: 1,
+        max_cards: 1,
+        can_cancel: false,
+        reason: crate::state::core::HandSelectReason::Discard,
+    });
+
+    let report = run_combat_search_v2_with_stepper(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        },
+        &PendingChoiceResolveStepper,
+    );
+
+    assert_eq!(report.performance.pending_choice_prefixes_expanded, 0);
+    assert_eq!(
+        report.performance.pending_choice_complete_actions_submitted,
+        0
+    );
+    assert_eq!(report.performance.engine_step_calls, 2);
+    assert_eq!(
+        report
+            .diagnostics
+            .pending_choice
+            .legal_actions_from_pending_choice,
+        2
+    );
+    assert_eq!(report.diagnostics.pending_choice.resolved_children, 2);
+}
+
+#[test]
 fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
@@ -707,6 +1142,73 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
         .diagnosis
         .contains(&"turn_plan_frontier_seeded"));
     assert_eq!(seeded.search_policy.turn_plan_policy, "root_frontier_seed");
+}
+
+#[test]
+fn hierarchical_turn_boundary_owns_the_source_and_charges_shared_budget() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            expansion_policy: CombatSearchV2ExpansionPolicy::HierarchicalTurnBoundary,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert!(report.outcome.complete_win_found);
+    assert_eq!(
+        report.search_policy.expansion_policy,
+        "hierarchical_turn_boundary"
+    );
+    assert_eq!(report.performance.turn_boundary_macro_calls, 1);
+    assert_eq!(report.performance.turn_boundary_macro_candidates, 1);
+    assert_eq!(
+        report.stats.nodes_expanded,
+        report.performance.turn_boundary_macro_inner_nodes_expanded
+    );
+    assert!(report.stats.nodes_expanded <= report.budget.max_nodes as u64);
+    assert_eq!(
+        report.diagnostics.branching.states_queried, 0,
+        "the source node must not also be expanded by the atomic action owner"
+    );
+    assert_eq!(
+        report.performance.turn_plan_frontier_seed_calls, 0,
+        "legacy frontier seeding must not run beside hierarchical ownership"
+    );
+}
+
+#[test]
+fn hierarchical_turn_boundary_records_atomic_fallback_for_an_uncovered_gap() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 4,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            expansion_policy: CombatSearchV2ExpansionPolicy::HierarchicalTurnBoundary,
+            ..CombatSearchV2Config::default()
+        },
+        &PendingChoiceResolveStepper,
+    );
+
+    assert_eq!(report.performance.turn_boundary_macro_calls, 1);
+    assert_eq!(report.performance.turn_boundary_macro_candidates, 0);
+    assert_eq!(
+        report.performance.turn_boundary_macro_atomic_fallbacks, 1,
+        "an empty supported portfolio is a typed refinement gap, not a silent stop"
+    );
+    assert_eq!(report.diagnostics.branching.states_queried, 1);
 }
 
 #[test]
@@ -969,6 +1471,10 @@ fn lazy_child_rollout_is_completed_from_frontier_pop() {
 
 #[test]
 fn config_and_turn_plan_policy_defaults_match() {
+    assert_eq!(
+        CombatSearchV2Config::default().expansion_policy,
+        CombatSearchV2ExpansionPolicy::AtomicActions
+    );
     assert_eq!(
         CombatSearchV2Config::default().turn_plan_policy,
         CombatSearchV2TurnPlanPolicy::default()

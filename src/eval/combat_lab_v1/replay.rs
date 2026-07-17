@@ -7,7 +7,7 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2TrajectoryReport, CombatSearchV2WitnessLine, CombatSearchV2WitnessReplayV1,
     SearchCoverageStatus, SearchTerminalLabel,
 };
-use crate::eval::fingerprint::StateFingerprintV1;
+use crate::eval::fingerprint::StateFingerprintV2;
 use crate::sim::combat::CombatPosition;
 use crate::state::core::ClientInput;
 use crate::state::DomainCardSnapshot;
@@ -17,7 +17,7 @@ use super::{
     ResolvedCombatLabSpecV1,
 };
 
-pub const COMBAT_LAB_CELL_SCHEMA_VERSION: u32 = 1;
+pub const COMBAT_LAB_CELL_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,7 +68,7 @@ pub struct CombatLabCellRecordV1 {
     pub profile_id: String,
     pub profile_hash: String,
     pub budget_hash: String,
-    pub initial_state_fingerprint: Option<StateFingerprintV1>,
+    pub initial_state_fingerprint: Option<StateFingerprintV2>,
     pub non_shuffle_rng_hash: Option<String>,
     pub shuffle_rng_hash: Option<String>,
     pub search_terminal: Option<SearchTerminalLabel>,
@@ -174,6 +174,8 @@ pub fn classify_combat_lab_outcome_v1(
     if matches!(
         coverage_status,
         SearchCoverageStatus::NodeBudgetLimited
+            | SearchCoverageStatus::ActionPrefixBudgetLimited
+            | SearchCoverageStatus::ActionSurfaceIncomplete
             | SearchCoverageStatus::TimeBudgetLimited
             | SearchCoverageStatus::FrontierOpen
     ) || selected_terminal.is_none()

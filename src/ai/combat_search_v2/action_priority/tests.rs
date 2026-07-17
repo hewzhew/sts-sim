@@ -714,6 +714,62 @@ fn sleeping_lagavulin_wake_damage_has_phase_penalty() {
 }
 
 #[test]
+fn guardian_mode_shift_attack_interrupts_visible_damage_before_end_turn() {
+    use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
+
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 46;
+    let mut guardian = test_monster(EnemyId::TheGuardian);
+    guardian.id = 1;
+    guardian.guardian.is_open = true;
+    guardian.set_planned_move_id(2);
+    let attack = MonsterMoveSpec::Attack(AttackSpec {
+        base_damage: 32,
+        hits: 1,
+        damage_kind: DamageKind::Normal,
+    });
+    guardian.set_planned_steps(attack.to_steps());
+    guardian.set_planned_visible_spec(Some(attack));
+    combat.entities.monsters = vec![guardian];
+    combat.entities.power_db.insert(
+        1,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::ModeShift,
+            instance_id: None,
+            amount: 5,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 10)];
+
+    let trigger = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let end_turn = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::EndTurn,
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(trigger.role, ActionOrderingRole::PreventHpLoss);
+    assert!(
+        trigger > end_turn,
+        "trigger={trigger:?} end_turn={end_turn:?}"
+    );
+}
+
+#[test]
 fn key_card_setup_bias_promotes_strength_scaling_power() {
     let mut combat = blank_test_combat();
     let mut monster = test_monster(EnemyId::JawWorm);

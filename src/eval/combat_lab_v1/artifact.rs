@@ -9,6 +9,7 @@ use crate::runtime::branch::SourceIdentity;
 
 use super::{
     combat_lab_cell_key_v1, derive_shuffle_seed_v1, CombatLabCellRecordV1, ResolvedCombatLabSpecV1,
+    COMBAT_LAB_CELL_SCHEMA_VERSION,
 };
 
 pub const COMBAT_LAB_ARTIFACT_SCHEMA_VERSION: u32 = 1;
@@ -189,6 +190,7 @@ impl CombatLabArtifactStoreV1 {
 
     pub fn append_cell(&mut self, cell: &CombatLabCellRecordV1) -> Result<(), String> {
         self.ensure_mutations_allowed()?;
+        validate_cell_schema_version(cell)?;
         if self.contains_cell(&cell.cell_key) {
             return Err(format!(
                 "duplicate cell key '{}': journal unchanged",
@@ -413,14 +415,46 @@ fn parse_complete_journal_lines(bytes: &[u8]) -> Result<Vec<CombatLabCellRecordV
         .split(|byte| *byte == b'\n')
         .enumerate()
         .map(|(index, line)| {
-            serde_json::from_slice(line).map_err(|error| {
+            #[derive(Deserialize)]
+            struct CellSchemaProbe {
+                schema_version: u32,
+            }
+            let probe: CellSchemaProbe = serde_json::from_slice(line).map_err(|error| {
                 format!(
                     "malformed combat laboratory journal entry at line {}: {error}",
                     index + 1
                 )
-            })
+            })?;
+            validate_cell_schema_version_value(probe.schema_version).map_err(|error| {
+                format!("combat laboratory journal line {}: {error}", index + 1)
+            })?;
+            let cell: CombatLabCellRecordV1 = serde_json::from_slice(line).map_err(|error| {
+                format!(
+                    "malformed combat laboratory journal entry at line {}: {error}",
+                    index + 1
+                )
+            })?;
+            validate_cell_schema_version(&cell).map_err(|error| {
+                format!("combat laboratory journal line {}: {error}", index + 1)
+            })?;
+            Ok(cell)
         })
         .collect()
+}
+
+fn validate_cell_schema_version(cell: &CombatLabCellRecordV1) -> Result<(), String> {
+    validate_cell_schema_version_value(cell.schema_version)
+}
+
+fn validate_cell_schema_version_value(schema_version: u32) -> Result<(), String> {
+    if schema_version == COMBAT_LAB_CELL_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(format!(
+            "unsupported combat laboratory cell schema_version {}; expected {} and legacy fingerprint cells cannot be resumed",
+            schema_version, COMBAT_LAB_CELL_SCHEMA_VERSION
+        ))
+    }
 }
 
 fn truncate_partial_journal_tail(path: &Path, valid_len: u64) -> Result<(), String> {

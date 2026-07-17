@@ -568,7 +568,7 @@ mod accepted_combat_diagnostic_tests {
         summary.record_ref(ArtifactRef::new(
             ArtifactKind::AcceptedCombatDiagnostic,
             "one.capture.json",
-            "CombatCaptureV1",
+            "CombatCaptureV2",
             "owner_audit_runtime",
         ));
         summary.record_ref(ArtifactRef::new(

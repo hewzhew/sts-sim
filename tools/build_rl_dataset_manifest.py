@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--notes", default="")
     parser.add_argument(
         "--generator-command",
-        default="cargo run --bin rl_dataset_export -- --input <panel-root> --out <dataset-json>",
+        default="cargo run -p sts_simulator_control --bin rl_dataset_export -- --input <panel-root> --out <dataset-json>",
     )
     return parser.parse_args()
 

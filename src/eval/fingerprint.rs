@@ -1,4 +1,6 @@
 use blake2::{Blake2b512, Digest};
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_policy_v1::{combat_public_observation_v1, CombatPublicObservationV1};
@@ -10,32 +12,36 @@ use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatState;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
-use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::sim::combat_action_surface::{
+    combat_legal_action_surface_v2, CombatSelectionActionFamilyV2,
+    CombatSelectionDomainCandidateV2, CombatSelectionInputEncodingV2,
+    CombatSelectionPayloadLanguageV2, CombatSelectionStatusV2,
+};
 use crate::state::core::{ClientInput, EngineState};
 
-pub const FINGERPRINT_SCHEMA_NAME: &str = "StateFingerprintV1";
-pub const FINGERPRINT_SCHEMA_VERSION: u32 = 1;
+pub const FINGERPRINT_SCHEMA_NAME: &str = "StateFingerprintV2";
+pub const FINGERPRINT_SCHEMA_VERSION: u32 = 2;
 pub const FINGERPRINT_ALGORITHM_JSON: &str = "blake2b_256_canonical_json_v1";
 pub const FINGERPRINT_ALGORITHM_DEBUG: &str = "blake2b_256_of_typed_key_debug_v1";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct StateFingerprintV1 {
+pub struct StateFingerprintV2 {
     pub schema_name: String,
     pub schema_version: u32,
     pub fingerprint_algorithm: String,
-    pub boundary: DecisionBoundaryFingerprintV1,
+    pub boundary: DecisionBoundaryFingerprintV2,
     pub public_observation_hash: String,
-    pub legal_candidate_set_hash: String,
-    pub legal_candidate_order_hash: String,
+    pub legal_input_language_hash: String,
+    pub action_enumeration_domain_hash: String,
     pub exact_state_hash: String,
     pub stable_outcome_hash: Option<String>,
-    pub rng_boundary: RngBoundaryFingerprintV1,
+    pub rng_boundary: RngBoundaryFingerprintV2,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct DecisionBoundaryFingerprintV1 {
+pub struct DecisionBoundaryFingerprintV2 {
     pub engine_state: String,
     pub decision_kind: String,
     pub terminal: CombatTerminal,
@@ -45,11 +51,11 @@ pub struct DecisionBoundaryFingerprintV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RngBoundaryFingerprintV1 {
+pub struct RngBoundaryFingerprintV2 {
     pub status: RngFingerprintStatus,
     pub stream_count: usize,
     pub digest: String,
-    pub streams: Vec<RngStreamFingerprintV1>,
+    pub streams: Vec<RngStreamFingerprintV2>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -60,7 +66,7 @@ pub enum RngFingerprintStatus {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RngStreamFingerprintV1 {
+pub struct RngStreamFingerprintV2 {
     pub name: String,
     pub counter: u32,
     pub state_hash: String,
@@ -68,29 +74,31 @@ pub struct RngStreamFingerprintV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatLegalActionSetFingerprintV1 {
+pub struct CombatLegalActionSurfaceFingerprintV2 {
     pub fingerprint_algorithm: String,
-    pub count: usize,
-    pub candidate_set_hash: String,
-    pub candidate_order_hash: String,
-    pub descriptors: Vec<CombatActionFingerprintDescriptorV1>,
+    pub legal_input_language_digest: String,
+    pub enumeration_domain_digest: String,
+    pub atomic_action_count: u64,
+    pub action_family_count: u64,
+    pub atomic_actions: Vec<CombatActionFingerprintDescriptorV2>,
+    pub selection_families: Vec<crate::sim::combat_action_surface::CombatSelectionActionFamilyV2>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct CombatActionFingerprintDescriptorV1 {
+pub struct CombatActionFingerprintDescriptorV2 {
     pub kind: String,
     pub stable_key: String,
     pub input: ClientInput,
-    pub subject: Option<ActionSubjectFingerprintV1>,
-    pub target: Option<ActionTargetFingerprintV1>,
+    pub subject: Option<ActionSubjectFingerprintV2>,
+    pub target: Option<ActionTargetFingerprintV2>,
     pub indices: Vec<usize>,
     pub uuids: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ActionSubjectFingerprintV1 {
+pub struct ActionSubjectFingerprintV2 {
     pub kind: String,
     pub index: Option<usize>,
     pub uuid: Option<u32>,
@@ -100,7 +108,7 @@ pub struct ActionSubjectFingerprintV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ActionTargetFingerprintV1 {
+pub struct ActionTargetFingerprintV2 {
     pub kind: String,
     pub entity_id: usize,
     pub slot: Option<u8>,
@@ -108,50 +116,198 @@ pub struct ActionTargetFingerprintV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct CombatPublicObservationFingerprintInputV1 {
-    boundary: DecisionBoundaryFingerprintV1,
+struct CombatPublicObservationFingerprintInputV2 {
+    boundary: DecisionBoundaryFingerprintV2,
     public: CombatPublicObservationV1,
 }
 
-pub fn combat_state_fingerprint_v1(position: &CombatPosition) -> StateFingerprintV1 {
-    let legal_actions = combat_legal_action_set_fingerprint_v1(&position.engine, &position.combat);
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatFingerprintBundleV2 {
+    pub state: StateFingerprintV2,
+    pub legal_action_surface: CombatLegalActionSurfaceFingerprintV2,
+}
+
+pub fn combat_fingerprint_bundle_v2(position: &CombatPosition) -> CombatFingerprintBundleV2 {
+    let legal_action_surface =
+        combat_legal_action_surface_fingerprint_v2(&position.engine, &position.combat);
     let stable = stable_dominance_bucket_key(&position.engine, &position.combat)
         .map(|_| stable_outcome_key(&position.engine, &position.combat));
-    StateFingerprintV1 {
+    let state = StateFingerprintV2 {
         schema_name: FINGERPRINT_SCHEMA_NAME.to_string(),
         schema_version: FINGERPRINT_SCHEMA_VERSION,
         fingerprint_algorithm: FINGERPRINT_ALGORITHM_JSON.to_string(),
         boundary: boundary_fingerprint(&position.engine, &position.combat),
         public_observation_hash: hash_serializable(&public_observation_input(position)),
-        legal_candidate_set_hash: legal_actions.candidate_set_hash,
-        legal_candidate_order_hash: legal_actions.candidate_order_hash,
+        legal_input_language_hash: legal_action_surface.legal_input_language_digest.clone(),
+        action_enumeration_domain_hash: legal_action_surface.enumeration_domain_digest.clone(),
         exact_state_hash: combat_exact_state_hash_v1(&position.engine, &position.combat),
         stable_outcome_hash: stable.as_ref().map(hash_debug),
-        rng_boundary: rng_boundary_fingerprint_v1(&position.combat.rng.pool),
+        rng_boundary: rng_boundary_fingerprint_v2(&position.combat.rng.pool),
+    };
+    CombatFingerprintBundleV2 {
+        state,
+        legal_action_surface,
     }
 }
 
-pub fn combat_legal_action_set_fingerprint_v1(
+pub fn combat_state_fingerprint_v2(position: &CombatPosition) -> StateFingerprintV2 {
+    combat_fingerprint_bundle_v2(position).state
+}
+
+pub fn combat_legal_action_surface_fingerprint_v2(
     engine: &EngineState,
     combat: &CombatState,
-) -> CombatLegalActionSetFingerprintV1 {
-    let descriptors = get_legal_moves(engine, combat)
+) -> CombatLegalActionSurfaceFingerprintV2 {
+    let legal_surface = combat_legal_action_surface_v2(engine, combat);
+    let atomic_actions = legal_surface
+        .atomic_actions
+        .iter()
+        .cloned()
         .into_iter()
-        .map(|input| combat_action_descriptor_v1(combat, input))
+        .map(|input| combat_action_descriptor_v2(combat, input))
         .collect::<Vec<_>>();
-    let mut sorted = descriptors.clone();
-    sorted.sort_by(|a, b| {
-        a.stable_key
-            .cmp(&b.stable_key)
-            .then_with(|| hash_serializable(a).cmp(&hash_serializable(b)))
-    });
-    CombatLegalActionSetFingerprintV1 {
+    let legal_input_language_digest = legal_input_language_digest(&legal_surface);
+    let enumeration_domain_digest =
+        enumeration_domain_digest(&atomic_actions, &legal_surface.selection_families);
+    CombatLegalActionSurfaceFingerprintV2 {
         fingerprint_algorithm: FINGERPRINT_ALGORITHM_JSON.to_string(),
-        count: descriptors.len(),
-        candidate_set_hash: hash_serializable(&sorted),
-        candidate_order_hash: hash_serializable(&descriptors),
-        descriptors,
+        legal_input_language_digest,
+        enumeration_domain_digest,
+        atomic_action_count: u64::try_from(atomic_actions.len()).unwrap_or(u64::MAX),
+        action_family_count: u64::try_from(legal_surface.selection_families.len())
+            .unwrap_or(u64::MAX),
+        atomic_actions,
+        selection_families: legal_surface.selection_families,
     }
+}
+
+#[derive(Serialize)]
+struct LegalInputLanguageDigestInputV2 {
+    atomic_inputs: Vec<ClientInput>,
+    selection_languages: Vec<LegalSelectionLanguageProjectionV2>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "input_language", rename_all = "snake_case")]
+enum LegalSelectionLanguageProjectionV2 {
+    CardUuidSequence {
+        input_encoding: CombatSelectionInputEncodingV2,
+        eligible_uuids: Vec<u32>,
+        min_selected: u64,
+        max_selected: u64,
+        payload_language: CombatSelectionPayloadLanguageV2,
+    },
+    ScryIndexSequence {
+        eligible_indices: Vec<u64>,
+        uuid_equivalence_classes: Vec<Vec<u64>>,
+        min_selected: u64,
+        max_selected: u64,
+        payload_language: CombatSelectionPayloadLanguageV2,
+    },
+}
+
+#[derive(Serialize)]
+struct EnumerationDomainDigestInputV2<'a> {
+    contract: &'static str,
+    atomic_actions: &'a [CombatActionFingerprintDescriptorV2],
+    selection_families: &'a [CombatSelectionActionFamilyV2],
+}
+
+fn legal_input_language_digest(
+    surface: &crate::sim::combat_action_surface::CombatLegalActionSurfaceV2,
+) -> String {
+    let mut atomic_inputs = surface.atomic_actions.clone();
+    atomic_inputs.sort_by_cached_key(serialized_sort_key);
+    let mut selection_languages = surface
+        .selection_families
+        .iter()
+        .filter_map(legal_selection_language_projection)
+        .collect::<Vec<_>>();
+    selection_languages.sort_by_cached_key(serialized_sort_key);
+    hash_serializable(&LegalInputLanguageDigestInputV2 {
+        atomic_inputs,
+        selection_languages,
+    })
+}
+
+fn legal_selection_language_projection(
+    family: &CombatSelectionActionFamilyV2,
+) -> Option<LegalSelectionLanguageProjectionV2> {
+    if family.selection_status != CombatSelectionStatusV2::Enabled {
+        return None;
+    }
+    match family.input_encoding {
+        CombatSelectionInputEncodingV2::SubmitSelectionHandCardUuids
+        | CombatSelectionInputEncodingV2::SubmitSelectionGridCardUuids => {
+            let mut eligible_uuids = family
+                .raw_domain
+                .iter()
+                .filter_map(|candidate| match candidate {
+                    CombatSelectionDomainCandidateV2::CardUuid {
+                        uuid,
+                        eligible: true,
+                        ..
+                    } => Some(*uuid),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            eligible_uuids.sort_unstable();
+            eligible_uuids.dedup();
+            Some(LegalSelectionLanguageProjectionV2::CardUuidSequence {
+                input_encoding: family.input_encoding,
+                eligible_uuids,
+                min_selected: family.declared_min,
+                max_selected: family.effective_max,
+                payload_language: family.payload_language,
+            })
+        }
+        CombatSelectionInputEncodingV2::SubmitScryDiscardIndices => {
+            let mut eligible_indices = Vec::new();
+            let mut equivalence_classes = BTreeMap::<u32, Vec<u64>>::new();
+            for candidate in &family.raw_domain {
+                let CombatSelectionDomainCandidateV2::ScryIndex {
+                    index,
+                    card_uuid: Some(card_uuid),
+                    currently_present: true,
+                    ..
+                } = candidate
+                else {
+                    continue;
+                };
+                eligible_indices.push(*index);
+                equivalence_classes
+                    .entry(*card_uuid)
+                    .or_default()
+                    .push(*index);
+            }
+            eligible_indices.sort_unstable();
+            let mut uuid_equivalence_classes =
+                equivalence_classes.into_values().collect::<Vec<_>>();
+            uuid_equivalence_classes.sort();
+            Some(LegalSelectionLanguageProjectionV2::ScryIndexSequence {
+                eligible_indices,
+                uuid_equivalence_classes,
+                min_selected: family.declared_min,
+                max_selected: family.effective_max,
+                payload_language: family.payload_language,
+            })
+        }
+    }
+}
+
+fn enumeration_domain_digest(
+    atomic_actions: &[CombatActionFingerprintDescriptorV2],
+    selection_families: &[CombatSelectionActionFamilyV2],
+) -> String {
+    hash_serializable(&EnumerationDomainDigestInputV2 {
+        contract: "ordered_semantic_atomic_actions_plus_frozen_selection_domain_v1",
+        atomic_actions,
+        selection_families,
+    })
+}
+
+fn serialized_sort_key<T: Serialize>(value: &T) -> Vec<u8> {
+    serde_json::to_vec(value).expect("fingerprint sort input should serialize deterministically")
 }
 
 pub fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
@@ -174,8 +330,8 @@ fn hash_bytes(bytes: &[u8]) -> String {
 fn boundary_fingerprint(
     engine: &EngineState,
     combat: &CombatState,
-) -> DecisionBoundaryFingerprintV1 {
-    DecisionBoundaryFingerprintV1 {
+) -> DecisionBoundaryFingerprintV2 {
+    DecisionBoundaryFingerprintV2 {
         engine_state: format!("{engine:?}"),
         decision_kind: decision_kind(engine),
         terminal: combat_terminal(engine, combat),
@@ -206,17 +362,17 @@ fn decision_kind(engine: &EngineState) -> String {
 
 fn public_observation_input(
     position: &CombatPosition,
-) -> CombatPublicObservationFingerprintInputV1 {
-    CombatPublicObservationFingerprintInputV1 {
+) -> CombatPublicObservationFingerprintInputV2 {
+    CombatPublicObservationFingerprintInputV2 {
         boundary: boundary_fingerprint(&position.engine, &position.combat),
         public: combat_public_observation_v1(&position.combat),
     }
 }
 
-fn combat_action_descriptor_v1(
+fn combat_action_descriptor_v2(
     combat: &CombatState,
     input: ClientInput,
-) -> CombatActionFingerprintDescriptorV1 {
+) -> CombatActionFingerprintDescriptorV2 {
     match &input {
         ClientInput::PlayCard { card_index, target } => {
             let subject =
@@ -224,7 +380,7 @@ fn combat_action_descriptor_v1(
                     .zones
                     .hand
                     .get(*card_index)
-                    .map(|card| ActionSubjectFingerprintV1 {
+                    .map(|card| ActionSubjectFingerprintV2 {
                         kind: "hand_card".to_string(),
                         index: Some(*card_index),
                         uuid: Some(card.uuid),
@@ -251,7 +407,7 @@ fn combat_action_descriptor_v1(
                 .potions
                 .get(*potion_index)
                 .and_then(|slot| slot.as_ref())
-                .map(|potion| ActionSubjectFingerprintV1 {
+                .map(|potion| ActionSubjectFingerprintV2 {
                     kind: "potion".to_string(),
                     index: Some(*potion_index),
                     uuid: Some(potion.uuid),
@@ -275,7 +431,7 @@ fn combat_action_descriptor_v1(
                 .potions
                 .get(*slot)
                 .and_then(|slot| slot.as_ref())
-                .map(|potion| ActionSubjectFingerprintV1 {
+                .map(|potion| ActionSubjectFingerprintV2 {
                     kind: "potion".to_string(),
                     index: Some(*slot),
                     uuid: Some(potion.uuid),
@@ -364,7 +520,7 @@ fn selection_descriptor(
     input: ClientInput,
     indices: Vec<usize>,
     uuids: Vec<u32>,
-) -> CombatActionFingerprintDescriptorV1 {
+) -> CombatActionFingerprintDescriptorV2 {
     descriptor(
         kind,
         stable_key(kind, None, None, &indices, &uuids),
@@ -380,12 +536,12 @@ fn descriptor(
     kind: &str,
     stable_key: String,
     input: ClientInput,
-    subject: Option<ActionSubjectFingerprintV1>,
-    target: Option<ActionTargetFingerprintV1>,
+    subject: Option<ActionSubjectFingerprintV2>,
+    target: Option<ActionTargetFingerprintV2>,
     indices: Vec<usize>,
     uuids: Vec<u32>,
-) -> CombatActionFingerprintDescriptorV1 {
-    CombatActionFingerprintDescriptorV1 {
+) -> CombatActionFingerprintDescriptorV2 {
+    CombatActionFingerprintDescriptorV2 {
         kind: kind.to_string(),
         stable_key,
         input,
@@ -396,13 +552,13 @@ fn descriptor(
     }
 }
 
-fn monster_target(combat: &CombatState, entity_id: usize) -> Option<ActionTargetFingerprintV1> {
+fn monster_target(combat: &CombatState, entity_id: usize) -> Option<ActionTargetFingerprintV2> {
     combat
         .entities
         .monsters
         .iter()
         .find(|monster| monster.id == entity_id)
-        .map(|monster| ActionTargetFingerprintV1 {
+        .map(|monster| ActionTargetFingerprintV2 {
             kind: "monster".to_string(),
             entity_id,
             slot: Some(monster.slot),
@@ -414,8 +570,8 @@ fn monster_target(combat: &CombatState, entity_id: usize) -> Option<ActionTarget
 
 fn stable_key(
     kind: &str,
-    subject: Option<&ActionSubjectFingerprintV1>,
-    target: Option<&ActionTargetFingerprintV1>,
+    subject: Option<&ActionSubjectFingerprintV2>,
+    target: Option<&ActionTargetFingerprintV2>,
     indices: &[usize],
     uuids: &[u32],
 ) -> String {
@@ -453,7 +609,7 @@ fn stable_key(
     format!("{kind}/{subject}/{target}/indices:{indices:?}/uuids:{uuids:?}")
 }
 
-fn rng_boundary_fingerprint_v1(pool: &RngPool) -> RngBoundaryFingerprintV1 {
+fn rng_boundary_fingerprint_v2(pool: &RngPool) -> RngBoundaryFingerprintV2 {
     let streams = vec![
         rng_stream("monster_rng", &pool.monster_rng),
         rng_stream("event_rng", &pool.event_rng),
@@ -469,7 +625,7 @@ fn rng_boundary_fingerprint_v1(pool: &RngPool) -> RngBoundaryFingerprintV1 {
         rng_stream("misc_rng", &pool.misc_rng),
         rng_stream("math_rng", &pool.math_rng),
     ];
-    RngBoundaryFingerprintV1 {
+    RngBoundaryFingerprintV2 {
         status: RngFingerprintStatus::Complete,
         stream_count: streams.len(),
         digest: hash_serializable(&streams),
@@ -477,8 +633,8 @@ fn rng_boundary_fingerprint_v1(pool: &RngPool) -> RngBoundaryFingerprintV1 {
     }
 }
 
-fn rng_stream(name: &str, rng: &StsRng) -> RngStreamFingerprintV1 {
-    RngStreamFingerprintV1 {
+fn rng_stream(name: &str, rng: &StsRng) -> RngStreamFingerprintV2 {
+    RngStreamFingerprintV2 {
         name: name.to_string(),
         counter: rng.counter,
         state_hash: hash_serializable(&(rng.seed0, rng.seed1, rng.counter)),
@@ -501,7 +657,140 @@ mod tests {
     use crate::content::monsters::EnemyId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::{CombatCard, Intent};
-    use crate::state::core::EngineState;
+    use crate::sim::combat_action_surface::{
+        CombatSelectionDistinctByV2, CombatSelectionPayloadLanguageV2,
+    };
+    use crate::state::core::{EngineState, PendingChoice};
+
+    #[test]
+    fn large_scry_fingerprint_is_a_single_linear_action_family() {
+        let mut combat = combat_with_single_monster();
+        let cards = vec![CardId::Strike; 64];
+        let card_uuids = (1..=64).collect::<Vec<_>>();
+        combat.zones.draw_pile = card_uuids
+            .iter()
+            .map(|uuid| CombatCard::new(CardId::Strike, *uuid))
+            .collect();
+
+        let surface = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::ScrySelect { cards, card_uuids }),
+            &combat,
+        );
+
+        assert_eq!(surface.atomic_action_count, 0);
+        assert_eq!(surface.action_family_count, 1);
+        assert!(surface.atomic_actions.is_empty());
+        let family = &surface.selection_families[0];
+        assert_eq!(family.raw_domain_count, 64);
+        assert_eq!(family.raw_domain.len(), 64);
+        assert_eq!(
+            family.payload_language,
+            CombatSelectionPayloadLanguageV2::OrderedDistinctSequence(
+                CombatSelectionDistinctByV2::ScryIndexAndCardUuid
+            )
+        );
+    }
+
+    #[test]
+    fn legal_language_and_frozen_enumeration_domain_are_separate() {
+        let mut combat = combat_with_single_monster();
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        let first = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::ScrySelect {
+                cards: vec![CardId::Strike, CardId::Defend],
+                card_uuids: vec![1, 2],
+            }),
+            &combat,
+        );
+        let reversed = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::ScrySelect {
+                cards: vec![CardId::Defend, CardId::Strike],
+                card_uuids: vec![2, 1],
+            }),
+            &combat,
+        );
+
+        assert_eq!(
+            first.legal_input_language_digest,
+            reversed.legal_input_language_digest
+        );
+        assert_ne!(
+            first.enumeration_domain_digest,
+            reversed.enumeration_domain_digest
+        );
+    }
+
+    #[test]
+    fn atomic_language_is_stable_but_semantic_domain_tracks_hand_identity() {
+        let mut combat = combat_with_single_monster();
+        combat.turn.energy = 3;
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Bash, 2),
+        ];
+        let first =
+            combat_legal_action_surface_fingerprint_v2(&EngineState::CombatPlayerTurn, &combat);
+        combat.zones.hand.swap(0, 1);
+        let swapped =
+            combat_legal_action_surface_fingerprint_v2(&EngineState::CombatPlayerTurn, &combat);
+
+        assert_eq!(
+            first.legal_input_language_digest,
+            swapped.legal_input_language_digest
+        );
+        assert_ne!(
+            first.enumeration_domain_digest,
+            swapped.enumeration_domain_digest
+        );
+    }
+
+    #[test]
+    fn symbolic_action_surface_digest_tracks_hand_candidates_beyond_legacy_caps() {
+        let mut combat = combat_with_single_monster();
+        let candidate_uuids = (100..124).collect::<Vec<_>>();
+        combat.zones.hand = candidate_uuids
+            .iter()
+            .map(|uuid| CombatCard::new(CardId::Strike, *uuid))
+            .collect();
+        let first = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::HandSelect {
+                candidate_uuids: candidate_uuids.clone(),
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::core::HandSelectReason::Discard,
+            }),
+            &combat,
+        );
+
+        let replacement_uuid = 10_000;
+        let mut changed_candidates = candidate_uuids;
+        changed_candidates[17] = replacement_uuid;
+        combat.zones.hand[17] = CombatCard::new(CardId::Defend, replacement_uuid);
+        let changed = combat_legal_action_surface_fingerprint_v2(
+            &EngineState::PendingChoice(PendingChoice::HandSelect {
+                candidate_uuids: changed_candidates,
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::core::HandSelectReason::Discard,
+            }),
+            &combat,
+        );
+
+        assert_eq!(first.selection_families[0].raw_domain_count, 24);
+        assert_ne!(
+            first.legal_input_language_digest,
+            changed.legal_input_language_digest
+        );
+        assert_ne!(
+            first.enumeration_domain_digest,
+            changed.enumeration_domain_digest
+        );
+    }
 
     #[test]
     fn public_observation_hash_does_not_change_for_hidden_runic_dome_intent() {
@@ -588,7 +877,7 @@ mod tests {
     }
 
     fn public_hash(combat: CombatState) -> String {
-        combat_state_fingerprint_v1(&CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        combat_state_fingerprint_v2(&CombatPosition::new(EngineState::CombatPlayerTurn, combat))
             .public_observation_hash
     }
 

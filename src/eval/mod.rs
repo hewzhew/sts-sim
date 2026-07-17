@@ -14,3 +14,7 @@ pub mod fingerprint;
 pub mod reward_boundary_packet_v1;
 pub mod reward_semantic_live_sample_v1;
 pub mod run_control;
+
+pub(crate) fn repository_root() -> &'static std::path::Path {
+    std::path::Path::new(env!("STS_REPOSITORY_ROOT"))
+}

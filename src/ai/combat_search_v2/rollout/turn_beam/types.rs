@@ -7,4 +7,5 @@ pub(super) struct TurnBeamState {
     pub(super) progress: RolloutPendingChoiceProgress,
     pub(super) last_action_reason: Option<&'static str>,
     pub(super) estimate_override: Option<RolloutNodeEstimate>,
+    pub(super) stalled_stop_reason: Option<RolloutStopReason>,
 }

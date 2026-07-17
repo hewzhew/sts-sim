@@ -11,7 +11,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 struct ProbeWinStepper;
 
 impl CombatStepper for ProbeWinStepper {
-    fn legal_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
+    fn atomic_actions(&self, _position: &CombatPosition) -> Vec<ClientInput> {
         Vec::new()
     }
 
@@ -333,6 +333,7 @@ fn test_config() -> CombatSearchV2Config {
         rollout_max_evaluations: 10,
         rollout_max_actions: 10,
         rollout_beam_width: 3,
+        expansion_policy: CombatSearchV2ExpansionPolicy::AtomicActions,
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
         frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,

@@ -3,7 +3,7 @@ use crate::content::relics::RelicId;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::eval::run_control::RunDecisionAction;
 use crate::runtime::combat::CombatCard;
-use crate::sim::combat_legal_actions::get_legal_moves;
+use crate::sim::combat_legal_actions::engine_atomic_actions;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::events::{EventOption, EventOptionTransition};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
@@ -614,7 +614,7 @@ fn combat_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     if let EngineState::PendingChoice(choice) = &position.engine {
         return pending_choice_candidates(session, choice, &position.combat);
     }
-    let legal_moves = get_legal_moves(&position.engine, &position.combat);
+    let legal_moves = engine_atomic_actions(&position.engine, &position.combat);
     let mut playable: BTreeMap<usize, Vec<Option<usize>>> = BTreeMap::new();
     let mut end_turn = false;
     for action in &legal_moves {
@@ -716,8 +716,12 @@ fn pending_choice_candidates(
         return candidates;
     }
 
-    let legal_moves = get_legal_moves(&EngineState::PendingChoice(choice.clone()), combat);
-    legal_moves
+    let legal_surface = crate::sim::combat_action_surface::combat_legal_action_surface_v2(
+        &EngineState::PendingChoice(choice.clone()),
+        combat,
+    );
+    legal_surface
+        .atomic_actions
         .into_iter()
         .enumerate()
         .map(|(idx, input)| {

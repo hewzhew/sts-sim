@@ -1,5 +1,7 @@
 use super::*;
 
+// Keep diagnostic decomposition here in the search layer while the opaque
+// dominance-key representation remains owned by the simulator core.
 #[derive(Clone, Debug)]
 pub(super) struct TurnSequenceEffectFingerprint {
     terminal_key: String,
@@ -56,6 +58,7 @@ pub(super) fn effect_fingerprint(
 ) -> TurnSequenceEffectFingerprint {
     let resource = node.resource_vector().diagnostic_parts();
     let dominance = combat_dominance_key(&node.engine, &node.combat);
+    let dominance_parts = combat_dominance_diagnostic_parts_v1(&dominance);
     TurnSequenceEffectFingerprint {
         terminal_key: format!("{:?}", terminal_label(&node.engine, &node.combat)),
         legal_action_count_key: legal_actions.to_string(),
@@ -76,8 +79,8 @@ pub(super) fn effect_fingerprint(
         )),
         rng_key: stable_debug_hash(&node.combat.rng),
         dominance_key: stable_debug_hash(&dominance),
-        dominance_engine_key: stable_debug_hash(&dominance.common.engine),
-        dominance_turn_key: stable_debug_hash(&dominance.common.turn),
+        dominance_engine_key: dominance_parts.engine_key,
+        dominance_turn_key: dominance_parts.turn_key,
         turn_draw_modifier_key: stable_debug_hash(&node.combat.turn.turn_start_draw_modifier),
         turn_action_counter_key: stable_debug_hash(&(
             node.combat.turn.counters.cards_played_this_turn,
@@ -104,15 +107,15 @@ pub(super) fn effect_fingerprint(
             node.combat.turn.counters.player_escaping,
             node.combat.turn.counters.escape_pending_reward,
         )),
-        dominance_meta_key: stable_debug_hash(&dominance.common.meta),
-        dominance_zones_key: stable_debug_hash(&dominance.common.zones),
-        dominance_monsters_key: stable_debug_hash(&dominance.common.monsters),
-        dominance_powers_key: stable_debug_hash(&dominance.common.powers),
-        dominance_potions_key: stable_debug_hash(&dominance.common.potions),
-        dominance_queue_key: stable_debug_hash(&dominance.common.queue),
-        dominance_runtime_key: stable_debug_hash(&dominance.common.runtime),
-        dominance_rng_key: stable_debug_hash(&dominance.common.rng),
-        dominance_player_key: stable_debug_hash(&dominance.player),
+        dominance_meta_key: dominance_parts.meta_key,
+        dominance_zones_key: dominance_parts.zones_key,
+        dominance_monsters_key: dominance_parts.monsters_key,
+        dominance_powers_key: dominance_parts.powers_key,
+        dominance_potions_key: dominance_parts.potions_key,
+        dominance_queue_key: dominance_parts.queue_key,
+        dominance_runtime_key: dominance_parts.runtime_key,
+        dominance_rng_key: dominance_parts.rng_key,
+        dominance_player_key: dominance_parts.player_key,
         resource_public_key: stable_debug_hash(&(resource.hp, resource.block)),
         resource_cost_key: stable_debug_hash(&(
             resource.potions_used,

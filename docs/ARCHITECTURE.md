@@ -15,6 +15,31 @@ unified typed representation
 Free-form strings are display and provenance only. If a decision needs to be
 continued, replayed, compared, or learned from, it needs typed identity first.
 
+## Cargo Package Boundary
+
+The production workspace has one compile-time dependency direction:
+
+```text
+sts_simulator_control -> sts_simulator
+```
+
+`sts_simulator` owns game content, state, engine transitions, simulation, and
+stable lower policy layers. `sts_simulator_control` owns combat search,
+evaluation, run-control, branch scheduling/artifacts, and the supported
+binaries. The control package may consume explicit core APIs; core must never
+import control modules.
+
+Some control modules still live physically below the historical root `src/`
+tree and are attached to the control package with `#[path]`. That is a source
+layout migration detail, not permission for a reverse dependency or duplicate
+module owner. Move those files mechanically only when the package boundary and
+artifact paths remain unchanged.
+
+Use `cargo test-core` and `cargo test-control` for their respective unit-test
+harnesses, `cargo architecture` for dependency-free source-boundary checks,
+and `cargo check-workspace` for every target. Do not merge the harnesses again
+through test features or replace them with many integration-test executables.
+
 ## AI Layers
 
 New AI code must choose an owner layer before it is written:

@@ -45,9 +45,16 @@ pub(super) fn locate_candidate_cutpoint(
 
     for action in &trajectory.actions {
         let position = trial.current_active_combat_position()?;
+        let Some(candidate) = EngineCombatStepper.choice_for_legal_input(&position, &action.input)
+        else {
+            return Err(format!(
+                "persistent burden cutpoint replay drift at step {}: expected {}",
+                action.step_index, action.action_key
+            ));
+        };
         let choices = enforce_replay_potion_budget(
             filter_combat_search_legal_actions(
-                EngineCombatStepper.legal_action_choices(&position),
+                vec![candidate],
                 config.potion_policy,
                 &position.combat,
             ),
@@ -55,7 +62,7 @@ pub(super) fn locate_candidate_cutpoint(
             potions_used,
         );
         let Some(choice) = choices
-            .iter()
+            .into_iter()
             .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
         else {
             return Err(format!(

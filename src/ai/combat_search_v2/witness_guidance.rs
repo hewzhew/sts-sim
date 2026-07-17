@@ -150,10 +150,7 @@ pub fn replay_combat_search_witness_line_v1(
     let mut steps = Vec::with_capacity(line.actions.len());
 
     for (action_index, action) in line.actions.iter().enumerate() {
-        if !EngineCombatStepper
-            .legal_actions(&position)
-            .contains(&action.input)
-        {
+        if !EngineCombatStepper.is_legal_action(&position, &action.input) {
             return Err(format!(
                 "illegal witness action at index {action_index}: {:?}",
                 action.input
@@ -370,6 +367,46 @@ mod tests {
             error.contains("illegal witness action at index 0"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn witness_replay_accepts_legal_selection_outside_legacy_candidate_cap() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = (0..10)
+            .map(|index| CombatCard::new(CardId::Strike, 1_000 + index))
+            .collect();
+        let position = CombatPosition::new(
+            EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
+                candidate_uuids: (1_000..1_010).collect(),
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: crate::state::core::HandSelectReason::Discard,
+            }),
+            combat,
+        );
+        let line = CombatSearchV2WitnessLine {
+            source: "test",
+            terminal: SearchTerminalLabel::Unresolved,
+            final_hp: 80,
+            total_enemy_hp: 20,
+            action_count: Some(1),
+            actions: vec![CombatSearchV2ActionPreview {
+                action_key: "discard_cap_external_card".to_string(),
+                input: ClientInput::SubmitSelection(
+                    crate::state::selection::SelectionResolution::card_uuids(
+                        crate::state::selection::SelectionScope::Hand,
+                        [1_009],
+                    ),
+                ),
+            }],
+        };
+
+        let replay = super::replay_combat_search_witness_line_v1(&position, &line, 20)
+            .expect("structured legality must not depend on the legacy candidate prefix");
+
+        assert_eq!(replay.replayed_actions, 1);
     }
 
     #[test]

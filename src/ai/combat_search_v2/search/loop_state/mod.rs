@@ -7,9 +7,11 @@ use std::collections::HashMap;
 use super::super::frontier::{FrontierQueue, ResourceVector};
 use super::super::*;
 use super::best_trajectories::SearchTrajectoryBook;
+use super::turn_boundary_expansion::TurnBoundaryExpansionTracker;
 use super::turn_plan_seeding::TurnPlanSeedTracker;
 
 pub(super) struct SearchLoopState {
+    pub(super) owns_engine_pending_choice_prefixes: bool,
     pub(super) plugins: CombatSearchPluginStack,
     pub(super) stats: CombatSearchV2Stats,
     pub(super) diagnostics: SearchDiagnosticsCollector,
@@ -18,6 +20,7 @@ pub(super) struct SearchLoopState {
     pub(super) rollout_cache: RolloutCache,
     pub(super) performance: CombatSearchV2PerformanceReport,
     pub(super) frontier: FrontierQueue,
+    pub(super) turn_boundary_expansion_tracker: TurnBoundaryExpansionTracker,
     pub(super) turn_plan_seed_tracker: TurnPlanSeedTracker,
     pub(super) trajectories: SearchTrajectoryBook,
     pub(super) unresolved_leaf_count: u64,
@@ -29,9 +32,13 @@ pub(super) struct SearchLoopState {
 }
 
 impl SearchLoopState {
-    pub(super) fn new(config: &CombatSearchV2Config) -> Self {
+    pub(super) fn new(
+        config: &CombatSearchV2Config,
+        owns_engine_pending_choice_prefixes: bool,
+    ) -> Self {
         let plugins = CombatSearchPluginStack::from_config(config);
         Self {
+            owns_engine_pending_choice_prefixes,
             plugins,
             stats: CombatSearchV2Stats::default(),
             diagnostics: SearchDiagnosticsCollector::default(),
@@ -45,6 +52,7 @@ impl SearchLoopState {
             ),
             performance: CombatSearchV2PerformanceReport::default(),
             frontier: FrontierQueue::new(plugins.frontier),
+            turn_boundary_expansion_tracker: TurnBoundaryExpansionTracker::default(),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),
             unresolved_leaf_count: 0,

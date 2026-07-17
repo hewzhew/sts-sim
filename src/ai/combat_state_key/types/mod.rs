@@ -6,6 +6,7 @@ mod shop;
 mod stable;
 
 pub(crate) use combat::*;
+pub use combat::{CombatDominanceKey, CombatExactStateKey};
 pub(crate) use pending_choice::{
     StableBossRelicKey, StableChoiceCandidateKey, StablePendingChoiceKey,
     StableRunPendingChoiceKey, StableRunPendingReturnKey, StableTreasureChestKey,
@@ -15,9 +16,9 @@ pub(crate) use postcombat::{
 };
 pub(crate) use reward::{StableRewardCardKey, StableRewardItemKey, StableRewardKey};
 pub(crate) use shop::{StableShopKey, StableShopRowKey};
+pub use stable::StableOutcomeKey;
 pub(crate) use stable::{
-    StableCombatPlayerKey, StableEngineKey, StableOutcomeKey, StableOutcomePayload, StableTurnKey,
-    StableZonesKey,
+    StableCombatPlayerKey, StableEngineKey, StableOutcomePayload, StableTurnKey, StableZonesKey,
 };
 trait DiagnosticKey {
     fn diagnostic_string(&self) -> String;

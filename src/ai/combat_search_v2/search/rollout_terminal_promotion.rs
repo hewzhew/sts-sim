@@ -43,16 +43,12 @@ fn replay_terminal_witness(
             return None;
         }
         let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
-        let (action_id, choice) = filtered_legal_actions(
-            stepper.legal_action_choices(&position),
-            config.potion_policy,
-            &node.combat,
-        )
-        .into_iter()
-        .enumerate()
-        .find(|(_, choice)| {
-            choice.input == action.input && choice.action_key == action.action_key
-        })?;
+        let candidate = stepper.choice_for_legal_input(&position, &action.input)?;
+        let choice = filtered_legal_actions(vec![candidate], config.potion_policy, &node.combat)
+            .into_iter()
+            .find(|choice| {
+                choice.input == action.input && choice.action_key == action.action_key
+            })?;
         let step = stepper.apply_to_stable(
             &position,
             choice.input.clone(),
@@ -78,7 +74,7 @@ fn replay_terminal_witness(
         child.note_turn_branch_priority(transition.frontier_priority_hint());
         child.actions.push(CombatSearchV2ActionTrace {
             step_index: node.actions.len(),
-            action_id,
+            action_id: node.actions.len(),
             action_key: choice.action_key,
             action_debug: choice.action_debug,
             input: choice.input,

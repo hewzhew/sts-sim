@@ -5,11 +5,13 @@
 mod diagnostics;
 mod enumerate;
 mod frontier_seed;
+mod turn_boundary_portfolio;
 mod types;
 
 pub(in crate::ai::combat_search_v2) use diagnostics::TurnPlanDiagnosticsCollector;
 pub(in crate::ai::combat_search_v2) use enumerate::enumerate_turn_plans;
 pub(in crate::ai::combat_search_v2) use frontier_seed::turn_plan_frontier_seed;
+pub(in crate::ai::combat_search_v2) use turn_boundary_portfolio::build_turn_boundary_portfolio;
 pub(in crate::ai::combat_search_v2) use types::{
     TurnPlanBucket, TurnPlanCandidateSelectionAuditV1, TurnPlanCoverageGroupAuditV1,
     TurnPlanCoverageKeyV1, TurnPlanCoverageSignatureV1, TurnPlanEnumeration,

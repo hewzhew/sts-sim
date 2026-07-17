@@ -5,6 +5,12 @@ use crate::sim::combat::CombatStepResult;
 use super::super::*;
 use super::loop_state::SearchLoopState;
 
+pub(super) enum ChildStepOutcome {
+    Stable(CombatStepResult),
+    StepLimitReached,
+    DeadlineReached,
+}
+
 pub(super) fn apply_child_step<S: CombatStepper>(
     loop_state: &mut SearchLoopState,
     position: &CombatPosition,
@@ -12,7 +18,7 @@ pub(super) fn apply_child_step<S: CombatStepper>(
     stepper: &S,
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
-) -> CombatStepResult {
+) -> ChildStepOutcome {
     let step_started = Instant::now();
     let step = stepper.apply_to_stable(
         position,
@@ -23,7 +29,19 @@ pub(super) fn apply_child_step<S: CombatStepper>(
         },
     );
     observe_child_step(loop_state, &step, step_started.elapsed());
-    step
+    if step.timed_out {
+        // A timed-out transition is not an atomic child.  It may contain zero
+        // engine steps or an unstable partial position, neither of which may
+        // acquire an action trace or enter the concrete frontier.
+        ChildStepOutcome::DeadlineReached
+    } else if step.truncated {
+        // A per-action step cap also yields an unstable partial transition.
+        // It cannot be retried under the same cap without looping forever, so
+        // the caller records the cut but must not materialize a fake child.
+        ChildStepOutcome::StepLimitReached
+    } else {
+        ChildStepOutcome::Stable(step)
+    }
 }
 
 fn observe_child_step(

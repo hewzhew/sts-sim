@@ -1,11 +1,27 @@
 use super::super::*;
 
-pub(super) fn search_policy_report(config: &CombatSearchV2Config) -> CombatSearchV2PolicyReport {
+pub(super) fn search_policy_report(
+    config: &CombatSearchV2Config,
+    owns_engine_pending_choice_prefixes: bool,
+) -> CombatSearchV2PolicyReport {
     let plugins = CombatSearchPluginStack::from_config(config);
     CombatSearchV2PolicyReport {
-        kind: "best_first_atomic_action_graph_search_v2",
+        kind: match plugins.expansion {
+            CombatSearchExpansionPluginId::AtomicActions => {
+                "best_first_atomic_action_graph_search_v2"
+            }
+            CombatSearchExpansionPluginId::HierarchicalTurnBoundary => {
+                "best_first_hierarchical_turn_boundary_graph_search_v1"
+            }
+        },
         terminal_policy: "whole_combat_terminal_only",
         expansion_order: "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_with_one_step_retaliation_protection_frontier_continuation_then_frontier_value_v1",
+        expansion_policy: plugins.expansion.label(),
+        pending_choice_action_surface: if owns_engine_pending_choice_prefixes {
+            "canonical_member_set_prefix_with_explicit_order_variant_gap_v2"
+        } else {
+            "stepper_eager_candidate_actions"
+        },
         action_prior_policy: plugins.action_prior.label(),
         phase_guard_policy: plugins.phase_guard.label(),
         frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
@@ -28,6 +44,7 @@ pub(super) fn budget_report(config: &CombatSearchV2Config) -> CombatSearchV2Budg
     let plugins = CombatSearchPluginStack::from_config(config);
     CombatSearchV2BudgetReport {
         max_nodes: config.max_nodes,
+        max_pending_choice_prefixes: config.max_nodes,
         max_actions_per_line: config.max_actions_per_line,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),

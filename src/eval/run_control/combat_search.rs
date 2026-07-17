@@ -315,6 +315,26 @@ mod tests {
     }
 
     #[test]
+    fn pending_choice_opportunity_does_not_enumerate_combinatorial_inputs() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.draw_pile = (0..13)
+            .map(|index| CombatCard::new(crate::content::cards::CardId::Strike, 1_000 + index))
+            .collect();
+        let mut session = session_with_active_combat(combat);
+        session.active_combat.as_mut().unwrap().engine_state =
+            EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+                cards: vec![crate::content::cards::CardId::Strike; 13],
+                card_uuids: (1_000..1_013).collect(),
+            });
+
+        let snapshot = combat_automation_opportunity_state_v1(&session)
+            .expect("pending combat choice should still expose the state snapshot");
+
+        assert!(snapshot.playable_card_uuids.is_empty());
+        assert!(snapshot.usable_potion_uuids.is_empty());
+    }
+
+    #[test]
     fn combat_automation_claims_cover_master_generated_and_active_potion_answers() {
         let master_deck = vec![CombatCard::new(
             crate::content::cards::CardId::Shockwave,

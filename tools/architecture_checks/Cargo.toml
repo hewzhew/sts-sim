@@ -1,0 +1,9 @@
+[package]
+name = "sts_architecture_checks"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "sts-architecture-checks"
+path = "src/main.rs"

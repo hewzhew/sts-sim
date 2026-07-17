@@ -50,6 +50,8 @@ pub(in crate::ai::combat_search_v2) struct QueueEntry {
     pub(in crate::ai::combat_search_v2::frontier) priority: NodePriority,
     pub(in crate::ai::combat_search_v2::frontier) sequence_id: u64,
     pub(in crate::ai::combat_search_v2) node: SearchNode,
+    pub(in crate::ai::combat_search_v2) pending_choice_work:
+        Option<super::super::PendingChoiceActionWork>,
 }
 
 impl Eq for QueueEntry {}

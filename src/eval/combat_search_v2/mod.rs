@@ -7,6 +7,7 @@ mod rollout_compare_attribution;
 mod start;
 mod turn_plan_guidance_lab;
 
+pub(crate) use benchmark::validate_combat_search_v2_benchmark_schema_header;
 pub use benchmark::{
     load_combat_search_v2_benchmark, run_combat_search_v2_benchmark,
     CombatSearchV2BaselineComparison, CombatSearchV2BaselineOutcomeSpec,

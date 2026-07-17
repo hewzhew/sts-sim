@@ -22,36 +22,65 @@ use crate::state::EngineState;
 
 use combat::{combat_dominance_bucket_key, combat_exact_runtime_key};
 use stable::build_stable_outcome_key;
-pub(crate) use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
+pub use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
+
+/// Stable diagnostic hashes for the semantic sections of a dominance key.
+/// Search diagnostics use this view without depending on the key's private
+/// representation.
+pub struct CombatDominanceDiagnosticPartsV1 {
+    pub engine_key: String,
+    pub turn_key: String,
+    pub meta_key: String,
+    pub zones_key: String,
+    pub monsters_key: String,
+    pub powers_key: String,
+    pub potions_key: String,
+    pub queue_key: String,
+    pub runtime_key: String,
+    pub rng_key: String,
+    pub player_key: String,
+}
 
 /// Exact in-combat key for Combat Search V2 transposition. It keeps player
 /// hp/block and runtime details that affect future combat transitions.
-pub(crate) fn combat_exact_state_key(
-    engine: &EngineState,
-    combat: &CombatState,
-) -> CombatExactStateKey {
+pub fn combat_exact_state_key(engine: &EngineState, combat: &CombatState) -> CombatExactStateKey {
     combat_exact_runtime_key(engine, combat)
 }
 
-pub(crate) fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
+pub fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
     hash_debug(&combat_exact_state_key(engine, combat))
 }
 
 /// In-combat bucket for Combat Search V2 resource dominance. It keeps runtime
 /// details that affect future combat transitions, while leaving current
 /// hp/block to the searched resource vector.
-pub(crate) fn combat_dominance_key(
-    engine: &EngineState,
-    combat: &CombatState,
-) -> CombatDominanceKey {
+pub fn combat_dominance_key(engine: &EngineState, combat: &CombatState) -> CombatDominanceKey {
     combat_dominance_bucket_key(engine, combat)
+}
+
+pub fn combat_dominance_diagnostic_parts_v1(
+    key: &CombatDominanceKey,
+) -> CombatDominanceDiagnosticPartsV1 {
+    CombatDominanceDiagnosticPartsV1 {
+        engine_key: diagnostic_hash(&key.common.engine),
+        turn_key: diagnostic_hash(&key.common.turn),
+        meta_key: diagnostic_hash(&key.common.meta),
+        zones_key: diagnostic_hash(&key.common.zones),
+        monsters_key: diagnostic_hash(&key.common.monsters),
+        powers_key: diagnostic_hash(&key.common.powers),
+        potions_key: diagnostic_hash(&key.common.potions),
+        queue_key: diagnostic_hash(&key.common.queue),
+        runtime_key: diagnostic_hash(&key.common.runtime),
+        rng_key: diagnostic_hash(&key.common.rng),
+        player_key: diagnostic_hash(&key.player),
+    }
 }
 
 /// Stable frontier key for comparing outcomes after the engine reaches a
 /// player decision boundary. This intentionally abstracts display/runtime noise
 /// that should not affect future decisions from that boundary.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
+pub fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> StableOutcomeKey {
     debug_assert_ne!(
         stable_frontier_scope(engine, combat),
         StableFrontierScope::Unstable,
@@ -62,7 +91,7 @@ pub(crate) fn stable_outcome_key(engine: &EngineState, combat: &CombatState) -> 
 
 /// Stable dominance bucket only exists at stable frontiers. Unstable engine
 /// processing states must not be merged under this abstraction.
-pub(crate) fn stable_dominance_bucket_key(
+pub fn stable_dominance_bucket_key(
     engine: &EngineState,
     combat: &CombatState,
 ) -> Option<StableOutcomeKey> {
@@ -111,6 +140,15 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
 
 fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
     hash_bytes(format!("{value:?}").as_bytes())
+}
+
+fn diagnostic_hash<T: std::fmt::Debug>(value: &T) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in format!("{value:?}").bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn hash_bytes(bytes: &[u8]) -> String {

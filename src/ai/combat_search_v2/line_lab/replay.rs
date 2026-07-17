@@ -50,10 +50,10 @@ pub(super) fn replay_one(
     action: &CombatSearchV2ActionTrace,
     stepper: &EngineCombatStepper,
 ) -> Option<CombatPosition> {
-    let choice = stepper
-        .legal_action_choices(position)
-        .into_iter()
-        .find(|choice| choice.input == action.input && choice.action_key == action.action_key)?;
+    let choice = stepper.choice_for_legal_input(position, &action.input)?;
+    if choice.action_key != action.action_key {
+        return None;
+    }
     let step = stepper.apply_to_stable(
         position,
         choice.input,

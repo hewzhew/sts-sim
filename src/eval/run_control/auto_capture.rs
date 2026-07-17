@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::content::monsters::EnemyId;
 use crate::eval::combat_capture::{
-    capture_combat_position_from_runtime_progress_v1, save_combat_capture_v1,
+    capture_combat_position_from_runtime_progress_v2, save_combat_capture_v2,
 };
 use crate::state::core::EngineState;
 
@@ -44,12 +44,12 @@ pub(super) fn maybe_auto_capture_combat_start(
     let case_id = next_available_case_id(&root, &base_case_id(session));
     let paths = BenchmarkCasePaths::for_case(&root, &case_id);
     let position = session.current_active_combat_position()?;
-    let capture = capture_combat_position_from_runtime_progress_v1(
+    let capture = capture_combat_position_from_runtime_progress_v2(
         Some(case_id.clone()),
         &position,
         &session.run_state,
     )?;
-    save_combat_capture_v1(&paths.capture_path, &capture)?;
+    save_combat_capture_v2(&paths.capture_path, &capture)?;
     let paths = add_case_to_benchmark_registry(&root, &case_id)?;
     session.remember_capture_case(root, case_id.clone());
     session.auto_capture_last_combat_sequence = Some(session.combat_sequence);
@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
     use crate::eval::artifact::ArtifactSourceKind;
-    use crate::eval::combat_capture::load_combat_capture_v1;
+    use crate::eval::combat_capture::load_combat_capture_v2;
     use crate::eval::run_control::session::{RunControlConfig, RunControlSession};
     use crate::state::core::ClientInput;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -196,7 +196,7 @@ mod tests {
         )
         .benchmark_manifest
         .exists());
-        let capture = load_combat_capture_v1(&captures[0]).expect("auto capture should load");
+        let capture = load_combat_capture_v2(&captures[0]).expect("auto capture should load");
         assert_eq!(
             capture.provenance.source_kind,
             ArtifactSourceKind::RuntimeProgress

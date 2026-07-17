@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use sts_simulator::eval::combat_capture::{
-    capture_combat_position_from_runtime_progress_v1, save_combat_capture_v1, CombatCaptureV1,
+    capture_combat_position_from_runtime_progress_v2, save_combat_capture_v2, CombatCaptureV2,
 };
 use sts_simulator::eval::run_control::{
     accepted_combat_line_evidence_v1, combat_automation_trajectories_v1,
@@ -29,7 +29,7 @@ pub(super) struct AcceptedCombatIdentityV1 {
 pub(super) struct AcceptedHighLossDiagnosticDraft {
     pub(super) identity: AcceptedCombatIdentityV1,
     pub(super) lane: String,
-    pub(super) capture: CombatCaptureV1,
+    pub(super) capture: CombatCaptureV2,
     pub(super) evidence: AcceptedCombatLineEvidenceV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) search: Option<CombatSearchTraceSummary>,
@@ -76,7 +76,7 @@ pub(super) fn high_loss_trigger(
 }
 
 pub(super) fn accepted_high_loss_diagnostic(
-    capture: CombatCaptureV1,
+    capture: CombatCaptureV2,
     lane: &str,
     annotations: &[RunControlTraceAnnotationV1],
     committed: bool,
@@ -126,7 +126,7 @@ pub(super) fn accepted_high_loss_diagnostic(
 
 pub(super) fn capture_active_combat(
     session: &RunControlSession,
-) -> Result<Option<CombatCaptureV1>, String> {
+) -> Result<Option<CombatCaptureV2>, String> {
     let Some(active) = session.active_combat.as_ref() else {
         return Ok(None);
     };
@@ -137,7 +137,7 @@ pub(super) fn capture_active_combat(
         return Ok(None);
     }
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
-    capture_combat_position_from_runtime_progress_v1(
+    capture_combat_position_from_runtime_progress_v2(
         Some("accepted high-loss candidate".to_string()),
         &position,
         &session.run_state,
@@ -175,7 +175,7 @@ pub(super) fn write_diagnostic_pair(
     );
     let capture_path = dir.join(format!("{stem}.capture.json"));
     let evidence_path = dir.join(format!("{stem}.evidence.json"));
-    save_combat_capture_v1(&capture_path, &draft.capture)?;
+    save_combat_capture_v2(&capture_path, &draft.capture)?;
     let attrition = draft.attrition.clone().unwrap_or_else(|| {
         accepted_combat_attrition_v1(
             draft.capture.summary.player_hp,
@@ -236,7 +236,7 @@ fn slug(raw: &str) -> String {
 mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
-    use sts_simulator::eval::combat_capture::capture_combat_position_from_runtime_progress_v1;
+    use sts_simulator::eval::combat_capture::capture_combat_position_from_runtime_progress_v2;
     use sts_simulator::eval::run_control::{
         AcceptedCombatLineEvidenceV1, CombatAutomationActionV1, CombatAutomationStepStateV1,
         CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
@@ -258,11 +258,11 @@ mod tests {
         }
     }
 
-    fn capture() -> sts_simulator::eval::combat_capture::CombatCaptureV1 {
+    fn capture() -> sts_simulator::eval::combat_capture::CombatCaptureV2 {
         capture_with_hp(44)
     }
 
-    fn capture_with_hp(start_hp: i32) -> sts_simulator::eval::combat_capture::CombatCaptureV1 {
+    fn capture_with_hp(start_hp: i32) -> sts_simulator::eval::combat_capture::CombatCaptureV2 {
         let mut run = sts_simulator::state::run::RunState::new(7, 0, false, "IRONCLAD");
         run.act_num = 2;
         run.floor_num = 21;
@@ -277,7 +277,7 @@ mod tests {
             sts_simulator::runtime::monster_move::MonsterMoveSpec::Unknown,
         ));
         combat.entities.monsters = vec![monster];
-        capture_combat_position_from_runtime_progress_v1(
+        capture_combat_position_from_runtime_progress_v2(
             Some("accepted high loss".to_string()),
             &CombatPosition::new(EngineState::CombatPlayerTurn, combat),
             &run,
@@ -412,7 +412,7 @@ mod tests {
         let written = write_diagnostic_pair(&root, 7, 22, 22, &draft).unwrap();
 
         let replay =
-            sts_simulator::eval::combat_capture::load_combat_capture_v1(&written.capture_path)
+            sts_simulator::eval::combat_capture::load_combat_capture_v2(&written.capture_path)
                 .unwrap();
         let evidence: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&written.evidence_path).unwrap())

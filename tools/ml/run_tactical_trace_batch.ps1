@@ -54,7 +54,7 @@ $OutputDir = Join-Path $RepoRoot $OutputRoot
 
 if ($Build -or -not (Test-Path -LiteralPath $DriverExe)) {
     Write-Host "building combat_search_v2_driver profile=$BuildProfile"
-    cargo build --profile $BuildProfile --bin combat_search_v2_driver
+    cargo build -p sts_simulator_control --profile $BuildProfile --bin combat_search_v2_driver
 }
 
 if ($CleanOutput -and (Test-Path -LiteralPath $OutputDir)) {

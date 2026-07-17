@@ -289,7 +289,7 @@ fn expected_cell_key(
 }
 
 fn resolve_panel_output_dir_v1(output_dir: &Path) -> Result<PathBuf, String> {
-    let repository_root = fs::canonicalize(env!("CARGO_MANIFEST_DIR"))
+    let repository_root = fs::canonicalize(crate::eval::repository_root())
         .map_err(|error| format!("failed to canonicalize repository root: {error}"))?;
     let artifact_root = fs::canonicalize(repository_root.join("artifacts").join("runs"))
         .map_err(|error| format!("failed to canonicalize artifact root: {error}"))?;

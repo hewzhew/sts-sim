@@ -89,11 +89,22 @@ fn no_potion_rollout(
             .no_potion_phase_profile_elapsed_us
             .saturating_add(phase_profile_started.elapsed().as_micros());
         pending_choice_progress.observe_boundary(phase_profile.pending_choice);
-        if phase_profile.pending_choice.high_fanout {
+        let search_owned_structured_choice = stepper.supports_canonical_pending_choice_actions()
+            && matches!(
+                &rollout.engine,
+                EngineState::PendingChoice(choice)
+                    if PendingChoiceActionFamily::from_choice(choice).is_some()
+            );
+        if phase_profile.pending_choice.high_fanout || search_owned_structured_choice {
+            let stop_reason = if phase_profile.pending_choice.high_fanout {
+                RolloutStopReason::HighFanoutPendingChoice
+            } else {
+                RolloutStopReason::StructuredPendingChoice
+            };
             return RolloutNodeEstimate::from_node(
                 &rollout,
                 actions_simulated,
-                RolloutStopReason::HighFanoutPendingChoice,
+                stop_reason,
                 last_action_reason,
                 pending_choice_progress,
             );
@@ -103,7 +114,7 @@ fn no_potion_rollout(
         let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
         let legal = filtered_rollout_legal_actions(
             policy,
-            stepper.legal_action_choices(&position),
+            stepper.atomic_action_choices(&position),
             &rollout.combat,
         );
         performance.no_potion_legal_actions_elapsed_us = performance

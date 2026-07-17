@@ -10,7 +10,7 @@ use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
-use crate::sim::combat_legal_actions::engine_local_moves;
+use crate::sim::combat_legal_actions::engine_atomic_actions;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLineSource};
 use super::combat_line_executor::{
@@ -244,7 +244,16 @@ pub(super) fn try_apply_smoke_bomb_survival_fallback_after_rejection(
     let Some(active) = session.active_combat.as_ref() else {
         return Ok(None);
     };
-    let smoke_input = engine_local_moves(&active.engine_state, &active.combat_state)
+    if !matches!(
+        active.engine_state,
+        crate::state::core::EngineState::CombatPlayerTurn
+    ) {
+        // Potions are not directly usable while a PendingChoice owns input.
+        // Avoid asking the legacy eager candidate surface to enumerate an
+        // unrelated combinatorial selection merely to look for Smoke Bomb.
+        return Ok(None);
+    }
+    let smoke_input = engine_atomic_actions(&active.engine_state, &active.combat_state)
         .into_iter()
         .find(|input| match input {
             crate::state::core::ClientInput::UsePotion { potion_index, .. } => active
@@ -288,13 +297,21 @@ fn verify_segment_trajectory_replays(
     let stepper = EngineCombatStepper;
     let mut position = start.clone();
     for action in actions {
+        let Some(candidate) = stepper.choice_for_legal_input(&position, &action.input) else {
+            return Err(format!(
+                "search-combat segment dry-run drift at step {}: expected {} ({})",
+                action.step_index,
+                action.action_key,
+                super::view_model::client_input_hint(&action.input)
+            ));
+        };
         let choices = filter_combat_search_legal_actions(
-            stepper.legal_action_choices(&position),
+            vec![candidate],
             config.potion_policy,
             &position.combat,
         );
         let Some(choice) = choices
-            .iter()
+            .into_iter()
             .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
         else {
             return Err(format!(

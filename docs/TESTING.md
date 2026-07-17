@@ -11,6 +11,21 @@ locally:
 If those answers are unclear, the test should be rewritten, moved to a better
 layer, or removed.
 
+## Test Compilation Boundaries
+
+Tests are deliberately split across real Cargo packages:
+
+- `cargo test-core <filter>` tests `sts_simulator` domain, engine, simulation,
+  and stable policy code;
+- `cargo test-control <filter>` tests combat search, evaluation, run-control,
+  branch runtime, and their shared contracts;
+- `cargo architecture <filter>` runs dependency-free source-boundary checks.
+
+Bare `cargo test --lib` addresses only the default core package and is not a
+complete repository check. Keep local unit tests beside their owning module;
+do not recreate the old monolithic harness with feature gates, and do not move
+private unit tests into many independently linked integration-test binaries.
+
 ## What Good Tests Protect
 
 Good tests protect one of these surfaces:

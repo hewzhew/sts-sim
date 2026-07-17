@@ -6,12 +6,13 @@ use super::child_frontier::enqueue_child_or_remember_leaf;
 use super::child_node::{build_child_node, BuiltChildNode};
 use super::child_preflight::{prepare_child_for_expansion, ChildPreflightOutcome};
 use super::child_rollout::child_rollout_estimate;
-use super::child_step::apply_child_step;
+use super::child_step::{apply_child_step, ChildStepOutcome};
 use super::loop_state::SearchLoopState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ChildExpansionOutcome {
-    Advanced,
+    Applied,
+    Skipped,
     DeadlineReached,
 }
 
@@ -42,18 +43,22 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         ChildPreflightOutcome::Continue {
             potion_tactical_priority,
         } => potion_tactical_priority,
-        ChildPreflightOutcome::Advanced => return ChildExpansionOutcome::Advanced,
+        ChildPreflightOutcome::Advanced => return ChildExpansionOutcome::Skipped,
         ChildPreflightOutcome::DeadlineReached => return ChildExpansionOutcome::DeadlineReached,
     };
 
-    let step = apply_child_step(
+    let step = match apply_child_step(
         loop_state,
         input.position,
         &input.ordered_choice.choice.input,
         input.stepper,
         input.config,
         input.deadline,
-    );
+    ) {
+        ChildStepOutcome::Stable(step) => step,
+        ChildStepOutcome::StepLimitReached => return ChildExpansionOutcome::Skipped,
+        ChildStepOutcome::DeadlineReached => return ChildExpansionOutcome::DeadlineReached,
+    };
 
     let child_bookkeeping_started = Instant::now();
     let BuiltChildNode {
@@ -82,7 +87,7 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
     if apply_child_dominance_gate(loop_state, turn_local_dominance, &child, truncated)
         == ChildDominanceOutcome::Pruned
     {
-        return ChildExpansionOutcome::Advanced;
+        return ChildExpansionOutcome::Applied;
     }
 
     child.rollout_estimate = child_rollout_estimate(
@@ -94,5 +99,5 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
     );
 
     enqueue_child_or_remember_leaf(loop_state, child, truncated);
-    ChildExpansionOutcome::Advanced
+    ChildExpansionOutcome::Applied
 }

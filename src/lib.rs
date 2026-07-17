@@ -15,9 +15,8 @@ mod semantics {
     }
 }
 
-// Integration layers around the runtime path.
+// Stable policy layers that sit directly on the simulator domain.
 pub mod ai;
-pub mod eval;
 mod testing;
 pub use testing::fixtures;
 pub use testing::support as test_support;
@@ -47,16 +46,6 @@ pub mod bot {
         pub mod monster_belief {
             pub use crate::ai::combat_belief::*;
         }
-
-        pub mod search_v2 {
-            pub use crate::ai::combat_search_v2::*;
-        }
-
-        pub mod search_v2_eval {
-            pub use crate::eval::combat_search_v2::*;
-        }
-
-        pub use crate::sim::combat_legal_actions::legal_moves_for_audit;
     }
 }
 

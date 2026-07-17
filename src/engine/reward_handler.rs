@@ -121,7 +121,7 @@ pub fn handle_overlay(
     handle_internal(run_state, reward_state, input, Some(return_state))
 }
 
-pub(crate) fn skip_card_reward_item(
+pub fn skip_card_reward_item(
     run_state: &mut RunState,
     reward_state: &mut RewardState,
     reward_index: usize,

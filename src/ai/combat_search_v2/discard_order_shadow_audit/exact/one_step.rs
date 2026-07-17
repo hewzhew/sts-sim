@@ -4,6 +4,8 @@ use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 use crate::sim::combat_action::CombatActionChoice;
 
 use super::super::super::frontier::SearchNode;
+use super::super::super::pending_choice_action_prefix::PendingChoiceActionFamily;
+use super::super::super::pending_choice_fanout::pending_choice_fanout;
 use super::super::super::plugins::CombatSearchPluginStack;
 use super::super::super::state_abstraction::StateDivergenceKind;
 use super::super::super::transition::filtered_legal_actions;
@@ -38,6 +40,20 @@ pub(super) fn audit_group_one_step(
         )
     {
         return None;
+    }
+
+    if combinatorial_pending_choice_owned(stepper, &left.node)
+        || combinatorial_pending_choice_owned(stepper, &right.node)
+    {
+        return Some(DiscardOrderShadowAuditExactGroupResult {
+            status: "skipped_combinatorial_pending_choice",
+            checked_actions: 0,
+            verified_actions: 0,
+            blocked_actions: 0,
+            blocking_action_key: None,
+            blocking_divergence_kind: None,
+            blocking_path: None,
+        });
     }
 
     let left_actions = legal_action_map(stepper, plugins, &left.node);
@@ -129,7 +145,7 @@ fn legal_action_map(
 ) -> BTreeMap<String, CombatActionChoice> {
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
     filtered_legal_actions(
-        stepper.legal_action_choices(&position),
+        stepper.atomic_action_choices(&position),
         plugins.potion.policy,
         &node.combat,
     )
@@ -177,13 +193,39 @@ fn one_step_effect(
     });
 
     let child_position = CombatPosition::new(child.engine.clone(), child.combat.clone());
-    let child_legal_count = filtered_legal_actions(
-        stepper.legal_action_choices(&child_position),
-        plugins.potion.policy,
-        &child.combat,
-    )
-    .len();
+    let child_legal_count = legal_action_count(stepper, plugins, &child, &child_position);
     Ok(effect_fingerprint(&child, child_legal_count))
+}
+
+fn combinatorial_pending_choice_owned(stepper: &impl CombatStepper, node: &SearchNode) -> bool {
+    if !stepper.supports_canonical_pending_choice_actions() {
+        return false;
+    }
+    let crate::state::core::EngineState::PendingChoice(choice) = &node.engine else {
+        return false;
+    };
+    PendingChoiceActionFamily::from_choice(choice).is_some()
+}
+
+fn legal_action_count(
+    stepper: &impl CombatStepper,
+    plugins: &CombatSearchPluginStack,
+    node: &SearchNode,
+    position: &CombatPosition,
+) -> usize {
+    if stepper.supports_canonical_pending_choice_actions() {
+        if let crate::state::core::EngineState::PendingChoice(choice) = &node.engine {
+            if PendingChoiceActionFamily::from_choice(choice).is_some() {
+                return pending_choice_fanout(choice).estimated_action_fanout;
+            }
+        }
+    }
+    filtered_legal_actions(
+        stepper.atomic_action_choices(position),
+        plugins.potion.policy,
+        &node.combat,
+    )
+    .len()
 }
 
 fn classify_pair(

@@ -4,6 +4,7 @@ use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
 use crate::content::cards::CardId;
 use crate::eval::combat_case::CombatCase;
 use crate::sim::combat::CombatTerminal;
+use crate::sim::combat_action_surface::CombatSelectionInputEncodingV2;
 use crate::state::core::ClientInput;
 
 use super::combat_case_adjudication::{
@@ -36,6 +37,16 @@ pub enum PersistentBurdenCutpointConclusionV1 {
     NoOneActionEscapeObserved,
     NoDirtyCandidateCutpoint,
     IncompleteDueToProbeFailures,
+    IncompleteDueToUnsupportedStructuredActionDomain,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PersistentBurdenCutpointActionDomainV1 {
+    AtomicActionsComplete,
+    UnsupportedStructuredActionDomain {
+        selection_input_encodings: Vec<CombatSelectionInputEncodingV2>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -75,6 +86,7 @@ pub struct PersistentBurdenCutpointAggregateV1 {
     pub living_enemy_plan_change_count: usize,
     pub neutral_count: usize,
     pub input_failure_count: usize,
+    pub unsupported_structured_action_domain_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -89,6 +101,7 @@ pub struct PersistentBurdenCutpointSummaryV1 {
     pub player_hp: i32,
     pub player_block: i32,
     pub enemy_hp: Vec<i32>,
+    pub action_domain: PersistentBurdenCutpointActionDomainV1,
     pub outcomes: Vec<PersistentBurdenCutpointInputOutcomeV1>,
 }
 
@@ -143,6 +156,8 @@ fn conclusion_from_aggregate(
         PersistentBurdenCutpointConclusionV1::CleanTerminalWinAvailable
     } else if aggregate.living_enemy_plan_change_count > 0 {
         PersistentBurdenCutpointConclusionV1::BurdenTriggerPlanChangeAvailable
+    } else if aggregate.unsupported_structured_action_domain_count > 0 {
+        PersistentBurdenCutpointConclusionV1::IncompleteDueToUnsupportedStructuredActionDomain
     } else if replay_failure_count > 0 || aggregate.input_failure_count > 0 {
         PersistentBurdenCutpointConclusionV1::IncompleteDueToProbeFailures
     } else {
@@ -154,22 +169,30 @@ fn aggregate_cutpoints(
     cutpoints: &[PersistentBurdenCutpointSummaryV1],
 ) -> PersistentBurdenCutpointAggregateV1 {
     let mut aggregate = PersistentBurdenCutpointAggregateV1::default();
-    for outcome in cutpoints.iter().flat_map(|cutpoint| &cutpoint.outcomes) {
-        match outcome.kind {
-            PersistentBurdenCutpointInputOutcomeKindV1::CleanCombatVictory => {
-                aggregate.clean_terminal_win_count += 1;
-            }
-            PersistentBurdenCutpointInputOutcomeKindV1::NewCurse => {
-                aggregate.burden_trigger_count += 1;
-            }
-            PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged => {
-                aggregate.living_enemy_plan_change_count += 1;
-            }
-            PersistentBurdenCutpointInputOutcomeKindV1::Neutral => {
-                aggregate.neutral_count += 1;
-            }
-            PersistentBurdenCutpointInputOutcomeKindV1::ApplyFailed => {
-                aggregate.input_failure_count += 1;
+    for cutpoint in cutpoints {
+        if matches!(
+            cutpoint.action_domain,
+            PersistentBurdenCutpointActionDomainV1::UnsupportedStructuredActionDomain { .. }
+        ) {
+            aggregate.unsupported_structured_action_domain_count += 1;
+        }
+        for outcome in &cutpoint.outcomes {
+            match outcome.kind {
+                PersistentBurdenCutpointInputOutcomeKindV1::CleanCombatVictory => {
+                    aggregate.clean_terminal_win_count += 1;
+                }
+                PersistentBurdenCutpointInputOutcomeKindV1::NewCurse => {
+                    aggregate.burden_trigger_count += 1;
+                }
+                PersistentBurdenCutpointInputOutcomeKindV1::LivingEnemyPlanChanged => {
+                    aggregate.living_enemy_plan_change_count += 1;
+                }
+                PersistentBurdenCutpointInputOutcomeKindV1::Neutral => {
+                    aggregate.neutral_count += 1;
+                }
+                PersistentBurdenCutpointInputOutcomeKindV1::ApplyFailed => {
+                    aggregate.input_failure_count += 1;
+                }
             }
         }
     }

@@ -32,6 +32,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
         progress: RolloutPendingChoiceProgress::default(),
         last_action_reason: None,
         estimate_override: None,
+        stalled_stop_reason: None,
     }];
 
     loop {
@@ -78,18 +79,17 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
 
         let mut next = Vec::new();
         let mut stalled = Vec::new();
-        let mut stalled_stop_reason = RolloutStopReason::NoLegalActions;
         for state in &beam {
             let mut progress = state.progress;
             let phase_profile = combat_search_phase_profile(&state.node.engine, &state.node.combat);
             progress.observe_boundary(phase_profile.pending_choice);
             if phase_profile.pending_choice.high_fanout {
-                stalled_stop_reason = RolloutStopReason::HighFanoutPendingChoice;
                 stalled.push(TurnBeamState {
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
                     estimate_override: None,
+                    stalled_stop_reason: Some(RolloutStopReason::HighFanoutPendingChoice),
                 });
                 continue;
             }
@@ -107,12 +107,12 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
                 estimate.actions_simulated = estimate.actions_simulated.saturating_add(simulated);
                 estimate.last_action_reason = Some(TURN_BEAM_BOUNDARY_FALLBACK_REASON);
                 merge_prior_pending_choice_progress(&mut estimate, state.progress);
-                stalled_stop_reason = estimate.stop_reason;
                 stalled.push(TurnBeamState {
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
                     estimate_override: Some(estimate),
+                    stalled_stop_reason: None,
                 });
                 continue;
             }
@@ -120,12 +120,12 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
             let remaining_actions = max_actions
                 .saturating_sub(state.node.actions.len().saturating_sub(root_action_count));
             if remaining_actions == 0 {
-                stalled_stop_reason = RolloutStopReason::MaxActions;
                 stalled.push(TurnBeamState {
                     node: state.node.clone(),
                     progress,
                     last_action_reason: state.last_action_reason,
                     estimate_override: None,
+                    stalled_stop_reason: Some(RolloutStopReason::MaxActions),
                 });
                 continue;
             }
@@ -149,12 +149,12 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
                     Some(TURN_BEAM_NO_PLAN_REASON),
                     progress,
                 );
-                stalled_stop_reason = RolloutStopReason::NoLegalActions;
                 stalled.push(TurnBeamState {
                     node: no_plan,
                     progress,
                     last_action_reason: Some(TURN_BEAM_NO_PLAN_REASON),
                     estimate_override: None,
+                    stalled_stop_reason: Some(RolloutStopReason::NoLegalActions),
                 });
             } else {
                 let before = next.len();
@@ -174,15 +174,16 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
                             progress,
                             last_action_reason: Some(TURN_BEAM_ACTION_REASON),
                             estimate_override: None,
+                            stalled_stop_reason: None,
                         }),
                 );
                 if next.len() == before {
-                    stalled_stop_reason = RolloutStopReason::MaxActions;
                     stalled.push(TurnBeamState {
                         node: state.node.clone(),
                         progress,
                         last_action_reason: state.last_action_reason,
                         estimate_override: None,
+                        stalled_stop_reason: Some(RolloutStopReason::MaxActions),
                     });
                 }
             }
@@ -190,8 +191,15 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
 
         if next.is_empty() {
             if !stalled.is_empty() {
+                debug_assert!(stalled.iter().all(|state| {
+                    state.estimate_override.is_some() || state.stalled_stop_reason.is_some()
+                }));
                 return finish_with_attribution(
-                    best_estimate(&stalled, root_action_count, stalled_stop_reason),
+                    best_estimate(
+                        &stalled,
+                        root_action_count,
+                        RolloutStopReason::NoLegalActions,
+                    ),
                     attribution,
                 );
             }

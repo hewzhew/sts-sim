@@ -4,6 +4,10 @@
 in `src/ai`, `src/eval`, `src/testing`, `src/state`, or another library module.
 One-off experiments should not grow long-lived binaries here.
 
+All binaries are Cargo targets of `sts_simulator_control`, even while their
+physical source paths remain under `src/bin`. Run or build them with
+`-p sts_simulator_control`.
+
 Use [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md) for command examples. This
 file only records binary ownership and boundaries.
 

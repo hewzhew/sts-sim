@@ -12,7 +12,10 @@ use crate::eval::campfire_survival_scenarios::{
 use crate::eval::combat_lab_v1::{atomic_write_json, CombatLabEnvironmentV1};
 use crate::runtime::branch::SourceIdentity;
 
-use super::{CampfireThreatPanelCellV1, ResolvedCampfireThreatPanelSpecV1};
+use super::{
+    CampfireThreatPanelCellV1, ResolvedCampfireThreatPanelSpecV1,
+    CAMPFIRE_THREAT_PANEL_CELL_SCHEMA_VERSION,
+};
 
 pub const CAMPFIRE_THREAT_PANEL_ARTIFACT_SCHEMA_VERSION: u32 = 1;
 
@@ -181,6 +184,7 @@ impl CampfireThreatPanelArtifactStoreV1 {
 
     pub fn append_cell(&mut self, cell: &CampfireThreatPanelCellV1) -> Result<(), String> {
         self.ensure_mutable()?;
+        validate_cell_schema_version(cell)?;
         if self.contains_cell(&cell.cell_key) {
             return Err(format!(
                 "duplicate Campfire threat panel cell key '{}'",
@@ -272,14 +276,47 @@ fn parse_cells(bytes: &[u8]) -> Result<Vec<CampfireThreatPanelCellV1>, String> {
         .split(|byte| *byte == b'\n')
         .enumerate()
         .map(|(index, line)| {
-            serde_json::from_slice(line).map_err(|error| {
+            #[derive(Deserialize)]
+            struct CellSchemaProbe {
+                schema_version: u32,
+            }
+            let probe: CellSchemaProbe = serde_json::from_slice(line).map_err(|error| {
                 format!(
                     "malformed Campfire threat panel journal entry at line {}: {error}",
                     index + 1
                 )
-            })
+            })?;
+            validate_cell_schema_version_value(probe.schema_version).map_err(|error| {
+                format!("Campfire threat panel journal line {}: {error}", index + 1)
+            })?;
+            let cell: CampfireThreatPanelCellV1 =
+                serde_json::from_slice(line).map_err(|error| {
+                    format!(
+                        "malformed Campfire threat panel journal entry at line {}: {error}",
+                        index + 1
+                    )
+                })?;
+            validate_cell_schema_version(&cell).map_err(|error| {
+                format!("Campfire threat panel journal line {}: {error}", index + 1)
+            })?;
+            Ok(cell)
         })
         .collect()
+}
+
+fn validate_cell_schema_version(cell: &CampfireThreatPanelCellV1) -> Result<(), String> {
+    validate_cell_schema_version_value(cell.schema_version)
+}
+
+fn validate_cell_schema_version_value(schema_version: u32) -> Result<(), String> {
+    if schema_version == CAMPFIRE_THREAT_PANEL_CELL_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(format!(
+            "unsupported Campfire threat panel cell schema_version {}; expected {} and legacy fingerprint cells cannot be resumed",
+            schema_version, CAMPFIRE_THREAT_PANEL_CELL_SCHEMA_VERSION
+        ))
+    }
 }
 
 fn truncate_partial_tail(path: &Path, valid_len: u64) -> Result<(), String> {

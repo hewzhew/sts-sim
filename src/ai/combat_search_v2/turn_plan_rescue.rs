@@ -43,6 +43,12 @@ pub fn find_combat_turn_plan_rescue_win_v0(
     per_plan_budget_ms: u64,
     max_hp_loss: Option<u32>,
 ) -> Option<CombatTurnPlanRescueWin> {
+    if !matches!(
+        start.engine,
+        crate::state::core::EngineState::CombatPlayerTurn
+    ) {
+        return None;
+    }
     let enumeration =
         enumerate_combat_search_v2_turn_plan_probe_candidates(&start.engine, &start.combat, config);
     let initial_hp = start.combat.entities.player.current_hp;
@@ -206,6 +212,36 @@ mod tests {
         );
         assert_eq!(actions[0].action_id, 41);
         assert_eq!(actions[1].action_id, 3);
+    }
+
+    #[test]
+    fn rescue_declines_pending_choice_owned_by_action_prefix_search() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.zones.draw_pile = (0..13)
+            .map(|index| {
+                crate::runtime::combat::CombatCard::new(
+                    crate::content::cards::CardId::Strike,
+                    1_000 + index,
+                )
+            })
+            .collect();
+        let start = CombatPosition::new(
+            crate::state::core::EngineState::PendingChoice(
+                crate::state::core::PendingChoice::ScrySelect {
+                    cards: vec![crate::content::cards::CardId::Strike; 13],
+                    card_uuids: (1_000..1_013).collect(),
+                },
+            ),
+            combat,
+        );
+
+        assert!(find_combat_turn_plan_rescue_win_v0(
+            &start,
+            &CombatSearchV2Config::default(),
+            10,
+            None,
+        )
+        .is_none());
     }
 
     fn trace(action_id: usize, input: ClientInput) -> CombatSearchV2ActionTrace {

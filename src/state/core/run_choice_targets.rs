@@ -27,7 +27,7 @@ pub(crate) fn run_pending_choice_allows_card(
     }
 }
 
-pub(crate) fn run_pending_choice_allows_card_for_run(
+pub fn run_pending_choice_allows_card_for_run(
     reason: &RunPendingChoiceReason,
     card: &crate::runtime::combat::CombatCard,
     run_state: &crate::state::run::RunState,
@@ -44,7 +44,7 @@ pub(crate) fn run_pending_choice_allows_card_for_run(
     }
 }
 
-pub(crate) fn master_deck_card_can_upgrade(card: &crate::runtime::combat::CombatCard) -> bool {
+pub fn master_deck_card_can_upgrade(card: &crate::runtime::combat::CombatCard) -> bool {
     let def = crate::content::cards::get_card_definition(card.id);
     card.id == CardId::SearingBlow
         || (card.upgrades == 0
@@ -52,14 +52,14 @@ pub(crate) fn master_deck_card_can_upgrade(card: &crate::runtime::combat::Combat
             && def.card_type != CardType::Curse)
 }
 
-pub(crate) fn master_deck_card_is_purgeable(card: &crate::runtime::combat::CombatCard) -> bool {
+pub fn master_deck_card_is_purgeable(card: &crate::runtime::combat::CombatCard) -> bool {
     !matches!(
         card.id,
         CardId::AscendersBane | CardId::CurseOfTheBell | CardId::Necronomicurse
     )
 }
 
-pub(crate) fn master_deck_card_is_bottled(
+pub fn master_deck_card_is_bottled(
     card: &crate::runtime::combat::CombatCard,
     relics: &[crate::content::relics::RelicState],
 ) -> bool {

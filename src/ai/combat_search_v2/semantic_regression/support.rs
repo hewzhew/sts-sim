@@ -30,7 +30,11 @@ pub(super) fn apply(position: &CombatPosition, input: ClientInput) -> CombatStep
 
 pub(super) fn legal_actions(position: &CombatPosition) -> Vec<ClientInput> {
     let stepper = EngineCombatStepper;
-    stepper.legal_actions(position)
+    stepper.atomic_actions(position)
+}
+
+pub(super) fn is_legal_action(position: &CombatPosition, input: &ClientInput) -> bool {
+    EngineCombatStepper.is_legal_action(position, input)
 }
 
 pub(super) fn assert_stable_player_turn(step: &CombatStepResult) {

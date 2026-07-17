@@ -6,6 +6,10 @@ use super::node_budget::{apply_node_budget_gate, NodeBudgetGateOutcome};
 use super::node_deferred_rollout::{apply_deferred_child_rollout, DeferredRolloutOutcome};
 use super::node_pruning::{apply_node_prune_gates, NodePruneOutcome};
 use super::node_terminal::{apply_node_terminal_gate, NodeTerminalOutcome};
+use super::pending_choice_expansion::{
+    start_pending_choice_transaction_if_owned, PendingChoiceTransactionOutcome,
+};
+use super::turn_boundary_expansion::{expand_turn_boundary_if_owned, TurnBoundaryExpansionOutcome};
 use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
 use super::turn_plan_seeding::seed_turn_plan_frontier;
 
@@ -32,6 +36,15 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
         NodeBudgetGateOutcome::Stop => return NodePreflightOutcome::Stop,
     };
 
+    let pre_expand_started = Instant::now();
+    let node = match start_pending_choice_transaction_if_owned(loop_state, node, input.config) {
+        PendingChoiceTransactionOutcome::NotApplicable(node) => node,
+        PendingChoiceTransactionOutcome::Handled => {
+            record_pre_expand_elapsed(loop_state, pre_expand_started);
+            return NodePreflightOutcome::Continue;
+        }
+    };
+
     let node = match apply_deferred_child_rollout(
         loop_state,
         node,
@@ -44,7 +57,6 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
         DeferredRolloutOutcome::Requeued => return NodePreflightOutcome::Continue,
     };
 
-    let pre_expand_started = Instant::now();
     let node = match apply_node_terminal_gate(loop_state, node, input.config) {
         NodeTerminalOutcome::Continue(node) => node,
         NodeTerminalOutcome::Skip => {
@@ -61,6 +73,25 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
     if apply_node_prune_gates(loop_state, &node, input.config) == NodePruneOutcome::Pruned {
         record_pre_expand_elapsed(loop_state, pre_expand_started);
         return NodePreflightOutcome::Continue;
+    }
+
+    match expand_turn_boundary_if_owned(
+        loop_state,
+        &node,
+        input.stepper,
+        input.config,
+        input.deadline,
+    ) {
+        TurnBoundaryExpansionOutcome::Handled => {
+            record_pre_expand_elapsed(loop_state, pre_expand_started);
+            return NodePreflightOutcome::Continue;
+        }
+        TurnBoundaryExpansionOutcome::Stop => {
+            record_pre_expand_elapsed(loop_state, pre_expand_started);
+            return NodePreflightOutcome::Stop;
+        }
+        TurnBoundaryExpansionOutcome::NotApplicable
+        | TurnBoundaryExpansionOutcome::AtomicFallback => {}
     }
 
     if should_seed_turn_plan_at_node(&node, input.config, &loop_state.plugins) {

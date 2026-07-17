@@ -30,6 +30,16 @@ pub(super) fn diagnosis_tags(
                 tags.push("node_budget_limited");
             }
         }
+        SearchCoverageStatus::ActionPrefixBudgetLimited => {
+            if frontier_remaining_states > 0 {
+                tags.push("action_prefix_budget_limited_with_open_frontier");
+            } else {
+                tags.push("action_prefix_budget_limited");
+            }
+        }
+        SearchCoverageStatus::ActionSurfaceIncomplete => {
+            tags.push("pending_choice_action_surface_incomplete")
+        }
         SearchCoverageStatus::TimeBudgetLimited => {
             if frontier_remaining_states > 0 {
                 tags.push("time_budget_limited_with_open_frontier");

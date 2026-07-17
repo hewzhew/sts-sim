@@ -141,6 +141,7 @@ pub(super) fn search_config(
         rollout_beam_width: options
             .rollout_beam_width
             .unwrap_or(defaults.rollout_beam_width),
+        expansion_policy: defaults.expansion_policy,
         turn_plan_policy: options
             .turn_plan_policy
             .unwrap_or(defaults.turn_plan_policy),

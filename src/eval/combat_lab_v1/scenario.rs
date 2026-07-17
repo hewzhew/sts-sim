@@ -1,7 +1,7 @@
 use blake2::{Blake2b512, Digest};
 use serde::{Deserialize, Serialize};
 
-use crate::eval::fingerprint::{combat_state_fingerprint_v1, StateFingerprintV1};
+use crate::eval::fingerprint::{combat_state_fingerprint_v2, StateFingerprintV2};
 use crate::fixtures::combat_start_spec::compile_combat_start_spec_with_rng_overrides;
 use crate::runtime::rng::{RngPool, StsRng};
 use crate::sim::combat::CombatPosition;
@@ -13,7 +13,7 @@ pub struct CombatLabCompiledSampleV1 {
     pub sample_index: u64,
     pub shuffle_seed: u64,
     pub start: CombatPosition,
-    pub state_fingerprint: StateFingerprintV1,
+    pub state_fingerprint: StateFingerprintV2,
     pub non_shuffle_rng_hash: String,
     pub shuffle_rng_hash: String,
     pub monster_snapshot_hash: String,
@@ -77,7 +77,7 @@ impl CombatLabScenarioCompilerV1 {
             return Err(invariant_error("monster_snapshot_hash"));
         }
         let shuffle_rng_hash = hash_serializable(&start.combat.rng.pool.shuffle_rng)?;
-        let state_fingerprint = combat_state_fingerprint_v1(&start);
+        let state_fingerprint = combat_state_fingerprint_v2(&start);
 
         Ok(CombatLabCompiledSampleV1 {
             sample_index,

@@ -9,13 +9,15 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::sim::combat::{CombatStepLimits, CombatTerminal};
+use crate::sim::combat::CombatStepLimits;
 
 use super::group::CombatScenarioGroupV1;
 use super::portfolio::{
     metric_summary, CombatScenarioActionPortfolioEvaluatorV1, CombatScenarioActionPortfolioMetricV1,
 };
-use super::step::{step_combat_scenario_group_v1, CombatScenarioStepResultV1};
+use super::step::{
+    step_combat_scenario_group_v1, CombatScenarioStepResultV1, CombatScenarioTerminalV1,
+};
 use super::types::{CombatPolicyInformationSetKeyV1, CombatPublicActionV1};
 
 pub const COMBAT_SCENARIO_BOUNDED_WIN_PROOF_SCHEMA_VERSION: u32 = 1;
@@ -207,7 +209,7 @@ impl BoundedWinSearch<'_> {
         let uses_potion = usize::from(matches!(action, CombatPublicActionV1::UsePotion { .. }));
         let mut outcomes = BTreeMap::new();
         for terminal in &stepped.terminal_outcomes {
-            if terminal.terminal != CombatTerminal::Win {
+            if terminal.terminal != CombatScenarioTerminalV1::Win {
                 return ActionProof::Refuted;
             }
             outcomes.insert(

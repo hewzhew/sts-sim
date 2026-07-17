@@ -2,7 +2,7 @@ use super::super::StableFrontierScope;
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct StableOutcomeKey {
+pub struct StableOutcomeKey {
     scope: StableFrontierScope,
     engine: StableEngineKey,
     payload: StableOutcomePayload,

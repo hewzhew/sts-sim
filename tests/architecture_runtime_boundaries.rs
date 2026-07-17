@@ -146,6 +146,131 @@ fn live_planner_boundary_capture_uses_only_public_typed_state() {
 }
 
 #[test]
+fn fingerprint_and_rendering_do_not_materialize_combinatorial_legal_actions() {
+    for path in [
+        "src/eval/fingerprint.rs",
+        "src/eval/combat_capture.rs",
+        "src/eval/run_control/render.rs",
+    ] {
+        let source = std::fs::read_to_string(path).expect("read bounded diagnostic source");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(&source);
+        for forbidden in [
+            "get_legal_moves",
+            "engine_local_moves",
+            "legal_moves_for_audit",
+            "canonical_pending_choice_inputs",
+        ] {
+            assert!(
+                !production.contains(forbidden),
+                "{path} must not materialize a combinatorial action surface through `{forbidden}`"
+            );
+        }
+    }
+
+    let surface = std::fs::read_to_string("src/sim/combat_action_surface.rs")
+        .expect("read symbolic action-surface owner");
+    let production = surface.split("#[cfg(test)]").next().unwrap_or(&surface);
+    for forbidden in [
+        "get_legal_moves",
+        "legal_moves_for_audit",
+        "canonical_pending_choice_inputs",
+        "extend_scry_moves",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "symbolic action-surface owner must not materialize choices through `{forbidden}`"
+        );
+    }
+
+    let candidates = std::fs::read_to_string("src/eval/run_control/view_model/candidates.rs")
+        .expect("read run-control candidate projector");
+    let pending_choice_projector = candidates
+        .split("fn pending_choice_candidates")
+        .nth(1)
+        .and_then(|tail| tail.split("fn selection_surface_note").next())
+        .expect("locate pending-choice candidate projector");
+    assert!(pending_choice_projector.contains("combat_legal_action_surface_v2"));
+    for forbidden in [
+        "get_legal_moves",
+        "engine_local_moves",
+        "legal_moves_for_audit",
+        "canonical_pending_choice_inputs",
+        "extend_scry_moves",
+    ] {
+        assert!(
+            !pending_choice_projector.contains(forbidden),
+            "pending-choice rendering must not fall back through `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn engine_action_domain_keeps_structured_selections_out_of_atomic_vectors() {
+    let actions = std::fs::read_to_string("src/sim/combat_legal_actions.rs")
+        .expect("read engine atomic-action owner");
+    let production = actions.split("#[cfg(test)]").next().unwrap_or(&actions);
+    for retired in [
+        "extend_hand_select_moves",
+        "extend_grid_select_moves",
+        "extend_scry_moves",
+        "collect_scry_index_combinations",
+        "selection_pool_cap",
+        "selection_generation_max",
+        "generate_ranked_combinations",
+        "collect_ranked_combinations",
+        "get_legal_moves",
+        "legal_moves_for_audit",
+    ] {
+        assert!(
+            !production.contains(retired),
+            "engine atomic-action owner must not restore eager helper `{retired}`"
+        );
+    }
+    assert!(production.contains("engine_atomic_actions"));
+    assert!(production.contains("combat_legal_action_surface_v2"));
+    assert!(production.contains("pending_choice_input_is_legal"));
+
+    let stepper = std::fs::read_to_string("src/sim/combat.rs").expect("read combat stepper");
+    let production = stepper.split("#[cfg(test)]").next().unwrap_or(&stepper);
+    assert!(production.contains("fn atomic_actions"));
+    assert!(production.contains("fn legal_action_surface"));
+    assert!(
+        !production.contains("fn legal_actions"),
+        "CombatStepper must not describe an atomic-only Vec as the complete legal action set"
+    );
+}
+
+#[test]
+fn run_control_combat_membership_delegates_to_the_simulator_owner() {
+    let selection = std::fs::read_to_string("src/eval/run_control/selection_surface.rs")
+        .expect("read run-control selection surface");
+    let production = selection.split("#[cfg(test)]").next().unwrap_or(&selection);
+    assert!(production.contains("pending_choice_input_is_legal"));
+    for duplicate in [
+        "uuid_selection_is_allowed",
+        "validate_indices_in_range",
+        "reject_duplicate_indices",
+        "hand_contains_all",
+        "grid_source_contains_all",
+        "pile_contains_all",
+    ] {
+        assert!(
+            !production.contains(duplicate),
+            "run control must not restore duplicate combat membership helper `{duplicate}`"
+        );
+    }
+
+    let input_gate = std::fs::read_to_string("src/eval/run_control/input_gate.rs")
+        .expect("read run-control input gate");
+    let production = input_gate
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or(&input_gate);
+    assert!(production.contains("is_legal_move"));
+    assert!(!production.contains("get_legal_moves"));
+}
+
+#[test]
 fn visible_input_candidates_execute_as_atomic_decision_transactions() {
     let transaction = std::fs::read_to_string("src/eval/run_control/decision_transaction.rs")
         .expect("read decision transaction contract");
@@ -694,6 +819,63 @@ fn public_scenario_policy_bank_does_not_depend_on_legacy_search_or_rollout() {
                 path.display()
             );
         }
+    }
+}
+
+#[test]
+fn turn_option_widening_schedule_sees_only_public_policy_state() {
+    let source = std::fs::read_to_string("src/ai/combat_policy_v1/turn_option_schedule.rs")
+        .expect("read public turn-option widening schedule");
+
+    for forbidden in [
+        "CombatScenarioGroupV1",
+        "CombatScenarioParticleV1",
+        "CombatScenarioStepResultV1",
+        "CombatPosition",
+        "ClientInput",
+        "scenario_id",
+        "bind_action",
+        "exact_inputs",
+        "step_combat_scenario_group_v1",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "turn-option widening schedule must not depend on exact transition detail `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn turn_option_observable_effect_uses_only_public_candidate_evidence() {
+    let source = std::fs::read_to_string("src/ai/combat_policy_v1/turn_option_effect.rs")
+        .expect("read public turn-option observable effect");
+
+    for forbidden in [
+        "CombatScenarioGroupV1",
+        "CombatScenarioParticleV1",
+        "CombatScenarioStepResultV1",
+        "CombatScenarioStepViewV1",
+        "CombatPosition",
+        "CombatStepResult",
+        "ClientInput",
+        "scenario_id",
+        "bind_action",
+        "exact_inputs",
+        "step_combat_scenario_group_v1",
+        "terminal_outcomes",
+        "retained_step",
+        "worlds",
+        "public_history_id",
+        "candidate.action",
+        "engine_steps",
+        "Deserialize",
+        "crate::runtime",
+        "crate::sim",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "observable-effect evidence must not depend on unchecked input or exact transition detail `{forbidden}`"
+        );
     }
 }
 

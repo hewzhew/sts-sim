@@ -113,9 +113,12 @@ pub(super) fn priority_for_play_card(
         (visible_damage - current_block - block - effects.direct.visible_attack_mitigation_hint)
             .max(0)
             .saturating_add(effects.reactive.player_hp_loss);
-    let prevents_visible_lethal =
-        visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
-    let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
+    let guardian_mode_shift_interrupts_visible_attack =
+        visible_damage > 0 && phase_transition.guardian_mode_shift_trigger_count > 0;
+    let prevents_visible_lethal = visible_loss_now >= current_hp
+        && (visible_loss_after_block < current_hp || guardian_mode_shift_interrupts_visible_attack);
+    let prevents_hp_loss = visible_loss_after_block < visible_loss_now
+        || guardian_mode_shift_interrupts_visible_attack;
     let key_setup_card = plugins.action_prior.prioritizes_key_card_online()
         && key_setup_card_online_candidate(card.id, card.upgrades);
     let (role, role_rank) = if target_lethal {
