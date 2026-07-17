@@ -4,8 +4,8 @@ use std::time::Instant;
 use sts_core::sim::combat::CombatStepper;
 
 use super::evidence::{
-    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption,
-    ContinuationUnavailable, OptionProspect, OptionProspectId,
+    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
+    ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
 use super::replay::replay_turn_option_observed;
 use super::{
@@ -52,7 +52,8 @@ impl CombatPlannerAgendaQuantum {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CombatPlannerAgendaCounters {
     pub agenda_items: usize,
-    pub option_generation_work: usize,
+    pub root_generation_work: usize,
+    pub continuation_generation_work: usize,
     pub boundary_witness_replays: usize,
     pub engine_steps: usize,
 }
@@ -60,7 +61,7 @@ pub struct CombatPlannerAgendaCounters {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CombatPlannerAgendaBudget {
     pub agenda_items: usize,
-    pub option_generation_work: usize,
+    pub generation_work: usize,
     pub engine_steps: usize,
 }
 
@@ -70,8 +71,8 @@ impl CombatPlannerAgendaBudget {
             agenda_items: self
                 .agenda_items
                 .saturating_add(quantum.additional_agenda_items),
-            option_generation_work: self
-                .option_generation_work
+            generation_work: self
+                .generation_work
                 .saturating_add(quantum.additional_generation_work),
             engine_steps: self
                 .engine_steps
@@ -90,9 +91,10 @@ pub enum CombatPlannerAgendaInterruption {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CombatPlannerAgendaStatus {
-    ImmediateEvidenceComplete,
+    EvidenceComplete,
     Partial(CombatPlannerAgendaInterruption),
     PartialWithGenerationGaps,
+    PartialWithContinuationGaps,
     PartialWithVerificationGaps,
 }
 
@@ -111,6 +113,7 @@ pub struct CombatPlannerAgendaReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AgendaItem {
     DiscoverTurnOption,
+    ExtendOneTurn(OptionProspectId),
     VerifyBoundaryWitness(OptionProspectId),
 }
 
@@ -120,6 +123,7 @@ pub struct CombatPlannerAgendaSession {
     config: CombatPlannerAgendaConfig,
     agenda: VecDeque<AgendaItem>,
     prospects: Vec<OptionProspect>,
+    continuations: Vec<Option<TurnOptionGeneratorSession>>,
     synced_options: usize,
     granted: CombatPlannerAgendaBudget,
     committed_generation_work: usize,
@@ -127,6 +131,8 @@ pub struct CombatPlannerAgendaSession {
     agenda_items_used: usize,
     witness_replays: usize,
     witness_engine_steps: usize,
+    continuation_generation_work: usize,
+    continuation_engine_steps: usize,
 }
 
 impl CombatPlannerAgendaSession {
@@ -138,6 +144,7 @@ impl CombatPlannerAgendaSession {
             config,
             agenda: VecDeque::from([AgendaItem::DiscoverTurnOption]),
             prospects: Vec::new(),
+            continuations: Vec::new(),
             synced_options: 0,
             granted: CombatPlannerAgendaBudget::default(),
             committed_generation_work: 0,
@@ -145,6 +152,8 @@ impl CombatPlannerAgendaSession {
             agenda_items_used: 0,
             witness_replays: 0,
             witness_engine_steps: 0,
+            continuation_generation_work: 0,
+            continuation_engine_steps: 0,
         }
     }
 
@@ -160,10 +169,12 @@ impl CombatPlannerAgendaSession {
         let generation = self.generator.counters();
         CombatPlannerAgendaCounters {
             agenda_items: self.agenda_items_used,
-            option_generation_work: generation.generation_work,
+            root_generation_work: generation.generation_work,
+            continuation_generation_work: self.continuation_generation_work,
             boundary_witness_replays: self.witness_replays,
             engine_steps: generation
                 .engine_steps
+                .saturating_add(self.continuation_engine_steps)
                 .saturating_add(self.witness_engine_steps),
         }
     }
@@ -191,7 +202,7 @@ impl CombatPlannerAgendaSession {
                 AgendaItem::DiscoverTurnOption => {
                     let remaining_generation = self
                         .granted
-                        .option_generation_work
+                        .generation_work
                         .saturating_sub(self.committed_generation_work);
                     let generator_granted = self.generator.granted_budget();
                     let generator_used = self.generator.counters();
@@ -244,7 +255,9 @@ impl CombatPlannerAgendaSession {
                             .committed_engine_steps
                             .saturating_sub(released.engine_steps);
                     } else {
-                        self.agenda.push_back(AgendaItem::DiscoverTurnOption);
+                        // Comparable continuation evidence is meaningful only after every
+                        // complete option at this decision root has had a chance to exist.
+                        self.agenda.push_front(AgendaItem::DiscoverTurnOption);
                     }
 
                     match generation_report.status {
@@ -265,7 +278,125 @@ impl CombatPlannerAgendaSession {
                             GenerationInterruption::GenerationWorkBudget,
                         ) if self
                             .granted
-                            .option_generation_work
+                            .generation_work
+                            .saturating_sub(self.committed_generation_work)
+                            == 0 =>
+                        {
+                            break Some(CombatPlannerAgendaInterruption::GenerationWorkBudget);
+                        }
+                        _ => {}
+                    }
+                }
+                AgendaItem::ExtendOneTurn(id) => {
+                    let index = id.0 as usize;
+                    let mut generator = self.continuations[index]
+                        .take()
+                        .expect("scheduled continuation keeps its generator");
+                    let remaining_generation = self
+                        .granted
+                        .generation_work
+                        .saturating_sub(self.committed_generation_work);
+                    let remaining_engine = self
+                        .granted
+                        .engine_steps
+                        .saturating_sub(self.committed_engine_steps);
+                    let Some(grant) = subgenerator_grant(
+                        &generator,
+                        self.config,
+                        remaining_generation,
+                        remaining_engine,
+                        quantum.deadline,
+                    ) else {
+                        self.continuations[index] = Some(generator);
+                        self.prospect_mut(id)
+                            .set_continuation(ContinuationEvidence::Interrupted(
+                                ContinuationInterruption::GenerationWorkBudget,
+                            ));
+                        self.agenda.push_front(item);
+                        break Some(CombatPlannerAgendaInterruption::GenerationWorkBudget);
+                    };
+                    self.committed_generation_work = self
+                        .committed_generation_work
+                        .saturating_add(grant.additional_generation_work);
+                    self.committed_engine_steps = self
+                        .committed_engine_steps
+                        .saturating_add(grant.additional_engine_steps);
+                    self.agenda_items_used = self.agenda_items_used.saturating_add(1);
+                    let before_continuation = generator.counters();
+                    let continuation_report = generator.advance(stepper, grant);
+                    let after_continuation = generator.counters();
+                    self.continuation_generation_work =
+                        self.continuation_generation_work.saturating_add(
+                            after_continuation
+                                .generation_work
+                                .saturating_sub(before_continuation.generation_work),
+                        );
+                    self.continuation_engine_steps = self.continuation_engine_steps.saturating_add(
+                        after_continuation
+                            .engine_steps
+                            .saturating_sub(before_continuation.engine_steps),
+                    );
+
+                    if generator.is_finished() {
+                        let released = generator.release_unused_grant();
+                        self.committed_generation_work = self
+                            .committed_generation_work
+                            .saturating_sub(released.generation_work);
+                        self.committed_engine_steps = self
+                            .committed_engine_steps
+                            .saturating_sub(released.engine_steps);
+                        let work = generator.counters();
+                        let complete_options = generator.completed_options().to_vec();
+                        if generator.gaps().is_empty() {
+                            self.prospect_mut(id).set_continuation(
+                                ContinuationEvidence::ExactHorizon(ExactHorizonEvidence {
+                                    turn_boundaries: 1,
+                                    complete_options,
+                                    work,
+                                }),
+                            );
+                        } else {
+                            self.prospect_mut(id).set_continuation(
+                                ContinuationEvidence::ExactHorizonGenerationGap(
+                                    ExactHorizonGenerationGapEvidence {
+                                        requested_turn_boundaries: 1,
+                                        complete_options,
+                                        gaps: generator.gaps().to_vec(),
+                                        work,
+                                    },
+                                ),
+                            );
+                        }
+                    } else {
+                        let interruption = match continuation_report.status {
+                            TurnOptionGenerationStatus::Partial(
+                                GenerationInterruption::EngineStepBudget,
+                            ) => ContinuationInterruption::EngineStepBudget,
+                            TurnOptionGenerationStatus::Partial(
+                                GenerationInterruption::Deadline,
+                            ) => ContinuationInterruption::Deadline,
+                            _ => ContinuationInterruption::GenerationWorkBudget,
+                        };
+                        self.prospect_mut(id)
+                            .set_continuation(ContinuationEvidence::Interrupted(interruption));
+                        self.continuations[index] = Some(generator);
+                        self.agenda.push_back(item);
+                    }
+
+                    match continuation_report.status {
+                        TurnOptionGenerationStatus::Partial(GenerationInterruption::Deadline) => {
+                            break Some(CombatPlannerAgendaInterruption::Deadline);
+                        }
+                        TurnOptionGenerationStatus::Partial(
+                            GenerationInterruption::EngineStepBudget,
+                        ) => {
+                            break Some(CombatPlannerAgendaInterruption::EngineStepBudget);
+                        }
+                        TurnOptionGenerationStatus::Partial(
+                            GenerationInterruption::GenerationWorkBudget,
+                        ) if self
+                            .granted
+                            .generation_work
                             .saturating_sub(self.committed_generation_work)
                             == 0 =>
                         {
@@ -351,19 +482,25 @@ impl CombatPlannerAgendaSession {
 
         let status = if let Some(cause) = interruption {
             CombatPlannerAgendaStatus::Partial(cause)
-        } else if self.generator.gaps().is_empty() {
-            if self.prospects.iter().any(|prospect| {
-                matches!(
-                    prospect.continuation(),
-                    ContinuationEvidence::VerificationFailed(_)
-                )
-            }) {
-                CombatPlannerAgendaStatus::PartialWithVerificationGaps
-            } else {
-                CombatPlannerAgendaStatus::ImmediateEvidenceComplete
-            }
-        } else {
+        } else if !self.generator.gaps().is_empty() {
             CombatPlannerAgendaStatus::PartialWithGenerationGaps
+        } else if self.prospects.iter().any(|prospect| {
+            matches!(
+                prospect.continuation(),
+                ContinuationEvidence::ExactHorizonGenerationGap(_)
+                    | ContinuationEvidence::ConstructionFailed(_)
+            )
+        }) {
+            CombatPlannerAgendaStatus::PartialWithContinuationGaps
+        } else if self.prospects.iter().any(|prospect| {
+            matches!(
+                prospect.continuation(),
+                ContinuationEvidence::VerificationFailed(_)
+            )
+        }) {
+            CombatPlannerAgendaStatus::PartialWithVerificationGaps
+        } else {
+            CombatPlannerAgendaStatus::EvidenceComplete
         };
         CombatPlannerAgendaReport {
             before,
@@ -383,19 +520,29 @@ impl CombatPlannerAgendaSession {
             let id = OptionProspectId(u64::try_from(self.prospects.len()).unwrap_or(u64::MAX));
             let immediate = ExactImmediateOptionProspect::from_option(&self.root, &option)
                 .expect("generator option belongs to the agenda root");
-            let continuation = match option.boundary() {
+            let (continuation, continuation_generator) = match option.boundary() {
                 CompleteTurnOptionBoundary::TerminalWin
                 | CompleteTurnOptionBoundary::TerminalLoss
                 | CompleteTurnOptionBoundary::Escape => {
                     self.agenda.push_back(AgendaItem::VerifyBoundaryWitness(id));
-                    ContinuationEvidence::PendingBoundaryVerification
+                    (ContinuationEvidence::PendingBoundaryVerification, None)
                 }
-                CompleteTurnOptionBoundary::NextPlayerTurn => ContinuationEvidence::Unavailable(
-                    ContinuationUnavailable::FutureTurnPlanningNotStarted,
-                ),
+                CompleteTurnOptionBoundary::NextPlayerTurn => {
+                    match CombatDecisionRoot::new(option.exact_successor().clone()) {
+                        Ok(root) => {
+                            self.agenda.push_back(AgendaItem::ExtendOneTurn(id));
+                            (
+                                ContinuationEvidence::PendingContinuationRefinement,
+                                Some(TurnOptionGeneratorSession::new(root, self.config.generator)),
+                            )
+                        }
+                        Err(error) => (ContinuationEvidence::ConstructionFailed(error), None),
+                    }
+                }
             };
             self.prospects
                 .push(OptionProspect::new(id, option, immediate, continuation));
+            self.continuations.push(continuation_generator);
             self.synced_options = self.synced_options.saturating_add(1);
         }
     }
@@ -411,4 +558,35 @@ impl CombatPlannerAgendaSession {
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+fn subgenerator_grant(
+    generator: &TurnOptionGeneratorSession,
+    config: CombatPlannerAgendaConfig,
+    remaining_generation: usize,
+    remaining_engine: usize,
+    deadline: Option<Instant>,
+) -> Option<CombatPlanningQuantum> {
+    let granted = generator.granted_budget();
+    let used = generator.counters();
+    let available_generation = granted.generation_work.saturating_sub(used.generation_work);
+    let generation_grant = config
+        .generation_work_per_item
+        .max(1)
+        .saturating_sub(available_generation)
+        .min(remaining_generation);
+    if available_generation.saturating_add(generation_grant) == 0 {
+        return None;
+    }
+    let available_engine = granted.engine_steps.saturating_sub(used.engine_steps);
+    let transition_reservation = config.generator.max_engine_steps_per_transition.max(1);
+    let required_engine = transition_reservation.saturating_sub(available_engine);
+    let engine_grant = (remaining_engine >= required_engine)
+        .then_some(required_engine)
+        .unwrap_or(0);
+    Some(CombatPlanningQuantum {
+        additional_generation_work: generation_grant,
+        additional_engine_steps: engine_grant,
+        deadline,
+    })
 }

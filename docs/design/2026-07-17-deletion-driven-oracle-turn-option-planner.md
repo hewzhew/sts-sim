@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted architecture direction; Slice 1 exact turn-option core is in progress.
+Accepted architecture direction. Slice 1 exact turn-option generation and replay
+are complete. Slice 2 now has a resumable evidence agenda, terminal-witness
+verification, and one exact future-turn refinement; comparator and decision
+result remain to be implemented before production cutover.
 
 This contract defines the production replacement for `combat_search_v2`. It
 does not define another search profile, rescue path, diagnostic lane, or
@@ -333,6 +336,12 @@ Add the computation agenda, future-turn continuation refinement, exact witness
 verification, one comparator, and one decision result. Demonstrate that a
 single decision and an equivalent sequence of work quanta retain the same
 evidence and selected option.
+
+Root discovery has priority over continuation refinement: the agenda first
+finishes enumerating complete options at the current decision root, then gives
+their continuations comparable exact horizon work. This prevents the successor
+from recreating the outgoing search's failure mode where one early lineage
+consumes the budget before sibling options exist.
 
 The first comparator may use a documented finite-horizon criterion, but its
 unresolved continuation remains explicit. Existing rollout or bucket scores

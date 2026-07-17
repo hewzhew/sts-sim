@@ -8,7 +8,7 @@ fn agenda_config() -> CombatPlannerAgendaConfig {
 }
 
 #[test]
-fn verifies_terminal_witness_without_promoting_unavailable_continuations() {
+fn verifies_terminal_witness_and_builds_one_turn_exact_horizon() {
     let stepper = TinyTurnStepper::lethal();
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
 
@@ -17,10 +17,7 @@ fn verifies_terminal_witness_without_promoting_unavailable_continuations() {
         CombatPlannerAgendaQuantum::deterministic(100, 100, 100),
     );
 
-    assert_eq!(
-        report.status,
-        CombatPlannerAgendaStatus::ImmediateEvidenceComplete
-    );
+    assert_eq!(report.status, CombatPlannerAgendaStatus::EvidenceComplete);
     assert_eq!(session.prospects().len(), 2);
     let terminal = session
         .prospects()
@@ -39,15 +36,16 @@ fn verifies_terminal_witness_without_promoting_unavailable_continuations() {
         .iter()
         .find(|prospect| prospect.option().boundary() == CompleteTurnOptionBoundary::NextPlayerTurn)
         .unwrap();
-    assert_eq!(
-        next_turn.continuation(),
-        &ContinuationEvidence::Unavailable(ContinuationUnavailable::FutureTurnPlanningNotStarted)
-    );
+    let ContinuationEvidence::ExactHorizon(horizon) = next_turn.continuation() else {
+        panic!("next-turn prospect should carry an exact one-turn horizon");
+    };
+    assert_eq!(horizon.turn_boundaries, 1);
+    assert_eq!(horizon.complete_options.len(), 2);
     assert_eq!(report.after.boundary_witness_replays, 1);
 }
 
 #[test]
-fn engine_budget_interruption_retains_terminal_verification_work() {
+fn engine_budget_interruption_retains_verified_terminal_while_continuation_waits() {
     let stepper = TinyTurnStepper::lethal();
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
 
@@ -64,8 +62,17 @@ fn engine_budget_interruption_retains_terminal_verification_work() {
         .iter()
         .find(|prospect| prospect.option().boundary() == CompleteTurnOptionBoundary::TerminalWin)
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         terminal.continuation(),
+        ContinuationEvidence::VerifiedBoundary(_)
+    ));
+    let next_turn = session
+        .prospects()
+        .iter()
+        .find(|prospect| prospect.option().boundary() == CompleteTurnOptionBoundary::NextPlayerTurn)
+        .unwrap();
+    assert_eq!(
+        next_turn.continuation(),
         &ContinuationEvidence::Interrupted(ContinuationInterruption::EngineStepBudget)
     );
 
@@ -75,7 +82,7 @@ fn engine_budget_interruption_retains_terminal_verification_work() {
     );
     assert_eq!(
         resumed.status,
-        CombatPlannerAgendaStatus::ImmediateEvidenceComplete
+        CombatPlannerAgendaStatus::Partial(CombatPlannerAgendaInterruption::EngineStepBudget)
     );
     assert!(matches!(
         session
@@ -88,6 +95,47 @@ fn engine_budget_interruption_retains_terminal_verification_work() {
             .continuation(),
         ContinuationEvidence::VerifiedBoundary(_)
     ));
+    assert_eq!(resumed.after.boundary_witness_replays, 1);
+
+    let completed = session.advance(
+        &stepper,
+        CombatPlannerAgendaQuantum::deterministic(100, 100, 100),
+    );
+    assert_eq!(
+        completed.status,
+        CombatPlannerAgendaStatus::EvidenceComplete
+    );
+}
+
+#[test]
+fn completes_root_discovery_before_spending_on_continuations() {
+    let stepper = TinyTurnStepper::plain();
+    let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
+
+    let report = session.advance(
+        &stepper,
+        CombatPlannerAgendaQuantum::deterministic(6, 100, 100),
+    );
+
+    assert_eq!(
+        report.status,
+        CombatPlannerAgendaStatus::Partial(CombatPlannerAgendaInterruption::AgendaItemBudget)
+    );
+    assert_eq!(report.after.continuation_generation_work, 0);
+    assert!(!session.prospects().is_empty());
+    assert!(session.prospects().iter().all(|prospect| matches!(
+        prospect.continuation(),
+        ContinuationEvidence::PendingContinuationRefinement
+    )));
+
+    let completed = session.advance(
+        &stepper,
+        CombatPlannerAgendaQuantum::deterministic(100, 100, 100),
+    );
+    assert_eq!(
+        completed.status,
+        CombatPlannerAgendaStatus::EvidenceComplete
+    );
 }
 
 #[test]
@@ -126,6 +174,6 @@ fn split_quanta_retain_the_same_evidence_without_replaying_generation() {
     assert_eq!(split_report.status, one_shot_report.status);
     assert_eq!(split_report.after, one_shot_report.after);
     assert_eq!(evidence(&split), evidence(&one_shot));
-    assert_eq!(split_stepper.call_count(&PLAY), 2);
-    assert_eq!(split_stepper.call_count(&ClientInput::EndTurn), 1);
+    assert_eq!(split_stepper.call_count(&PLAY), 3);
+    assert_eq!(split_stepper.call_count(&ClientInput::EndTurn), 2);
 }

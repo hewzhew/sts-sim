@@ -20,8 +20,8 @@ pub use agenda::{
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
 };
 pub use evidence::{
-    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption,
-    ContinuationUnavailable, OptionProspect, OptionProspectId,
+    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
+    ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
 pub use generator::TurnOptionGeneratorSession;
 pub use prospect::{

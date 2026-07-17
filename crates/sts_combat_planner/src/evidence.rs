@@ -1,5 +1,6 @@
 use super::{
-    CompleteTurnOption, CompleteTurnOptionBoundary, ExactImmediateOptionProspect, ReplayError,
+    CombatDecisionRootError, CombatPlanningCounters, CompleteTurnOption,
+    CompleteTurnOptionBoundary, ExactImmediateOptionProspect, ReplayError, TurnOptionGenerationGap,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -49,12 +50,15 @@ impl OptionProspect {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ContinuationEvidence {
     PendingBoundaryVerification,
+    PendingContinuationRefinement,
     VerifiedBoundary(BoundaryWitnessEvidence),
-    Unavailable(ContinuationUnavailable),
+    ExactHorizon(ExactHorizonEvidence),
+    ExactHorizonGenerationGap(ExactHorizonGenerationGapEvidence),
     Interrupted(ContinuationInterruption),
+    ConstructionFailed(CombatDecisionRootError),
     VerificationFailed(ReplayError),
 }
 
@@ -66,12 +70,23 @@ pub struct BoundaryWitnessEvidence {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ContinuationUnavailable {
-    FutureTurnPlanningNotStarted,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContinuationInterruption {
+    GenerationWorkBudget,
     EngineStepBudget,
     Deadline,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExactHorizonEvidence {
+    pub turn_boundaries: u16,
+    pub complete_options: Vec<CompleteTurnOption>,
+    pub work: CombatPlanningCounters,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExactHorizonGenerationGapEvidence {
+    pub requested_turn_boundaries: u16,
+    pub complete_options: Vec<CompleteTurnOption>,
+    pub gaps: Vec<TurnOptionGenerationGap>,
+    pub work: CombatPlanningCounters,
 }

@@ -110,7 +110,7 @@ pub enum CompleteTurnOptionBoundary {
     Escape,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompleteTurnOption {
     root_exact_state_hash: String,
     actions: Vec<TurnOptionAction>,
