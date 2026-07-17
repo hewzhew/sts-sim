@@ -10,7 +10,7 @@ use super::combat_search_report::{
 };
 use super::combat_search_session_output::CombatSearchSessionOutput;
 use super::combat_search_session_plan::{
-    canonical_combat_search_session_plan, CombatSearchSessionPlan, CombatSearchStakes,
+    canonical_combat_search_session_plan, CombatSearchSessionPlan,
 };
 use super::combat_search_session_result::{combat_search_result, CombatSearchSessionResult};
 use super::combat_search_survival::owner_audit_hp_loss_limit;
@@ -22,22 +22,6 @@ pub(super) fn run_combat_search_session_step(
     args: Args,
 ) -> Result<CombatSearchSessionResult, String> {
     let plan = canonical_combat_search_session_plan(session, args);
-    if plan.combat_budget_capped(args) {
-        let status = combat_budget_capped_status(plan.stakes, args);
-        let report = session_report(
-            &plan,
-            status.clone(),
-            Vec::new(),
-            None,
-            false,
-            "outer_budget_cap",
-        );
-        return Ok(combat_search_result(
-            status,
-            Some(report),
-            CombatSearchSessionOutput::default(),
-        ));
-    }
     if plan.should_checkpoint_before_search(args) {
         let status = awaiting_auto_boundary(
             "Combat",
@@ -244,26 +228,6 @@ fn search_status(session: &RunControlSession, outcome: &RunProgressOutcome) -> B
         BranchStatus::Terminal(outcome)
     } else {
         boundary_router::classify_auto_outcome(session, outcome)
-    }
-}
-
-fn combat_budget_capped_status(stakes: CombatSearchStakes, args: Args) -> BranchStatus {
-    if stakes == CombatSearchStakes::Boss {
-        awaiting_auto_boundary(
-            "Combat",
-            format!(
-                "outer wall budget would cap canonical combat search; initial={}ms refinement={}ms",
-                args.search_ms, args.boss_search_ms
-            ),
-        )
-    } else {
-        BranchStatus::BudgetGap {
-            boundary: "Combat".to_string(),
-            reason: format!(
-                "outer wall budget capped canonical combat search; initial={}ms refinement={}ms",
-                args.search_ms, args.rescue_search_ms
-            ),
-        }
     }
 }
 

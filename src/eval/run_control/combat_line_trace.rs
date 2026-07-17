@@ -347,6 +347,8 @@ fn combat_search_performance_snapshot(
         nodes_to_first_win: report.stats.nodes_to_first_win,
         deadline_hit: report.stats.deadline_hit,
         node_budget_hit: report.stats.node_budget_hit,
+        quantum_history: report.quantum_history.clone(),
+        final_root_evidence: Some(report.final_root_evidence.clone()),
         nodes_expanded: report.stats.nodes_expanded,
         nodes_generated: report.stats.nodes_generated,
         terminal_wins: report.stats.terminal_wins,
@@ -622,6 +624,11 @@ mod tests {
 
         assert_eq!(snapshot.best_hp_loss, Some(15));
         assert_eq!(snapshot.nodes_expanded, report.stats.nodes_expanded);
+        assert_eq!(snapshot.quantum_history, report.quantum_history);
+        assert_eq!(
+            snapshot.final_root_evidence.as_ref(),
+            Some(&report.final_root_evidence)
+        );
     }
 
     #[test]

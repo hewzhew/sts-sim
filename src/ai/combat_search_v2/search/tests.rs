@@ -73,6 +73,14 @@ fn production_search_steps_only_completed_scry_prefixes() {
     assert_eq!(report.stats.nodes_generated, 8);
     assert!(!report.stats.action_prefix_budget_hit);
     assert!(report.stats.action_surface_incomplete);
+    assert_eq!(
+        report.final_root_evidence.closure_status,
+        CombatSearchV2RootClosureStatus::NotProven
+    );
+    assert!(report
+        .final_root_evidence
+        .closure_blockers
+        .contains(&CombatSearchV2RootClosureBlocker::PendingChoiceOrderedVariantsOmitted));
     assert!(!report.outcome.exhaustive);
     assert_eq!(
         report.outcome.coverage_status,
@@ -264,7 +272,7 @@ fn node_ordering_carries_only_the_best_retaliation_protection_into_frontier() {
     let position = CombatPosition::new(node.engine.clone(), combat);
     let legal = EngineCombatStepper.atomic_action_choices(&position);
     let config = CombatSearchV2Config::default();
-    let mut loop_state = SearchLoopState::new(&config, false);
+    let mut loop_state = SearchLoopState::new(&config, false, 0);
 
     let ordered = super::node_action_ordering::order_node_actions(
         &mut loop_state,
@@ -640,6 +648,149 @@ impl CombatStepper for OneCardWinStepper {
 }
 
 #[derive(Clone, Copy)]
+struct SecondActionWinStepper;
+
+impl CombatStepper for SecondActionWinStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if !matches!(position.engine, EngineState::CombatPlayerTurn)
+            || position.combat.zones.hand.is_empty()
+        {
+            return Vec::new();
+        }
+        vec![
+            ClientInput::EndTurn,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ]
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        OneCardWinStepper.apply_to_stable(position, input, limits)
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DuplicateTerminalWinStepper;
+
+impl CombatStepper for DuplicateTerminalWinStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if matches!(position.engine, EngineState::CombatPlayerTurn) {
+            vec![ClientInput::EndTurn, ClientInput::Proceed]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        _input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        let mut combat = position.combat.clone();
+        for monster in &mut combat.entities.monsters {
+            monster.current_hp = 0;
+        }
+        let position = CombatPosition::new(
+            EngineState::GameOver(crate::state::core::RunResult::Victory),
+            combat,
+        );
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CleanOrDirtyTerminalWinStepper;
+
+impl CombatStepper for CleanOrDirtyTerminalWinStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if matches!(position.engine, EngineState::CombatPlayerTurn) {
+            vec![ClientInput::EndTurn, ClientInput::Proceed]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        if limits
+            .deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+        {
+            return crate::sim::combat::CombatStepResult {
+                terminal: combat_terminal(&position.engine, &position.combat),
+                alive: true,
+                truncated: true,
+                timed_out: true,
+                engine_steps: 0,
+                position: position.clone(),
+            };
+        }
+
+        let mut combat = position.combat.clone();
+        let monster = combat
+            .entities
+            .monsters
+            .first_mut()
+            .expect("terminal witness test monster");
+        monster.current_hp = 0;
+        if input == ClientInput::Proceed {
+            combat
+                .meta
+                .meta_changes
+                .push(crate::runtime::combat::MetaChange::AddCardToMasterDeck(
+                    CardId::Parasite,
+                ));
+            combat.entities.player.current_hp = 80;
+        } else {
+            combat.entities.player.current_hp = 20;
+        }
+        let position = CombatPosition::new(
+            EngineState::GameOver(crate::state::core::RunResult::Victory),
+            combat,
+        );
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position,
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[derive(Clone, Copy)]
 struct DuplicateUnresolvedChildStepper;
 
 impl CombatStepper for DuplicateUnresolvedChildStepper {
@@ -858,10 +1009,16 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 17);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 18);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
+    );
+    assert_eq!(report.quantum_history.len(), 1);
+    assert_eq!(report.quantum_history[0].requested_additional_nodes, 1);
+    assert_eq!(
+        report.quantum_history[0].after.nodes_expanded,
+        report.stats.nodes_expanded
     );
     assert_eq!(
         report.policy_evidence.information_access,
@@ -987,7 +1144,7 @@ fn split_work_quanta_reuse_the_same_search_state() {
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
     let config = CombatSearchV2Config {
-        max_nodes: 4,
+        max_nodes: 99,
         max_actions_per_line: 20,
         rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
         satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
@@ -995,7 +1152,7 @@ fn split_work_quanta_reuse_the_same_search_state() {
     };
     let quantum = |additional_nodes| CombatSearchV2WorkQuantum {
         additional_nodes,
-        soft_wall_time: None,
+        soft_wall_time: Some(std::time::Duration::from_secs(1)),
     };
 
     let mut split = CombatSearchV2Session::new_with_stepper(
@@ -1011,6 +1168,40 @@ fn split_work_quanta_reuse_the_same_search_state() {
     let after_first = split.snapshot();
     assert_eq!(after_first.nodes_expanded, 2);
     assert!(after_first.frontier_remaining_states > 0);
+    assert_eq!(
+        after_first.root_evidence.materialization,
+        CombatSearchV2RootMaterializationStatus::Complete
+    );
+    assert_eq!(after_first.root_evidence.contenders.len(), 2);
+    assert_eq!(
+        after_first
+            .root_evidence
+            .leader
+            .as_ref()
+            .map(|leader| leader.action_key.as_str()),
+        after_first
+            .best_win
+            .as_ref()
+            .and_then(|win| win.actions.first())
+            .map(|action| action.action_key.as_str())
+    );
+    assert_eq!(
+        after_first
+            .root_evidence
+            .contenders
+            .iter()
+            .map(|contender| contender.work.generated_concrete_nodes)
+            .sum::<u64>(),
+        split.loop_state.stats.nodes_generated
+    );
+    assert_eq!(
+        after_first
+            .root_evidence
+            .unattributed
+            .expanded_concrete_nodes,
+        1,
+        "the concrete root expansion has no root action lineage yet"
+    );
     assert_eq!(
         split.advance_with_stepper(quantum(2), &WinOrDelayStepper),
         CombatSearchV2AdvanceStop::QuantumNodeBudget
@@ -1053,6 +1244,554 @@ fn split_work_quanta_reuse_the_same_search_state() {
             .map(|candidate| (&candidate.outcome_order_key, candidate.potions_used))
             .collect::<Vec<_>>()
     );
+    let split_report = split.finish_with_stepper(&WinOrDelayStepper);
+    assert_eq!(split_report.quantum_history.len(), 2);
+    assert_eq!(
+        split_report.quantum_history[0].after,
+        split_report.quantum_history[1].before
+    );
+    assert_eq!(
+        split_report.quantum_history[1].root_evidence,
+        split_snapshot.root_evidence
+    );
+    assert_eq!(split_report.budget.max_nodes, 4);
+    assert_eq!(split_report.budget.wall_time_ms, Some(2_000));
+}
+
+#[test]
+fn split_pending_choice_quanta_advance_the_same_virtual_prefix_work() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.draw_pile = (0..13)
+        .map(|index| CombatCard::new(CardId::Strike, 8_000 + index))
+        .collect();
+    let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
+        cards: vec![CardId::Strike; 13],
+        card_uuids: (8_000..8_013).collect(),
+    });
+    let mut session = CombatSearchV2Session::new(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 4,
+            max_actions_per_line: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+            ..CombatSearchV2Config::default()
+        },
+    );
+    let quantum = CombatSearchV2WorkQuantum {
+        additional_nodes: 2,
+        soft_wall_time: None,
+    };
+
+    assert_eq!(
+        session.advance(quantum),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    let first_prefixes = session
+        .loop_state
+        .performance
+        .pending_choice_prefixes_expanded;
+    let first = session.snapshot();
+    assert_eq!(first_prefixes, 2);
+    assert_eq!(
+        first.root_evidence.materialization,
+        CombatSearchV2RootMaterializationStatus::Partial
+    );
+    assert!(first.root_evidence.contenders.is_empty());
+    assert_eq!(
+        first
+            .root_evidence
+            .unattributed
+            .open_pending_choice_work_items,
+        1
+    );
+    assert_eq!(first.root_evidence.unattributed.open_concrete_states, 1);
+
+    assert_eq!(
+        session.advance(quantum),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    assert_eq!(
+        session
+            .loop_state
+            .performance
+            .pending_choice_prefixes_expanded,
+        4,
+        "the second quantum must extend the cumulative virtual-work ceiling"
+    );
+}
+
+#[test]
+fn historical_pending_prefix_work_does_not_raise_the_concrete_node_limit() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 10,
+            max_actions_per_line: 100,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+            ..CombatSearchV2Config::default()
+        },
+        &WinOrDelayStepper,
+    );
+    session.loop_state.stats.nodes_expanded = 1;
+    session
+        .loop_state
+        .performance
+        .pending_choice_prefixes_expanded = 100;
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 10,
+                soft_wall_time: None,
+            },
+            &WinOrDelayStepper,
+        ),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    assert_eq!(session.loop_state.stats.nodes_expanded, 11);
+    assert_eq!(
+        session
+            .loop_state
+            .performance
+            .pending_choice_prefixes_expanded,
+        100
+    );
+}
+
+#[test]
+fn replayable_rollout_win_is_promoted_at_the_quantum_boundary() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: None,
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    let snapshot = session.snapshot();
+    assert!(snapshot.best_win.is_some());
+    assert!(snapshot
+        .root_evidence
+        .contenders
+        .iter()
+        .any(|contender| contender.work.best_exact_win.is_some()));
+}
+
+fn terminal_witness_for_input(
+    engine: &EngineState,
+    combat: &crate::runtime::combat::CombatState,
+    input: ClientInput,
+    stepper: &impl CombatStepper,
+) -> RolloutNodeEstimate {
+    let root = SearchNode::root(engine.clone(), combat.clone());
+    let position = CombatPosition::new(engine.clone(), combat.clone());
+    let choices = stepper.atomic_action_choices(&position);
+    let action_id = choices
+        .iter()
+        .position(|choice| choice.input == input)
+        .expect("test witness input must be legal");
+    let choice = choices[action_id].clone();
+    let step = stepper.apply_to_stable(
+        &position,
+        choice.input.clone(),
+        CombatStepLimits {
+            max_engine_steps: 100,
+            deadline: None,
+        },
+    );
+    assert!(!step.truncated && !step.timed_out);
+
+    let mut child = root.clone_for_child(step.position.engine, step.position.combat);
+    let transition = classify_turn_branch_transition(
+        &root.engine,
+        &root.combat,
+        &choice.input,
+        &child.engine,
+        &child.combat,
+    );
+    child.note_turn_prefix(&root.combat, &choice.input, transition);
+    child.note_input(&choice.input);
+    child.note_turn_branch_priority(transition.frontier_priority_hint());
+    child.push_action(CombatSearchV2ActionTrace {
+        step_index: 0,
+        action_id,
+        action_key: choice.action_key,
+        action_debug: choice.action_debug,
+        input: choice.input,
+    });
+    RolloutNodeEstimate::from_node(
+        &child,
+        1,
+        RolloutStopReason::TerminalState,
+        None,
+        crate::ai::combat_search_v2::rollout_pending_choice::RolloutPendingChoiceProgress::default(
+        ),
+    )
+}
+
+#[test]
+fn clean_satisfaction_promotes_the_preserved_clean_rollout_witness() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::WrithingMass)];
+    let engine = EngineState::CombatPlayerTurn;
+    let clean = terminal_witness_for_input(
+        &engine,
+        &combat,
+        ClientInput::EndTurn,
+        &CleanOrDirtyTerminalWinStepper,
+    );
+    let dirty = terminal_witness_for_input(
+        &engine,
+        &combat,
+        ClientInput::Proceed,
+        &CleanOrDirtyTerminalWinStepper,
+    );
+    assert!(clean.is_replayable_terminal_win_without_new_external_burden(0));
+    assert_eq!(dirty.external_burden_count, 1);
+    assert!(dirty.final_hp > clean.final_hp);
+
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            satisfaction: CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden,
+            ..CombatSearchV2Config::default()
+        },
+        &CleanOrDirtyTerminalWinStepper,
+    );
+    session
+        .loop_state
+        .rollout_cache
+        .best_replayable_terminal_win = Some(
+        crate::ai::combat_search_v2::rollout_cache::ReplayableTerminalWinWitness {
+            estimate: dirty,
+            nodes_generated_at_discovery: 9,
+        },
+    );
+    session
+        .loop_state
+        .rollout_cache
+        .best_replayable_terminal_win_without_new_external_burden = Some(
+        crate::ai::combat_search_v2::rollout_cache::ReplayableTerminalWinWitness {
+            estimate: clean,
+            nodes_generated_at_discovery: 3,
+        },
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: None,
+            },
+            &CleanOrDirtyTerminalWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    let best = session
+        .loop_state
+        .trajectories
+        .best_win
+        .as_ref()
+        .expect("preserved clean witness should replay exactly");
+    assert_eq!(best.combat.entities.player.current_hp, 20);
+    assert_eq!(outcome_score::external_burden_count(&best.combat), 0);
+}
+
+#[test]
+fn expired_quantum_does_not_promote_and_the_same_session_retries_the_witness() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let engine = EngineState::CombatPlayerTurn;
+    let witness = terminal_witness_for_input(
+        &engine,
+        &combat,
+        ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        &OneCardWinStepper,
+    );
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &engine,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+    session
+        .loop_state
+        .rollout_cache
+        .best_replayable_terminal_win = Some(
+        crate::ai::combat_search_v2::rollout_cache::ReplayableTerminalWinWitness {
+            estimate: witness.clone(),
+            nodes_generated_at_discovery: 0,
+        },
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: Some(std::time::Duration::ZERO),
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::QuantumWallTime
+    );
+    assert!(session.snapshot().best_win.is_none());
+    assert!(session.loop_state.last_promoted_rollout_witness.is_none());
+    assert_eq!(
+        session
+            .loop_state
+            .rollout_cache
+            .best_replayable_terminal_win
+            .as_ref()
+            .map(|candidate| &candidate.estimate),
+        Some(&witness),
+        "deadline interruption must retain the witness for a later quantum"
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: Some(std::time::Duration::from_secs(1)),
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    assert!(session.snapshot().best_win.is_some());
+    assert_eq!(
+        session.loop_state.last_promoted_rollout_witness,
+        Some(witness)
+    );
+}
+
+#[test]
+fn rollout_promotion_preserves_the_original_root_action_id() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
+            ..CombatSearchV2Config::default()
+        },
+        &SecondActionWinStepper,
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: None,
+            },
+            &SecondActionWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    let snapshot = session.snapshot();
+    assert_eq!(
+        snapshot
+            .best_win
+            .as_ref()
+            .and_then(|win| win.actions.first())
+            .map(|action| action.action_id),
+        Some(1)
+    );
+    assert_eq!(
+        snapshot
+            .root_evidence
+            .leader
+            .as_ref()
+            .map(|leader| leader.action_id),
+        Some(1)
+    );
+}
+
+#[test]
+fn dominated_terminal_children_still_record_exact_evidence_for_each_root() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+            ..CombatSearchV2Config::default()
+        },
+        &DuplicateTerminalWinStepper,
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 1,
+                soft_wall_time: None,
+            },
+            &DuplicateTerminalWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    let snapshot = session.snapshot();
+    assert_eq!(snapshot.root_evidence.contenders.len(), 2);
+    assert!(snapshot
+        .root_evidence
+        .contenders
+        .iter()
+        .all(|contender| contender.work.best_exact_win.is_some()));
+}
+
+#[test]
+fn root_rollout_waits_for_the_first_quantum_and_uses_its_deadline() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 0,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(session.loop_state.rollout_cache.evaluations, 0);
+    assert_eq!(
+        session.loop_state.performance.root_rollout_estimate_calls,
+        0
+    );
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: Some(std::time::Duration::ZERO),
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::QuantumWallTime
+    );
+    assert_eq!(session.loop_state.rollout_cache.evaluations, 0);
+    assert_eq!(session.loop_state.rollout_cache.deadline_budget_skips, 1);
+    assert_eq!(
+        session.loop_state.performance.root_rollout_estimate_calls,
+        1
+    );
+    assert!(session.snapshot().best_win.is_none());
+    assert!(session.root_rollout_pending);
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: Some(std::time::Duration::from_secs(1)),
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    assert_eq!(session.loop_state.rollout_cache.evaluations, 1);
+    assert_eq!(
+        session.loop_state.performance.root_rollout_estimate_calls,
+        2
+    );
+    assert!(session.snapshot().best_win.is_some());
+    assert!(!session.root_rollout_pending);
+}
+
+#[test]
+fn replayable_rollout_win_is_not_masked_by_an_existing_exact_win() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let config = CombatSearchV2Config {
+        max_nodes: 0,
+        rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
+        ..CombatSearchV2Config::default()
+    };
+    let mut session = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        config.clone(),
+        &OneCardWinStepper,
+    );
+    let mut inferior_win = combat;
+    inferior_win.entities.monsters.clear();
+    inferior_win.entities.player.current_hp = 1;
+    session.loop_state.remember_win(
+        SearchNode::root(EngineState::CombatPlayerTurn, inferior_win),
+        &config,
+    );
+
+    assert_eq!(
+        session.advance_with_stepper(
+            CombatSearchV2WorkQuantum {
+                additional_nodes: 0,
+                soft_wall_time: None,
+            },
+            &OneCardWinStepper,
+        ),
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    );
+    assert_eq!(
+        session
+            .loop_state
+            .trajectories
+            .best_win
+            .as_ref()
+            .map(|node| node.combat.entities.player.current_hp),
+        Some(80)
+    );
+    assert!(session
+        .snapshot()
+        .root_evidence
+        .contenders
+        .iter()
+        .any(|contender| contender.work.best_exact_win.is_some()));
 }
 
 #[test]
@@ -1705,6 +2444,7 @@ fn test_search_node(combat: CombatState) -> SearchNode {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     }
 }
 

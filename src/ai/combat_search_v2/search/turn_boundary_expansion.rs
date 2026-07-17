@@ -89,6 +89,7 @@ pub(super) fn expand_turn_boundary_if_owned(
         .turn_boundary_macro_elapsed_us
         .saturating_add(started.elapsed().as_micros());
     loop_state.record_turn_boundary_work(
+        source,
         portfolio.inner_nodes_expanded,
         portfolio.inner_nodes_generated,
     );
@@ -116,7 +117,9 @@ pub(super) fn expand_turn_boundary_if_owned(
         .turn_boundary_macro_candidates
         .saturating_add(portfolio.candidates.len() as u64);
     for candidate in portfolio.candidates {
-        let node = candidate.plan.end_node;
+        let mut node = candidate.plan.end_node;
+        loop_state.materialize_root_lineage(&mut node);
+        loop_state.observe_exact_root_terminal(&node);
         loop_state.record_first_generated_win_if_needed(&node);
         loop_state.push_frontier(node);
     }

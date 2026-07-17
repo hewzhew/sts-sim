@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use super::super::frontier::{FrontierQueue, ResourceVector};
 use super::super::*;
 use super::best_trajectories::SearchTrajectoryBook;
+use super::root_evidence::RootEvidenceBook;
 use super::turn_boundary_expansion::TurnBoundaryExpansionTracker;
 use super::turn_plan_seeding::TurnPlanSeedTracker;
 
@@ -29,12 +30,16 @@ pub(super) struct SearchLoopState {
     pub(super) potion_budget_cut_count: u64,
     pub(super) exhausted: bool,
     pub(super) accepted_complete_candidate: bool,
+    pub(super) initial_external_burden_count: i32,
+    pub(super) root_evidence: RootEvidenceBook,
+    pub(super) last_promoted_rollout_witness: Option<RolloutNodeEstimate>,
 }
 
 impl SearchLoopState {
     pub(super) fn new(
         config: &CombatSearchV2Config,
         owns_engine_pending_choice_prefixes: bool,
+        initial_external_burden_count: i32,
     ) -> Self {
         let plugins = CombatSearchPluginStack::from_config(config);
         Self {
@@ -49,6 +54,7 @@ impl SearchLoopState {
                 config.rollout_max_evaluations,
                 config.rollout_max_actions,
                 config.rollout_beam_width,
+                initial_external_burden_count,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
             frontier: FrontierQueue::new(plugins.frontier),
@@ -61,6 +67,9 @@ impl SearchLoopState {
             potion_budget_cut_count: 0,
             exhausted: false,
             accepted_complete_candidate: false,
+            initial_external_burden_count,
+            root_evidence: RootEvidenceBook::default(),
+            last_promoted_rollout_witness: None,
         }
     }
 

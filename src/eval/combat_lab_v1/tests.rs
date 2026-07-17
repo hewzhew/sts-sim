@@ -1176,7 +1176,7 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
     assert!(trajectory_json.get("outcome_order_key").is_some());
     assert_eq!(
         crate::ai::combat_search_v2::COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
-        17
+        18
     );
 
     fs::remove_dir_all(directory).expect("remove test directory");

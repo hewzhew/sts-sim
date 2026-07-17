@@ -536,10 +536,25 @@ fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
         "src/runtime/branch/owner_audit/combat_search_lane_options.rs",
         "src/runtime/branch/owner_audit/combat_search_lanes.rs",
         "src/runtime/branch/owner_audit/combat_search_portfolio_plan.rs",
+        "src/eval/run_control/combat_line_repair.rs",
     ] {
         assert!(
             !std::path::Path::new(retired_lane_owner).exists(),
             "retired multi-root combat search owner must stay deleted: {retired_lane_owner}"
+        );
+    }
+
+    let line_selector =
+        std::fs::read_to_string("src/eval/run_control/combat_line_selector.rs")
+            .expect("read combat line selector");
+    for forbidden_search_owner in [
+        "combat_line_repair",
+        "combat_search_v2_with_stepper",
+        "CombatSearchV2Session::new",
+    ] {
+        assert!(
+            !line_selector.contains(forbidden_search_owner),
+            "candidate selection must not restore hidden combat search owner `{forbidden_search_owner}`"
         );
     }
 

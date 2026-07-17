@@ -8,6 +8,7 @@ pub(in crate::ai::combat_search_v2) struct RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) terminal: SearchTerminalLabel,
     pub(in crate::ai::combat_search_v2) final_hp: i32,
     pub(in crate::ai::combat_search_v2) persistent_run_value: i32,
+    pub(in crate::ai::combat_search_v2) external_burden_count: i32,
     pub(in crate::ai::combat_search_v2) hp_loss: i32,
     pub(in crate::ai::combat_search_v2) turns: u32,
     pub(in crate::ai::combat_search_v2) potions_used: u32,
@@ -64,6 +65,7 @@ impl RolloutNodeEstimate {
             terminal: SearchTerminalLabel::Unresolved,
             final_hp: 0,
             persistent_run_value: 0,
+            external_burden_count: 0,
             hp_loss: 0,
             turns: 0,
             potions_used: 0,
@@ -104,6 +106,14 @@ impl RolloutNodeEstimate {
             && !self.truncated
             && self.total_actions == self.action_preview.len()
             && self.total_actions <= ROLLOUT_ACTION_PREVIEW_LIMIT
+    }
+
+    pub(in crate::ai::combat_search_v2) fn is_replayable_terminal_win_without_new_external_burden(
+        &self,
+        initial_external_burden_count: i32,
+    ) -> bool {
+        self.is_replayable_terminal_win()
+            && self.external_burden_count <= initial_external_burden_count
     }
 }
 

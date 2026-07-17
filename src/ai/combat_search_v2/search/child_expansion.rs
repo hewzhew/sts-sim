@@ -74,11 +74,15 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         potion_tactical_priority,
         input.config,
     );
+    loop_state.materialize_root_lineage(&mut child);
     loop_state
         .diagnostics
         .observe_pending_choice_child_transition(input.pending_choice, truncated, &child.engine);
     turn_branching.observe_child(turn_transition);
-    loop_state.record_node_generated();
+    loop_state.record_node_generated(&child);
+    if !truncated {
+        loop_state.observe_exact_root_terminal(&child);
+    }
     loop_state.performance.child_bookkeeping_elapsed_us = loop_state
         .performance
         .child_bookkeeping_elapsed_us

@@ -122,6 +122,7 @@ fn test_node(combat: CombatState, action_count: usize) -> SearchNode {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     }
 }
 

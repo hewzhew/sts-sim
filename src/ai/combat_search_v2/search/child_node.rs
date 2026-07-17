@@ -39,7 +39,7 @@ pub(super) fn build_child_node(
     child.note_action_ordering_frontier_hint(action_ordering_frontier_hint);
     child.note_potion_tactical_priority(potion_tactical_priority);
     child.note_turn_branch_priority(turn_transition.frontier_priority_hint());
-    child.actions.push(CombatSearchV2ActionTrace {
+    child.push_action(CombatSearchV2ActionTrace {
         step_index: parent.actions.len(),
         action_id,
         action_key: choice.action_key,

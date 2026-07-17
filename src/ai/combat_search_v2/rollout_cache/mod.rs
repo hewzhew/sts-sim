@@ -54,7 +54,10 @@ pub(super) struct RolloutCache {
     pub(super) max_pending_choice_estimated_action_fanout: usize,
     pub(super) performance: RolloutPerformanceCounters,
     pub(super) cache: HashMap<CombatExactStateKey, RolloutNodeEstimate>,
+    pub(super) initial_external_burden_count: i32,
     pub(super) best_replayable_terminal_win: Option<ReplayableTerminalWinWitness>,
+    pub(super) best_replayable_terminal_win_without_new_external_burden:
+        Option<ReplayableTerminalWinWitness>,
 }
 
 impl RolloutCache {
@@ -63,12 +66,14 @@ impl RolloutCache {
         max_evaluations: usize,
         max_actions: usize,
         beam_width: usize,
+        initial_external_burden_count: i32,
     ) -> Self {
         Self {
             policy: policy.into(),
             max_evaluations,
             max_actions,
             beam_width,
+            initial_external_burden_count,
             turn_beam_extension_budget: turn_beam_extension_budget(max_evaluations, beam_width),
             ..Self::default()
         }
@@ -164,6 +169,7 @@ mod tests {
             384,
             80,
             3,
+            0,
         );
         cache.cache_queries = 4;
         cache.cache_misses = 3;
@@ -227,6 +233,7 @@ mod tests {
             action_prior_score: None,
             action_ordering_frontier_hint: 0,
             rollout_estimate: RolloutNodeEstimate::unevaluated(),
+            root_lineage: Default::default(),
         }
     }
 }

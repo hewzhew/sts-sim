@@ -66,6 +66,7 @@ pub(super) fn seed_turn_plan_frontier(
         .observe_turn_plan_prior_scored_plans(seeded_plans.turn_plan_prior_scored_plans);
     for plan in seeded_plans.plans.drain(..) {
         let mut seed = plan.end_node;
+        loop_state.materialize_root_lineage(&mut seed);
         let nodes_generated_at_discovery = loop_state.stats.nodes_generated.saturating_add(1);
         seed.rollout_estimate = turn_plan_seed_rollout_estimate(
             loop_state,
@@ -75,7 +76,8 @@ pub(super) fn seed_turn_plan_frontier(
             deadline,
             nodes_generated_at_discovery,
         );
-        loop_state.record_node_generated();
+        loop_state.record_node_generated(&seed);
+        loop_state.observe_exact_root_terminal(&seed);
         loop_state.record_first_generated_win_if_needed(&seed);
         loop_state.push_frontier(seed);
     }

@@ -6,11 +6,13 @@ use super::finish_outcome::outcome_report;
 use super::finish_policy::{budget_report, search_policy_report};
 use super::finish_trajectories::trajectory_reports;
 use super::loop_state::SearchLoopState;
+use super::root_evidence::root_evidence_snapshot;
 
 pub(super) struct SearchFinishInput {
     pub(super) config: CombatSearchV2Config,
     pub(super) policy_evidence: CombatSearchV2PolicyEvidenceReport,
     pub(super) loop_state: SearchLoopState,
+    pub(super) quantum_history: Vec<CombatSearchV2QuantumEvidence>,
 }
 
 pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSearchV2Report {
@@ -18,7 +20,9 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         config,
         policy_evidence,
         loop_state,
+        quantum_history,
     } = input;
+    let final_root_evidence = root_evidence_snapshot(&loop_state);
     let SearchLoopState {
         owns_engine_pending_choice_prefixes,
         stats,
@@ -109,5 +113,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             exhaustive,
             action_surface_incomplete,
         ),
+        quantum_history,
+        final_root_evidence,
     }
 }

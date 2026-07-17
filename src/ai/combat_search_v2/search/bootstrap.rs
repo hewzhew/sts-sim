@@ -14,23 +14,12 @@ pub(super) fn initialize_root_frontier(
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
 ) -> SearchNode {
-    let mut root = SearchNode::root(engine.clone(), combat.clone());
+    let root = SearchNode::root(engine.clone(), combat.clone());
     if pending_choice_prefix_owned(loop_state, &root.engine) {
         loop_state.performance.pending_choice_rollout_skips = loop_state
             .performance
             .pending_choice_rollout_skips
             .saturating_add(1);
-    } else {
-        root.rollout_estimate = timed_rollout_estimate(
-            &mut loop_state.rollout_cache,
-            &root,
-            stepper,
-            config,
-            deadline,
-            &mut loop_state.performance,
-            RolloutEstimateSource::Root,
-            0,
-        );
     }
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         loop_state.stats.nodes_to_first_win = Some(0);
@@ -49,4 +38,23 @@ pub(super) fn initialize_root_frontier(
         );
     }
     root_for_turn_plan_diagnostics
+}
+
+pub(super) fn deferred_root_rollout_estimate(
+    loop_state: &mut SearchLoopState,
+    root: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    deadline: Option<Instant>,
+) -> RolloutNodeEstimate {
+    timed_rollout_estimate(
+        &mut loop_state.rollout_cache,
+        root,
+        stepper,
+        config,
+        deadline,
+        &mut loop_state.performance,
+        RolloutEstimateSource::Root,
+        0,
+    )
 }

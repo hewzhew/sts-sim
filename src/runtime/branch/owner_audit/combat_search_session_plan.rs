@@ -35,15 +35,6 @@ pub(super) struct CombatSearchSessionPlan {
 }
 
 impl CombatSearchSessionPlan {
-    pub(super) fn combat_budget_capped(&self, args: Args) -> bool {
-        match self.stakes {
-            CombatSearchStakes::Boss => args.wall_capped_boss_budget,
-            CombatSearchStakes::Elite | CombatSearchStakes::Hallway => {
-                args.wall_capped_search_budget
-            }
-        }
-    }
-
     pub(super) fn should_checkpoint_before_search(&self, args: Args) -> bool {
         self.stakes == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio
     }
@@ -87,8 +78,12 @@ pub(super) fn canonical_combat_search_session_plan(
         },
     };
     let satisfaction = match owner_audit_hp_loss_limit(session) {
-        RunControlHpLossLimit::Limit(limit) => CombatSearchV2Satisfaction::HpLossAtMost(limit),
-        RunControlHpLossLimit::Unlimited => CombatSearchV2Satisfaction::FirstCompleteWin,
+        RunControlHpLossLimit::Limit(limit) => {
+            CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(limit)
+        }
+        RunControlHpLossLimit::Unlimited => {
+            CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
+        }
     };
     let semantics_fingerprint = profile.semantics_fingerprint();
     let mut search = RunControlSearchCombatOptions::default();
@@ -158,14 +153,15 @@ fn work_quanta(stakes: CombatSearchStakes, args: Args) -> Vec<RunControlCombatSe
             soft_wall_ms: Some(args.boss_search_ms),
         },
     };
-    vec![
-        RunControlCombatSearchQuantum {
-            label: "initial",
-            additional_nodes: args.search_nodes,
-            soft_wall_ms: Some(args.search_ms),
-        },
-        refinement,
-    ]
+    let mut quanta = vec![RunControlCombatSearchQuantum {
+        label: "initial",
+        additional_nodes: args.search_nodes,
+        soft_wall_ms: Some(args.search_ms),
+    }];
+    if refinement.additional_nodes > 0 && refinement.soft_wall_ms != Some(0) {
+        quanta.push(refinement);
+    }
+    quanta
 }
 
 fn canonical_potion_surface(
@@ -265,7 +261,21 @@ mod tests {
         assert!(plan.search.disable_no_win_rescue);
         assert!(matches!(
             plan.search.satisfaction,
-            Some(CombatSearchV2Satisfaction::HpLossAtMost(_))
+            Some(CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_))
         ));
+    }
+
+    #[test]
+    fn zero_wall_refinement_is_not_authorized() {
+        let mut args = args();
+        args.rescue_search_ms = 0;
+        args.boss_search_ms = 0;
+
+        let plan = canonical_combat_search_session_plan(&hallway_session(), args);
+
+        assert_eq!(plan.search.work_quanta.len(), 1);
+        assert_eq!(plan.search.work_quanta[0].label, "initial");
+        assert_eq!(plan.total_wall_ms, args.search_ms);
+        assert_eq!(plan.total_nodes, args.search_nodes);
     }
 }

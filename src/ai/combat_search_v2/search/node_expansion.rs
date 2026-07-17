@@ -21,11 +21,12 @@ pub(super) fn prepare_node_expansion(
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
 ) -> Option<PreparedNodeExpansion> {
-    loop_state.record_node_expanded();
+    loop_state.record_node_expanded(node);
     let expansion_started = Instant::now();
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
     let surface = collect_node_action_surface(loop_state, node, &position, stepper);
     if surface.legal.is_empty() {
+        loop_state.mark_unmaterialized_root_surface_complete(node);
         loop_state.record_unresolved_leaf(node);
         record_expansion_elapsed(loop_state, expansion_started);
         return None;
@@ -38,6 +39,7 @@ pub(super) fn prepare_node_expansion(
         surface.pending_choice.as_ref(),
         config,
     );
+    loop_state.observe_enumerated_root_surface(node, &ordered.ordered_choices);
     let (turn_branching, turn_local_dominance) =
         initialize_node_child_observers(node, ordered.ordered_choices.len());
     record_expansion_elapsed(loop_state, expansion_started);

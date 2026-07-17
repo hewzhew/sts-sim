@@ -4,7 +4,7 @@ use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatCard;
-use crate::runtime::combat::{Power, PowerPayload};
+use crate::runtime::combat::{MetaChange, Power, PowerPayload};
 use crate::test_support::{blank_test_combat, test_monster};
 
 #[test]
@@ -99,6 +99,37 @@ fn win_candidate_frontier_preserves_hp_potion_tradeoffs() {
     assert!(remember_win_candidate(&mut candidates, &spend));
 
     assert_eq!(candidates.len(), 2);
+}
+
+#[test]
+fn win_candidate_frontier_does_not_collapse_distinct_persistent_payoffs() {
+    let mut candidates = Vec::new();
+    let mut gold = test_node();
+    gold.combat.entities.player.gold_delta_this_combat = 50;
+
+    let mut dagger = CombatCard::new(CardId::RitualDagger, 41);
+    dagger.misc_value = 15;
+    gold.combat.meta.master_deck_snapshot = vec![dagger.clone()];
+
+    let mut ritual = test_node();
+    ritual.combat.meta.master_deck_snapshot = vec![dagger];
+    ritual
+        .combat
+        .meta
+        .meta_changes
+        .push(MetaChange::ModifyCardMisc {
+            card_uuid: 41,
+            amount: 5,
+        });
+
+    assert!(remember_win_candidate(&mut candidates, &gold));
+    assert!(remember_win_candidate(&mut candidates, &ritual));
+
+    assert_eq!(
+        candidates.len(),
+        2,
+        "gold and Ritual Dagger growth are incomparable typed outcomes; an aggregate score must not delete either line"
+    );
 }
 
 #[test]
@@ -267,5 +298,6 @@ fn test_node() -> SearchNode {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     }
 }

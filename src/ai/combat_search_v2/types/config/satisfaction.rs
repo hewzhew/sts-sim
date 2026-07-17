@@ -13,6 +13,12 @@ pub enum CombatSearchV2Satisfaction {
     FirstCompleteWin,
     /// Stop once an exact whole-combat win meets the owner's explicit loss target.
     HpLossAtMost(u32),
+    /// Stop on the first exact whole-combat win that did not create a
+    /// combat-external burden such as Writhing Mass's curse.
+    FirstCompleteWinWithoutNewExternalBurden,
+    /// Stop once an exact clean whole-combat win also meets the owner's
+    /// explicit loss target.
+    HpLossAtMostWithoutNewExternalBurden(u32),
 }
 
 impl CombatSearchV2Satisfaction {
@@ -22,13 +28,24 @@ impl CombatSearchV2Satisfaction {
             Self::ZeroLossOrBudget => "zero_loss_or_budget",
             Self::FirstCompleteWin => "first_complete_win",
             Self::HpLossAtMost(_) => "hp_loss_at_most",
+            Self::FirstCompleteWinWithoutNewExternalBurden => {
+                "first_complete_win_without_new_external_burden"
+            }
+            Self::HpLossAtMostWithoutNewExternalBurden(_) => {
+                "hp_loss_at_most_without_new_external_burden"
+            }
         }
     }
 
     pub fn hp_loss_limit(self) -> Option<u32> {
         match self {
-            Self::HpLossAtMost(limit) => Some(limit),
-            Self::BudgetOrExhaustion | Self::ZeroLossOrBudget | Self::FirstCompleteWin => None,
+            Self::HpLossAtMost(limit) | Self::HpLossAtMostWithoutNewExternalBurden(limit) => {
+                Some(limit)
+            }
+            Self::BudgetOrExhaustion
+            | Self::ZeroLossOrBudget
+            | Self::FirstCompleteWin
+            | Self::FirstCompleteWinWithoutNewExternalBurden => None,
         }
     }
 }

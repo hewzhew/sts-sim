@@ -26,16 +26,25 @@ impl SearchLoopState {
         self.accepted_complete_candidate = true;
     }
 
-    pub(in crate::ai::combat_search_v2::search) fn record_node_expanded(&mut self) {
+    pub(in crate::ai::combat_search_v2::search) fn record_node_expanded(
+        &mut self,
+        node: &SearchNode,
+    ) {
         self.stats.nodes_expanded = self.stats.nodes_expanded.saturating_add(1);
+        self.root_evidence.record_expanded(node);
     }
 
-    pub(in crate::ai::combat_search_v2::search) fn record_node_generated(&mut self) {
+    pub(in crate::ai::combat_search_v2::search) fn record_node_generated(
+        &mut self,
+        node: &SearchNode,
+    ) {
         self.stats.nodes_generated = self.stats.nodes_generated.saturating_add(1);
+        self.root_evidence.record_generated(node);
     }
 
     pub(in crate::ai::combat_search_v2::search) fn record_turn_boundary_work(
         &mut self,
+        source: &SearchNode,
         nodes_expanded: usize,
         nodes_generated: usize,
     ) {
@@ -47,6 +56,8 @@ impl SearchLoopState {
             .stats
             .nodes_generated
             .saturating_add(nodes_generated as u64);
+        self.root_evidence
+            .record_bulk_work(source, nodes_expanded, nodes_generated);
     }
 
     pub(in crate::ai::combat_search_v2::search) fn record_first_generated_win_if_needed(

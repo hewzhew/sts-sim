@@ -151,7 +151,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                 child.note_turn_prefix(&node.combat, &ordered_choice.choice.input, transition);
                 child.note_input(&ordered_choice.choice.input);
                 child.note_turn_branch_priority(transition.frontier_priority_hint());
-                child.actions.push(CombatSearchV2ActionTrace {
+                child.push_action(CombatSearchV2ActionTrace {
                     step_index: node.actions.len(),
                     action_id: ordered_choice.original_action_id,
                     action_key: ordered_choice.choice.action_key,

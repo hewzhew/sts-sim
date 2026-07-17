@@ -1,6 +1,7 @@
 use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::CardId;
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CombatCard, CombatState, MetaChange};
+use std::collections::HashMap;
 
 pub(crate) fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
     combat
@@ -33,17 +34,32 @@ pub(super) fn persistent_run_value(combat: &CombatState) -> i32 {
             .player
             .gold_delta_this_combat
             .saturating_div(5)
-        + combat
-            .meta
-            .master_deck_snapshot
-            .iter()
-            .map(card_persistent_value)
-            .sum::<i32>()
+        + persistent_card_value(combat, CardId::RitualDagger)
+        + persistent_card_value(combat, CardId::GeneticAlgorithm)
 }
 
-fn card_persistent_value(card: &CombatCard) -> i32 {
-    match card.id {
-        CardId::RitualDagger | CardId::GeneticAlgorithm => card.misc_value.max(0),
-        _ => 0,
+pub(super) fn persistent_card_value(combat: &CombatState, card_id: CardId) -> i32 {
+    let mut misc_delta_by_uuid = HashMap::<u32, i32>::new();
+    for change in &combat.meta.meta_changes {
+        if let MetaChange::ModifyCardMisc { card_uuid, amount } = change {
+            let delta = misc_delta_by_uuid.entry(*card_uuid).or_default();
+            *delta = delta.saturating_add(*amount);
+        }
     }
+    combat
+        .meta
+        .master_deck_snapshot
+        .iter()
+        .filter(|card| card.id == card_id)
+        .map(|card| {
+            card.misc_value
+                .saturating_add(
+                    misc_delta_by_uuid
+                        .get(&card.uuid)
+                        .copied()
+                        .unwrap_or_default(),
+                )
+                .max(0)
+        })
+        .sum()
 }

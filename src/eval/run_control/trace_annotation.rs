@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
-use crate::ai::combat_search_v2::SearchTerminalLabel;
+use crate::ai::combat_search_v2::{
+    CombatSearchV2QuantumEvidence, CombatSearchV2RootEvidenceSnapshot, SearchTerminalLabel,
+};
 use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
@@ -181,6 +183,10 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     pub deadline_hit: bool,
     #[serde(default)]
     pub node_budget_hit: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quantum_history: Vec<CombatSearchV2QuantumEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_root_evidence: Option<CombatSearchV2RootEvidenceSnapshot>,
     pub nodes_expanded: u64,
     pub nodes_generated: u64,
     pub terminal_wins: u64,
@@ -294,6 +300,10 @@ pub struct CombatSearchTraceSummary {
     pub deadline_hit: bool,
     #[serde(default)]
     pub node_budget_hit: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quantum_history: Vec<CombatSearchV2QuantumEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_root_evidence: Option<CombatSearchV2RootEvidenceSnapshot>,
     pub nodes_expanded: u64,
     pub terminal_wins: u64,
     pub total_us: u64,
@@ -576,6 +586,8 @@ pub fn combat_search_trace_summaries(
             nodes_to_first_win: snapshot.nodes_to_first_win,
             deadline_hit: snapshot.deadline_hit,
             node_budget_hit: snapshot.node_budget_hit,
+            quantum_history: snapshot.quantum_history.clone(),
+            final_root_evidence: snapshot.final_root_evidence.clone(),
             nodes_expanded: snapshot.nodes_expanded,
             terminal_wins: snapshot.terminal_wins,
             total_us: snapshot.total_us,

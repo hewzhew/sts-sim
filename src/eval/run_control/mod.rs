@@ -15,7 +15,6 @@ mod combat_complete_line_solver;
 mod combat_line_adjudication;
 mod combat_line_executor;
 mod combat_line_outcome;
-mod combat_line_repair;
 mod combat_line_selector;
 mod combat_line_trace;
 mod combat_no_win_fallback;

@@ -59,7 +59,7 @@ pub(super) fn start_pending_choice_transaction_if_owned(
         return PendingChoiceTransactionOutcome::Handled;
     }
 
-    loop_state.record_node_expanded();
+    loop_state.record_node_expanded(&node);
     loop_state.performance.pending_choice_transactions_started = loop_state
         .performance
         .pending_choice_transactions_started
@@ -70,6 +70,7 @@ pub(super) fn start_pending_choice_transaction_if_owned(
         .observe_pending_choice(profile.as_ref());
 
     let work_items = family.into_work_items();
+    loop_state.begin_unmaterialized_root_pending_work(&node, work_items.len());
     if work_items.is_empty() {
         loop_state.record_unresolved_leaf(&node);
         return PendingChoiceTransactionOutcome::Handled;
@@ -95,6 +96,7 @@ pub(super) fn expand_pending_choice_prefix(
     mut work: PendingChoiceActionWork,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    pending_choice_prefix_limit: usize,
     deadline: Option<Instant>,
 ) -> PendingChoicePrefixOutcome {
     while !work.is_empty() {
@@ -103,7 +105,9 @@ pub(super) fn expand_pending_choice_prefix(
             loop_state.push_pending_choice_work(node, work);
             return PendingChoicePrefixOutcome::Stop;
         }
-        if loop_state.performance.pending_choice_prefixes_expanded as usize >= config.max_nodes {
+        if loop_state.performance.pending_choice_prefixes_expanded as usize
+            >= pending_choice_prefix_limit
+        {
             loop_state.mark_action_prefix_budget_hit();
             loop_state.push_pending_choice_work(node, work);
             return PendingChoicePrefixOutcome::Stop;
@@ -238,6 +242,7 @@ fn finish_exhausted_work(
         // once instead of inflating unresolved-leaf counts exponentially.
         loop_state.record_unresolved_leaf(node);
     }
+    loop_state.finish_unmaterialized_root_pending_work(node);
 }
 
 fn prefer_include(node: &SearchNode, prefix: &PendingChoiceActionPrefix) -> bool {

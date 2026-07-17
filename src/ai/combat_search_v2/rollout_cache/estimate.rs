@@ -160,18 +160,19 @@ impl RolloutCache {
         nodes_generated_at_discovery: u64,
     ) {
         if estimate.is_replayable_terminal_win() {
-            let replace = self
-                .best_replayable_terminal_win
-                .as_ref()
-                .map(|current| {
-                    better_rollout_estimate(estimate.clone(), current.estimate.clone()) == *estimate
-                })
-                .unwrap_or(true);
-            if replace {
-                self.best_replayable_terminal_win = Some(ReplayableTerminalWinWitness {
-                    estimate: estimate.clone(),
+            observe_best_replayable_terminal_win(
+                &mut self.best_replayable_terminal_win,
+                estimate,
+                nodes_generated_at_discovery,
+            );
+            if estimate.is_replayable_terminal_win_without_new_external_burden(
+                self.initial_external_burden_count,
+            ) {
+                observe_best_replayable_terminal_win(
+                    &mut self.best_replayable_terminal_win_without_new_external_burden,
+                    estimate,
                     nodes_generated_at_discovery,
-                });
+                );
             }
         }
         if estimate.truncated {
@@ -240,5 +241,75 @@ impl RolloutCache {
             self.turn_beam_best_pv_len = estimate.actions_simulated;
             self.turn_beam_best_pv_terminal = Some(estimate.terminal);
         }
+    }
+}
+
+fn observe_best_replayable_terminal_win(
+    current: &mut Option<ReplayableTerminalWinWitness>,
+    estimate: &RolloutNodeEstimate,
+    nodes_generated_at_discovery: u64,
+) {
+    let replace = current
+        .as_ref()
+        .map(|current| {
+            better_rollout_estimate(estimate.clone(), current.estimate.clone()) == *estimate
+        })
+        .unwrap_or(true);
+    if replace {
+        *current = Some(ReplayableTerminalWinWitness {
+            estimate: estimate.clone(),
+            nodes_generated_at_discovery,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::core::ClientInput;
+
+    fn terminal_win(final_hp: i32, external_burden_count: i32) -> RolloutNodeEstimate {
+        let mut estimate = RolloutNodeEstimate::unevaluated();
+        estimate.evaluated = true;
+        estimate.terminal = SearchTerminalLabel::Win;
+        estimate.final_hp = final_hp;
+        estimate.external_burden_count = external_burden_count;
+        estimate.total_actions = 1;
+        estimate.action_preview = vec![CombatSearchV2ActionPreview {
+            action_key: "terminal".to_string(),
+            input: ClientInput::EndTurn,
+        }];
+        estimate.stop_reason = RolloutStopReason::TerminalState;
+        estimate
+    }
+
+    #[test]
+    fn higher_scoring_dirty_terminal_rollout_does_not_erase_the_clean_witness() {
+        let mut cache = RolloutCache {
+            initial_external_burden_count: 1,
+            ..RolloutCache::default()
+        };
+        let clean = terminal_win(10, 1);
+        let dirty = terminal_win(80, 2);
+
+        cache.observe_estimate(&clean, 3);
+        cache.observe_estimate(&dirty, 7);
+
+        assert_eq!(
+            cache
+                .best_replayable_terminal_win
+                .as_ref()
+                .map(|witness| &witness.estimate),
+            Some(&dirty),
+            "the unrestricted incumbent may still prefer the higher-scoring win"
+        );
+        assert_eq!(
+            cache
+                .best_replayable_terminal_win_without_new_external_burden
+                .as_ref()
+                .map(|witness| (&witness.estimate, witness.nodes_generated_at_discovery)),
+            Some((&clean, 3)),
+            "clean acceptance must retain its own replayable witness"
+        );
     }
 }

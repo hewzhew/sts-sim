@@ -14,6 +14,13 @@ pub(super) struct SearchTrajectoryBook {
 }
 
 impl SearchTrajectoryBook {
+    pub(super) fn contains_exact_win_path(&self, node: &SearchNode) -> bool {
+        self.win_candidates
+            .iter()
+            .chain(self.best_win.iter())
+            .any(|observed| same_action_path(observed, node))
+    }
+
     pub(super) fn remember_best_frontier(&mut self, node: &SearchNode) {
         remember_best_frontier(&mut self.best_frontier, node);
     }
@@ -22,14 +29,73 @@ impl SearchTrajectoryBook {
         remember_best_complete(&mut self.best_complete, node);
     }
 
-    pub(super) fn remember_win(&mut self, node: SearchNode, config: &CombatSearchV2Config) -> bool {
+    pub(super) fn remember_win(
+        &mut self,
+        node: SearchNode,
+        config: &CombatSearchV2Config,
+        initial_external_burden_count: i32,
+    ) -> bool {
+        let candidate_satisfied =
+            accepted_complete_win(&node, config, initial_external_burden_count);
         if remember_win_candidate(&mut self.win_candidates, &node) {
             self.win_frontier_revision = self.win_frontier_revision.saturating_add(1);
         }
         remember_best_complete(&mut self.best_win, node.clone());
         remember_best_complete(&mut self.best_complete, node);
-        self.best_win
-            .as_ref()
-            .is_some_and(|best| accepted_complete_win(best, config))
+        candidate_satisfied
+    }
+}
+
+fn same_action_path(left: &SearchNode, right: &SearchNode) -> bool {
+    left.actions.len() == right.actions.len()
+        && left
+            .actions
+            .iter()
+            .zip(&right.actions)
+            .all(|(left, right)| left.action_key == right.action_key && left.input == right.input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::cards::CardId;
+    use crate::runtime::combat::CombatCard;
+    use crate::state::core::RunResult;
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn any_new_exact_candidate_can_satisfy_the_session_objective() {
+        let mut rich_combat = blank_test_combat();
+        rich_combat.entities.player.current_hp = 80;
+        let mut dagger = CombatCard::new(CardId::RitualDagger, 41);
+        dagger.misc_value = 50;
+        rich_combat.meta.master_deck_snapshot = vec![dagger];
+        let mut rich = SearchNode::root(EngineState::GameOver(RunResult::Victory), rich_combat);
+        rich.combat.entities.player.current_hp = 60;
+
+        let mut healthy_combat = blank_test_combat();
+        healthy_combat.entities.player.current_hp = 80;
+        let mut healthy =
+            SearchNode::root(EngineState::GameOver(RunResult::Victory), healthy_combat);
+        healthy.combat.entities.player.current_hp = 70;
+
+        let config = CombatSearchV2Config {
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(10),
+            ..CombatSearchV2Config::default()
+        };
+        let mut book = SearchTrajectoryBook::default();
+
+        assert!(!book.remember_win(rich, &config, 0));
+        assert!(book.remember_win(healthy, &config, 0));
+        assert_eq!(
+            book.best_win
+                .as_ref()
+                .expect("persistent-payoff win remains raw best")
+                .combat
+                .entities
+                .player
+                .current_hp,
+            60
+        );
     }
 }

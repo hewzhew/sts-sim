@@ -38,23 +38,8 @@ pub(super) fn select_accepted_search_combat_line(
     trajectory: &CombatSearchV2TrajectoryReport,
     policy: CombatLineAcceptancePolicy,
 ) -> CombatLineSelection {
-    let original_line = CombatCandidateLine::from_search_trajectory(trajectory);
-    let mut selected_line = original_line.clone();
+    let selected_line = CombatCandidateLine::from_search_trajectory(trajectory);
     let mut summary = None;
-    if let Some(repair) =
-        super::combat_line_repair::try_repair_winning_trajectory(start, trajectory, config)
-    {
-        selected_line = repair.line;
-        summary = Some(format!(
-            "line_repair attempts={} wins={} improvements={} elapsed_ms={} original_hp_loss={} repaired_hp_loss={}",
-            repair.attempts,
-            repair.wins,
-            repair.improvements,
-            repair.elapsed_ms,
-            trajectory.hp_loss,
-            selected_line.hp_loss
-        ));
-    }
 
     let selected_eval =
         match evaluate_combat_candidate_line_outcome(session, start, config, selected_line.clone())

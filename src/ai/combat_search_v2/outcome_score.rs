@@ -1,5 +1,7 @@
 use super::*;
-use crate::content::monsters::EnemyId;
+use crate::content::cards::{get_card_definition, CardType};
+use crate::content::relics::RelicId;
+use crate::runtime::combat::MetaChange;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct CombatOutcomeScore {
@@ -79,20 +81,35 @@ impl PartialOrd for CombatOutcomeScore {
 }
 
 pub(super) fn external_burden_count(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
+    let curse_additions = combat
+        .meta
+        .meta_changes
         .iter()
-        .filter(|monster| {
-            monster.monster_type == EnemyId::WrithingMass as usize
-                && monster.writhing_mass.used_mega_debuff
+        .filter(|change| {
+            matches!(
+                change,
+                MetaChange::AddCardToMasterDeck(card_id)
+                    if get_card_definition(*card_id).card_type == CardType::Curse
+            )
         })
-        .count() as i32
+        .count() as i32;
+    let omamori_charges = combat
+        .entities
+        .player
+        .relics
+        .iter()
+        .find(|relic| relic.id == RelicId::Omamori && !relic.used_up)
+        .map(|relic| relic.counter.max(0))
+        .unwrap_or_default();
+    curse_additions.saturating_sub(omamori_charges).max(0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
+    use crate::content::relics::RelicState;
+    use crate::runtime::combat::MetaChange;
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -171,6 +188,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn external_burden_counts_actual_unblocked_curse_additions() {
+        let mut combat = blank_test_combat();
+        combat
+            .meta
+            .meta_changes
+            .push(MetaChange::AddCardToMasterDeck(CardId::Parasite));
+        combat
+            .entities
+            .player
+            .relics
+            .push(RelicState::new(RelicId::Omamori));
+
+        assert_eq!(external_burden_count(&combat), 0);
+
+        combat
+            .meta
+            .meta_changes
+            .push(MetaChange::AddCardToMasterDeck(CardId::Pain));
+        combat
+            .meta
+            .meta_changes
+            .push(MetaChange::AddCardToMasterDeck(CardId::Doubt));
+
+        assert_eq!(external_burden_count(&combat), 1);
+    }
+
     impl SearchNode {
         fn test_node_with_hp(hp: i32) -> Self {
             let mut combat = blank_test_combat();
@@ -189,6 +233,7 @@ mod tests {
                 action_prior_score: None,
                 action_ordering_frontier_hint: 0,
                 rollout_estimate: RolloutNodeEstimate::unevaluated(),
+                root_lineage: Default::default(),
             }
         }
     }

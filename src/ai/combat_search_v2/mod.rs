@@ -194,8 +194,8 @@ pub use plugins::{
     CombatSearchRolloutPluginId, CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
 };
 pub use search::{
-    run_combat_search_v2, run_combat_search_v2_with_stepper, CombatSearchV2AdvanceStop,
-    CombatSearchV2DecisionSnapshot, CombatSearchV2Session, CombatSearchV2WorkQuantum,
+    run_combat_search_v2, run_combat_search_v2_with_stepper, CombatSearchV2DecisionSnapshot,
+    CombatSearchV2Session, CombatSearchV2WorkQuantum,
 };
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;

@@ -184,7 +184,7 @@ fn one_step_effect(
     );
     child.note_turn_prefix(&node.combat, &choice.input, transition);
     child.note_input(&choice.input);
-    child.actions.push(CombatSearchV2ActionTrace {
+    child.push_action(CombatSearchV2ActionTrace {
         step_index: node.actions.len(),
         action_id: 0,
         action_key: choice.action_key.clone(),

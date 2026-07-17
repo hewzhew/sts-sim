@@ -101,6 +101,27 @@ impl FrontierQueue {
     pub(in crate::ai::combat_search_v2) fn iter(&self) -> impl Iterator<Item = &QueueEntry> {
         self.single.iter().chain(self.lanes.iter())
     }
+
+    pub(in crate::ai::combat_search_v2) fn replace_exact_state_rollout_estimate(
+        &mut self,
+        target: &SearchNode,
+        estimate: &super::super::RolloutNodeEstimate,
+    ) {
+        let target_key = combat_exact_state_key(&target.engine, &target.combat);
+        let mut entries = match self.policy {
+            CombatSearchFrontierPluginId::SingleQueue => self.single.drain().collect::<Vec<_>>(),
+            CombatSearchFrontierPluginId::RoundRobinEvalBuckets => self.lanes.drain(),
+        };
+        for entry in &mut entries {
+            if combat_exact_state_key(&entry.node.engine, &entry.node.combat) == target_key {
+                entry.node.rollout_estimate = estimate.clone();
+                entry.priority = priority_for_node(&entry.node);
+            }
+        }
+        for entry in entries {
+            self.push_entry(entry);
+        }
+    }
 }
 
 struct FrontierLanes {
@@ -226,6 +247,16 @@ impl FrontierLanes {
             .chain(self.survival.iter())
             .chain(self.progress.iter())
             .chain(self.balanced.iter())
+    }
+
+    fn drain(&mut self) -> Vec<QueueEntry> {
+        self.exact_win
+            .drain()
+            .chain(self.estimated_win.drain())
+            .chain(self.survival.drain())
+            .chain(self.progress.drain())
+            .chain(self.balanced.drain())
+            .collect()
     }
 }
 

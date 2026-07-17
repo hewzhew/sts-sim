@@ -6,6 +6,21 @@ use super::resources::ResourceVector;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, EngineState};
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(in crate::ai::combat_search_v2) struct RootLineageId(pub(in crate::ai::combat_search_v2) u32);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ai::combat_search_v2) enum RootLineage {
+    Unmaterialized,
+    Action(RootLineageId),
+}
+
+impl Default for RootLineage {
+    fn default() -> Self {
+        Self::Unmaterialized
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::ai::combat_search_v2) struct SearchNode {
     pub(in crate::ai::combat_search_v2) engine: EngineState,
@@ -21,6 +36,7 @@ pub(in crate::ai::combat_search_v2) struct SearchNode {
     pub(in crate::ai::combat_search_v2) action_prior_score: Option<f64>,
     pub(in crate::ai::combat_search_v2) action_ordering_frontier_hint: i32,
     pub(in crate::ai::combat_search_v2) rollout_estimate: RolloutNodeEstimate,
+    pub(in crate::ai::combat_search_v2) root_lineage: RootLineage,
 }
 
 impl SearchNode {
@@ -40,6 +56,7 @@ impl SearchNode {
             action_prior_score: None,
             action_ordering_frontier_hint: 0,
             rollout_estimate: RolloutNodeEstimate::unevaluated(),
+            root_lineage: RootLineage::Unmaterialized,
         }
     }
 
@@ -62,6 +79,7 @@ impl SearchNode {
             action_prior_score: None,
             action_ordering_frontier_hint: 0,
             rollout_estimate: RolloutNodeEstimate::unevaluated(),
+            root_lineage: self.root_lineage,
         }
     }
 
@@ -78,6 +96,13 @@ impl SearchNode {
             }
             _ => {}
         }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn push_action(
+        &mut self,
+        action: CombatSearchV2ActionTrace,
+    ) {
+        self.actions.push(action);
     }
 
     pub(in crate::ai::combat_search_v2) fn note_potion_tactical_priority(

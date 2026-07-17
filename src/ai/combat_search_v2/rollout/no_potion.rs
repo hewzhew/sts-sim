@@ -183,7 +183,7 @@ fn no_potion_rollout(
         let child_build_started = Instant::now();
         let mut child = rollout.clone_for_child(step.position.engine, step.position.combat);
         child.note_input(&choice.choice.input);
-        child.actions.push(CombatSearchV2ActionTrace {
+        child.push_action(CombatSearchV2ActionTrace {
             step_index: rollout.actions.len(),
             action_id: choice.original_action_id,
             action_key: choice.choice.action_key,

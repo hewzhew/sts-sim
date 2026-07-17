@@ -128,6 +128,7 @@ fn conservative_rollout_records_estimated_terminal_win() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config::default();
     let mut performance = RolloutPerformanceCounters::default();
@@ -148,7 +149,13 @@ fn conservative_rollout_records_estimated_terminal_win() {
 
 #[test]
 fn rollout_cache_reuses_exact_state_estimate() {
-    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::ConservativeNoPotion, 4, 4, 3);
+    let mut cache = RolloutCache::new(
+        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        4,
+        4,
+        3,
+        0,
+    );
     let node = SearchNode {
         engine: EngineState::CombatPlayerTurn,
         combat: blank_test_combat(),
@@ -163,6 +170,7 @@ fn rollout_cache_reuses_exact_state_estimate() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config::default();
 
@@ -176,7 +184,7 @@ fn rollout_cache_reuses_exact_state_estimate() {
 
 #[test]
 fn rollout_report_includes_turn_beam_anchor_attribution() {
-    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 4, 3);
+    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 4, 3, 0);
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     let node = SearchNode {
@@ -193,6 +201,7 @@ fn rollout_report_includes_turn_beam_anchor_attribution() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
@@ -218,7 +227,7 @@ fn rollout_report_includes_turn_beam_anchor_attribution() {
 
 #[test]
 fn rollout_report_includes_turn_beam_extension_attribution() {
-    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 2, 3);
+    let mut cache = RolloutCache::new(CombatSearchV2RolloutPolicy::TurnBeamNoPotion, 4, 2, 3, 0);
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     let node = SearchNode {
@@ -235,6 +244,7 @@ fn rollout_report_includes_turn_beam_extension_attribution() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
@@ -284,6 +294,7 @@ fn rollout_estimate_records_phase_adjusted_enemy_effort() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
 
     let estimate = RolloutNodeEstimate::from_node(
@@ -320,6 +331,7 @@ fn conservative_rollout_stops_before_large_pending_choice_branch() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config::default();
     let mut performance = RolloutPerformanceCounters::default();
@@ -378,6 +390,7 @@ fn engine_rollout_stops_at_small_structured_pending_choice_without_calling_it_no
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config::default();
     let mut performance = RolloutPerformanceCounters::default();
@@ -418,6 +431,7 @@ fn conservative_rollout_tracks_small_pending_choice_resolution() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config::default();
     let mut performance = RolloutPerformanceCounters::default();
@@ -460,6 +474,7 @@ fn turn_beam_rollout_preserves_conservative_anchor_win() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
@@ -496,6 +511,7 @@ fn turn_beam_rollout_resolves_small_pending_choice_via_conservative_fallback() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
@@ -537,6 +553,7 @@ fn turn_beam_rollout_still_stops_before_large_pending_choice_branch() {
         action_prior_score: None,
         action_ordering_frontier_hint: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        root_lineage: Default::default(),
     };
     let config = CombatSearchV2Config {
         rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,

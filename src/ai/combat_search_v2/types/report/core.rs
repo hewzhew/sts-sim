@@ -6,9 +6,10 @@ use super::super::{
 use super::evidence::CombatSearchV2PolicyEvidenceReport;
 use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
+use super::root_evidence::{CombatSearchV2QuantumEvidence, CombatSearchV2RootEvidenceSnapshot};
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 17;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
@@ -31,6 +32,8 @@ pub struct CombatSearchV2Report {
     pub stats: CombatSearchV2Stats,
     pub performance: CombatSearchV2PerformanceReport,
     pub evidence_reliability: CombatSearchV2EvidenceReport,
+    pub quantum_history: Vec<CombatSearchV2QuantumEvidence>,
+    pub final_root_evidence: CombatSearchV2RootEvidenceSnapshot,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -115,6 +118,7 @@ pub struct CombatSearchV2PerformanceReport {
     pub terminal_turn_plan_seed_rollout_skips: u64,
     pub turn_local_dominance_rollout_skips: u64,
     pub rollout_estimate_elapsed_us: u128,
+    pub rollout_promotion_actions_replayed: u64,
     pub engine_step_calls: u64,
     pub engine_step_elapsed_us: u128,
     pub frontier_pop_calls: u64,
