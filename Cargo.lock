@@ -309,6 +309,7 @@ name = "sts_combat_planner"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "sts_simulator",
 ]
 

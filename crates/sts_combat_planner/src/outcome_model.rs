@@ -86,7 +86,7 @@ impl CombatOutcomeTrainingExampleV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CombatOutcomeModelTrainingConfigV1 {
     pub epochs: usize,
     pub learning_rate: f64,
@@ -122,7 +122,7 @@ pub enum CombatOutcomeModelErrorV1 {
     InvalidTrainingConfig,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CombatOutcomeModelV1 {
     model_id: String,
     continuation_policy_manifest: String,

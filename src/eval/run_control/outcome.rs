@@ -3,7 +3,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatOutcomeFeatureVectorV1, CombatOutcomeLabelProvenanceV1, CombatOutcomeTrainingExampleV1,
+    CombatOutcomeDatasetErrorV1, CombatOutcomeFeatureVectorV1, CombatOutcomeLabelProvenanceV1,
+    CombatOutcomeTrainingBatchV1, CombatOutcomeTrainingCaseV1, CombatOutcomeTrainingExampleV1,
 };
 
 use crate::engine::run_loop::FinishedActiveCombat;
@@ -42,6 +43,8 @@ pub struct CombatOutcomeTracker {
     last: Option<CombatBaselineOutcomeV1>,
     #[serde(default)]
     last_training_examples: Vec<CombatOutcomeTrainingExampleV1>,
+    #[serde(default)]
+    training_cases: Vec<CombatOutcomeTrainingCaseV1>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -158,6 +161,7 @@ impl CombatOutcomeTracker {
     pub fn finish(
         &mut self,
         case_id: impl Into<String>,
+        split_group_id: impl Into<String>,
         finished: &FinishedActiveCombat,
         continuation_policy_manifest: impl Into<String>,
     ) -> CombatBaselineOutcomeV1 {
@@ -169,10 +173,11 @@ impl CombatOutcomeTracker {
             last_observed_turn: None,
         });
         let final_hp = finished.combat_state.entities.player.current_hp;
+        let case_id = case_id.into();
         let outcome = CombatBaselineOutcomeV1 {
             schema_name: COMBAT_BASELINE_OUTCOME_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
-            case_id: case_id.into(),
+            case_id: case_id.clone(),
             terminal: combat_terminal(&finished.engine_state, &finished.combat_state),
             start_hp: draft.start_hp,
             final_hp,
@@ -203,6 +208,13 @@ impl CombatOutcomeTracker {
                 .collect(),
             CombatTerminal::Unresolved => Vec::new(),
         };
+        if !self.last_training_examples.is_empty() {
+            self.training_cases.push(CombatOutcomeTrainingCaseV1 {
+                case_id,
+                split_group_id: split_group_id.into(),
+                examples: self.last_training_examples.clone(),
+            });
+        }
         self.last = Some(outcome.clone());
         outcome
     }
@@ -213,6 +225,25 @@ impl CombatOutcomeTracker {
 
     pub fn last_training_examples(&self) -> &[CombatOutcomeTrainingExampleV1] {
         &self.last_training_examples
+    }
+
+    pub fn training_batches(
+        &self,
+    ) -> Result<Vec<CombatOutcomeTrainingBatchV1>, CombatOutcomeDatasetErrorV1> {
+        let mut cases_by_policy = std::collections::BTreeMap::<String, Vec<_>>::new();
+        for case in &self.training_cases {
+            let Some(example) = case.examples.first() else {
+                continue;
+            };
+            cases_by_policy
+                .entry(example.continuation_policy_manifest.clone())
+                .or_default()
+                .push(case.clone());
+        }
+        cases_by_policy
+            .into_iter()
+            .map(|(policy, cases)| CombatOutcomeTrainingBatchV1::new(policy, cases))
+            .collect()
     }
 }
 
@@ -327,7 +358,7 @@ mod tests {
             ),
             combat_state,
         };
-        let outcome = tracker.finish("jaw", &finished, "test-realized-policy-v1");
+        let outcome = tracker.finish("jaw", "test-run-root", &finished, "test-realized-policy-v1");
 
         assert_eq!(outcome.start_hp, 72);
         assert_eq!(outcome.final_hp, 65);
@@ -338,6 +369,10 @@ mod tests {
             .last_training_examples()
             .iter()
             .all(|example| example.continuation_policy_manifest == "test-realized-policy-v1"));
+        let batches = tracker.training_batches().expect("training batch is valid");
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].cases[0].case_id, "jaw");
+        assert_eq!(batches[0].cases[0].split_group_id, "test-run-root");
     }
 
     fn sample_baseline() -> CombatBaselineOutcomeV1 {

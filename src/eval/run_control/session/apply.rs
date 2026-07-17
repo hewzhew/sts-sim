@@ -583,8 +583,17 @@ impl RunControlSession {
                     "run-control/legacy-search-realized-behavior-v1"
                 }
             };
-            self.combat_outcomes
-                .finish("last_combat", finished, continuation_policy_manifest);
+            let case_id = format!(
+                "seed-{}-combat-{}",
+                self.run_state.seed, self.combat_sequence
+            );
+            let split_group_id = format!("seed-{}", self.run_state.seed);
+            self.combat_outcomes.finish(
+                case_id,
+                split_group_id,
+                finished,
+                continuation_policy_manifest,
+            );
             self.last_completed_combat_sequence = Some(self.combat_sequence);
             self.last_completed_combat_source = Some(completion_source);
         }
