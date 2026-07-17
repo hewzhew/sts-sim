@@ -9,7 +9,7 @@ use super::run_contract::RunContract;
 use super::run_identity::{RunIdentity, SourceIdentity};
 use super::trajectory_snapshot::FrontierTrajectoryEvaluation;
 use super::{
-    combat_portfolio_json, run_state_json, trajectory_snapshot, Args, Branch, BranchStatus,
+    combat_search_session_json, run_state_json, trajectory_snapshot, Args, Branch, BranchStatus,
 };
 
 pub(super) fn manifest_value(
@@ -270,7 +270,7 @@ pub(super) fn result_value(
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
         "accepted_high_loss_combat_diagnostics": accepted_high_loss_combat_diagnostics,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
+        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_search_session_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
         "combat_search_history": &branch.combat_search_history,
         "execution_adjudication": super::primary_search_outcome::latest_execution_adjudication(
@@ -758,32 +758,31 @@ mod tests {
             shadow_audit_us: 37,
             root_turn_plan_diag_us: 41,
         };
-        let report = super::super::combat_search_report::CombatSearchPortfolioReport {
-            status: super::super::combat_search_report::CombatSearchPortfolioStatus::Failed(
+        let report = super::super::combat_search_report::CombatSearchSessionReport {
+            status: super::super::combat_search_report::CombatSearchSessionStatus::Failed(
                 "no_complete_winning_candidate".to_string(),
             ),
+            profile_id: "canonical_combat_session",
             max_nodes: 1_000,
             wall_ms: 500,
+            potion_policy: "never",
+            max_potions_used: Some(0),
+            work_quanta: vec![
+                super::super::combat_search_report::CombatSearchQuantumReport {
+                    label: "initial",
+                    additional_nodes: 1_000,
+                    soft_wall_ms: Some(500),
+                },
+            ],
             action_keys: vec!["combat/play:Strike:target0".to_string()],
-            attempts: vec![super::super::combat_search_report::CombatSearchLaneReport {
-                label: "primary",
-                status: super::super::combat_search_report::CombatSearchPortfolioStatus::Failed(
-                    "no_complete_winning_candidate".to_string(),
-                ),
-                max_nodes: 1_000,
-                wall_ms: 500,
-                potion_policy: "never",
-                max_potions_used: Some(0),
-                action_keys: vec!["combat/play:Strike:target0".to_string()],
-                engine_fingerprint: "primary-engine".to_string(),
-                candidate_tier: None,
-                selected: false,
-                incumbent_reason: "invalid_result".to_string(),
-                combat_final_hp: None,
-                run_hp: None,
-                potions_used: None,
-                turns: None,
-            }],
+            semantics_fingerprint: "canonical-engine".to_string(),
+            candidate_tier: None,
+            applied: false,
+            decision: "no_accepted_candidate".to_string(),
+            combat_final_hp: None,
+            run_hp: None,
+            potions_used: None,
+            turns: None,
         };
 
         let value = super::super::primary_search_outcome::primary_search_outcome_value(
@@ -792,7 +791,7 @@ mod tests {
         );
 
         assert_eq!(value["status"], "no_accepted_line");
-        assert_eq!(value["profile"]["profile_id"], "primary");
+        assert_eq!(value["profile"]["profile_id"], "canonical_combat_session");
         assert_eq!(value["profile"]["stakes"], "hallway");
         assert_eq!(value["profile"]["max_nodes"], 1_000);
         assert_eq!(value["profile"]["wall_ms"], 500);

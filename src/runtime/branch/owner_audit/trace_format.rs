@@ -10,7 +10,7 @@ use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_c
 use super::branch_path::BranchPathStep;
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
-    combat_portfolio_json, run_state_json, Args, BoundarySite, Branch, BranchStatus, Owner,
+    combat_search_session_json, run_state_json, Args, BoundarySite, Branch, BranchStatus, Owner,
 };
 
 pub(super) fn run_start_event(args: Args) -> Value {
@@ -53,7 +53,7 @@ pub(super) fn node_event(
         "arrived": branch.path.last().map(path_step_value),
         "trajectory_head": branch.trajectory.committed_head(),
         "combat_search": branch.combat_search,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::trace_value),
+        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_search_session_json::trace_value),
         "choices": choices.iter().enumerate()
             .map(|(index, choice)| {
                 choice_value(index, choice, expanded.get(index).copied().unwrap_or(false))

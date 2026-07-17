@@ -451,8 +451,7 @@ impl CombatSearchEngineProfile {
     }
 
     pub fn semantics_fingerprint(self) -> String {
-        serde_json::to_string(&self.plugins)
-            .expect("combat search plugin stack should serialize")
+        serde_json::to_string(&self.plugins).expect("combat search plugin stack should serialize")
     }
 
     pub fn to_config(self) -> CombatSearchV2Config {
@@ -731,7 +730,10 @@ mod tests {
         };
 
         assert_ne!(base.engine_fingerprint(), refined.engine_fingerprint());
-        assert_eq!(base.semantics_fingerprint(), refined.semantics_fingerprint());
+        assert_eq!(
+            base.semantics_fingerprint(),
+            refined.semantics_fingerprint()
+        );
     }
 
     #[test]

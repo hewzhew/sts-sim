@@ -125,8 +125,8 @@ pub use progress_journal::{
     RunProgressJournalV1, RUN_PROGRESS_JOURNAL_SCHEMA_NAME, RUN_PROGRESS_JOURNAL_SCHEMA_VERSION,
 };
 pub use progress_options::{
-    RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlAutoStepOptions, RunControlCombatSearchQuantum, RunControlCombatSegmentMode,
+    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};

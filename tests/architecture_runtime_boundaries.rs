@@ -520,12 +520,28 @@ fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
     assert!(progress.contains("outcome.progress_steps.iter().cloned()"));
     assert!(progress.contains("with_progress_steps"));
 
-    let lane_runner =
-        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_lane_runner.rs")
-            .expect("read owner-audit combat lane runner");
-    assert!(lane_runner.contains("trial.apply_combat_search(options.search)"));
-    assert!(!lane_runner.contains("apply_progress_step"));
-    assert!(!lane_runner.contains("apply_owner_audit_progress_step"));
+    let search_orchestrator =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_orchestrator.rs")
+            .expect("read owner-audit combat search orchestrator");
+    assert_eq!(
+        search_orchestrator.matches(".apply_combat_search(").count(),
+        1,
+        "owner audit must invoke exactly one canonical combat search session"
+    );
+    assert!(!search_orchestrator.contains("run_lane_attempt"));
+    assert!(!search_orchestrator.contains("arbitrate_post_primary"));
+    assert!(!search_orchestrator.contains("let root = session.clone()"));
+    for retired_lane_owner in [
+        "src/runtime/branch/owner_audit/combat_search_lane_runner.rs",
+        "src/runtime/branch/owner_audit/combat_search_lane_options.rs",
+        "src/runtime/branch/owner_audit/combat_search_lanes.rs",
+        "src/runtime/branch/owner_audit/combat_search_portfolio_plan.rs",
+    ] {
+        assert!(
+            !std::path::Path::new(retired_lane_owner).exists(),
+            "retired multi-root combat search owner must stay deleted: {retired_lane_owner}"
+        );
+    }
 
     let owner_runner = std::fs::read_to_string("src/runtime/branch/owner_audit/runner.rs")
         .expect("read owner-audit bounded runner integration");
@@ -550,15 +566,15 @@ fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
     assert!(!owner_orchestrator.contains("OWNER_ROUTINE_STEP_LIMIT"));
     assert!(!owner_orchestrator.contains("owner routine step budget exhausted"));
 
-    let portfolio_result =
-        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_portfolio_result.rs")
-            .expect("read combat portfolio result");
-    assert!(!portfolio_result.contains("should_continue_operation_budget_chunk"));
-    assert!(!portfolio_result.contains("applied_operations"));
-    let portfolio_output =
-        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_portfolio_output.rs")
-            .expect("read combat portfolio output");
-    assert!(!portfolio_output.contains("applied_operations"));
+    let search_result =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_session_result.rs")
+            .expect("read combat search session result");
+    assert!(!search_result.contains("should_continue_operation_budget_chunk"));
+    assert!(!search_result.contains("applied_operations"));
+    let search_output =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_session_output.rs")
+            .expect("read combat search session output");
+    assert!(!search_output.contains("applied_operations"));
 
     let journal = std::fs::read_to_string("src/eval/run_control/progress_journal.rs")
         .expect("read typed progress journal");
@@ -574,8 +590,8 @@ fn committed_combat_execution_is_atomic_and_separate_from_run_decisions() {
         "src/runtime/branch/owner_audit/runner.rs",
         "src/runtime/branch/owner_audit/branch_model.rs",
         "src/runtime/branch/owner_audit/owner_orchestrator.rs",
-        "src/runtime/branch/owner_audit/combat_search_portfolio_output.rs",
-        "src/runtime/branch/owner_audit/combat_search_portfolio_result.rs",
+        "src/runtime/branch/owner_audit/combat_search_session_output.rs",
+        "src/runtime/branch/owner_audit/combat_search_session_result.rs",
         "src/runtime/branch/owner_audit/render.rs",
         "src/runtime/branch/owner_audit/trace_format.rs",
         "src/runtime/branch/owner_audit/run_capsule_format.rs",
@@ -736,9 +752,9 @@ fn windows_test_linking_uses_the_bundled_lld_without_machine_specific_paths() {
 fn combat_line_adjudication_has_one_production_owner() {
     let selector = std::fs::read_to_string("src/eval/run_control/combat_line_selector.rs")
         .expect("read combat line selector");
-    let lane_runner =
-        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_lane_runner.rs")
-            .expect("read combat search lane runner");
+    let orchestrator =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/combat_search_orchestrator.rs")
+            .expect("read combat search orchestrator");
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner audit module");
     let review_adapter = [
@@ -752,8 +768,10 @@ fn combat_line_adjudication_has_one_production_owner() {
     .join("\n");
 
     assert!(!selector.contains("CombatLineAcceptancePolicy::default()"));
-    assert!(!lane_runner.contains("reject_dirty_win_status"));
-    assert!(!lane_runner.contains("master_deck_curse_count"));
+    assert!(!selector.contains("find_clean_no_potion_alternative"));
+    assert!(!selector.contains("run_combat_search_v2"));
+    assert!(!orchestrator.contains("reject_dirty_win_status"));
+    assert!(!orchestrator.contains("master_deck_curse_count"));
     assert!(!owner_audit.contains("combat_search_dirty_win.rs"));
     for forbidden in [
         "meta_changes",

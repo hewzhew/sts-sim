@@ -7,7 +7,7 @@ use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::branch_path::BranchPathStep;
 use super::branch_policy_lane::BranchPolicyLane;
 use super::branch_trajectory::BranchTrajectoryState;
-use super::combat_search_report::CombatSearchPortfolioReport;
+use super::combat_search_report::CombatSearchSessionReport;
 pub(super) use sts_simulator::runtime::branch::{
     BoundarySite, BranchStatus, Owner, TerminalOutcome,
 };
@@ -20,7 +20,7 @@ pub(super) struct Branch {
     pub(super) session: RunControlSession,
     pub(super) status: BranchStatus,
     pub(super) policy_lane: BranchPolicyLane,
-    pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
+    pub(super) combat_portfolio: Option<CombatSearchSessionReport>,
     pub(super) recent_progress_journal: RunProgressJournalV1,
     pub(super) recent_planner_capture: PlannerBoundaryCaptureSegmentV1,
     pub(super) trajectory: BranchTrajectoryState,

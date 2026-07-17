@@ -8,8 +8,8 @@ use sts_simulator::eval::run_control::{
 
 use super::accepted_high_loss_diagnostic::AcceptedHighLossDiagnosticDraft;
 use super::combat_search_orchestrator;
-use super::combat_search_portfolio_result::CombatSearchPortfolioResult;
-use super::combat_search_report::CombatSearchPortfolioReport;
+use super::combat_search_report::CombatSearchSessionReport;
+use super::combat_search_session_result::CombatSearchSessionResult;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_cutpoint_recorder::RunCutpointRecorder;
 use super::run_deadline::RunDeadline;
@@ -17,7 +17,7 @@ use super::{Args, BranchStatus, TerminalOutcome};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
-    pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
+    pub(super) combat_portfolio: Option<CombatSearchSessionReport>,
     pub(super) progress_journal: RunProgressJournalV1,
     pub(super) planner_capture: PlannerBoundaryCaptureSegmentV1,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
@@ -171,8 +171,9 @@ fn execute_one_owner_audit_step(
             .before_combat_search(session, &context)
             .map_err(|error| format!("cutpoint persistence failed: {error}"))?;
     }
-    let portfolio = match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
-        Ok(portfolio) => portfolio,
+    let search = match combat_search_orchestrator::run_combat_search_session_step(session, run_args)
+    {
+        Ok(search) => search,
         Err(error) => {
             if let Some(recorder) = cutpoints.as_deref_mut() {
                 recorder.retain_on_error().map_err(|cutpoint_error| {
@@ -184,10 +185,10 @@ fn execute_one_owner_audit_step(
             return Err(format!("combat search failed: {error}"));
         }
     };
-    absorb_portfolio_output(log, &portfolio);
-    let progress_steps = portfolio.progress_steps.clone();
+    absorb_search_output(log, &search);
+    let progress_steps = search.progress_steps.clone();
     if let Some(recorder) = cutpoints.as_deref_mut() {
-        if let Err(error) = recorder.after_combat_search(&portfolio.status) {
+        if let Err(error) = recorder.after_combat_search(&search.status) {
             return Ok(BoundedRunStepControlV1::Stop {
                 progress_steps,
                 output: log.finish(
@@ -199,11 +200,11 @@ fn execute_one_owner_audit_step(
         }
     }
     let applied = progress_steps.len();
-    let status = portfolio.status;
-    if portfolio.report.is_some() || applied == 0 {
+    let status = search.status;
+    if search.report.is_some() || applied == 0 {
         return Ok(BoundedRunStepControlV1::Stop {
             progress_steps,
-            output: log.finish(status, portfolio.report, RunProgressJournalV1::default()),
+            output: log.finish(status, search.report, RunProgressJournalV1::default()),
         });
     }
     Ok(BoundedRunStepControlV1::Continue { progress_steps })
@@ -255,18 +256,18 @@ fn execute_one_noncombat_step(
     }
 }
 
-fn absorb_portfolio_output(log: &mut AdvanceLog, portfolio: &CombatSearchPortfolioResult) {
+fn absorb_search_output(log: &mut AdvanceLog, search: &CombatSearchSessionResult) {
     log.combat_search
-        .extend(portfolio.combat_search.iter().cloned());
+        .extend(search.combat_search.iter().cloned());
     log.accepted_high_loss_diagnostics
-        .extend(portfolio.accepted_high_loss_diagnostics.iter().cloned());
+        .extend(search.accepted_high_loss_diagnostics.iter().cloned());
 }
 
 impl AdvanceLog {
     fn finish(
         &mut self,
         status: BranchStatus,
-        combat_portfolio: Option<CombatSearchPortfolioReport>,
+        combat_portfolio: Option<CombatSearchSessionReport>,
         progress_journal: RunProgressJournalV1,
     ) -> AdvanceResult {
         advance_result(
@@ -281,7 +282,7 @@ impl AdvanceLog {
 
 fn advance_result(
     status: BranchStatus,
-    combat_portfolio: Option<CombatSearchPortfolioReport>,
+    combat_portfolio: Option<CombatSearchSessionReport>,
     progress_journal: RunProgressJournalV1,
     combat_search: Vec<CombatSearchTraceSummary>,
     accepted_high_loss_diagnostics: Vec<AcceptedHighLossDiagnosticDraft>,

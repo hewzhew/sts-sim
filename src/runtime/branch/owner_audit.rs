@@ -47,34 +47,18 @@ mod challenger_execution_smoke;
 mod cli_args;
 #[path = "owner_audit/combat_gap_case.rs"]
 mod combat_gap_case;
-#[path = "owner_audit/combat_portfolio_json.rs"]
-mod combat_portfolio_json;
-#[path = "owner_audit/combat_search_incumbent.rs"]
-mod combat_search_incumbent;
-#[path = "owner_audit/combat_search_lane_commit.rs"]
-mod combat_search_lane_commit;
-#[path = "owner_audit/combat_search_lane_options.rs"]
-mod combat_search_lane_options;
-#[path = "owner_audit/combat_search_lane_runner.rs"]
-mod combat_search_lane_runner;
-#[path = "owner_audit/combat_search_lane_spec.rs"]
-mod combat_search_lane_spec;
-#[path = "owner_audit/combat_search_lanes.rs"]
-mod combat_search_lanes;
 #[path = "owner_audit/combat_search_orchestrator.rs"]
 mod combat_search_orchestrator;
-#[path = "owner_audit/combat_search_portfolio_context.rs"]
-mod combat_search_portfolio_context;
-#[path = "owner_audit/combat_search_portfolio_output.rs"]
-mod combat_search_portfolio_output;
-#[path = "owner_audit/combat_search_portfolio_plan.rs"]
-mod combat_search_portfolio_plan;
-#[path = "owner_audit/combat_search_portfolio_result.rs"]
-mod combat_search_portfolio_result;
-#[path = "owner_audit/combat_search_recipe.rs"]
-mod combat_search_recipe;
 #[path = "owner_audit/combat_search_report.rs"]
 mod combat_search_report;
+#[path = "owner_audit/combat_search_session_json.rs"]
+mod combat_search_session_json;
+#[path = "owner_audit/combat_search_session_output.rs"]
+mod combat_search_session_output;
+#[path = "owner_audit/combat_search_session_plan.rs"]
+mod combat_search_session_plan;
+#[path = "owner_audit/combat_search_session_result.rs"]
+mod combat_search_session_result;
 #[path = "owner_audit/combat_search_survival.rs"]
 mod combat_search_survival;
 #[path = "owner_audit/combat_search_trace_actions.rs"]

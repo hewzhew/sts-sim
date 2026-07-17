@@ -858,7 +858,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 16);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 17);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION

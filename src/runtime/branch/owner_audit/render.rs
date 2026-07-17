@@ -3,7 +3,7 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::branch_status_view;
-use super::combat_search_report::{CombatSearchPortfolioReport, CombatSearchPortfolioStatus};
+use super::combat_search_report::{CombatSearchSessionReport, CombatSearchSessionStatus};
 use super::owner_model::OwnerChoice;
 pub(super) use super::render_choice::{render_candidate_decision_compact, render_timeline_choice};
 use super::{render_choice, BoundarySite, Branch, BranchStatus, Owner};
@@ -93,28 +93,25 @@ fn print_progress_journal(journal: &sts_simulator::eval::run_control::RunProgres
     }
 }
 
-fn print_combat_portfolio(report: &CombatSearchPortfolioReport) {
+fn print_combat_portfolio(report: &CombatSearchSessionReport) {
     println!(
-        "  combat_portfolio: {} budget={}nodes/{}ms",
+        "  combat_search_session: {} profile={} applied={} decision={} budget={}nodes/{}ms potion={} max_potions={:?}",
         combat_portfolio_status_label(&report.status),
+        report.profile_id,
+        report.applied,
+        report.decision,
         report.max_nodes,
-        report.wall_ms
+        report.wall_ms,
+        report.potion_policy,
+        report.max_potions_used,
     );
-    for attempt in &report.attempts {
+    for quantum in &report.work_quanta {
         println!(
-            "    attempt {}: {} selected={} tier={:?} decision={} potion={} max_potions={:?} budget={}nodes/{}ms",
-            attempt.label,
-            combat_portfolio_status_label(&attempt.status),
-            attempt.selected,
-            attempt.candidate_tier,
-            attempt.incumbent_reason,
-            attempt.potion_policy,
-            attempt.max_potions_used,
-            attempt.max_nodes,
-            attempt.wall_ms
+            "    work_quantum {}: +{}nodes/{:?}ms",
+            quantum.label, quantum.additional_nodes, quantum.soft_wall_ms,
         );
-        print_action_path("      applied_path", &attempt.action_keys);
     }
+    print_action_path("    applied_path", &report.action_keys);
 }
 
 fn print_action_path(prefix: &str, action_keys: &[String]) {
@@ -128,11 +125,11 @@ fn print_action_path(prefix: &str, action_keys: &[String]) {
     }
 }
 
-fn combat_portfolio_status_label(status: &CombatSearchPortfolioStatus) -> String {
+fn combat_portfolio_status_label(status: &CombatSearchSessionStatus) -> String {
     match status {
-        CombatSearchPortfolioStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
-        CombatSearchPortfolioStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
-        CombatSearchPortfolioStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
+        CombatSearchSessionStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
+        CombatSearchSessionStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
+        CombatSearchSessionStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
     }
 }
 

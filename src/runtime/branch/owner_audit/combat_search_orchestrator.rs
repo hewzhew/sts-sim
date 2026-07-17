@@ -1,166 +1,282 @@
-use sts_simulator::eval::run_control::RunControlSession;
-
-use super::combat_search_incumbent::CombatSearchIncumbent;
-use super::combat_search_lane_commit::primary_operation_budget_exhausted;
-use super::combat_search_lane_runner::{
-    lane_attempt_report, run_lane_attempt, CombatSearchLaneAttempt,
+use sts_simulator::eval::run_control::{
+    combat_search_trace_summaries, CombatSearchTraceSummary, RunControlHpLossLimit,
+    RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome, RunProgressStepV1,
 };
-use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest, CombatSearchStakes};
-use super::combat_search_portfolio_output::CombatSearchPortfolioOutput;
-use super::combat_search_portfolio_result::{combat_search_result, CombatSearchPortfolioResult};
-use super::combat_search_report::{combat_portfolio_report, CombatSearchLaneReport};
-use super::{Args, BranchStatus};
 
-pub(super) fn run_combat_portfolio_step(
+use super::accepted_high_loss_diagnostic::{accepted_high_loss_diagnostic, capture_active_combat};
+use super::combat_search_report::{
+    combat_search_session_report, CombatSearchQuantumReport, CombatSearchSessionReport,
+    CombatSearchSessionReportInput,
+};
+use super::combat_search_session_output::CombatSearchSessionOutput;
+use super::combat_search_session_plan::{
+    canonical_combat_search_session_plan, CombatSearchSessionPlan, CombatSearchStakes,
+};
+use super::combat_search_session_result::{combat_search_result, CombatSearchSessionResult};
+use super::combat_search_survival::owner_audit_hp_loss_limit;
+use super::combat_search_trace_actions::complete_search_action_keys;
+use super::{boundary_router, Args, BranchStatus};
+
+pub(super) fn run_combat_search_session_step(
     session: &mut RunControlSession,
     args: Args,
-) -> Result<CombatSearchPortfolioResult, String> {
-    let request = CombatSearchRequest::from_session(session, args);
-    let mut output = CombatSearchPortfolioOutput::default();
-    let mut lane_reports = Vec::new();
-
-    let mut primary = run_lane_attempt(session, &request, CombatSearchLane::primary())
-        .map_err(|err| format!("primary failed: {err}"))?;
-    if primary.applicable {
-        primary.incumbent_reason = "primary_fast_path";
-        primary.commit_into(session)?;
-    }
-    output.collect_attempt(&primary)?;
-    let mut status = primary.status.clone();
-    if primary_operation_budget_exhausted(&status) && !matches!(status, BranchStatus::Terminal(_)) {
-        return Ok(combat_search_result(status, None, output));
-    }
-    let saw_primary_combat_gap = matches!(status, BranchStatus::CombatGap { .. });
-    if request.should_report() && saw_primary_combat_gap {
-        lane_reports.push(lane_attempt_report(&primary));
-    }
-    if !saw_primary_combat_gap {
-        return Ok(combat_search_result(status, None, output));
-    }
-
-    let schedule = request.portfolio_after_primary(session);
-    if schedule.lanes.is_empty() {
-        let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(status, report, output));
-    }
-
-    if request.combat_budget_capped() {
-        status = combat_budget_capped_status(&request);
-        let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(status, report, output));
-    }
-    if request.stakes() == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio {
-        status = awaiting_auto_boundary(
-            "Combat",
-            "checkpoint before combat portfolio after primary search gap".to_string(),
+) -> Result<CombatSearchSessionResult, String> {
+    let plan = canonical_combat_search_session_plan(session, args);
+    if plan.combat_budget_capped(args) {
+        let status = combat_budget_capped_status(plan.stakes, args);
+        let report = session_report(
+            &plan,
+            status.clone(),
+            Vec::new(),
+            None,
+            false,
+            "outer_budget_cap",
         );
-        let report = portfolio_report(&request, status.clone(), lane_reports);
-        return Ok(combat_search_result(status, report, output));
+        return Ok(combat_search_result(
+            status,
+            Some(report),
+            CombatSearchSessionOutput::default(),
+        ));
+    }
+    if plan.should_checkpoint_before_search(args) {
+        let status = awaiting_auto_boundary(
+            "Combat",
+            "checkpoint before canonical combat search session".to_string(),
+        );
+        let report = session_report(&plan, status.clone(), Vec::new(), None, false, "checkpoint");
+        return Ok(combat_search_result(
+            status,
+            Some(report),
+            CombatSearchSessionOutput::default(),
+        ));
     }
 
-    let suppressed_attempts = schedule
-        .suppressed
-        .into_iter()
-        .map(|lane| CombatSearchLaneAttempt::duplicate_engine_suppressed(session, &request, lane))
-        .collect::<Vec<_>>();
-    let arbitration = arbitrate_post_primary(session, status, schedule.lanes, |root, lane| {
-        run_lane_attempt(root, &request, lane)
-    })?;
-    status = arbitration.status;
-    for attempt in arbitration.attempts.into_iter().chain(suppressed_attempts) {
-        output.collect_attempt(&attempt)?;
-        if request.should_report() {
-            lane_reports.push(lane_attempt_report(&attempt));
+    let combat_capture = capture_active_combat(session)?;
+    let owner_hp_loss_limit = match owner_audit_hp_loss_limit(session) {
+        RunControlHpLossLimit::Limit(limit) => Some(limit),
+        RunControlHpLossLimit::Unlimited => None,
+    };
+    let outcome = match session.apply_combat_search(plan.search.clone()) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let status = BranchStatus::AdvanceFailed(error);
+            let report = session_report(
+                &plan,
+                status.clone(),
+                Vec::new(),
+                None,
+                false,
+                "search_error",
+            );
+            return Ok(combat_search_result(
+                status,
+                Some(report),
+                CombatSearchSessionOutput::default(),
+            ));
         }
+    };
+    let status = search_status(session, &outcome);
+    let action_keys = complete_search_action_keys(&outcome.trace_annotations);
+    let applied_steps = committed_progress_steps(&outcome);
+    let applied = !applied_steps.is_empty();
+    let facts = candidate_facts(session, &outcome.trace_annotations, owner_hp_loss_limit);
+    let decision = session_decision(applied, facts.as_ref());
+
+    let mut output = CombatSearchSessionOutput::default();
+    output.progress_steps = applied_steps;
+    output.combat_search =
+        combat_search_summaries(&outcome, &plan, facts.as_ref(), applied, decision);
+    if let Some(diagnostic) = combat_capture.and_then(|capture| {
+        accepted_high_loss_diagnostic(
+            capture,
+            "canonical_combat_session",
+            &outcome.trace_annotations,
+            applied,
+            owner_hp_loss_limit,
+        )
+    }) {
+        output.accepted_high_loss_diagnostics.push(diagnostic);
     }
 
-    let report = portfolio_report(&request, status.clone(), lane_reports);
+    let report = (!applied).then(|| {
+        session_report(
+            &plan,
+            status.clone(),
+            action_keys,
+            facts.as_ref(),
+            applied,
+            decision,
+        )
+    });
     Ok(combat_search_result(status, report, output))
 }
 
-struct PostPrimaryArbitration {
-    status: BranchStatus,
-    attempts: Vec<CombatSearchLaneAttempt>,
+#[derive(Clone, Copy)]
+struct SearchCandidateFacts {
+    tier: SearchCandidateTier,
+    combat_final_hp: i32,
+    run_hp: i32,
+    potions_used: u32,
+    turns: u32,
 }
 
-fn arbitrate_post_primary<I, F>(
-    session: &mut RunControlSession,
-    fallback_status: BranchStatus,
-    lanes: I,
-    mut run_attempt: F,
-) -> Result<PostPrimaryArbitration, String>
-where
-    I: IntoIterator<Item = CombatSearchLane>,
-    F: FnMut(&RunControlSession, CombatSearchLane) -> Result<CombatSearchLaneAttempt, String>,
-{
-    let root = session.clone();
-    let mut incumbent = CombatSearchIncumbent::new();
-    let mut attempts: Vec<CombatSearchLaneAttempt> = Vec::new();
+#[derive(Clone, Copy)]
+enum SearchCandidateTier {
+    RelaxedCompleteWin,
+    ReserveCompliantCompleteWin,
+}
 
-    for lane in lanes {
-        let mut attempt =
-            run_attempt(&root, lane).map_err(|err| format!("{} failed: {err}", lane.label()))?;
-        if attempt.applicable {
-            let candidate = attempt.candidate_facts.ok_or_else(|| {
-                format!(
-                    "lane {} produced an applicable trial without facts",
-                    lane.label()
-                )
-            })?;
-            let previous_index = incumbent.selected_index();
-            let decision = incumbent.offer(attempts.len(), candidate);
-            attempt.incumbent_reason = decision.reason;
-            if decision.replaced {
-                if let Some(previous_index) = previous_index {
-                    attempts[previous_index].incumbent_reason = "replaced_by_better_candidate";
-                }
-            }
+impl SearchCandidateTier {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::RelaxedCompleteWin => "relaxed_complete_win",
+            Self::ReserveCompliantCompleteWin => "reserve_compliant_complete_win",
         }
-        attempts.push(attempt);
     }
-
-    let status = if let Some(selected_index) = incumbent.selected_index() {
-        let selected_status = attempts[selected_index].status.clone();
-        attempts[selected_index].commit_into(session)?;
-        selected_status
-    } else {
-        attempts
-            .last()
-            .map(|attempt| attempt.status.clone())
-            .unwrap_or(fallback_status)
-    };
-
-    Ok(PostPrimaryArbitration { status, attempts })
 }
 
-fn combat_budget_capped_status(request: &CombatSearchRequest) -> BranchStatus {
-    if request.stakes() == CombatSearchStakes::Boss {
+fn candidate_facts(
+    session: &RunControlSession,
+    annotations: &[RunControlTraceAnnotationV1],
+    owner_hp_loss_limit: Option<u32>,
+) -> Option<SearchCandidateFacts> {
+    let best_win =
+        combat_search_trace_summaries(annotations).find_map(|summary| summary.best_win)?;
+    let tier = if owner_hp_loss_limit.is_some_and(|limit| best_win.hp_loss.max(0) as u32 > limit) {
+        SearchCandidateTier::RelaxedCompleteWin
+    } else {
+        SearchCandidateTier::ReserveCompliantCompleteWin
+    };
+    Some(SearchCandidateFacts {
+        tier,
+        combat_final_hp: best_win.final_hp,
+        run_hp: session.visible_player_hp().0,
+        potions_used: best_win.potions_used,
+        turns: best_win.turns,
+    })
+}
+
+fn session_decision(applied: bool, facts: Option<&SearchCandidateFacts>) -> &'static str {
+    match (applied, facts.map(|facts| facts.tier)) {
+        (true, Some(SearchCandidateTier::ReserveCompliantCompleteWin)) => {
+            "accepted_reserve_compliant_candidate"
+        }
+        (true, Some(SearchCandidateTier::RelaxedCompleteWin)) => "accepted_relaxed_candidate",
+        (true, None) => "applied_direct_survival_action",
+        (false, Some(_)) => "candidate_rejected_by_typed_acceptance",
+        (false, None) => "no_accepted_candidate",
+    }
+}
+
+fn committed_progress_steps(outcome: &RunProgressOutcome) -> Vec<RunProgressStepV1> {
+    outcome
+        .progress_steps
+        .iter()
+        .filter(|step| !matches!(step, RunProgressStepV1::Stop(_)))
+        .cloned()
+        .collect()
+}
+
+fn combat_search_summaries(
+    outcome: &RunProgressOutcome,
+    plan: &CombatSearchSessionPlan,
+    facts: Option<&SearchCandidateFacts>,
+    applied: bool,
+    decision: &'static str,
+) -> Vec<CombatSearchTraceSummary> {
+    let mut summaries =
+        combat_search_trace_summaries(&outcome.trace_annotations).collect::<Vec<_>>();
+    for summary in &mut summaries {
+        summary.lane = None;
+        summary.profile_id = Some("canonical_combat_session".to_string());
+        summary.profile_max_nodes = Some(plan.total_nodes);
+        summary.profile_wall_ms = Some(plan.total_wall_ms);
+        summary.profile_potion_policy = Some(potion_policy_label(plan.potion_policy).to_string());
+        summary.profile_max_potions_used = plan.max_potions_used;
+        summary.profile_internal_no_win_rescue_enabled = Some(false);
+        summary.engine_fingerprint = Some(plan.semantics_fingerprint.clone());
+        summary.portfolio_candidate_tier = facts.map(|facts| facts.tier.as_str().to_string());
+        summary.portfolio_selected = Some(applied);
+        summary.portfolio_decision = Some(decision.to_string());
+    }
+    summaries
+}
+
+fn session_report(
+    plan: &CombatSearchSessionPlan,
+    status: BranchStatus,
+    action_keys: Vec<String>,
+    facts: Option<&SearchCandidateFacts>,
+    applied: bool,
+    decision: &'static str,
+) -> CombatSearchSessionReport {
+    combat_search_session_report(CombatSearchSessionReportInput {
+        status,
+        profile_id: "canonical_combat_session",
+        max_nodes: plan.total_nodes,
+        wall_ms: plan.total_wall_ms,
+        potion_policy: plan.potion_policy,
+        max_potions_used: plan.max_potions_used,
+        work_quanta: plan
+            .search
+            .work_quanta
+            .iter()
+            .map(|quantum| CombatSearchQuantumReport {
+                label: quantum.label,
+                additional_nodes: quantum.additional_nodes,
+                soft_wall_ms: quantum.soft_wall_ms,
+            })
+            .collect(),
+        action_keys,
+        semantics_fingerprint: plan.semantics_fingerprint.clone(),
+        candidate_tier: facts.map(|facts| facts.tier.as_str().to_string()),
+        applied,
+        decision: decision.to_string(),
+        combat_final_hp: facts.map(|facts| facts.combat_final_hp),
+        run_hp: facts.map(|facts| facts.run_hp),
+        potions_used: facts.map(|facts| facts.potions_used),
+        turns: facts.map(|facts| facts.turns),
+    })
+}
+
+fn search_status(session: &RunControlSession, outcome: &RunProgressOutcome) -> BranchStatus {
+    if let Some(outcome) = boundary_router::terminal_outcome(session) {
+        BranchStatus::Terminal(outcome)
+    } else {
+        boundary_router::classify_auto_outcome(session, outcome)
+    }
+}
+
+fn combat_budget_capped_status(stakes: CombatSearchStakes, args: Args) -> BranchStatus {
+    if stakes == CombatSearchStakes::Boss {
         awaiting_auto_boundary(
             "Combat",
             format!(
-                "outer wall budget would cap combat portfolio; effective search={}ms rescue={}ms boss={}ms",
-                request.args.search_ms, request.args.rescue_search_ms, request.args.boss_search_ms
+                "outer wall budget would cap canonical combat search; initial={}ms refinement={}ms",
+                args.search_ms, args.boss_search_ms
             ),
         )
     } else {
         BranchStatus::BudgetGap {
             boundary: "Combat".to_string(),
             reason: format!(
-                "outer wall budget capped combat search; effective search={}ms rescue={}ms boss={}ms",
-                request.args.search_ms, request.args.rescue_search_ms, request.args.boss_search_ms
+                "outer wall budget capped canonical combat search; initial={}ms refinement={}ms",
+                args.search_ms, args.rescue_search_ms
             ),
         }
     }
 }
 
-fn portfolio_report(
-    request: &CombatSearchRequest,
-    status: BranchStatus,
-    attempts: Vec<CombatSearchLaneReport>,
-) -> Option<super::combat_search_report::CombatSearchPortfolioReport> {
-    request
-        .should_report()
-        .then(|| combat_portfolio_report(request.args, status, attempts))
+fn potion_policy_label(
+    policy: sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy,
+) -> &'static str {
+    match policy {
+        sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never => "never",
+        sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::All => "all",
+        sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted => {
+            "semantic"
+        }
+    }
 }
 
 fn awaiting_auto_boundary(boundary: impl Into<String>, reason: String) -> BranchStatus {
@@ -172,94 +288,30 @@ fn awaiting_auto_boundary(boundary: impl Into<String>, reason: String) -> Branch
 
 #[cfg(test)]
 mod tests {
-    use super::super::combat_search_incumbent::{
-        CombatSearchCandidateFacts, CombatSearchCandidateTier,
-    };
-    use super::super::combat_search_lane_runner::CombatSearchLaneAttempt;
-    use super::super::combat_search_lanes::CombatSearchLaneKind;
     use super::*;
-    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::eval::run_control::RunProgressOutcome;
 
-    fn candidate(
-        tier: CombatSearchCandidateTier,
-        run_hp: i32,
-        potions_used: u32,
-    ) -> CombatSearchCandidateFacts {
-        CombatSearchCandidateFacts {
-            terminal_run_victory: false,
-            tier,
-            combat_final_hp: run_hp,
-            run_hp,
-            potions_used,
-            potions_discarded: 0,
-            turns: 5,
-            action_count: 20,
-        }
+    #[test]
+    fn stop_records_are_not_misreported_as_committed_search_progress() {
+        let outcome = RunProgressOutcome::progress("gap");
+
+        assert!(committed_progress_steps(&outcome).is_empty());
     }
 
     #[test]
-    fn post_primary_attempts_share_root_and_commit_only_global_incumbent() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.current_hp = 70;
-        let lanes = [
-            CombatSearchLane::new(CombatSearchLaneKind::DiagnosticRescue),
-            CombatSearchLane::new(CombatSearchLaneKind::PrimaryImmediateEscalation),
-            CombatSearchLane::new(CombatSearchLaneKind::HallwaySurvivalFallback),
-        ];
-        let candidates = [
-            candidate(
-                CombatSearchCandidateTier::ReserveCompliantCompleteWin,
-                38,
-                2,
-            ),
-            candidate(
-                CombatSearchCandidateTier::ReserveCompliantCompleteWin,
-                48,
-                2,
-            ),
-            candidate(
-                CombatSearchCandidateTier::ReserveCompliantCompleteWin,
-                60,
-                3,
-            ),
-        ];
-        let mut calls = 0usize;
-
-        let result = arbitrate_post_primary(
-            &mut session,
-            BranchStatus::CombatGap {
-                boundary: "Combat".to_string(),
-                reason: "primary gap".to_string(),
-            },
-            lanes,
-            |root, lane| {
-                assert_eq!(root.run_state.current_hp, 70);
-                let index = calls;
-                calls += 1;
-                Ok(CombatSearchLaneAttempt::synthetic_for_test(
-                    root,
-                    lane.label(),
-                    candidates[index],
-                ))
-            },
-        )
-        .expect("portfolio arbitration");
-
-        assert_eq!(calls, 3);
-        assert_eq!(result.attempts.len(), 3);
-        assert_eq!(session.run_state.current_hp, 48);
+    fn candidate_tier_uses_owner_reserve_without_rejecting_relaxed_win() {
         assert_eq!(
-            result
-                .attempts
-                .iter()
-                .filter(|attempt| attempt.selected)
-                .count(),
-            1
-        );
-        assert!(result.attempts[1].selected);
-        assert_eq!(
-            result.attempts[2].incumbent_reason,
-            "incomparable_resource_trade"
+            session_decision(
+                true,
+                Some(&SearchCandidateFacts {
+                    tier: SearchCandidateTier::RelaxedCompleteWin,
+                    combat_final_hp: 10,
+                    run_hp: 10,
+                    potions_used: 0,
+                    turns: 5,
+                })
+            ),
+            "accepted_relaxed_candidate"
         );
     }
 }

@@ -8,7 +8,7 @@ use sts_simulator::runtime::branch::{
 };
 
 use super::branch_model::Branch;
-use super::combat_search_report::{CombatSearchLaneReport, CombatSearchPortfolioReport};
+use super::combat_search_report::CombatSearchSessionReport;
 
 pub(super) fn primary_search_outcome_from_branch(branch: &Branch) -> PrimarySearchOutcomeSummary {
     primary_search_outcome(&branch.combat_search, branch.combat_portfolio.as_ref())
@@ -16,7 +16,7 @@ pub(super) fn primary_search_outcome_from_branch(branch: &Branch) -> PrimarySear
 
 pub(super) fn primary_search_outcome_value(
     attempts: &[CombatSearchTraceSummary],
-    portfolio: Option<&CombatSearchPortfolioReport>,
+    portfolio: Option<&CombatSearchSessionReport>,
 ) -> serde_json::Value {
     serde_json::to_value(primary_search_outcome(attempts, portfolio))
         .unwrap_or(serde_json::Value::Null)
@@ -24,7 +24,7 @@ pub(super) fn primary_search_outcome_value(
 
 fn primary_search_outcome(
     attempts: &[CombatSearchTraceSummary],
-    portfolio: Option<&CombatSearchPortfolioReport>,
+    portfolio: Option<&CombatSearchSessionReport>,
 ) -> PrimarySearchOutcomeSummary {
     let primary_attempt = primary_attempt(attempts);
     let profile_attempt = primary_profile_attempt(portfolio);
@@ -44,7 +44,7 @@ fn primary_search_outcome(
         status: primary_search_status(primary_attempt).to_string(),
         profile: PrimarySearchProfileSummary {
             profile_id: profile_attempt
-                .map(|profile| profile.label.to_string())
+                .map(|profile| profile.profile_id.to_string())
                 .or_else(|| primary_attempt.and_then(|attempt| attempt.profile_id.clone())),
             stakes: primary_attempt.map(|attempt| attempt.combat_kind.clone()),
             max_nodes: profile_attempt
@@ -62,7 +62,7 @@ fn primary_search_outcome(
                 .and_then(|profile| profile.max_potions_used)
                 .or_else(|| primary_attempt.and_then(|attempt| attempt.profile_max_potions_used)),
             internal_no_win_rescue_enabled: profile_attempt
-                .map(|profile| profile.label == "diagnostic_rescue")
+                .map(|_| false)
                 .or_else(|| {
                     primary_attempt
                         .and_then(|attempt| attempt.profile_internal_no_win_rescue_enabled)
@@ -100,15 +100,9 @@ fn primary_attempt(attempts: &[CombatSearchTraceSummary]) -> Option<&CombatSearc
 }
 
 fn primary_profile_attempt(
-    portfolio: Option<&CombatSearchPortfolioReport>,
-) -> Option<&CombatSearchLaneReport> {
-    portfolio.and_then(|report| {
-        report
-            .attempts
-            .iter()
-            .find(|attempt| attempt.label == "primary")
-            .or_else(|| report.attempts.first())
-    })
+    search_session: Option<&CombatSearchSessionReport>,
+) -> Option<&CombatSearchSessionReport> {
+    search_session
 }
 
 fn primary_search_status(attempt: Option<&CombatSearchTraceSummary>) -> &'static str {
@@ -135,7 +129,7 @@ fn primary_search_status(attempt: Option<&CombatSearchTraceSummary>) -> &'static
 
 fn primary_search_telemetry(
     attempt: Option<&CombatSearchTraceSummary>,
-    profile: Option<&CombatSearchLaneReport>,
+    profile: Option<&CombatSearchSessionReport>,
 ) -> PrimarySearchTelemetrySummary {
     let total_us = attempt.map(|attempt| attempt.total_us).unwrap_or(0);
     PrimarySearchTelemetrySummary {
