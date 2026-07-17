@@ -130,6 +130,12 @@ impl RunControlSession {
         self.combat_outcomes.last()
     }
 
+    pub fn last_combat_outcome_training_examples(
+        &self,
+    ) -> &[sts_combat_planner::CombatOutcomeTrainingExampleV1] {
+        self.combat_outcomes.last_training_examples()
+    }
+
     pub fn last_completed_combat_automation_trajectory(
         &self,
     ) -> Option<&CombatAutomationTrajectoryRecordV1> {

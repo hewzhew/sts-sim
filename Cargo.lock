@@ -308,6 +308,7 @@ version = "0.1.0"
 name = "sts_combat_planner"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "sts_simulator",
 ]
 

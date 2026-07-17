@@ -8,3 +8,4 @@ autotests = false
 
 [dependencies]
 sts_core = { package = "sts_simulator", path = "../.." }
+serde = { version = "1.0", features = ["derive"] }

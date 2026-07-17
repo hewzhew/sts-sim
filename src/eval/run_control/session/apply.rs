@@ -558,6 +558,13 @@ impl RunControlSession {
             });
         self.combat_outcomes
             .observe_input_after(potion_observation, after_combat);
+        if matches!(self.engine_state, EngineState::CombatPlayerTurn) {
+            self.combat_outcomes.observe_player_turn_boundary(
+                self.active_combat
+                    .as_ref()
+                    .map(|active| &active.combat_state),
+            );
+        }
         let combat_observation_changes = if let Some(finished) = finished_combat.as_mut() {
             action_result_changes_from_domain_events(finished.combat_state.take_emitted_events())
         } else if let Some(active) = self.active_combat.as_mut() {
@@ -566,13 +573,20 @@ impl RunControlSession {
             Vec::new()
         };
         if let Some(finished) = finished_combat.as_ref() {
-            self.combat_outcomes.finish("last_combat", finished);
+            let completion_source = self
+                .current_combat_source
+                .take()
+                .unwrap_or(CombatCompletionSource::Manual);
+            let continuation_policy_manifest = match completion_source {
+                CombatCompletionSource::Manual => "run-control/manual-realized-behavior-v1",
+                CombatCompletionSource::SearchCombat => {
+                    "run-control/legacy-search-realized-behavior-v1"
+                }
+            };
+            self.combat_outcomes
+                .finish("last_combat", finished, continuation_policy_manifest);
             self.last_completed_combat_sequence = Some(self.combat_sequence);
-            self.last_completed_combat_source = Some(
-                self.current_combat_source
-                    .take()
-                    .unwrap_or(CombatCompletionSource::Manual),
-            );
+            self.last_completed_combat_source = Some(completion_source);
         }
         self.cleanup_inactive_combat();
         self.ensure_combat_started_if_needed()?;

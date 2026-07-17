@@ -28,6 +28,7 @@ fn outcome_example(enemy_hp: i32, energy: u8, victory: bool) -> CombatOutcomeTra
         if victory { 50 } else { 0 },
         80,
         CombatOutcomeLabelProvenanceV1::ExactScenarioReplay,
+        "tiny-exact-continuation-v1",
     )
 }
 

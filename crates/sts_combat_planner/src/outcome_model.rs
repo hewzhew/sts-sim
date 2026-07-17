@@ -1,15 +1,19 @@
+use sts_core::runtime::combat::CombatState;
 use sts_core::sim::combat::CombatPosition;
 
 pub const COMBAT_OUTCOME_FEATURE_SCHEMA_V1: &str = "oracle-combat-outcome-features/v1";
 const FEATURE_COUNT: usize = 12;
 const PARAMETER_COUNT: usize = FEATURE_COUNT + 1;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CombatOutcomeFeatureVectorV1(pub [f64; FEATURE_COUNT]);
 
 impl CombatOutcomeFeatureVectorV1 {
     pub fn from_position(position: &CombatPosition) -> Self {
-        let combat = &position.combat;
+        Self::from_combat(&position.combat)
+    }
+
+    pub fn from_combat(combat: &CombatState) -> Self {
         let player = &combat.entities.player;
         let living = combat
             .entities
@@ -48,18 +52,19 @@ impl CombatOutcomeFeatureVectorV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum CombatOutcomeLabelProvenanceV1 {
     RealizedBehaviorCombat,
     ExactScenarioReplay,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CombatOutcomeTrainingExampleV1 {
     pub features: CombatOutcomeFeatureVectorV1,
     pub victory: bool,
     pub terminal_hp_fraction: f64,
     pub provenance: CombatOutcomeLabelProvenanceV1,
+    pub continuation_policy_manifest: String,
 }
 
 impl CombatOutcomeTrainingExampleV1 {
@@ -69,12 +74,14 @@ impl CombatOutcomeTrainingExampleV1 {
         terminal_hp: i32,
         terminal_max_hp: i32,
         provenance: CombatOutcomeLabelProvenanceV1,
+        continuation_policy_manifest: impl Into<String>,
     ) -> Self {
         Self {
             features: CombatOutcomeFeatureVectorV1::from_position(position),
             victory,
             terminal_hp_fraction: ratio(terminal_hp.max(0), terminal_max_hp.max(1)),
             provenance,
+            continuation_policy_manifest: continuation_policy_manifest.into(),
         }
     }
 }
@@ -110,6 +117,7 @@ pub enum CombatOutcomeModelErrorV1 {
     InsufficientCalibrationExamples { provided: usize, required: usize },
     TrainingMissingOutcomeClass,
     CalibrationMissingOutcomeClass,
+    ContinuationPolicyMismatch,
     NonFiniteExample,
     InvalidTrainingConfig,
 }
@@ -200,6 +208,13 @@ impl CombatOutcomeModelV1 {
         }
         if !contains_both_outcomes(calibration) {
             return Err(CombatOutcomeModelErrorV1::CalibrationMissingOutcomeClass);
+        }
+        if training
+            .iter()
+            .chain(calibration)
+            .any(|example| example.continuation_policy_manifest != continuation_policy_manifest)
+        {
+            return Err(CombatOutcomeModelErrorV1::ContinuationPolicyMismatch);
         }
 
         let win_parameters = train_logistic(training, config);
@@ -452,6 +467,7 @@ mod tests {
             if victory { player_hp - 3 } else { 0 },
             80,
             CombatOutcomeLabelProvenanceV1::ExactScenarioReplay,
+            "exact-test-continuation-policy-v1",
         )
     }
 
