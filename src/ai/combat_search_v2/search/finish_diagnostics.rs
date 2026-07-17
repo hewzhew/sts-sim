@@ -1,15 +1,16 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::super::*;
 use super::loop_state::SearchLoopState;
 
 pub(super) fn finish_diagnostics_and_timing(
     loop_state: &mut SearchLoopState,
-    started: Instant,
+    active_elapsed: Duration,
     root_for_turn_plan_diagnostics: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
 ) {
+    let finish_started = Instant::now();
     let shadow_audit_started = Instant::now();
     loop_state.diagnostics.run_discard_order_exact_shadow_audit(
         stepper,
@@ -27,7 +28,7 @@ pub(super) fn finish_diagnostics_and_timing(
             root_turn_plan_diagnostics_started.elapsed().as_micros();
     }
 
-    let total_elapsed = started.elapsed();
+    let total_elapsed = active_elapsed.saturating_add(finish_started.elapsed());
     loop_state.stats.elapsed_ms = total_elapsed.as_millis();
     loop_state.performance.total_elapsed_us = total_elapsed.as_micros();
     loop_state.performance.unattributed_elapsed_us =

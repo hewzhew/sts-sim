@@ -1,7 +1,12 @@
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::eval::run_control::RunControlSession;
 
-use super::combat_search_lanes::CombatSearchStakes;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CombatSearchStakes {
+    Hallway,
+    Elite,
+    Boss,
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct CombatSearchPortfolioContext {

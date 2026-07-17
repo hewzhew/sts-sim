@@ -218,8 +218,9 @@ fn existential_search_config(
     // This probe asks whether the transformed exact state has any replayable
     // complete win. Continuing after proof only optimizes final HP and makes
     // calibration needlessly expensive.
-    config.stop_on_win_hp_loss_at_most = Some(initial_hp.max(0) as u32);
-    config.min_win_candidates_before_stop = 1;
+    let _ = initial_hp;
+    config.satisfaction =
+        sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin;
     config
 }
 
@@ -460,8 +461,10 @@ mod tests {
     fn power_setup_search_stops_after_first_replayable_win() {
         let config = existential_search_config(CombatSearchV2Config::default(), 87);
 
-        assert_eq!(config.stop_on_win_hp_loss_at_most, Some(87));
-        assert_eq!(config.min_win_candidates_before_stop, 1);
+        assert_eq!(
+            config.satisfaction,
+            sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::ai::combat_search_v2::{
-    CombatSearchAcceptancePluginId, CombatSearchProfile, CombatSearchV2Config, CombatSearchV2Report,
+    CombatSearchAcceptancePluginId, CombatSearchProfile, CombatSearchV2Config,
+    CombatSearchV2Report, CombatSearchV2Satisfaction,
 };
 use crate::sim::combat::CombatPosition;
 
@@ -61,6 +62,24 @@ pub(super) fn effective_hp_loss_limit(
     }
 }
 
+pub(super) fn effective_search_satisfaction(
+    session: &RunControlSession,
+    options: &RunControlSearchCombatOptions,
+    profile_default: CombatSearchV2Satisfaction,
+) -> CombatSearchV2Satisfaction {
+    options
+        .satisfaction
+        .unwrap_or_else(|| match options.max_hp_loss {
+            Some(RunControlHpLossLimit::Limit(limit)) => {
+                CombatSearchV2Satisfaction::HpLossAtMost(limit)
+            }
+            Some(RunControlHpLossLimit::Unlimited) => CombatSearchV2Satisfaction::FirstCompleteWin,
+            None => session.search_max_hp_loss.map_or(profile_default, |limit| {
+                CombatSearchV2Satisfaction::HpLossAtMost(limit)
+            }),
+        })
+}
+
 pub(in crate::eval::run_control) fn high_stakes_search_options(
     session: &RunControlSession,
     mut options: RunControlSearchCombatOptions,
@@ -97,7 +116,7 @@ pub(super) fn search_config(
         .profile
         .map(CombatSearchProfile::to_config)
         .unwrap_or_default();
-    let stop_on_win_hp_loss_at_most = effective_hp_loss_limit(session, &options);
+    let satisfaction = effective_search_satisfaction(session, &options, defaults.satisfaction);
     CombatSearchV2Config {
         max_nodes: options
             .max_nodes
@@ -114,8 +133,7 @@ pub(super) fn search_config(
             .or(session.search_wall_ms)
             .map(std::time::Duration::from_millis)
             .or(defaults.wall_time),
-        stop_on_win_hp_loss_at_most,
-        min_win_candidates_before_stop: defaults.min_win_candidates_before_stop,
+        satisfaction,
         input_label: Some(format!(
             "run_play_driver:search_combat:step{}",
             session.decision_step

@@ -1,7 +1,7 @@
 use crate::ai::combat_search_v2::{
     CombatSearchProfile, CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy,
     CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy,
+    CombatSearchV2Satisfaction, CombatSearchV2SetupBiasPolicy,
 };
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -11,6 +11,7 @@ pub struct RunControlSearchCombatOptions {
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
+    pub satisfaction: Option<CombatSearchV2Satisfaction>,
     pub max_hp_loss: Option<RunControlHpLossLimit>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
@@ -26,6 +27,14 @@ pub struct RunControlSearchCombatOptions {
     pub segment_mode: Option<RunControlCombatSegmentMode>,
     pub disable_no_win_rescue: bool,
     pub allow_smoke_bomb_survival_fallback: bool,
+    pub work_quanta: Vec<RunControlCombatSearchQuantum>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunControlCombatSearchQuantum {
+    pub label: &'static str,
+    pub additional_nodes: usize,
+    pub soft_wall_ms: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

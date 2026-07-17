@@ -6,6 +6,7 @@ use super::policies::{
     CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use super::prior::{CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPrior};
+use super::satisfaction::CombatSearchV2Satisfaction;
 
 #[derive(Clone, Debug)]
 pub struct CombatSearchV2Config {
@@ -13,8 +14,7 @@ pub struct CombatSearchV2Config {
     pub max_actions_per_line: usize,
     pub max_engine_steps_per_action: usize,
     pub wall_time: Option<Duration>,
-    pub stop_on_win_hp_loss_at_most: Option<u32>,
-    pub min_win_candidates_before_stop: usize,
+    pub satisfaction: CombatSearchV2Satisfaction,
     pub input_label: Option<String>,
     pub potion_policy: CombatSearchV2PotionPolicy,
     pub max_potions_used: Option<u32>,
@@ -42,8 +42,7 @@ impl Default for CombatSearchV2Config {
             max_actions_per_line: 200,
             max_engine_steps_per_action: 250,
             wall_time: None,
-            stop_on_win_hp_loss_at_most: None,
-            min_win_candidates_before_stop: 1,
+            satisfaction: CombatSearchV2Satisfaction::default(),
             input_label: None,
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,

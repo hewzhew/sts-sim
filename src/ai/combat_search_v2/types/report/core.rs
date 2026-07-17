@@ -8,7 +8,7 @@ use super::frontier::CombatSearchV2FrontierReport;
 use super::rollout::CombatSearchV2RolloutReport;
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 16;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 17;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
@@ -62,8 +62,8 @@ pub struct CombatSearchV2BudgetReport {
     pub max_actions_per_line: usize,
     pub max_engine_steps_per_action: usize,
     pub wall_time_ms: Option<u128>,
-    pub stop_on_win_hp_loss_at_most: Option<u32>,
-    pub min_win_candidates_before_stop: usize,
+    pub satisfaction: &'static str,
+    pub satisfaction_hp_loss_at_most: Option<u32>,
     pub max_potions_used: Option<u32>,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,

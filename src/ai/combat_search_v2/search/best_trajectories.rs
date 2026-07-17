@@ -9,6 +9,7 @@ pub(super) struct SearchTrajectoryBook {
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_win: Option<SearchNode>,
     pub(super) win_candidates: Vec<SearchNode>,
+    pub(super) win_frontier_revision: u64,
     pub(super) best_frontier: Option<SearchNode>,
 }
 
@@ -22,12 +23,13 @@ impl SearchTrajectoryBook {
     }
 
     pub(super) fn remember_win(&mut self, node: SearchNode, config: &CombatSearchV2Config) -> bool {
-        remember_win_candidate(&mut self.win_candidates, &node);
+        if remember_win_candidate(&mut self.win_candidates, &node) {
+            self.win_frontier_revision = self.win_frontier_revision.saturating_add(1);
+        }
         remember_best_complete(&mut self.best_win, node.clone());
         remember_best_complete(&mut self.best_complete, node);
         self.best_win
             .as_ref()
             .is_some_and(|best| accepted_complete_win(best, config))
-            && self.win_candidates.len() >= config.min_win_candidates_before_stop.max(1)
     }
 }

@@ -9,13 +9,12 @@ use super::combat_line_adjudication::{
 };
 use super::combat_line_outcome::{
     evaluate_combat_candidate_line_outcome, find_accepted_alternative_in_report,
-    find_clean_no_potion_alternative, render_combat_line_outcome_detail,
+    render_combat_line_outcome_detail,
 };
 use super::session::RunControlSession;
 
 pub(super) struct SelectedCombatLine {
     pub(super) line: CombatCandidateLine,
-    pub(super) report: Option<CombatSearchV2Report>,
     pub(super) summary: Option<String>,
     pub(super) adjudication: CombatLineAdjudicationV1,
 }
@@ -70,7 +69,6 @@ pub(super) fn select_accepted_search_combat_line(
     ) {
         return CombatLineSelection::Selected(SelectedCombatLine {
             line: selected_eval.line,
-            report: None,
             summary,
             adjudication: selected_adjudication,
         });
@@ -107,38 +105,6 @@ pub(super) fn select_accepted_search_combat_line(
         );
         return CombatLineSelection::Selected(SelectedCombatLine {
             line: alternative.line,
-            report: None,
-            summary,
-            adjudication,
-        });
-    }
-
-    let no_potion_alternative =
-        match find_clean_no_potion_alternative(session, start, config, policy) {
-            Ok(alternative) => alternative,
-            Err(error) => return replay_failed(policy, error),
-        };
-    if let Some(alternative) = no_potion_alternative {
-        let adjudication = policy.adjudicate(alternative.outcome.clone());
-        debug_assert!(matches!(
-            &adjudication,
-            CombatLineAdjudicationV1::Accepted {
-                cleanliness: CombatLineCleanlinessV1::Clean,
-                ..
-            }
-        ));
-        append_selection_summary(
-            &mut summary,
-            format!(
-                "clean_no_potion_alternative replaced dirty_win gained_curses={} original_final_hp={} clean_final_hp={}",
-                selected_eval.outcome.gained_curse_count(),
-                selected_eval.outcome.final_hp,
-                alternative.outcome.final_hp
-            ),
-        );
-        return CombatLineSelection::Selected(SelectedCombatLine {
-            line: alternative.line,
-            report: Some(alternative.report),
             summary,
             adjudication,
         });

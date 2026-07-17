@@ -66,8 +66,8 @@ pub struct CombatLabCommonBudgetV1 {
     pub max_actions_per_line: usize,
     pub max_engine_steps_per_action: usize,
     pub wall_ms: Option<u64>,
-    pub stop_on_win_hp_loss_at_most: Option<u32>,
-    pub min_win_candidates_before_stop: usize,
+    #[serde(default)]
+    pub satisfaction: crate::ai::combat_search_v2::CombatSearchV2Satisfaction,
     pub max_potions_used: Option<u32>,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
@@ -313,8 +313,7 @@ pub fn profile_config_v1(
     config.max_actions_per_line = budget.max_actions_per_line;
     config.max_engine_steps_per_action = budget.max_engine_steps_per_action;
     config.wall_time = budget.wall_ms.map(std::time::Duration::from_millis);
-    config.stop_on_win_hp_loss_at_most = budget.stop_on_win_hp_loss_at_most;
-    config.min_win_candidates_before_stop = budget.min_win_candidates_before_stop;
+    config.satisfaction = budget.satisfaction;
     config.input_label = Some(format!("combat_lab_v1/{experiment_id}/{}", profile.id));
     config.potion_policy = profile.potion_policy;
     config.max_potions_used = budget.max_potions_used;

@@ -14,6 +14,7 @@ pub(super) fn trajectory_reports(trajectories: SearchTrajectoryBook) -> SearchTr
         best_complete,
         best_win,
         win_candidates,
+        win_frontier_revision: _,
         best_frontier,
     } = trajectories;
 

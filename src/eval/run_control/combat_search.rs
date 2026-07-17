@@ -1,4 +1,4 @@
-use crate::ai::combat_search_v2::run_combat_search_v2;
+use crate::ai::combat_search_v2::{CombatSearchV2Session, CombatSearchV2WorkQuantum};
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
@@ -29,7 +29,7 @@ pub(super) fn apply_search_combat(
     let options = prepared.options;
     let start = prepared.start;
     let config = prepared.config;
-    let report = run_combat_search_v2(&start.engine, &start.combat, config.clone());
+    let report = run_search_work_plan(&start, config.clone(), &options.work_quanta);
     if search_report_has_invalid_card_identity(&report) {
         return Ok(build_combat_search_rejection_outcome(
             session,
@@ -162,7 +162,7 @@ pub(super) fn apply_search_combat(
         session,
         &start,
         &config,
-        selected.report.as_ref().unwrap_or(&report),
+        &report,
         selected.line,
         CombatAutomationTrajectorySource::SearchCombat,
         summary,
@@ -174,6 +174,41 @@ pub(super) fn apply_search_combat(
         .push(accepted_line_evidence.into_annotation());
     attach_execution_adjudication(&mut outcome.trace_annotations, &selected_adjudication);
     Ok(outcome)
+}
+
+fn run_search_work_plan(
+    start: &crate::sim::combat::CombatPosition,
+    config: crate::ai::combat_search_v2::CombatSearchV2Config,
+    work_quanta: &[super::progress_options::RunControlCombatSearchQuantum],
+) -> crate::ai::combat_search_v2::CombatSearchV2Report {
+    let default_quantum = super::progress_options::RunControlCombatSearchQuantum {
+        label: "single_run",
+        additional_nodes: config.max_nodes,
+        soft_wall_ms: config
+            .wall_time
+            .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64),
+    };
+    let quanta = if work_quanta.is_empty() {
+        std::slice::from_ref(&default_quantum)
+    } else {
+        work_quanta
+    };
+    let mut search = CombatSearchV2Session::new(&start.engine, &start.combat, config);
+    for quantum in quanta {
+        let stop = search.advance(CombatSearchV2WorkQuantum {
+            additional_nodes: quantum.additional_nodes,
+            soft_wall_time: quantum.soft_wall_ms.map(std::time::Duration::from_millis),
+        });
+        if matches!(
+            stop,
+            crate::ai::combat_search_v2::CombatSearchV2AdvanceStop::CandidateSatisfied
+                | crate::ai::combat_search_v2::CombatSearchV2AdvanceStop::FrontierExhausted
+                | crate::ai::combat_search_v2::CombatSearchV2AdvanceStop::AlreadyComplete
+        ) {
+            break;
+        }
+    }
+    search.finish()
 }
 
 #[cfg(test)]
@@ -193,7 +228,7 @@ mod tests {
         CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
         CombatSearchEngineProfile, CombatSearchPluginStack, CombatSearchPotionPlugin,
         CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
-        CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
+        CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction, CombatSearchV2SetupBiasPolicy,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
@@ -556,9 +591,8 @@ mod tests {
             Some(12)
         );
         assert_eq!(
-            search_config(&session, RunControlSearchCombatOptions::default())
-                .stop_on_win_hp_loss_at_most,
-            Some(12)
+            search_config(&session, RunControlSearchCombatOptions::default()).satisfaction,
+            CombatSearchV2Satisfaction::HpLossAtMost(12)
         );
         assert_eq!(
             effective_hp_loss_limit(
@@ -572,8 +606,8 @@ mod tests {
                 &session,
                 options_with_hp_loss(RunControlHpLossLimit::Limit(4))
             )
-            .stop_on_win_hp_loss_at_most,
-            Some(4)
+            .satisfaction,
+            CombatSearchV2Satisfaction::HpLossAtMost(4)
         );
         assert_eq!(
             effective_hp_loss_limit(
@@ -587,8 +621,8 @@ mod tests {
                 &session,
                 options_with_hp_loss(RunControlHpLossLimit::Unlimited)
             )
-            .stop_on_win_hp_loss_at_most,
-            None
+            .satisfaction,
+            CombatSearchV2Satisfaction::FirstCompleteWin
         );
     }
 

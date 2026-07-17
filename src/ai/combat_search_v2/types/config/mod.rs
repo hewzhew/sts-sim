@@ -1,6 +1,7 @@
 mod options;
 mod policies;
 mod prior;
+mod satisfaction;
 
 pub use options::CombatSearchV2Config;
 pub use policies::{
@@ -12,3 +13,4 @@ pub use policies::{
 pub use prior::{
     turn_plan_action_sequence_key, CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPrior,
 };
+pub use satisfaction::CombatSearchV2Satisfaction;

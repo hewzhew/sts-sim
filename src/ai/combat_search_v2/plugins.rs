@@ -436,11 +436,23 @@ impl CombatSearchProfile {
     pub fn engine_fingerprint(self) -> String {
         self.engine.fingerprint()
     }
+
+    /// Stable identity for search behavior. Work budgets are deliberately
+    /// excluded because advancing an existing session must not pretend to
+    /// create a different search engine.
+    pub fn semantics_fingerprint(self) -> String {
+        self.engine.semantics_fingerprint()
+    }
 }
 
 impl CombatSearchEngineProfile {
     pub fn fingerprint(self) -> String {
         serde_json::to_string(&self).expect("combat search engine profile should serialize")
+    }
+
+    pub fn semantics_fingerprint(self) -> String {
+        serde_json::to_string(&self.plugins)
+            .expect("combat search plugin stack should serialize")
     }
 
     pub fn to_config(self) -> CombatSearchV2Config {
@@ -702,6 +714,24 @@ mod tests {
 
         assert_ne!(immediate.engine, lazy.engine);
         assert_ne!(immediate.engine_fingerprint(), lazy.engine_fingerprint());
+    }
+
+    #[test]
+    fn semantics_identity_ignores_incremental_work_budget() {
+        let base = test_profile("initial");
+        let refined = CombatSearchProfile {
+            engine: CombatSearchEngineProfile {
+                budget: CombatSearchBudgetSpec {
+                    max_nodes: 500,
+                    wall_ms: 1_000,
+                },
+                ..base.engine
+            },
+            ..base
+        };
+
+        assert_ne!(base.engine_fingerprint(), refined.engine_fingerprint());
+        assert_eq!(base.semantics_fingerprint(), refined.semantics_fingerprint());
     }
 
     #[test]

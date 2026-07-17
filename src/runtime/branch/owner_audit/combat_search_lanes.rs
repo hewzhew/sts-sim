@@ -4,17 +4,11 @@ use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSess
 use super::combat_search_lane_options;
 use super::combat_search_lane_spec::lane_spec;
 use super::combat_search_portfolio_context::CombatSearchPortfolioContext;
+pub(super) use super::combat_search_portfolio_context::CombatSearchStakes;
 use super::combat_search_portfolio_plan::{
     CombatSearchPortfolioPlan, CombatSearchPortfolioSchedule,
 };
 use super::Args;
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub(super) enum CombatSearchStakes {
-    Hallway,
-    Elite,
-    Boss,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CombatSearchLaneKind {

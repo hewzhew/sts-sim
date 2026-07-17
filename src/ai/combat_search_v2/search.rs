@@ -47,6 +47,41 @@ use rollout_terminal_promotion::promote_replayable_terminal_rollout;
 #[cfg(test)]
 use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CombatSearchV2WorkQuantum {
+    pub additional_nodes: usize,
+    pub soft_wall_time: Option<std::time::Duration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatSearchV2AdvanceStop {
+    CandidateSatisfied,
+    QuantumNodeBudget,
+    QuantumWallTime,
+    FrontierExhausted,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Debug)]
+pub struct CombatSearchV2DecisionSnapshot {
+    pub candidate_frontier: Vec<CombatSearchV2TrajectoryReport>,
+    pub candidate_frontier_revision: u64,
+    pub best_win: Option<CombatSearchV2TrajectoryReport>,
+    pub nodes_expanded: u64,
+    pub frontier_remaining_states: usize,
+    pub exact_state_keys: usize,
+    pub rollout_cache_entries: usize,
+}
+
+pub struct CombatSearchV2Session {
+    config: CombatSearchV2Config,
+    policy_evidence: CombatSearchV2PolicyEvidenceReport,
+    loop_state: SearchLoopState,
+    root_for_turn_plan_diagnostics: SearchNode,
+    active_elapsed: std::time::Duration,
+    complete: bool,
+}
+
 pub fn run_combat_search_v2(
     engine: &EngineState,
     combat: &CombatState,
@@ -70,57 +105,177 @@ fn run_combat_search_v2_inner(
     config: CombatSearchV2Config,
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2Report {
-    let started = Instant::now();
-    let deadline = config.wall_time.map(|duration| started + duration);
-    let policy_evidence = combat_search_policy_evidence_for_combat(combat);
-    let mut loop_state =
-        SearchLoopState::new(&config, stepper.supports_canonical_pending_choice_actions());
-    let root_for_turn_plan_diagnostics =
-        initialize_root_frontier(&mut loop_state, engine, combat, stepper, &config, deadline);
+    let quantum = CombatSearchV2WorkQuantum {
+        additional_nodes: config.max_nodes,
+        soft_wall_time: config.wall_time,
+    };
+    let mut session = CombatSearchV2Session::new_with_stepper(engine, combat, config, stepper);
+    session.advance_with_stepper(quantum, stepper);
+    session.finish_with_stepper(stepper)
+}
 
+impl CombatSearchV2Session {
+    pub fn new(engine: &EngineState, combat: &CombatState, config: CombatSearchV2Config) -> Self {
+        Self::new_with_stepper(engine, combat, config, &EngineCombatStepper)
+    }
+
+    fn new_with_stepper(
+        engine: &EngineState,
+        combat: &CombatState,
+        config: CombatSearchV2Config,
+        stepper: &impl CombatStepper,
+    ) -> Self {
+        let started = Instant::now();
+        let policy_evidence = combat_search_policy_evidence_for_combat(combat);
+        let mut loop_state =
+            SearchLoopState::new(&config, stepper.supports_canonical_pending_choice_actions());
+        let root_for_turn_plan_diagnostics =
+            initialize_root_frontier(&mut loop_state, engine, combat, stepper, &config, None);
+        Self {
+            config,
+            policy_evidence,
+            loop_state,
+            root_for_turn_plan_diagnostics,
+            active_elapsed: started.elapsed(),
+            complete: false,
+        }
+    }
+
+    pub fn advance(&mut self, quantum: CombatSearchV2WorkQuantum) -> CombatSearchV2AdvanceStop {
+        self.advance_with_stepper(quantum, &EngineCombatStepper)
+    }
+
+    fn advance_with_stepper(
+        &mut self,
+        quantum: CombatSearchV2WorkQuantum,
+        stepper: &impl CombatStepper,
+    ) -> CombatSearchV2AdvanceStop {
+        if self.complete {
+            return CombatSearchV2AdvanceStop::AlreadyComplete;
+        }
+        self.loop_state.begin_work_quantum();
+        let started = Instant::now();
+        let deadline = quantum.soft_wall_time.map(|duration| started + duration);
+        let mut quantum_config = self.config.clone();
+        quantum_config.max_nodes = (self.loop_state.stats.nodes_expanded as usize)
+            .saturating_add(quantum.additional_nodes);
+        quantum_config.wall_time = quantum.soft_wall_time;
+        let stop = run_search_quantum(
+            &mut self.loop_state,
+            stepper,
+            &quantum_config,
+            started,
+            deadline,
+        );
+        self.active_elapsed = self.active_elapsed.saturating_add(started.elapsed());
+        if matches!(
+            stop,
+            CombatSearchV2AdvanceStop::CandidateSatisfied
+                | CombatSearchV2AdvanceStop::FrontierExhausted
+        ) {
+            self.complete = true;
+        }
+        stop
+    }
+
+    pub fn snapshot(&self) -> CombatSearchV2DecisionSnapshot {
+        CombatSearchV2DecisionSnapshot {
+            candidate_frontier: self
+                .loop_state
+                .trajectories
+                .win_candidates
+                .iter()
+                .map(|node| trajectory_report(node, false))
+                .collect(),
+            candidate_frontier_revision: self.loop_state.trajectories.win_frontier_revision,
+            best_win: self
+                .loop_state
+                .trajectories
+                .best_win
+                .as_ref()
+                .map(|node| trajectory_report(node, false)),
+            nodes_expanded: self.loop_state.stats.nodes_expanded,
+            frontier_remaining_states: self.loop_state.frontier.concrete_state_count(),
+            exact_state_keys: self.loop_state.exact_transpositions.len(),
+            rollout_cache_entries: self.loop_state.rollout_cache.cache.len(),
+        }
+    }
+
+    pub fn finish(self) -> CombatSearchV2Report {
+        self.finish_with_stepper(&EngineCombatStepper)
+    }
+
+    fn finish_with_stepper(mut self, stepper: &impl CombatStepper) -> CombatSearchV2Report {
+        let final_started = Instant::now();
+        promote_replayable_terminal_rollout(
+            &mut self.loop_state,
+            &self.root_for_turn_plan_diagnostics,
+            stepper,
+            &self.config,
+        );
+        self.active_elapsed = self.active_elapsed.saturating_add(final_started.elapsed());
+        finish_diagnostics_and_timing(
+            &mut self.loop_state,
+            self.active_elapsed,
+            &self.root_for_turn_plan_diagnostics,
+            stepper,
+            &self.config,
+        );
+        finish_combat_search_report(SearchFinishInput {
+            config: self.config,
+            policy_evidence: self.policy_evidence,
+            loop_state: self.loop_state,
+        })
+    }
+}
+
+fn run_search_quantum(
+    loop_state: &mut SearchLoopState,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    started: Instant,
+    deadline: Option<Instant>,
+) -> CombatSearchV2AdvanceStop {
     loop {
+        if deadline.is_some_and(|limit| Instant::now() >= limit) {
+            loop_state.mark_deadline_hit();
+            return CombatSearchV2AdvanceStop::QuantumWallTime;
+        }
         let Some(entry) = loop_state.pop_frontier() else {
-            break;
+            return CombatSearchV2AdvanceStop::FrontierExhausted;
         };
 
         if let Some(work) = entry.pending_choice_work {
-            if expand_pending_choice_prefix(
-                &mut loop_state,
-                entry.node,
-                work,
-                stepper,
-                &config,
-                deadline,
-            ) == PendingChoicePrefixOutcome::Stop
+            if expand_pending_choice_prefix(loop_state, entry.node, work, stepper, config, None)
+                == PendingChoicePrefixOutcome::Stop
             {
-                break;
+                return quantum_stop_reason(loop_state);
             }
             continue;
         }
 
         let node = match prepare_node_for_expansion(
-            &mut loop_state,
+            loop_state,
             NodePreflightInput {
                 node: entry.node,
                 started,
                 stepper,
-                config: &config,
-                deadline,
+                config,
+                deadline: None,
             },
         ) {
             NodePreflightOutcome::Expand(node) => node,
             NodePreflightOutcome::Continue => continue,
-            NodePreflightOutcome::Stop => break,
+            NodePreflightOutcome::Stop => return quantum_stop_reason(loop_state),
         };
 
-        let Some(mut expansion) = prepare_node_expansion(&mut loop_state, &node, stepper, &config)
-        else {
+        let Some(mut expansion) = prepare_node_expansion(loop_state, &node, stepper, config) else {
             continue;
         };
 
         for ordered_action in expansion.ordered_choices {
             let outcome = expand_ordered_child(
-                &mut loop_state,
+                loop_state,
                 &mut expansion.turn_branching,
                 &mut expansion.turn_local_dominance,
                 ChildExpansionInput {
@@ -131,13 +286,11 @@ fn run_combat_search_v2_inner(
                     action_prior_state_hash: expansion.action_prior_state_hash.as_deref(),
                     pending_choice: expansion.pending_choice.as_ref(),
                     stepper,
-                    config: &config,
-                    deadline,
+                    config,
+                    deadline: None,
                 },
             );
-            if outcome == ChildExpansionOutcome::DeadlineReached {
-                break;
-            }
+            debug_assert_ne!(outcome, ChildExpansionOutcome::DeadlineReached);
         }
         loop_state
             .diagnostics
@@ -147,28 +300,23 @@ fn run_combat_search_v2_inner(
             .observe_turn_local_dominance(&expansion.turn_local_dominance);
 
         if loop_state.exhausted {
-            break;
+            return quantum_stop_reason(loop_state);
         }
     }
+}
 
-    promote_replayable_terminal_rollout(
-        &mut loop_state,
-        &root_for_turn_plan_diagnostics,
-        stepper,
-        &config,
-    );
-    finish_diagnostics_and_timing(
-        &mut loop_state,
-        started,
-        &root_for_turn_plan_diagnostics,
-        stepper,
-        &config,
-    );
-    finish_combat_search_report(SearchFinishInput {
-        config,
-        policy_evidence,
-        loop_state,
-    })
+fn quantum_stop_reason(loop_state: &SearchLoopState) -> CombatSearchV2AdvanceStop {
+    if loop_state.accepted_complete_candidate {
+        CombatSearchV2AdvanceStop::CandidateSatisfied
+    } else if loop_state.stats.deadline_hit {
+        CombatSearchV2AdvanceStop::QuantumWallTime
+    } else if loop_state.stats.node_budget_hit || loop_state.stats.action_prefix_budget_hit {
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    } else if loop_state.frontier.is_empty() {
+        CombatSearchV2AdvanceStop::FrontierExhausted
+    } else {
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    }
 }
 
 #[cfg(test)]

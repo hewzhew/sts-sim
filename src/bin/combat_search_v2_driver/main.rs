@@ -389,10 +389,11 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         write_or_print(args.output.as_ref(), &payload)?;
         return Ok(());
     }
-    let stop_on_win_hp_loss_at_most = match args.max_hp_loss.as_deref() {
+    let satisfaction = match args.max_hp_loss.as_deref() {
         Some(value) => parse_max_hp_loss(value)?,
         None => None,
-    };
+    }
+    .map(sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost);
 
     let (potion_policy, high_stakes_semantic_potions) = match args.potion_policy {
         Some(DriverPotionPolicy::Search(policy)) => (Some(policy), false),
@@ -415,7 +416,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         max_actions_per_line: args.max_actions_per_line,
         max_engine_steps_per_action: args.max_engine_steps_per_action,
         wall_ms: args.wall_ms,
-        stop_on_win_hp_loss_at_most,
+        satisfaction,
         potion_policy,
         max_potions_used: args.max_potions_used,
         high_stakes_semantic_potions,

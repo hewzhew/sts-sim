@@ -4,6 +4,7 @@ use super::{
     CombatLabManifestV1, CombatLabOutcomeClassV1, CombatLabShuffleGeneratorV1,
     CombatLabShuffleScheduleV1, CombatLabSpecV1,
 };
+use crate::ai::combat_search_v2::CombatSearchV2Satisfaction;
 use crate::eval::fingerprint::combat_state_fingerprint_v2;
 use crate::fixtures::combat_start_spec::compile_combat_start_spec;
 use serde_json::json;
@@ -58,8 +59,10 @@ fn seed006_derived_fixture_resolves() {
     assert_eq!(budget.max_actions_per_line, 200);
     assert_eq!(budget.max_engine_steps_per_action, 250);
     assert_eq!(budget.wall_ms, Some(3_000));
-    assert_eq!(budget.stop_on_win_hp_loss_at_most, None);
-    assert_eq!(budget.min_win_candidates_before_stop, 1);
+    assert_eq!(
+        budget.satisfaction,
+        CombatSearchV2Satisfaction::ZeroLossOrBudget
+    );
     assert_eq!(budget.max_potions_used, Some(1));
     assert_eq!(budget.rollout_max_evaluations, 384);
     assert_eq!(budget.rollout_max_actions, 80);
@@ -106,8 +109,10 @@ fn seed006_feasibility_fixture_resolves_with_any_surviving_win_threshold() {
     assert_eq!(budget.max_actions_per_line, 200);
     assert_eq!(budget.max_engine_steps_per_action, 250);
     assert_eq!(budget.wall_ms, Some(3_000));
-    assert_eq!(budget.stop_on_win_hp_loss_at_most, Some(87));
-    assert_eq!(budget.min_win_candidates_before_stop, 1);
+    assert_eq!(
+        budget.satisfaction,
+        CombatSearchV2Satisfaction::HpLossAtMost(87)
+    );
     assert_eq!(budget.max_potions_used, Some(1));
     assert_eq!(budget.rollout_max_evaluations, 384);
     assert_eq!(budget.rollout_max_actions, 80);
@@ -136,7 +141,7 @@ fn seed006_feasibility_fixture_resolves_with_any_surviving_win_threshold() {
         serde_json::to_value(&maintained.profiles).expect("serialize maintained profiles")
     );
     let mut normalized_budget = feasibility.common_budget.clone();
-    normalized_budget.stop_on_win_hp_loss_at_most = None;
+    normalized_budget.satisfaction = CombatSearchV2Satisfaction::ZeroLossOrBudget;
     assert_eq!(
         serde_json::to_value(normalized_budget).expect("serialize normalized budget"),
         serde_json::to_value(&maintained.common_budget).expect("serialize maintained budget")
@@ -2386,8 +2391,7 @@ fn every_common_budget_field_is_hashed() {
         ("max_actions_per_line", json!(101)),
         ("max_engine_steps_per_action", json!(201)),
         ("wall_ms", json!(1)),
-        ("stop_on_win_hp_loss_at_most", json!(2)),
-        ("min_win_candidates_before_stop", json!(2)),
+        ("satisfaction", json!({"hp_loss_at_most": 2})),
         ("max_potions_used", json!(1)),
         ("rollout_max_evaluations", json!(11)),
         ("rollout_max_actions", json!(21)),
@@ -2494,7 +2498,7 @@ fn experiment_identity_and_schedule_are_hashed() {
 fn profile_config_assigns_the_complete_contract() {
     let mut value = valid_lab_spec_value();
     value["common_budget"]["wall_ms"] = json!(250);
-    value["common_budget"]["stop_on_win_hp_loss_at_most"] = json!(4);
+    value["common_budget"]["satisfaction"] = json!({"hp_loss_at_most": 4});
     value["common_budget"]["max_potions_used"] = json!(2);
     value["common_budget"]["turn_plan_probe_max_inner_nodes"] = json!(31);
     value["common_budget"]["turn_plan_probe_max_end_states"] = json!(32);
@@ -2514,8 +2518,10 @@ fn profile_config_assigns_the_complete_contract() {
         config.wall_time,
         Some(std::time::Duration::from_millis(250))
     );
-    assert_eq!(config.stop_on_win_hp_loss_at_most, Some(4));
-    assert_eq!(config.min_win_candidates_before_stop, 1);
+    assert_eq!(
+        config.satisfaction,
+        CombatSearchV2Satisfaction::HpLossAtMost(4)
+    );
     assert_eq!(config.potion_policy, spec.profiles[0].potion_policy);
     assert_eq!(config.max_potions_used, Some(2));
     assert_eq!(config.rollout_policy, spec.profiles[0].rollout_policy);
@@ -2594,8 +2600,7 @@ fn valid_lab_spec_value() -> serde_json::Value {
             "max_actions_per_line": 100,
             "max_engine_steps_per_action": 200,
             "wall_ms": null,
-            "stop_on_win_hp_loss_at_most": null,
-            "min_win_candidates_before_stop": 1,
+            "satisfaction": "zero_loss_or_budget",
             "max_potions_used": null,
             "rollout_max_evaluations": 10,
             "rollout_max_actions": 20,

@@ -4,6 +4,7 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
     CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
     CombatSearchTurnPlanPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2Satisfaction,
 };
 
 #[derive(Clone, Copy)]
@@ -26,8 +27,7 @@ struct QualityLanePlugins {
 
 #[derive(Clone, Copy)]
 pub(crate) struct QualitySearchObjective {
-    stop_on_win_hp_loss_at_most: Option<u32>,
-    min_win_candidates_before_stop: usize,
+    satisfaction: CombatSearchV2Satisfaction,
 }
 
 impl QualityLaneSpec {
@@ -67,15 +67,13 @@ impl QualityLanePlugins {
 impl QualitySearchObjective {
     pub(crate) fn strict_low_loss() -> Self {
         Self {
-            stop_on_win_hp_loss_at_most: Some(0),
-            min_win_candidates_before_stop: 4,
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
         }
     }
 
     pub(crate) fn apply(self, profile: CombatSearchProfile) -> CombatSearchV2Config {
         let mut config = profile.to_config();
-        config.stop_on_win_hp_loss_at_most = self.stop_on_win_hp_loss_at_most;
-        config.min_win_candidates_before_stop = self.min_win_candidates_before_stop;
+        config.satisfaction = self.satisfaction;
         config
     }
 }
@@ -172,7 +170,9 @@ mod tests {
             quality_config.phase_guard_policy,
             profile_config.phase_guard_policy
         );
-        assert_eq!(quality_config.stop_on_win_hp_loss_at_most, Some(0));
-        assert_eq!(quality_config.min_win_candidates_before_stop, 4);
+        assert_eq!(
+            quality_config.satisfaction,
+            CombatSearchV2Satisfaction::HpLossAtMost(0)
+        );
     }
 }

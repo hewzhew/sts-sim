@@ -3,6 +3,7 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
     CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
     CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
+    CombatSearchV2Satisfaction,
 };
 use sts_simulator::eval::run_control::{
     RunControlAutoStepOptions, RunControlHpLossLimit, RunControlSession,
@@ -42,6 +43,10 @@ pub(super) fn lane_options(
     options.search.max_hp_loss = Some(match lane.kind() {
         CombatSearchLaneKind::Primary => owner_audit_hp_loss_limit(session),
         _ => RunControlHpLossLimit::Unlimited,
+    });
+    options.search.satisfaction = Some(match owner_audit_hp_loss_limit(session) {
+        RunControlHpLossLimit::Limit(limit) => CombatSearchV2Satisfaction::HpLossAtMost(limit),
+        RunControlHpLossLimit::Unlimited => CombatSearchV2Satisfaction::FirstCompleteWin,
     });
     options.search.disable_no_win_rescue = !lane_allows_internal_no_win_rescue(lane);
     options.search.allow_smoke_bomb_survival_fallback =

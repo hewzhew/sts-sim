@@ -78,7 +78,7 @@ impl PartialOrd for CombatOutcomeScore {
     }
 }
 
-fn external_burden_count(combat: &CombatState) -> i32 {
+pub(super) fn external_burden_count(combat: &CombatState) -> i32 {
     combat
         .entities
         .monsters

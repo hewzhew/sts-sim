@@ -1,14 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-};
+use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
-use super::combat_case_retained_candidates::unique_retained_win_trajectories;
 use super::combat_line_adjudication::{
     CombatLineAcceptancePolicy, CombatLineAdjudicationV1, CombatLineCleanlinessV1,
     CombatLineObservedOutcomeV1,
@@ -21,39 +18,10 @@ pub(super) struct CombatLineEvaluation {
     pub(super) outcome: CombatLineObservedOutcomeV1,
 }
 
-pub(super) struct CombatLineAlternative {
-    pub(super) line: CombatCandidateLine,
-    pub(super) outcome: CombatLineObservedOutcomeV1,
-    pub(super) report: CombatSearchV2Report,
-}
-
 impl CombatLineObservedOutcomeV1 {
     pub(super) fn gained_curse_count(&self) -> usize {
         self.gained_curses.len()
     }
-}
-
-pub(super) fn find_clean_no_potion_alternative(
-    session: &RunControlSession,
-    start: &CombatPosition,
-    config: &CombatSearchV2Config,
-    policy: CombatLineAcceptancePolicy,
-) -> Result<Option<CombatLineAlternative>, String> {
-    let mut clean_config = config.clone();
-    clean_config.potion_policy = CombatSearchV2PotionPolicy::All;
-    clean_config.max_potions_used = Some(0);
-    clean_config.min_win_candidates_before_stop = 128;
-    let report = run_combat_search_v2(&start.engine, &start.combat, clean_config.clone());
-    let Some(evaluation) =
-        find_accepted_alternative_in_report(session, start, &clean_config, &report, policy)?
-    else {
-        return Ok(None);
-    };
-    Ok(Some(CombatLineAlternative {
-        line: evaluation.line,
-        outcome: evaluation.outcome,
-        report,
-    }))
 }
 
 pub(super) fn find_accepted_alternative_in_report(
@@ -64,8 +32,8 @@ pub(super) fn find_accepted_alternative_in_report(
     policy: CombatLineAcceptancePolicy,
 ) -> Result<Option<CombatLineEvaluation>, String> {
     let mut best_clean: Option<CombatLineEvaluation> = None;
-    for retained in unique_retained_win_trajectories(report).trajectories {
-        let line = CombatCandidateLine::from_search_trajectory(retained.trajectory);
+    for trajectory in &report.win_candidate_trajectories {
+        let line = CombatCandidateLine::from_search_trajectory(trajectory);
         let evaluation = evaluate_combat_candidate_line_outcome(session, start, config, line)?;
         if !matches!(
             policy.adjudicate(evaluation.outcome.clone()),

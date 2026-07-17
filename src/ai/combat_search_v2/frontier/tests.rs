@@ -72,6 +72,36 @@ fn action_ordering_frontier_hint_expires_on_the_next_child_edge() {
 }
 
 #[test]
+fn win_candidate_frontier_discards_strictly_dominated_results() {
+    let mut candidates = Vec::new();
+    let mut low = test_node();
+    low.combat.entities.player.current_hp = 30;
+    let mut high = test_node();
+    high.combat.entities.player.current_hp = 40;
+
+    assert!(remember_win_candidate(&mut candidates, &low));
+    assert!(remember_win_candidate(&mut candidates, &high));
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].combat.entities.player.current_hp, 40);
+}
+
+#[test]
+fn win_candidate_frontier_preserves_hp_potion_tradeoffs() {
+    let mut candidates = Vec::new();
+    let mut conserve = test_node();
+    conserve.combat.entities.player.current_hp = 30;
+    let mut spend = test_node();
+    spend.combat.entities.player.current_hp = 50;
+    spend.potions_used = 1;
+
+    assert!(remember_win_candidate(&mut candidates, &conserve));
+    assert!(remember_win_candidate(&mut candidates, &spend));
+
+    assert_eq!(candidates.len(), 2);
+}
+
+#[test]
 fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
     let mut better_progress = test_node();
     let mut monster = test_monster(EnemyId::TheGuardian);

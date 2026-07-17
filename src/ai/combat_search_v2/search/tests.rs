@@ -892,7 +892,7 @@ fn hp_loss_acceptance_threshold_stops_after_good_enough_complete_win() {
         CombatSearchV2Config {
             max_nodes: 20,
             rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
-            stop_on_win_hp_loss_at_most: Some(0),
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
             ..CombatSearchV2Config::default()
         },
         &WinOrDelayStepper,
@@ -930,7 +930,7 @@ fn zero_hp_loss_complete_win_stops_without_explicit_hp_gate() {
         CombatSearchV2Config {
             max_nodes: 20,
             rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
-            stop_on_win_hp_loss_at_most: None,
+            satisfaction: CombatSearchV2Satisfaction::ZeroLossOrBudget,
             ..CombatSearchV2Config::default()
         },
         &WinOrDelayStepper,
@@ -967,7 +967,7 @@ fn zero_hp_loss_complete_win_waits_when_external_payoff_remains_possible() {
         CombatSearchV2Config {
             max_nodes: 20,
             rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
-            stop_on_win_hp_loss_at_most: None,
+            satisfaction: CombatSearchV2Satisfaction::ZeroLossOrBudget,
             ..CombatSearchV2Config::default()
         },
         &WinOrDelayStepper,
@@ -979,6 +979,80 @@ fn zero_hp_loss_complete_win_waits_when_external_payoff_remains_possible() {
         "default zero-loss early accept should not close search when combat-external payoff cards remain relevant"
     );
     assert!(report.outcome.complete_trajectory_found);
+}
+
+#[test]
+fn split_work_quanta_reuse_the_same_search_state() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+    let config = CombatSearchV2Config {
+        max_nodes: 4,
+        max_actions_per_line: 20,
+        rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+        ..CombatSearchV2Config::default()
+    };
+    let quantum = |additional_nodes| CombatSearchV2WorkQuantum {
+        additional_nodes,
+        soft_wall_time: None,
+    };
+
+    let mut split = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        config.clone(),
+        &WinOrDelayStepper,
+    );
+    assert_eq!(
+        split.advance_with_stepper(quantum(2), &WinOrDelayStepper),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    let after_first = split.snapshot();
+    assert_eq!(after_first.nodes_expanded, 2);
+    assert!(after_first.frontier_remaining_states > 0);
+    assert_eq!(
+        split.advance_with_stepper(quantum(2), &WinOrDelayStepper),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    let split_snapshot = split.snapshot();
+
+    let mut combined = CombatSearchV2Session::new_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        config,
+        &WinOrDelayStepper,
+    );
+    assert_eq!(
+        combined.advance_with_stepper(quantum(4), &WinOrDelayStepper),
+        CombatSearchV2AdvanceStop::QuantumNodeBudget
+    );
+    let combined_snapshot = combined.snapshot();
+
+    assert_eq!(
+        split_snapshot.nodes_expanded,
+        combined_snapshot.nodes_expanded
+    );
+    assert_eq!(
+        split_snapshot.exact_state_keys,
+        combined_snapshot.exact_state_keys
+    );
+    assert_eq!(
+        split_snapshot.candidate_frontier_revision,
+        combined_snapshot.candidate_frontier_revision
+    );
+    assert_eq!(
+        split_snapshot
+            .candidate_frontier
+            .iter()
+            .map(|candidate| (&candidate.outcome_order_key, candidate.potions_used))
+            .collect::<Vec<_>>(),
+        combined_snapshot
+            .candidate_frontier
+            .iter()
+            .map(|candidate| (&candidate.outcome_order_key, candidate.potions_used))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1346,7 +1420,7 @@ fn exact_replayed_terminal_rollout_honors_hp_loss_acceptance_threshold() {
         CombatSearchV2Config {
             max_nodes: 0,
             rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
-            stop_on_win_hp_loss_at_most: Some(0),
+            satisfaction: CombatSearchV2Satisfaction::HpLossAtMost(0),
             ..CombatSearchV2Config::default()
         },
         &OneCardWinStepper,

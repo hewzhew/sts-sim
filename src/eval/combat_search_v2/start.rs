@@ -8,7 +8,7 @@ use crate::ai::combat_search_v2::{
     high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2ChildRolloutPolicy,
     CombatSearchV2Config, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
     CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior,
-    CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
+    CombatSearchV2Satisfaction, CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v2;
@@ -22,7 +22,7 @@ pub struct CombatSearchV2RunOptions {
     pub max_actions_per_line: Option<usize>,
     pub max_engine_steps_per_action: Option<usize>,
     pub wall_ms: Option<u64>,
-    pub stop_on_win_hp_loss_at_most: Option<u32>,
+    pub satisfaction: Option<CombatSearchV2Satisfaction>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
     pub high_stakes_semantic_potions: bool,
@@ -52,10 +52,7 @@ impl CombatSearchV2RunOptions {
                 .max_engine_steps_per_action
                 .unwrap_or(defaults.max_engine_steps_per_action),
             wall_time: self.wall_ms.map(Duration::from_millis),
-            stop_on_win_hp_loss_at_most: self
-                .stop_on_win_hp_loss_at_most
-                .or(defaults.stop_on_win_hp_loss_at_most),
-            min_win_candidates_before_stop: defaults.min_win_candidates_before_stop,
+            satisfaction: self.satisfaction.unwrap_or(defaults.satisfaction),
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
@@ -254,7 +251,7 @@ mod tests {
     #[test]
     fn run_options_accept_complete_win_hp_loss_gate() {
         let options = CombatSearchV2RunOptions {
-            stop_on_win_hp_loss_at_most: Some(8),
+            satisfaction: Some(CombatSearchV2Satisfaction::HpLossAtMost(8)),
             ..CombatSearchV2RunOptions::default()
         };
 
@@ -263,6 +260,9 @@ mod tests {
             &combat_position_with_flags(false, false),
         );
 
-        assert_eq!(config.stop_on_win_hp_loss_at_most, Some(8));
+        assert_eq!(
+            config.satisfaction,
+            CombatSearchV2Satisfaction::HpLossAtMost(8)
+        );
     }
 }

@@ -5,8 +5,8 @@ use crate::state::core::ClientInput;
 
 use super::{
     enumerate_combat_search_v2_turn_plan_probe_candidates, run_combat_search_v2,
-    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2TurnPlanPolicy,
-    SearchTerminalLabel,
+    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Satisfaction,
+    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
 };
 
 const MAX_RESCUE_PLANS: usize = 2;
@@ -133,9 +133,9 @@ fn rescue_child_config(
     let mut child = config.clone();
     child.max_actions_per_line = child.max_actions_per_line.saturating_sub(prefix.len());
     child.wall_time = Some(Duration::from_millis(per_plan_budget_ms.max(1)));
-    child.stop_on_win_hp_loss_at_most =
-        Some(child_start_hp.saturating_sub(minimum_final_hp).max(0) as u32);
-    child.min_win_candidates_before_stop = 1;
+    child.satisfaction = CombatSearchV2Satisfaction::HpLossAtMost(
+        child_start_hp.saturating_sub(minimum_final_hp).max(0) as u32,
+    );
     child.turn_plan_policy = CombatSearchV2TurnPlanPolicy::Disabled;
     child.max_potions_used = child.max_potions_used.map(|limit| {
         limit.saturating_sub(
@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(child.max_actions_per_line, 6);
         assert_eq!(child.max_potions_used, Some(0));
         assert_eq!(child.wall_time, Some(Duration::from_millis(321)));
-        assert_eq!(child.stop_on_win_hp_loss_at_most, Some(12));
+        assert_eq!(
+            child.satisfaction,
+            CombatSearchV2Satisfaction::HpLossAtMost(12)
+        );
         assert_eq!(
             child.turn_plan_policy,
             CombatSearchV2TurnPlanPolicy::Disabled

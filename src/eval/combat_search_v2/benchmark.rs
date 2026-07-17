@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use crate::ai::combat_search_v2::CombatSearchV2Satisfaction;
 use crate::ai::combat_search_v2::{
     compare_outcome_metrics, run_combat_search_v2, CombatSearchV2DiagnosticsReport,
     CombatSearchV2FrontierValueReport, CombatSearchV2OutcomeMetrics, CombatSearchV2OutcomeReport,
@@ -402,7 +404,8 @@ fn benchmark_case_search_options(
     mut options: CombatSearchV2RunOptions,
 ) -> CombatSearchV2RunOptions {
     if case.baseline.is_some() {
-        options.stop_on_win_hp_loss_at_most = None;
+        options.satisfaction =
+            Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion);
     }
     options
 }
@@ -1007,26 +1010,32 @@ mod tests {
             cards_played: 9,
         }));
         let options = CombatSearchV2RunOptions {
-            stop_on_win_hp_loss_at_most: Some(8),
+            satisfaction: Some(CombatSearchV2Satisfaction::HpLossAtMost(8)),
             ..CombatSearchV2RunOptions::default()
         };
 
         let guarded = benchmark_case_search_options(&case, options);
 
-        assert_eq!(guarded.stop_on_win_hp_loss_at_most, None);
+        assert_eq!(
+            guarded.satisfaction,
+            Some(CombatSearchV2Satisfaction::BudgetOrExhaustion)
+        );
     }
 
     #[test]
     fn benchmark_case_without_baseline_keeps_hp_loss_early_acceptance() {
         let case = loaded_case_with_baseline(None);
         let options = CombatSearchV2RunOptions {
-            stop_on_win_hp_loss_at_most: Some(8),
+            satisfaction: Some(CombatSearchV2Satisfaction::HpLossAtMost(8)),
             ..CombatSearchV2RunOptions::default()
         };
 
         let guarded = benchmark_case_search_options(&case, options);
 
-        assert_eq!(guarded.stop_on_win_hp_loss_at_most, Some(8));
+        assert_eq!(
+            guarded.satisfaction,
+            Some(CombatSearchV2Satisfaction::HpLossAtMost(8))
+        );
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {

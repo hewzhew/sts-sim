@@ -63,4 +63,11 @@ impl SearchLoopState {
             accepted_complete_candidate: false,
         }
     }
+
+    pub(super) fn begin_work_quantum(&mut self) {
+        self.exhausted = false;
+        self.stats.deadline_hit = false;
+        self.stats.node_budget_hit = false;
+        self.stats.action_prefix_budget_hit = false;
+    }
 }
