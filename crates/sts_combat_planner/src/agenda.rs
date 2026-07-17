@@ -272,9 +272,11 @@ impl CombatPlannerAgendaSession {
                         .committed_engine_steps
                         .saturating_sub(released.engine_steps);
                     if !root_finished {
-                        // Comparable continuation evidence is meaningful only after every
-                        // complete option at this decision root has had a chance to exist.
-                        self.agenda.push_front(AgendaItem::DiscoverTurnOption);
+                        // Reserve at least every other agenda slot for root discovery while
+                        // allowing one already-discovered prospect to gain usable evidence.
+                        let insertion = self.agenda.len().min(1);
+                        self.agenda
+                            .insert(insertion, AgendaItem::DiscoverTurnOption);
                     }
 
                     match generation_report.status {

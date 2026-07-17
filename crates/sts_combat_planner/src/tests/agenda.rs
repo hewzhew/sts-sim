@@ -120,7 +120,7 @@ fn engine_budget_interruption_retains_verified_terminal_while_continuation_waits
 }
 
 #[test]
-fn completes_root_discovery_before_spending_on_continuations() {
+fn interleaves_root_discovery_with_one_continuation_quantum() {
     let stepper = TinyTurnStepper::plain();
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
 
@@ -133,11 +133,11 @@ fn completes_root_discovery_before_spending_on_continuations() {
         report.status,
         CombatPlannerAgendaStatus::Partial(CombatPlannerAgendaInterruption::AgendaItemBudget)
     );
-    assert_eq!(report.after.continuation_generation_work, 0);
+    assert_eq!(report.after.continuation_generation_work, 1);
     assert!(!session.prospects().is_empty());
     assert!(session.prospects().iter().all(|prospect| matches!(
         prospect.continuation(),
-        ContinuationEvidence::PendingContinuationRefinement
+        ContinuationEvidence::Interrupted(ContinuationInterruption::GenerationWorkBudget)
     )));
 
     let completed = session.advance(

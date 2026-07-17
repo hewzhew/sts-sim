@@ -337,11 +337,12 @@ verification, one comparator, and one decision result. Demonstrate that a
 single decision and an equivalent sequence of work quanta retain the same
 evidence and selected option.
 
-Root discovery has priority over continuation refinement: the agenda first
-finishes enumerating complete options at the current decision root, then gives
-their continuations comparable exact horizon work. This prevents the successor
-from recreating the outgoing search's failure mode where one early lineage
-consumes the budget before sibling options exist.
+Root discovery and continuation refinement are interleaved. While root
+generation remains open, root discovery receives at least every other agenda
+slot; the intervening slot advances one already-discovered prospect in FIFO
+order. This prevents both failure modes: no early lineage can consume the whole
+budget, and combinatorial root enumeration cannot block all usable continuation
+evidence until exhaustive completion.
 
 The first comparator may use a documented finite-horizon criterion, but its
 unresolved continuation remains explicit. Existing rollout or bucket scores
