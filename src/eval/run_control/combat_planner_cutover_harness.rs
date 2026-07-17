@@ -1,9 +1,10 @@
 use sts_combat_planner::{
     decide_combat_option, replay_turn_option, CombatDecisionRoot, CombatEvaluationContext,
     CombatPlannerAgendaConfig, CombatPlannerAgendaQuantum, CombatPlannerAgendaSession,
-    CombatPlannerDecision, CombatPlannerDecisionBasis, CombatPlannerDecisionResult,
-    CombatPlanningQuantum, CompleteTurnOptionBoundary, OptionProspectId, ReplayLimits,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    CombatPlannerAgendaStatus, CombatPlannerDecision, CombatPlannerDecisionBasis,
+    CombatPlannerDecisionResult, CombatPlanningQuantum, CompleteTurnOptionBoundary,
+    OptionProspectId, ReplayLimits, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession,
 };
 
 use crate::ai::combat_state_key::combat_exact_state_hash_v1;
@@ -12,20 +13,22 @@ use crate::sim::combat::EngineCombatStepper;
 use super::session::RunControlSession;
 use super::transition_report::ActionResultChange;
 
-fn plan_one_bounded_option(session: &RunControlSession) -> Result<CombatPlannerDecision, String> {
+fn plan_one_option(session: &RunControlSession) -> Result<CombatPlannerDecision, String> {
     let position = session.current_active_combat_position()?;
     let root = CombatDecisionRoot::new(position).map_err(|error| format!("{error:?}"))?;
     let mut agenda = CombatPlannerAgendaSession::new(root, CombatPlannerAgendaConfig::default());
     let report = agenda.advance(
         &EngineCombatStepper,
-        CombatPlannerAgendaQuantum::deterministic(128, 256, 2_048),
+        CombatPlannerAgendaQuantum::deterministic(100_000, 1_000_000, 10_000_000),
     );
+    if report.status != CombatPlannerAgendaStatus::EvidenceComplete {
+        return Err(format!("planner evidence incomplete: {:?}", report.status));
+    }
     match decide_combat_option(&agenda) {
         CombatPlannerDecisionResult::Selected(decision) => Ok(decision),
-        CombatPlannerDecisionResult::Deferred(deferral) => Err(format!(
-            "planner deferred after {:?}: {:?}",
-            report.status, deferral.gaps
-        )),
+        CombatPlannerDecisionResult::Deferred(deferral) => {
+            Err(format!("planner deferred: {:?}", deferral.gaps))
+        }
     }
 }
 
@@ -118,7 +121,6 @@ fn generated_decision(
         selected_prospect_id: OptionProspectId(0),
         selected_option: option,
         nondominated_alternatives: Vec::new(),
-        unresolved_gaps: Vec::new(),
         basis,
     })
 }
@@ -162,7 +164,7 @@ mod tests {
         let session = session_with_active_combat(combat);
         let before = session.current_active_combat_position().unwrap();
 
-        let decision = plan_one_bounded_option(&session).unwrap();
+        let decision = plan_one_option(&session).unwrap();
         assert_eq!(
             decision.selected_option.boundary(),
             CompleteTurnOptionBoundary::NextPlayerTurn

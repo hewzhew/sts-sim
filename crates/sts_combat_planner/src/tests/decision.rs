@@ -69,7 +69,7 @@ fn selects_the_only_option_with_an_exact_win_in_the_next_turn() {
 }
 
 #[test]
-fn budget_incumbent_preserves_the_exact_interrupted_prospect() {
+fn deferral_preserves_the_exact_interrupted_prospect() {
     let stepper = TinyTurnStepper::lethal();
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
     session.advance(
@@ -77,10 +77,10 @@ fn budget_incumbent_preserves_the_exact_interrupted_prospect() {
         CombatPlannerAgendaQuantum::deterministic(10, 10, 5),
     );
 
-    let CombatPlannerDecisionResult::Selected(decision) = decide_combat_option(&session) else {
-        panic!("an interrupted continuation must remain visible on the bounded incumbent");
+    let CombatPlannerDecisionResult::Deferred(deferral) = decide_combat_option(&session) else {
+        panic!("an interrupted continuation must remain unselectable");
     };
-    assert!(decision.unresolved_gaps.iter().any(|gap| matches!(
+    assert!(deferral.gaps.iter().any(|gap| matches!(
         gap,
         CombatPlannerDecisionGap::ProspectEvidence {
             gap: ProspectEvidenceGap::Interrupted(ContinuationInterruption::EngineStepBudget),
@@ -106,45 +106,17 @@ fn defers_a_forced_terminal_loss_without_policy_authority() {
 }
 
 #[test]
-fn selects_a_typed_budget_incumbent_for_different_nonwinning_exact_states() {
+fn leaves_different_nonwinning_exact_states_incomparable() {
     let session = finish_agenda(&TinyTurnStepper::plain());
 
-    let CombatPlannerDecisionResult::Selected(decision) = decide_combat_option(&session) else {
-        panic!("a complete non-losing option must remain executable at the budget boundary");
+    let CombatPlannerDecisionResult::Deferred(deferral) = decide_combat_option(&session) else {
+        panic!("no hidden scalar should rank different nonwinning states");
     };
-    assert!(matches!(
-        decision.basis,
-        CombatPlannerDecisionBasis::BudgetBoundedIncumbent {
-            evaluator: CombatPlannerIncumbentEvaluator::ObservedResourceParetoV1,
-            exact_winning_horizon: None,
-            considered_prospects: 2,
-        }
-    ));
-    assert_eq!(decision.selected_option.actions().len(), 2);
-    assert_eq!(decision.nondominated_alternatives.len(), 1);
     assert_eq!(
-        decision.unresolved_gaps,
+        deferral.gaps,
         vec![CombatPlannerDecisionGap::IncomparableExactProspects]
     );
-}
-
-#[test]
-fn partial_root_generation_selects_only_a_complete_option_and_retains_the_gap() {
-    let stepper = TinyTurnStepper::plain();
-    let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
-    session.advance(
-        &stepper,
-        CombatPlannerAgendaQuantum::deterministic(6, 6, 24),
-    );
-
-    let CombatPlannerDecisionResult::Selected(decision) = decide_combat_option(&session) else {
-        panic!("a discovered complete option should be usable without exhausting the root");
-    };
-    assert!(decision
-        .unresolved_gaps
-        .iter()
-        .any(|gap| matches!(gap, CombatPlannerDecisionGap::RetainedAgendaWork { .. })));
-    assert!(!decision.selected_option.actions().is_empty());
+    assert_eq!(deferral.nondominated_prospects.len(), 2);
 }
 
 #[test]

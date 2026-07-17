@@ -23,7 +23,7 @@ pub use agenda::{
 pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
     CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral, CombatPlannerDecisionGap,
-    CombatPlannerDecisionResult, CombatPlannerIncumbentEvaluator, ProspectEvidenceGap,
+    CombatPlannerDecisionResult, ProspectEvidenceGap,
 };
 pub use evidence::{
     BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
