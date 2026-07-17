@@ -94,6 +94,7 @@ pub struct CombatOutcomeModelTrainingConfigV1 {
     pub minimum_training_examples: usize,
     pub minimum_calibration_examples: usize,
     pub maximum_calibration_brier: f64,
+    pub maximum_goal_probability_error_p95: f64,
 }
 
 impl Default for CombatOutcomeModelTrainingConfigV1 {
@@ -105,6 +106,7 @@ impl Default for CombatOutcomeModelTrainingConfigV1 {
             minimum_training_examples: 16,
             minimum_calibration_examples: 8,
             maximum_calibration_brier: 0.24,
+            maximum_goal_probability_error_p95: 0.35,
         }
     }
 }
@@ -269,7 +271,8 @@ impl CombatOutcomeModelV1 {
             calibration_brier,
             goal_probability_error_p95,
             terminal_hp_mae,
-            calibration_accepted: calibration_brier <= config.maximum_calibration_brier,
+            calibration_accepted: calibration_brier <= config.maximum_calibration_brier
+                && goal_probability_error_p95 <= config.maximum_goal_probability_error_p95,
         })
     }
 
@@ -325,6 +328,8 @@ fn validate_config(
         || config.minimum_calibration_examples == 0
         || !config.maximum_calibration_brier.is_finite()
         || !(0.0..=1.0).contains(&config.maximum_calibration_brier)
+        || !config.maximum_goal_probability_error_p95.is_finite()
+        || !(0.0..=1.0).contains(&config.maximum_goal_probability_error_p95)
     {
         return Err(CombatOutcomeModelErrorV1::InvalidTrainingConfig);
     }

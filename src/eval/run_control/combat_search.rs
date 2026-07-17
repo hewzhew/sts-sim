@@ -44,6 +44,7 @@ pub(super) fn apply_search_combat(
             },
         ));
     }
+    record_complete_policy_episode(session, &start);
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
         if !options.disable_no_win_rescue {
             if let Some(outcome) = try_apply_no_win_fallback(
@@ -174,6 +175,45 @@ pub(super) fn apply_search_combat(
         .push(accepted_line_evidence.into_annotation());
     attach_execution_adjudication(&mut outcome.trace_annotations, &selected_adjudication);
     Ok(outcome)
+}
+
+fn record_complete_policy_episode(
+    session: &mut RunControlSession,
+    start: &crate::sim::combat::CombatPosition,
+) {
+    const MAX_ACTIONS: usize = 240;
+    const POLICY: &str = "combat-outcome/phase-aware-no-potion-single-episode/v1;pending=first-canonical;max_actions=240";
+    let root_fingerprint =
+        crate::ai::combat_state_key::combat_exact_state_hash_v1(&start.engine, &start.combat);
+    let observation_fingerprint = format!("{root_fingerprint}|{POLICY}");
+    if !session
+        .combat_outcomes
+        .begin_policy_episode(observation_fingerprint.clone())
+    {
+        return;
+    }
+    let episode =
+        crate::ai::combat_search_v2::run_combat_outcome_policy_episode_v1(start, MAX_ACTIONS);
+    if episode.stop != crate::ai::combat_search_v2::CombatOutcomePolicyEpisodeStopV1::Terminal {
+        return;
+    }
+    session.combat_outcomes.record_outcome_case(
+        format!(
+            "seed-{}-combat-{}-policy-episode-{}",
+            session.run_state.seed, session.combat_sequence, root_fingerprint
+        ),
+        format!("seed-{}", session.run_state.seed),
+        observation_fingerprint,
+        episode
+            .observed_player_turns
+            .iter()
+            .map(sts_combat_planner::CombatOutcomeFeatureVectorV1::from_position)
+            .collect(),
+        episode.terminal,
+        episode.final_hp,
+        episode.final_max_hp,
+        POLICY,
+    );
 }
 
 fn run_search_work_plan(

@@ -381,7 +381,10 @@ mod tests {
             serde_json::from_str(&encoded).expect("artifact deserializes");
         assert_eq!(decoded.schema_name, artifact.schema_name);
         assert_eq!(decoded.feature_schema_id, artifact.feature_schema_id);
-        assert_eq!(decoded.continuation_policy_manifest, artifact.continuation_policy_manifest);
+        assert_eq!(
+            decoded.continuation_policy_manifest,
+            artifact.continuation_policy_manifest
+        );
         assert_eq!(decoded.split, artifact.split);
     }
 

@@ -45,6 +45,10 @@ pub struct CombatOutcomeTracker {
     last_training_examples: Vec<CombatOutcomeTrainingExampleV1>,
     #[serde(default)]
     training_cases: Vec<CombatOutcomeTrainingCaseV1>,
+    #[serde(default)]
+    recorded_outcome_fingerprints: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    attempted_policy_episode_fingerprints: std::collections::BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -245,6 +249,52 @@ impl CombatOutcomeTracker {
             .map(|(policy, cases)| CombatOutcomeTrainingBatchV1::new(policy, cases))
             .collect()
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_outcome_case(
+        &mut self,
+        case_id: impl Into<String>,
+        split_group_id: impl Into<String>,
+        root_fingerprint: impl Into<String>,
+        observed_turns: Vec<CombatOutcomeFeatureVectorV1>,
+        terminal: CombatTerminal,
+        final_hp: i32,
+        final_max_hp: i32,
+        continuation_policy_manifest: impl Into<String>,
+    ) -> bool {
+        if observed_turns.is_empty()
+            || !matches!(terminal, CombatTerminal::Win | CombatTerminal::Loss)
+        {
+            return false;
+        }
+        let root_fingerprint = root_fingerprint.into();
+        if !self.recorded_outcome_fingerprints.insert(root_fingerprint) {
+            return false;
+        }
+        let continuation_policy_manifest = continuation_policy_manifest.into();
+        let victory = terminal == CombatTerminal::Win;
+        let terminal_hp_fraction = f64::from(final_hp.max(0)) / f64::from(final_max_hp.max(1));
+        self.training_cases.push(CombatOutcomeTrainingCaseV1 {
+            case_id: case_id.into(),
+            split_group_id: split_group_id.into(),
+            examples: observed_turns
+                .into_iter()
+                .map(|features| CombatOutcomeTrainingExampleV1 {
+                    features,
+                    victory,
+                    terminal_hp_fraction,
+                    provenance: CombatOutcomeLabelProvenanceV1::ExactScenarioReplay,
+                    continuation_policy_manifest: continuation_policy_manifest.clone(),
+                })
+                .collect(),
+        });
+        true
+    }
+
+    pub fn begin_policy_episode(&mut self, fingerprint: impl Into<String>) -> bool {
+        self.attempted_policy_episode_fingerprints
+            .insert(fingerprint.into())
+    }
 }
 
 pub fn load_combat_baseline_outcome_v1(path: &Path) -> Result<CombatBaselineOutcomeV1, String> {
@@ -373,6 +423,36 @@ mod tests {
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].cases[0].case_id, "jaw");
         assert_eq!(batches[0].cases[0].split_group_id, "test-run-root");
+
+        let exact_features = batches[0].cases[0].examples[0].features;
+        assert!(tracker.record_outcome_case(
+            "jaw-exact",
+            "test-run-root",
+            "root-and-policy",
+            vec![exact_features],
+            CombatTerminal::Loss,
+            0,
+            80,
+            "test-exact-policy-v1",
+        ));
+        assert!(!tracker.record_outcome_case(
+            "jaw-exact-duplicate",
+            "test-run-root",
+            "root-and-policy",
+            vec![exact_features],
+            CombatTerminal::Loss,
+            0,
+            80,
+            "test-exact-policy-v1",
+        ));
+        let batches = tracker.training_batches().expect("both policies are valid");
+        assert_eq!(batches.len(), 2);
+        assert!(batches.iter().any(|batch| {
+            batch.continuation_policy_manifest == "test-exact-policy-v1"
+                && !batch.cases[0].examples[0].victory
+                && batch.cases[0].examples[0].provenance
+                    == CombatOutcomeLabelProvenanceV1::ExactScenarioReplay
+        }));
     }
 
     fn sample_baseline() -> CombatBaselineOutcomeV1 {
