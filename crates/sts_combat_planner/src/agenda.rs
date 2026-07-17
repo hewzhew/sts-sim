@@ -173,6 +173,15 @@ impl CombatPlannerAgendaSession {
         self.generator.gaps()
     }
 
+    #[cfg(test)]
+    pub(crate) fn committed_budget_for_test(&self) -> CombatPlannerAgendaBudget {
+        CombatPlannerAgendaBudget {
+            agenda_items: self.agenda_items_used,
+            generation_work: self.committed_generation_work,
+            engine_steps: self.committed_engine_steps,
+        }
+    }
+
     pub fn counters(&self) -> CombatPlannerAgendaCounters {
         let generation = self.generator.counters();
         CombatPlannerAgendaCounters {
@@ -254,15 +263,15 @@ impl CombatPlannerAgendaSession {
                         },
                     );
                     self.sync_new_options();
-                    if self.generator.is_finished() {
-                        let released = self.generator.release_unused_grant();
-                        self.committed_generation_work = self
-                            .committed_generation_work
-                            .saturating_sub(released.generation_work);
-                        self.committed_engine_steps = self
-                            .committed_engine_steps
-                            .saturating_sub(released.engine_steps);
-                    } else {
+                    let root_finished = self.generator.is_finished();
+                    let released = self.generator.release_unused_grant();
+                    self.committed_generation_work = self
+                        .committed_generation_work
+                        .saturating_sub(released.generation_work);
+                    self.committed_engine_steps = self
+                        .committed_engine_steps
+                        .saturating_sub(released.engine_steps);
+                    if !root_finished {
                         // Comparable continuation evidence is meaningful only after every
                         // complete option at this decision root has had a chance to exist.
                         self.agenda.push_front(AgendaItem::DiscoverTurnOption);
@@ -345,14 +354,15 @@ impl CombatPlannerAgendaSession {
                             .saturating_sub(before_continuation.engine_steps),
                     );
 
-                    if generator.is_finished() {
-                        let released = generator.release_unused_grant();
-                        self.committed_generation_work = self
-                            .committed_generation_work
-                            .saturating_sub(released.generation_work);
-                        self.committed_engine_steps = self
-                            .committed_engine_steps
-                            .saturating_sub(released.engine_steps);
+                    let continuation_finished = generator.is_finished();
+                    let released = generator.release_unused_grant();
+                    self.committed_generation_work = self
+                        .committed_generation_work
+                        .saturating_sub(released.generation_work);
+                    self.committed_engine_steps = self
+                        .committed_engine_steps
+                        .saturating_sub(released.engine_steps);
+                    if continuation_finished {
                         let work = generator.counters();
                         let complete_options = generator.completed_options().to_vec();
                         if generator.gaps().is_empty() {

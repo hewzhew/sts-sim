@@ -90,6 +90,22 @@ fn deferral_preserves_the_exact_interrupted_prospect() {
 }
 
 #[test]
+fn defers_a_forced_terminal_loss_without_policy_authority() {
+    let session = finish_agenda(&TinyTurnStepper::losing());
+
+    let CombatPlannerDecisionResult::Deferred(deferral) = decide_combat_option(&session) else {
+        panic!("mechanical uniqueness must not authorize choosing a terminal loss");
+    };
+    assert!(matches!(
+        deferral.gaps.as_slice(),
+        [CombatPlannerDecisionGap::UnresolvedBoundaryPreference {
+            boundary: CompleteTurnOptionBoundary::TerminalLoss,
+            ..
+        }]
+    ));
+}
+
+#[test]
 fn leaves_different_nonwinning_exact_states_incomparable() {
     let session = finish_agenda(&TinyTurnStepper::plain());
 

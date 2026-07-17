@@ -25,6 +25,7 @@ const PLAY: ClientInput = ClientInput::PlayCard {
 struct TinyTurnStepper {
     opens_selection: bool,
     lethal_from_turn: Option<u32>,
+    terminal_loss: bool,
     calls: Arc<Mutex<Vec<ClientInput>>>,
     successor_salt: Arc<AtomicI32>,
 }
@@ -34,6 +35,7 @@ impl TinyTurnStepper {
         Self {
             opens_selection: false,
             lethal_from_turn: None,
+            terminal_loss: false,
             calls: Arc::new(Mutex::new(Vec::new())),
             successor_salt: Arc::new(AtomicI32::new(0)),
         }
@@ -56,6 +58,13 @@ impl TinyTurnStepper {
     fn lethal_after_current_turn() -> Self {
         Self {
             lethal_from_turn: Some(2),
+            ..Self::plain()
+        }
+    }
+
+    fn losing() -> Self {
+        Self {
+            terminal_loss: true,
             ..Self::plain()
         }
     }
@@ -117,39 +126,44 @@ impl CombatStepper for TinyTurnStepper {
     ) -> CombatStepResult {
         self.calls.lock().unwrap().push(input.clone());
         let mut next = position.clone();
-        match input {
-            ClientInput::PlayCard {
-                card_index: 0,
-                target: None,
-            } => {
-                next.combat.turn.energy = 0;
-                next.combat.turn.turn_start_draw_modifier +=
-                    self.successor_salt.load(Ordering::SeqCst);
-                if self.opens_selection {
-                    next.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
-                        candidate_uuids: vec![11, 22],
-                        min_cards: 2,
-                        max_cards: 2,
-                        can_cancel: false,
-                        reason: HandSelectReason::Discard,
-                    });
-                } else if self
-                    .lethal_from_turn
-                    .is_some_and(|turn| next.combat.turn.turn_count >= turn)
-                {
-                    next.engine = EngineState::GameOver(sts_core::state::core::RunResult::Victory);
+        if self.terminal_loss {
+            next.engine = EngineState::GameOver(sts_core::state::core::RunResult::Defeat);
+        } else {
+            match input {
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: None,
+                } => {
+                    next.combat.turn.energy = 0;
+                    next.combat.turn.turn_start_draw_modifier +=
+                        self.successor_salt.load(Ordering::SeqCst);
+                    if self.opens_selection {
+                        next.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+                            candidate_uuids: vec![11, 22],
+                            min_cards: 2,
+                            max_cards: 2,
+                            can_cancel: false,
+                            reason: HandSelectReason::Discard,
+                        });
+                    } else if self
+                        .lethal_from_turn
+                        .is_some_and(|turn| next.combat.turn.turn_count >= turn)
+                    {
+                        next.engine =
+                            EngineState::GameOver(sts_core::state::core::RunResult::Victory);
+                    }
                 }
+                ClientInput::SubmitSelection(resolution) => {
+                    let selected = resolution.selected_card_uuids();
+                    next.combat.turn.turn_start_draw_modifier = i32::try_from(selected[0]).unwrap();
+                    next.engine = EngineState::CombatPlayerTurn;
+                }
+                ClientInput::EndTurn => {
+                    next.combat.turn.turn_count += 1;
+                    next.engine = EngineState::CombatPlayerTurn;
+                }
+                _ => panic!("tiny stepper received unsupported input"),
             }
-            ClientInput::SubmitSelection(resolution) => {
-                let selected = resolution.selected_card_uuids();
-                next.combat.turn.turn_start_draw_modifier = i32::try_from(selected[0]).unwrap();
-                next.engine = EngineState::CombatPlayerTurn;
-            }
-            ClientInput::EndTurn => {
-                next.combat.turn.turn_count += 1;
-                next.engine = EngineState::CombatPlayerTurn;
-            }
-            _ => panic!("tiny stepper received unsupported input"),
         }
         let terminal = self.terminal(&next);
         CombatStepResult {

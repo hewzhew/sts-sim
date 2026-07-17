@@ -353,7 +353,9 @@ The initial Oracle comparator is deliberately narrow:
 1. any retained agenda work or typed generation/verification gap defers;
 2. a shorter exact terminal-win horizon is preferred;
 3. prospects with the same exact immediate successor are equivalent;
-4. one complete legal option is selectable without inventing a ranking;
+4. one complete next-turn option is selectable without inventing a ranking,
+   while a mechanically unique loss or escape still requires explicit policy
+   authority;
 5. all other exact state differences remain nondominated and defer.
 
 This gives production integration an honest decision/gap boundary without

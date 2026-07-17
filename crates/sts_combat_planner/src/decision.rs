@@ -67,6 +67,10 @@ pub enum CombatPlannerDecisionGap {
         prospect_id: OptionProspectId,
         gap: ProspectEvidenceGap,
     },
+    UnresolvedBoundaryPreference {
+        prospect_id: OptionProspectId,
+        boundary: CompleteTurnOptionBoundary,
+    },
     IncomparableExactProspects,
 }
 
@@ -151,7 +155,26 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
         let index = nondominated[0];
         let selected = &prospects[index];
         let basis = if prospects.len() == 1 {
-            CombatPlannerDecisionBasis::OnlyCompleteOption
+            match selected.option().boundary() {
+                CompleteTurnOptionBoundary::NextPlayerTurn => {
+                    CombatPlannerDecisionBasis::OnlyCompleteOption
+                }
+                CompleteTurnOptionBoundary::TerminalWin => {
+                    CombatPlannerDecisionBasis::VerifiedTerminalWin
+                }
+                boundary @ (CompleteTurnOptionBoundary::TerminalLoss
+                | CompleteTurnOptionBoundary::Escape) => {
+                    return CombatPlannerDecisionResult::Deferred(CombatPlannerDecisionDeferral {
+                        root_exact_state_hash,
+                        evaluation_context,
+                        nondominated_prospects: vec![selected.id()],
+                        gaps: vec![CombatPlannerDecisionGap::UnresolvedBoundaryPreference {
+                            prospect_id: selected.id(),
+                            boundary,
+                        }],
+                    });
+                }
+            }
         } else {
             match exact_winning_horizon(selected) {
                 Some(0) => CombatPlannerDecisionBasis::VerifiedTerminalWin,

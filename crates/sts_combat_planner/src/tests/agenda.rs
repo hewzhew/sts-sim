@@ -8,6 +8,18 @@ fn agenda_config() -> CombatPlannerAgendaConfig {
 }
 
 #[test]
+fn unused_transition_reservation_is_released_after_each_agenda_item() {
+    let stepper = TinyTurnStepper::plain();
+    let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
+
+    session.advance(&stepper, CombatPlannerAgendaQuantum::deterministic(1, 1, 4));
+
+    let committed = session.committed_budget_for_test();
+    assert_eq!(committed.generation_work, 1);
+    assert_eq!(committed.engine_steps, 0);
+}
+
+#[test]
 fn verifies_terminal_witness_and_builds_one_turn_exact_horizon() {
     let stepper = TinyTurnStepper::lethal();
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
