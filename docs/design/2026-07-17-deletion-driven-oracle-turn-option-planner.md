@@ -4,8 +4,8 @@
 
 Accepted architecture direction. Slice 1 exact turn-option generation and replay
 are complete. Slice 2 now has a resumable evidence agenda, terminal-witness
-verification, and one exact future-turn refinement; comparator and decision
-result remain to be implemented before production cutover.
+verification, one exact future-turn refinement, and the first typed comparator
+and decision result. Atomic production cutover remains to be implemented.
 
 This contract defines the production replacement for `combat_search_v2`. It
 does not define another search profile, rescue path, diagnostic lane, or
@@ -347,6 +347,19 @@ The first comparator may use a documented finite-horizon criterion, but its
 unresolved continuation remains explicit. Existing rollout or bucket scores
 may be used only as named estimated evidence during migration; they may not
 define core types or pruning safety.
+
+The initial Oracle comparator is deliberately narrow:
+
+1. any retained agenda work or typed generation/verification gap defers;
+2. a shorter exact terminal-win horizon is preferred;
+3. prospects with the same exact immediate successor are equivalent;
+4. one complete legal option is selectable without inventing a ranking;
+5. all other exact state differences remain nondominated and defer.
+
+This gives production integration an honest decision/gap boundary without
+smuggling the outgoing HP, damage, rollout, or action-count scores into the new
+owner. A later evaluator must enter as named evidence with its own comparison
+contract.
 
 ### Slice 3: Atomic Production Cutover
 

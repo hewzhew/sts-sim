@@ -7,6 +7,7 @@
 //! harness; production integration belongs to the control layer.
 
 mod agenda;
+mod decision;
 mod evidence;
 mod generator;
 mod prospect;
@@ -18,6 +19,11 @@ pub use agenda::{
     CombatPlannerAgendaBudget, CombatPlannerAgendaConfig, CombatPlannerAgendaCounters,
     CombatPlannerAgendaInterruption, CombatPlannerAgendaQuantum, CombatPlannerAgendaReport,
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
+};
+pub use decision::{
+    decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
+    CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral, CombatPlannerDecisionGap,
+    CombatPlannerDecisionResult, ProspectEvidenceGap,
 };
 pub use evidence::{
     BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,

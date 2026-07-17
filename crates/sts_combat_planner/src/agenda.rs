@@ -165,6 +165,14 @@ impl CombatPlannerAgendaSession {
         &self.prospects
     }
 
+    pub(crate) fn retained_agenda_items(&self) -> usize {
+        self.agenda.len()
+    }
+
+    pub(crate) fn root_generation_gaps(&self) -> &[TurnOptionGenerationGap] {
+        self.generator.gaps()
+    }
+
     pub fn counters(&self) -> CombatPlannerAgendaCounters {
         let generation = self.generator.counters();
         CombatPlannerAgendaCounters {

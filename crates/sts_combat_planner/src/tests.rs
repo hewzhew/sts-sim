@@ -24,7 +24,7 @@ const PLAY: ClientInput = ClientInput::PlayCard {
 #[derive(Clone)]
 struct TinyTurnStepper {
     opens_selection: bool,
-    lethal_play: bool,
+    lethal_from_turn: Option<u32>,
     calls: Arc<Mutex<Vec<ClientInput>>>,
     successor_salt: Arc<AtomicI32>,
 }
@@ -33,7 +33,7 @@ impl TinyTurnStepper {
     fn plain() -> Self {
         Self {
             opens_selection: false,
-            lethal_play: false,
+            lethal_from_turn: None,
             calls: Arc::new(Mutex::new(Vec::new())),
             successor_salt: Arc::new(AtomicI32::new(0)),
         }
@@ -48,7 +48,14 @@ impl TinyTurnStepper {
 
     fn lethal() -> Self {
         Self {
-            lethal_play: true,
+            lethal_from_turn: Some(1),
+            ..Self::plain()
+        }
+    }
+
+    fn lethal_after_current_turn() -> Self {
+        Self {
+            lethal_from_turn: Some(2),
             ..Self::plain()
         }
     }
@@ -126,7 +133,10 @@ impl CombatStepper for TinyTurnStepper {
                         can_cancel: false,
                         reason: HandSelectReason::Discard,
                     });
-                } else if self.lethal_play {
+                } else if self
+                    .lethal_from_turn
+                    .is_some_and(|turn| next.combat.turn.turn_count >= turn)
+                {
                     next.engine = EngineState::GameOver(sts_core::state::core::RunResult::Victory);
                 }
             }
@@ -371,3 +381,4 @@ fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
 }
 
 mod agenda;
+mod decision;
