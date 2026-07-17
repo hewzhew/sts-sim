@@ -22,9 +22,9 @@ pub use agenda::{
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
 };
 pub use decision::{
-    decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
-    CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral, CombatPlannerDecisionGap,
-    CombatPlannerDecisionResult, ProspectEvidenceGap,
+    decide_combat_option, decide_combat_option_with_outcome_model, CombatEvaluationContext,
+    CombatPlannerDecision, CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral,
+    CombatPlannerDecisionGap, CombatPlannerDecisionResult, ProspectEvidenceGap,
 };
 pub use evidence::{
     BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
@@ -34,8 +34,8 @@ pub use generator::TurnOptionGeneratorSession;
 pub use outcome_model::{
     CombatOutcomeEstimateV1, CombatOutcomeFeatureVectorV1, CombatOutcomeLabelProvenanceV1,
     CombatOutcomeModelApplicabilityV1, CombatOutcomeModelEpistemicV1, CombatOutcomeModelErrorV1,
-    CombatOutcomeModelTrainingConfigV1, CombatOutcomeModelV1, CombatOutcomeTrainingExampleV1,
-    COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
+    CombatOutcomeModelTrainingConfigV1, CombatOutcomeModelV1, CombatOutcomeProbabilityIntervalV1,
+    CombatOutcomeTrainingExampleV1, COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
 };
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,

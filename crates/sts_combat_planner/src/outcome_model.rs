@@ -125,6 +125,7 @@ pub struct CombatOutcomeModelV1 {
     training_examples: usize,
     calibration_examples: usize,
     calibration_brier: f64,
+    goal_probability_error_p95: f64,
     terminal_hp_mae: f64,
     calibration_accepted: bool,
 }
@@ -141,7 +142,14 @@ pub struct CombatOutcomeModelEpistemicV1 {
     pub training_examples: usize,
     pub calibration_examples: usize,
     pub calibration_brier: f64,
+    pub goal_probability_error_p95: f64,
     pub terminal_hp_mae: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CombatOutcomeProbabilityIntervalV1 {
+    pub lower: f64,
+    pub upper: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -150,6 +158,7 @@ pub struct CombatOutcomeEstimateV1 {
     pub feature_schema_id: &'static str,
     pub continuation_policy_manifest: String,
     pub goal_success_probability: f64,
+    pub goal_success_interval: CombatOutcomeProbabilityIntervalV1,
     pub terminal_hp_fraction_mean: f64,
     pub applicability: CombatOutcomeModelApplicabilityV1,
     pub epistemic: CombatOutcomeModelEpistemicV1,
@@ -205,6 +214,21 @@ impl CombatOutcomeModelV1 {
             })
             .sum::<f64>()
             / calibration.len() as f64;
+        let mut goal_probability_errors = calibration
+            .iter()
+            .map(|example| {
+                let predicted = sigmoid(dot(win_parameters, example.features));
+                let target = f64::from(example.victory);
+                (predicted - target).abs()
+            })
+            .collect::<Vec<_>>();
+        goal_probability_errors.sort_by(f64::total_cmp);
+        let p95_index = goal_probability_errors
+            .len()
+            .saturating_mul(95)
+            .div_ceil(100)
+            .saturating_sub(1);
+        let goal_probability_error_p95 = goal_probability_errors[p95_index];
         let victorious = calibration
             .iter()
             .filter(|example| example.victory)
@@ -228,6 +252,7 @@ impl CombatOutcomeModelV1 {
             training_examples: training.len(),
             calibration_examples: calibration.len(),
             calibration_brier,
+            goal_probability_error_p95,
             terminal_hp_mae,
             calibration_accepted: calibration_brier <= config.maximum_calibration_brier,
         })
@@ -250,17 +275,23 @@ impl CombatOutcomeModelV1 {
                 feature_indices: out_of_domain,
             }
         };
+        let goal_success_probability = sigmoid(dot(self.win_parameters, features));
         CombatOutcomeEstimateV1 {
             model_id: self.model_id.clone(),
             feature_schema_id: COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
             continuation_policy_manifest: self.continuation_policy_manifest.clone(),
-            goal_success_probability: sigmoid(dot(self.win_parameters, features)),
+            goal_success_probability,
+            goal_success_interval: CombatOutcomeProbabilityIntervalV1 {
+                lower: (goal_success_probability - self.goal_probability_error_p95).clamp(0.0, 1.0),
+                upper: (goal_success_probability + self.goal_probability_error_p95).clamp(0.0, 1.0),
+            },
             terminal_hp_fraction_mean: dot(self.terminal_hp_parameters, features).clamp(0.0, 1.0),
             applicability,
             epistemic: CombatOutcomeModelEpistemicV1 {
                 training_examples: self.training_examples,
                 calibration_examples: self.calibration_examples,
                 calibration_brier: self.calibration_brier,
+                goal_probability_error_p95: self.goal_probability_error_p95,
                 terminal_hp_mae: self.terminal_hp_mae,
             },
         }
