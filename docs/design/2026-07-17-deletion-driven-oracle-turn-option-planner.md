@@ -351,13 +351,15 @@ define core types or pruning safety.
 
 The initial Oracle comparator is deliberately narrow:
 
-1. any retained agenda work or typed generation/verification gap defers;
+1. if no complete non-losing option exists, retained work or a typed gap defers;
 2. a shorter exact terminal-win horizon is preferred;
 3. prospects with the same exact immediate successor are equivalent;
 4. one complete next-turn option is selectable without inventing a ranking,
    while a mechanically unique loss or escape still requires explicit policy
    authority;
-5. all other exact state differences remain nondominated and defer.
+5. at a hard budget boundary, a named observed-resource Pareto evaluator may
+   select an incumbent from complete non-losing options; it retains every
+   unresolved alternative and gap and never promotes a partial prefix.
 
 This gives production integration an honest decision/gap boundary without
 smuggling the outgoing HP, damage, rollout, or action-count scores into the new

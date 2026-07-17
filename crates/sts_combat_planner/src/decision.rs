@@ -3,6 +3,7 @@ use super::{
     CompleteTurnOptionBoundary, ContinuationEvidence, ContinuationInterruption, OptionProspect,
     OptionProspectId, ReplayError, TurnOptionGenerationGap,
 };
+use sts_core::state::core::ClientInput;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Exact assumptions shared by every prospect in one comparison.
@@ -16,7 +17,8 @@ impl CombatEvaluationContext {
     pub const ORACLE_EXACT_ONE_TURN: Self = Self {
         oracle_exact_state: true,
         continuation_turn_boundaries: 1,
-        contract_fingerprint: "oracle-exact-complete-turn-option/one-turn/v1",
+        contract_fingerprint:
+            "oracle-exact-complete-turn-option/one-turn/observed-resource-pareto-v1",
     };
 }
 
@@ -35,6 +37,7 @@ pub struct CombatPlannerDecision {
     pub selected_prospect_id: OptionProspectId,
     pub selected_option: CompleteTurnOption,
     pub nondominated_alternatives: Vec<OptionProspectId>,
+    pub unresolved_gaps: Vec<CombatPlannerDecisionGap>,
     pub basis: CombatPlannerDecisionBasis,
 }
 
@@ -43,8 +46,22 @@ pub struct CombatPlannerDecision {
 pub enum CombatPlannerDecisionBasis {
     OnlyCompleteOption,
     VerifiedTerminalWin,
-    PreferredExactWinningHorizon { turn_boundaries: u16 },
-    EquivalentExactSuccessor { exact_successor_hash: String },
+    PreferredExactWinningHorizon {
+        turn_boundaries: u16,
+    },
+    EquivalentExactSuccessor {
+        exact_successor_hash: String,
+    },
+    BudgetBoundedIncumbent {
+        evaluator: CombatPlannerIncumbentEvaluator,
+        exact_winning_horizon: Option<u16>,
+        considered_prospects: usize,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatPlannerIncumbentEvaluator {
+    ObservedResourceParetoV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,10 +103,10 @@ pub enum ProspectEvidenceGap {
 
 /// Applies the first finite-horizon Oracle comparison contract.
 ///
-/// Incomplete evidence always defers. Complete prospects are ordered only by a
-/// shorter exact winning horizon; byte-identical exact successors are treated
-/// as equivalent. All other state differences remain incomparable until a
-/// named evaluator is added to the contract.
+/// Exact evidence selects directly when it proves a unique result. At a hard
+/// budget boundary, already-complete non-losing options remain executable: a
+/// named Pareto incumbent evaluator may choose one while retaining every gap
+/// and unresolved alternative. Partial action prefixes never enter comparison.
 pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlannerDecisionResult {
     let root_exact_state_hash = session.root().exact_state_hash().to_owned();
     let evaluation_context = CombatEvaluationContext::ORACLE_EXACT_ONE_TURN;
@@ -140,14 +157,16 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
     }
     if prospects.is_empty() {
         gaps.push(CombatPlannerDecisionGap::NoCompleteOptions);
-    }
-    if !gaps.is_empty() {
         return CombatPlannerDecisionResult::Deferred(CombatPlannerDecisionDeferral {
             root_exact_state_hash,
             evaluation_context,
             nondominated_prospects: all_ids,
             gaps,
         });
+    }
+
+    if !gaps.is_empty() {
+        return budget_bounded_result(session, gaps, evaluation_context);
     }
 
     let nondominated = nondominated_indices(prospects);
@@ -184,7 +203,14 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
                 None => unreachable!("only a shorter exact winning horizon can dominate"),
             }
         };
-        return selected_result(session, selected, Vec::new(), basis, evaluation_context);
+        return selected_result(
+            session,
+            selected,
+            Vec::new(),
+            Vec::new(),
+            basis,
+            evaluation_context,
+        );
     }
 
     let first_successor = prospects[nondominated[0]].option().exact_successor_hash();
@@ -203,6 +229,7 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
             session,
             selected,
             alternatives,
+            Vec::new(),
             CombatPlannerDecisionBasis::EquivalentExactSuccessor {
                 exact_successor_hash: first_successor.to_owned(),
             },
@@ -210,21 +237,18 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
         );
     }
 
-    CombatPlannerDecisionResult::Deferred(CombatPlannerDecisionDeferral {
-        root_exact_state_hash,
+    budget_bounded_result(
+        session,
+        vec![CombatPlannerDecisionGap::IncomparableExactProspects],
         evaluation_context,
-        nondominated_prospects: nondominated
-            .iter()
-            .map(|index| prospects[*index].id())
-            .collect(),
-        gaps: vec![CombatPlannerDecisionGap::IncomparableExactProspects],
-    })
+    )
 }
 
 fn selected_result(
     session: &CombatPlannerAgendaSession,
     selected: &OptionProspect,
     nondominated_alternatives: Vec<OptionProspectId>,
+    unresolved_gaps: Vec<CombatPlannerDecisionGap>,
     basis: CombatPlannerDecisionBasis,
     evaluation_context: CombatEvaluationContext,
 ) -> CombatPlannerDecisionResult {
@@ -234,8 +258,103 @@ fn selected_result(
         selected_prospect_id: selected.id(),
         selected_option: selected.option().clone(),
         nondominated_alternatives,
+        unresolved_gaps,
         basis,
     })
+}
+
+fn budget_bounded_result(
+    session: &CombatPlannerAgendaSession,
+    mut gaps: Vec<CombatPlannerDecisionGap>,
+    evaluation_context: CombatEvaluationContext,
+) -> CombatPlannerDecisionResult {
+    let prospects = session.prospects();
+    let best_winning_horizon = prospects.iter().filter_map(exact_winning_horizon).min();
+    let candidates = prospects
+        .iter()
+        .enumerate()
+        .filter(|(_, prospect)| match best_winning_horizon {
+            Some(horizon) => exact_winning_horizon(prospect) == Some(horizon),
+            None => prospect.option().boundary() == CompleteTurnOptionBoundary::NextPlayerTurn,
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return CombatPlannerDecisionResult::Deferred(CombatPlannerDecisionDeferral {
+            root_exact_state_hash: session.root().exact_state_hash().to_owned(),
+            evaluation_context,
+            nondominated_prospects: prospects.iter().map(OptionProspect::id).collect(),
+            gaps,
+        });
+    }
+
+    let selected_index = candidates
+        .iter()
+        .copied()
+        .reduce(|incumbent, challenger| {
+            if observed_resource_pareto_prefers(&prospects[challenger], &prospects[incumbent]) {
+                challenger
+            } else {
+                incumbent
+            }
+        })
+        .expect("non-empty budget-bounded candidates");
+    let alternatives = candidates
+        .iter()
+        .copied()
+        .filter(|index| *index != selected_index)
+        .map(|index| prospects[index].id())
+        .collect::<Vec<_>>();
+    if !alternatives.is_empty()
+        && !gaps.contains(&CombatPlannerDecisionGap::IncomparableExactProspects)
+    {
+        gaps.push(CombatPlannerDecisionGap::IncomparableExactProspects);
+    }
+    selected_result(
+        session,
+        &prospects[selected_index],
+        alternatives,
+        gaps,
+        CombatPlannerDecisionBasis::BudgetBoundedIncumbent {
+            evaluator: CombatPlannerIncumbentEvaluator::ObservedResourceParetoV1,
+            exact_winning_horizon: best_winning_horizon,
+            considered_prospects: candidates.len(),
+        },
+        evaluation_context,
+    )
+}
+
+fn observed_resource_pareto_prefers(left: &OptionProspect, right: &OptionProspect) -> bool {
+    let left_immediate = left.immediate();
+    let right_immediate = right.immediate();
+    let no_worse = left_immediate.player_hp.after >= right_immediate.player_hp.after
+        && left_immediate.player_block.after >= right_immediate.player_block.after
+        && left_immediate.gold.after >= right_immediate.gold.after
+        && left_immediate.living_enemies.after <= right_immediate.living_enemies.after
+        && left_immediate.total_enemy_hp.after <= right_immediate.total_enemy_hp.after
+        && left_immediate.occupied_potion_slots.after
+            >= right_immediate.occupied_potion_slots.after
+        && left_immediate.relic_count.after >= right_immediate.relic_count.after
+        && played_cards(left) >= played_cards(right);
+    let strictly_better = left_immediate.player_hp.after > right_immediate.player_hp.after
+        || left_immediate.player_block.after > right_immediate.player_block.after
+        || left_immediate.gold.after > right_immediate.gold.after
+        || left_immediate.living_enemies.after < right_immediate.living_enemies.after
+        || left_immediate.total_enemy_hp.after < right_immediate.total_enemy_hp.after
+        || left_immediate.occupied_potion_slots.after > right_immediate.occupied_potion_slots.after
+        || left_immediate.relic_count.after > right_immediate.relic_count.after
+        || played_cards(left) > played_cards(right);
+    no_worse && strictly_better
+}
+
+fn played_cards(prospect: &OptionProspect) -> usize {
+    prospect
+        .option()
+        .actions()
+        .iter()
+        .filter(|action| matches!(action.input, ClientInput::PlayCard { .. }))
+        .count()
 }
 
 fn nondominated_indices(prospects: &[OptionProspect]) -> Vec<usize> {
