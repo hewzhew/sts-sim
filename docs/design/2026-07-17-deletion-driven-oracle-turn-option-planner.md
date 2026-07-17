@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted architecture direction; implementation has not started.
+Accepted architecture direction; Slice 1 exact turn-option core is in progress.
 
 This contract defines the production replacement for `combat_search_v2`. It
 does not define another search profile, rescue path, diagnostic lane, or

@@ -67,7 +67,9 @@ impl SelectionTransactionCursor {
         let max_len = usize::try_from(family.effective_max)
             .unwrap_or(usize::MAX)
             .min(distinct_count);
-        let next_indices = first_valid_indices(&candidates, min_len);
+        let next_indices = (min_len <= max_len)
+            .then(|| first_valid_indices(&candidates, min_len))
+            .flatten();
 
         Ok(Self {
             encoding: family.input_encoding,

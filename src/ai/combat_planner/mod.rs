@@ -5,11 +5,16 @@
 //! boundary. Partial action prefixes remain private generator work.
 
 mod generator;
+mod prospect;
 mod replay;
 mod selection_transaction;
 mod types;
 
 pub use generator::TurnOptionGeneratorSession;
+pub use prospect::{
+    ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
+    ExactProspectError,
+};
 pub use replay::{replay_turn_option, ReplayError, ReplayLimits, VerifiedTurnOptionReplay};
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,

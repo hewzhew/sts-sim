@@ -3,9 +3,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
+use crate::content::potions::{Potion, PotionId};
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
+    EngineCombatStepper,
 };
 use crate::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
@@ -296,4 +298,58 @@ fn exact_replay_verifies_each_successor_and_final_position() {
         .unwrap_err(),
         ReplayError::SuccessorMismatch { action_index: 0 }
     );
+}
+
+#[test]
+fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
+    let mut combat = crate::test_support::blank_test_combat();
+    let monster = crate::test_support::planned_monster(EnemyId::JawWorm, 1);
+    let target = monster.id;
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 7))];
+    combat.zones.hand.clear();
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .unwrap();
+    let stepper = EngineCombatStepper;
+    let mut session = TurnOptionGeneratorSession::new(
+        root.clone(),
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+        },
+    );
+
+    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(1_000, 8_192));
+    assert_eq!(report.status, TurnOptionGenerationStatus::Complete);
+    let option = session
+        .completed_options()
+        .iter()
+        .find(|option| {
+            option.actions().iter().any(|action| {
+                action.input
+                    == ClientInput::UsePotion {
+                        potion_index: 0,
+                        target: Some(target),
+                    }
+            })
+        })
+        .expect("targeted Fire Potion should survive option generation");
+
+    let replay = replay_turn_option(
+        &root,
+        option,
+        &stepper,
+        ReplayLimits::deterministic(option.engine_steps()),
+    )
+    .unwrap();
+    assert_eq!(replay.position, *option.exact_successor());
+    let prospect = ExactImmediateOptionProspect::from_option(&root, option).unwrap();
+    assert_eq!(prospect.changed_potion_slots, 1);
+    assert_eq!(
+        prospect.occupied_potion_slots,
+        ExactCountChange {
+            before: 1,
+            after: 0
+        }
+    );
+    assert!(prospect.total_enemy_hp.delta() < 0);
 }
