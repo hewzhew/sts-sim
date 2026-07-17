@@ -17,6 +17,8 @@ Tests are deliberately split across real Cargo packages:
 
 - `cargo test-core <filter>` tests `sts_simulator` domain, engine, simulation,
   and stable policy code;
+- `cargo test-planner <filter>` tests the exact complete-turn planner without
+  linking the core crate's monolithic unit-test binary;
 - `cargo test-control <filter>` tests combat search, evaluation, run-control,
   branch runtime, and their shared contracts;
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
@@ -25,6 +27,11 @@ Bare `cargo test --lib` addresses only the default core package and is not a
 complete repository check. Keep local unit tests beside their owning module;
 do not recreate the old monolithic harness with feature gates, and do not move
 private unit tests into many independently linked integration-test binaries.
+
+New independently owned subsystems should prefer a workspace crate when that
+boundary prevents unrelated unit tests from entering their edit-test loop.
+Runtime filters do not reduce Rust compilation or linking work inside one test
+target.
 
 ## What Good Tests Protect
 

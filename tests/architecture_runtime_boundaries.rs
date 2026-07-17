@@ -267,7 +267,10 @@ fn engine_action_domain_keeps_structured_selections_out_of_atomic_vectors() {
 #[test]
 fn exact_combat_planner_core_does_not_import_legacy_policy_owners() {
     let mut sources = Vec::new();
-    collect_rust_sources(std::path::Path::new("src/ai/combat_planner"), &mut sources);
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_combat_planner/src"),
+        &mut sources,
+    );
 
     for path in sources {
         let source = std::fs::read_to_string(&path).expect("read exact combat planner source");

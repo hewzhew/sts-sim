@@ -9,7 +9,12 @@ readme = "README.md"
 repository = "https://github.com/hewzhew/sts-sim"
 
 [workspace]
-members = [".", "crates/sts_simulator_control", "tools/architecture_checks"]
+members = [
+    ".",
+    "crates/sts_combat_planner",
+    "crates/sts_simulator_control",
+    "tools/architecture_checks",
+]
 default-members = ["."]
 resolver = "2"
 

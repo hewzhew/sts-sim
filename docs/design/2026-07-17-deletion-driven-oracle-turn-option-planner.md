@@ -17,8 +17,9 @@ prerequisite for the Oracle cutover.
 ## Decision
 
 Production combat planning will be owned by one unversioned
-`src/ai/combat_planner` module whose semantic candidate is a **complete turn
-option**.
+`crates/sts_combat_planner` crate whose semantic candidate is a **complete
+turn option**. The separate crate is a compilation and ownership boundary: a
+planner edit must not rebuild the core crate's monolithic unit-test binary.
 
 A complete turn option is an executable decision program from one stable
 player decision boundary to exactly one of:
@@ -309,7 +310,7 @@ them. Compile-visible dependency closure determines the eventual deletion.
 
 ### Slice 1: Exact Turn-Option Core
 
-Create `src/ai/combat_planner` with:
+Create `crates/sts_combat_planner` with:
 
 - exact `CombatDecisionRoot` identity;
 - resumable `TurnOptionGenerator`;

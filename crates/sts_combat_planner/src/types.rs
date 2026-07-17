@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use crate::ai::combat_state_key::combat_exact_state_hash_v1;
-use crate::engine::core::is_smoke_escape_stable_boundary;
-use crate::sim::combat::{CombatPosition, CombatTerminal};
-use crate::state::core::{ClientInput, EngineState};
+use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_core::engine::core::is_smoke_escape_stable_boundary;
+use sts_core::sim::combat::{CombatPosition, CombatTerminal};
+use sts_core::state::core::{ClientInput, EngineState};
 
 #[derive(Clone, Debug)]
 pub struct CombatDecisionRoot {
@@ -23,7 +23,7 @@ impl CombatDecisionRoot {
         if !matches!(position.engine, EngineState::CombatPlayerTurn) {
             return Err(CombatDecisionRootError::NotStablePlayerTurn);
         }
-        if crate::sim::combat::combat_terminal(&position.engine, &position.combat)
+        if sts_core::sim::combat::combat_terminal(&position.engine, &position.combat)
             != CombatTerminal::Unresolved
         {
             return Err(CombatDecisionRootError::AlreadyTerminal);

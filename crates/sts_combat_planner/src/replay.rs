@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
+use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 
 use super::types::{
     exact_hash, supported_boundary, CombatDecisionRoot, CompleteTurnOption,

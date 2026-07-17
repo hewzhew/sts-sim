@@ -1,9 +1,9 @@
 use std::collections::{HashSet, VecDeque};
 use std::time::Instant;
 
-use crate::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
-use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
-use crate::state::core::{ClientInput, EngineState};
+use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
+use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
+use sts_core::state::core::{ClientInput, EngineState};
 
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{

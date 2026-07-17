@@ -1,18 +1,18 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::content::cards::CardId;
-use crate::content::monsters::EnemyId;
-use crate::content::potions::{Potion, PotionId};
-use crate::runtime::combat::CombatCard;
-use crate::sim::combat::{
+use sts_core::content::cards::CardId;
+use sts_core::content::monsters::EnemyId;
+use sts_core::content::potions::{Potion, PotionId};
+use sts_core::runtime::combat::CombatCard;
+use sts_core::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
-use crate::sim::combat_action_surface::{
+use sts_core::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
 };
-use crate::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
+use sts_core::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 
 use super::*;
 
@@ -146,8 +146,8 @@ impl CombatStepper for TinyTurnStepper {
 }
 
 fn root() -> CombatDecisionRoot {
-    let mut combat = crate::test_support::blank_test_combat();
-    combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+    let mut combat = sts_core::test_support::blank_test_combat();
+    combat.entities.monsters = vec![sts_core::test_support::test_monster(EnemyId::JawWorm)];
     combat.turn.turn_count = 1;
     combat.turn.energy = 1;
     combat.zones.hand = vec![
@@ -302,8 +302,8 @@ fn exact_replay_verifies_each_successor_and_final_position() {
 
 #[test]
 fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
-    let mut combat = crate::test_support::blank_test_combat();
-    let monster = crate::test_support::planned_monster(EnemyId::JawWorm, 1);
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let monster = sts_core::test_support::planned_monster(EnemyId::JawWorm, 1);
     let target = monster.id;
     combat.entities.monsters = vec![monster];
     combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 7))];

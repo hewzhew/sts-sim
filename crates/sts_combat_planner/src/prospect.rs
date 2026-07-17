@@ -1,4 +1,4 @@
-use crate::runtime::combat::CombatState;
+use sts_core::runtime::combat::CombatState;
 
 use super::types::{CombatDecisionRoot, CompleteTurnOption, CompleteTurnOptionBoundary};
 

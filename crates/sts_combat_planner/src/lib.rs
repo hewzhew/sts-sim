@@ -3,6 +3,8 @@
 //! This module owns no combat policy. It turns the simulator's exact legal
 //! input surface into replayable options ending at the next supported combat
 //! boundary. Partial action prefixes remain private generator work.
+//! The crate boundary also keeps planner iteration out of the core unit-test
+//! harness; production integration belongs to the control layer.
 
 mod generator;
 mod prospect;

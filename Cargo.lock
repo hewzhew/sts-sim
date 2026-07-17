@@ -305,6 +305,13 @@ name = "sts_architecture_checks"
 version = "0.1.0"
 
 [[package]]
+name = "sts_combat_planner"
+version = "0.1.0"
+dependencies = [
+ "sts_simulator",
+]
+
+[[package]]
 name = "sts_simulator"
 version = "0.1.0"
 dependencies = [

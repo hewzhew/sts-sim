@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use crate::sim::combat_action_surface::{
+use sts_core::sim::combat_action_surface::{
     CombatSelectionActionFamilyV2, CombatSelectionDomainCandidateV2,
     CombatSelectionInputEncodingV2, CombatSelectionStatusV2,
 };
-use crate::state::core::ClientInput;
-use crate::state::selection::{SelectionResolution, SelectionScope};
+use sts_core::state::core::ClientInput;
+use sts_core::state::selection::{SelectionResolution, SelectionScope};
 
 use super::types::TurnOptionGenerationGapKind;
 
@@ -178,10 +178,10 @@ fn distinct_key_is_available(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::combat_action_surface::{
+    use sts_core::sim::combat_action_surface::{
         CombatSelectionDistinctByV2, CombatSelectionPayloadLanguageV2, CombatSelectionReasonV2,
     };
-    use crate::state::core::HandSelectReason;
+    use sts_core::state::core::HandSelectReason;
 
     #[test]
     fn ordered_cursor_emits_permutations_without_eager_materialization() {
