@@ -334,6 +334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "sts_combat_planner",
  "sts_simulator",
  "windows-sys",
 ]

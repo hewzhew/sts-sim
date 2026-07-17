@@ -18,6 +18,8 @@ mod combat_line_outcome;
 mod combat_line_selector;
 mod combat_line_trace;
 mod combat_no_win_fallback;
+#[cfg(test)]
+mod combat_planner_cutover_harness;
 mod combat_resolution;
 mod combat_search;
 mod combat_search_rejection;
