@@ -24,6 +24,7 @@ const PLAY: ClientInput = ClientInput::PlayCard {
 #[derive(Clone)]
 struct TinyTurnStepper {
     opens_selection: bool,
+    lethal_play: bool,
     calls: Arc<Mutex<Vec<ClientInput>>>,
     successor_salt: Arc<AtomicI32>,
 }
@@ -32,6 +33,7 @@ impl TinyTurnStepper {
     fn plain() -> Self {
         Self {
             opens_selection: false,
+            lethal_play: false,
             calls: Arc::new(Mutex::new(Vec::new())),
             successor_salt: Arc::new(AtomicI32::new(0)),
         }
@@ -40,6 +42,13 @@ impl TinyTurnStepper {
     fn with_selection() -> Self {
         Self {
             opens_selection: true,
+            ..Self::plain()
+        }
+    }
+
+    fn lethal() -> Self {
+        Self {
+            lethal_play: true,
             ..Self::plain()
         }
     }
@@ -117,6 +126,8 @@ impl CombatStepper for TinyTurnStepper {
                         can_cancel: false,
                         reason: HandSelectReason::Discard,
                     });
+                } else if self.lethal_play {
+                    next.engine = EngineState::GameOver(sts_core::state::core::RunResult::Victory);
                 }
             }
             ClientInput::SubmitSelection(resolution) => {
@@ -130,9 +141,10 @@ impl CombatStepper for TinyTurnStepper {
             }
             _ => panic!("tiny stepper received unsupported input"),
         }
+        let terminal = self.terminal(&next);
         CombatStepResult {
             position: next,
-            terminal: CombatTerminal::Unresolved,
+            terminal,
             alive: true,
             truncated: false,
             timed_out: false,
@@ -140,8 +152,12 @@ impl CombatStepper for TinyTurnStepper {
         }
     }
 
-    fn terminal(&self, _position: &CombatPosition) -> CombatTerminal {
-        CombatTerminal::Unresolved
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        match position.engine {
+            EngineState::GameOver(sts_core::state::core::RunResult::Victory) => CombatTerminal::Win,
+            EngineState::GameOver(sts_core::state::core::RunResult::Defeat) => CombatTerminal::Loss,
+            _ => CombatTerminal::Unresolved,
+        }
     }
 }
 
@@ -353,3 +369,5 @@ fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
     );
     assert!(prospect.total_enemy_hp.delta() < 0);
 }
+
+mod agenda;

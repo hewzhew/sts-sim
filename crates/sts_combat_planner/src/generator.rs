@@ -92,6 +92,29 @@ impl TurnOptionGeneratorSession {
         self.granted
     }
 
+    pub fn retained_work_items(&self) -> usize {
+        self.frontier.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.frontier.is_empty()
+    }
+
+    pub(crate) fn release_unused_grant(&mut self) -> CombatPlanningCounters {
+        let released = CombatPlanningCounters {
+            generation_work: self
+                .granted
+                .generation_work
+                .saturating_sub(self.used.generation_work),
+            engine_steps: self
+                .granted
+                .engine_steps
+                .saturating_sub(self.used.engine_steps),
+        };
+        self.granted = self.used;
+        released
+    }
+
     pub fn advance(
         &mut self,
         stepper: &dyn CombatStepper,

@@ -6,18 +6,31 @@
 //! The crate boundary also keeps planner iteration out of the core unit-test
 //! harness; production integration belongs to the control layer.
 
+mod agenda;
+mod evidence;
 mod generator;
 mod prospect;
 mod replay;
 mod selection_transaction;
 mod types;
 
+pub use agenda::{
+    CombatPlannerAgendaBudget, CombatPlannerAgendaConfig, CombatPlannerAgendaCounters,
+    CombatPlannerAgendaInterruption, CombatPlannerAgendaQuantum, CombatPlannerAgendaReport,
+    CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
+};
+pub use evidence::{
+    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption,
+    ContinuationUnavailable, OptionProspect, OptionProspectId,
+};
 pub use generator::TurnOptionGeneratorSession;
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
     ExactProspectError,
 };
-pub use replay::{replay_turn_option, ReplayError, ReplayLimits, VerifiedTurnOptionReplay};
+pub use replay::{
+    replay_turn_option, ReplayError, ReplayFailure, ReplayLimits, VerifiedTurnOptionReplay,
+};
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,
     CompleteTurnOption, CompleteTurnOptionBoundary, GenerationInterruption, TurnOptionAction,
