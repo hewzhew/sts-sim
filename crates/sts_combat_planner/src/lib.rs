@@ -10,6 +10,7 @@ mod agenda;
 mod decision;
 mod evidence;
 mod generator;
+mod outcome_model;
 mod prospect;
 mod replay;
 mod selection_transaction;
@@ -30,6 +31,12 @@ pub use evidence::{
     ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
 pub use generator::TurnOptionGeneratorSession;
+pub use outcome_model::{
+    CombatOutcomeEstimateV1, CombatOutcomeFeatureVectorV1, CombatOutcomeLabelProvenanceV1,
+    CombatOutcomeModelApplicabilityV1, CombatOutcomeModelEpistemicV1, CombatOutcomeModelErrorV1,
+    CombatOutcomeModelTrainingConfigV1, CombatOutcomeModelV1, CombatOutcomeTrainingExampleV1,
+    COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
+};
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
     ExactProspectError,
