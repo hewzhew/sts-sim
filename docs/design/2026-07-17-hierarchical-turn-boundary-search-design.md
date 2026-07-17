@@ -6,7 +6,9 @@ Frozen exact-state laboratory prototype.
 
 This document records the experiment that established planning-granularity
 evidence. It is not the migration target for production combat policy. The
-public, resumable replacement direction is defined in
+production replacement direction is defined in
+`2026-07-17-deletion-driven-oracle-turn-option-planner.md`; the later
+public-information extension retains the useful mechanism evidence in
 `2026-07-17-progressive-public-turn-option-design.md`.
 
 ## Decision

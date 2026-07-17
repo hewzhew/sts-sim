@@ -1,5 +1,14 @@
 # Progressive Public Turn-Option Migration
 
+## Supersession Note
+
+The public-information mechanisms in this document remain valid design
+evidence, but this is no longer the production migration target. The
+deletion-driven Oracle cutover and the shared turn-option/prospect owner are
+defined in `2026-07-17-deletion-driven-oracle-turn-option-planner.md`.
+Public scenario branching resumes only through that owner's successor
+contract; `combat_policy_v1` must not become a parallel production planner.
+
 ## Decision
 
 Combat planning will grow from the existing public scenario-policy boundary,
