@@ -335,7 +335,6 @@ fn test_config() -> CombatSearchV2Config {
         rollout_beam_width: 3,
         expansion_policy: CombatSearchV2ExpansionPolicy::AtomicActions,
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
         setup_bias_policy: CombatSearchV2SetupBiasPolicy::Default,
         turn_plan_probe_max_inner_nodes: None,

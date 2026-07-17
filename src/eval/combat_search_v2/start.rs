@@ -6,9 +6,9 @@ use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
     high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2ChildRolloutPolicy,
-    CombatSearchV2Config, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
-    CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior,
-    CombatSearchV2Satisfaction, CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2Satisfaction,
+    CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v2;
@@ -32,7 +32,6 @@ pub struct CombatSearchV2RunOptions {
     pub rollout_max_actions: Option<usize>,
     pub rollout_beam_width: Option<usize>,
     pub turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
-    pub frontier_policy: Option<CombatSearchV2FrontierPolicy>,
     pub turn_plan_probe_max_inner_nodes: Option<usize>,
     pub turn_plan_probe_max_end_states: Option<usize>,
     pub turn_plan_probe_per_bucket_limit: Option<usize>,
@@ -71,7 +70,6 @@ impl CombatSearchV2RunOptions {
                 .unwrap_or(defaults.rollout_beam_width),
             expansion_policy: defaults.expansion_policy,
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
-            frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
             phase_guard_policy: defaults.phase_guard_policy,
             setup_bias_policy: defaults.setup_bias_policy,
             turn_plan_probe_max_inner_nodes: self

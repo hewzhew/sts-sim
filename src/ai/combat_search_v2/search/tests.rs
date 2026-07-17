@@ -1009,7 +1009,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 18);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 19);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
@@ -2291,10 +2291,6 @@ fn config_and_turn_plan_policy_defaults_match() {
     assert_eq!(
         CombatSearchV2Config::default().turn_plan_policy,
         CombatSearchV2TurnPlanPolicy::default()
-    );
-    assert_eq!(
-        CombatSearchV2Config::default().frontier_policy,
-        CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
     );
     assert_eq!(CombatSearchV2TurnPlanPolicy::default().label(), "disabled");
 }

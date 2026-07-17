@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::policies::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2ExpansionPolicy, CombatSearchV2FrontierPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2ExpansionPolicy,
     CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
     CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
@@ -25,7 +25,6 @@ pub struct CombatSearchV2Config {
     pub rollout_beam_width: usize,
     pub expansion_policy: CombatSearchV2ExpansionPolicy,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    pub frontier_policy: CombatSearchV2FrontierPolicy,
     pub phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     pub setup_bias_policy: CombatSearchV2SetupBiasPolicy,
     pub turn_plan_probe_max_inner_nodes: Option<usize>,
@@ -54,7 +53,6 @@ impl Default for CombatSearchV2Config {
             rollout_beam_width: crate::ai::combat_search_v2::rollout::DEFAULT_TURN_BEAM_WIDTH,
             expansion_policy: CombatSearchV2ExpansionPolicy::default(),
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::default(),
-            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
             setup_bias_policy: CombatSearchV2SetupBiasPolicy::Default,
             turn_plan_probe_max_inner_nodes: None,

@@ -57,7 +57,7 @@ impl SearchLoopState {
                 initial_external_burden_count,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
-            frontier: FrontierQueue::new(plugins.frontier),
+            frontier: FrontierQueue::new(),
             turn_boundary_expansion_tracker: TurnBoundaryExpansionTracker::default(),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),

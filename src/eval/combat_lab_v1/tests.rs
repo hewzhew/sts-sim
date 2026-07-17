@@ -1176,7 +1176,7 @@ fn cell_replayed_win_carries_metrics_actions_and_draws() {
     assert!(trajectory_json.get("outcome_order_key").is_some());
     assert_eq!(
         crate::ai::combat_search_v2::COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION,
-        18
+        19
     );
 
     fs::remove_dir_all(directory).expect("remove test directory");
@@ -2322,7 +2322,6 @@ fn every_serialized_profile_policy_is_hashed() {
         ("potion_policy", "all"),
         ("child_rollout_policy", "lazy_on_pop"),
         ("turn_plan_policy", "root_frontier_seed"),
-        ("frontier_policy", "round_robin_eval_buckets"),
         ("phase_guard_policy", "champ_split_guard"),
         ("setup_bias_policy", "key_card_online"),
     ] {
@@ -2533,7 +2532,6 @@ fn profile_config_assigns_the_complete_contract() {
     assert_eq!(config.rollout_max_actions, 20);
     assert_eq!(config.rollout_beam_width, 3);
     assert_eq!(config.turn_plan_policy, spec.profiles[0].turn_plan_policy);
-    assert_eq!(config.frontier_policy, spec.profiles[0].frontier_policy);
     assert_eq!(
         config.phase_guard_policy,
         spec.profiles[0].phase_guard_policy
@@ -2591,7 +2589,6 @@ fn valid_lab_spec_value() -> serde_json::Value {
             "rollout_policy": "disabled",
             "child_rollout_policy": "immediate",
             "turn_plan_policy": "disabled",
-            "frontier_policy": "single_queue",
             "phase_guard_policy": "default",
             "setup_bias_policy": "default"
         }],

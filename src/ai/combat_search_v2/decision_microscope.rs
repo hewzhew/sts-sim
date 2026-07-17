@@ -78,7 +78,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
 
     CombatSearchV2DecisionMicroscopeReport {
         schema_name: "CombatSearchV2DecisionMicroscopeReport",
-        schema_version: 1,
+        schema_version: 2,
         question: "why_was_this_action_selected_and_where_might_it_be_wrong",
         behavioral_scope: "diagnostic_only_no_prune_no_policy_change_no_artifact_promotion",
         input_label: config.input_label.clone(),

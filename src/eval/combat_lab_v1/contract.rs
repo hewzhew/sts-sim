@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2PhaseGuardPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 use crate::testing::fixtures::combat_start_spec::CombatStartSpec;
 
@@ -48,7 +48,6 @@ pub struct CombatLabProfileSpecV1 {
     pub rollout_policy: CombatSearchV2RolloutPolicy,
     pub child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    pub frontier_policy: CombatSearchV2FrontierPolicy,
     pub phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     pub setup_bias_policy: CombatSearchV2SetupBiasPolicy,
 }
@@ -106,7 +105,6 @@ struct CombatLabProfileHashInputV1<'a> {
     rollout_policy: &'a CombatSearchV2RolloutPolicy,
     child_rollout_policy: &'a CombatSearchV2ChildRolloutPolicy,
     turn_plan_policy: &'a CombatSearchV2TurnPlanPolicy,
-    frontier_policy: &'a CombatSearchV2FrontierPolicy,
     phase_guard_policy: &'a CombatSearchV2PhaseGuardPolicy,
     setup_bias_policy: &'a CombatSearchV2SetupBiasPolicy,
 }
@@ -207,7 +205,6 @@ pub fn load_and_resolve_combat_lab_spec_v1(
                 rollout_policy: &profile.rollout_policy,
                 child_rollout_policy: &profile.child_rollout_policy,
                 turn_plan_policy: &profile.turn_plan_policy,
-                frontier_policy: &profile.frontier_policy,
                 phase_guard_policy: &profile.phase_guard_policy,
                 setup_bias_policy: &profile.setup_bias_policy,
             })?;
@@ -323,7 +320,6 @@ pub fn profile_config_v1(
     config.rollout_max_actions = budget.rollout_max_actions;
     config.rollout_beam_width = budget.rollout_beam_width;
     config.turn_plan_policy = profile.turn_plan_policy;
-    config.frontier_policy = profile.frontier_policy;
     config.phase_guard_policy = profile.phase_guard_policy;
     config.setup_bias_policy = profile.setup_bias_policy;
     config.turn_plan_probe_max_inner_nodes = budget.turn_plan_probe_max_inner_nodes;

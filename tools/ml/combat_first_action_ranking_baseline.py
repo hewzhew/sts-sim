@@ -407,7 +407,6 @@ def group_key(sample: dict[str, Any]) -> str:
                 context.get("max_end_states"),
                 context.get("per_bucket_limit"),
                 context.get("rollout_policy"),
-                context.get("frontier_policy"),
                 enumeration.get("planning_policy"),
             )
         )
@@ -421,7 +420,6 @@ def group_key(sample: dict[str, Any]) -> str:
             context.get("max_nodes"),
             context.get("wall_time_ms"),
             context.get("rollout_policy"),
-            context.get("frontier_policy"),
         )
     )
 
@@ -1579,7 +1577,6 @@ def extract_features(
     add_token(features, f"plan_survival_bucket:{cand.get('survival_bucket')}")
     add_token(features, f"plan_progress_bucket:{cand.get('progress_bucket')}")
     add_token(features, f"rollout_policy:{search.get('rollout_policy')}")
-    add_token(features, f"frontier_policy:{search.get('frontier_policy')}")
     add_token(features, f"potion_policy:{search.get('potion_policy')}")
     add_token(features, f"one_step_status:{one_step.get('status')}")
     add_token(features, f"one_step_terminal:{one_step.get('terminal')}")

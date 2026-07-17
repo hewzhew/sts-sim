@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::{
     explain_combat_search_v2_initial_decision, CombatSearchV2ChildRolloutPolicy,
-    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::campfire_threat_panel::{
     run_campfire_threat_panel_v1, CampfireThreatPanelRunRequestV1,
@@ -14,9 +13,9 @@ use sts_simulator::eval::combat_capture::load_combat_capture_v2;
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
 use sts_simulator::eval::combat_search_v2::{
-    compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
-    compare_combat_search_v2_turn_plan_policies, load_combat_root_action_prior_hints_jsonl_v0,
-    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
+    compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
+    load_combat_root_action_prior_hints_jsonl_v0, load_combat_search_v2_benchmark,
+    load_combat_search_v2_snapshot, load_combat_search_v2_start,
     load_combat_turn_plan_prior_hints_jsonl_v0, run_combat_search_guidance_lab_benchmark_v1,
     run_combat_search_guidance_lab_v1, run_combat_search_v2_benchmark,
     run_combat_search_v2_loaded_start, run_combat_turn_plan_guidance_lab_benchmark_v1,
@@ -69,13 +68,11 @@ struct Args {
             "child_rollout_policy",
             "compare_rollout",
             "compare_turn_plan",
-            "compare_frontier",
             "explain_case",
             "rollout_max_evaluations",
             "rollout_max_actions",
             "rollout_beam_width",
             "turn_plan_policy",
-            "frontier_policy",
             "validate_only",
             "gate_only",
             "guidance_lab",
@@ -115,13 +112,11 @@ struct Args {
             "child_rollout_policy",
             "compare_rollout",
             "compare_turn_plan",
-            "compare_frontier",
             "explain_case",
             "rollout_max_evaluations",
             "rollout_max_actions",
             "rollout_beam_width",
             "turn_plan_policy",
-            "frontier_policy",
             "validate_only",
             "gate_only",
             "guidance_lab",
@@ -184,9 +179,6 @@ struct Args {
     compare_turn_plan: Option<String>,
 
     #[arg(long)]
-    compare_frontier: Option<String>,
-
-    #[arg(long)]
     explain_case: Option<String>,
 
     #[arg(long)]
@@ -200,9 +192,6 @@ struct Args {
 
     #[arg(long, value_parser = parse_turn_plan_policy)]
     turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
-
-    #[arg(long, value_parser = parse_frontier_policy)]
-    frontier_policy: Option<CombatSearchV2FrontierPolicy>,
 
     #[arg(long)]
     validate_only: bool,
@@ -326,7 +315,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if (args.guidance_lab || args.turn_plan_guidance_lab)
         && (args.compare_rollout.is_some()
             || args.compare_turn_plan.is_some()
-            || args.compare_frontier.is_some()
             || args.explain_case.is_some())
     {
         return Err("--guidance-lab modes cannot be combined with compare/explain modes".into());
@@ -352,20 +340,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.compare_turn_plan.is_some() && args.compare_rollout.is_some() {
         return Err("--compare-turn-plan cannot be combined with --compare-rollout".into());
     }
-    if args.compare_frontier.is_some() && args.benchmark_spec.is_none() {
-        return Err("--compare-frontier requires --benchmark-spec".into());
-    }
-    if args.compare_frontier.is_some() && args.gate_only {
-        return Err("--compare-frontier cannot be used with --gate-only".into());
-    }
-    if args.compare_frontier.is_some() && args.frontier_policy.is_some() {
-        return Err("--compare-frontier cannot be combined with --frontier-policy".into());
-    }
-    if args.compare_frontier.is_some()
-        && (args.compare_rollout.is_some() || args.compare_turn_plan.is_some())
-    {
-        return Err("--compare-frontier cannot be combined with other compare options".into());
-    }
     if args.explain_case.is_some() && args.benchmark_spec.is_none() {
         return Err("--explain-case requires --benchmark-spec".into());
     }
@@ -374,9 +348,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.explain_case.is_some() && args.compare_turn_plan.is_some() {
         return Err("--explain-case cannot be combined with --compare-turn-plan".into());
-    }
-    if args.explain_case.is_some() && args.compare_frontier.is_some() {
-        return Err("--explain-case cannot be combined with --compare-frontier".into());
     }
     if args.explain_case.is_some() && args.gate_only {
         return Err("--explain-case cannot be combined with --gate-only".into());
@@ -426,7 +397,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         rollout_max_actions: args.rollout_max_actions,
         rollout_beam_width: args.rollout_beam_width,
         turn_plan_policy: args.turn_plan_policy,
-        frontier_policy: args.frontier_policy,
         turn_plan_probe_max_inner_nodes: args.turn_plan_probe_max_inner_nodes,
         turn_plan_probe_max_end_states: args.turn_plan_probe_max_end_states,
         turn_plan_probe_per_bucket_limit: args.turn_plan_probe_per_bucket_limit,
@@ -467,10 +437,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         } else if let Some(compare) = args.compare_turn_plan.as_deref() {
             let (left, right) = parse_turn_plan_policy_pair(compare)?;
             let run = compare_combat_search_v2_turn_plan_policies(&loaded, options, left, right);
-            serde_json::to_string_pretty(&run)?
-        } else if let Some(compare) = args.compare_frontier.as_deref() {
-            let (left, right) = parse_frontier_policy_pair(compare)?;
-            let run = compare_combat_search_v2_frontier_policies(&loaded, options, left, right);
             serde_json::to_string_pretty(&run)?
         } else if let Some(case_id) = args.explain_case.as_deref() {
             let case = loaded
@@ -607,26 +573,6 @@ fn parse_turn_plan_policy_pair(
     Ok((left, right))
 }
 
-fn parse_frontier_policy_pair(
-    value: &str,
-) -> Result<(CombatSearchV2FrontierPolicy, CombatSearchV2FrontierPolicy), String> {
-    let mut parts = value.split(',').map(str::trim);
-    let left = parts
-        .next()
-        .filter(|part| !part.is_empty())
-        .ok_or_else(|| "compare-frontier requires LEFT,RIGHT".to_string())
-        .and_then(parse_frontier_policy)?;
-    let right = parts
-        .next()
-        .filter(|part| !part.is_empty())
-        .ok_or_else(|| "compare-frontier requires LEFT,RIGHT".to_string())
-        .and_then(parse_frontier_policy)?;
-    if parts.next().is_some() {
-        return Err("compare-frontier requires exactly two comma-separated policies".to_string());
-    }
-    Ok((left, right))
-}
-
 fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
     match value.to_ascii_lowercase().as_str() {
         "disabled" | "off" | "none" => Ok(CombatSearchV2RolloutPolicy::Disabled),
@@ -729,21 +675,6 @@ fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, S
         }
         _ => Err(format!(
             "invalid turn plan policy '{value}', expected disabled|diagnostic_only|root_frontier_seed|turn_boundary_frontier_seed|tactical_enemy_turn_boundary_frontier_seed"
-        )),
-    }
-}
-
-fn parse_frontier_policy(value: &str) -> Result<CombatSearchV2FrontierPolicy, String> {
-    match value.to_ascii_lowercase().as_str() {
-        "single" | "single_queue" | "single-queue" => Ok(CombatSearchV2FrontierPolicy::SingleQueue),
-        "round_robin"
-        | "round-robin"
-        | "round_robin_eval_buckets"
-        | "round-robin-eval-buckets"
-        | "eval_buckets"
-        | "eval-buckets" => Ok(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
-        _ => Err(format!(
-            "invalid frontier policy '{value}', expected single_queue|round_robin_eval_buckets"
         )),
     }
 }
@@ -888,16 +819,11 @@ mod tests {
             ("--child-rollout-policy", Some("lazy_on_pop")),
             ("--compare-rollout", Some("none,enemy_mechanics_adaptive")),
             ("--compare-turn-plan", Some("disabled,diagnostic_only")),
-            (
-                "--compare-frontier",
-                Some("single_queue,round_robin_eval_buckets"),
-            ),
             ("--explain-case", Some("case")),
             ("--rollout-max-evaluations", Some("1")),
             ("--rollout-max-actions", Some("1")),
             ("--rollout-beam-width", Some("1")),
             ("--turn-plan-policy", Some("disabled")),
-            ("--frontier-policy", Some("single_queue")),
             ("--validate-only", None),
             ("--gate-only", None),
             ("--guidance-lab", None),
@@ -1052,18 +978,6 @@ mod tests {
             Some(8)
         );
         assert_eq!(parse_max_hp_loss("off").expect("off should parse"), None);
-    }
-
-    #[test]
-    fn parse_frontier_policy_pair_accepts_single_and_eval_buckets() {
-        assert_eq!(
-            parse_frontier_policy_pair("single_queue,round_robin_eval_buckets")
-                .expect("pair should parse"),
-            (
-                CombatSearchV2FrontierPolicy::SingleQueue,
-                CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets
-            )
-        );
     }
 
     #[test]

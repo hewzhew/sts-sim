@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2ExpansionPolicy,
-    CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy,
-    CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -47,7 +47,6 @@ pub struct CombatSearchPluginStack {
     pub turn_plan: CombatSearchTurnPlanPluginId,
     pub child_rollout: CombatSearchChildRolloutPluginId,
     pub rollout: CombatSearchRolloutPluginId,
-    pub frontier: CombatSearchFrontierPluginId,
     pub potion: CombatSearchPotionPlugin,
     pub phase_guard: CombatSearchPhaseGuardPluginId,
 }
@@ -61,7 +60,6 @@ impl Default for CombatSearchPluginStack {
             turn_plan: CombatSearchTurnPlanPluginId::Disabled,
             child_rollout: CombatSearchChildRolloutPluginId::LazyOnPop,
             rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
-            frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
             potion: CombatSearchPotionPlugin::default(),
             phase_guard: CombatSearchPhaseGuardPluginId::Default,
         }
@@ -77,7 +75,6 @@ impl CombatSearchPluginStack {
             turn_plan: config.turn_plan_policy.into(),
             child_rollout: config.child_rollout_policy.into(),
             rollout: config.rollout_policy.into(),
-            frontier: config.frontier_policy.into(),
             potion: CombatSearchPotionPlugin {
                 policy: config.potion_policy,
                 max_potions_used: config.max_potions_used,
@@ -194,13 +191,6 @@ impl Default for CombatSearchRolloutPluginId {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CombatSearchFrontierPluginId {
-    SingleQueue,
-    RoundRobinEvalBuckets,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum CombatSearchPhaseGuardPluginId {
     Default,
     ChampSplitGuard,
@@ -264,10 +254,6 @@ pub trait CombatSearchChildRolloutPlugin {
 
 pub trait CombatSearchRolloutPlugin {
     fn id(&self) -> CombatSearchRolloutPluginId;
-}
-
-pub trait CombatSearchFrontierPlugin {
-    fn id(&self) -> CombatSearchFrontierPluginId;
 }
 
 pub trait CombatSearchPhaseGuardPlugin {
@@ -348,12 +334,6 @@ impl CombatSearchRolloutPlugin for CombatSearchRolloutPluginId {
     }
 }
 
-impl CombatSearchFrontierPlugin for CombatSearchFrontierPluginId {
-    fn id(&self) -> CombatSearchFrontierPluginId {
-        *self
-    }
-}
-
 impl CombatSearchPhaseGuardPlugin for CombatSearchPhaseGuardPluginId {
     fn id(&self) -> CombatSearchPhaseGuardPluginId {
         *self
@@ -409,11 +389,6 @@ impl CombatSearchProfile {
         self
     }
 
-    pub fn with_frontier_plugin(mut self, frontier: CombatSearchFrontierPluginId) -> Self {
-        self.engine.plugins.frontier = frontier;
-        self
-    }
-
     pub fn with_potion_policy(mut self, policy: CombatSearchV2PotionPolicy) -> Self {
         self.engine.plugins.potion.policy = policy;
         self
@@ -466,7 +441,6 @@ impl CombatSearchEngineProfile {
             child_rollout_policy: self.plugins.child_rollout.into(),
             expansion_policy: self.plugins.expansion.into(),
             turn_plan_policy: self.plugins.turn_plan.into(),
-            frontier_policy: self.plugins.frontier.into(),
             phase_guard_policy: self.plugins.phase_guard.into(),
             setup_bias_policy: self.plugins.action_prior.into(),
             rollout_max_evaluations: rollout_budget.max_evaluations,
@@ -625,24 +599,6 @@ impl From<CombatSearchV2RolloutPolicy> for CombatSearchRolloutPluginId {
             CombatSearchV2RolloutPolicy::ConservativeNoPotion => Self::ConservativeNoPotion,
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => Self::PhaseAwareNoPotion,
             CombatSearchV2RolloutPolicy::TurnBeamNoPotion => Self::TurnBeamNoPotion,
-        }
-    }
-}
-
-impl From<CombatSearchFrontierPluginId> for CombatSearchV2FrontierPolicy {
-    fn from(plugin: CombatSearchFrontierPluginId) -> Self {
-        match plugin {
-            CombatSearchFrontierPluginId::SingleQueue => Self::SingleQueue,
-            CombatSearchFrontierPluginId::RoundRobinEvalBuckets => Self::RoundRobinEvalBuckets,
-        }
-    }
-}
-
-impl From<CombatSearchV2FrontierPolicy> for CombatSearchFrontierPluginId {
-    fn from(policy: CombatSearchV2FrontierPolicy) -> Self {
-        match policy {
-            CombatSearchV2FrontierPolicy::SingleQueue => Self::SingleQueue,
-            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => Self::RoundRobinEvalBuckets,
         }
     }
 }
@@ -821,9 +777,6 @@ mod tests {
         ) -> CombatSearchNodeEvaluatorPluginId {
             plugin.id()
         }
-        fn frontier_id(plugin: impl CombatSearchFrontierPlugin) -> CombatSearchFrontierPluginId {
-            plugin.id()
-        }
         fn rollout_id(plugin: impl CombatSearchRolloutPlugin) -> CombatSearchRolloutPluginId {
             plugin.id()
         }
@@ -842,10 +795,6 @@ mod tests {
             CombatSearchNodeEvaluatorPluginId::CombatOutcomeScore
         );
         assert_eq!(
-            frontier_id(CombatSearchFrontierPluginId::RoundRobinEvalBuckets),
-            CombatSearchFrontierPluginId::RoundRobinEvalBuckets
-        );
-        assert_eq!(
             rollout_id(CombatSearchRolloutPluginId::TurnBeamNoPotion),
             CombatSearchRolloutPluginId::TurnBeamNoPotion
         );
@@ -860,7 +809,6 @@ mod tests {
         let config = CombatSearchV2Config {
             setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
-            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
             child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
@@ -878,10 +826,6 @@ mod tests {
         assert_eq!(
             stack.phase_guard,
             CombatSearchPhaseGuardPluginId::TimeEaterClockHint
-        );
-        assert_eq!(
-            stack.frontier,
-            CombatSearchFrontierPluginId::RoundRobinEvalBuckets
         );
         assert_eq!(stack.rollout, CombatSearchRolloutPluginId::TurnBeamNoPotion);
         assert_eq!(

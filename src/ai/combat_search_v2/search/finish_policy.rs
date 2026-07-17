@@ -25,7 +25,6 @@ pub(super) fn search_policy_report(
         action_prior_policy: plugins.action_prior.label(),
         phase_guard_policy: plugins.phase_guard.label(),
         frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
-        frontier_policy: CombatSearchV2FrontierPolicy::from(plugins.frontier).label(),
         turn_branching: "turn_transition_classification_with_late_frontier_tie_break",
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::from(plugins.turn_plan).label(),
         potion_policy: plugins.potion.policy.label(),

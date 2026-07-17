@@ -185,10 +185,8 @@ pub(super) fn render_segment_application(
 
 pub(super) fn render_search_policy_summary(report: &CombatSearchV2Report) -> String {
     format!(
-        "  frontier_policy={} turn_plan_policy={} rollout_policy={}",
-        report.search_policy.frontier_policy,
-        report.search_policy.turn_plan_policy,
-        report.rollout.policy
+        "  turn_plan_policy={} rollout_policy={}",
+        report.search_policy.turn_plan_policy, report.rollout.policy
     )
 }
 

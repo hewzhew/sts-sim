@@ -187,11 +187,11 @@ pub use plugins::{
     CombatSearchActionPriorPluginId, CombatSearchArtifactPlugin, CombatSearchArtifactPluginId,
     CombatSearchAttemptPolicy, CombatSearchBudgetSpec, CombatSearchChildRolloutPlugin,
     CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchExpansionPlugin,
-    CombatSearchExpansionPluginId, CombatSearchFrontierPlugin, CombatSearchFrontierPluginId,
-    CombatSearchNodeEvaluatorPlugin, CombatSearchNodeEvaluatorPluginId,
-    CombatSearchPhaseGuardPlugin, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
-    CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPlugin,
-    CombatSearchRolloutPluginId, CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
+    CombatSearchExpansionPluginId, CombatSearchNodeEvaluatorPlugin,
+    CombatSearchNodeEvaluatorPluginId, CombatSearchPhaseGuardPlugin,
+    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+    CombatSearchProfile, CombatSearchRolloutPlugin, CombatSearchRolloutPluginId,
+    CombatSearchTurnPlanPlugin, CombatSearchTurnPlanPluginId,
 };
 pub use search::{
     run_combat_search_v2, run_combat_search_v2_with_stepper, CombatSearchV2DecisionSnapshot,

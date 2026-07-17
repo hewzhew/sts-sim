@@ -1085,8 +1085,7 @@ mod tests {
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
         CombatSearchBudgetSpec, CombatSearchEngineProfile, CombatSearchPluginStack,
-        CombatSearchProfile, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
-        CombatSearchV2TurnPlanPolicy,
+        CombatSearchProfile, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
     };
     use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
@@ -1137,14 +1136,12 @@ mod tests {
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
         assert_eq!(options.wall_ms, None);
         assert_eq!(options.turn_plan_policy, None);
-        assert_eq!(options.frontier_policy, None);
 
         let options = auto_search_options(
             &session,
             RunControlSearchCombatOptions {
                 wall_ms: Some(500),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
-                frontier_policy: Some(CombatSearchV2FrontierPolicy::SingleQueue),
                 ..RunControlSearchCombatOptions::default()
             },
         );
@@ -1152,10 +1149,6 @@ mod tests {
         assert_eq!(
             options.turn_plan_policy,
             Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly)
-        );
-        assert_eq!(
-            options.frontier_policy,
-            Some(CombatSearchV2FrontierPolicy::SingleQueue)
         );
 
         let session = RunControlSession::new(RunControlConfig::default());

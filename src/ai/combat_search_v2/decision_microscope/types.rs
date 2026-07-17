@@ -38,7 +38,6 @@ pub struct CombatSearchV2DecisionMicroscopeConfigReport {
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
     pub rollout_beam_width: usize,
-    pub frontier_policy: &'static str,
     pub phase_guard_policy: &'static str,
     pub setup_bias_policy: &'static str,
 }

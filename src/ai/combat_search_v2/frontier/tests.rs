@@ -163,8 +163,8 @@ fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
 }
 
 #[test]
-fn frontier_queue_preserves_single_queue_priority_order() {
-    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::SingleQueue);
+fn frontier_queue_preserves_priority_order() {
+    let mut queue = FrontierQueue::new();
 
     let low_priority = test_node();
     let mut high_priority = test_node();
@@ -177,110 +177,6 @@ fn frontier_queue_preserves_single_queue_priority_order() {
     assert_eq!(queue.pop().unwrap().node.potion_tactical_priority, 50);
     assert_eq!(queue.pop().unwrap().node.potion_tactical_priority, 0);
     assert!(queue.is_empty());
-}
-
-#[test]
-fn round_robin_frontier_queue_interleaves_survival_and_progress_lanes() {
-    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-
-    for index in 0..8 {
-        let mut progress = evaluated_node(20, 40);
-        progress
-            .actions
-            .push(test_action_trace(format!("progress-{index}")));
-        queue.push_node(progress);
-    }
-    let mut survival = evaluated_node(0, 300);
-    survival
-        .actions
-        .push(test_action_trace("survival".to_string()));
-    queue.push_node(survival);
-
-    for index in 0..7 {
-        assert_eq!(
-            queue.pop().unwrap().node.actions[0].action_key,
-            format!("progress-{index}")
-        );
-    }
-    assert_eq!(queue.pop().unwrap().node.actions[0].action_key, "survival");
-}
-
-#[test]
-fn round_robin_frontier_gives_dangerous_race_progress_its_own_budget() {
-    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-
-    for index in 0..32 {
-        let mut survival = evaluated_node(5, 300);
-        survival
-            .actions
-            .push(test_action_trace(format!("survival-{index}")));
-        queue.push_node(survival);
-    }
-    let mut dangerous_race = evaluated_node(-1, 40);
-    dangerous_race
-        .actions
-        .push(test_action_trace("dangerous-race".to_string()));
-    queue.push_node(dangerous_race);
-
-    let popped = (0..16)
-        .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())
-        .collect::<Vec<_>>();
-
-    assert!(
-        popped.iter().any(|key| key == "dangerous-race"),
-        "dangerous race progress should receive progress-lane budget; popped={popped:?}"
-    );
-}
-
-#[test]
-fn round_robin_frontier_does_not_treat_unevaluated_rollout_as_survival_crisis() {
-    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-
-    for index in 0..8 {
-        let mut progress = evaluated_node(20, 40);
-        progress
-            .actions
-            .push(test_action_trace(format!("progress-{index}")));
-        queue.push_node(progress);
-    }
-    let mut unevaluated = test_node();
-    unevaluated.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    unevaluated
-        .actions
-        .push(test_action_trace("unevaluated".to_string()));
-    queue.push_node(unevaluated);
-
-    let popped = (0..8)
-        .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())
-        .collect::<Vec<_>>();
-
-    assert!(
-        popped.iter().all(|key| key.starts_with("progress-")),
-        "unevaluated rollout should stay in balanced lane instead of taking survival-lane budget; popped={popped:?}"
-    );
-}
-
-fn evaluated_node(survival_margin: i32, phase_adjusted_enemy_effort: i32) -> SearchNode {
-    let mut node = test_node();
-    node.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    node.rollout_estimate = RolloutNodeEstimate {
-        evaluated: true,
-        final_hp: 30,
-        survival_margin,
-        phase_adjusted_enemy_effort,
-        ..RolloutNodeEstimate::unevaluated()
-    };
-    node
-}
-
-fn test_action_trace(action_key: String) -> CombatSearchV2ActionTrace {
-    CombatSearchV2ActionTrace {
-        step_index: 0,
-        action_id: 0,
-        action_debug: action_key.clone(),
-        action_key,
-        input: ClientInput::EndTurn,
-    }
 }
 
 fn test_node() -> SearchNode {

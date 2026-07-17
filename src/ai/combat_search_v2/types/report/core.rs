@@ -9,7 +9,7 @@ use super::rollout::CombatSearchV2RolloutReport;
 use super::root_evidence::{CombatSearchV2QuantumEvidence, CombatSearchV2RootEvidenceSnapshot};
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 18;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 19;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
@@ -46,7 +46,6 @@ pub struct CombatSearchV2PolicyReport {
     pub action_prior_policy: &'static str,
     pub phase_guard_policy: &'static str,
     pub frontier_value: &'static str,
-    pub frontier_policy: &'static str,
     pub turn_branching: &'static str,
     pub turn_plan_policy: &'static str,
     pub potion_policy: &'static str,

@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    compare_outcome_metrics, CombatSearchV2FrontierPolicy, CombatSearchV2OutcomeMetrics,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy,
-    SearchCoverageStatus, SearchTerminalLabel,
+    compare_outcome_metrics, CombatSearchV2OutcomeMetrics, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy, SearchCoverageStatus,
+    SearchTerminalLabel,
 };
 
 use super::benchmark::{
@@ -22,7 +22,6 @@ pub type CombatSearchV2RolloutPolicyComparisonSummary = CombatSearchV2PolicyComp
 pub type CombatSearchV2RolloutPolicyComparisonCase = CombatSearchV2PolicyComparisonCase;
 pub type CombatSearchV2RolloutPolicyComparisonVerdict = CombatSearchV2PolicyComparisonVerdict;
 pub type CombatSearchV2RolloutPolicyComparisonRun = CombatSearchV2PolicyComparisonRun;
-pub type CombatSearchV2FrontierPolicyComparisonReport = CombatSearchV2PolicyComparisonReport;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2PolicyComparisonReport {
@@ -173,38 +172,6 @@ pub fn compare_combat_search_v2_turn_plan_policies(
             "turn_plan_policy=root_frontier_seed seeds exact root turn-plan end states into frontier",
             "seeded turn-plan states do not prune exact states and cannot create terminal outcome records without exact replay",
             "first_action_diff context is reconstructed by exact replay of the common prefix and is diagnostic only",
-        ],
-    )
-}
-
-pub fn compare_combat_search_v2_frontier_policies(
-    loaded: &CombatSearchV2LoadedBenchmark,
-    options: CombatSearchV2RunOptions,
-    left_policy: CombatSearchV2FrontierPolicy,
-    right_policy: CombatSearchV2FrontierPolicy,
-) -> CombatSearchV2PolicyComparisonReport {
-    let mut left_options = options.clone();
-    left_options.frontier_policy = Some(left_policy);
-    let left = run_combat_search_v2_benchmark(loaded, left_options);
-
-    let mut right_options = options.clone();
-    right_options.frontier_policy = Some(right_policy);
-    let right = run_combat_search_v2_benchmark(loaded, right_options);
-
-    build_comparison_report(
-        loaded,
-        &options,
-        "frontier_policy",
-        left_policy.label(),
-        right_policy.label(),
-        &left,
-        &right,
-        vec![
-            "comparison uses complete candidate trajectories, not stepwise action agreement",
-            "frontier policy only changes which exact states are expanded first under budget",
-            "round_robin_eval_buckets is experimental and defaults off",
-            "estimated lanes do not create terminal claims without exact replay",
-            "node deltas are budget diagnostics; outcome comparison still uses whole-combat trajectories",
         ],
     )
 }

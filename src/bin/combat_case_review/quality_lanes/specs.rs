@@ -1,10 +1,9 @@
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
     CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
-    CombatSearchFrontierPluginId, CombatSearchPhaseGuardPluginId, CombatSearchPluginStack,
-    CombatSearchPotionPlugin, CombatSearchProfile, CombatSearchRolloutPluginId,
-    CombatSearchTurnPlanPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
-    CombatSearchV2Satisfaction,
+    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
+    CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Satisfaction,
 };
 
 #[derive(Clone, Copy)]
@@ -17,7 +16,6 @@ pub(crate) struct QualityLaneSpec {
 
 #[derive(Clone, Copy)]
 struct QualityLanePlugins {
-    pub(super) frontier_plugin: CombatSearchFrontierPluginId,
     pub(super) turn_plan_plugin: CombatSearchTurnPlanPluginId,
     pub(super) rollout_plugin: CombatSearchRolloutPluginId,
     pub(super) child_rollout_plugin: CombatSearchChildRolloutPluginId,
@@ -47,7 +45,6 @@ impl QualityLanePlugins {
             engine: CombatSearchEngineProfile {
                 budget: CombatSearchBudgetSpec { max_nodes, wall_ms },
                 plugins: CombatSearchPluginStack {
-                    frontier: self.frontier_plugin,
                     turn_plan: self.turn_plan_plugin,
                     rollout: self.rollout_plugin,
                     child_rollout: self.child_rollout_plugin,
@@ -81,10 +78,9 @@ impl QualitySearchObjective {
 pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
     [
         QualityLaneSpec {
-            label: "quality_balanced_rr",
-            intent: "baseline round-robin frontier with adaptive rollout",
+            label: "quality_balanced",
+            intent: "baseline adaptive rollout",
             plugins: QualityLanePlugins {
-                frontier_plugin: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
                 turn_plan_plugin: CombatSearchTurnPlanPluginId::DiagnosticOnly,
                 rollout_plugin: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
                 child_rollout_plugin: CombatSearchChildRolloutPluginId::LazyOnPop,
@@ -100,7 +96,6 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
             label: "quality_champ_split_guard",
             intent: "penalize crossing Champ half-hp threshold before a clear burst window",
             plugins: QualityLanePlugins {
-                frontier_plugin: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
                 turn_plan_plugin: CombatSearchTurnPlanPluginId::DiagnosticOnly,
                 rollout_plugin: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
                 child_rollout_plugin: CombatSearchChildRolloutPluginId::Immediate,
@@ -116,7 +111,6 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
             label: "quality_immediate_rescue_no_potion",
             intent: "force immediate child rollout so low-hp tactical lines are not under-sampled",
             plugins: QualityLanePlugins {
-                frontier_plugin: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
                 turn_plan_plugin: CombatSearchTurnPlanPluginId::DiagnosticOnly,
                 rollout_plugin: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
                 child_rollout_plugin: CombatSearchChildRolloutPluginId::Immediate,
@@ -133,7 +127,6 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
             intent:
                 "try semantic potion rescue with immediate rollout before declaring a combat gap",
             plugins: QualityLanePlugins {
-                frontier_plugin: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
                 turn_plan_plugin: CombatSearchTurnPlanPluginId::DiagnosticOnly,
                 rollout_plugin: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
                 child_rollout_plugin: CombatSearchChildRolloutPluginId::Immediate,

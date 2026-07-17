@@ -1,10 +1,9 @@
 use sts_simulator::ai::combat_search_v2::{
     high_stakes_semantic_potion_budget, CombatSearchAcceptancePluginId,
     CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
-    CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchFrontierPluginId,
-    CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
-    CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
-    CombatSearchV2Satisfaction,
+    CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchPhaseGuardPluginId,
+    CombatSearchPluginStack, CombatSearchPotionPlugin, CombatSearchProfile,
+    CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy, CombatSearchV2Satisfaction,
 };
 use sts_simulator::eval::run_control::{
     RunControlCombatSearchQuantum, RunControlHpLossLimit, RunControlSearchCombatOptions,
@@ -63,7 +62,6 @@ pub(super) fn canonical_combat_search_session_plan(
             plugins: CombatSearchPluginStack {
                 child_rollout: CombatSearchChildRolloutPluginId::LazyOnPop,
                 rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
-                frontier: CombatSearchFrontierPluginId::RoundRobinEvalBuckets,
                 phase_guard: CombatSearchPhaseGuardPluginId::Default,
                 potion: CombatSearchPotionPlugin {
                     policy: potion_policy,

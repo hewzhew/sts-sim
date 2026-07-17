@@ -126,7 +126,6 @@
       "rollout_policy": "enemy_mechanics_adaptive_no_potion",
       "child_rollout_policy": "immediate",
       "turn_plan_policy": "disabled",
-      "frontier_policy": "round_robin_eval_buckets",
       "phase_guard_policy": "default",
       "setup_bias_policy": "default"
     },

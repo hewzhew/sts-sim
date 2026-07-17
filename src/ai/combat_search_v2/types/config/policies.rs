@@ -208,25 +208,3 @@ impl CombatSearchV2TurnPlanPolicy {
         !matches!(self, Self::Disabled)
     }
 }
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CombatSearchV2FrontierPolicy {
-    SingleQueue,
-    RoundRobinEvalBuckets,
-}
-
-impl Default for CombatSearchV2FrontierPolicy {
-    fn default() -> Self {
-        Self::SingleQueue
-    }
-}
-
-impl CombatSearchV2FrontierPolicy {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::SingleQueue => "single_queue",
-            Self::RoundRobinEvalBuckets => "round_robin_eval_buckets",
-        }
-    }
-}

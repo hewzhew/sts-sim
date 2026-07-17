@@ -75,6 +75,30 @@ fn retired_repl_and_multi_operation_auto_run_do_not_return() {
 }
 
 #[test]
+fn retired_eval_bucket_frontier_does_not_return() {
+    let mut sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut sources);
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read Rust source");
+        for forbidden in [
+            "RoundRobinEvalBuckets",
+            "FrontierLanes",
+            "CombatSearchV2FrontierPolicy",
+            "CombatSearchFrontierPluginId",
+            "compare_frontier",
+            "frontier_policy",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "source '{}' must not restore retired eval-bucket scheduling surface `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn run_control_has_no_legacy_command_parser_recorder_or_replay_executor() {
     let mut sources = Vec::new();
     collect_rust_sources(std::path::Path::new("src/eval/run_control"), &mut sources);
