@@ -172,6 +172,20 @@ struct PendingOracleCombatV1 {
     work: RunControlCombatWorkV1,
 }
 
+enum FinishedOracleCombatV1 {
+    Resolved(usize),
+    ExactDuplicate,
+    Unresolved { branch_id: usize },
+}
+
+fn should_rotate_after_finished_combat(
+    advance: RunControlCombatWorkAdvanceV1,
+    finished: &FinishedOracleCombatV1,
+) -> bool {
+    advance == RunControlCombatWorkAdvanceV1::AllowanceExhausted
+        && matches!(finished, FinishedOracleCombatV1::Unresolved { .. })
+}
+
 pub struct OracleRunExplorerV1 {
     pub branches: Vec<OracleRunBranchV1>,
     pub pending_decisions: VecDeque<LazyOracleRunDecisionV1>,
@@ -330,6 +344,42 @@ impl OracleRunExplorerV1 {
         self.pending_combats.remove(index)
     }
 
+    /// An exhausted combat should not make every nearby sibling monopolize the
+    /// remaining run budget. Keep all work, but defer the closest ancestor's
+    /// sibling group behind the other already-registered decision work.
+    fn rotate_nearest_ancestor_decisions_after_unresolved_combat(
+        &mut self,
+        combat_branch_id: usize,
+    ) -> Option<usize> {
+        let mut cursor = Some(combat_branch_id);
+        while let Some(branch_id) = cursor {
+            if self
+                .pending_decisions
+                .iter()
+                .any(|work| work.parent_branch_id == branch_id)
+            {
+                let mut retained = VecDeque::with_capacity(self.pending_decisions.len());
+                let mut deferred = VecDeque::new();
+                while let Some(work) = self.pending_decisions.pop_front() {
+                    if work.parent_branch_id == branch_id {
+                        deferred.push_back(work);
+                    } else {
+                        retained.push_back(work);
+                    }
+                }
+                retained.append(&mut deferred);
+                self.pending_decisions = retained;
+                return Some(branch_id);
+            }
+            cursor = self
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == branch_id)
+                .and_then(|branch| branch.parent_branch_id);
+        }
+        None
+    }
+
     fn accept_branch(&mut self, branch: OracleRunBranchV1) -> Option<usize> {
         if let Some(survivor_branch_id) = self.state_index.get(&branch.state_fingerprint).copied() {
             self.retired_exact_duplicates
@@ -464,7 +514,7 @@ impl OracleRunExplorerV1 {
         &mut self,
         pending: PendingOracleCombatV1,
         finalization_deadline: Option<Instant>,
-    ) -> Result<Option<usize>, String> {
+    ) -> Result<FinishedOracleCombatV1, String> {
         let parent = self
             .branches
             .iter()
@@ -488,7 +538,9 @@ impl OracleRunExplorerV1 {
                 rejection,
                 nodes_expanded,
             });
-            return Ok(None);
+            return Ok(FinishedOracleCombatV1::Unresolved {
+                branch_id: parent.branch_id,
+            });
         }
         if outcome.progress_steps.len() != 1 {
             return Err(format!(
@@ -511,7 +563,10 @@ impl OracleRunExplorerV1 {
             session,
         };
         self.next_branch_id = self.next_branch_id.saturating_add(1);
-        Ok(self.accept_branch(child))
+        Ok(match self.accept_branch(child) {
+            Some(branch_id) => FinishedOracleCombatV1::Resolved(branch_id),
+            None => FinishedOracleCombatV1::ExactDuplicate,
+        })
     }
 }
 
@@ -656,20 +711,36 @@ pub fn drive_oracle_run_explorer_v1(
                 }
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
-                    if let Some(branch_id) = explorer.finish_combat(pending, deadline)? {
-                        let boundary = explorer
-                            .branches
-                            .iter()
-                            .find(|branch| branch.branch_id == branch_id)
-                            .map(|branch| branch.boundary)
-                            .ok_or_else(|| format!("missing resolved combat branch {branch_id}"))?;
-                        if boundary == OracleRunBoundaryV1::TerminalVictory {
-                            break OracleRunExploreStopV1::Victory { branch_id };
+                    let finished = explorer.finish_combat(pending, deadline)?;
+                    let rotate_nearby_siblings =
+                        should_rotate_after_finished_combat(advance, &finished);
+                    match finished {
+                        FinishedOracleCombatV1::Resolved(branch_id) => {
+                            let boundary = explorer
+                                .branches
+                                .iter()
+                                .find(|branch| branch.branch_id == branch_id)
+                                .map(|branch| branch.boundary)
+                                .ok_or_else(|| {
+                                    format!("missing resolved combat branch {branch_id}")
+                                })?;
+                            if boundary == OracleRunBoundaryV1::TerminalVictory {
+                                break OracleRunExploreStopV1::Victory { branch_id };
+                            }
+                            explorer.schedule_branch(branch_id, &budget.combat, true)?;
+                            explorer.active_branch_id = Some(branch_id);
                         }
-                        explorer.schedule_branch(branch_id, &budget.combat, true)?;
-                        explorer.active_branch_id = Some(branch_id);
-                    } else {
-                        explorer.active_branch_id = None;
+                        FinishedOracleCombatV1::Unresolved { branch_id } => {
+                            if rotate_nearby_siblings {
+                                explorer.rotate_nearest_ancestor_decisions_after_unresolved_combat(
+                                    branch_id,
+                                );
+                            }
+                            explorer.active_branch_id = None;
+                        }
+                        FinishedOracleCombatV1::ExactDuplicate => {
+                            explorer.active_branch_id = None;
+                        }
                     }
                 }
             }
@@ -937,6 +1008,33 @@ mod tests {
     use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
     use crate::state::map::node::RoomType;
 
+    fn test_branch(branch_id: usize, parent_branch_id: Option<usize>) -> OracleRunBranchV1 {
+        OracleRunBranchV1 {
+            branch_id,
+            parent_branch_id,
+            neow_root_candidate_id: "root".to_string(),
+            neow_root_label: "root".to_string(),
+            state_fingerprint: format!("state/{branch_id}"),
+            boundary: OracleRunBoundaryV1::MapDecision,
+            replay: Vec::new(),
+            journal: RunProgressJournalV1::default(),
+            session: RunControlSession::new(RunControlConfig::default()),
+        }
+    }
+
+    fn test_decision(parent_branch_id: usize, candidate_id: &str) -> LazyOracleRunDecisionV1 {
+        LazyOracleRunDecisionV1 {
+            parent_branch_id,
+            parent_state_fingerprint: format!("state/{parent_branch_id}"),
+            neow_root_candidate_id: "root".to_string(),
+            kind: OracleRunWorkKindV1::MapTravel,
+            candidate_id: candidate_id.to_string(),
+            label: candidate_id.to_string(),
+            action: RunDecisionAction::Input(ClientInput::Proceed),
+            stable_work_key: candidate_id.to_string(),
+        }
+    }
+
     #[test]
     fn seed006_registers_all_completed_neow_roots_without_selecting_one() {
         let session = RunControlSession::new(RunControlConfig {
@@ -1011,7 +1109,98 @@ mod tests {
     }
 
     #[test]
-    fn one_combat_quantum_remains_pending_instead_of_becoming_a_gap() {
+    fn unresolved_combat_defers_only_the_nearest_ancestor_sibling_group() {
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.branches = vec![
+            test_branch(0, None),
+            test_branch(1, Some(0)),
+            test_branch(2, Some(1)),
+            test_branch(7, None),
+        ];
+        explorer.pending_decisions = VecDeque::from([
+            test_decision(1, "near/a"),
+            test_decision(1, "near/b"),
+            test_decision(0, "older"),
+            test_decision(7, "unrelated"),
+        ]);
+        let before = explorer
+            .pending_decisions
+            .iter()
+            .map(|work| work.stable_work_key.clone())
+            .collect::<BTreeSet<_>>();
+
+        let rotated = explorer.rotate_nearest_ancestor_decisions_after_unresolved_combat(2);
+
+        assert_eq!(rotated, Some(1));
+        assert_eq!(
+            explorer
+                .pending_decisions
+                .iter()
+                .map(|work| work.candidate_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["older", "unrelated", "near/a", "near/b"]
+        );
+        assert_eq!(
+            explorer
+                .pending_decisions
+                .iter()
+                .map(|work| work.stable_work_key.clone())
+                .collect::<BTreeSet<_>>(),
+            before
+        );
+    }
+
+    #[test]
+    fn unresolved_combat_falls_back_to_an_older_ancestor_without_losing_work() {
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.branches = vec![
+            test_branch(0, None),
+            test_branch(1, Some(0)),
+            test_branch(2, Some(1)),
+            test_branch(7, None),
+        ];
+        explorer.pending_decisions = VecDeque::from([
+            test_decision(0, "older/a"),
+            test_decision(7, "unrelated"),
+            test_decision(0, "older/b"),
+        ]);
+
+        let rotated = explorer.rotate_nearest_ancestor_decisions_after_unresolved_combat(2);
+
+        assert_eq!(rotated, Some(0));
+        assert_eq!(
+            explorer
+                .pending_decisions
+                .iter()
+                .map(|work| work.candidate_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["unrelated", "older/a", "older/b"]
+        );
+    }
+
+    #[test]
+    fn sibling_rotation_requires_both_allowance_exhaustion_and_typed_unresolved() {
+        let unresolved = FinishedOracleCombatV1::Unresolved { branch_id: 2 };
+        assert!(should_rotate_after_finished_combat(
+            RunControlCombatWorkAdvanceV1::AllowanceExhausted,
+            &unresolved
+        ));
+        assert!(!should_rotate_after_finished_combat(
+            RunControlCombatWorkAdvanceV1::ReadyToFinish,
+            &unresolved
+        ));
+        assert!(!should_rotate_after_finished_combat(
+            RunControlCombatWorkAdvanceV1::AllowanceExhausted,
+            &FinishedOracleCombatV1::Resolved(3)
+        ));
+        assert!(!should_rotate_after_finished_combat(
+            RunControlCombatWorkAdvanceV1::AllowanceExhausted,
+            &FinishedOracleCombatV1::ExactDuplicate
+        ));
+    }
+
+    #[test]
+    fn consecutive_combat_quanta_stay_on_the_active_branch_until_resolved() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
         combat.entities.monsters = vec![crate::test_support::planned_monster(
@@ -1058,7 +1247,7 @@ mod tests {
         let result = drive_oracle_run_explorer_v1(
             explorer,
             OracleRunExploreBudgetV1 {
-                max_work_items: 1,
+                max_work_items: 2,
                 wall_ms: None,
                 combat: combat_budgets,
                 combat_quantum_nodes: 1,
@@ -1069,7 +1258,7 @@ mod tests {
         .expect("one explorer quantum");
 
         assert_eq!(result.stop, OracleRunExploreStopV1::WorkBudgetExhausted);
-        assert_eq!(result.combat_quanta, 1);
+        assert_eq!(result.combat_quanta, 2);
         assert_eq!(result.explorer.pending_combat_count(), 1);
         assert!(result.explorer.unresolved_combats.is_empty());
         let pending = result
@@ -1080,6 +1269,6 @@ mod tests {
         assert_eq!(pending[0].branch_id, 0);
         assert_eq!(pending[0].enemies.len(), 1);
         assert_eq!(pending[0].enemies[0].name, "Jaw Worm");
-        assert_eq!(pending[0].quantum_count, 1);
+        assert_eq!(pending[0].quantum_count, 2);
     }
 }
