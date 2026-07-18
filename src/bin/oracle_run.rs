@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+
 use clap::Parser;
+use sts_simulator::eval::combat_case::save_combat_case;
 use sts_simulator::runtime::branch::{run_oracle_run, OracleRunBudget, OracleRunConfig};
 
 #[derive(Debug, Parser)]
@@ -42,6 +45,10 @@ struct Cli {
 
     #[arg(long, default_value_t = 1_000)]
     combat_quantum_ms: u64,
+
+    /// Save the first exact unresolved combat as a standalone combat case.
+    #[arg(long)]
+    combat_case_out: Option<PathBuf>,
 }
 
 fn main() -> Result<(), String> {
@@ -62,6 +69,15 @@ fn main() -> Result<(), String> {
             combat_quantum_ms: cli.combat_quantum_ms,
         },
     })?;
+    if let Some(path) = cli.combat_case_out.as_ref() {
+        let case = report
+            .first_unresolved_combat_case
+            .as_ref()
+            .ok_or_else(|| {
+                "oracle run did not encounter an unresolved combat to export".to_string()
+            })?;
+        save_combat_case(path, case)?;
+    }
     println!(
         "{}",
         serde_json::to_string_pretty(&report)

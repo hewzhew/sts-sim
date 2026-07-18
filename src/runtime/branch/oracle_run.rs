@@ -1,10 +1,15 @@
 use std::time::Instant;
 
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::ai::combat_search_v2::CombatSearchV2Satisfaction;
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
+use crate::eval::combat_case::{
+    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
+    CombatCaseSource,
+};
 use crate::eval::run_control::{
     drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_v1,
     CombatAutomationActionV1, DecisionCandidateKey, NeowOracleExpansionV1,
@@ -14,10 +19,11 @@ use crate::eval::run_control::{
     RunProgressJournalV1, RunProgressStepV1,
 };
 use crate::runtime::combat::CombatCard;
+use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
 
 pub const ORACLE_RUN_REPORT_SCHEMA_NAME: &str = "OracleRunReport";
-pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 6;
+pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Copy, Debug)]
 pub struct OracleRunBudget {
@@ -171,6 +177,8 @@ pub struct OracleRunReportV1 {
     pub decisions: Vec<OracleDecisionSummaryV1>,
     pub combat_resolutions: Vec<OracleCombatResolutionSummaryV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_unresolved_combat_case: Option<CombatCase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub victory_witness: Option<RunProgressJournalV1>,
 }
 
@@ -221,6 +229,7 @@ fn finish_oracle_run_report(
     initial_neow_frontier: OracleNeowFrontierSummaryV1,
     explored: OracleRunExploreResultV1,
 ) -> Result<OracleRunReportV1, String> {
+    let first_unresolved_combat_case = first_unresolved_combat_case(config, &explored);
     let selected = explored
         .witness()
         .or_else(|| explored.furthest_branch())
@@ -273,8 +282,77 @@ fn finish_oracle_run_report(
         committed_progress_steps: journal.len(),
         decisions: decision_summaries(&journal),
         combat_resolutions: combat_resolution_summaries(&journal),
+        first_unresolved_combat_case,
         victory_witness,
     })
+}
+
+fn first_unresolved_combat_case(
+    config: &OracleRunConfig,
+    explored: &OracleRunExploreResultV1,
+) -> Option<CombatCase> {
+    let unresolved = explored.explorer.unresolved_combats.first()?;
+    let branch = explored
+        .explorer
+        .branches
+        .iter()
+        .find(|branch| branch.branch_id == unresolved.branch_id)?;
+    let active = branch.session.active_combat.as_ref()?;
+    let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
+    let search_ms = if active.combat_state.meta.is_boss_fight {
+        config.budget.boss_ms
+    } else if active.combat_state.meta.is_elite_fight {
+        config.budget.elite_ms
+    } else {
+        config.budget.hallway_ms
+    };
+    Some(CombatCase::new(
+        CombatCaseSource {
+            seed: config.seed,
+            ascension: config.ascension,
+            generation: branch.replay.len(),
+            branch_id: branch.branch_id,
+            parent_id: branch.parent_branch_id,
+        },
+        CombatCaseGap {
+            boundary: format!(
+                "Act {} Floor {} combat",
+                branch.session.run_state.act_num, branch.session.run_state.floor_num
+            ),
+            reason: format!("{:?}", unresolved.rejection),
+            search_nodes: unresolved.nodes_expanded.min(usize::MAX as u64) as usize,
+            search_ms,
+            rescue_search_nodes: 0,
+            rescue_search_ms: 0,
+        },
+        CombatCaseRunSummary {
+            act: branch.session.run_state.act_num,
+            floor: branch.session.run_state.floor_num,
+            hp: branch.session.run_state.current_hp,
+            max_hp: branch.session.run_state.max_hp,
+            gold: branch.session.run_state.gold,
+            deck_size: branch.session.run_state.master_deck.len(),
+            relic_count: branch.session.run_state.relics.len(),
+            potion_slots: branch.session.run_state.potions.len(),
+        },
+        Vec::new(),
+        None,
+        branch
+            .replay
+            .iter()
+            .map(|step| CombatCasePathStep {
+                key: Value::Null,
+                label: step.label.clone(),
+                state_before: None,
+                decision_evidence: Some(json!({
+                    "candidate_id": &step.candidate_id,
+                    "action": &step.action,
+                })),
+            })
+            .collect(),
+        CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
+        position,
+    ))
 }
 
 fn oracle_neow_frontier_summary(expansion: NeowOracleExpansionV1) -> OracleNeowFrontierSummaryV1 {
