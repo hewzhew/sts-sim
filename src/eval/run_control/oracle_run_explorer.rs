@@ -153,7 +153,10 @@ pub struct OracleRunExploreBudgetV1 {
     pub combat: OracleRunCombatBudgetsV1,
     pub combat_quantum_nodes: usize,
     pub combat_quantum_ms: Option<u64>,
+    pub decision_order: Option<OracleRunDecisionOrderFnV1>,
 }
+
+pub type OracleRunDecisionOrderFnV1 = fn(&RunControlSession) -> Vec<String>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -291,11 +294,31 @@ impl OracleRunExplorerV1 {
             .or_else(|| self.pending_combats.front().map(|work| work.branch_id))
     }
 
-    fn take_decision_for_branch(&mut self, branch_id: usize) -> Option<LazyOracleRunDecisionV1> {
-        let index = self
-            .pending_decisions
+    fn take_decision_for_branch(
+        &mut self,
+        branch_id: usize,
+        decision_order: Option<OracleRunDecisionOrderFnV1>,
+    ) -> Option<LazyOracleRunDecisionV1> {
+        let preferred_ids = decision_order
+            .and_then(|order| {
+                self.branches
+                    .iter()
+                    .find(|branch| branch.branch_id == branch_id)
+                    .map(|branch| order(&branch.session))
+            })
+            .unwrap_or_default();
+        let index = preferred_ids
             .iter()
-            .position(|work| work.parent_branch_id == branch_id)?;
+            .find_map(|candidate_id| {
+                self.pending_decisions.iter().position(|work| {
+                    work.parent_branch_id == branch_id && work.candidate_id == *candidate_id
+                })
+            })
+            .or_else(|| {
+                self.pending_decisions
+                    .iter()
+                    .position(|work| work.parent_branch_id == branch_id)
+            })?;
         self.pending_decisions.remove(index)
     }
 
@@ -653,7 +676,9 @@ pub fn drive_oracle_run_explorer_v1(
             continue;
         }
 
-        let Some(decision) = explorer.take_decision_for_branch(active_branch_id) else {
+        let Some(decision) =
+            explorer.take_decision_for_branch(active_branch_id, budget.decision_order)
+        else {
             explorer.active_branch_id = None;
             continue;
         };
@@ -939,6 +964,53 @@ mod tests {
     }
 
     #[test]
+    fn decision_order_changes_only_the_first_choice_and_keeps_fallbacks() {
+        fn prefer_second(_: &RunControlSession) -> Vec<String> {
+            vec!["second".to_string()]
+        }
+
+        let session = RunControlSession::new(RunControlConfig::default());
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.branches.push(OracleRunBranchV1 {
+            branch_id: 7,
+            parent_branch_id: None,
+            neow_root_candidate_id: "root".to_string(),
+            neow_root_label: "root".to_string(),
+            state_fingerprint: "state".to_string(),
+            boundary: OracleRunBoundaryV1::MapDecision,
+            replay: Vec::new(),
+            journal: RunProgressJournalV1::default(),
+            session,
+        });
+        for candidate_id in ["first", "second"] {
+            explorer
+                .pending_decisions
+                .push_back(LazyOracleRunDecisionV1 {
+                    parent_branch_id: 7,
+                    parent_state_fingerprint: "state".to_string(),
+                    neow_root_candidate_id: "root".to_string(),
+                    kind: OracleRunWorkKindV1::MapTravel,
+                    candidate_id: candidate_id.to_string(),
+                    label: candidate_id.to_string(),
+                    action: RunDecisionAction::Input(ClientInput::Proceed),
+                    stable_work_key: candidate_id.to_string(),
+                });
+        }
+
+        let preferred = explorer
+            .take_decision_for_branch(7, Some(prefer_second))
+            .expect("preferred candidate");
+        assert_eq!(preferred.candidate_id, "second");
+        assert_eq!(explorer.pending_decisions.len(), 1);
+
+        let fallback = explorer
+            .take_decision_for_branch(7, Some(prefer_second))
+            .expect("unpreferred fallback remains available");
+        assert_eq!(fallback.candidate_id, "first");
+        assert!(explorer.pending_decisions.is_empty());
+    }
+
+    #[test]
     fn one_combat_quantum_remains_pending_instead_of_becoming_a_gap() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         let mut combat = crate::test_support::blank_test_combat();
@@ -991,6 +1063,7 @@ mod tests {
                 combat: combat_budgets,
                 combat_quantum_nodes: 1,
                 combat_quantum_ms: None,
+                decision_order: None,
             },
         )
         .expect("one explorer quantum");

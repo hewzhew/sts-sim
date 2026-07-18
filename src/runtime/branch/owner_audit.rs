@@ -200,6 +200,61 @@ impl OwnerAuditRuntime {
     }
 }
 
+/// Returns a preferred exploration order for the oracle run without changing
+/// the real branch or removing any legal candidate.  The oracle explorer owns
+/// completeness; the existing owners are only a soft first-choice hint.
+pub(super) fn oracle_candidate_order(
+    session: &sts_simulator::eval::run_control::RunControlSession,
+) -> Vec<String> {
+    use owner_model::{OwnerDecision, OwnerRoutine};
+    use sts_simulator::eval::run_control::build_decision_surface;
+    use sts_simulator::state::core::EngineState;
+
+    let mut trial = session.clone();
+    if matches!(
+        &trial.engine_state,
+        EngineState::MapNavigation | EngineState::MapOverlay { .. }
+    ) {
+        return trial
+            .apply_route_plan()
+            .ok()
+            .and_then(|outcome| {
+                outcome
+                    .single_decision_transaction()
+                    .map(|transaction| transaction.selection.candidate_id.clone())
+            })
+            .into_iter()
+            .collect();
+    }
+
+    let Some(owner) = boundary_router::owner_for_current_boundary(&trial) else {
+        return Vec::new();
+    };
+    let surface = build_decision_surface(&trial);
+    match owners::owner_decision(&trial, owner, &surface) {
+        OwnerDecision::Candidates(choices) => choices
+            .into_iter()
+            .map(|choice| choice.candidate_id)
+            .collect(),
+        OwnerDecision::Routine(OwnerRoutine::Candidate { candidate_id, .. }) => {
+            vec![candidate_id]
+        }
+        OwnerDecision::Routine(OwnerRoutine::RewardPolicyStep) => {
+            owner_routines::apply_owner_routine(&mut trial, OwnerRoutine::RewardPolicyStep)
+                .ok()
+                .and_then(|outcome| {
+                    outcome
+                        .single_decision_transaction()
+                        .map(|transaction| transaction.selection.candidate_id.clone())
+                })
+                .into_iter()
+                .collect()
+        }
+        OwnerDecision::Routine(OwnerRoutine::ForcedTransition(_)) => Vec::new(),
+        OwnerDecision::Gap(_) => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

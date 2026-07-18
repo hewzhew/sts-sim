@@ -207,6 +207,7 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
             combat: oracle_combat_budgets(&config),
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
+            decision_order: Some(super::owner_audit::oracle_candidate_order),
         },
     )
     .map_err(|error| format!("oracle run explorer failed: {error}"))?;

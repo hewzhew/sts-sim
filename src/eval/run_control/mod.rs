@@ -108,9 +108,9 @@ pub use oracle_neow::{
 pub use oracle_run_explorer::{
     drive_oracle_run_explorer_v1, seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1,
     LazyOracleRunDecisionV1, OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1,
-    OracleRunBoundaryV1, OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1,
-    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerV1, OracleRunReplayStepV1,
-    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
+    OracleRunBoundaryV1, OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunDecisionOrderFnV1,
+    OracleRunExploreBudgetV1, OracleRunExploreResultV1, OracleRunExploreStopV1,
+    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
