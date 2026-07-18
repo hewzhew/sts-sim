@@ -243,7 +243,12 @@ impl CombatSearchV2Session {
             &self.root_for_turn_plan_diagnostics,
             stepper,
             &self.config,
-            deadline,
+            // A rollout win is not evidence until this exact replay succeeds.
+            // The quantum wall time is a soft exploration budget; letting it
+            // expire must not discard a complete witness already discovered.
+            // Replay is independently bounded by the rollout preview limit and
+            // max_engine_steps_per_action.
+            None,
         );
         if promotion == RolloutPromotionOutcome::ReplayInterrupted {
             self.loop_state.mark_deadline_hit();

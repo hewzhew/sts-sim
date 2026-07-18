@@ -1533,7 +1533,7 @@ fn clean_satisfaction_promotes_the_preserved_clean_rollout_witness() {
 }
 
 #[test]
-fn expired_quantum_does_not_promote_and_the_same_session_retries_the_witness() {
+fn expired_soft_quantum_still_promotes_a_bounded_exact_witness() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
@@ -1576,10 +1576,21 @@ fn expired_quantum_does_not_promote_and_the_same_session_retries_the_witness() {
             },
             &OneCardWinStepper,
         ),
-        CombatSearchV2AdvanceStop::QuantumWallTime
+        CombatSearchV2AdvanceStop::CandidateSatisfied
     );
-    assert!(session.snapshot().best_win.is_none());
-    assert!(session.loop_state.last_promoted_rollout_witness.is_none());
+    assert!(session.snapshot().best_win.is_some());
+    assert_eq!(
+        session.loop_state.last_promoted_rollout_witness,
+        Some(witness.clone())
+    );
+    assert_eq!(
+        session
+            .loop_state
+            .performance
+            .rollout_promotion_actions_replayed,
+        1,
+        "exact witness verification remains bounded even after exploration time expires"
+    );
     assert_eq!(
         session
             .loop_state
@@ -1588,23 +1599,7 @@ fn expired_quantum_does_not_promote_and_the_same_session_retries_the_witness() {
             .as_ref()
             .map(|candidate| &candidate.estimate),
         Some(&witness),
-        "deadline interruption must retain the witness for a later quantum"
-    );
-
-    assert_eq!(
-        session.advance_with_stepper(
-            CombatSearchV2WorkQuantum {
-                additional_nodes: 0,
-                soft_wall_time: Some(std::time::Duration::from_secs(1)),
-            },
-            &OneCardWinStepper,
-        ),
-        CombatSearchV2AdvanceStop::CandidateSatisfied
-    );
-    assert!(session.snapshot().best_win.is_some());
-    assert_eq!(
-        session.loop_state.last_promoted_rollout_witness,
-        Some(witness)
+        "the rollout cache retains the verified witness as evidence"
     );
 }
 
