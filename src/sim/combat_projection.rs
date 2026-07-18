@@ -1,5 +1,5 @@
 use crate::runtime::combat::{CombatState, MonsterEntity};
-use crate::runtime::monster_move::{EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
+use crate::runtime::monster_move::{DamageKind, EffectStrength, MonsterMoveSpec, MonsterTurnPlan};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisibleIntentKind {
@@ -71,7 +71,18 @@ pub fn project_monster_move_preview_from_plan(
         } else {
             None
         };
-    let semantic_damage = plan.attack().map(|attack| attack.base_damage.max(0));
+    let semantic_damage = plan.attack().map(|attack| {
+        if attack.damage_kind == DamageKind::Normal {
+            crate::content::powers::calculate_monster_damage(
+                attack.base_damage,
+                monster.id,
+                combat.entities.player.id,
+                combat,
+            )
+        } else {
+            attack.base_damage.max(0)
+        }
+    });
     let damage_per_hit = protocol_damage.or(semantic_damage);
     MonsterMovePreview::from_plan(plan, damage_per_hit)
 }
@@ -130,5 +141,53 @@ fn visible_intent_kind(plan: &MonsterTurnPlan) -> VisibleIntentKind {
         MonsterMoveSpec::Debug => VisibleIntentKind::Debug,
         MonsterMoveSpec::None => VisibleIntentKind::None,
         MonsterMoveSpec::Unknown => VisibleIntentKind::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::content::powers::{store, PowerId};
+    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::test_support::{blank_test_combat, planned_monster};
+
+    fn power(power_type: PowerId, amount: i32) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
+    }
+
+    #[test]
+    fn semantic_monster_preview_uses_the_execution_damage_pipeline() {
+        let mut combat = blank_test_combat();
+        let monster = planned_monster(EnemyId::TimeEater, 2);
+        let monster_id = monster.id;
+        combat.entities.monsters = vec![monster.clone()];
+        store::set_powers_for(&mut combat, monster_id, vec![power(PowerId::Strength, 5)]);
+        let player_id = combat.entities.player.id;
+        store::set_powers_for(&mut combat, player_id, vec![power(PowerId::Vulnerable, 1)]);
+
+        let plan = crate::content::monsters::resolve_monster_turn_plan(&combat, &monster);
+        let attack = plan.attack().expect("test move should attack");
+        let expected = crate::content::powers::calculate_monster_damage(
+            attack.base_damage,
+            monster_id,
+            player_id,
+            &combat,
+        );
+        let preview = project_monster_move_preview_in_combat(&combat, &monster);
+
+        assert!(expected > attack.base_damage);
+        assert_eq!(preview.damage_per_hit, Some(expected));
+        assert_eq!(
+            preview.total_damage,
+            Some(expected.saturating_mul(attack.hits.max(1) as i32))
+        );
     }
 }
