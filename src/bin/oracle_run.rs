@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use sts_simulator::eval::combat_case::save_combat_case;
-use sts_simulator::runtime::branch::{run_oracle_run, OracleRunBudget, OracleRunConfig};
+use sts_simulator::runtime::branch::{
+    load_oracle_run_continuation_v1, run_oracle_run, run_oracle_run_from_continuation,
+    save_oracle_run_continuation_v1, OracleRunBudget, OracleRunConfig,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -49,11 +52,19 @@ struct Cli {
     /// Save the first exact unresolved combat as a standalone combat case.
     #[arg(long)]
     combat_case_out: Option<PathBuf>,
+
+    /// Continue from one exact state previously written by --continuation-out.
+    #[arg(long)]
+    resume: Option<PathBuf>,
+
+    /// Save the furthest exact state and its full committed journal.
+    #[arg(long)]
+    continuation_out: Option<PathBuf>,
 }
 
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
-    let report = run_oracle_run(OracleRunConfig {
+    let config = OracleRunConfig {
         seed: cli.seed,
         ascension: cli.ascension,
         budget: OracleRunBudget {
@@ -68,7 +79,12 @@ fn main() -> Result<(), String> {
             combat_quantum_nodes: cli.combat_quantum_nodes,
             combat_quantum_ms: cli.combat_quantum_ms,
         },
-    })?;
+    };
+    let report = if let Some(path) = cli.resume.as_ref() {
+        run_oracle_run_from_continuation(config, load_oracle_run_continuation_v1(path)?)?
+    } else {
+        run_oracle_run(config)?
+    };
     if let Some(path) = cli.combat_case_out.as_ref() {
         let case = report
             .first_unresolved_combat_case
@@ -77,6 +93,9 @@ fn main() -> Result<(), String> {
                 "oracle run did not encounter an unresolved combat to export".to_string()
             })?;
         save_combat_case(path, case)?;
+    }
+    if let Some(path) = cli.continuation_out.as_ref() {
+        save_oracle_run_continuation_v1(path, &report.continuation)?;
     }
     println!(
         "{}",

@@ -1,6 +1,8 @@
+use std::fs;
+use std::path::Path;
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::ai::combat_search_v2::{CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction};
@@ -11,12 +13,13 @@ use crate::eval::combat_case::{
     CombatCaseSource,
 };
 use crate::eval::run_control::{
-    drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_v1,
+    drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1,
+    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
     CombatAutomationActionV1, DecisionCandidateKey, NeowOracleExpansionV1,
     OraclePendingCombatSummaryV1, OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1,
     OracleRunExploreResultV1, OracleRunExploreStopV1, RewardAutomationConfig, RunControlConfig,
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession, RunDecisionAction,
-    RunProgressJournalV1, RunProgressStepV1,
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
@@ -24,6 +27,8 @@ use crate::state::core::EngineState;
 
 pub const ORACLE_RUN_REPORT_SCHEMA_NAME: &str = "OracleRunReport";
 pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 7;
+pub const ORACLE_RUN_CONTINUATION_SCHEMA_NAME: &str = "OracleRunContinuation";
+pub const ORACLE_RUN_CONTINUATION_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug)]
 pub struct OracleRunBudget {
@@ -61,6 +66,17 @@ pub struct OracleRunConfig {
     pub seed: u64,
     pub ascension: u8,
     pub budget: OracleRunBudget,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleRunContinuationV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub seed: u64,
+    pub ascension: u8,
+    pub journal: RunProgressJournalV1,
+    pub session: RunControlSessionCheckpointV1,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -180,6 +196,10 @@ pub struct OracleRunReportV1 {
     pub first_unresolved_combat_case: Option<CombatCase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub victory_witness: Option<RunProgressJournalV1>,
+    /// Mechanical exact-state continuation, intentionally omitted from the
+    /// human report. The CLI can persist it separately on request.
+    #[serde(skip_serializing)]
+    pub continuation: OracleRunContinuationV1,
 }
 
 impl OracleRunReportV1 {
@@ -223,6 +243,58 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
     finish_oracle_run_report(&config, &started, initial_neow_frontier, explored)
 }
 
+pub fn run_oracle_run_from_continuation(
+    config: OracleRunConfig,
+    continuation: OracleRunContinuationV1,
+) -> Result<OracleRunReportV1, String> {
+    validate_config(&config)?;
+    validate_continuation(&config, &continuation)?;
+    let started = Instant::now();
+    let combat_budgets = oracle_combat_budgets(&config);
+    let explorer = seed_oracle_run_explorer_from_session_v1(
+        continuation.session.into_session()?,
+        continuation.journal,
+        &combat_budgets,
+    )?;
+    let explored = drive_oracle_run_explorer_v1(
+        explorer,
+        OracleRunExploreBudgetV1 {
+            max_work_items: config.budget.max_work_items,
+            wall_ms: config.budget.wall_ms,
+            combat: combat_budgets,
+            combat_quantum_nodes: config.budget.combat_quantum_nodes,
+            combat_quantum_ms: Some(config.budget.combat_quantum_ms),
+            decision_order: Some(super::owner_audit::oracle_candidate_order),
+        },
+    )
+    .map_err(|error| format!("continued oracle run explorer failed: {error}"))?;
+    finish_oracle_run_report(
+        &config,
+        &started,
+        OracleNeowFrontierSummaryV1 {
+            completed: Vec::new(),
+            unresolved: Vec::new(),
+        },
+        explored,
+    )
+}
+
+pub fn save_oracle_run_continuation_v1(
+    path: &Path,
+    continuation: &OracleRunContinuationV1,
+) -> Result<(), String> {
+    let bytes = serde_json::to_vec(continuation)
+        .map_err(|error| format!("failed to serialize oracle continuation: {error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("failed to write {}: {error}", path.display()))
+}
+
+pub fn load_oracle_run_continuation_v1(path: &Path) -> Result<OracleRunContinuationV1, String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to parse {}: {error}", path.display()))
+}
+
 fn finish_oracle_run_report(
     config: &OracleRunConfig,
     started: &Instant,
@@ -235,6 +307,16 @@ fn finish_oracle_run_report(
         .or_else(|| explored.furthest_branch())
         .ok_or_else(|| "oracle run produced no materialized branch".to_string())?;
     let journal = selected.journal.clone();
+    let mut continuation_session = RunControlSessionCheckpointV1::from_session(&selected.session);
+    continuation_session.clear_combat_diagnostics_for_external_checkpoint();
+    let continuation = OracleRunContinuationV1 {
+        schema_name: ORACLE_RUN_CONTINUATION_SCHEMA_NAME.to_string(),
+        schema_version: ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
+        seed: config.seed,
+        ascension: config.ascension,
+        journal: journal.clone(),
+        session: continuation_session,
+    };
     let victory_witness =
         matches!(explored.stop, OracleRunExploreStopV1::Victory { .. }).then_some(journal.clone());
     let pending_combats = explored.explorer.pending_combat_summaries()?;
@@ -284,6 +366,7 @@ fn finish_oracle_run_report(
         combat_resolutions: combat_resolution_summaries(&journal),
         first_unresolved_combat_case,
         victory_witness,
+        continuation,
     })
 }
 
@@ -471,6 +554,24 @@ fn validate_config(config: &OracleRunConfig) -> Result<(), String> {
         return Err(format!(
             "oracle run ascension must be in 0..=20, got {}",
             config.ascension
+        ));
+    }
+    Ok(())
+}
+
+fn validate_continuation(
+    config: &OracleRunConfig,
+    continuation: &OracleRunContinuationV1,
+) -> Result<(), String> {
+    if continuation.schema_name != ORACLE_RUN_CONTINUATION_SCHEMA_NAME
+        || continuation.schema_version != ORACLE_RUN_CONTINUATION_SCHEMA_VERSION
+    {
+        return Err("unsupported oracle continuation schema".to_string());
+    }
+    if continuation.seed != config.seed || continuation.ascension != config.ascension {
+        return Err(format!(
+            "oracle continuation run mismatch: artifact is seed {} A{}, request is seed {} A{}",
+            continuation.seed, continuation.ascension, config.seed, config.ascension
         ));
     }
     Ok(())

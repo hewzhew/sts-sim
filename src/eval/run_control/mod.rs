@@ -106,9 +106,10 @@ pub use oracle_neow::{
     NeowOracleReplayStepV1, UnresolvedNeowCandidateV1,
 };
 pub use oracle_run_explorer::{
-    drive_oracle_run_explorer_v1, seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1,
-    LazyOracleRunDecisionV1, OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1,
-    OracleRunBoundaryV1, OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunDecisionOrderFnV1,
+    drive_oracle_run_explorer_v1, seed_oracle_run_explorer_from_session_v1,
+    seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1,
+    OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunBoundaryV1,
+    OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunDecisionOrderFnV1,
     OracleRunExploreBudgetV1, OracleRunExploreResultV1, OracleRunExploreStopV1,
     OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
 };

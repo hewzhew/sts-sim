@@ -649,6 +649,38 @@ pub fn seed_oracle_run_explorer_v1(
     Ok(explorer)
 }
 
+/// Resume exact oracle execution from one already committed run state.
+///
+/// This deliberately restores no historical sibling frontier. The journal is
+/// carried forward solely so a later victory remains replayable from the
+/// original run start.
+pub fn seed_oracle_run_explorer_from_session_v1(
+    session: RunControlSession,
+    journal: RunProgressJournalV1,
+    combat_budgets: &OracleRunCombatBudgetsV1,
+) -> Result<OracleRunExplorerV1, String> {
+    let mut explorer = OracleRunExplorerV1::empty();
+    let branch_id = explorer.next_branch_id;
+    explorer.next_branch_id = explorer.next_branch_id.saturating_add(1);
+    let branch = OracleRunBranchV1 {
+        branch_id,
+        parent_branch_id: None,
+        neow_root_candidate_id: "continued-exact-state".to_string(),
+        neow_root_label: "continued exact state".to_string(),
+        state_fingerprint: run_session_fingerprint_v1(&session),
+        boundary: classify_run_boundary(&session),
+        replay: Vec::new(),
+        journal,
+        session,
+    };
+    let branch_id = explorer
+        .accept_branch(branch)
+        .ok_or_else(|| "continued oracle state was unexpectedly duplicated".to_string())?;
+    explorer.schedule_branch(branch_id, combat_budgets, true)?;
+    explorer.active_branch_id = Some(branch_id);
+    Ok(explorer)
+}
+
 pub fn drive_oracle_run_explorer_v1(
     mut explorer: OracleRunExplorerV1,
     budget: OracleRunExploreBudgetV1,
