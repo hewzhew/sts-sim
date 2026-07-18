@@ -23,6 +23,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         quantum_history,
     } = input;
     let final_root_evidence = root_evidence_snapshot(&loop_state);
+    let reportable_trajectories = loop_state.reportable_trajectories();
     let SearchLoopState {
         owns_engine_pending_choice_prefixes,
         stats,
@@ -73,7 +74,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
     let search_policy = search_policy_report(&config, owns_engine_pending_choice_prefixes);
     let budget = budget_report(&config);
     let rollout = rollout_cache.finish(trajectories.best_frontier.as_ref());
-    let trajectory_reports = trajectory_reports(trajectories);
+    let trajectory_reports = trajectory_reports(reportable_trajectories);
 
     CombatSearchV2Report {
         schema_name: COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME,

@@ -43,3 +43,7 @@ path = "../../src/bin/combat_search_v2_driver/main.rs"
 [[bin]]
 name = "rl_dataset_export"
 path = "../../src/bin/rl_dataset_export.rs"
+
+[[bin]]
+name = "oracle_run"
+path = "../../src/bin/oracle_run.rs"

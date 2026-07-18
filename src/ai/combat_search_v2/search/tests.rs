@@ -1009,7 +1009,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 19);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 20);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
@@ -1019,6 +1019,13 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     assert_eq!(
         report.quantum_history[0].after.nodes_expanded,
         report.stats.nodes_expanded
+    );
+    assert!(
+        report.performance.total_elapsed_us >= report.performance.report_finalization_elapsed_us
+    );
+    assert_eq!(
+        report.stats.elapsed_ms,
+        report.performance.total_elapsed_us / 1_000
     );
     assert_eq!(
         report.policy_evidence.information_access,

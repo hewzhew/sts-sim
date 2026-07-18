@@ -18,6 +18,21 @@ pub(super) fn owner_audit_hp_loss_limit(session: &RunControlSession) -> RunContr
     RunControlHpLossLimit::Limit(max_hp_loss)
 }
 
+/// A route reserve is the largest loss the run can survive, not a quality
+/// target for ending combat search.  Requiring a materially cleaner incumbent
+/// before early exit prevents high-HP hallways from spending only a few dozen
+/// nodes and handing the resulting attrition to every later floor.
+pub(super) fn owner_audit_search_quality_loss_target(
+    session: &RunControlSession,
+) -> RunControlHpLossLimit {
+    let RunControlHpLossLimit::Limit(reserve_limit) = owner_audit_hp_loss_limit(session) else {
+        return RunControlHpLossLimit::Unlimited;
+    };
+    let (_, max_hp) = session.visible_player_hp();
+    let quality_limit = (max_hp.max(1) / 5).max(1) as u32;
+    RunControlHpLossLimit::Limit(reserve_limit.min(quality_limit))
+}
+
 fn finite_survival_damage_mitigation_active(session: &RunControlSession) -> bool {
     session.active_combat.as_ref().is_some_and(|active| {
         active
@@ -99,6 +114,10 @@ mod tests {
             assert_eq!(
                 owner_audit_hp_loss_limit(&session),
                 RunControlHpLossLimit::Limit(21)
+            );
+            assert_eq!(
+                owner_audit_search_quality_loss_target(&session),
+                RunControlHpLossLimit::Limit(15)
             );
         }
     }

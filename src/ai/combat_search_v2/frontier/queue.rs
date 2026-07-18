@@ -1,18 +1,20 @@
 use super::super::PendingChoiceActionWork;
-use super::node::SearchNode;
+use super::node::{RootLineage, RootLineageId, SearchNode};
 use super::priority::{priority_for_node, QueueEntry};
 use crate::ai::combat_state_key::combat_exact_state_key;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashSet};
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
-    heap: BinaryHeap<QueueEntry>,
+    unattributed: BinaryHeap<QueueEntry>,
+    by_root_action: BTreeMap<RootLineageId, BinaryHeap<QueueEntry>>,
     next_sequence_id: u64,
 }
 
 impl FrontierQueue {
     pub(in crate::ai::combat_search_v2) fn new() -> Self {
         Self {
-            heap: BinaryHeap::new(),
+            unattributed: BinaryHeap::new(),
+            by_root_action: BTreeMap::new(),
             next_sequence_id: 0,
         }
     }
@@ -45,15 +47,62 @@ impl FrontierQueue {
     }
 
     fn push_entry(&mut self, entry: QueueEntry) {
-        self.heap.push(entry);
+        match entry.node.root_lineage {
+            RootLineage::Unmaterialized => self.unattributed.push(entry),
+            RootLineage::Action(id) => self.by_root_action.entry(id).or_default().push(entry),
+        }
     }
 
     pub(in crate::ai::combat_search_v2) fn pop(&mut self) -> Option<QueueEntry> {
-        self.heap.pop()
+        let mut selected_root = None;
+        let mut best = self.unattributed.peek();
+        for (id, heap) in &self.by_root_action {
+            let Some(candidate) = heap.peek() else {
+                continue;
+            };
+            if best.is_none_or(|current| candidate > current) {
+                selected_root = Some(*id);
+                best = Some(candidate);
+            }
+        }
+        match selected_root {
+            Some(id) => self.pop_root_action(id),
+            None => self.unattributed.pop(),
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn pop_unattributed(&mut self) -> Option<QueueEntry> {
+        self.unattributed.pop()
+    }
+
+    pub(in crate::ai::combat_search_v2) fn pop_root_action(
+        &mut self,
+        id: RootLineageId,
+    ) -> Option<QueueEntry> {
+        let (entry, empty) = {
+            let heap = self.by_root_action.get_mut(&id)?;
+            let entry = heap.pop();
+            (entry, heap.is_empty())
+        };
+        if empty {
+            self.by_root_action.remove(&id);
+        }
+        entry
+    }
+
+    pub(in crate::ai::combat_search_v2) fn has_root_action_work(&self, id: RootLineageId) -> bool {
+        self.by_root_action
+            .get(&id)
+            .is_some_and(|heap| !heap.is_empty())
     }
 
     pub(in crate::ai::combat_search_v2) fn len(&self) -> usize {
-        self.heap.len()
+        self.unattributed.len()
+            + self
+                .by_root_action
+                .values()
+                .map(BinaryHeap::len)
+                .sum::<usize>()
     }
 
     /// Concrete engine states and virtual action-prefix work are different
@@ -77,7 +126,9 @@ impl FrontierQueue {
     }
 
     pub(in crate::ai::combat_search_v2) fn iter(&self) -> impl Iterator<Item = &QueueEntry> {
-        self.heap.iter()
+        self.unattributed
+            .iter()
+            .chain(self.by_root_action.values().flat_map(|heap| heap.iter()))
     }
 
     pub(in crate::ai::combat_search_v2) fn replace_exact_state_rollout_estimate(
@@ -86,7 +137,10 @@ impl FrontierQueue {
         estimate: &super::super::RolloutNodeEstimate,
     ) {
         let target_key = combat_exact_state_key(&target.engine, &target.combat);
-        let mut entries = self.heap.drain().collect::<Vec<_>>();
+        let mut entries = std::mem::take(&mut self.unattributed).into_vec();
+        for (_, heap) in std::mem::take(&mut self.by_root_action) {
+            entries.extend(heap.into_vec());
+        }
         for entry in &mut entries {
             if combat_exact_state_key(&entry.node.engine, &entry.node.combat) == target_key {
                 entry.node.rollout_estimate = estimate.clone();

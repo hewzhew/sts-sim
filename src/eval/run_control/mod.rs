@@ -37,6 +37,8 @@ mod input_gate;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
+mod oracle_neow;
+mod oracle_run_explorer;
 pub mod outcome;
 mod panels;
 #[cfg(test)]
@@ -83,6 +85,7 @@ pub use combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
     RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
 };
+pub use combat_search::{RunControlCombatWorkAdvanceV1, RunControlCombatWorkV1};
 pub use decision_action::RunDecisionAction;
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
@@ -97,6 +100,17 @@ pub use decision_transaction::{
 pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
+};
+pub use oracle_neow::{
+    expand_oracle_neow_candidates_v1, CompletedNeowCandidateV1, NeowOracleExpansionV1,
+    NeowOracleReplayStepV1, UnresolvedNeowCandidateV1,
+};
+pub use oracle_run_explorer::{
+    drive_oracle_run_explorer_v1, seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1,
+    LazyOracleRunDecisionV1, OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1,
+    OracleRunBoundaryV1, OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1,
+    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerV1, OracleRunReplayStepV1,
+    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
@@ -140,8 +154,8 @@ pub use reward_auto::{
 };
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1, RunProgressOutcome,
-    ShopVisitContextV1,
+    RunControlCombatSearchRejection, RunControlConfig, RunControlSession,
+    RunControlSessionCheckpointV1, RunProgressOutcome, ShopVisitContextV1,
 };
 pub use session_trace::{
     load_session_trace_v1, SessionTraceArtifactKind, SessionTraceArtifactRefV1,

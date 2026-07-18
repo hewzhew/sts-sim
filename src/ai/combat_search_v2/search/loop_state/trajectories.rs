@@ -3,6 +3,38 @@ use super::super::super::CombatSearchV2Config;
 use super::SearchLoopState;
 
 impl SearchLoopState {
+    pub(in crate::ai::combat_search_v2::search) fn reportable_trajectories(
+        &self,
+    ) -> super::super::best_trajectories::SearchTrajectoryBook {
+        let root_states = self.root_action_schedule_states();
+        let current_round_complete = self
+            .root_round_scheduler
+            .current_comparison_complete(&root_states);
+        let mut reportable = if self.accepted_complete_candidate
+            || !self.root_round_scheduler.started()
+            || self.root_round_scheduler.completed_rounds() > 0
+            || current_round_complete
+        {
+            self.trajectories.clone()
+        } else {
+            self.completed_root_round_trajectories
+                .clone()
+                .unwrap_or_default()
+        };
+        // An incomplete root-comparison round limits ranking confidence; it
+        // does not invalidate an exact terminal witness already replayed by
+        // the search. Keep open/frontier observations gated by the completed
+        // round, but never hide exact wins from the execution boundary.
+        if self.trajectories.best_win.is_some() {
+            reportable.best_complete = self.trajectories.best_complete.clone();
+            reportable.best_win = self.trajectories.best_win.clone();
+            reportable.win_candidates = self.trajectories.win_candidates.clone();
+            reportable.win_frontier_revision = self.trajectories.win_frontier_revision;
+        }
+        reportable.best_frontier = self.trajectories.best_frontier.clone();
+        reportable
+    }
+
     pub(in crate::ai::combat_search_v2::search) fn remember_best_frontier(
         &mut self,
         node: &SearchNode,
@@ -60,5 +92,57 @@ impl SearchLoopState {
     pub(in crate::ai::combat_search_v2::search) fn remember_loss(&mut self, node: SearchNode) {
         self.stats.terminal_losses = self.stats.terminal_losses.saturating_add(1);
         self.remember_complete(node);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::combat_search_v2::frontier::RootLineageId;
+    use crate::ai::combat_search_v2::search::root_round_scheduler::RootActionScheduleState;
+    use crate::ai::combat_search_v2::{
+        terminal_label, CombatSearchV2Satisfaction, SearchTerminalLabel,
+    };
+    use crate::state::core::{EngineState, RunResult};
+    use crate::test_support::blank_test_combat;
+
+    #[test]
+    fn incomplete_root_round_keeps_exact_win_executable_without_claiming_acceptance() {
+        let config = CombatSearchV2Config {
+            satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+            ..CombatSearchV2Config::default()
+        };
+        let mut state = SearchLoopState::new(&config, false, 0);
+        state.root_round_scheduler.activate(
+            &[
+                RootActionScheduleState {
+                    id: RootLineageId(0),
+                    expanded: 0,
+                    has_work: true,
+                },
+                RootActionScheduleState {
+                    id: RootLineageId(1),
+                    expanded: 0,
+                    has_work: true,
+                },
+            ],
+            "test",
+        );
+        state.completed_root_round_trajectories = Some(Default::default());
+        let win = SearchNode::root(
+            EngineState::GameOver(RunResult::Victory),
+            blank_test_combat(),
+        );
+
+        assert!(!state.remember_win(win, &config));
+        assert!(!state.accepted_complete_candidate);
+        let reportable = state.reportable_trajectories();
+        assert_eq!(
+            reportable
+                .best_win
+                .as_ref()
+                .map(|node| terminal_label(&node.engine, &node.combat)),
+            Some(SearchTerminalLabel::Win)
+        );
     }
 }

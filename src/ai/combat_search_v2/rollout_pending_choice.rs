@@ -1,4 +1,34 @@
+use super::pending_choice_action_prefix::canonical_pending_choice_inputs;
 use super::phase_profile::{PendingChoicePhaseKind, PendingChoicePhaseProfileV1};
+use crate::sim::combat::{CombatPosition, CombatStepper};
+use crate::sim::combat_action::CombatActionChoice;
+use crate::state::core::{EngineState, PendingChoice};
+
+/// Materialize only selection families whose size grows linearly with the
+/// frozen candidate domain.  Single-card exhaust/discard/tutor choices are
+/// ordinary rollout decisions; subset choices such as Gambling Chip remain
+/// owned by the main search instead of exploding into a powerset here.
+pub(super) fn linear_pending_choice_actions(
+    position: &CombatPosition,
+    stepper: &impl CombatStepper,
+) -> Option<Vec<CombatActionChoice>> {
+    let EngineState::PendingChoice(choice) = &position.engine else {
+        return None;
+    };
+    let is_linear = match choice {
+        PendingChoice::HandSelect { max_cards, .. }
+        | PendingChoice::GridSelect { max_cards, .. } => *max_cards <= 1,
+        _ => false,
+    };
+    if !is_linear {
+        return None;
+    }
+
+    let actions = canonical_pending_choice_inputs(choice)?
+        .filter_map(|input| stepper.choice_for_legal_input(position, &input))
+        .collect::<Vec<_>>();
+    Some(actions)
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct RolloutPendingChoiceProgress {

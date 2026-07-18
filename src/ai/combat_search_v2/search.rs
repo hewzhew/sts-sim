@@ -31,6 +31,7 @@ mod pending_choice_expansion;
 mod rollout_terminal_promotion;
 mod rollout_timing;
 mod root_evidence;
+mod root_round_scheduler;
 mod turn_boundary_expansion;
 mod turn_plan_seed_gate;
 mod turn_plan_seeding;
@@ -68,6 +69,7 @@ pub struct CombatSearchV2DecisionSnapshot {
 }
 
 pub struct CombatSearchV2Session {
+    started_at: Instant,
     config: CombatSearchV2Config,
     policy_evidence: CombatSearchV2PolicyEvidenceReport,
     loop_state: SearchLoopState,
@@ -103,13 +105,24 @@ fn run_combat_search_v2_inner(
     config: CombatSearchV2Config,
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2Report {
-    let quantum = CombatSearchV2WorkQuantum {
+    let deadline = config
+        .wall_time
+        .and_then(|duration| Instant::now().checked_add(duration));
+    let mut quantum = CombatSearchV2WorkQuantum {
         additional_nodes: config.max_nodes,
         soft_wall_time: config.wall_time,
     };
     let mut session = CombatSearchV2Session::new_with_stepper(engine, combat, config, stepper);
+    if let Some(deadline) = deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        quantum.soft_wall_time = Some(
+            quantum
+                .soft_wall_time
+                .map_or(remaining, |requested| requested.min(remaining)),
+        );
+    }
     session.advance_with_stepper(quantum, stepper);
-    session.finish_with_stepper(stepper)
+    session.finish_with_stepper_deadline(stepper, deadline, None)
 }
 
 impl CombatSearchV2Session {
@@ -136,6 +149,7 @@ impl CombatSearchV2Session {
             == SearchTerminalLabel::Unresolved
             && !pending_choice_expansion::pending_choice_prefix_owned(&loop_state, engine);
         Self {
+            started_at: started,
             config,
             policy_evidence,
             loop_state,
@@ -164,9 +178,10 @@ impl CombatSearchV2Session {
             self.record_quantum(quantum, stop, before);
             return stop;
         }
-        self.authorized_nodes = self
-            .authorized_nodes
-            .saturating_add(quantum.additional_nodes);
+        self.authorized_nodes = self.authorized_nodes.max(
+            (self.loop_state.stats.nodes_expanded as usize)
+                .saturating_add(quantum.additional_nodes),
+        );
         self.authorized_wall_time = match (self.authorized_wall_time, quantum.soft_wall_time) {
             (Some(total), Some(additional)) => Some(total.saturating_add(additional)),
             _ => None,
@@ -250,18 +265,15 @@ impl CombatSearchV2Session {
     }
 
     pub fn snapshot(&self) -> CombatSearchV2DecisionSnapshot {
+        let trajectories = self.loop_state.reportable_trajectories();
         CombatSearchV2DecisionSnapshot {
-            candidate_frontier: self
-                .loop_state
-                .trajectories
+            candidate_frontier: trajectories
                 .win_candidates
                 .iter()
                 .map(|node| trajectory_report(node, false))
                 .collect(),
-            candidate_frontier_revision: self.loop_state.trajectories.win_frontier_revision,
-            best_win: self
-                .loop_state
-                .trajectories
+            candidate_frontier_revision: trajectories.win_frontier_revision,
+            best_win: trajectories
                 .best_win
                 .as_ref()
                 .map(|node| trajectory_report(node, false)),
@@ -273,26 +285,72 @@ impl CombatSearchV2Session {
         }
     }
 
+    pub fn nodes_expanded(&self) -> u64 {
+        self.loop_state.stats.nodes_expanded
+    }
+
+    pub fn quantum_count(&self) -> usize {
+        self.quantum_history.len()
+    }
+
     pub fn finish(self) -> CombatSearchV2Report {
         self.finish_with_stepper(&EngineCombatStepper)
     }
 
-    fn finish_with_stepper(mut self, stepper: &impl CombatStepper) -> CombatSearchV2Report {
+    pub fn finish_with_deadline(self, deadline: Option<Instant>) -> CombatSearchV2Report {
+        self.finish_with_stepper_deadline(&EngineCombatStepper, deadline, None)
+    }
+
+    pub fn finish_with_deadline_and_wall_time(
+        self,
+        deadline: Option<Instant>,
+        wall_time: Option<std::time::Duration>,
+    ) -> CombatSearchV2Report {
+        self.finish_with_stepper_deadline(&EngineCombatStepper, deadline, wall_time)
+    }
+
+    fn finish_with_stepper(self, stepper: &impl CombatStepper) -> CombatSearchV2Report {
+        self.finish_with_stepper_deadline(stepper, None, None)
+    }
+
+    fn finish_with_stepper_deadline(
+        mut self,
+        stepper: &impl CombatStepper,
+        deadline: Option<Instant>,
+        wall_time_override: Option<std::time::Duration>,
+    ) -> CombatSearchV2Report {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            self.loop_state.mark_deadline_hit();
+        }
         finish_diagnostics_and_timing(
             &mut self.loop_state,
             self.active_elapsed,
             &self.root_for_turn_plan_diagnostics,
             stepper,
             &self.config,
+            deadline,
         );
         self.config.max_nodes = self.authorized_nodes;
-        self.config.wall_time = self.authorized_wall_time;
-        finish_combat_search_report(SearchFinishInput {
+        self.config.wall_time = wall_time_override
+            .or_else(|| {
+                deadline.map(|deadline| deadline.saturating_duration_since(self.started_at))
+            })
+            .or(self.authorized_wall_time);
+        let report_finalization_started = Instant::now();
+        let mut report = finish_combat_search_report(SearchFinishInput {
             config: self.config,
             policy_evidence: self.policy_evidence,
             loop_state: self.loop_state,
             quantum_history: self.quantum_history,
-        })
+        });
+        let report_finalization_elapsed_us = report_finalization_started.elapsed().as_micros();
+        report.performance.report_finalization_elapsed_us = report_finalization_elapsed_us;
+        report.performance.total_elapsed_us = report
+            .performance
+            .total_elapsed_us
+            .saturating_add(report_finalization_elapsed_us);
+        report.stats.elapsed_ms = report.performance.total_elapsed_us / 1_000;
+        report
     }
 
     fn quantum_counters(&self) -> CombatSearchV2QuantumCounters {

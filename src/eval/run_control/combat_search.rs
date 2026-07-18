@@ -1,4 +1,9 @@
-use crate::ai::combat_search_v2::{CombatSearchV2Session, CombatSearchV2WorkQuantum};
+use std::time::{Duration, Instant};
+
+use crate::ai::combat_search_v2::{
+    CombatSearchV2AdvanceStop, CombatSearchV2DecisionSnapshot, CombatSearchV2Session,
+    CombatSearchV2WorkQuantum,
+};
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
@@ -15,8 +20,9 @@ use super::combat_search_rejection::{
 };
 use super::combat_search_setup::{
     effective_hp_loss_limit, prepare_search_combat, search_report_has_invalid_card_identity,
+    PreparedCombatSearch,
 };
-use super::progress_options::RunControlSearchCombatOptions;
+use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
 
@@ -25,11 +31,162 @@ pub(super) fn apply_search_combat(
     options: RunControlSearchCombatOptions,
 ) -> Result<RunProgressOutcome, String> {
     let prepared = prepare_search_combat(session, options)?;
+    let report = run_search_work_plan(
+        &prepared.start,
+        prepared.config.clone(),
+        &prepared.options.work_quanta,
+    );
+    apply_prepared_search_report(session, prepared, report)
+}
+
+pub struct RunControlCombatWorkV1 {
+    prepared: PreparedCombatSearch,
+    search: CombatSearchV2Session,
+    remaining_nodes: usize,
+    remaining_wall_time: Option<Duration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunControlCombatWorkAdvanceV1 {
+    Pending,
+    ReadyToFinish,
+    AllowanceExhausted,
+    GlobalDeadlineReached,
+}
+
+impl RunControlCombatWorkV1 {
+    pub fn new(
+        session: &RunControlSession,
+        options: RunControlSearchCombatOptions,
+    ) -> Result<Self, String> {
+        let prepared = prepare_search_combat(session, options)?;
+        let search = CombatSearchV2Session::new(
+            &prepared.start.engine,
+            &prepared.start.combat,
+            prepared.config.clone(),
+        );
+        Ok(Self {
+            remaining_nodes: prepared.config.max_nodes,
+            remaining_wall_time: prepared.config.wall_time,
+            prepared,
+            search,
+        })
+    }
+
+    pub fn advance(
+        &mut self,
+        quantum: &RunControlCombatSearchQuantum,
+        global_deadline: Option<Instant>,
+    ) -> RunControlCombatWorkAdvanceV1 {
+        let now = Instant::now();
+        let global_remaining =
+            global_deadline.map(|deadline| deadline.saturating_duration_since(now));
+        if global_remaining == Some(Duration::ZERO) {
+            return RunControlCombatWorkAdvanceV1::GlobalDeadlineReached;
+        }
+
+        let additional_nodes = quantum.additional_nodes.min(self.remaining_nodes);
+        if additional_nodes == 0 {
+            return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
+        }
+        if self.remaining_wall_time == Some(Duration::ZERO) {
+            return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
+        }
+
+        let requested_wall = quantum.soft_wall_ms.map(Duration::from_millis);
+        let soft_wall_time = [requested_wall, self.remaining_wall_time, global_remaining]
+            .into_iter()
+            .flatten()
+            .min();
+        if soft_wall_time == Some(Duration::ZERO) {
+            return if global_remaining == Some(Duration::ZERO) {
+                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached
+            } else {
+                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+            };
+        }
+
+        let before_nodes = self.search.nodes_expanded();
+        let started = Instant::now();
+        let stop = self.search.advance(CombatSearchV2WorkQuantum {
+            additional_nodes,
+            soft_wall_time,
+        });
+        let elapsed = started.elapsed();
+        let expanded = self.search.nodes_expanded().saturating_sub(before_nodes);
+        self.remaining_nodes = self
+            .remaining_nodes
+            .saturating_sub(expanded.min(usize::MAX as u64) as usize);
+        if let Some(remaining) = &mut self.remaining_wall_time {
+            *remaining = remaining.saturating_sub(elapsed);
+        }
+
+        if matches!(
+            stop,
+            CombatSearchV2AdvanceStop::CandidateSatisfied
+                | CombatSearchV2AdvanceStop::FrontierExhausted
+                | CombatSearchV2AdvanceStop::AlreadyComplete
+        ) {
+            return RunControlCombatWorkAdvanceV1::ReadyToFinish;
+        }
+        if self.remaining_nodes == 0 || self.remaining_wall_time == Some(Duration::ZERO) {
+            RunControlCombatWorkAdvanceV1::AllowanceExhausted
+        } else {
+            RunControlCombatWorkAdvanceV1::Pending
+        }
+    }
+
+    pub fn snapshot(&self) -> CombatSearchV2DecisionSnapshot {
+        self.search.snapshot()
+    }
+
+    pub fn quantum_count(&self) -> usize {
+        self.search.quantum_count()
+    }
+
+    pub fn nodes_expanded(&self) -> u64 {
+        self.search.nodes_expanded()
+    }
+
+    pub fn remaining_nodes(&self) -> usize {
+        self.remaining_nodes
+    }
+
+    pub fn remaining_wall_ms(&self) -> Option<u64> {
+        self.remaining_wall_time
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+    }
+
+    pub fn finish_and_apply(
+        self,
+        session: &mut RunControlSession,
+        finalization_deadline: Option<Instant>,
+    ) -> Result<RunProgressOutcome, String> {
+        let current = session.current_active_combat_position()?;
+        if current != self.prepared.start {
+            return Err(
+                "combat work parent changed before its search result was committed".to_string(),
+            );
+        }
+        let timed_production_deadline = finalization_deadline
+            .or_else(|| self.prepared.config.wall_time.map(|_| Instant::now()));
+        let report = self.search.finish_with_deadline_and_wall_time(
+            timed_production_deadline,
+            self.prepared.config.wall_time,
+        );
+        apply_prepared_search_report(session, self.prepared, report)
+    }
+}
+
+fn apply_prepared_search_report(
+    session: &mut RunControlSession,
+    prepared: PreparedCombatSearch,
+    report: crate::ai::combat_search_v2::CombatSearchV2Report,
+) -> Result<RunProgressOutcome, String> {
     let effective_profile = prepared.effective_profile;
     let options = prepared.options;
     let start = prepared.start;
     let config = prepared.config;
-    let report = run_search_work_plan(&start, config.clone(), &options.work_quanta);
     if search_report_has_invalid_card_identity(&report) {
         return Ok(build_combat_search_rejection_outcome(
             session,
@@ -44,9 +201,8 @@ pub(super) fn apply_search_combat(
             },
         ));
     }
-    record_complete_policy_episode(session, &start);
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
-        if !options.disable_no_win_rescue {
+        if options.enable_legacy_no_win_rescue {
             if let Some(outcome) = try_apply_no_win_fallback(
                 session,
                 &start,
@@ -177,45 +333,6 @@ pub(super) fn apply_search_combat(
     Ok(outcome)
 }
 
-fn record_complete_policy_episode(
-    session: &mut RunControlSession,
-    start: &crate::sim::combat::CombatPosition,
-) {
-    const MAX_ACTIONS: usize = 240;
-    const POLICY: &str = "combat-outcome/phase-aware-no-potion-single-episode/v1;pending=first-canonical;max_actions=240";
-    let root_fingerprint =
-        crate::ai::combat_state_key::combat_exact_state_hash_v1(&start.engine, &start.combat);
-    let observation_fingerprint = format!("{root_fingerprint}|{POLICY}");
-    if !session
-        .combat_outcomes
-        .begin_policy_episode(observation_fingerprint.clone())
-    {
-        return;
-    }
-    let episode =
-        crate::ai::combat_search_v2::run_combat_outcome_policy_episode_v1(start, MAX_ACTIONS);
-    if episode.stop != crate::ai::combat_search_v2::CombatOutcomePolicyEpisodeStopV1::Terminal {
-        return;
-    }
-    session.combat_outcomes.record_outcome_case(
-        format!(
-            "seed-{}-combat-{}-policy-episode-{}",
-            session.run_state.seed, session.combat_sequence, root_fingerprint
-        ),
-        format!("seed-{}", session.run_state.seed),
-        observation_fingerprint,
-        episode
-            .observed_player_turns
-            .iter()
-            .map(sts_combat_planner::CombatOutcomeFeatureVectorV1::from_position)
-            .collect(),
-        episode.terminal,
-        episode.final_hp,
-        episode.final_max_hp,
-        POLICY,
-    );
-}
-
 fn run_search_work_plan(
     start: &crate::sim::combat::CombatPosition,
     config: crate::ai::combat_search_v2::CombatSearchV2Config,
@@ -233,12 +350,17 @@ fn run_search_work_plan(
     } else {
         work_quanta
     };
+    let wall_time = config
+        .wall_time
+        .or_else(|| summed_quantum_wall_time(quanta));
+    let mut budget = CombatSearchWorkBudget::new(config.max_nodes, wall_time, Instant::now());
+    let deadline = budget.deadline;
     let mut search = CombatSearchV2Session::new(&start.engine, &start.combat, config);
     for quantum in quanta {
-        let stop = search.advance(CombatSearchV2WorkQuantum {
-            additional_nodes: quantum.additional_nodes,
-            soft_wall_time: quantum.soft_wall_ms.map(std::time::Duration::from_millis),
-        });
+        let Some(authorized) = budget.authorize(quantum, Instant::now()) else {
+            break;
+        };
+        let stop = search.advance(authorized);
         if matches!(
             stop,
             crate::ai::combat_search_v2::CombatSearchV2AdvanceStop::CandidateSatisfied
@@ -248,12 +370,66 @@ fn run_search_work_plan(
             break;
         }
     }
-    search.finish()
+    search.finish_with_deadline(deadline)
+}
+
+fn summed_quantum_wall_time(
+    quanta: &[super::progress_options::RunControlCombatSearchQuantum],
+) -> Option<Duration> {
+    quanta.iter().try_fold(Duration::ZERO, |total, quantum| {
+        quantum
+            .soft_wall_ms
+            .map(Duration::from_millis)
+            .map(|duration| total.saturating_add(duration))
+    })
+}
+
+struct CombatSearchWorkBudget {
+    deadline: Option<Instant>,
+    remaining_nodes: usize,
+}
+
+impl CombatSearchWorkBudget {
+    fn new(max_nodes: usize, wall_time: Option<Duration>, started: Instant) -> Self {
+        Self {
+            deadline: wall_time.and_then(|duration| started.checked_add(duration)),
+            remaining_nodes: max_nodes,
+        }
+    }
+
+    fn authorize(
+        &mut self,
+        quantum: &super::progress_options::RunControlCombatSearchQuantum,
+        now: Instant,
+    ) -> Option<CombatSearchV2WorkQuantum> {
+        let additional_nodes = quantum.additional_nodes.min(self.remaining_nodes);
+        if quantum.additional_nodes > 0 && additional_nodes == 0 {
+            return None;
+        }
+        let remaining_wall_time = self
+            .deadline
+            .map(|deadline| deadline.saturating_duration_since(now));
+        if remaining_wall_time == Some(Duration::ZERO) {
+            return None;
+        }
+        let requested_wall_time = quantum.soft_wall_ms.map(Duration::from_millis);
+        let soft_wall_time = match (requested_wall_time, remaining_wall_time) {
+            (Some(requested), Some(remaining)) => Some(requested.min(remaining)),
+            (Some(requested), None) => Some(requested),
+            (None, Some(remaining)) => Some(remaining),
+            (None, None) => None,
+        };
+        self.remaining_nodes = self.remaining_nodes.saturating_sub(additional_nodes);
+        Some(CombatSearchV2WorkQuantum {
+            additional_nodes,
+            soft_wall_time,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::super::combat_line_trace::{
         combat_automation_answer_claims_v1, combat_automation_opportunity_state_v1,
@@ -263,6 +439,10 @@ mod tests {
     use super::super::combat_search_setup::{
         effective_hp_loss_limit, high_stakes_search_options, search_config,
     };
+    use super::{
+        run_search_work_plan, CombatSearchWorkBudget, RunControlCombatWorkAdvanceV1,
+        RunControlCombatWorkV1,
+    };
     use crate::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchActionPriorPluginId,
         CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
@@ -270,6 +450,101 @@ mod tests {
         CombatSearchProfile, CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy,
         CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction, CombatSearchV2SetupBiasPolicy,
     };
+
+    #[test]
+    fn work_budget_caps_every_quantum_to_one_node_and_wall_owner() {
+        let started = Instant::now();
+        let mut budget = CombatSearchWorkBudget::new(10, Some(Duration::from_millis(10)), started);
+        let requested = super::super::progress_options::RunControlCombatSearchQuantum {
+            label: "test",
+            additional_nodes: 6,
+            soft_wall_ms: Some(8),
+        };
+
+        let first = budget
+            .authorize(&requested, started)
+            .expect("initial quantum should be authorized");
+        assert_eq!(first.additional_nodes, 6);
+        assert_eq!(first.soft_wall_time, Some(Duration::from_millis(8)));
+
+        let second = budget
+            .authorize(&requested, started + Duration::from_millis(8))
+            .expect("refinement should consume only the remaining budget");
+        assert_eq!(second.additional_nodes, 4);
+        assert_eq!(second.soft_wall_time, Some(Duration::from_millis(2)));
+
+        assert!(budget
+            .authorize(&requested, started + Duration::from_millis(10))
+            .is_none());
+    }
+
+    #[test]
+    fn legacy_no_win_solver_chain_is_opt_in() {
+        assert!(!RunControlSearchCombatOptions::default().enable_legacy_no_win_rescue);
+    }
+
+    #[test]
+    fn search_work_plan_reports_only_resources_authorized_by_its_single_budget() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut jaw_worm =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &jaw_worm,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&jaw_worm),
+            &[],
+        );
+        jaw_worm.set_planned_move_id(plan.move_id);
+        jaw_worm.set_planned_steps(plan.steps);
+        jaw_worm.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters = vec![jaw_worm];
+        combat.zones.hand = (0..5)
+            .map(|index| {
+                crate::runtime::combat::CombatCard::new(
+                    crate::content::cards::CardId::Strike,
+                    100 + index,
+                )
+            })
+            .collect();
+        combat.update_hand_cards();
+        let start = crate::sim::combat::CombatPosition::new(
+            crate::state::core::EngineState::CombatPlayerTurn,
+            combat,
+        );
+        let report = run_search_work_plan(
+            &start,
+            crate::ai::combat_search_v2::CombatSearchV2Config {
+                max_nodes: 10,
+                wall_time: Some(Duration::from_millis(150)),
+                rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+                satisfaction: CombatSearchV2Satisfaction::BudgetOrExhaustion,
+                ..crate::ai::combat_search_v2::CombatSearchV2Config::default()
+            },
+            &[
+                super::super::progress_options::RunControlCombatSearchQuantum {
+                    label: "initial",
+                    additional_nodes: 6,
+                    soft_wall_ms: Some(100),
+                },
+                super::super::progress_options::RunControlCombatSearchQuantum {
+                    label: "refine",
+                    additional_nodes: 6,
+                    soft_wall_ms: Some(100),
+                },
+            ],
+        );
+
+        assert_eq!(report.quantum_history.len(), 2);
+        assert_eq!(report.quantum_history[0].requested_additional_nodes, 6);
+        assert_eq!(report.quantum_history[1].requested_additional_nodes, 4);
+        assert_eq!(report.budget.max_nodes, 10);
+        assert!(report.budget.wall_time_ms.is_some_and(|wall| wall <= 150));
+        assert!(report.quantum_history.iter().all(|quantum| quantum
+            .requested_soft_wall_time_ms
+            .is_some_and(|wall| wall <= 100)));
+    }
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
@@ -486,6 +761,46 @@ mod tests {
         session_with_active_combat(combat)
     }
 
+    #[test]
+    fn resumable_run_control_work_keeps_one_search_session_across_quanta() {
+        let mut session = session_with_combat_flags(false, false);
+        session
+            .active_combat
+            .as_mut()
+            .expect("active combat")
+            .combat_state
+            .entities
+            .monsters[0] =
+            crate::test_support::planned_monster(crate::content::monsters::EnemyId::JawWorm, 1);
+        let mut work = RunControlCombatWorkV1::new(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(8),
+                wall_ms: None,
+                rollout_policy: Some(CombatSearchV2RolloutPolicy::Disabled),
+                satisfaction: Some(CombatSearchV2Satisfaction::BudgetOrExhaustion),
+                ..RunControlSearchCombatOptions::default()
+            },
+        )
+        .expect("combat work should initialize");
+        let quantum = super::super::progress_options::RunControlCombatSearchQuantum {
+            label: "resume_contract",
+            additional_nodes: 1,
+            soft_wall_ms: None,
+        };
+
+        let first = work.advance(&quantum, None);
+        assert_eq!(first, RunControlCombatWorkAdvanceV1::Pending);
+        let first_nodes = work.snapshot().nodes_expanded;
+        assert_eq!(work.quantum_count(), 1);
+
+        let second = work.advance(&quantum, None);
+        assert_eq!(second, RunControlCombatWorkAdvanceV1::Pending);
+        assert_eq!(work.quantum_count(), 2);
+        assert!(work.snapshot().nodes_expanded >= first_nodes);
+        assert!(work.remaining_nodes() <= 7);
+    }
+
     fn options_with_hp_loss(max_hp_loss: RunControlHpLossLimit) -> RunControlSearchCombatOptions {
         RunControlSearchCombatOptions {
             max_hp_loss: Some(max_hp_loss),
@@ -554,7 +869,7 @@ mod tests {
             RunControlSearchCombatOptions {
                 max_nodes: Some(1),
                 wall_ms: Some(1),
-                disable_no_win_rescue: true,
+                enable_legacy_no_win_rescue: false,
                 allow_smoke_bomb_survival_fallback: true,
                 ..RunControlSearchCombatOptions::default()
             },

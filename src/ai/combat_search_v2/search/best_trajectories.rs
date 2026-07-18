@@ -4,7 +4,7 @@ use super::super::frontier::{
 use super::super::*;
 use super::win_acceptance::accepted_complete_win;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct SearchTrajectoryBook {
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_win: Option<SearchNode>,

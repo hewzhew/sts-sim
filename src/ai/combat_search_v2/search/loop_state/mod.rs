@@ -8,6 +8,7 @@ use super::super::frontier::{FrontierQueue, ResourceVector};
 use super::super::*;
 use super::best_trajectories::SearchTrajectoryBook;
 use super::root_evidence::RootEvidenceBook;
+use super::root_round_scheduler::RootRoundScheduler;
 use super::turn_boundary_expansion::TurnBoundaryExpansionTracker;
 use super::turn_plan_seeding::TurnPlanSeedTracker;
 
@@ -32,6 +33,8 @@ pub(super) struct SearchLoopState {
     pub(super) accepted_complete_candidate: bool,
     pub(super) initial_external_burden_count: i32,
     pub(super) root_evidence: RootEvidenceBook,
+    pub(super) root_round_scheduler: RootRoundScheduler,
+    pub(super) completed_root_round_trajectories: Option<SearchTrajectoryBook>,
     pub(super) last_promoted_rollout_witness: Option<RolloutNodeEstimate>,
 }
 
@@ -69,6 +72,8 @@ impl SearchLoopState {
             accepted_complete_candidate: false,
             initial_external_burden_count,
             root_evidence: RootEvidenceBook::default(),
+            root_round_scheduler: RootRoundScheduler::default(),
+            completed_root_round_trajectories: None,
             last_promoted_rollout_witness: None,
         }
     }

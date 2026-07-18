@@ -24,7 +24,7 @@ pub struct RunControlSearchCombatOptions {
     pub phase_guard_policy: Option<CombatSearchV2PhaseGuardPolicy>,
     pub setup_bias_policy: Option<CombatSearchV2SetupBiasPolicy>,
     pub segment_mode: Option<RunControlCombatSegmentMode>,
-    pub disable_no_win_rescue: bool,
+    pub enable_legacy_no_win_rescue: bool,
     pub allow_smoke_bomb_survival_fallback: bool,
     pub work_quanta: Vec<RunControlCombatSearchQuantum>,
 }

@@ -3,14 +3,15 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchArtifactPluginId, CombatSearchAttemptPolicy, CombatSearchBudgetSpec,
     CombatSearchChildRolloutPluginId, CombatSearchEngineProfile, CombatSearchPhaseGuardPluginId,
     CombatSearchPluginStack, CombatSearchPotionPlugin, CombatSearchProfile,
-    CombatSearchRolloutPluginId, CombatSearchV2PotionPolicy, CombatSearchV2Satisfaction,
+    CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId, CombatSearchV2PotionPolicy,
+    CombatSearchV2Satisfaction,
 };
 use sts_simulator::eval::run_control::{
     RunControlCombatSearchQuantum, RunControlHpLossLimit, RunControlSearchCombatOptions,
     RunControlSession,
 };
 
-use super::combat_search_survival::owner_audit_hp_loss_limit;
+use super::combat_search_survival::owner_audit_search_quality_loss_target;
 use super::Args;
 
 const HALLWAY_REFINEMENT_MAX_NODES: usize = 300_000;
@@ -62,6 +63,7 @@ pub(super) fn canonical_combat_search_session_plan(
             plugins: CombatSearchPluginStack {
                 child_rollout: CombatSearchChildRolloutPluginId::LazyOnPop,
                 rollout: CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
+                turn_plan: CombatSearchTurnPlanPluginId::TacticalEnemyTurnBoundaryFrontierSeed,
                 phase_guard: CombatSearchPhaseGuardPluginId::Default,
                 potion: CombatSearchPotionPlugin {
                     policy: potion_policy,
@@ -75,7 +77,7 @@ pub(super) fn canonical_combat_search_session_plan(
             artifacts: CombatSearchArtifactPluginId::FullTrace,
         },
     };
-    let satisfaction = match owner_audit_hp_loss_limit(session) {
+    let satisfaction = match owner_audit_search_quality_loss_target(session) {
         RunControlHpLossLimit::Limit(limit) => {
             CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(limit)
         }
@@ -87,9 +89,9 @@ pub(super) fn canonical_combat_search_session_plan(
     let mut search = RunControlSearchCombatOptions::default();
     search.profile = Some(profile);
     search.satisfaction = Some(satisfaction);
-    // Satisfaction controls whether more computation is useful. Final line
-    // eligibility is deliberately wider: if the work plan cannot reach the
-    // reserve target, its best clean survival win remains actionable evidence.
+    // The reserve remains an aspirational search target. A hard execution
+    // gate here hides the selected combat line behind a later route stop and
+    // cannot diagnose why the search preferred catastrophic attrition.
     search.max_hp_loss = Some(RunControlHpLossLimit::Unlimited);
     search.potion_policy = Some(potion_policy);
     search.max_potions_used = max_potions_used;
@@ -97,7 +99,7 @@ pub(super) fn canonical_combat_search_session_plan(
     // A canonical session must be the only search owner. The old complete-line,
     // turn-plan, and turn-pool root searches are therefore not invoked after a
     // gap. Smoke Bomb remains a direct legal survival action, not another search.
-    search.disable_no_win_rescue = true;
+    search.enable_legacy_no_win_rescue = false;
     search.allow_smoke_bomb_survival_fallback = stakes != CombatSearchStakes::Boss;
 
     CombatSearchSessionPlan {
@@ -256,7 +258,7 @@ mod tests {
             plan.search.max_hp_loss,
             Some(RunControlHpLossLimit::Unlimited)
         );
-        assert!(plan.search.disable_no_win_rescue);
+        assert!(!plan.search.enable_legacy_no_win_rescue);
         assert!(matches!(
             plan.search.satisfaction,
             Some(CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_))

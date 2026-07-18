@@ -9,17 +9,23 @@ pub(super) fn finish_diagnostics_and_timing(
     root_for_turn_plan_diagnostics: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    deadline: Option<Instant>,
 ) {
     let finish_started = Instant::now();
-    let shadow_audit_started = Instant::now();
-    loop_state.diagnostics.run_discard_order_exact_shadow_audit(
-        stepper,
-        config,
-        &loop_state.plugins,
-    );
-    loop_state.performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
+    // Timed production searches must not start a fresh, independently timed
+    // diagnostic traversal after their owner deadline. Offline/unbounded runs
+    // retain the full audits.
+    if deadline.is_none() {
+        let shadow_audit_started = Instant::now();
+        loop_state.diagnostics.run_discard_order_exact_shadow_audit(
+            stepper,
+            config,
+            &loop_state.plugins,
+        );
+        loop_state.performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
+    }
 
-    if config.turn_plan_policy.observes_root_diagnostics() {
+    if deadline.is_none() && config.turn_plan_policy.observes_root_diagnostics() {
         let root_turn_plan_diagnostics_started = Instant::now();
         loop_state
             .diagnostics

@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
+use super::super::rollout_pending_choice::{
+    linear_pending_choice_actions, RolloutPendingChoiceProgress,
+};
 use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::super::*;
 
@@ -95,26 +97,34 @@ fn no_potion_rollout(
                 EngineState::PendingChoice(choice)
                     if PendingChoiceActionFamily::from_choice(choice).is_some()
             );
-        if phase_profile.pending_choice.high_fanout || search_owned_structured_choice {
-            let stop_reason = if phase_profile.pending_choice.high_fanout {
-                RolloutStopReason::HighFanoutPendingChoice
-            } else {
-                RolloutStopReason::StructuredPendingChoice
-            };
+        if phase_profile.pending_choice.high_fanout {
             return RolloutNodeEstimate::from_node(
                 &rollout,
                 actions_simulated,
-                stop_reason,
+                RolloutStopReason::HighFanoutPendingChoice,
+                last_action_reason,
+                pending_choice_progress,
+            );
+        }
+
+        let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
+        let structured_actions = search_owned_structured_choice
+            .then(|| linear_pending_choice_actions(&position, stepper))
+            .flatten();
+        if search_owned_structured_choice && structured_actions.is_none() {
+            return RolloutNodeEstimate::from_node(
+                &rollout,
+                actions_simulated,
+                RolloutStopReason::StructuredPendingChoice,
                 last_action_reason,
                 pending_choice_progress,
             );
         }
 
         let legal_actions_started = Instant::now();
-        let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
         let legal = filtered_rollout_legal_actions(
             policy,
-            stepper.atomic_action_choices(&position),
+            structured_actions.unwrap_or_else(|| stepper.atomic_action_choices(&position)),
             &rollout.combat,
         );
         performance.no_potion_legal_actions_elapsed_us = performance

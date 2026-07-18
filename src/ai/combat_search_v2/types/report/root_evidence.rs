@@ -66,6 +66,18 @@ pub struct CombatSearchV2RootObservedValue {
 pub struct CombatSearchV2RootWorkEvidence {
     pub generated_concrete_nodes: u64,
     pub expanded_concrete_nodes: u64,
+    #[serde(default)]
+    pub expanded_turn_zero_nodes: u64,
+    #[serde(default)]
+    pub expanded_turn_one_nodes: u64,
+    #[serde(default)]
+    pub expanded_turn_two_or_later_nodes: u64,
+    #[serde(default)]
+    pub bulk_expanded_nodes_without_depth: u64,
+    #[serde(default)]
+    pub max_expanded_turn: u32,
+    #[serde(default)]
+    pub max_expanded_action_count: usize,
     pub open_concrete_states: usize,
     pub open_pending_choice_work_items: usize,
     pub best_exact_complete: Option<CombatSearchV2RootObservedValue>,
@@ -84,6 +96,20 @@ pub struct CombatSearchV2RootActionEvidence {
 pub struct CombatSearchV2RootEvidenceSnapshot {
     pub ranking_policy: String,
     pub work_accounting_scope: String,
+    #[serde(default)]
+    pub scheduling_policy: String,
+    #[serde(default)]
+    pub scheduling_trigger: String,
+    #[serde(default)]
+    pub completed_comparison_rounds: u32,
+    #[serde(default)]
+    pub current_comparison_round: u32,
+    #[serde(default)]
+    pub current_scheduling_phase: String,
+    #[serde(default)]
+    pub current_comparison_round_complete: bool,
+    #[serde(default)]
+    pub current_round_expansions_per_action: u64,
     pub materialization: CombatSearchV2RootMaterializationStatus,
     pub closure_status: CombatSearchV2RootClosureStatus,
     pub closure_blockers: Vec<CombatSearchV2RootClosureBlocker>,

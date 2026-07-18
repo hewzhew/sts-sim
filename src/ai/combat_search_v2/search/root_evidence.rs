@@ -4,11 +4,12 @@ use super::super::frontier::{RootLineage, RootLineageId, SearchNode};
 use super::super::*;
 use super::loop_state::SearchLoopState;
 use super::node_action_ordering::OrderedNodeAction;
+use super::root_round_scheduler::{RootActionScheduleState, ROOT_SCHEDULING_POLICY};
 
 const ROOT_RANKING_POLICY: &str =
     "best_exact_complete_or_live_open_observation_by_combat_outcome_score_v1";
 const ROOT_WORK_ACCOUNTING_SCOPE: &str =
-    "concrete_search_nodes_by_typed_root_lineage; hierarchical_turn_boundary_macro_inner_work_remains_unattributed";
+    "concrete_search_nodes_and_turn_boundary_inner_nodes_by_typed_root_lineage";
 
 pub(super) struct RootEvidenceBook {
     next_id: u32,
@@ -38,6 +39,26 @@ impl Default for RootEvidenceBook {
 }
 
 impl RootEvidenceBook {
+    fn best_exact_win_root(&self, states: &[RootActionScheduleState]) -> Option<RootLineageId> {
+        states
+            .iter()
+            .filter(|state| state.has_work)
+            .filter_map(|state| {
+                self.entries
+                    .get(&state.id)?
+                    .work
+                    .best_exact_win
+                    .as_ref()
+                    .map(|win| (state.id, win))
+            })
+            .max_by(|(left_id, left), (right_id, right)| {
+                left.outcome_order_key
+                    .cmp(&right.outcome_order_key)
+                    .then_with(|| right_id.cmp(left_id))
+            })
+            .map(|(id, _)| id)
+    }
+
     pub(super) fn materialize_node(&mut self, node: &mut SearchNode) {
         if !matches!(node.root_lineage, RootLineage::Unmaterialized) {
             return;
@@ -110,6 +131,16 @@ impl RootEvidenceBook {
     pub(super) fn record_expanded(&mut self, node: &SearchNode) {
         let work = self.work_for_node_mut(node);
         work.expanded_concrete_nodes = work.expanded_concrete_nodes.saturating_add(1);
+        match node.combat.turn.turn_count {
+            0 => work.expanded_turn_zero_nodes = work.expanded_turn_zero_nodes.saturating_add(1),
+            1 => work.expanded_turn_one_nodes = work.expanded_turn_one_nodes.saturating_add(1),
+            _ => {
+                work.expanded_turn_two_or_later_nodes =
+                    work.expanded_turn_two_or_later_nodes.saturating_add(1)
+            }
+        }
+        work.max_expanded_turn = work.max_expanded_turn.max(node.combat.turn.turn_count);
+        work.max_expanded_action_count = work.max_expanded_action_count.max(node.actions.len());
     }
 
     pub(super) fn record_bulk_work(
@@ -121,6 +152,9 @@ impl RootEvidenceBook {
         let work = self.work_for_node_mut(source);
         work.expanded_concrete_nodes = work
             .expanded_concrete_nodes
+            .saturating_add(nodes_expanded as u64);
+        work.bulk_expanded_nodes_without_depth = work
+            .bulk_expanded_nodes_without_depth
             .saturating_add(nodes_expanded as u64);
         work.generated_concrete_nodes = work
             .generated_concrete_nodes
@@ -183,6 +217,31 @@ impl RootEvidenceBook {
 }
 
 impl SearchLoopState {
+    pub(in crate::ai::combat_search_v2::search) fn root_surface_fully_materialized(&self) -> bool {
+        self.root_evidence.materialization == CombatSearchV2RootMaterializationStatus::Complete
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn root_action_schedule_states(
+        &self,
+    ) -> Vec<RootActionScheduleState> {
+        self.root_evidence
+            .entries
+            .iter()
+            .map(|(id, entry)| RootActionScheduleState {
+                id: *id,
+                expanded: entry.work.expanded_concrete_nodes,
+                has_work: self.frontier.has_root_action_work(*id),
+            })
+            .collect()
+    }
+
+    pub(in crate::ai::combat_search_v2::search) fn best_exact_win_root_with_work(
+        &self,
+        states: &[RootActionScheduleState],
+    ) -> Option<RootLineageId> {
+        self.root_evidence.best_exact_win_root(states)
+    }
+
     pub(in crate::ai::combat_search_v2::search) fn materialize_root_lineage(
         &mut self,
         node: &mut SearchNode,
@@ -238,6 +297,10 @@ impl SearchLoopState {
 pub(super) fn root_evidence_snapshot(
     loop_state: &SearchLoopState,
 ) -> CombatSearchV2RootEvidenceSnapshot {
+    let root_schedule_states = loop_state.root_action_schedule_states();
+    let current_comparison_round_complete = loop_state
+        .root_round_scheduler
+        .current_comparison_complete(&root_schedule_states);
     let mut contenders = loop_state
         .root_evidence
         .entries
@@ -362,6 +425,21 @@ pub(super) fn root_evidence_snapshot(
     CombatSearchV2RootEvidenceSnapshot {
         ranking_policy: ROOT_RANKING_POLICY.to_string(),
         work_accounting_scope: ROOT_WORK_ACCOUNTING_SCOPE.to_string(),
+        scheduling_policy: ROOT_SCHEDULING_POLICY.to_string(),
+        scheduling_trigger: loop_state
+            .root_round_scheduler
+            .activation_reason()
+            .to_string(),
+        completed_comparison_rounds: loop_state
+            .root_round_scheduler
+            .completed_rounds()
+            .saturating_add(u32::from(current_comparison_round_complete)),
+        current_comparison_round: loop_state.root_round_scheduler.round_index(),
+        current_scheduling_phase: loop_state.root_round_scheduler.phase_name().to_string(),
+        current_comparison_round_complete,
+        current_round_expansions_per_action: loop_state
+            .root_round_scheduler
+            .comparison_expansions_per_action(),
         materialization: loop_state.root_evidence.materialization,
         closure_status: CombatSearchV2RootClosureStatus::NotProven,
         closure_blockers,

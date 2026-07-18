@@ -18,7 +18,6 @@ use crate::state::core::{ClientInput, EngineState};
 
 // Core search loop and frontier ownership.
 mod frontier;
-mod outcome_episode;
 mod outcome_score;
 mod search;
 mod transition;
@@ -130,9 +129,6 @@ use pressure_value::visible_incoming_damage;
 use rollout_action_selector::{choose_rollout_action, filtered_rollout_legal_actions};
 use rollout_cache::RolloutCache;
 
-pub(crate) use outcome_episode::{
-    run_combat_outcome_policy_episode_v1, CombatOutcomePolicyEpisodeStopV1,
-};
 use rollout_estimate::{RolloutNodeEstimate, RolloutStopReason};
 use target_fanout::{
     summarize_target_fanout, TargetFanoutDiagnosticsCollector, TargetFanoutSummary,
