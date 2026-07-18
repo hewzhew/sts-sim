@@ -3,7 +3,7 @@ use std::time::Instant;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::ai::combat_search_v2::CombatSearchV2Satisfaction;
+use crate::ai::combat_search_v2::{CombatSearchV2RolloutPolicy, CombatSearchV2Satisfaction};
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::eval::combat_case::{
@@ -497,8 +497,9 @@ fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
         boss: RunControlSearchCombatOptions {
             max_nodes: Some(config.budget.boss_nodes),
             wall_ms: Some(config.budget.boss_ms),
-            satisfaction: Some(CombatSearchV2Satisfaction::BudgetOrExhaustion),
+            satisfaction: Some(CombatSearchV2Satisfaction::FirstCompleteWin),
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+            rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
             enable_legacy_no_win_rescue: false,
             ..RunControlSearchCombatOptions::default()
         },
@@ -522,5 +523,32 @@ fn engine_state_name(state: &EngineState) -> &'static str {
         EngineState::TreasureRoom(_) => "treasure_room",
         EngineState::BossRelicSelect(_) => "boss_relic_select",
         EngineState::GameOver(_) => "game_over",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oracle_boss_budget_uses_the_replayable_first_win_policy() {
+        let config = OracleRunConfig {
+            seed: 6,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        };
+
+        let budgets = oracle_combat_budgets(&config);
+
+        assert_eq!(
+            budgets.boss.satisfaction,
+            Some(CombatSearchV2Satisfaction::FirstCompleteWin)
+        );
+        assert_eq!(
+            budgets.boss.rollout_policy,
+            Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion)
+        );
+        assert_eq!(budgets.hallway.rollout_policy, None);
+        assert_eq!(budgets.elite.rollout_policy, None);
     }
 }
