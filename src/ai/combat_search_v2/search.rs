@@ -13,7 +13,6 @@ mod finalize;
 mod finish_coverage;
 mod finish_diagnostics;
 mod finish_evidence;
-mod finish_frontier;
 mod finish_outcome;
 mod finish_policy;
 mod finish_trajectories;
@@ -46,7 +45,7 @@ use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
 use pending_choice_expansion::{expand_pending_choice_prefix, PendingChoicePrefixOutcome};
 use rollout_terminal_promotion::{promote_replayable_terminal_rollout, RolloutPromotionOutcome};
-use root_evidence::root_evidence_snapshot;
+use root_evidence::{frontier_evidence_scan, root_evidence_snapshot};
 #[cfg(test)]
 use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
 
@@ -62,7 +61,7 @@ pub struct CombatSearchV2DecisionSnapshot {
     pub candidate_frontier_revision: u64,
     pub best_win: Option<CombatSearchV2TrajectoryReport>,
     pub nodes_expanded: u64,
-    pub frontier_remaining_states: usize,
+    pub frontier_work_items: usize,
     pub exact_state_keys: usize,
     pub rollout_cache_entries: usize,
     pub root_evidence: CombatSearchV2RootEvidenceSnapshot,
@@ -271,6 +270,7 @@ impl CombatSearchV2Session {
 
     pub fn snapshot(&self) -> CombatSearchV2DecisionSnapshot {
         let trajectories = self.loop_state.reportable_trajectories();
+        let frontier_evidence = frontier_evidence_scan(&self.loop_state);
         CombatSearchV2DecisionSnapshot {
             candidate_frontier: trajectories
                 .win_candidates
@@ -283,10 +283,10 @@ impl CombatSearchV2Session {
                 .as_ref()
                 .map(|node| trajectory_report(node, false)),
             nodes_expanded: self.loop_state.stats.nodes_expanded,
-            frontier_remaining_states: self.loop_state.frontier.concrete_state_count(),
+            frontier_work_items: frontier_evidence.work_item_count,
             exact_state_keys: self.loop_state.exact_transpositions.len(),
             rollout_cache_entries: self.loop_state.rollout_cache.cache.len(),
-            root_evidence: root_evidence_snapshot(&self.loop_state),
+            root_evidence: frontier_evidence.root_evidence,
         }
     }
 

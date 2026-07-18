@@ -72,10 +72,12 @@ complete action, then requeues its exact remaining tree. Real child states can
 therefore compete with ungenerated sibling actions instead of waiting for the
 whole power set to be enumerated.
 
-Reports keep these units separate: `remaining_states` counts unique concrete
-engine states, while `pending_choice_work_items` counts virtual residual work.
-Rejected complete prefixes are counted as action-surface diagnostics; if an
-entire transaction has no legal input, its concrete parent is retained once.
+Reports keep these units explicit without rebuilding an exact-state census:
+`remaining_work_items` counts frontier queue entries, while
+`pending_choice_work_items` is the subset carrying virtual residual work. One
+residual item may own several not-yet-materialized prefixes. Rejected complete
+prefixes are counted as action-surface diagnostics; if an entire transaction
+has no legal input, its concrete parent remains represented by queue work.
 
 ## Potion boundary
 

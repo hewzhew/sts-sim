@@ -39,8 +39,8 @@ fn production_search_factors_scry_without_materializing_the_power_set() {
     );
     assert_eq!(report.performance.pending_choice_prefixes_expanded, 8);
     assert_eq!(report.performance.engine_step_calls, 0);
-    assert!(report.frontier.remaining_states > 0);
-    assert_eq!(report.frontier.remaining_states, 1);
+    assert!(report.frontier.remaining_work_items > 0);
+    assert_eq!(report.frontier.remaining_work_items, 1);
     assert_eq!(report.frontier.pending_choice_work_items, 1);
     assert!(report.best_frontier_trajectory.is_some());
 }
@@ -152,7 +152,7 @@ fn production_search_submits_cancel_before_a_deep_selection_residual() {
         1
     );
     assert_eq!(report.performance.engine_step_calls, 1);
-    assert!(report.frontier.remaining_states > 0);
+    assert!(report.frontier.remaining_work_items > 0);
 }
 
 #[test]
@@ -549,7 +549,7 @@ fn timed_out_pending_choice_steps_requeue_the_atomic_leaf_without_a_fake_child()
             0
         );
         assert_eq!(report.stats.nodes_generated, 0);
-        assert_eq!(report.frontier.remaining_states, 1);
+        assert_eq!(report.frontier.remaining_work_items, 1);
         assert_eq!(report.frontier.pending_choice_work_items, 1);
         let frontier = report
             .best_frontier_trajectory
@@ -1009,7 +1009,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
     );
 
     assert_eq!(report.schema_name, COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME);
-    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 20);
+    assert_eq!(COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION, 21);
     assert_eq!(
         report.schema_version,
         COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION
@@ -1174,7 +1174,7 @@ fn split_work_quanta_reuse_the_same_search_state() {
     );
     let after_first = split.snapshot();
     assert_eq!(after_first.nodes_expanded, 2);
-    assert!(after_first.frontier_remaining_states > 0);
+    assert!(after_first.frontier_work_items > 0);
     assert_eq!(
         after_first.root_evidence.materialization,
         CombatSearchV2RootMaterializationStatus::Complete
@@ -1314,7 +1314,7 @@ fn split_pending_choice_quanta_advance_the_same_virtual_prefix_work() {
             .open_pending_choice_work_items,
         1
     );
-    assert_eq!(first.root_evidence.unattributed.open_concrete_states, 1);
+    assert_eq!(first.root_evidence.unattributed.open_work_items, 1);
 
     assert_eq!(
         session.advance(quantum),

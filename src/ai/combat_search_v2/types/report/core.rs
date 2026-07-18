@@ -9,7 +9,7 @@ use super::rollout::CombatSearchV2RolloutReport;
 use super::root_evidence::{CombatSearchV2QuantumEvidence, CombatSearchV2RootEvidenceSnapshot};
 
 pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_NAME: &str = "CombatSearchV2Report";
-pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 20;
+pub const COMBAT_SEARCH_V2_REPORT_SCHEMA_VERSION: u32 = 21;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2Report {
@@ -103,6 +103,8 @@ pub struct CombatSearchV2PerformanceReport {
     pub total_elapsed_us: u128,
     pub unattributed_elapsed_us: u128,
     pub report_finalization_elapsed_us: u128,
+    pub report_frontier_scan_elapsed_us: u128,
+    pub report_search_storage_drop_elapsed_us: u128,
     pub rollout_estimate_calls: u64,
     pub root_rollout_estimate_calls: u64,
     pub child_rollout_estimate_calls: u64,

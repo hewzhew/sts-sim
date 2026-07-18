@@ -33,7 +33,7 @@ pub struct CombatSearchV2DiagnosticsPruning {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2DiagnosticsFrontier {
-    pub remaining_states: usize,
+    pub remaining_work_items: usize,
     pub sample_limit: usize,
     pub sampled_states: usize,
 }

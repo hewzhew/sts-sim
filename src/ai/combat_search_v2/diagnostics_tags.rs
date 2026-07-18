@@ -16,7 +16,7 @@ pub(super) fn diagnosis_tags(
     card_identity: &CombatSearchV2DiagnosticsCardIdentity,
     turn_local_dominance: &CombatSearchV2DiagnosticsTurnLocalDominance,
     pruning: &CombatSearchV2DiagnosticsPruning,
-    frontier_remaining_states: usize,
+    frontier_work_items: usize,
 ) -> Vec<&'static str> {
     let mut tags = Vec::new();
 
@@ -24,14 +24,14 @@ pub(super) fn diagnosis_tags(
         SearchCoverageStatus::Exhaustive => tags.push("frontier_exhausted"),
         SearchCoverageStatus::AcceptedCompleteCandidate => tags.push("accepted_complete_candidate"),
         SearchCoverageStatus::NodeBudgetLimited => {
-            if frontier_remaining_states > 0 {
+            if frontier_work_items > 0 {
                 tags.push("node_budget_limited_with_open_frontier");
             } else {
                 tags.push("node_budget_limited");
             }
         }
         SearchCoverageStatus::ActionPrefixBudgetLimited => {
-            if frontier_remaining_states > 0 {
+            if frontier_work_items > 0 {
                 tags.push("action_prefix_budget_limited_with_open_frontier");
             } else {
                 tags.push("action_prefix_budget_limited");
@@ -41,7 +41,7 @@ pub(super) fn diagnosis_tags(
             tags.push("pending_choice_action_surface_incomplete")
         }
         SearchCoverageStatus::TimeBudgetLimited => {
-            if frontier_remaining_states > 0 {
+            if frontier_work_items > 0 {
                 tags.push("time_budget_limited_with_open_frontier");
             } else {
                 tags.push("time_budget_limited");
@@ -198,7 +198,7 @@ pub(super) fn diagnosis_tags(
     if turn_local_dominance.pruned_child_states > 0 {
         tags.push("turn_local_dominance_pruned_children");
     }
-    if frontier_remaining_states > 0 {
+    if frontier_work_items > 0 {
         tags.push("frontier_remaining");
     }
 

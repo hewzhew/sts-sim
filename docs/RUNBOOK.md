@@ -162,7 +162,9 @@ in its manifest; the current tree must not silently substitute a newer profile.
 ## Planner Capture Export
 
 The retired interactive driver no longer produces live `SessionTraceV1`
-captures. Existing schema-v15 traces remain readable while capture moves to the
+captures. Existing schema-v6-through-v15 traces remain readable; schema v16
+keeps legacy exact-frontier evidence distinct from current work-item counts
+while capture moves to the
 atomic run-job journal. A rebuildable dataset and coverage report can still be
 exported from an existing typed trace under `artifacts/runs` with:
 

@@ -2,12 +2,19 @@ use super::super::PendingChoiceActionWork;
 use super::node::{RootLineage, RootLineageId, SearchNode};
 use super::priority::{priority_for_node, QueueEntry};
 use crate::ai::combat_state_key::combat_exact_state_key;
-use std::collections::{BTreeMap, BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap};
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
     unattributed: BinaryHeap<QueueEntry>,
     by_root_action: BTreeMap<RootLineageId, BinaryHeap<QueueEntry>>,
     next_sequence_id: u64,
+}
+
+pub(in crate::ai::combat_search_v2) struct FrontierLineageSummary<'a> {
+    pub(in crate::ai::combat_search_v2) lineage: RootLineage,
+    pub(in crate::ai::combat_search_v2) work_items: usize,
+    pub(in crate::ai::combat_search_v2) pending_choice_work_items: usize,
+    pub(in crate::ai::combat_search_v2) best_entry: Option<&'a QueueEntry>,
 }
 
 impl FrontierQueue {
@@ -105,22 +112,6 @@ impl FrontierQueue {
                 .sum::<usize>()
     }
 
-    /// Concrete engine states and virtual action-prefix work are different
-    /// units.  Multiple residual entries may carry clones of the same parent;
-    /// reports count that parent once.
-    pub(in crate::ai::combat_search_v2) fn concrete_state_count(&self) -> usize {
-        self.iter()
-            .map(|entry| combat_exact_state_key(&entry.node.engine, &entry.node.combat))
-            .collect::<HashSet<_>>()
-            .len()
-    }
-
-    pub(in crate::ai::combat_search_v2) fn pending_choice_work_item_count(&self) -> usize {
-        self.iter()
-            .filter(|entry| entry.pending_choice_work.is_some())
-            .count()
-    }
-
     pub(in crate::ai::combat_search_v2) fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -129,6 +120,90 @@ impl FrontierQueue {
         self.unattributed
             .iter()
             .chain(self.by_root_action.values().flat_map(|heap| heap.iter()))
+    }
+
+    pub(in crate::ai::combat_search_v2) fn lineage_summaries(
+        &self,
+    ) -> Vec<FrontierLineageSummary<'_>> {
+        let mut summaries = Vec::with_capacity(self.by_root_action.len().saturating_add(1));
+        if !self.unattributed.is_empty() {
+            summaries.push(FrontierLineageSummary {
+                lineage: RootLineage::Unmaterialized,
+                work_items: self.unattributed.len(),
+                pending_choice_work_items: self
+                    .unattributed
+                    .iter()
+                    .filter(|entry| entry.pending_choice_work.is_some())
+                    .count(),
+                best_entry: self.unattributed.peek(),
+            });
+        }
+        summaries.extend(self.by_root_action.iter().map(|(id, heap)| {
+            FrontierLineageSummary {
+                lineage: RootLineage::Action(*id),
+                work_items: heap.len(),
+                pending_choice_work_items: heap
+                    .iter()
+                    .filter(|entry| entry.pending_choice_work.is_some())
+                    .count(),
+                best_entry: heap.peek(),
+            }
+        }));
+        summaries
+    }
+
+    /// Search nodes own deep engine snapshots and action paths. Dropping a
+    /// large finished frontier serially can take seconds, so dispose of the
+    /// independent root heaps in a small bounded worker set.
+    pub(in crate::ai::combat_search_v2) fn drop_parallel(self) {
+        const MAX_DROP_WORKERS: usize = 4;
+
+        let Self {
+            unattributed,
+            by_root_action,
+            next_sequence_id: _,
+        } = self;
+        let mut heaps = Vec::with_capacity(by_root_action.len().saturating_add(1));
+        if !unattributed.is_empty() {
+            heaps.push(unattributed);
+        }
+        heaps.extend(by_root_action.into_values().filter(|heap| !heap.is_empty()));
+        let workers = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .min(MAX_DROP_WORKERS)
+            .min(heaps.len());
+        if workers <= 1 {
+            drop(heaps);
+            return;
+        }
+
+        heaps.sort_unstable_by_key(|heap| std::cmp::Reverse(heap.len()));
+        let mut groups = (0..workers)
+            .map(|_| Vec::<BinaryHeap<QueueEntry>>::new())
+            .collect::<Vec<_>>();
+        let mut group_loads = vec![0usize; workers];
+        for heap in heaps {
+            let group_index = group_loads
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, load)| **load)
+                .map(|(index, _)| index)
+                .expect("at least one frontier drop worker");
+            group_loads[group_index] = group_loads[group_index].saturating_add(heap.len());
+            groups[group_index].push(heap);
+        }
+        std::thread::scope(|scope| {
+            for (index, group) in groups.into_iter().enumerate() {
+                // If the OS refuses another worker, dropping the failed
+                // closure releases that group synchronously on this thread.
+                // The search report must never panic merely because cleanup
+                // could not acquire an optional worker.
+                let _ = std::thread::Builder::new()
+                    .name(format!("combat-frontier-drop-{index}"))
+                    .spawn_scoped(scope, move || drop(group));
+            }
+        });
     }
 
     pub(in crate::ai::combat_search_v2) fn replace_exact_state_rollout_estimate(

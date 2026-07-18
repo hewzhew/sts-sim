@@ -8,7 +8,7 @@ pub(in crate::ai::combat_search_v2) struct SearchDiagnosticsFinish<'a> {
         &'a HashMap<CombatExactStateKey, Vec<ResourceVector>>,
     pub(in crate::ai::combat_search_v2) dominance:
         &'a HashMap<CombatDominanceKey, Vec<ResourceVector>>,
-    pub(in crate::ai::combat_search_v2) frontier_remaining_states: usize,
+    pub(in crate::ai::combat_search_v2) frontier_work_items: usize,
     pub(in crate::ai::combat_search_v2) frontier_sample_count: usize,
     pub(in crate::ai::combat_search_v2) stats: &'a CombatSearchV2Stats,
     pub(in crate::ai::combat_search_v2) coverage_status: SearchCoverageStatus,
@@ -52,7 +52,7 @@ impl SearchDiagnosticsCollector {
             potion_budget_cut_count: input.potion_budget_cut_count,
         };
         let frontier = CombatSearchV2DiagnosticsFrontier {
-            remaining_states: input.frontier_remaining_states,
+            remaining_work_items: input.frontier_work_items,
             sample_limit: FRONTIER_SAMPLE_LIMIT,
             sampled_states: input.frontier_sample_count,
         };
@@ -83,11 +83,11 @@ impl SearchDiagnosticsCollector {
             &card_identity,
             &turn_local_dominance,
             &pruning,
-            frontier.remaining_states,
+            frontier.remaining_work_items,
         );
 
         CombatSearchV2DiagnosticsReport {
-            schema_version: 14,
+            schema_version: 15,
             mode: "summary",
             tables,
             branching,

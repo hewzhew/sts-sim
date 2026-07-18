@@ -192,6 +192,12 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     pub terminal_wins: u64,
     pub total_us: u64,
     pub unattributed_us: u64,
+    #[serde(default)]
+    pub report_finalization_us: u64,
+    #[serde(default)]
+    pub report_frontier_scan_us: u64,
+    #[serde(default)]
+    pub report_search_storage_drop_us: u64,
     pub rollout_calls: u64,
     pub root_rollout_calls: u64,
     pub child_rollout_calls: u64,
@@ -309,6 +315,12 @@ pub struct CombatSearchTraceSummary {
     pub total_us: u64,
     #[serde(default)]
     pub unattributed_us: u64,
+    #[serde(default)]
+    pub report_finalization_us: u64,
+    #[serde(default)]
+    pub report_frontier_scan_us: u64,
+    #[serde(default)]
+    pub report_search_storage_drop_us: u64,
     #[serde(default)]
     pub rollout_us: u64,
     #[serde(default)]
@@ -592,6 +604,9 @@ pub fn combat_search_trace_summaries(
             terminal_wins: snapshot.terminal_wins,
             total_us: snapshot.total_us,
             unattributed_us: snapshot.unattributed_us,
+            report_finalization_us: snapshot.report_finalization_us,
+            report_frontier_scan_us: snapshot.report_frontier_scan_us,
+            report_search_storage_drop_us: snapshot.report_search_storage_drop_us,
             rollout_us: snapshot.rollout_us,
             expansion_us: snapshot.expansion_us,
             child_bookkeeping_us: snapshot.child_bookkeeping_us,

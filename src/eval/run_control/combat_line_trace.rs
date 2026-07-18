@@ -354,6 +354,11 @@ fn combat_search_performance_snapshot(
         terminal_wins: report.stats.terminal_wins,
         total_us: micros_to_u64(report.performance.total_elapsed_us),
         unattributed_us: micros_to_u64(report.performance.unattributed_elapsed_us),
+        report_finalization_us: micros_to_u64(report.performance.report_finalization_elapsed_us),
+        report_frontier_scan_us: micros_to_u64(report.performance.report_frontier_scan_elapsed_us),
+        report_search_storage_drop_us: micros_to_u64(
+            report.performance.report_search_storage_drop_elapsed_us,
+        ),
         rollout_calls: report.performance.rollout_estimate_calls,
         root_rollout_calls: report.performance.root_rollout_estimate_calls,
         child_rollout_calls: report.performance.child_rollout_estimate_calls,
@@ -567,6 +572,16 @@ mod tests {
             .as_object_mut()
             .expect("snapshot object")
             .remove("node_budget_hit");
+        for field in [
+            "report_finalization_us",
+            "report_frontier_scan_us",
+            "report_search_storage_drop_us",
+        ] {
+            snapshot_value
+                .as_object_mut()
+                .expect("snapshot object")
+                .remove(field);
+        }
         let restored_snapshot: CombatSearchPerformanceSnapshotV1 =
             serde_json::from_value(snapshot_value).expect("legacy snapshot");
 
@@ -584,6 +599,9 @@ mod tests {
             serde_json::from_value(summary_value).expect("legacy summary");
 
         assert!(!restored_snapshot.node_budget_hit);
+        assert_eq!(restored_snapshot.report_finalization_us, 0);
+        assert_eq!(restored_snapshot.report_frontier_scan_us, 0);
+        assert_eq!(restored_snapshot.report_search_storage_drop_us, 0);
         assert!(!restored_summary.node_budget_hit);
     }
 
@@ -624,6 +642,18 @@ mod tests {
 
         assert_eq!(snapshot.best_hp_loss, Some(15));
         assert_eq!(snapshot.nodes_expanded, report.stats.nodes_expanded);
+        assert_eq!(
+            snapshot.report_finalization_us,
+            micros_to_u64(report.performance.report_finalization_elapsed_us)
+        );
+        assert_eq!(
+            snapshot.report_frontier_scan_us,
+            micros_to_u64(report.performance.report_frontier_scan_elapsed_us)
+        );
+        assert_eq!(
+            snapshot.report_search_storage_drop_us,
+            micros_to_u64(report.performance.report_search_storage_drop_elapsed_us)
+        );
         assert_eq!(snapshot.quantum_history, report.quantum_history);
         assert_eq!(
             snapshot.final_root_evidence.as_ref(),

@@ -15,9 +15,9 @@ use super::transition_report::ActionResult;
 use super::view_model::{CandidateResolution, DecisionCandidate};
 
 pub const SESSION_TRACE_SCHEMA_NAME: &str = "SessionTraceV1";
-pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 15;
+pub const SESSION_TRACE_SCHEMA_VERSION: u32 = 16;
 
-/// Historical schema-v15 trace data.
+/// Typed schema-v16 trace data with data-only compatibility through v6.
 ///
 /// The raw command fields are retained only because they are part of the
 /// persisted schema. This module never parses or executes them.
@@ -69,7 +69,7 @@ impl SessionTraceV1 {
 
 /// Loads historical SessionTrace payloads as data only.
 ///
-/// Schema-v15 traces remain available to exporters without restoring the
+/// Historical traces remain available to exporters without restoring the
 /// retired command parser, recorder, or replay executor.
 pub fn load_session_trace_v1(path: &Path) -> Result<SessionTraceV1, String> {
     let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;

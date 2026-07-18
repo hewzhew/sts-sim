@@ -31,7 +31,11 @@ pub enum CombatSearchV2RootClosureStatus {
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2RootClosureBlocker {
     RootActionSurfaceNotFullyMaterialized,
-    OpenConcreteWork,
+    OpenFrontierWork,
+    /// Historical schema-v20 evidence. This remains distinct because its
+    /// exact-state count must not be reinterpreted as frontier work items.
+    #[serde(rename = "open_concrete_work")]
+    LegacyOpenConcreteWork,
     OpenPendingChoiceWork,
     UnresolvedLeaf,
     PendingChoiceOrderedVariantsOmitted,
@@ -78,10 +82,21 @@ pub struct CombatSearchV2RootWorkEvidence {
     pub max_expanded_turn: u32,
     #[serde(default)]
     pub max_expanded_action_count: usize,
-    pub open_concrete_states: usize,
+    #[serde(default)]
+    pub open_work_items: usize,
+    /// Historical schema-v20 exact-state census, retained only when loading
+    /// old trace data. New reports leave it absent.
+    #[serde(
+        default,
+        rename = "open_concrete_states",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub legacy_open_concrete_states: Option<usize>,
     pub open_pending_choice_work_items: usize,
     pub best_exact_complete: Option<CombatSearchV2RootObservedValue>,
     pub best_exact_win: Option<CombatSearchV2RootObservedValue>,
+    /// Observation of this root's priority-queue head, not an exhaustive
+    /// maximum over every open work item.
     pub best_open_observed: Option<CombatSearchV2RootObservedValue>,
 }
 

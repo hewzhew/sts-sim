@@ -192,8 +192,8 @@ pub(super) fn render_search_policy_summary(report: &CombatSearchV2Report) -> Str
 
 pub(super) fn render_search_diagnostics_summary(report: &CombatSearchV2Report) -> String {
     format!(
-        "  search_diagnostics=frontier_concrete_states={} pending_action_work={} unresolved_leaf={} max_actions_cut={} engine_step_cut={} potion_budget_cut={} turn_plan_observed={} turn_plan_seeded={} pending_states={} pending_high_fanout={} rollout_budget_skips={}",
-        report.frontier.remaining_states,
+        "  search_diagnostics=frontier_work_items={} pending_action_work={} unresolved_leaf={} max_actions_cut={} engine_step_cut={} potion_budget_cut={} turn_plan_observed={} turn_plan_seeded={} pending_states={} pending_high_fanout={} rollout_budget_skips={}",
+        report.frontier.remaining_work_items,
         report.frontier.pending_choice_work_items,
         report.frontier.unresolved_leaf_count,
         report.frontier.max_actions_cut_count,

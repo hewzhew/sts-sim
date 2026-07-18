@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use super::super::frontier::{RootLineage, RootLineageId, SearchNode};
 use super::super::*;
@@ -7,9 +7,9 @@ use super::node_action_ordering::OrderedNodeAction;
 use super::root_round_scheduler::{RootActionScheduleState, ROOT_SCHEDULING_POLICY};
 
 const ROOT_RANKING_POLICY: &str =
-    "best_exact_complete_or_live_open_observation_by_combat_outcome_score_v1";
+    "best_exact_complete_or_priority_queue_head_then_ranked_by_combat_outcome_score_v2";
 const ROOT_WORK_ACCOUNTING_SCOPE: &str =
-    "concrete_search_nodes_and_turn_boundary_inner_nodes_by_typed_root_lineage";
+    "generated_expanded_nodes_and_open_frontier_work_items_by_typed_root_lineage_v2";
 
 pub(super) struct RootEvidenceBook {
     next_id: u32,
@@ -297,6 +297,20 @@ impl SearchLoopState {
 pub(super) fn root_evidence_snapshot(
     loop_state: &SearchLoopState,
 ) -> CombatSearchV2RootEvidenceSnapshot {
+    frontier_evidence_scan(loop_state).root_evidence
+}
+
+pub(super) struct FrontierEvidenceScan {
+    pub(super) root_evidence: CombatSearchV2RootEvidenceSnapshot,
+    pub(super) work_item_count: usize,
+    pub(super) pending_choice_work_items: usize,
+    pub(super) sample_states: Vec<CombatSearchV2StateSummary>,
+}
+
+/// Report frontier work without reconstructing every exact combat-state key.
+/// Exact duplicate pruning remains authoritative inside the search tables;
+/// reporting only needs queue occupancy, root attribution, and a small sample.
+pub(super) fn frontier_evidence_scan(loop_state: &SearchLoopState) -> FrontierEvidenceScan {
     let root_schedule_states = loop_state.root_action_schedule_states();
     let current_comparison_round_complete = loop_state
         .root_round_scheduler
@@ -317,41 +331,55 @@ pub(super) fn root_evidence_snapshot(
         })
         .collect::<BTreeMap<_, _>>();
     let mut unattributed = loop_state.root_evidence.unattributed.clone();
-    let mut open_states = HashMap::<RootLineageId, HashSet<CombatExactStateKey>>::new();
-    let mut unattributed_open_states = HashSet::new();
-
-    for entry in loop_state.frontier.iter() {
-        let value = observed_value(&entry.node);
-        let key = combat_exact_state_key(&entry.node.engine, &entry.node.combat);
-        match entry.node.root_lineage {
-            RootLineage::Action(id) if contenders.contains_key(&id) => {
+    let mut pending_choice_work_items = 0usize;
+    for summary in loop_state.frontier.lineage_summaries() {
+        let lineage = match summary.lineage {
+            RootLineage::Action(id) if contenders.contains_key(&id) => RootLineage::Action(id),
+            RootLineage::Action(_) | RootLineage::Unmaterialized => RootLineage::Unmaterialized,
+        };
+        pending_choice_work_items =
+            pending_choice_work_items.saturating_add(summary.pending_choice_work_items);
+        match lineage {
+            RootLineage::Action(id) => {
                 let contender = contenders.get_mut(&id).expect("checked root lineage");
-                remember_best(&mut contender.work.best_open_observed, value);
-                open_states.entry(id).or_default().insert(key);
-                if entry.pending_choice_work.is_some() {
-                    contender.work.open_pending_choice_work_items = contender
-                        .work
-                        .open_pending_choice_work_items
-                        .saturating_add(1);
+                contender.work.open_work_items = contender
+                    .work
+                    .open_work_items
+                    .saturating_add(summary.work_items);
+                contender.work.open_pending_choice_work_items = contender
+                    .work
+                    .open_pending_choice_work_items
+                    .saturating_add(summary.pending_choice_work_items);
+                if let Some(entry) = summary.best_entry {
+                    remember_best(
+                        &mut contender.work.best_open_observed,
+                        observed_value(&entry.node),
+                    );
                 }
             }
-            RootLineage::Action(_) | RootLineage::Unmaterialized => {
-                remember_best(&mut unattributed.best_open_observed, value);
-                unattributed_open_states.insert(key);
-                if entry.pending_choice_work.is_some() {
-                    unattributed.open_pending_choice_work_items = unattributed
-                        .open_pending_choice_work_items
-                        .saturating_add(1);
+            RootLineage::Unmaterialized => {
+                unattributed.open_work_items = unattributed
+                    .open_work_items
+                    .saturating_add(summary.work_items);
+                unattributed.open_pending_choice_work_items = unattributed
+                    .open_pending_choice_work_items
+                    .saturating_add(summary.pending_choice_work_items);
+                if let Some(entry) = summary.best_entry {
+                    remember_best(
+                        &mut unattributed.best_open_observed,
+                        observed_value(&entry.node),
+                    );
                 }
             }
         }
     }
-    for (id, states) in open_states {
-        if let Some(contender) = contenders.get_mut(&id) {
-            contender.work.open_concrete_states = states.len();
-        }
-    }
-    unattributed.open_concrete_states = unattributed_open_states.len();
+    let sample_states = loop_state
+        .frontier
+        .iter()
+        .take(FRONTIER_SAMPLE_LIMIT)
+        .map(|entry| summarize_state(&entry.node.engine, &entry.node.combat))
+        .collect();
+    let frontier_work_items = loop_state.frontier.len();
 
     let mut contenders = contenders.into_values().collect::<Vec<_>>();
     contenders.sort_by(|left, right| {
@@ -382,12 +410,12 @@ pub(super) fn root_evidence_snapshot(
         closure_blockers
             .push(CombatSearchV2RootClosureBlocker::RootActionSurfaceNotFullyMaterialized);
     }
-    if unattributed.open_concrete_states > 0
+    if unattributed.open_work_items > 0
         || contenders
             .iter()
-            .any(|contender| contender.work.open_concrete_states > 0)
+            .any(|contender| contender.work.open_work_items > 0)
     {
-        closure_blockers.push(CombatSearchV2RootClosureBlocker::OpenConcreteWork);
+        closure_blockers.push(CombatSearchV2RootClosureBlocker::OpenFrontierWork);
     }
     if unattributed.open_pending_choice_work_items > 0
         || contenders
@@ -422,7 +450,7 @@ pub(super) fn root_evidence_snapshot(
     // into a false proof.
     closure_blockers.push(CombatSearchV2RootClosureBlocker::ProofDispositionsUnavailable);
 
-    CombatSearchV2RootEvidenceSnapshot {
+    let root_evidence = CombatSearchV2RootEvidenceSnapshot {
         ranking_policy: ROOT_RANKING_POLICY.to_string(),
         work_accounting_scope: ROOT_WORK_ACCOUNTING_SCOPE.to_string(),
         scheduling_policy: ROOT_SCHEDULING_POLICY.to_string(),
@@ -446,6 +474,124 @@ pub(super) fn root_evidence_snapshot(
         leader,
         contenders,
         unattributed,
+    };
+    FrontierEvidenceScan {
+        root_evidence,
+        work_item_count: frontier_work_items,
+        pending_choice_work_items,
+        sample_states,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::monsters::EnemyId;
+    use crate::state::core::ClientInput;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    fn attributed_node(
+        state: &mut SearchLoopState,
+        combat: CombatState,
+        root_key: &str,
+    ) -> SearchNode {
+        let mut node = SearchNode::root(EngineState::CombatPlayerTurn, combat);
+        node.push_action(CombatSearchV2ActionTrace {
+            step_index: 0,
+            action_id: 0,
+            action_key: root_key.to_string(),
+            action_debug: root_key.to_string(),
+            input: ClientInput::Proceed,
+        });
+        state.materialize_root_lineage(&mut node);
+        node
+    }
+
+    #[test]
+    fn frontier_evidence_accounts_for_work_by_root_without_an_exact_state_census() {
+        let config = CombatSearchV2Config {
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            ..CombatSearchV2Config::default()
+        };
+        let mut state = SearchLoopState::new(&config, false, 0);
+        let mut state_zero = blank_test_combat();
+        state_zero.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+        let mut state_one = state_zero.clone();
+        state_one.entities.player.block = 1;
+
+        let root_a_zero = attributed_node(&mut state, state_zero.clone(), "root/a");
+        let root_a_zero_duplicate = attributed_node(&mut state, state_zero.clone(), "root/a");
+        let root_b_zero = attributed_node(&mut state, state_zero.clone(), "root/b");
+        let root_a_one = attributed_node(&mut state, state_one, "root/a");
+        state.push_frontier(root_a_zero);
+        state.push_frontier(root_a_zero_duplicate);
+        state.push_frontier(root_b_zero);
+        state.push_frontier(root_a_one);
+        state.push_frontier(SearchNode::root(EngineState::CombatPlayerTurn, state_zero));
+
+        let scan = frontier_evidence_scan(&state);
+
+        assert_eq!(scan.work_item_count, 5);
+        assert_eq!(scan.sample_states.len(), 5);
+        assert_eq!(scan.pending_choice_work_items, 0);
+        let root_a = scan
+            .root_evidence
+            .contenders
+            .iter()
+            .find(|entry| entry.root_action.action_key == "root/a")
+            .expect("root/a evidence");
+        let root_b = scan
+            .root_evidence
+            .contenders
+            .iter()
+            .find(|entry| entry.root_action.action_key == "root/b")
+            .expect("root/b evidence");
+        assert_eq!(root_a.work.open_work_items, 3);
+        assert_eq!(root_b.work.open_work_items, 1);
+        assert_eq!(scan.root_evidence.unattributed.open_work_items, 1);
+        assert_eq!(
+            scan.root_evidence
+                .contenders
+                .iter()
+                .map(|entry| entry.work.open_work_items)
+                .sum::<usize>()
+                .saturating_add(scan.root_evidence.unattributed.open_work_items),
+            scan.work_item_count
+        );
+        assert_eq!(
+            scan.root_evidence
+                .contenders
+                .iter()
+                .map(|entry| entry.work.open_pending_choice_work_items)
+                .sum::<usize>()
+                .saturating_add(
+                    scan.root_evidence
+                        .unattributed
+                        .open_pending_choice_work_items
+                ),
+            scan.pending_choice_work_items
+        );
+    }
+
+    #[test]
+    fn legacy_exact_frontier_evidence_remains_distinct_when_deserialized() {
+        let mut value = serde_json::to_value(CombatSearchV2RootWorkEvidence::default())
+            .expect("serialize root work evidence");
+        let object = value.as_object_mut().expect("root work object");
+        object.remove("open_work_items");
+        object.insert("open_concrete_states".to_string(), serde_json::json!(7));
+
+        let restored: CombatSearchV2RootWorkEvidence =
+            serde_json::from_value(value).expect("legacy root evidence");
+        let blocker: CombatSearchV2RootClosureBlocker =
+            serde_json::from_str("\"open_concrete_work\"").expect("legacy blocker");
+
+        assert_eq!(restored.open_work_items, 0);
+        assert_eq!(restored.legacy_open_concrete_states, Some(7));
+        assert_eq!(
+            blocker,
+            CombatSearchV2RootClosureBlocker::LegacyOpenConcreteWork
+        );
     }
 }
 

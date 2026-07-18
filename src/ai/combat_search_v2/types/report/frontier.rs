@@ -4,8 +4,10 @@ use super::super::{CombatSearchV2StateSummary, SearchTerminalLabel};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2FrontierReport {
-    /// Number of unique concrete engine states retained by the frontier.
-    pub remaining_states: usize,
+    /// Queue entries waiting in the frontier. One residual pending-choice work
+    /// item may own multiple not-yet-materialized prefixes. This is
+    /// intentionally not an expensive exact-state census.
+    pub remaining_work_items: usize,
     /// Search-only residual work that has not crossed the engine boundary.
     pub pending_choice_work_items: usize,
     pub unresolved_leaf_count: u64,
@@ -13,6 +15,7 @@ pub struct CombatSearchV2FrontierReport {
     pub engine_step_limit_count: u64,
     pub potion_budget_cut_count: u64,
     pub best_estimated_value: Option<CombatSearchV2FrontierValueReport>,
+    /// Cheap work-item samples; duplicate states and roots are allowed.
     pub sample_states: Vec<CombatSearchV2StateSummary>,
 }
 
