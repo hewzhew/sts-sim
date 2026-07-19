@@ -4,6 +4,7 @@ mod guidance_lab;
 mod policy_compare;
 mod prior_hints;
 mod rollout_compare_attribution;
+mod root_proposal_probe;
 mod start;
 mod turn_plan_guidance_lab;
 
@@ -46,6 +47,13 @@ pub use prior_hints::{
 };
 pub use rollout_compare_attribution::{
     CombatSearchV2RolloutPolicyFirstActionDiff, CombatSearchV2RolloutPolicyFirstDiffContext,
+};
+pub use root_proposal_probe::{
+    run_combat_root_proposal_priority_matrix_v1, run_combat_root_proposal_probe_v1,
+    CombatRootProposalObservationV1, CombatRootProposalOutcomeV1,
+    CombatRootProposalPriorityMatrixRunV1, CombatRootProposalPriorityMatrixV1Report,
+    CombatRootProposalProbeConfigV1, CombatRootProposalProbeSummaryV1,
+    CombatRootProposalProbeV1Report,
 };
 pub use start::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_loaded_start,

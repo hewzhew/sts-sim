@@ -16,7 +16,8 @@ use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
     load_combat_root_action_prior_hints_jsonl_v0, load_combat_search_v2_benchmark,
     load_combat_search_v2_snapshot, load_combat_search_v2_start,
-    load_combat_turn_plan_prior_hints_jsonl_v0, run_combat_search_guidance_lab_benchmark_v1,
+    load_combat_turn_plan_prior_hints_jsonl_v0, run_combat_root_proposal_priority_matrix_v1,
+    run_combat_root_proposal_probe_v1, run_combat_search_guidance_lab_benchmark_v1,
     run_combat_search_guidance_lab_v1, run_combat_search_v2_benchmark,
     run_combat_search_v2_loaded_start, run_combat_turn_plan_guidance_lab_benchmark_v1,
     run_combat_turn_plan_guidance_lab_v1, CombatSearchV2LoadedStart, CombatSearchV2RunOptions,
@@ -77,6 +78,8 @@ struct Args {
             "gate_only",
             "guidance_lab",
             "turn_plan_guidance_lab",
+            "root_proposal_probe",
+            "root_proposal_quantum_nodes",
             "guidance_lab_max_cases",
             "probe_max_nodes",
             "probe_wall_ms",
@@ -121,6 +124,8 @@ struct Args {
             "gate_only",
             "guidance_lab",
             "turn_plan_guidance_lab",
+            "root_proposal_probe",
+            "root_proposal_quantum_nodes",
             "guidance_lab_max_cases",
             "probe_max_nodes",
             "probe_wall_ms",
@@ -206,6 +211,15 @@ struct Args {
     turn_plan_guidance_lab: bool,
 
     #[arg(long)]
+    root_proposal_probe: bool,
+
+    #[arg(long, requires = "root_proposal_probe")]
+    root_proposal_priority_matrix: bool,
+
+    #[arg(long, requires = "root_proposal_probe")]
+    root_proposal_quantum_nodes: Option<usize>,
+
+    #[arg(long)]
     guidance_lab_max_cases: Option<usize>,
 
     #[arg(long)]
@@ -288,6 +302,26 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.guidance_lab && args.turn_plan_guidance_lab {
         return Err("--guidance-lab cannot be combined with --turn-plan-guidance-lab".into());
+    }
+    if args.root_proposal_probe
+        && (args.guidance_lab
+            || args.turn_plan_guidance_lab
+            || args.validate_only
+            || args.gate_only
+            || args.compare_rollout.is_some()
+            || args.compare_turn_plan.is_some()
+            || args.explain_case.is_some()
+            || args.compact)
+    {
+        return Err("--root-proposal-probe cannot be combined with other analysis modes".into());
+    }
+    if args.root_proposal_probe && args.benchmark_spec.is_some() {
+        return Err(
+            "--root-proposal-probe requires one exact combat input, not a benchmark".into(),
+        );
+    }
+    if args.root_proposal_probe && args.max_hp_loss.is_some() {
+        return Err("--root-proposal-probe owns satisfaction and cannot use --max-hp-loss".into());
     }
     if args.compact && !args.turn_plan_guidance_lab {
         return Err("--compact currently requires --turn-plan-guidance-lab".into());
@@ -499,7 +533,23 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 .expect("clap requires exactly one input");
             load_combat_search_v2_start(path)?
         };
-        if args.guidance_lab || args.turn_plan_guidance_lab {
+        if args.root_proposal_probe {
+            if args.root_proposal_priority_matrix {
+                let report = run_combat_root_proposal_priority_matrix_v1(
+                    &loaded,
+                    options,
+                    args.root_proposal_quantum_nodes.unwrap_or(1),
+                )?;
+                serde_json::to_string_pretty(&report)?
+            } else {
+                let report = run_combat_root_proposal_probe_v1(
+                    &loaded,
+                    options,
+                    args.root_proposal_quantum_nodes.unwrap_or(1),
+                )?;
+                serde_json::to_string_pretty(&report)?
+            }
+        } else if args.guidance_lab || args.turn_plan_guidance_lab {
             let mut child_options = options.clone();
             if args.probe_max_nodes.is_some() {
                 child_options.max_nodes = args.probe_max_nodes;

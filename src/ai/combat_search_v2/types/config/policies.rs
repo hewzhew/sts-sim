@@ -1,5 +1,43 @@
 use serde::{Deserialize, Serialize};
 
+/// Diagnostic-only switches for identifying which legacy frontier signals
+/// contribute useful search capability. Production search always uses
+/// `Baseline`; the other variants are exposed only through explicit lab
+/// session construction.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2PriorityAblation {
+    Baseline,
+    NoActionGuidance,
+    NoStateValue,
+    NoActionGuidanceOrStateValue,
+}
+
+impl Default for CombatSearchV2PriorityAblation {
+    fn default() -> Self {
+        Self::Baseline
+    }
+}
+
+impl CombatSearchV2PriorityAblation {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::NoActionGuidance => "no_action_guidance",
+            Self::NoStateValue => "no_state_value",
+            Self::NoActionGuidanceOrStateValue => "no_action_guidance_or_state_value",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn uses_action_guidance(self) -> bool {
+        matches!(self, Self::Baseline | Self::NoStateValue)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn uses_state_value(self) -> bool {
+        matches!(self, Self::Baseline | Self::NoActionGuidance)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchV2SetupBiasPolicy {

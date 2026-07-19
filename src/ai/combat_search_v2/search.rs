@@ -129,18 +129,53 @@ impl CombatSearchV2Session {
         Self::new_with_stepper(engine, combat, config, &EngineCombatStepper)
     }
 
+    /// Creates an explicitly diagnostic session whose frontier omits selected
+    /// legacy priority signals. This is intentionally separate from config so
+    /// production callers cannot accidentally persist an ablation.
+    pub fn new_with_priority_ablation(
+        engine: &EngineState,
+        combat: &CombatState,
+        config: CombatSearchV2Config,
+        priority_ablation: CombatSearchV2PriorityAblation,
+    ) -> Self {
+        Self::new_with_stepper_and_priority_ablation(
+            engine,
+            combat,
+            config,
+            &EngineCombatStepper,
+            priority_ablation,
+        )
+    }
+
     fn new_with_stepper(
         engine: &EngineState,
         combat: &CombatState,
         config: CombatSearchV2Config,
         stepper: &impl CombatStepper,
     ) -> Self {
+        Self::new_with_stepper_and_priority_ablation(
+            engine,
+            combat,
+            config,
+            stepper,
+            CombatSearchV2PriorityAblation::Baseline,
+        )
+    }
+
+    fn new_with_stepper_and_priority_ablation(
+        engine: &EngineState,
+        combat: &CombatState,
+        config: CombatSearchV2Config,
+        stepper: &impl CombatStepper,
+        priority_ablation: CombatSearchV2PriorityAblation,
+    ) -> Self {
         let started = Instant::now();
         let policy_evidence = combat_search_policy_evidence_for_combat(combat);
-        let mut loop_state = SearchLoopState::new(
+        let mut loop_state = SearchLoopState::new_with_priority_ablation(
             &config,
             stepper.supports_canonical_pending_choice_actions(),
             outcome_score::external_burden_count(combat),
+            priority_ablation,
         );
         let root_for_turn_plan_diagnostics =
             initialize_root_frontier(&mut loop_state, engine, combat, stepper, &config, None);

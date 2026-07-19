@@ -1,6 +1,7 @@
+use super::super::CombatSearchV2PriorityAblation;
 use super::super::PendingChoiceActionWork;
 use super::node::{RootLineage, RootLineageId, SearchNode};
-use super::priority::{priority_for_node, QueueEntry};
+use super::priority::{priority_for_node_with_ablation, QueueEntry};
 use crate::ai::combat_state_key::combat_exact_state_key;
 use std::collections::{BTreeMap, BinaryHeap};
 
@@ -8,6 +9,7 @@ pub(in crate::ai::combat_search_v2) struct FrontierQueue {
     unattributed: BinaryHeap<QueueEntry>,
     by_root_action: BTreeMap<RootLineageId, BinaryHeap<QueueEntry>>,
     next_sequence_id: u64,
+    priority_ablation: CombatSearchV2PriorityAblation,
 }
 
 pub(in crate::ai::combat_search_v2) struct FrontierLineageSummary<'a> {
@@ -18,11 +20,19 @@ pub(in crate::ai::combat_search_v2) struct FrontierLineageSummary<'a> {
 }
 
 impl FrontierQueue {
+    #[cfg(test)]
     pub(in crate::ai::combat_search_v2) fn new() -> Self {
+        Self::new_with_priority_ablation(CombatSearchV2PriorityAblation::Baseline)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn new_with_priority_ablation(
+        priority_ablation: CombatSearchV2PriorityAblation,
+    ) -> Self {
         Self {
             unattributed: BinaryHeap::new(),
             by_root_action: BTreeMap::new(),
             next_sequence_id: 0,
+            priority_ablation,
         }
     }
 
@@ -44,7 +54,7 @@ impl FrontierQueue {
         pending_choice_work: Option<PendingChoiceActionWork>,
     ) {
         let entry = QueueEntry {
-            priority: priority_for_node(&node),
+            priority: priority_for_node_with_ablation(&node, self.priority_ablation),
             sequence_id: self.next_sequence_id,
             node,
             pending_choice_work,
@@ -162,6 +172,7 @@ impl FrontierQueue {
             unattributed,
             by_root_action,
             next_sequence_id: _,
+            priority_ablation: _,
         } = self;
         let mut heaps = Vec::with_capacity(by_root_action.len().saturating_add(1));
         if !unattributed.is_empty() {
@@ -219,7 +230,8 @@ impl FrontierQueue {
         for entry in &mut entries {
             if combat_exact_state_key(&entry.node.engine, &entry.node.combat) == target_key {
                 entry.node.rollout_estimate = estimate.clone();
-                entry.priority = priority_for_node(&entry.node);
+                entry.priority =
+                    priority_for_node_with_ablation(&entry.node, self.priority_ablation);
             }
         }
         for entry in entries {

@@ -1,6 +1,7 @@
 use super::super::rollout_value::{rollout_priority_value, CombatSearchRolloutValueV1};
 use super::super::transition::terminal_label;
 use super::super::value::{combat_search_state_value, CombatSearchStateValueV1};
+use super::super::CombatSearchV2PriorityAblation;
 use super::super::SearchTerminalLabel;
 use super::node::SearchNode;
 use std::cmp::Ordering;
@@ -76,8 +77,16 @@ impl PartialOrd for QueueEntry {
     }
 }
 
+#[cfg(test)]
 pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node(
     node: &SearchNode,
+) -> NodePriority {
+    priority_for_node_with_ablation(node, CombatSearchV2PriorityAblation::Baseline)
+}
+
+pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node_with_ablation(
+    node: &SearchNode,
+    ablation: CombatSearchV2PriorityAblation,
 ) -> NodePriority {
     let terminal_rank = match terminal_label(&node.engine, &node.combat) {
         SearchTerminalLabel::Win => 3,
@@ -87,9 +96,18 @@ pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node(
     NodePriority {
         terminal_rank,
         rollout_value: rollout_priority_value(&node.rollout_estimate),
-        action_prior_rank: action_prior_rank(node.action_prior_score),
-        action_ordering_frontier_hint: node.action_ordering_frontier_hint,
-        state_value: combat_search_state_value(node),
+        action_prior_rank: ablation
+            .uses_action_guidance()
+            .then(|| action_prior_rank(node.action_prior_score))
+            .unwrap_or_default(),
+        action_ordering_frontier_hint: ablation
+            .uses_action_guidance()
+            .then_some(node.action_ordering_frontier_hint)
+            .unwrap_or_default(),
+        state_value: ablation
+            .uses_state_value()
+            .then(|| combat_search_state_value(node))
+            .unwrap_or_default(),
         potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
         turn_branch_priority: node.last_turn_branch_priority,

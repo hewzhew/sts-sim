@@ -39,10 +39,25 @@ pub(super) struct SearchLoopState {
 }
 
 impl SearchLoopState {
+    #[cfg(test)]
     pub(super) fn new(
         config: &CombatSearchV2Config,
         owns_engine_pending_choice_prefixes: bool,
         initial_external_burden_count: i32,
+    ) -> Self {
+        Self::new_with_priority_ablation(
+            config,
+            owns_engine_pending_choice_prefixes,
+            initial_external_burden_count,
+            CombatSearchV2PriorityAblation::Baseline,
+        )
+    }
+
+    pub(super) fn new_with_priority_ablation(
+        config: &CombatSearchV2Config,
+        owns_engine_pending_choice_prefixes: bool,
+        initial_external_burden_count: i32,
+        priority_ablation: CombatSearchV2PriorityAblation,
     ) -> Self {
         let plugins = CombatSearchPluginStack::from_config(config);
         Self {
@@ -60,7 +75,7 @@ impl SearchLoopState {
                 initial_external_burden_count,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
-            frontier: FrontierQueue::new(),
+            frontier: FrontierQueue::new_with_priority_ablation(priority_ablation),
             turn_boundary_expansion_tracker: TurnBoundaryExpansionTracker::default(),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),
