@@ -26,18 +26,18 @@ fn service_keeps_one_session_alive_autosaves_and_survives_bad_commands() {
     .expect("analysis workspace");
     let root = workspace.view().expect("root view");
     let root_id = root.node_id;
-    let choice_ref = root
-        .choices
-        .first()
-        .expect("root choice")
-        .choice_ref
-        .clone();
+    let owner_rank = root.choices.first().expect("root choice").owner_rank;
 
     let requests = [
         json!({"id": "view", "command": "view"}),
         json!({"id": "bad", "command": "try", "choice_ref": "tampered"}),
         json!({"id": "ping", "command": "ping"}),
-        json!({"id": "try", "command": "try", "choice_ref": choice_ref}),
+        json!({
+            "id": "choose",
+            "command": "choose",
+            "node": root_id,
+            "owner_rank": owner_rank
+        }),
         json!({"id": "back", "command": "back"}),
         json!({"id": "save", "command": "save"}),
         json!({"id": "shutdown", "command": "shutdown"}),
@@ -67,8 +67,8 @@ fn service_keeps_one_session_alive_autosaves_and_survives_bad_commands() {
     assert_eq!(responses.first().expect("ready").event, "ready");
     assert!(!response(&responses, "bad").ok);
     assert!(response(&responses, "ping").ok, "service continued");
-    assert_eq!(response(&responses, "try").revision, 1);
-    assert_eq!(response(&responses, "try").saved_revision, 1);
+    assert_eq!(response(&responses, "choose").revision, 1);
+    assert_eq!(response(&responses, "choose").saved_revision, 1);
     assert_eq!(response(&responses, "back").revision, 2);
     assert_eq!(response(&responses, "back").saved_revision, 2);
     assert_eq!(response(&responses, "shutdown").event, "shutdown");
@@ -115,6 +115,25 @@ fn loopback_endpoint_accepts_independent_calls_and_removes_discovery_file_on_shu
         .expect("ping resident service");
     assert!(ping.ok);
     assert_eq!(ping.id, Some(json!("ping")));
+    let status =
+        call_oracle_analysis_tcp_v1(&endpoint_path, r#"{"id":"status","command":"status"}"#)
+            .expect("summarize resident service");
+    let summary = status.result.expect("status result");
+    assert!(summary.get("deck").is_none(), "status stays compact");
+    assert!(
+        summary["choice_count"]
+            .as_u64()
+            .is_some_and(|count| count > 0),
+        "status retains actionable choices"
+    );
+    let node = summary["node_id"].as_u64().expect("status node id");
+    let explain = call_oracle_analysis_tcp_v1(
+        &endpoint_path,
+        &format!(r#"{{"id":"explain","command":"explain","node":{node},"owner_rank":0}}"#),
+    )
+    .expect("explain one resident choice");
+    assert!(explain.ok);
+    assert!(explain.result.expect("explanation")["label"].is_string());
     let view = call_oracle_analysis_tcp_v1(&endpoint_path, r#"{"id":"view","command":"view"}"#)
         .expect("view resident service");
     assert!(view.ok);

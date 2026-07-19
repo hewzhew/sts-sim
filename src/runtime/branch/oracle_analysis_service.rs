@@ -9,7 +9,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
 use crate::eval::combat_lab_v1::atomic_write_json;
-use crate::eval::run_control::OracleAnalysisAdvanceRequestV1;
+use crate::eval::run_control::{OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1};
 
 use super::{save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1};
 
@@ -63,6 +63,14 @@ pub struct OracleAnalysisServiceEndpointV1 {
 pub enum OracleAnalysisServiceCommandV1 {
     Ping,
     Capabilities,
+    Status {
+        #[serde(default)]
+        node: Option<usize>,
+    },
+    Explain {
+        node: usize,
+        owner_rank: u64,
+    },
     View {
         #[serde(default)]
         node: Option<usize>,
@@ -70,6 +78,10 @@ pub enum OracleAnalysisServiceCommandV1 {
     Tree,
     Try {
         choice_ref: String,
+    },
+    Choose {
+        node: usize,
+        owner_rank: u64,
     },
     Focus {
         node: usize,
@@ -437,17 +449,43 @@ fn execute_command(
         OracleAnalysisServiceCommandV1::Capabilities => (
             json!({
                 "commands": [
-                    "ping", "capabilities", "view", "tree", "try", "focus", "follow",
-                    "back", "promote", "advance", "history", "save", "shutdown"
+                    "ping", "capabilities", "status", "explain", "view", "tree", "try",
+                    "focus", "choose", "follow", "back", "promote", "advance", "history",
+                    "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
                 "autosave": "after every successful mutation",
                 "pause": "omit advance commands; in-memory combat work remains resident",
+                "status": "compact actionable node summary",
+                "view": "full node state including deck and relics",
             }),
             false,
             false,
             false,
         ),
+        OracleAnalysisServiceCommandV1::Status { node } => {
+            let view = if let Some(node) = node {
+                workspace.session.view_node(node)?
+            } else {
+                workspace.view()?
+            };
+            (node_summary(&view), false, false, false)
+        }
+        OracleAnalysisServiceCommandV1::Explain { node, owner_rank } => {
+            let view = workspace.session.view_node(node)?;
+            let matching = view
+                .choices
+                .iter()
+                .filter(|choice| choice.owner_rank == owner_rank)
+                .collect::<Vec<_>>();
+            let [choice] = matching.as_slice() else {
+                return Err(format!(
+                    "oracle node {node} has {} choices with owner rank {owner_rank}; expected exactly one",
+                    matching.len()
+                ));
+            };
+            (to_value(choice)?, false, false, false)
+        }
         OracleAnalysisServiceCommandV1::View { node } => {
             let view = if let Some(node) = node {
                 workspace.session.view_node(node)?
@@ -459,27 +497,48 @@ fn execute_command(
         OracleAnalysisServiceCommandV1::Tree => {
             (to_value(workspace.session.tree())?, false, false, false)
         }
-        OracleAnalysisServiceCommandV1::Try { choice_ref } => (
-            to_value(workspace.try_choice(&choice_ref)?)?,
-            true,
-            false,
-            false,
-        ),
+        OracleAnalysisServiceCommandV1::Try { choice_ref } => {
+            let view = workspace.try_choice(&choice_ref)?;
+            (node_summary(&view), true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::Choose { node, owner_rank } => {
+            let current_node = workspace.session.cursor_node_id();
+            if current_node != node {
+                return Err(format!(
+                    "oracle choose expected cursor node {node}, but current cursor is {current_node}"
+                ));
+            }
+            let current = workspace.view()?;
+            let matching = current
+                .choices
+                .iter()
+                .filter(|choice| choice.owner_rank == owner_rank)
+                .collect::<Vec<_>>();
+            let [choice] = matching.as_slice() else {
+                return Err(format!(
+                    "oracle node {node} has {} choices with owner rank {owner_rank}; expected exactly one",
+                    matching.len()
+                ));
+            };
+            let choice_ref = choice.choice_ref.clone();
+            let view = workspace.try_choice(&choice_ref)?;
+            (node_summary(&view), true, false, false)
+        }
         OracleAnalysisServiceCommandV1::Focus { node } => {
             workspace.session.focus_node(node)?;
-            (to_value(workspace.view()?)?, true, false, false)
+            (node_summary(&workspace.view()?), true, false, false)
         }
         OracleAnalysisServiceCommandV1::Follow { edge } => {
             workspace.session.follow_edge(edge)?;
-            (to_value(workspace.view()?)?, true, false, false)
+            (node_summary(&workspace.view()?), true, false, false)
         }
         OracleAnalysisServiceCommandV1::Back => {
             workspace.session.back()?;
-            (to_value(workspace.view()?)?, true, false, false)
+            (node_summary(&workspace.view()?), true, false, false)
         }
         OracleAnalysisServiceCommandV1::Promote => {
             workspace.session.promote_cursor();
-            (to_value(workspace.view()?)?, true, false, false)
+            (node_summary(&workspace.view()?), true, false, false)
         }
         OracleAnalysisServiceCommandV1::Advance {
             max_quanta,
@@ -499,7 +558,12 @@ fn execute_command(
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
             })?;
-            (json!({"report": report, "view": view}), true, false, false)
+            (
+                json!({"report": report, "node": node_transition_summary(&view)}),
+                true,
+                false,
+                false,
+            )
         }
         OracleAnalysisServiceCommandV1::History { node } => {
             let node = node.unwrap_or_else(|| workspace.session.cursor_node_id());
@@ -578,6 +642,73 @@ fn write_response<W: Write>(
 fn to_value<T: Serialize>(value: T) -> Result<Value, String> {
     serde_json::to_value(value)
         .map_err(|error| format!("failed to serialize oracle service result: {error}"))
+}
+
+fn node_summary(view: &OracleAnalysisNodeViewV1) -> Value {
+    let choices = view
+        .choices
+        .iter()
+        .map(|choice| {
+            let annotation_kind = choice.annotation.as_ref().and_then(annotation_kind);
+            json!({
+                "choice_ref": choice.choice_ref,
+                "kind": choice.kind,
+                "candidate_id": choice.candidate_id,
+                "label": choice.label,
+                "owner_rank": choice.owner_rank,
+                "path_discrepancy": choice.path_discrepancy,
+                "annotation_kind": annotation_kind,
+            })
+        })
+        .collect::<Vec<_>>();
+    let children = view
+        .children
+        .iter()
+        .map(|child| {
+            json!({
+                "edge_id": child.edge_id,
+                "child_node_id": child.child_node_id,
+                "kind": child.kind,
+                "label": child.label,
+                "is_on_mainline": child.is_on_mainline,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "node_id": view.node_id,
+        "canonical_parent_node_id": view.canonical_parent_node_id,
+        "is_cursor": view.is_cursor,
+        "is_on_mainline": view.is_on_mainline,
+        "boundary": view.boundary,
+        "act": view.act,
+        "floor": view.floor,
+        "current_hp": view.current_hp,
+        "max_hp": view.max_hp,
+        "gold": view.gold,
+        "choice_count": choices.len(),
+        "choices": choices,
+        "child_count": children.len(),
+        "children": children,
+        "encounter": view.encounter,
+        "combat": view.combat,
+    })
+}
+
+fn node_transition_summary(view: &OracleAnalysisNodeViewV1) -> Value {
+    let mut summary = node_summary(view);
+    if let Some(object) = summary.as_object_mut() {
+        object.remove("combat");
+        object.remove("encounter");
+    }
+    summary
+}
+
+fn annotation_kind<T: Serialize>(annotation: &T) -> Option<String> {
+    serde_json::to_value(annotation)
+        .ok()?
+        .get("kind")?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn validate_endpoint(endpoint: &OracleAnalysisServiceEndpointV1) -> Result<(), String> {

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::content::monsters::EnemyId;
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::runtime::combat::CombatCard;
@@ -114,6 +115,33 @@ pub struct OracleAnalysisCombatProgressV1 {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct OracleAnalysisMonsterViewV1 {
+    pub slot: u8,
+    pub label: String,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisEncounterViewV1 {
+    pub turn: u32,
+    pub phase: String,
+    pub energy: u8,
+    pub player_block: i32,
+    pub hand: Vec<CombatCard>,
+    pub draw_pile_count: usize,
+    pub discard_pile_count: usize,
+    pub exhaust_pile_count: usize,
+    pub is_elite: bool,
+    pub is_boss: bool,
+    pub monsters: Vec<OracleAnalysisMonsterViewV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleAnalysisNodeViewV1 {
     pub node_id: usize,
     pub canonical_parent_node_id: Option<usize>,
@@ -135,6 +163,7 @@ pub struct OracleAnalysisNodeViewV1 {
     pub recent_replay: Vec<OracleRunReplayStepV1>,
     pub choices: Vec<OracleAnalysisChoiceViewV1>,
     pub children: Vec<OracleAnalysisChildViewV1>,
+    pub encounter: Option<OracleAnalysisEncounterViewV1>,
     pub combat: Option<OracleAnalysisCombatProgressV1>,
 }
 
@@ -517,6 +546,36 @@ impl OracleAnalysisSessionV1 {
             .cloned()
             .collect();
         let run = &branch.session.run_state;
+        let encounter = branch.session.active_combat.as_ref().map(|active| {
+            let combat = &active.combat_state;
+            OracleAnalysisEncounterViewV1 {
+                turn: combat.turn.turn_count,
+                phase: format!("{:?}", combat.turn.current_phase),
+                energy: combat.turn.energy,
+                player_block: combat.entities.player.block,
+                hand: combat.zones.hand.clone(),
+                draw_pile_count: combat.zones.draw_pile.len(),
+                discard_pile_count: combat.zones.discard_pile.len(),
+                exhaust_pile_count: combat.zones.exhaust_pile.len(),
+                is_elite: combat.meta.is_elite_fight,
+                is_boss: combat.meta.is_boss_fight,
+                monsters: combat
+                    .entities
+                    .monsters
+                    .iter()
+                    .map(|monster| OracleAnalysisMonsterViewV1 {
+                        slot: monster.slot,
+                        label: EnemyId::from_id(monster.monster_type)
+                            .map(|enemy| enemy.get_name().to_string())
+                            .unwrap_or_else(|| format!("monster_type:{}", monster.monster_type)),
+                        current_hp: monster.current_hp,
+                        max_hp: monster.max_hp,
+                        block: monster.block,
+                        alive: !monster.is_dead_or_escaped(),
+                    })
+                    .collect(),
+            }
+        });
         Ok(OracleAnalysisNodeViewV1 {
             node_id,
             canonical_parent_node_id: branch.parent_branch_id,
@@ -548,6 +607,7 @@ impl OracleAnalysisSessionV1 {
             recent_replay,
             choices,
             children,
+            encounter,
             combat: self.combat_progress(node_id),
         })
     }
