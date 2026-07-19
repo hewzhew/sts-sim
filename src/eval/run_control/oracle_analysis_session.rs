@@ -2,11 +2,19 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::content::monsters::EnemyId;
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
 use crate::runtime::combat::CombatCard;
+use crate::runtime::monster_move::MonsterMoveSpec;
+use crate::sim::combat::CombatPosition;
+
+use crate::eval::combat_case::{
+    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
+    CombatCaseSource,
+};
 
 use super::oracle_combat_work::{
     OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
@@ -18,8 +26,9 @@ use super::oracle_run_explorer::{
     OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
+    CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1,
     RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlTraceAnnotationV1,
-    RunDecisionAction,
+    RunDecisionAction, RunProgressStepV1,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -122,6 +131,8 @@ pub struct OracleAnalysisMonsterViewV1 {
     pub max_hp: i32,
     pub block: i32,
     pub alive: bool,
+    pub planned_move_id: u8,
+    pub intent: Option<MonsterMoveSpec>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -138,6 +149,35 @@ pub struct OracleAnalysisEncounterViewV1 {
     pub is_elite: bool,
     pub is_boss: bool,
     pub monsters: Vec<OracleAnalysisMonsterViewV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatTurnV1 {
+    pub turn: u32,
+    pub start_hp: i32,
+    pub end_hp: i32,
+    pub hp_loss: i32,
+    pub ended_turn: bool,
+    pub actions: Vec<String>,
+    pub player_block_after: i32,
+    pub monsters_after: Vec<CombatAutomationMonsterStateV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatSummaryV1 {
+    pub node_id: usize,
+    pub parent_node_id: usize,
+    pub encounter_start_hp: i32,
+    pub encounter_start_max_hp: i32,
+    pub combat_end_hp: i32,
+    pub post_combat_hp: i32,
+    pub post_combat_max_hp: i32,
+    pub combat_hp_loss: i32,
+    pub post_combat_healing: i32,
+    pub action_count: usize,
+    pub turns: Vec<OracleAnalysisCombatTurnV1>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -451,6 +491,160 @@ impl OracleAnalysisSessionV1 {
         Ok(self.require_branch(node_id)?.replay.clone())
     }
 
+    pub fn journal_entries(&self, node_id: usize) -> Result<&[RunProgressStepV1], String> {
+        Ok(self.require_branch(node_id)?.journal.entries())
+    }
+
+    pub fn combat_trajectory(
+        &self,
+        node_id: usize,
+    ) -> Result<Option<&CombatAutomationTrajectoryRecordV1>, String> {
+        let branch = self.require_branch(node_id)?;
+        Ok(branch
+            .journal
+            .entries()
+            .iter()
+            .rev()
+            .find_map(RunProgressStepV1::as_combat_resolution)
+            .map(|resolution| &resolution.trajectory)
+            .or_else(|| branch.session.last_combat_automation_trajectory()))
+    }
+
+    pub fn combat_summary(&self, node_id: usize) -> Result<OracleAnalysisCombatSummaryV1, String> {
+        let branch = self.require_branch(node_id)?;
+        let parent_node_id = branch
+            .parent_branch_id
+            .ok_or_else(|| format!("oracle node {node_id} has no parent combat boundary"))?;
+        let parent = self.require_branch(parent_node_id)?;
+        let trajectory = self
+            .combat_trajectory(node_id)?
+            .ok_or_else(|| format!("oracle node {node_id} has no recorded combat trajectory"))?;
+        let encounter_start_hp = parent.session.run_state.current_hp;
+        let encounter_start_max_hp = parent.session.run_state.max_hp;
+        let mut last_hp = encounter_start_hp;
+        let mut active_turn: Option<OracleAnalysisCombatTurnV1> = None;
+        let mut turns = Vec::new();
+
+        for action in &trajectory.actions {
+            let turn = action
+                .opportunity_before
+                .as_ref()
+                .map(|opportunity| opportunity.turn)
+                .unwrap_or_else(|| active_turn.as_ref().map(|turn| turn.turn).unwrap_or(0));
+            if active_turn
+                .as_ref()
+                .is_some_and(|summary| summary.turn != turn)
+            {
+                turns.push(active_turn.take().expect("active turn checked above"));
+            }
+            let summary = active_turn.get_or_insert_with(|| OracleAnalysisCombatTurnV1 {
+                turn,
+                start_hp: last_hp,
+                end_hp: last_hp,
+                hp_loss: 0,
+                ended_turn: false,
+                actions: Vec::new(),
+                player_block_after: 0,
+                monsters_after: Vec::new(),
+            });
+            summary.actions.push(action.action_key.clone());
+            if let Some(after) = &action.combat_after {
+                last_hp = after.player_hp;
+                summary.end_hp = last_hp;
+                summary.hp_loss = summary.start_hp.saturating_sub(last_hp).max(0);
+                summary.player_block_after = after.player_block;
+                summary.monsters_after = after.monsters.clone();
+            }
+            if matches!(action.input, crate::state::core::ClientInput::EndTurn) {
+                summary.ended_turn = true;
+            }
+        }
+        if let Some(summary) = active_turn {
+            turns.push(summary);
+        }
+
+        let post_combat_hp = branch.session.run_state.current_hp;
+        Ok(OracleAnalysisCombatSummaryV1 {
+            node_id,
+            parent_node_id,
+            encounter_start_hp,
+            encounter_start_max_hp,
+            combat_end_hp: last_hp,
+            post_combat_hp,
+            post_combat_max_hp: branch.session.run_state.max_hp,
+            combat_hp_loss: encounter_start_hp.saturating_sub(last_hp).max(0),
+            post_combat_healing: post_combat_hp.saturating_sub(last_hp).max(0),
+            action_count: trajectory.action_count,
+            turns,
+        })
+    }
+
+    pub fn combat_case(
+        &self,
+        node_id: usize,
+        seed: u64,
+        ascension: u8,
+        search_nodes: usize,
+        search_ms: u64,
+    ) -> Result<CombatCase, String> {
+        let branch = self.require_branch(node_id)?;
+        let position: CombatPosition = branch.session.current_active_combat_position()?;
+        let path: Vec<CombatCasePathStep> = branch
+            .journal
+            .entries()
+            .iter()
+            .filter_map(RunProgressStepV1::as_decision)
+            .map(|record| CombatCasePathStep {
+                key: Value::Null,
+                label: record.result.chosen_label.clone(),
+                state_before: Some(json!({
+                    "title": record.before.title,
+                    "location": record.before.location,
+                })),
+                decision_evidence: Some(json!({
+                    "candidate_id": record.selection.candidate_id,
+                    "source": record.selection.source,
+                    "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
+                })),
+            })
+            .collect();
+        Ok(CombatCase::new(
+            CombatCaseSource {
+                seed,
+                ascension,
+                generation: path.len(),
+                branch_id: branch.branch_id,
+                parent_id: branch.parent_branch_id,
+            },
+            CombatCaseGap {
+                boundary: format!(
+                    "Act {} Floor {} oracle analysis combat",
+                    branch.session.run_state.act_num, branch.session.run_state.floor_num
+                ),
+                reason: "oracle_analysis_export".to_string(),
+                search_nodes,
+                search_ms,
+                rescue_search_nodes: 0,
+                rescue_search_ms: 0,
+            },
+            CombatCaseRunSummary {
+                act: branch.session.run_state.act_num,
+                floor: branch.session.run_state.floor_num,
+                hp: branch.session.run_state.current_hp,
+                max_hp: branch.session.run_state.max_hp,
+                gold: branch.session.run_state.gold,
+                deck_size: branch.session.run_state.master_deck.len(),
+                relic_count: branch.session.run_state.relics.len(),
+                potion_slots: branch.session.run_state.potions.len(),
+            },
+            Vec::new(),
+            None,
+            path,
+            CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
+            position,
+        ))
+    }
+
     pub fn tree(&self) -> OracleAnalysisTreeViewV1 {
         OracleAnalysisTreeViewV1 {
             roots: self.root_node_ids(),
@@ -572,6 +766,8 @@ impl OracleAnalysisSessionV1 {
                         max_hp: monster.max_hp,
                         block: monster.block,
                         alive: !monster.is_dead_or_escaped(),
+                        planned_move_id: monster.planned_move_id(),
+                        intent: monster.move_state.planned_visible_spec.clone(),
                     })
                     .collect(),
             }
@@ -748,6 +944,28 @@ impl OracleAnalysisSessionV1 {
             elapsed_ms: elapsed_ms(started),
             combat: Some(final_progress),
         })
+    }
+
+    /// Discards only the cursor combat's retained search work and starts a
+    /// fresh tactical job from the same exact simulator state. Historical run
+    /// state, journal entries, siblings, and navigation remain unchanged.
+    pub fn restart_cursor_combat_search(&mut self) -> Result<(), String> {
+        let node_id = self.cursor_node_id;
+        let work = {
+            let branch = self.require_branch(node_id)?;
+            if branch.boundary != OracleRunBoundaryV1::Combat {
+                return Err(format!(
+                    "oracle analysis node {node_id} is at {:?}, not combat",
+                    branch.boundary
+                ));
+            }
+            OracleRunCombatWorkV1::restart_from_exact_state(
+                &branch.session,
+                self.combat_budgets.for_session(&branch.session),
+            )?
+        };
+        self.combat_jobs.insert(node_id, work);
+        Ok(())
     }
 
     fn require_branch(

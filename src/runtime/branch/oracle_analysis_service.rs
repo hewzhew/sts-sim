@@ -101,9 +101,34 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default)]
         wall_ms: Option<u64>,
     },
+    RestartCombat,
     History {
         #[serde(default)]
         node: Option<usize>,
+    },
+    Journal {
+        node: usize,
+        #[serde(default = "default_journal_tail")]
+        tail: usize,
+    },
+    Timeline {
+        node: usize,
+        #[serde(default = "default_journal_tail")]
+        tail: usize,
+    },
+    JournalEntry {
+        node: usize,
+        index: usize,
+    },
+    Trajectory {
+        node: usize,
+    },
+    CombatSummary {
+        node: usize,
+    },
+    ExportCombatCase {
+        node: usize,
+        path: PathBuf,
     },
     Save,
     Shutdown,
@@ -450,8 +475,9 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "view", "tree", "try",
-                    "focus", "choose", "follow", "back", "promote", "advance", "history",
-                    "save", "shutdown"
+                    "focus", "choose", "follow", "back", "promote", "advance", "restart_combat", "history",
+                    "journal", "timeline", "journal_entry", "trajectory", "combat_summary",
+                    "export_combat_case", "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
                 "autosave": "after every successful mutation",
@@ -565,10 +591,168 @@ fn execute_command(
                 false,
             )
         }
+        OracleAnalysisServiceCommandV1::RestartCombat => {
+            workspace.session.restart_cursor_combat_search()?;
+            (node_summary(&workspace.view()?), true, false, false)
+        }
         OracleAnalysisServiceCommandV1::History { node } => {
             let node = node.unwrap_or_else(|| workspace.session.cursor_node_id());
             (
                 to_value(workspace.session.replay(node)?)?,
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::Journal { node, tail } => {
+            if tail == 0 || tail > 500 {
+                return Err("journal tail must be in 1..=500".to_string());
+            }
+            let entries = workspace.session.journal_entries(node)?;
+            let start = entries.len().saturating_sub(tail);
+            (
+                json!({
+                    "node_id": node,
+                    "total_entries": entries.len(),
+                    "returned_entries": entries.len().saturating_sub(start),
+                    "entries": &entries[start..],
+                }),
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::Timeline { node, tail } => {
+            if tail == 0 || tail > 500 {
+                return Err("timeline tail must be in 1..=500".to_string());
+            }
+            let entries = workspace.session.journal_entries(node)?;
+            let start = entries.len().saturating_sub(tail);
+            let compact = entries[start..]
+                .iter()
+                .enumerate()
+                .map(|(offset, entry)| match entry {
+                    crate::eval::run_control::RunProgressStepV1::Decision(record) => json!({
+                        "journal_index": start + offset,
+                        "kind": "decision",
+                        "location": record.before.location,
+                        "title": record.before.title,
+                        "chosen": record.result.chosen_label,
+                        "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
+                    }),
+                    crate::eval::run_control::RunProgressStepV1::ForcedTransition(record) => json!({
+                        "journal_index": start + offset,
+                        "kind": "forced_transition",
+                        "location": record.before.location,
+                        "title": record.before.title,
+                    }),
+                    crate::eval::run_control::RunProgressStepV1::CombatResolution(record) => json!({
+                        "journal_index": start + offset,
+                        "kind": "combat_resolution",
+                        "location": record.before.location,
+                        "title": record.before.title,
+                        "resolution": record.kind,
+                        "actions": record.trajectory.action_count,
+                        "hp_change": record.result.changes.iter().find_map(|change| match change {
+                            crate::eval::run_control::RunActionResultChangeV1::HpChanged {
+                                before_current,
+                                before_max,
+                                after_current,
+                                after_max,
+                            } => Some(json!({
+                                "before_current": before_current,
+                                "before_max": before_max,
+                                "after_current": after_current,
+                                "after_max": after_max,
+                            })),
+                            _ => None,
+                        }),
+                        "potions_lost": record.result.changes.iter().filter_map(|change| match change {
+                            crate::eval::run_control::RunActionResultChangeV1::PotionLost { potion, slot } => {
+                                Some(json!({"potion": potion, "slot": slot}))
+                            }
+                            _ => None,
+                        }).collect::<Vec<_>>(),
+                    }),
+                    crate::eval::run_control::RunProgressStepV1::Stop(record) => json!({
+                        "journal_index": start + offset,
+                        "kind": "stop",
+                        "stop_kind": record.kind,
+                        "reason": record.reason,
+                    }),
+                })
+                .collect::<Vec<_>>();
+            (
+                json!({
+                    "node_id": node,
+                    "total_entries": entries.len(),
+                    "returned_entries": compact.len(),
+                    "entries": compact,
+                }),
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::JournalEntry { node, index } => {
+            let entries = workspace.session.journal_entries(node)?;
+            let entry = entries.get(index).ok_or_else(|| {
+                format!(
+                    "oracle node {node} journal index {index} is out of range 0..{}",
+                    entries.len()
+                )
+            })?;
+            (to_value(entry)?, false, false, false)
+        }
+        OracleAnalysisServiceCommandV1::Trajectory { node } => {
+            let trajectory = workspace
+                .session
+                .combat_trajectory(node)?
+                .ok_or_else(|| format!("oracle node {node} has no recorded combat trajectory"))?;
+            (
+                json!({"node_id": node, "trajectory": trajectory}),
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::CombatSummary { node } => (
+            to_value(workspace.session.combat_summary(node)?)?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::ExportCombatCase { node, path } => {
+            let view = workspace.session.view_node(node)?;
+            let (search_nodes, search_ms) = if view
+                .encounter
+                .as_ref()
+                .is_some_and(|encounter| encounter.is_boss)
+            {
+                (workspace.budget.boss_nodes, workspace.budget.boss_ms)
+            } else if view
+                .encounter
+                .as_ref()
+                .is_some_and(|encounter| encounter.is_elite)
+            {
+                (workspace.budget.elite_nodes, workspace.budget.elite_ms)
+            } else {
+                (workspace.budget.hallway_nodes, workspace.budget.hallway_ms)
+            };
+            let case = workspace.session.combat_case(
+                node,
+                workspace.seed,
+                workspace.ascension,
+                search_nodes,
+                search_ms,
+            )?;
+            crate::eval::combat_case::save_combat_case(&path, &case)?;
+            (
+                json!({
+                    "node_id": node,
+                    "path": path,
+                    "combat": case.combat,
+                }),
                 false,
                 false,
                 false,
@@ -753,4 +937,8 @@ const fn default_quantum_nodes() -> usize {
 
 const fn default_quantum_ms() -> u64 {
     1_000
+}
+
+const fn default_journal_tail() -> usize {
+    32
 }
