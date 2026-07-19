@@ -70,7 +70,8 @@ pub use witness_search::{
     OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessCounters,
     OracleCombatWitnessInterruption, OracleCombatWitnessProgressSnapshot,
     OracleCombatWitnessQuantum, OracleCombatWitnessReplayError, OracleCombatWitnessReport,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, OracleCombatWitnessStatus,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus,
 };
 
 #[cfg(test)]

@@ -1,9 +1,15 @@
+use std::sync::Arc;
+
 use sts_combat_planner::{CombatActionPolicy, CombatPolicyChoice, CombatStateGuideRank};
 
 use crate::sim::combat::CombatPosition;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct ExistingCombatKnowledgePolicy;
+
+pub fn existing_combat_knowledge_policy_v1() -> sts_combat_planner::SharedCombatActionPolicy {
+    Arc::new(ExistingCombatKnowledgePolicy)
+}
 
 impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
     fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {

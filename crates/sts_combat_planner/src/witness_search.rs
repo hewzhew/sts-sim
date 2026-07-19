@@ -112,7 +112,7 @@ pub struct OracleCombatWitnessReport {
     pub witness: Option<OracleCombatWitness>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct OracleCombatWitnessProgressSnapshot {
     pub retained_states: usize,
     pub queued_anchor_entries: usize,
@@ -122,6 +122,21 @@ pub struct OracleCombatWitnessProgressSnapshot {
     pub max_completed_turn_options_at_state: usize,
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
+    pub root_state: Option<OracleCombatWitnessStateProgressSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatWitnessStateProgressSnapshot {
+    pub exact_state_hash: String,
+    pub path_atomic_depth: usize,
+    pub path_negative_log_policy: f64,
+    pub generator_work: usize,
+    pub generator_engine_steps: usize,
+    pub completed_turn_options: usize,
+    pub retained_generator_work_items: usize,
+    pub synced_options: usize,
+    pub anchor_states_ahead: Option<usize>,
+    pub guided_states_ahead: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -352,6 +367,11 @@ impl OracleCombatWitnessSession {
             queued_guided_entries: self.guided_frontiers.iter().map(BinaryHeap::len).collect(),
             generation_gap_count: self.gaps.len(),
             pending_witness_replay: self.pending_witness.is_some(),
+            root_state: self
+                .states
+                .first()
+                .and_then(Option::as_ref)
+                .map(state_progress_snapshot),
             ..OracleCombatWitnessProgressSnapshot::default()
         };
         for state in self.states.iter().flatten() {
@@ -365,6 +385,17 @@ impl OracleCombatWitnessSession {
                 .max(state.generator.completed_options().len());
         }
         snapshot
+    }
+
+    pub fn state_progress_by_exact_hash(
+        &self,
+        exact_state_hash: &str,
+    ) -> Option<OracleCombatWitnessStateProgressSnapshot> {
+        self.states
+            .iter()
+            .flatten()
+            .find(|state| exact_hash(state.generator.root().position()) == exact_state_hash)
+            .map(|state| self.state_progress_snapshot_with_ranks(state))
     }
 
     pub fn advance(
@@ -421,10 +452,20 @@ impl OracleCombatWitnessSession {
                 self.granted_generation_work
                     .saturating_sub(self.used.generation_work),
             );
-            let engine_grant = self.config.generator.max_engine_steps_per_transition.min(
-                self.granted_engine_steps
-                    .saturating_sub(self.used.engine_steps),
-            );
+            // A generator work batch may contain more than one exact action
+            // transition. Reserve one transition allowance per granted work
+            // item; otherwise every agenda pop is forced to yield after its
+            // first action even when `generation_work_per_agenda_pop` asks
+            // for a larger coherent slice.
+            let engine_grant = self
+                .config
+                .generator
+                .max_engine_steps_per_transition
+                .saturating_mul(generation_grant)
+                .min(
+                    self.granted_engine_steps
+                        .saturating_sub(self.used.engine_steps),
+                );
             let generation = state.generator.advance(
                 stepper,
                 CombatPlanningQuantum {
@@ -656,6 +697,37 @@ impl OracleCombatWitnessSession {
             })
     }
 
+    fn state_progress_snapshot_with_ranks(
+        &self,
+        state: &SearchState,
+    ) -> OracleCombatWitnessStateProgressSnapshot {
+        let mut snapshot = state_progress_snapshot(state);
+        let target_anchor = combined_anchor_priority(state);
+        let mut anchor_states_ahead = 0usize;
+        let mut guided_states_ahead = vec![0usize; state.guide_ranks.len()];
+        for other in self.states.iter().flatten() {
+            let other_anchor = combined_anchor_priority(other);
+            if other_anchor.total_cmp(&target_anchor) == Ordering::Less {
+                anchor_states_ahead = anchor_states_ahead.saturating_add(1);
+            }
+            for (guide_index, target_rank) in state.guide_ranks.iter().enumerate() {
+                let Some(other_rank) = other.guide_ranks.get(guide_index) else {
+                    continue;
+                };
+                if other_rank > target_rank
+                    || (other_rank == target_rank
+                        && other_anchor.total_cmp(&target_anchor) == Ordering::Less)
+                {
+                    guided_states_ahead[guide_index] =
+                        guided_states_ahead[guide_index].saturating_add(1);
+                }
+            }
+        }
+        snapshot.anchor_states_ahead = Some(anchor_states_ahead);
+        snapshot.guided_states_ahead = Some(guided_states_ahead);
+        snapshot
+    }
+
     fn advance_pending_witness(
         &mut self,
         stepper: &dyn CombatStepper,
@@ -767,6 +839,35 @@ impl OracleCombatWitnessSession {
             }
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
         }
+    }
+}
+
+fn combined_anchor_priority(state: &SearchState) -> f64 {
+    let Some((local_depth, local_negative_log_policy)) =
+        state.generator.best_retained_path_bound_snapshot()
+    else {
+        return f64::INFINITY;
+    };
+    PathRank {
+        atomic_depth: state.path.atomic_depth.saturating_add(local_depth),
+        negative_log_policy: state.path.negative_log_policy + local_negative_log_policy,
+    }
+    .levin_log_priority()
+}
+
+fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgressSnapshot {
+    let counters = state.generator.counters();
+    OracleCombatWitnessStateProgressSnapshot {
+        exact_state_hash: exact_hash(state.generator.root().position()),
+        path_atomic_depth: state.path.atomic_depth,
+        path_negative_log_policy: state.path.negative_log_policy,
+        generator_work: counters.generation_work,
+        generator_engine_steps: counters.engine_steps,
+        completed_turn_options: state.generator.completed_options().len(),
+        retained_generator_work_items: state.generator.retained_work_items(),
+        synced_options: state.synced_options,
+        anchor_states_ahead: None,
+        guided_states_ahead: None,
     }
 }
 

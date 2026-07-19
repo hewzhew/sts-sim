@@ -39,20 +39,18 @@ pub fn oracle_atomic_action_policy_weights(
     rank_by_input
         .into_iter()
         .zip(inputs)
-        // A ranked policy must concentrate enough mass for Levin search to
-        // follow coherent multi-action lines. Reciprocal ranks flatten too
-        // quickly after repeated normalization; geometric decay preserves a
-        // decisive principal variation while the planner's uniform epsilon
-        // still gives every legal action non-zero mass.
+        // The source is an ordinal action ordering, not a calibrated action
+        // probability.  Reciprocal rank keeps that ordering useful while
+        // preventing two locally non-greedy actions from acquiring an
+        // exponential path penalty before their turn-boundary successor can
+        // be evaluated.
         .map(|(rank, input)| {
             if matches!(input, ClientInput::UsePotion { .. })
                 && !super::potions::semantic_potion_action_allowed(&position.combat, input)
             {
                 return 1.0e-6;
             }
-            rank.map_or(1.0, |rank| {
-                0.25_f64.powi(rank.min(i32::MAX as usize) as i32)
-            })
+            rank.map_or(1.0, oracle_ordinal_rank_weight)
         })
         .collect()
 }
@@ -92,6 +90,10 @@ pub fn oracle_combat_state_guide_components(position: &CombatPosition) -> Vec<i3
     ]
 }
 
+/// A separate non-authoritative view of the same typed state knowledge.
+/// Keeping survival independent from progress lets multi-heuristic search
+/// retain healthy setup lines without inventing a conversion rate between
+/// enemy progress and player HP.
 pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec<i32> {
     let node = SearchNode::root(position.engine.clone(), position.combat.clone());
     let value = combat_search_state_value(&node);
@@ -112,6 +114,10 @@ pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec
         value.hand_damage,
         value.next_draw_damage,
     ]
+}
+
+fn oracle_ordinal_rank_weight(rank: usize) -> f64 {
+    1.0 / rank.saturating_add(1) as f64
 }
 
 #[cfg(test)]
@@ -137,5 +143,13 @@ mod tests {
         assert!(weights
             .iter()
             .all(|weight| weight.is_finite() && *weight > 0.0));
+    }
+
+    #[test]
+    fn ordinal_rank_guidance_is_weak_rather_than_exponential() {
+        assert_eq!(oracle_ordinal_rank_weight(0), 1.0);
+        assert_eq!(oracle_ordinal_rank_weight(1), 0.5);
+        assert_eq!(oracle_ordinal_rank_weight(2), 1.0 / 3.0);
+        assert_eq!(oracle_ordinal_rank_weight(15), 1.0 / 16.0);
     }
 }

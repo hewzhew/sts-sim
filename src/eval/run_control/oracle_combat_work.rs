@@ -112,7 +112,12 @@ impl OracleRunCombatWorkV1 {
                     max_engine_steps_per_transition: max_transition_steps,
                     ..TurnOptionGeneratorConfig::default()
                 },
-                generation_work_per_agenda_pop: 1,
+                // Keep a selected exact state long enough to make a small,
+                // coherent amount of turn-generation progress before the
+                // outer state scheduler preempts it. A one-work slice made
+                // early turn choices compete with every newly discovered
+                // turn-boundary state after each atomic prefix.
+                generation_work_per_agenda_pop: 4,
                 satisfaction,
             },
             Arc::new(ExistingCombatKnowledgePolicy),

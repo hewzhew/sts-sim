@@ -1,16 +1,27 @@
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
-use sts_simulator::eval::run_control::OracleAnalysisAdvanceRequestV1;
+use sts_combat_planner::{
+    CombatDecisionRoot, CombatPlanningQuantum, OracleCombatWitnessConfig,
+    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+};
+use sts_simulator::eval::combat_case::load_combat_case;
+use sts_simulator::eval::run_control::{
+    existing_combat_knowledge_policy_v1, OracleAnalysisAdvanceRequestV1,
+};
 use sts_simulator::runtime::branch::{
     call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
     serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisWorkspaceV1,
     OracleRunBudget, OracleRunConfig,
 };
+use sts_simulator::sim::combat::EngineCombatStepper;
+use sts_simulator::state::core::ClientInput;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -43,6 +54,34 @@ enum Command {
         workspace: PathBuf,
         #[command(flatten)]
         budget: BudgetArgs,
+    },
+    /// Run the production oracle combat planner directly on one exact case.
+    CombatCase {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long, default_value_t = 250_000)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long)]
+        watch_state_hash: Option<String>,
+    },
+    /// Check when one exact complete-turn action sequence is generated.
+    TurnMembership {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        actions: PathBuf,
+        #[arg(long, default_value_t = 100_000)]
+        max_work: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 8)]
+        quantum_work: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
     },
     /// View the current cursor or another exact analysis node.
     View {
@@ -99,6 +138,11 @@ enum Command {
         quantum_ms: u64,
         #[arg(long)]
         wall_ms: Option<u64>,
+    },
+    /// Restart tactical search from the cursor's unchanged exact combat state.
+    RestartCombat {
+        #[arg(long)]
+        workspace: PathBuf,
     },
     /// Print the strategic replay attached to a node.
     History {
@@ -197,6 +241,171 @@ fn main() -> Result<(), String> {
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
         }
+        Command::CombatCase {
+            case,
+            max_nodes,
+            wall_ms,
+            max_engine_steps_per_transition,
+            watch_state_hash,
+        } => {
+            let case = load_combat_case(&case)?;
+            let root = CombatDecisionRoot::new(case.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let initial_hp = root.position().combat.entities.player.current_hp;
+            let mut search = OracleCombatWitnessSession::with_policy(
+                root,
+                OracleCombatWitnessConfig {
+                    generator: TurnOptionGeneratorConfig {
+                        max_engine_steps_per_transition,
+                        ..TurnOptionGeneratorConfig::default()
+                    },
+                    generation_work_per_agenda_pop: 4,
+                    satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+                },
+                existing_combat_knowledge_policy_v1(),
+            );
+            let started = Instant::now();
+            let report = search.advance(
+                &EngineCombatStepper,
+                OracleCombatWitnessQuantum {
+                    additional_agenda_pops: max_nodes,
+                    additional_generation_work: max_nodes,
+                    additional_engine_steps: max_nodes
+                        .saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(started + Duration::from_millis(wall_ms)),
+                },
+            );
+            let progress = search.progress_snapshot();
+            let watched_state = watch_state_hash
+                .as_deref()
+                .and_then(|hash| search.state_progress_by_exact_hash(hash));
+            let witness = report.witness.as_ref();
+            print_json(&serde_json::json!({
+                "schema_name": "OracleCombatCaseProbeV1",
+                "schema_version": 1,
+                "status": format!("{:?}", report.status),
+                "elapsed_ms": started.elapsed().as_millis(),
+                "budget": {
+                    "max_nodes": max_nodes,
+                    "wall_ms": wall_ms,
+                    "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                },
+                "counters": {
+                    "agenda_pops": report.after.agenda_pops,
+                    "generation_work": report.after.generation_work,
+                    "engine_steps": report.after.engine_steps,
+                    "exact_states": report.after.exact_states,
+                    "applied_action_transitions": report.after.applied_action_transitions,
+                    "unique_successor_states": report.after.unique_successor_states,
+                    "duplicate_exact_successors": report.after.duplicate_exact_successors,
+                    "completed_turn_options": report.after.completed_turn_options,
+                },
+                "progress": {
+                    "retained_states": progress.retained_states,
+                    "queued_anchor_entries": progress.queued_anchor_entries,
+                    "queued_guided_entries": progress.queued_guided_entries,
+                    "max_player_turn": progress.max_player_turn,
+                    "max_path_atomic_depth": progress.max_path_atomic_depth,
+                    "max_completed_turn_options_at_state": progress.max_completed_turn_options_at_state,
+                    "generation_gap_count": progress.generation_gap_count,
+                    "root_state": progress.root_state,
+                    "watched_state": watched_state,
+                },
+                "witness": witness.map(|witness| serde_json::json!({
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "hp_loss": initial_hp.saturating_sub(witness.final_position.combat.entities.player.current_hp),
+                    "action_count": witness.actions.len(),
+                    "negative_log_policy": witness.negative_log_policy,
+                    "actions": witness.actions,
+                })),
+            }))
+        }
+        Command::TurnMembership {
+            case,
+            actions,
+            max_work,
+            wall_ms,
+            quantum_work,
+            max_engine_steps_per_transition,
+        } => {
+            let case = load_combat_case(&case)?;
+            let target: Vec<ClientInput> = serde_json::from_slice(
+                &std::fs::read(&actions).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| format!("invalid target action list: {error}"))?;
+            let root = CombatDecisionRoot::new(case.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let mut generator = TurnOptionGeneratorSession::with_policy(
+                root,
+                TurnOptionGeneratorConfig {
+                    max_engine_steps_per_transition,
+                    ..TurnOptionGeneratorConfig::default()
+                },
+                existing_combat_knowledge_policy_v1(),
+            );
+            let started = Instant::now();
+            let deadline = started + Duration::from_millis(wall_ms);
+            let mut scanned_options = 0usize;
+            let mut matched = None;
+            let mut last_status = TurnOptionGenerationStatus::Partial(
+                sts_combat_planner::GenerationInterruption::GenerationWorkBudget,
+            );
+            while generator.counters().generation_work < max_work
+                && !generator.is_finished()
+                && Instant::now() < deadline
+            {
+                let remaining = max_work.saturating_sub(generator.counters().generation_work);
+                let work = quantum_work.max(1).min(remaining);
+                let report = generator.advance(
+                    &EngineCombatStepper,
+                    CombatPlanningQuantum {
+                        additional_generation_work: work,
+                        additional_engine_steps: work
+                            .saturating_mul(max_engine_steps_per_transition),
+                        deadline: Some(deadline),
+                    },
+                );
+                last_status = report.status;
+                for option in &generator.completed_options()[scanned_options..] {
+                    if option.actions().len() == target.len()
+                        && option
+                            .actions()
+                            .iter()
+                            .zip(&target)
+                            .all(|(actual, expected)| actual.input == *expected)
+                    {
+                        matched = Some(serde_json::json!({
+                            "generation_work": report.after.generation_work,
+                            "engine_steps": report.after.engine_steps,
+                            "elapsed_ms": started.elapsed().as_millis(),
+                            "boundary": format!("{:?}", option.boundary()),
+                            "successor_exact_state_hash": option.exact_successor_hash(),
+                            "negative_log_policy": option.negative_log_policy(),
+                        }));
+                        break;
+                    }
+                }
+                scanned_options = generator.completed_options().len();
+                if matched.is_some() {
+                    break;
+                }
+            }
+            let counters = generator.counters();
+            print_json(&serde_json::json!({
+                "schema_name": "OracleTurnMembershipProbeV1",
+                "schema_version": 1,
+                "matched": matched.is_some(),
+                "match": matched,
+                "target_action_count": target.len(),
+                "status": format!("{:?}", last_status),
+                "elapsed_ms": started.elapsed().as_millis(),
+                "generation_work": counters.generation_work,
+                "engine_steps": counters.engine_steps,
+                "completed_turn_options": generator.completed_options().len(),
+                "retained_work_items": generator.retained_work_items(),
+                "finished": generator.is_finished(),
+            }))
+        }
         Command::View { workspace, node } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let view = if let Some(node) = node {
@@ -263,6 +472,13 @@ fn main() -> Result<(), String> {
             })?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&AdvanceOutput { report, view })
+        }
+        Command::RestartCombat { workspace } => {
+            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            analysis.session.restart_cursor_combat_search()?;
+            let view = analysis.view()?;
+            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
+            print_json(&view)
         }
         Command::History { workspace, node } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;

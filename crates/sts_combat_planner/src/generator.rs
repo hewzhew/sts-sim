@@ -7,7 +7,8 @@ use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, Com
 use sts_core::state::core::{ClientInput, EngineState};
 
 use super::policy::{
-    normalized_probabilities, uniform_policy, CombatPolicyChoice, SharedCombatActionPolicy,
+    normalized_probabilities, uniform_policy, CombatPolicyChoice, CombatStateGuideRank,
+    SharedCombatActionPolicy,
 };
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
@@ -46,6 +47,16 @@ enum GeneratorWork {
     Expand(PartialTurnOption),
     ApplyAction(ActionTransitionWork),
     StructuredSelection(StructuredSelectionWork),
+}
+
+impl GeneratorWork {
+    fn position(&self) -> &CombatPosition {
+        match self {
+            Self::Expand(partial) => &partial.position,
+            Self::ApplyAction(action) => &action.parent.position,
+            Self::StructuredSelection(selection) => &selection.parent.position,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -90,7 +101,41 @@ impl PartialOrd for GeneratorWorkPriority {
 struct GeneratorQueueEntry {
     priority: GeneratorWorkPriority,
     sequence_id: u64,
-    work: GeneratorWork,
+    work_id: usize,
+}
+
+#[derive(Clone, Debug)]
+struct GuidedGeneratorQueueEntry {
+    guide_index: usize,
+    work_id: usize,
+    sequence_id: u64,
+    guide_rank: CombatStateGuideRank,
+    anchor_priority: GeneratorWorkPriority,
+}
+
+impl Eq for GuidedGeneratorQueueEntry {}
+
+impl PartialEq for GuidedGeneratorQueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.guide_index == other.guide_index
+            && self.work_id == other.work_id
+            && self.sequence_id == other.sequence_id
+    }
+}
+
+impl Ord for GuidedGeneratorQueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.guide_rank
+            .cmp(&other.guide_rank)
+            .then_with(|| self.anchor_priority.cmp(&other.anchor_priority))
+            .then_with(|| other.sequence_id.cmp(&self.sequence_id))
+    }
+}
+
+impl PartialOrd for GuidedGeneratorQueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Eq for GeneratorQueueEntry {}
@@ -119,7 +164,11 @@ pub struct TurnOptionGeneratorSession {
     root: CombatDecisionRoot,
     config: TurnOptionGeneratorConfig,
     policy: SharedCombatActionPolicy,
-    frontier: BinaryHeap<GeneratorQueueEntry>,
+    work: Vec<Option<GeneratorWork>>,
+    anchor_frontier: BinaryHeap<GeneratorQueueEntry>,
+    guided_frontiers: Vec<BinaryHeap<GuidedGeneratorQueueEntry>>,
+    next_scheduler_lane: usize,
+    live_work_items: usize,
     next_sequence_id: u64,
     seen: HashSet<CombatExactStateKey>,
     completed: Vec<CompleteTurnOption>,
@@ -155,7 +204,11 @@ impl TurnOptionGeneratorSession {
             root,
             config,
             policy,
-            frontier: BinaryHeap::new(),
+            work: Vec::new(),
+            anchor_frontier: BinaryHeap::new(),
+            guided_frontiers: Vec::new(),
+            next_scheduler_lane: 0,
+            live_work_items: 0,
             next_sequence_id: 0,
             seen,
             completed: Vec::new(),
@@ -190,7 +243,7 @@ impl TurnOptionGeneratorSession {
     }
 
     pub fn retained_work_items(&self) -> usize {
-        self.frontier.len()
+        self.live_work_items
     }
 
     pub fn diagnostics(&self) -> TurnOptionGenerationDiagnostics {
@@ -203,16 +256,43 @@ impl TurnOptionGeneratorSession {
     }
 
     pub fn is_finished(&self) -> bool {
-        self.frontier.is_empty()
+        self.live_work_items == 0
     }
 
-    pub(crate) fn best_retained_path_bound(&self) -> Option<(usize, f64)> {
-        self.frontier.peek().map(|entry| {
-            (
-                entry.priority.atomic_depth,
-                entry.priority.negative_log_policy,
-            )
-        })
+    pub(crate) fn best_retained_path_bound(&mut self) -> Option<(usize, f64)> {
+        while let Some(entry) = self.anchor_frontier.peek() {
+            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
+                return Some((
+                    entry.priority.atomic_depth,
+                    entry.priority.negative_log_policy,
+                ));
+            }
+            self.anchor_frontier.pop();
+        }
+        None
+    }
+
+    pub(crate) fn best_retained_path_bound_snapshot(&self) -> Option<(usize, f64)> {
+        self.anchor_frontier
+            .iter()
+            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .min_by(|left, right| {
+                left.priority
+                    .levin_log_priority
+                    .total_cmp(&right.priority.levin_log_priority)
+                    .then_with(|| {
+                        left.priority
+                            .negative_log_policy
+                            .total_cmp(&right.priority.negative_log_policy)
+                    })
+                    .then_with(|| left.priority.atomic_depth.cmp(&right.priority.atomic_depth))
+            })
+            .map(|entry| {
+                (
+                    entry.priority.atomic_depth,
+                    entry.priority.negative_log_policy,
+                )
+            })
     }
 
     pub(crate) fn release_unused_grant(&mut self) -> CombatPlanningCounters {
@@ -244,7 +324,7 @@ impl TurnOptionGeneratorSession {
         });
 
         let interruption = loop {
-            if self.frontier.is_empty() {
+            if self.is_finished() {
                 break None;
             }
             if deadline_reached(quantum.deadline) {
@@ -254,24 +334,21 @@ impl TurnOptionGeneratorSession {
                 break Some(GenerationInterruption::GenerationWorkBudget);
             }
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-            if matches!(
-                self.frontier.peek().map(|entry| &entry.work),
-                Some(GeneratorWork::ApplyAction(_))
-            ) && self
-                .granted
-                .engine_steps
-                .saturating_sub(self.used.engine_steps)
-                < transition_reservation
+            if self.next_scheduled_work_is_apply_action()
+                && self
+                    .granted
+                    .engine_steps
+                    .saturating_sub(self.used.engine_steps)
+                    < transition_reservation
             {
                 break Some(GenerationInterruption::EngineStepBudget);
             }
 
             let work = self
-                .frontier
-                .pop()
-                .expect("non-empty frontier has front work");
+                .pop_scheduled_work()
+                .expect("non-empty generator has scheduled work");
             self.used.generation_work = self.used.generation_work.saturating_add(1);
-            match work.work {
+            match work {
                 GeneratorWork::Expand(partial) => self.expand(stepper, partial),
                 GeneratorWork::StructuredSelection(mut selection) => {
                     if let Some(input) = selection.cursor.next_input() {
@@ -392,7 +469,7 @@ impl TurnOptionGeneratorSession {
             granted: self.granted,
             before_diagnostics,
             after_diagnostics: self.diagnostics(),
-            retained_work_items: self.frontier.len(),
+            retained_work_items: self.live_work_items,
             newly_completed_options: self.completed.len().saturating_sub(completed_before),
             total_completed_options: self.completed.len(),
             gaps: self.gaps.clone(),
@@ -515,16 +592,142 @@ impl TurnOptionGeneratorSession {
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) {
         debug_assert!(priority.levin_log_priority.is_finite());
+        let guide_ranks = self.policy.state_guide_ranks(work.position());
+        let work_id = self.work.len();
+        self.work.push(Some(work));
         let entry = GeneratorQueueEntry {
             priority,
             sequence_id: self.next_sequence_id,
-            work,
+            work_id,
         };
+        self.anchor_frontier.push(entry);
+        if self.guided_frontiers.len() < guide_ranks.len() {
+            self.guided_frontiers
+                .resize_with(guide_ranks.len(), BinaryHeap::new);
+        }
+        for (guide_index, guide_rank) in guide_ranks.into_iter().enumerate() {
+            self.guided_frontiers[guide_index].push(GuidedGeneratorQueueEntry {
+                guide_index,
+                work_id,
+                sequence_id: self.next_sequence_id,
+                guide_rank,
+                anchor_priority: priority,
+            });
+        }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
-        self.frontier.push(entry);
+        self.live_work_items = self.live_work_items.saturating_add(1);
+    }
+
+    fn next_scheduled_work_is_apply_action(&mut self) -> bool {
+        self.peek_scheduled_work_id()
+            .and_then(|work_id| self.work.get(work_id))
+            .and_then(Option::as_ref)
+            .is_some_and(|work| matches!(work, GeneratorWork::ApplyAction(_)))
+    }
+
+    fn peek_scheduled_work_id(&mut self) -> Option<usize> {
+        let lane_count = self.guided_frontiers.len().saturating_add(1);
+        for offset in 0..lane_count {
+            let lane = (self.next_scheduler_lane + offset) % lane_count;
+            let work_id = if lane == 0 {
+                self.peek_anchor_work_id()
+            } else {
+                self.peek_guided_work_id(lane - 1)
+            };
+            if work_id.is_some() {
+                return work_id;
+            }
+        }
+        None
+    }
+
+    fn pop_scheduled_work(&mut self) -> Option<GeneratorWork> {
+        let lane_count = self.guided_frontiers.len().saturating_add(1);
+        for offset in 0..lane_count {
+            let lane = (self.next_scheduler_lane + offset) % lane_count;
+            let work_id = if lane == 0 {
+                self.pop_anchor_work_id()
+            } else {
+                self.pop_guided_work_id(lane - 1)
+            };
+            let Some(work_id) = work_id else {
+                continue;
+            };
+            let work = self.work[work_id]
+                .take()
+                .expect("scheduled generator work must still be live");
+            self.live_work_items = self.live_work_items.saturating_sub(1);
+            self.next_scheduler_lane = (lane + 1) % lane_count;
+            return Some(work);
+        }
+        None
+    }
+
+    fn peek_anchor_work_id(&mut self) -> Option<usize> {
+        while let Some(entry) = self.anchor_frontier.peek() {
+            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
+                return Some(entry.work_id);
+            }
+            self.anchor_frontier.pop();
+        }
+        None
+    }
+
+    fn pop_anchor_work_id(&mut self) -> Option<usize> {
+        self.peek_anchor_work_id()?;
+        self.anchor_frontier.pop().map(|entry| entry.work_id)
+    }
+
+    fn peek_guided_work_id(&mut self, guide_index: usize) -> Option<usize> {
+        let frontier = self.guided_frontiers.get_mut(guide_index)?;
+        while let Some(entry) = frontier.peek() {
+            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
+                return Some(entry.work_id);
+            }
+            frontier.pop();
+        }
+        None
+    }
+
+    fn pop_guided_work_id(&mut self, guide_index: usize) -> Option<usize> {
+        self.peek_guided_work_id(guide_index)?;
+        self.guided_frontiers[guide_index]
+            .pop()
+            .map(|entry| entry.work_id)
     }
 }
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+
+    fn guided_entry(
+        guide: i32,
+        cumulative_negative_log_policy: f64,
+        atomic_depth: usize,
+        sequence_id: u64,
+    ) -> GuidedGeneratorQueueEntry {
+        GuidedGeneratorQueueEntry {
+            guide_index: 0,
+            work_id: sequence_id as usize,
+            sequence_id,
+            guide_rank: CombatStateGuideRank::new(vec![guide]),
+            anchor_priority: GeneratorWorkPriority::for_path(
+                atomic_depth,
+                cumulative_negative_log_policy,
+            ),
+        }
+    }
+
+    #[test]
+    fn guided_prefix_priority_uses_exact_state_before_anchor_policy() {
+        let improved_after_setup = guided_entry(10, 8.0, 3, 0);
+        let locally_greedy = guided_entry(9, 0.01, 1, 1);
+
+        assert!(improved_after_setup > locally_greedy);
+    }
 }

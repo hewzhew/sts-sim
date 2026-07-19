@@ -303,6 +303,32 @@ fn oracle_witness_search_crosses_turns_and_exactly_replays_first_win() {
 }
 
 #[test]
+fn witness_generation_batch_reserves_engine_allowance_for_the_whole_batch() {
+    let stepper = TinyTurnStepper::plain();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(1, 4, 16),
+    );
+
+    assert_eq!(report.after.agenda_pops, 1);
+    assert_eq!(report.after.generation_work, 4);
+    assert!(
+        report.after.applied_action_transitions >= 2,
+        "one agenda pop must be able to execute more than one exact transition when its generation batch requests it"
+    );
+}
+
+#[test]
 fn verified_witness_survives_a_serialized_search_restart() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let config = OracleCombatWitnessConfig {
