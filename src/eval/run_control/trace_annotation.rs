@@ -391,9 +391,52 @@ pub struct RoutePlannerSelectionEvidenceV1 {
     pub first_elite: RoutePlannerFirstEliteEvidenceV1,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardFunctionV1 {
+    Answer,
+    Access,
+    Amplifier,
+    Liability,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardRewardObligationSourceV1 {
+    KnownBoss,
+    CommittedRoute,
+    PossiblePool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardObligationDeltaV1 {
+    pub source: CardRewardObligationSourceV1,
+    pub subject: String,
+    pub deadline_nodes: Option<usize>,
+    pub gaps_before: usize,
+    pub gaps_after: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardOwnerProvenanceV1 {
+    pub functions: Vec<CardRewardFunctionV1>,
+    pub obligations: Vec<CardRewardObligationDeltaV1>,
+    pub hard_startup_liability: bool,
+    pub component_debt_count: usize,
+    pub access_saturated: bool,
+    pub stable_surface_index: usize,
+    pub owner_rank: usize,
+    pub tie_break_applied: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RunControlTraceAnnotationV1 {
+    CardRewardOwnerDecision {
+        provenance: CardRewardOwnerProvenanceV1,
+    },
     RoutePlannerSelection {
         summary: String,
         selected_index: Option<usize>,
@@ -634,6 +677,19 @@ fn validate_run_control_trace_annotation_v1(
     annotation: &RunControlTraceAnnotationV1,
 ) -> Result<(), String> {
     match annotation {
+        RunControlTraceAnnotationV1::CardRewardOwnerDecision { provenance } => {
+            if provenance.owner_rank == 0 {
+                return Err(format!(
+                    "trace annotation {idx} card reward owner rank must be one-based"
+                ));
+            }
+            if provenance.obligations.is_empty() {
+                return Err(format!(
+                    "trace annotation {idx} card reward provenance has no strategic obligations"
+                ));
+            }
+            Ok(())
+        }
         RunControlTraceAnnotationV1::RoutePlannerSelection {
             noncombat_record: Some(record),
             ..

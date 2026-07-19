@@ -7,7 +7,7 @@ use sts_simulator::ai::strategy::decision_pipeline::{
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_candidate;
 
-use super::branch_path::BranchPathStep;
+use super::branch_path::{card_reward_provenance_value, BranchPathStep};
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
     combat_search_session_json, run_state_json, Args, BoundarySite, Branch, BranchStatus, Owner,
@@ -120,6 +120,10 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
             "candidate": candidate_kind_value(decision.evaluation.candidate.kind),
             "shop_boss_preview": shop_boss_preview_value(decision.evaluation.candidate.kind),
             "admission": decision.admission.as_ref().map(admission_value),
+            "card_reward_provenance": decision
+                .card_reward_provenance
+                .as_ref()
+                .map(card_reward_provenance_value),
         }),
         ChoiceAnnotation::BossRelic(admission) => json!({
             "kind": "boss_relic",

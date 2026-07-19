@@ -11,8 +11,9 @@ pub use context::{
     RouteRelicSummaryV1, UnknownRoomBeliefV1,
 };
 pub use features::{
-    MapRouteTargetV1, NodeFeaturesV1, RouteCandidateViabilityV1, RouteFirstEliteSegmentV1,
-    RouteMoveKindV1, RoutePathSummaryV1, RoutePathViabilityV1, RouteSafetyFlagV1,
+    MapRouteTargetV1, NodeFeaturesV1, PathSurvivalEnvelopeV1, PathThreatExposureV1,
+    RouteCandidateViabilityV1, RouteFirstEliteSegmentV1, RouteMoveKindV1, RoutePathSummaryV1,
+    RoutePathViabilityV1, RouteSafetyFlagV1,
 };
 pub use map_packet::{
     MapDecisionPacketV1, RouteCandidateOrderingV1, RouteCandidatePoolProvenanceV1,

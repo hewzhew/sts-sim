@@ -4,6 +4,7 @@ use crate::ai::strategic::{
 };
 
 use super::component_scorer::score_shop_plan_components_v1;
+use super::elite_matchup::exact_next_elite_coverage_v1;
 use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopFutureShopV1, ShopMawBankStateV1,
     ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentV1,
@@ -165,6 +166,19 @@ fn evaluate_purchase_v1(
     };
     if let Some(reason) = blocking_purchase_risk_reason_v1(candidate) {
         return ShopPlanEvaluationV1::block(candidate.legacy_estimate, reason);
+    }
+    if let Some(coverage) = exact_next_elite_coverage_v1(context, candidate) {
+        let priority = candidate.legacy_estimate.unwrap_or_default();
+        return ShopPlanEvaluationV1::allow(
+            335,
+            priority,
+            0.88,
+            candidate.legacy_estimate,
+            format!(
+                "oracle next-elite coverage {:?} for {:?}",
+                coverage, context.visit.next_elite_encounter
+            ),
+        );
     }
     if let ShopPurchaseTargetV1::Card { .. } = target {
         let Some(strategic_decision) = purchase_strategic_decision(target, strategic_trace) else {
@@ -631,6 +645,25 @@ fn plan_components_v1(
             ShopPlanComponentKindV1::BossAnswer,
             1.0,
             "typed strategic delta matches a current boss tax",
+        ));
+    }
+    if candidate_plan
+        .plan
+        .candidate_ids
+        .iter()
+        .any(|candidate_id| {
+            context
+                .candidates
+                .iter()
+                .find(|candidate| &candidate.candidate_id == candidate_id)
+                .and_then(|candidate| exact_next_elite_coverage_v1(context, candidate))
+                .is_some()
+        })
+    {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::ImmediateThreatCoverage,
+            1.0,
+            "shop plan directly covers the oracle-scheduled next elite",
         ));
     }
     let hard_threat_is_near = matches!(

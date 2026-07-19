@@ -347,10 +347,8 @@ fn threat_alignment_component(
 fn boss_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
     context
         .strategy
-        .threats
-        .sources
-        .iter()
-        .any(|source| source.source == StrategyThreatSourceV1::ActBoss && source.tag == tag)
+        .threat_coverage
+        .has_gap(StrategyThreatSourceV1::ActBoss, tag)
 }
 
 fn elite_threat_visible_for_route(
@@ -358,11 +356,11 @@ fn elite_threat_visible_for_route(
     tag: StrategyThreatTagV1,
 ) -> bool {
     route_allows_elites(context)
-        && context.strategy.threats.sources.iter().any(|source| {
+        && context.strategy.threat_coverage.gaps.iter().any(|gap| {
             matches!(
-                source.source,
+                gap.source,
                 StrategyThreatSourceV1::ActElitePool | StrategyThreatSourceV1::ActEliteEncounter
-            ) && source.tag == tag
+            ) && gap.tag == tag
         })
 }
 

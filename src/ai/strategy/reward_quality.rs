@@ -1,4 +1,5 @@
 use crate::ai::analysis::card_semantics::{CardBurden, DuplicateBehavior, Mechanic, PlayEffect};
+use crate::ai::deck_shape_v1::is_status_digest_card;
 use crate::ai::strategy::package_transition::{PackageKind, PackageTransitionReport};
 use crate::content::cards::CardId;
 
@@ -31,7 +32,10 @@ pub fn assess_reward_quality(
     {
         report.thin_payoff_support.push(Mechanic::Strength);
     }
-    if has_clutter_burden(transition) && has_existing_clutter_burden(deck, candidate) {
+    if has_clutter_burden(transition)
+        && has_existing_clutter_burden(deck, candidate)
+        && !has_status_digest(deck)
+    {
         report
             .duplicate_burdens
             .push(CardBurden::AddsCombatDeckClutter);
@@ -119,6 +123,10 @@ fn has_existing_clutter_burden(deck: &[CardId], candidate: CardId) -> bool {
     card_adds_clutter(candidate) && deck.iter().copied().any(card_adds_clutter)
 }
 
+fn has_status_digest(deck: &[CardId]) -> bool {
+    deck.iter().copied().any(is_status_digest_card)
+}
+
 fn support_units(deck: &[CardId], mechanic: Mechanic) -> u8 {
     deck.iter()
         .copied()
@@ -179,4 +187,42 @@ fn has_duplicate_behavior(
     behavior: DuplicateBehavior,
 ) -> bool {
     transition.candidate_duplicate_behaviors.contains(&behavior)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::analysis::card_semantics::card_definition;
+    use crate::ai::strategy::package_transition::assess_package_transition;
+
+    fn quality(deck: &[CardId], candidate: CardId) -> RewardQualityReport {
+        let definitions = deck
+            .iter()
+            .copied()
+            .map(card_definition)
+            .collect::<Vec<_>>();
+        let transition = assess_package_transition(&definitions, card_definition(candidate));
+        assess_reward_quality(deck, candidate, &transition)
+    }
+
+    #[test]
+    fn repeated_status_generator_is_a_duplicate_burden_without_digest() {
+        assert!(quality(&[CardId::WildStrike], CardId::WildStrike).has_duplicate_burden());
+    }
+
+    #[test]
+    fn status_digest_prevents_a_global_duplicate_clutter_ban() {
+        for digest in [
+            CardId::Evolve,
+            CardId::TrueGrit,
+            CardId::SecondWind,
+            CardId::FireBreathing,
+        ] {
+            assert!(
+                !quality(&[CardId::WildStrike, digest], CardId::WildStrike)
+                    .has_duplicate_burden(),
+                "{digest:?} should make repeated status generation contextual rather than an unconditional duplicate rejection"
+            );
+        }
+    }
 }

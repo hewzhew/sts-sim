@@ -553,7 +553,8 @@ fn card_reward_record_from_annotation(
             noncombat_record: Some(record),
             ..
         } if record.site == DecisionSiteKindV1::CardReward => Some((record, None)),
-        RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        RunControlTraceAnnotationV1::CardRewardOwnerDecision { .. }
+        | RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
         | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
         | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
         | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }

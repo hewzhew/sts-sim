@@ -145,6 +145,14 @@ pub(super) fn priority_for_play_card(
             ActionOrderingRole::CurrentTurnAttackSetup,
             ROLE_CURRENT_TURN_ATTACK_SETUP,
         )
+    } else if def.card_type == CardType::Power
+        && effects.direct.player_vulnerable > 0
+        && visible_damage > current_block
+    {
+        // A setup card that immediately exposes the player to amplified
+        // visible damage is not automatically better than ending the turn.
+        // It remains legal and searchable through the policy floor.
+        (ActionOrderingRole::DeferredSetup, ROLE_END_TURN - 1)
     } else if def.card_type == CardType::Power {
         (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
     } else if prevents_hp_loss && reactive_risk == 0 {

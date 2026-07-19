@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -14,23 +14,26 @@ use crate::eval::combat_case::{
 };
 use crate::eval::run_control::{
     drive_oracle_run_explorer_v1, expand_oracle_neow_candidates_v1,
-    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
-    CombatAutomationActionV1, DecisionCandidateKey, NeowOracleExpansionV1,
-    OraclePendingCombatSummaryV1, OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1,
-    OracleRunExploreResultV1, OracleRunExploreStopV1, RewardAutomationConfig, RunControlConfig,
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
+    seed_oracle_run_explorer_v1, CombatAutomationActionV1, DecisionCandidateKey,
+    NeowOracleExpansionV1, OraclePendingCombatSummaryV1, OracleRunBranchV1,
+    OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
+    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, RewardAutomationConfig,
+    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
+    StrategicProbeOwnerAuthorityV1, StrategicProbeSchedulingAuthorityV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
 
 pub const ORACLE_RUN_REPORT_SCHEMA_NAME: &str = "OracleRunReport";
-pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 7;
+pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 13;
 pub const ORACLE_RUN_CONTINUATION_SCHEMA_NAME: &str = "OracleRunContinuation";
 pub const ORACLE_RUN_CONTINUATION_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleRunBudget {
     pub max_work_items: usize,
     pub wall_ms: Option<u64>,
@@ -77,6 +80,8 @@ pub struct OracleRunContinuationV1 {
     pub ascension: u8,
     pub journal: RunProgressJournalV1,
     pub session: RunControlSessionCheckpointV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explorer_frontier: Option<OracleRunExplorerCheckpointV1>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -150,7 +155,19 @@ pub struct OracleNeowFrontierSummaryV1 {
 pub struct OracleUnresolvedCombatSummaryV1 {
     pub branch_id: usize,
     pub rejection: String,
+    pub evidence_kind: &'static str,
+    pub last_status: Option<&'static str>,
     pub nodes_expanded: u64,
+    pub exact_states: usize,
+    pub applied_action_transitions: usize,
+    pub unique_successor_states: usize,
+    pub duplicate_exact_successors: usize,
+    pub completed_turn_options: usize,
+    pub retained_state_work: usize,
+    pub max_player_turn: u32,
+    pub max_path_atomic_depth: usize,
+    pub generation_gap_count: usize,
+    pub incumbent_final_hp: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -161,12 +178,41 @@ pub struct OracleRunExplorerSummaryV1 {
     pub combat_quanta: usize,
     pub decision_service_ms: u64,
     pub combat_service_ms: u64,
+    pub combat_edge_probe_evaluations: usize,
+    pub immediate_combat_edge_hints: usize,
+    pub combat_edge_probe_authority: StrategicProbeSchedulingAuthorityV1,
+    pub probe_owner_authority: StrategicProbeOwnerAuthorityV1,
     pub elapsed_ms: u64,
     pub materialized_branches: usize,
     pub pending_decisions: usize,
     pub pending_combats: Vec<OraclePendingCombatSummaryV1>,
+    pub combat_search_restarts: usize,
+    pub neow_root_progress: Vec<OracleNeowRootProgressSummaryV1>,
     pub exact_duplicates: usize,
     pub unresolved_combats: Vec<OracleUnresolvedCombatSummaryV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleRunBuildIdentityV1 {
+    pub source_identity: super::SourceIdentity,
+    pub cargo_profile: String,
+    pub executable_len: Option<u64>,
+    pub executable_modified_unix_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleNeowRootProgressSummaryV1 {
+    pub root_candidate_id: String,
+    pub root_label: String,
+    pub materialized_branches: usize,
+    pub furthest_act: u8,
+    pub furthest_floor: i32,
+    pub furthest_branch_id: usize,
+    pub pending_decisions: usize,
+    pub pending_combats: usize,
+    pub unresolved_combats: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -187,6 +233,7 @@ pub struct OracleRunReportV1 {
     pub potions: Vec<Option<Potion>>,
     pub engine_state: String,
     pub elapsed_ms: u64,
+    pub build_identity: OracleRunBuildIdentityV1,
     pub initial_neow_frontier: OracleNeowFrontierSummaryV1,
     pub explorer: OracleRunExplorerSummaryV1,
     pub committed_progress_steps: usize,
@@ -194,6 +241,10 @@ pub struct OracleRunReportV1 {
     pub combat_resolutions: Vec<OracleCombatResolutionSummaryV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_unresolved_combat_case: Option<CombatCase>,
+    /// Exact active combat at the selected bounded frontier. Kept out of the
+    /// report payload; the CLI may persist it as a standalone diagnostic case.
+    #[serde(skip_serializing)]
+    pub selected_active_combat_case: Option<CombatCase>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub victory_witness: Option<RunProgressJournalV1>,
     /// Mechanical exact-state continuation, intentionally omitted from the
@@ -215,18 +266,17 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
         seed: config.seed,
         ascension_level: config.ascension,
         final_act: false,
-        reward_automation: RewardAutomationConfig {
-            claim_gold: true,
-            claim_potion_with_empty_slot: true,
-            claim_safe_relic_without_sapphire_key: true,
-        },
+        reward_automation: oracle_reward_automation_config(),
         ..RunControlConfig::default()
     });
     let neow_expansion = expand_oracle_neow_candidates_v1(&session)
         .map_err(|error| format!("failed to materialize initial Neow frontier: {error}"))?;
     let initial_neow_frontier = oracle_neow_frontier_summary(neow_expansion.clone());
-    let explorer = seed_oracle_run_explorer_v1(neow_expansion)
-        .map_err(|error| format!("failed to seed oracle run explorer: {error}"))?;
+    let explorer = seed_oracle_run_explorer_v1(
+        neow_expansion,
+        Some(super::owner_audit::oracle_candidate_order),
+    )
+    .map_err(|error| format!("failed to seed oracle run explorer: {error}"))?;
     let explored = drive_oracle_run_explorer_v1(
         explorer,
         OracleRunExploreBudgetV1 {
@@ -236,11 +286,25 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
             decision_order: Some(super::owner_audit::oracle_candidate_order),
+            decision_annotation: Some(super::owner_audit::oracle_candidate_annotation),
+            // The current endpoint lexicographic key has not been calibrated
+            // against disjoint expert-reviewed/exact cases.  Keep the narrow
+            // edge-order hook available for experiments, but do not let that
+            // provisional key steer production oracle runs.
+            combat_edge_order: None,
         },
     )
     .map_err(|error| format!("oracle run explorer failed: {error}"))?;
 
     finish_oracle_run_report(&config, &started, initial_neow_frontier, explored)
+}
+
+pub(super) fn oracle_reward_automation_config() -> RewardAutomationConfig {
+    RewardAutomationConfig {
+        claim_gold: true,
+        claim_potion_with_empty_slot: true,
+        claim_safe_relic_without_sapphire_key: true,
+    }
 }
 
 pub fn run_oracle_run_from_continuation(
@@ -251,11 +315,16 @@ pub fn run_oracle_run_from_continuation(
     validate_continuation(&config, &continuation)?;
     let started = Instant::now();
     let combat_budgets = oracle_combat_budgets(&config);
-    let explorer = seed_oracle_run_explorer_from_session_v1(
-        continuation.session.into_session()?,
-        continuation.journal,
-        &combat_budgets,
-    )?;
+    let explorer = if let Some(frontier) = continuation.explorer_frontier {
+        seed_oracle_run_explorer_from_checkpoint_v1(frontier, &combat_budgets)?
+    } else {
+        seed_oracle_run_explorer_from_session_v1(
+            continuation.session.into_session()?,
+            continuation.journal,
+            &combat_budgets,
+            Some(super::owner_audit::oracle_candidate_order),
+        )?
+    };
     let explored = drive_oracle_run_explorer_v1(
         explorer,
         OracleRunExploreBudgetV1 {
@@ -265,6 +334,8 @@ pub fn run_oracle_run_from_continuation(
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
             decision_order: Some(super::owner_audit::oracle_candidate_order),
+            decision_annotation: Some(super::owner_audit::oracle_candidate_annotation),
+            combat_edge_order: None,
         },
     )
     .map_err(|error| format!("continued oracle run explorer failed: {error}"))?;
@@ -301,11 +372,32 @@ fn finish_oracle_run_report(
     initial_neow_frontier: OracleNeowFrontierSummaryV1,
     explored: OracleRunExploreResultV1,
 ) -> Result<OracleRunReportV1, String> {
+    let explorer_frontier = if matches!(explored.stop, OracleRunExploreStopV1::Victory { .. }) {
+        None
+    } else {
+        explored.explorer.frontier_checkpoint()?
+    };
     let first_unresolved_combat_case = first_unresolved_combat_case(config, &explored);
     let selected = explored
         .witness()
         .or_else(|| explored.furthest_branch())
         .ok_or_else(|| "oracle run produced no materialized branch".to_string())?;
+    let pending_combats = explored.explorer.pending_combat_summaries()?;
+    let selected_active_combat_case = pending_combats.first().and_then(|pending| {
+        explored
+            .explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == pending.branch_id)
+            .and_then(|branch| {
+                combat_case_for_branch(
+                    config,
+                    branch,
+                    "bounded_run_stopped_with_active_combat".to_string(),
+                    pending.nodes_expanded.min(usize::MAX as u64) as usize,
+                )
+            })
+    });
     let journal = selected.journal.clone();
     let mut continuation_session = RunControlSessionCheckpointV1::from_session(&selected.session);
     continuation_session.clear_combat_diagnostics_for_external_checkpoint();
@@ -316,20 +408,28 @@ fn finish_oracle_run_report(
         ascension: config.ascension,
         journal: journal.clone(),
         session: continuation_session,
+        explorer_frontier,
     };
     let victory_witness =
         matches!(explored.stop, OracleRunExploreStopV1::Victory { .. }).then_some(journal.clone());
-    let pending_combats = explored.explorer.pending_combat_summaries()?;
+    let neow_root_progress = oracle_neow_root_progress(&explored, &pending_combats);
     let explorer_summary = OracleRunExplorerSummaryV1 {
         stop: explored.stop,
         work_items: explored.work_items,
         combat_quanta: explored.combat_quanta,
         decision_service_ms: explored.decision_service_ms,
         combat_service_ms: explored.combat_service_ms,
+        combat_edge_probe_evaluations: explored.combat_edge_probe_evaluations,
+        immediate_combat_edge_hints: explored.immediate_combat_edge_hints,
+        combat_edge_probe_authority:
+            StrategicProbeSchedulingAuthorityV1::WithheldPendingHeldOutCalibration,
+        probe_owner_authority: StrategicProbeOwnerAuthorityV1::NotGranted,
         elapsed_ms: explored.elapsed_ms,
         materialized_branches: explored.explorer.branches.len(),
         pending_decisions: explored.explorer.pending_decisions.len(),
         pending_combats,
+        combat_search_restarts: explored.explorer.combat_search_restarts,
+        neow_root_progress,
         exact_duplicates: explored.explorer.retired_exact_duplicates.len(),
         unresolved_combats: explored
             .explorer
@@ -338,7 +438,19 @@ fn finish_oracle_run_report(
             .map(|combat| OracleUnresolvedCombatSummaryV1 {
                 branch_id: combat.branch_id,
                 rejection: format!("{:?}", combat.rejection),
+                evidence_kind: combat.evidence_kind,
+                last_status: combat.last_status,
                 nodes_expanded: combat.nodes_expanded,
+                exact_states: combat.exact_states,
+                applied_action_transitions: combat.applied_action_transitions,
+                unique_successor_states: combat.unique_successor_states,
+                duplicate_exact_successors: combat.duplicate_exact_successors,
+                completed_turn_options: combat.completed_turn_options,
+                retained_state_work: combat.retained_state_work,
+                max_player_turn: combat.max_player_turn,
+                max_path_atomic_depth: combat.max_path_atomic_depth,
+                generation_gap_count: combat.generation_gap_count,
+                incumbent_final_hp: combat.incumbent_final_hp,
             })
             .collect(),
     };
@@ -359,15 +471,113 @@ fn finish_oracle_run_report(
         potions: selected.session.run_state.potions.clone(),
         engine_state: engine_state_name(&selected.session.engine_state).to_string(),
         elapsed_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        build_identity: current_oracle_build_identity(),
         initial_neow_frontier,
         explorer: explorer_summary,
         committed_progress_steps: journal.len(),
         decisions: decision_summaries(&journal),
         combat_resolutions: combat_resolution_summaries(&journal),
         first_unresolved_combat_case,
+        selected_active_combat_case,
         victory_witness,
         continuation,
     })
+}
+
+fn current_oracle_build_identity() -> OracleRunBuildIdentityV1 {
+    let executable = std::env::current_exe().ok();
+    let metadata = executable
+        .as_ref()
+        .and_then(|path| std::fs::metadata(path).ok());
+    OracleRunBuildIdentityV1 {
+        source_identity: super::current_source_identity(),
+        cargo_profile: executable
+            .as_deref()
+            .and_then(oracle_target_profile)
+            .unwrap_or_else(|| env!("STS_CARGO_PROFILE").to_string()),
+        executable_len: metadata.as_ref().map(std::fs::Metadata::len),
+        executable_modified_unix_ms: metadata
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64),
+    }
+}
+
+fn oracle_target_profile(executable: &Path) -> Option<String> {
+    let mut directory = executable.parent()?;
+    if directory.file_name().is_some_and(|name| name == "deps") {
+        directory = directory.parent()?;
+    }
+    directory
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+}
+
+fn oracle_neow_root_progress(
+    explored: &OracleRunExploreResultV1,
+    pending_combats: &[OraclePendingCombatSummaryV1],
+) -> Vec<OracleNeowRootProgressSummaryV1> {
+    let mut by_root = std::collections::BTreeMap::<String, OracleNeowRootProgressSummaryV1>::new();
+    for branch in &explored.explorer.branches {
+        let entry = by_root
+            .entry(branch.neow_root_candidate_id.clone())
+            .or_insert_with(|| OracleNeowRootProgressSummaryV1 {
+                root_candidate_id: branch.neow_root_candidate_id.clone(),
+                root_label: branch.neow_root_label.clone(),
+                materialized_branches: 0,
+                furthest_act: branch.session.run_state.act_num,
+                furthest_floor: branch.session.run_state.floor_num,
+                furthest_branch_id: branch.branch_id,
+                pending_decisions: 0,
+                pending_combats: 0,
+                unresolved_combats: 0,
+            });
+        entry.materialized_branches = entry.materialized_branches.saturating_add(1);
+        if (
+            branch.session.run_state.act_num,
+            branch.session.run_state.floor_num,
+            branch.branch_id,
+        ) > (
+            entry.furthest_act,
+            entry.furthest_floor,
+            entry.furthest_branch_id,
+        ) {
+            entry.furthest_act = branch.session.run_state.act_num;
+            entry.furthest_floor = branch.session.run_state.floor_num;
+            entry.furthest_branch_id = branch.branch_id;
+        }
+    }
+    for pending in &explored.explorer.pending_decisions {
+        if let Some(entry) = by_root.get_mut(&pending.neow_root_candidate_id) {
+            entry.pending_decisions = entry.pending_decisions.saturating_add(1);
+        }
+    }
+    for pending in pending_combats {
+        if let Some(branch) = explored
+            .explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == pending.branch_id)
+        {
+            if let Some(entry) = by_root.get_mut(&branch.neow_root_candidate_id) {
+                entry.pending_combats = entry.pending_combats.saturating_add(1);
+            }
+        }
+    }
+    for unresolved in &explored.explorer.unresolved_combats {
+        if let Some(branch) = explored
+            .explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == unresolved.branch_id)
+        {
+            if let Some(entry) = by_root.get_mut(&branch.neow_root_candidate_id) {
+                entry.unresolved_combats = entry.unresolved_combats.saturating_add(1);
+            }
+        }
+    }
+    by_root.into_values().collect()
 }
 
 fn first_unresolved_combat_case(
@@ -380,6 +590,20 @@ fn first_unresolved_combat_case(
         .branches
         .iter()
         .find(|branch| branch.branch_id == unresolved.branch_id)?;
+    combat_case_for_branch(
+        config,
+        branch,
+        format!("{:?}", unresolved.rejection),
+        unresolved.nodes_expanded.min(usize::MAX as u64) as usize,
+    )
+}
+
+fn combat_case_for_branch(
+    config: &OracleRunConfig,
+    branch: &OracleRunBranchV1,
+    reason: String,
+    search_nodes: usize,
+) -> Option<CombatCase> {
     let active = branch.session.active_combat.as_ref()?;
     let position = CombatPosition::new(active.engine_state.clone(), active.combat_state.clone());
     let search_ms = if active.combat_state.meta.is_boss_fight {
@@ -402,8 +626,8 @@ fn first_unresolved_combat_case(
                 "Act {} Floor {} combat",
                 branch.session.run_state.act_num, branch.session.run_state.floor_num
             ),
-            reason: format!("{:?}", unresolved.rejection),
-            search_nodes: unresolved.nodes_expanded.min(usize::MAX as u64) as usize,
+            reason,
+            search_nodes,
             search_ms,
             rescue_search_nodes: 0,
             rescue_search_ms: 0,
@@ -577,7 +801,7 @@ fn validate_continuation(
     Ok(())
 }
 
-fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
+pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombatBudgetsV1 {
     OracleRunCombatBudgetsV1 {
         hallway: RunControlSearchCombatOptions {
             max_nodes: Some(config.budget.hallway_nodes),
@@ -630,6 +854,23 @@ fn engine_state_name(state: &EngineState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oracle_report_build_identity_names_the_profile_and_binary() {
+        let identity = current_oracle_build_identity();
+
+        assert!(!identity.cargo_profile.is_empty());
+        assert!(identity.executable_len.is_some_and(|len| len > 0));
+        assert!(identity.executable_modified_unix_ms.is_some());
+        assert_eq!(
+            oracle_target_profile(Path::new(r"D:\repo\target\fast-run\oracle_run.exe")),
+            Some("fast-run".to_string())
+        );
+        assert_eq!(
+            oracle_target_profile(Path::new(r"D:\repo\target\debug\deps\oracle_run-tests.exe")),
+            Some("debug".to_string())
+        );
+    }
 
     #[test]
     fn oracle_boss_budget_uses_the_replayable_first_win_policy() {

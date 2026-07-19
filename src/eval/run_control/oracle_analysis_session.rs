@@ -1,0 +1,948 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+
+use crate::content::potions::Potion;
+use crate::content::relics::RelicState;
+use crate::runtime::combat::CombatCard;
+
+use super::oracle_combat_work::{
+    OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
+};
+use super::oracle_run_explorer::{
+    decision_work_for_branch, seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
+    OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatBudgetsV1,
+    OracleRunDecisionAnnotationFnV1, OracleRunDecisionOrderFnV1, OracleRunExplorerCheckpointV1,
+    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
+};
+use super::{
+    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlTraceAnnotationV1,
+    RunDecisionAction,
+};
+
+pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
+pub const ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleAnalysisEdgeKindV1 {
+    Decision,
+    CombatWitness,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisEdgeV1 {
+    pub edge_id: u64,
+    pub parent_node_id: usize,
+    pub child_node_id: usize,
+    pub kind: OracleAnalysisEdgeKindV1,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisChoiceViewV1 {
+    pub choice_ref: String,
+    pub kind: OracleRunWorkKindV1,
+    pub candidate_id: String,
+    pub label: String,
+    pub action: RunDecisionAction,
+    pub owner_rank: u64,
+    pub path_discrepancy: u64,
+    pub path_negative_log_policy: f64,
+    pub annotation: Option<RunControlTraceAnnotationV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisNodeSummaryV1 {
+    pub node_id: usize,
+    pub canonical_parent_node_id: Option<usize>,
+    pub boundary: OracleRunBoundaryV1,
+    pub act: u8,
+    pub floor: i32,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub replay_len: usize,
+    pub is_cursor: bool,
+    pub is_mainline_tip: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisTreeViewV1 {
+    pub roots: Vec<usize>,
+    pub cursor_node_id: usize,
+    pub mainline_node_id: usize,
+    pub nodes: Vec<OracleAnalysisNodeSummaryV1>,
+    pub edges: Vec<OracleAnalysisEdgeV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisChildViewV1 {
+    pub edge_id: u64,
+    pub child_node_id: usize,
+    pub kind: OracleAnalysisEdgeKindV1,
+    pub label: String,
+    pub is_on_mainline: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatProgressV1 {
+    pub generation_work: u64,
+    pub exact_states: usize,
+    pub completed_turn_options: usize,
+    pub retained_state_work: usize,
+    pub max_player_turn: u32,
+    pub incumbent_final_hp: Option<i32>,
+    pub incumbent_hp_loss: Option<i32>,
+    pub incumbent_action_count: Option<usize>,
+    pub quantum_count: usize,
+    pub remaining_nodes: usize,
+    pub remaining_wall_ms: Option<u64>,
+    pub resume_kind: OracleCombatSearchResumeKindV1,
+    pub restart_count: usize,
+    pub last_status: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisNodeViewV1 {
+    pub node_id: usize,
+    pub canonical_parent_node_id: Option<usize>,
+    pub is_cursor: bool,
+    pub is_on_mainline: bool,
+    pub boundary: OracleRunBoundaryV1,
+    pub state_fingerprint: String,
+    pub neow_root_label: String,
+    pub act: u8,
+    pub floor: i32,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub keys: [bool; 3],
+    pub deck: Vec<CombatCard>,
+    pub relics: Vec<RelicState>,
+    pub potions: Vec<Option<Potion>>,
+    pub replay_len: usize,
+    pub recent_replay: Vec<OracleRunReplayStepV1>,
+    pub choices: Vec<OracleAnalysisChoiceViewV1>,
+    pub children: Vec<OracleAnalysisChildViewV1>,
+    pub combat: Option<OracleAnalysisCombatProgressV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum OracleAnalysisAdvanceStatusV1 {
+    SearchPending,
+    BoundaryReached { child_node_id: usize },
+    BudgetUnknown,
+    ExhaustiveRefutation,
+    SetupOrMechanicsError,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisAdvanceReportV1 {
+    pub source_node_id: usize,
+    pub status: OracleAnalysisAdvanceStatusV1,
+    pub quanta_served: usize,
+    pub elapsed_ms: u64,
+    pub combat: Option<OracleAnalysisCombatProgressV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisAdvanceRequestV1 {
+    pub max_quanta: usize,
+    pub quantum_nodes: usize,
+    pub quantum_ms: Option<u64>,
+    pub wall_ms: Option<u64>,
+}
+
+impl Default for OracleAnalysisAdvanceRequestV1 {
+    fn default() -> Self {
+        Self {
+            max_quanta: 1,
+            quantum_nodes: 50_000,
+            quantum_ms: Some(1_000),
+            wall_ms: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisCombatJobCheckpointV1 {
+    pub branch_id: usize,
+    pub work: OracleRunCombatWorkCheckpointV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OracleAnalysisSessionCheckpointV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub cursor_node_id: usize,
+    pub cursor_edge_path: Vec<u64>,
+    pub mainline_node_id: usize,
+    pub mainline_edge_path: Vec<u64>,
+    pub next_edge_id: u64,
+    pub edges: Vec<OracleAnalysisEdgeV1>,
+    pub explorer: OracleRunExplorerCheckpointV1,
+    pub combat_jobs: Vec<OracleAnalysisCombatJobCheckpointV1>,
+}
+
+pub struct OracleAnalysisSessionV1 {
+    explorer: OracleRunExplorerV1,
+    cursor_node_id: usize,
+    cursor_edge_path: Vec<u64>,
+    mainline_node_id: usize,
+    mainline_edge_path: Vec<u64>,
+    next_edge_id: u64,
+    edges: Vec<OracleAnalysisEdgeV1>,
+    combat_jobs: BTreeMap<usize, OracleRunCombatWorkV1>,
+    combat_budgets: OracleRunCombatBudgetsV1,
+    decision_order: Option<OracleRunDecisionOrderFnV1>,
+    decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
+}
+
+impl OracleAnalysisSessionV1 {
+    pub fn from_explorer(
+        mut explorer: OracleRunExplorerV1,
+        preferred_cursor_node_id: Option<usize>,
+        combat_budgets: OracleRunCombatBudgetsV1,
+        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
+    ) -> Result<Self, String> {
+        let cursor_node_id = preferred_cursor_node_id
+            .filter(|branch_id| {
+                explorer
+                    .branches
+                    .iter()
+                    .any(|branch| branch.branch_id == *branch_id)
+            })
+            .or_else(|| {
+                explorer
+                    .branches
+                    .iter()
+                    .max_by_key(|branch| {
+                        (
+                            branch.session.run_state.act_num,
+                            branch.session.run_state.floor_num,
+                            branch.journal.len(),
+                            branch.branch_id,
+                        )
+                    })
+                    .map(|branch| branch.branch_id)
+            })
+            .ok_or_else(|| "oracle analysis session requires at least one branch".to_string())?;
+        let combat_jobs = explorer
+            .drain_pending_combats()
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let mut session = Self {
+            explorer,
+            cursor_node_id,
+            cursor_edge_path: Vec::new(),
+            mainline_node_id: cursor_node_id,
+            mainline_edge_path: Vec::new(),
+            next_edge_id: 0,
+            edges: Vec::new(),
+            combat_jobs,
+            combat_budgets,
+            decision_order,
+            decision_annotation,
+        };
+        session.seed_canonical_edges();
+        session.cursor_edge_path = session.path_to_node(cursor_node_id).ok_or_else(|| {
+            format!("analysis cursor node {cursor_node_id} is not reachable from any root")
+        })?;
+        session.mainline_edge_path = session.cursor_edge_path.clone();
+        Ok(session)
+    }
+
+    pub fn restore(
+        checkpoint: OracleAnalysisSessionCheckpointV1,
+        combat_budgets: OracleRunCombatBudgetsV1,
+        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
+    ) -> Result<Self, String> {
+        if checkpoint.schema_name != ORACLE_ANALYSIS_SESSION_SCHEMA_NAME
+            || checkpoint.schema_version != ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION
+        {
+            return Err("unsupported oracle analysis session schema".to_string());
+        }
+        let explorer =
+            seed_oracle_run_explorer_from_checkpoint_v1(checkpoint.explorer, &combat_budgets)?;
+        let mut combat_jobs = BTreeMap::new();
+        for saved in checkpoint.combat_jobs {
+            let branch = explorer
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == saved.branch_id)
+                .ok_or_else(|| {
+                    format!(
+                        "analysis combat job references missing node {}",
+                        saved.branch_id
+                    )
+                })?;
+            let work = OracleRunCombatWorkV1::restart_from_checkpoint(
+                &branch.session,
+                combat_budgets.for_session(&branch.session),
+                saved.work,
+            )?;
+            if combat_jobs.insert(saved.branch_id, work).is_some() {
+                return Err(format!(
+                    "analysis checkpoint duplicated combat node {}",
+                    saved.branch_id
+                ));
+            }
+        }
+        let session = Self {
+            explorer,
+            cursor_node_id: checkpoint.cursor_node_id,
+            cursor_edge_path: checkpoint.cursor_edge_path,
+            mainline_node_id: checkpoint.mainline_node_id,
+            mainline_edge_path: checkpoint.mainline_edge_path,
+            next_edge_id: checkpoint.next_edge_id,
+            edges: checkpoint.edges,
+            combat_jobs,
+            combat_budgets,
+            decision_order,
+            decision_annotation,
+        };
+        session.validate_navigation_state()?;
+        Ok(session)
+    }
+
+    pub fn checkpoint(&self) -> Result<OracleAnalysisSessionCheckpointV1, String> {
+        self.validate_navigation_state()?;
+        Ok(OracleAnalysisSessionCheckpointV1 {
+            schema_name: ORACLE_ANALYSIS_SESSION_SCHEMA_NAME.to_string(),
+            schema_version: ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
+            cursor_node_id: self.cursor_node_id,
+            cursor_edge_path: self.cursor_edge_path.clone(),
+            mainline_node_id: self.mainline_node_id,
+            mainline_edge_path: self.mainline_edge_path.clone(),
+            next_edge_id: self.next_edge_id,
+            edges: self.edges.clone(),
+            explorer: self.explorer.analysis_checkpoint()?,
+            combat_jobs: self
+                .combat_jobs
+                .iter()
+                .map(|(branch_id, work)| OracleAnalysisCombatJobCheckpointV1 {
+                    branch_id: *branch_id,
+                    work: work.checkpoint(),
+                })
+                .collect(),
+        })
+    }
+
+    pub fn cursor_node_id(&self) -> usize {
+        self.cursor_node_id
+    }
+
+    pub fn mainline_node_id(&self) -> usize {
+        self.mainline_node_id
+    }
+
+    pub fn root_node_ids(&self) -> Vec<usize> {
+        let branch_ids = self
+            .explorer
+            .branches
+            .iter()
+            .map(|branch| branch.branch_id)
+            .collect::<BTreeSet<_>>();
+        self.explorer
+            .branches
+            .iter()
+            .filter(|branch| {
+                branch
+                    .parent_branch_id
+                    .is_none_or(|parent| !branch_ids.contains(&parent))
+            })
+            .map(|branch| branch.branch_id)
+            .collect()
+    }
+
+    pub fn focus_node(&mut self, node_id: usize) -> Result<(), String> {
+        self.require_branch(node_id)?;
+        self.cursor_node_id = node_id;
+        self.cursor_edge_path = self
+            .path_to_node(node_id)
+            .ok_or_else(|| format!("analysis node {node_id} is not reachable from any root"))?;
+        Ok(())
+    }
+
+    pub fn follow_edge(&mut self, edge_id: u64) -> Result<(), String> {
+        let edge = self
+            .edges
+            .iter()
+            .find(|edge| edge.edge_id == edge_id)
+            .ok_or_else(|| format!("unknown oracle analysis edge {edge_id}"))?;
+        if edge.parent_node_id != self.cursor_node_id {
+            return Err(format!(
+                "analysis edge {edge_id} starts at node {}, cursor is node {}",
+                edge.parent_node_id, self.cursor_node_id
+            ));
+        }
+        self.cursor_node_id = edge.child_node_id;
+        self.cursor_edge_path.push(edge.edge_id);
+        Ok(())
+    }
+
+    pub fn back(&mut self) -> Result<usize, String> {
+        let edge_id = self
+            .cursor_edge_path
+            .pop()
+            .ok_or_else(|| "oracle analysis cursor is already at a root".to_string())?;
+        let edge = self
+            .edges
+            .iter()
+            .find(|edge| edge.edge_id == edge_id)
+            .ok_or_else(|| format!("analysis cursor references missing edge {edge_id}"))?;
+        self.cursor_node_id = edge.parent_node_id;
+        Ok(self.cursor_node_id)
+    }
+
+    pub fn promote_cursor(&mut self) {
+        self.mainline_node_id = self.cursor_node_id;
+        self.mainline_edge_path = self.cursor_edge_path.clone();
+    }
+
+    pub fn replay(&self, node_id: usize) -> Result<Vec<OracleRunReplayStepV1>, String> {
+        Ok(self.require_branch(node_id)?.replay.clone())
+    }
+
+    pub fn tree(&self) -> OracleAnalysisTreeViewV1 {
+        OracleAnalysisTreeViewV1 {
+            roots: self.root_node_ids(),
+            cursor_node_id: self.cursor_node_id,
+            mainline_node_id: self.mainline_node_id,
+            nodes: self
+                .explorer
+                .branches
+                .iter()
+                .map(|branch| OracleAnalysisNodeSummaryV1 {
+                    node_id: branch.branch_id,
+                    canonical_parent_node_id: branch.parent_branch_id,
+                    boundary: branch.boundary,
+                    act: branch.session.run_state.act_num,
+                    floor: branch.session.run_state.floor_num,
+                    current_hp: branch.session.run_state.current_hp,
+                    max_hp: branch.session.run_state.max_hp,
+                    gold: branch.session.run_state.gold,
+                    replay_len: branch.replay.len(),
+                    is_cursor: branch.branch_id == self.cursor_node_id,
+                    is_mainline_tip: branch.branch_id == self.mainline_node_id,
+                })
+                .collect(),
+            edges: self.edges.clone(),
+        }
+    }
+
+    pub fn view_cursor(&self) -> Result<OracleAnalysisNodeViewV1, String> {
+        self.view_node(self.cursor_node_id)
+    }
+
+    pub fn view_node(&self, node_id: usize) -> Result<OracleAnalysisNodeViewV1, String> {
+        let branch = self.require_branch(node_id)?;
+        let mut choices = if matches!(
+            branch.boundary,
+            OracleRunBoundaryV1::Combat
+                | OracleRunBoundaryV1::TerminalVictory
+                | OracleRunBoundaryV1::TerminalDefeat
+        ) {
+            Vec::new()
+        } else {
+            decision_work_for_branch(branch, self.decision_order)?
+        };
+        choices.sort_by(|left, right| {
+            left.path_discrepancy
+                .cmp(&right.path_discrepancy)
+                .then_with(|| {
+                    left.path_negative_log_policy
+                        .total_cmp(&right.path_negative_log_policy)
+                })
+                .then_with(|| left.candidate_id.cmp(&right.candidate_id))
+        });
+        let choices = choices
+            .into_iter()
+            .map(|choice| OracleAnalysisChoiceViewV1 {
+                choice_ref: choice_ref(&choice),
+                kind: choice.kind,
+                candidate_id: choice.candidate_id.clone(),
+                label: choice.label.clone(),
+                action: choice.action.clone(),
+                owner_rank: choice
+                    .path_discrepancy
+                    .saturating_sub(branch.path_discrepancy),
+                path_discrepancy: choice.path_discrepancy,
+                path_negative_log_policy: choice.path_negative_log_policy,
+                annotation: self
+                    .decision_annotation
+                    .and_then(|annotate| annotate(&branch.session, &choice.candidate_id)),
+            })
+            .collect();
+        let mainline_edges = self
+            .mainline_edge_path
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let children = self
+            .edges
+            .iter()
+            .filter(|edge| edge.parent_node_id == node_id)
+            .map(|edge| OracleAnalysisChildViewV1 {
+                edge_id: edge.edge_id,
+                child_node_id: edge.child_node_id,
+                kind: edge.kind,
+                label: edge.label.clone(),
+                is_on_mainline: mainline_edges.contains(&edge.edge_id),
+            })
+            .collect();
+        let replay_len = branch.replay.len();
+        let recent_replay = branch
+            .replay
+            .iter()
+            .skip(replay_len.saturating_sub(12))
+            .cloned()
+            .collect();
+        let run = &branch.session.run_state;
+        Ok(OracleAnalysisNodeViewV1 {
+            node_id,
+            canonical_parent_node_id: branch.parent_branch_id,
+            is_cursor: node_id == self.cursor_node_id,
+            is_on_mainline: node_id == self.mainline_node_id
+                || self
+                    .mainline_edge_path
+                    .iter()
+                    .filter_map(|edge_id| {
+                        self.edges
+                            .iter()
+                            .find(|edge| edge.edge_id == *edge_id)
+                            .map(|edge| edge.parent_node_id)
+                    })
+                    .any(|parent| parent == node_id),
+            boundary: branch.boundary,
+            state_fingerprint: branch.state_fingerprint.clone(),
+            neow_root_label: branch.neow_root_label.clone(),
+            act: run.act_num,
+            floor: run.floor_num,
+            current_hp: run.current_hp,
+            max_hp: run.max_hp,
+            gold: run.gold,
+            keys: run.keys,
+            deck: run.master_deck.clone(),
+            relics: run.relics.clone(),
+            potions: run.potions.clone(),
+            replay_len,
+            recent_replay,
+            choices,
+            children,
+            combat: self.combat_progress(node_id),
+        })
+    }
+
+    pub fn try_choice(&mut self, requested_ref: &str) -> Result<usize, String> {
+        let (parent_node_id, _) = parse_choice_ref(requested_ref)?;
+        let parent = self.require_branch(parent_node_id)?;
+        let work = decision_work_for_branch(parent, self.decision_order)?
+            .into_iter()
+            .find(|work| choice_ref(work) == requested_ref)
+            .ok_or_else(|| {
+                format!("choice reference is stale or is not legal at node {parent_node_id}")
+            })?;
+        let label = work.label.clone();
+        self.explorer.remove_pending_decision(&work.stable_work_key);
+        let child_node_id = self
+            .explorer
+            .materialize_explicit_decision(work, self.decision_annotation)?;
+        let edge_id = self.record_edge(
+            parent_node_id,
+            child_node_id,
+            OracleAnalysisEdgeKindV1::Decision,
+            label,
+            Some(requested_ref.to_string()),
+        );
+        self.move_cursor_after_edge(parent_node_id, edge_id, child_node_id);
+        Ok(child_node_id)
+    }
+
+    pub fn advance_cursor(
+        &mut self,
+        request: OracleAnalysisAdvanceRequestV1,
+    ) -> Result<OracleAnalysisAdvanceReportV1, String> {
+        if request.max_quanta == 0 || request.quantum_nodes == 0 {
+            return Err("oracle analysis advance requires positive quantum budgets".to_string());
+        }
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        if !self.combat_jobs.contains_key(&source_node_id) {
+            let work = OracleRunCombatWorkV1::new(
+                &branch.session,
+                self.combat_budgets.for_session(&branch.session),
+            )?;
+            self.combat_jobs.insert(source_node_id, work);
+        }
+        let started = Instant::now();
+        let deadline = request
+            .wall_ms
+            .and_then(|wall_ms| started.checked_add(Duration::from_millis(wall_ms)));
+        let quantum = RunControlCombatSearchQuantum {
+            label: "oracle_analysis_session",
+            additional_nodes: request.quantum_nodes,
+            soft_wall_ms: request.quantum_ms,
+        };
+        let mut quanta_served = 0usize;
+        let mut ready_to_finish = false;
+        for _ in 0..request.max_quanta {
+            let work = self
+                .combat_jobs
+                .get_mut(&source_node_id)
+                .expect("analysis combat job inserted above");
+            match work.advance(&quantum, deadline) {
+                RunControlCombatWorkAdvanceV1::Pending => {
+                    quanta_served = quanta_served.saturating_add(1);
+                }
+                RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => break,
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                    quanta_served = quanta_served.saturating_add(1);
+                    ready_to_finish = true;
+                    break;
+                }
+            }
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                break;
+            }
+        }
+        if !ready_to_finish {
+            return Ok(OracleAnalysisAdvanceReportV1 {
+                source_node_id,
+                status: OracleAnalysisAdvanceStatusV1::SearchPending,
+                quanta_served,
+                elapsed_ms: elapsed_ms(started),
+                combat: self.combat_progress(source_node_id),
+            });
+        }
+
+        let work = self
+            .combat_jobs
+            .remove(&source_node_id)
+            .expect("ready analysis combat job exists");
+        let final_progress = combat_progress_view(&work);
+        let child_node_id = self
+            .explorer
+            .materialize_explicit_combat(source_node_id, work)?;
+        let status = if let Some(child_node_id) = child_node_id {
+            let child = self.require_branch(child_node_id)?;
+            let edge_id = self.record_edge(
+                source_node_id,
+                child_node_id,
+                OracleAnalysisEdgeKindV1::CombatWitness,
+                format!(
+                    "combat witness -> {} HP",
+                    child.session.run_state.current_hp
+                ),
+                None,
+            );
+            self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { child_node_id }
+        } else {
+            match self
+                .explorer
+                .unresolved_combats
+                .iter()
+                .rev()
+                .find(|unresolved| unresolved.branch_id == source_node_id)
+                .map(|unresolved| unresolved.evidence_kind)
+            {
+                Some("exhaustive_refutation") => {
+                    OracleAnalysisAdvanceStatusV1::ExhaustiveRefutation
+                }
+                Some("setup_or_mechanics_error") => {
+                    OracleAnalysisAdvanceStatusV1::SetupOrMechanicsError
+                }
+                _ => OracleAnalysisAdvanceStatusV1::BudgetUnknown,
+            }
+        };
+        Ok(OracleAnalysisAdvanceReportV1 {
+            source_node_id,
+            status,
+            quanta_served,
+            elapsed_ms: elapsed_ms(started),
+            combat: Some(final_progress),
+        })
+    }
+
+    fn require_branch(
+        &self,
+        node_id: usize,
+    ) -> Result<&super::oracle_run_explorer::OracleRunBranchV1, String> {
+        self.explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == node_id)
+            .ok_or_else(|| format!("unknown oracle analysis node {node_id}"))
+    }
+
+    fn combat_progress(&self, node_id: usize) -> Option<OracleAnalysisCombatProgressV1> {
+        self.combat_jobs.get(&node_id).map(combat_progress_view)
+    }
+
+    fn seed_canonical_edges(&mut self) {
+        let parents = self
+            .explorer
+            .branches
+            .iter()
+            .filter_map(|branch| {
+                branch
+                    .parent_branch_id
+                    .map(|parent| (parent, branch.branch_id))
+            })
+            .collect::<Vec<_>>();
+        for (parent, child) in parents {
+            if self
+                .edges
+                .iter()
+                .any(|edge| edge.parent_node_id == parent && edge.child_node_id == child)
+            {
+                continue;
+            }
+            let label = self
+                .edge_label_from_branches(parent, child)
+                .unwrap_or_else(|| "continued variation".to_string());
+            self.record_edge(
+                parent,
+                child,
+                OracleAnalysisEdgeKindV1::Decision,
+                label,
+                None,
+            );
+        }
+    }
+
+    fn edge_label_from_branches(&self, parent: usize, child: usize) -> Option<String> {
+        let parent = self.require_branch(parent).ok()?;
+        let child = self.require_branch(child).ok()?;
+        if child.replay.len() > parent.replay.len() {
+            child.replay.last().map(|step| step.label.clone())
+        } else if child.boundary != parent.boundary
+            || child.session.run_state.current_hp != parent.session.run_state.current_hp
+        {
+            Some(format!(
+                "combat witness -> {} HP",
+                child.session.run_state.current_hp
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn record_edge(
+        &mut self,
+        parent_node_id: usize,
+        child_node_id: usize,
+        kind: OracleAnalysisEdgeKindV1,
+        label: String,
+        choice_ref: Option<String>,
+    ) -> u64 {
+        if let Some(existing) = self.edges.iter().find(|edge| {
+            edge.parent_node_id == parent_node_id
+                && edge.child_node_id == child_node_id
+                && edge.kind == kind
+                && edge.choice_ref == choice_ref
+        }) {
+            return existing.edge_id;
+        }
+        let edge_id = self.next_edge_id;
+        self.next_edge_id = self.next_edge_id.saturating_add(1);
+        self.edges.push(OracleAnalysisEdgeV1 {
+            edge_id,
+            parent_node_id,
+            child_node_id,
+            kind,
+            label,
+            choice_ref,
+        });
+        edge_id
+    }
+
+    fn move_cursor_after_edge(
+        &mut self,
+        parent_node_id: usize,
+        edge_id: u64,
+        child_node_id: usize,
+    ) {
+        if self.cursor_node_id != parent_node_id {
+            self.cursor_edge_path = self
+                .path_to_node(parent_node_id)
+                .expect("materialized analysis parent is reachable");
+        }
+        self.cursor_edge_path.push(edge_id);
+        self.cursor_node_id = child_node_id;
+    }
+
+    fn path_to_node(&self, target: usize) -> Option<Vec<u64>> {
+        if !self
+            .explorer
+            .branches
+            .iter()
+            .any(|branch| branch.branch_id == target)
+        {
+            return None;
+        }
+        let roots = self.root_node_ids();
+        let mut queue = roots
+            .iter()
+            .map(|root| (*root, Vec::<u64>::new()))
+            .collect::<VecDeque<_>>();
+        let mut visited = BTreeSet::new();
+        while let Some((node, path)) = queue.pop_front() {
+            if !visited.insert(node) {
+                continue;
+            }
+            if node == target {
+                return Some(path);
+            }
+            for edge in self.edges.iter().filter(|edge| edge.parent_node_id == node) {
+                let mut child_path = path.clone();
+                child_path.push(edge.edge_id);
+                queue.push_back((edge.child_node_id, child_path));
+            }
+        }
+        None
+    }
+
+    fn validate_navigation_state(&self) -> Result<(), String> {
+        self.require_branch(self.cursor_node_id)?;
+        self.require_branch(self.mainline_node_id)?;
+        let roots = self.root_node_ids().into_iter().collect::<BTreeSet<_>>();
+        if self.cursor_edge_path.is_empty() && !roots.contains(&self.cursor_node_id) {
+            return Err(format!(
+                "analysis cursor node {} has no path from a root",
+                self.cursor_node_id
+            ));
+        }
+        if self.mainline_edge_path.is_empty() && !roots.contains(&self.mainline_node_id) {
+            return Err(format!(
+                "analysis mainline node {} has no path from a root",
+                self.mainline_node_id
+            ));
+        }
+        validate_edge_path(
+            &self.edges,
+            self.cursor_node_id,
+            &self.cursor_edge_path,
+            "cursor",
+        )?;
+        validate_edge_path(
+            &self.edges,
+            self.mainline_node_id,
+            &self.mainline_edge_path,
+            "mainline",
+        )?;
+        Ok(())
+    }
+}
+
+fn choice_ref(work: &LazyOracleRunDecisionV1) -> String {
+    format!(
+        "choice-v1/{}/{}",
+        work.parent_branch_id, work.stable_work_key
+    )
+}
+
+fn parse_choice_ref(value: &str) -> Result<(usize, &str), String> {
+    let mut parts = value.splitn(3, '/');
+    if parts.next() != Some("choice-v1") {
+        return Err("unsupported oracle analysis choice reference".to_string());
+    }
+    let node = parts
+        .next()
+        .ok_or_else(|| "choice reference is missing its node".to_string())?
+        .parse::<usize>()
+        .map_err(|_| "choice reference contains an invalid node".to_string())?;
+    let key = parts
+        .next()
+        .filter(|key| !key.is_empty())
+        .ok_or_else(|| "choice reference is missing its fingerprint".to_string())?;
+    Ok((node, key))
+}
+
+fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatProgressV1 {
+    let progress: OracleRunCombatWorkProgressV1 = work.progress();
+    OracleAnalysisCombatProgressV1 {
+        generation_work: progress.generation_work,
+        exact_states: progress.exact_states,
+        completed_turn_options: progress.completed_turn_options,
+        retained_state_work: progress.retained_state_work,
+        max_player_turn: progress.max_player_turn,
+        incumbent_final_hp: progress.incumbent_final_hp,
+        incumbent_hp_loss: progress.incumbent_hp_loss,
+        incumbent_action_count: progress.incumbent_action_count,
+        quantum_count: work.quantum_count(),
+        remaining_nodes: work.remaining_nodes(),
+        remaining_wall_ms: work.remaining_wall_ms(),
+        resume_kind: if work.restart_count() == 0 {
+            OracleCombatSearchResumeKindV1::Fresh
+        } else {
+            OracleCombatSearchResumeKindV1::StateReplayExactSearchRestarted
+        },
+        restart_count: work.restart_count(),
+        last_status: progress.last_status,
+    }
+}
+
+fn validate_edge_path(
+    edges: &[OracleAnalysisEdgeV1],
+    expected_tip: usize,
+    path: &[u64],
+    label: &str,
+) -> Result<(), String> {
+    let Some(first_edge_id) = path.first() else {
+        return Ok(());
+    };
+    let first = edges
+        .iter()
+        .find(|edge| edge.edge_id == *first_edge_id)
+        .ok_or_else(|| format!("analysis {label} path references missing edge {first_edge_id}"))?;
+    let mut node = first.parent_node_id;
+    for edge_id in path {
+        let edge = edges
+            .iter()
+            .find(|edge| edge.edge_id == *edge_id)
+            .ok_or_else(|| format!("analysis {label} path references missing edge {edge_id}"))?;
+        if edge.parent_node_id != node {
+            return Err(format!(
+                "analysis {label} path is disconnected before edge {edge_id}"
+            ));
+        }
+        node = edge.child_node_id;
+    }
+    if node != expected_tip {
+        return Err(format!(
+            "analysis {label} path ends at node {node}, expected {expected_tip}"
+        ));
+    }
+    Ok(())
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}

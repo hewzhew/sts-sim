@@ -22,14 +22,14 @@ pub(crate) fn threat_response_delta(
 ) -> CardRewardThreatResponseDeltaV1 {
     let mut response = CardRewardThreatResponseDeltaV1::default();
 
-    if has_threat(context, StrategyThreatTagV1::HighIncomingDamage) {
+    if has_any_threat_gap(context, StrategyThreatTagV1::HighIncomingDamage) {
         response.components.push(CardRewardValueComponentV1 {
             name: "strategy_threat_high_incoming_damage".to_string(),
             value: 1.0,
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::StrengthDebuffValuable)
+    if has_boss_threat_gap(context, StrategyThreatTagV1::StrengthDebuffValuable)
         && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.18;
@@ -40,7 +40,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::MultiHit)
+    if has_boss_threat_gap(context, StrategyThreatTagV1::MultiHit)
         && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.12;
@@ -51,7 +51,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
+    if has_boss_threat_gap(context, StrategyThreatTagV1::WeakValuable) && candidate.facts.weak > 0 {
         let value = candidate.facts.weak as f32 * 0.08;
         response.survival_delta += value;
         response.components.push(CardRewardValueComponentV1 {
@@ -60,7 +60,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::AoEValuable) && candidate.facts.is_aoe {
+    if has_boss_threat_gap(context, StrategyThreatTagV1::AoEValuable) && candidate.facts.is_aoe {
         response.progress_delta += 0.10;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_aoe_response".to_string(),
@@ -68,7 +68,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::StatusFlood)
+    if has_boss_threat_gap(context, StrategyThreatTagV1::StatusFlood)
         && candidate
             .facts
             .pick_dependencies
@@ -82,7 +82,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::LongFightScaling)
+    if has_boss_threat_gap(context, StrategyThreatTagV1::LongFightScaling)
         && scaling_candidate(candidate)
     {
         response.progress_delta += 0.12;
@@ -92,7 +92,8 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::SetupWindow) && setup_candidate(candidate) {
+    if has_boss_threat_gap(context, StrategyThreatTagV1::SetupWindow) && setup_candidate(candidate)
+    {
         response.progress_delta += 0.10;
         response.components.push(CardRewardValueComponentV1 {
             name: "boss_threat_setup_window_response".to_string(),
@@ -153,7 +154,7 @@ pub(crate) fn threat_response_delta(
         }
     }
 
-    if has_boss_threat(context, StrategyThreatTagV1::SplitThreshold)
+    if has_boss_threat_gap(context, StrategyThreatTagV1::SplitThreshold)
         && candidate.facts.damage.total_damage >= 15
     {
         response.progress_delta += 0.12;
@@ -163,7 +164,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_pool_threat(context, StrategyThreatTagV1::StrengthDebuffValuable)
+    if has_elite_pool_threat_gap(context, StrategyThreatTagV1::StrengthDebuffValuable)
         && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.08;
@@ -174,7 +175,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_pool_threat(context, StrategyThreatTagV1::MultiHit)
+    if has_elite_pool_threat_gap(context, StrategyThreatTagV1::MultiHit)
         && candidate.facts.enemy_strength_down > 0
     {
         let value = candidate.facts.enemy_strength_down as f32 * 0.06;
@@ -196,7 +197,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_encounter_threat(context, "ThreeSentries", StrategyThreatTagV1::StatusFlood)
+    if has_elite_encounter_threat_gap(context, "ThreeSentries", StrategyThreatTagV1::StatusFlood)
         && candidate
             .facts
             .pick_dependencies
@@ -210,7 +211,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_encounter_threat(
+    if has_elite_encounter_threat_gap(
         context,
         "BookOfStabbing",
         StrategyThreatTagV1::StrengthDebuffValuable,
@@ -224,7 +225,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_encounter_threat(context, "Slavers", StrategyThreatTagV1::AoEValuable)
+    if has_elite_encounter_threat_gap(context, "Slavers", StrategyThreatTagV1::AoEValuable)
         && candidate.facts.is_aoe
     {
         response.survival_delta += 0.05;
@@ -235,7 +236,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_encounter_threat(context, "Reptomancer", StrategyThreatTagV1::AoEValuable)
+    if has_elite_encounter_threat_gap(context, "Reptomancer", StrategyThreatTagV1::AoEValuable)
         && candidate.facts.is_aoe
     {
         response.survival_delta += 0.07;
@@ -246,7 +247,7 @@ pub(crate) fn threat_response_delta(
         });
     }
 
-    if has_elite_encounter_threat(context, "GiantHead", StrategyThreatTagV1::LongFightScaling)
+    if has_elite_encounter_threat_gap(context, "GiantHead", StrategyThreatTagV1::LongFightScaling)
         && scaling_candidate(candidate)
     {
         response.progress_delta += 0.10;
@@ -334,8 +335,20 @@ fn push_unique(tags: &mut Vec<StrategyThreatTagV1>, tag: StrategyThreatTagV1) {
     }
 }
 
-fn has_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
-    context.strategy.threats.tags.contains(&tag)
+fn has_any_threat_gap(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
+    context
+        .strategy
+        .threat_coverage
+        .gaps
+        .iter()
+        .any(|gap| gap.tag == tag)
+}
+
+fn has_boss_threat_gap(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
+    context
+        .strategy
+        .threat_coverage
+        .has_gap(StrategyThreatSourceV1::ActBoss, tag)
 }
 
 fn has_boss_threat(context: &CardRewardDecisionContextV1, tag: StrategyThreatTagV1) -> bool {
@@ -354,6 +367,17 @@ fn has_elite_pool_threat(context: &CardRewardDecisionContextV1, tag: StrategyThr
         })
 }
 
+fn has_elite_pool_threat_gap(
+    context: &CardRewardDecisionContextV1,
+    tag: StrategyThreatTagV1,
+) -> bool {
+    route_allows_elite_pool_response(context)
+        && context
+            .strategy
+            .threat_coverage
+            .has_gap(StrategyThreatSourceV1::ActElitePool, tag)
+}
+
 fn has_elite_encounter_threat(
     context: &CardRewardDecisionContextV1,
     subject: &str,
@@ -364,6 +388,19 @@ fn has_elite_encounter_threat(
             source.source == StrategyThreatSourceV1::ActEliteEncounter
                 && source.subject == subject
                 && source.tag == tag
+        })
+}
+
+fn has_elite_encounter_threat_gap(
+    context: &CardRewardDecisionContextV1,
+    subject: &str,
+    tag: StrategyThreatTagV1,
+) -> bool {
+    route_allows_elite_pool_response(context)
+        && context.strategy.threat_coverage.gaps.iter().any(|gap| {
+            gap.source == StrategyThreatSourceV1::ActEliteEncounter
+                && gap.subject == subject
+                && gap.tag == tag
         })
 }
 

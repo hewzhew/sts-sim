@@ -18,6 +18,7 @@ pub fn threat_profile_from_run_state_v1(run_state: &RunState) -> StrategyThreatP
         add_boss_threats(boss, &mut profile);
     }
     add_act_elite_pool_threats(run_state.act_num, &mut profile);
+    add_act_hallway_pool_threats(run_state.act_num, &mut profile);
 
     profile
 }
@@ -295,6 +296,55 @@ fn add_act_elite_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
                 "GiantHead",
                 &[StrategyThreatTagV1::LongFightScaling],
                 "Act 3 elite Giant Head: long fight rewards scaling and dense damage turns",
+            );
+        }
+        _ => {}
+    }
+}
+
+fn add_act_hallway_pool_threats(act: u8, profile: &mut StrategyThreatProfileV1) {
+    match act {
+        1 => push_tags(
+            profile,
+            StrategyThreatSourceV1::ActHallwayPool,
+            "Act1HallwayPool",
+            &[StrategyThreatTagV1::TimedDamageRace],
+            "Act 1 hallway pool rewards early single-target frontload before enemies scale or inflict repeated chip damage",
+        ),
+        2 => push_tags(
+            profile,
+            StrategyThreatSourceV1::ActHallwayPool,
+            "Act2HallwayPool",
+            &[
+                StrategyThreatTagV1::HighIncomingDamage,
+                StrategyThreatTagV1::AoEValuable,
+            ],
+            "Act 2 hallway pool includes early multi-enemy and high-frontload pressure",
+        ),
+        3 => {
+            push_tags(
+                profile,
+                StrategyThreatSourceV1::ActHallwayPool,
+                "Spiker",
+                &[StrategyThreatTagV1::RetaliationPunish],
+                "Act 3 Spiker retaliation rewards high damage per triggering hit or non-attack damage",
+            );
+            push_tags(
+                profile,
+                StrategyThreatSourceV1::ActHallwayPool,
+                "Transient",
+                &[StrategyThreatTagV1::TimedDamageRace],
+                "Act 3 Transient requires reliable damage each turn to suppress incoming damage",
+            );
+            push_tags(
+                profile,
+                StrategyThreatSourceV1::ActHallwayPool,
+                "Act3HallwayPool",
+                &[
+                    StrategyThreatTagV1::HighIncomingDamage,
+                    StrategyThreatTagV1::ArtifactBlocksDebuff,
+                ],
+                "Act 3 hallway pool combines large attacks with artifact-backed enemies",
             );
         }
         _ => {}

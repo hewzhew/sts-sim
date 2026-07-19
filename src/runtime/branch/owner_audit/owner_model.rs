@@ -2,7 +2,7 @@ use sts_simulator::ai::strategy::boss_relic_admission::BossRelicAdmission;
 use sts_simulator::ai::strategy::decision_pipeline::{CandidateEvaluation, CleanupTarget};
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::eval::run_control::{
-    DecisionCandidateKey, RunDecisionAction, RunForcedTransitionKindV1,
+    CardRewardOwnerProvenanceV1, DecisionCandidateKey, RunDecisionAction, RunForcedTransitionKindV1,
 };
 
 pub(super) type DecisionKey = DecisionCandidateKey;
@@ -43,6 +43,7 @@ pub(super) enum ChoiceAnnotation {
 pub(super) struct OwnerCandidateDecision {
     pub(super) evaluation: CandidateEvaluation,
     pub(super) admission: Option<RewardAdmission>,
+    pub(super) card_reward_provenance: Option<CardRewardOwnerProvenanceV1>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -343,6 +343,31 @@ fn strategy_package_estimator_exports_exhaust_engine_roles() {
 }
 
 #[test]
+fn exhaust_payoff_dependency_is_satisfied_by_an_existing_exhaust_stream() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::TrueGrit);
+    let context = context_for_run_with_route(
+        &run_state,
+        vec![RewardCard::new(CardId::DarkEmbrace, 1)],
+        route_with_combat_pressure(),
+    );
+    let candidate = &context.candidates[0];
+
+    assert!(candidate
+        .impact
+        .dependency_assessments
+        .iter()
+        .any(|assessment| {
+            assessment.dependency == CardRewardPickDependencyV1::ExhaustPackage
+                && assessment.status == CardRewardDependencyStatusV1::Satisfied
+        }));
+    assert!(!candidate
+        .impact
+        .approval_blockers
+        .contains(&CardRewardEvidenceGapV1::UnsatisfiedExhaustPackageEvidence));
+}
+
+#[test]
 fn exhaust_engine_completion_aligns_with_status_flood_threats() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 1;

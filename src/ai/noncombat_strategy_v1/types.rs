@@ -281,7 +281,7 @@ pub struct StrategyResourceFactsV2 {
     pub relic_constraints: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum StrategyThreatTagV1 {
     HighIncomingDamage,
     MultiHit,
@@ -297,13 +297,16 @@ pub enum StrategyThreatTagV1 {
     CardPlayLimit,
     LongFightScaling,
     SetupWindow,
+    RetaliationPunish,
+    TimedDamageRace,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum StrategyThreatSourceV1 {
     ActBoss,
     ActElitePool,
     ActEliteEncounter,
+    ActHallwayPool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -323,11 +326,83 @@ pub struct StrategyThreatProfileV1 {
     pub evidence: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategyCapabilityKindV1 {
+    SingleTargetFrontload,
+    MultiTargetControl,
+    SustainedDefense,
+    LongFightScaling,
+    DrawEnergyConsistency,
+    PhaseControl,
+    DebuffResilience,
+    CardPlayEfficiency,
+    RetaliationSafeDamage,
+    TimedDamageRace,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategyCapabilityCoverageV1 {
+    Unknown,
+    Missing,
+    Thin,
+    Supported,
+    Strong,
+}
+
+impl StrategyCapabilityCoverageV1 {
+    pub fn is_gap(self) -> bool {
+        matches!(self, Self::Missing | Self::Thin)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StrategyCapabilityEvidenceV1 {
+    pub capability: StrategyCapabilityKindV1,
+    pub coverage: StrategyCapabilityCoverageV1,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct StrategyThreatCoverageGapV1 {
+    pub tag: StrategyThreatTagV1,
+    pub source: StrategyThreatSourceV1,
+    pub subject: String,
+    pub required_capabilities: Vec<StrategyCapabilityKindV1>,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct StrategyThreatCoverageLedgerV1 {
+    pub capabilities: Vec<StrategyCapabilityEvidenceV1>,
+    pub gaps: Vec<StrategyThreatCoverageGapV1>,
+}
+
+impl StrategyThreatCoverageLedgerV1 {
+    pub fn capability(
+        &self,
+        kind: StrategyCapabilityKindV1,
+    ) -> Option<&StrategyCapabilityEvidenceV1> {
+        self.capabilities
+            .iter()
+            .find(|capability| capability.capability == kind)
+    }
+
+    pub fn has_gap(&self, source: StrategyThreatSourceV1, tag: StrategyThreatTagV1) -> bool {
+        self.gaps
+            .iter()
+            .any(|gap| gap.source == source && gap.tag == tag)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RunStrategySnapshotV2 {
     pub(crate) v1: RunStrategySnapshotV1,
     pub resources: StrategyResourceFactsV2,
     pub threats: StrategyThreatProfileV1,
+    #[serde(default)]
+    pub threat_coverage: StrategyThreatCoverageLedgerV1,
     pub packages: Vec<StrategyPackageV2>,
 }
 

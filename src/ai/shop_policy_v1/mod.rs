@@ -1,6 +1,7 @@
 mod compiler;
 mod component_scorer;
 mod conversion;
+mod elite_matchup;
 mod evaluator;
 mod policy;
 mod strategy_tags;

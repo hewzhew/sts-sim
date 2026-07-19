@@ -32,7 +32,7 @@ pub(super) fn search_policy_report(
         dominance_pruning:
             "global_dominance_bucket_resource_vector_plus_same_parent_same_turn_sibling_coverage",
         rollout_value:
-            "combat_eval_v2_risk_bucketed_unresolved_estimate_used_for_frontier_priority_only_not_terminal_claims",
+            "combat_eval_v3_first_play_urgency_between_simulated_loss_and_unresolved_estimate_used_for_frontier_priority_only_not_terminal_claims",
         rollout_policy: CombatSearchV2RolloutPolicy::from(plugins.rollout).label(),
         child_rollout_policy: CombatSearchV2ChildRolloutPolicy::from(plugins.child_rollout).label(),
         llm_authority: "none",

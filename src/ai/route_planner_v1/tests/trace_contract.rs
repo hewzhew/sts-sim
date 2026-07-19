@@ -20,7 +20,7 @@ fn route_planner_trace_is_behavior_policy_not_teacher_label() {
 
     assert_eq!(trace.schema_name, ROUTE_DECISION_TRACE_SCHEMA_NAME);
     assert_eq!(trace.schema_version, ROUTE_DECISION_TRACE_SCHEMA_VERSION);
-    assert_eq!(trace.schema_version, 3);
+    assert_eq!(trace.schema_version, 4);
     assert_eq!(trace.label_role, "behavior_policy_not_teacher");
     assert!(!trace.candidates.is_empty());
     assert!(trace.selected_index.is_some());
@@ -72,6 +72,7 @@ fn route_planner_trace_serializes_structured_evidence() {
     assert!(value["candidates"][0]["needs"].is_object());
     assert!(value["candidates"][0]["path_summary"]["first_elite"].is_object());
     assert!(value["candidates"][0]["viability"].is_object());
+    assert!(value["candidates"][0]["survival_envelope"].is_object());
     assert!(
         value["candidates"][0]["viability"]["representative"]["projected_hp_after_segment"]
             .is_number()
@@ -92,7 +93,7 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
 
     assert_eq!(packet.schema_name, MAP_DECISION_PACKET_SCHEMA_NAME);
     assert_eq!(packet.schema_version, MAP_DECISION_PACKET_SCHEMA_VERSION);
-    assert_eq!(packet.schema_version, 2);
+    assert_eq!(packet.schema_version, 3);
     assert_eq!(packet.selected_index, trace.selected_index);
     assert_eq!(packet.candidates.len(), trace.candidates.len());
     assert_eq!(

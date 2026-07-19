@@ -2,7 +2,7 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
     CombatSearchV2TurnSegmentReport,
 };
-use crate::sim::combat::{CombatPosition, CombatTerminal};
+use crate::sim::combat::{CombatPosition, CombatStepper, CombatTerminal, EngineCombatStepper};
 use crate::state::core::ClientInput;
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
@@ -105,6 +105,84 @@ pub(super) fn apply_selected_combat_candidate_line(
                 line_performance,
             ),
         ])
+        .with_progress_step(super::RunProgressStepV1::CombatResolution(resolution));
+    *session = trial;
+    Ok(outcome)
+}
+
+pub(super) fn apply_oracle_combat_witness(
+    session: &mut RunControlSession,
+    start: &CombatPosition,
+    witness: &sts_combat_planner::OracleCombatWitness,
+) -> Result<RunProgressOutcome, String> {
+    if witness.actions.is_empty() {
+        return Err("oracle combat witness contains no actions".to_string());
+    }
+    if session.current_active_combat_position()? != *start {
+        return Err("oracle combat parent changed before witness commit".to_string());
+    }
+
+    let mut trial = session.clone();
+    let master_deck = active_combat_master_deck(&trial);
+    let resolution_before = RunCombatResolutionBoundaryV1::capture(&trial);
+    let before_snapshot = RunVisibleSnapshot::capture(&trial);
+    let mut automation_actions = Vec::with_capacity(witness.actions.len());
+    trial.mark_current_combat_search_resolved();
+    for (step_index, action) in witness.actions.iter().enumerate() {
+        let position = trial.current_combat_position_for_actions()?;
+        let choice = EngineCombatStepper
+            .choice_for_legal_input(&position, &action.input)
+            .ok_or_else(|| format!("oracle witness action {step_index} is no longer legal"))?;
+        let opportunity_before = combat_automation_opportunity_state_v1(&trial);
+        let outcome = trial.apply_combat_resolution_input(action.input.clone())?;
+        automation_actions.push(CombatAutomationActionV1 {
+            step_index,
+            action_key: choice.action_key,
+            input: action.input.clone(),
+            opportunity_before,
+            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+            combat_after: combat_automation_step_state_v1(&trial),
+        });
+    }
+
+    let after_snapshot = RunVisibleSnapshot::capture(&trial);
+    let status = current_run_apply_status(&trial);
+    let action_result = action_result_from_transition(
+        TransitionAction {
+            label: format!(
+                "oracle witness applied {} exact actions",
+                witness.actions.len()
+            ),
+        },
+        &before_snapshot,
+        &after_snapshot,
+        status,
+    );
+    let answer_claims = combat_automation_answer_claims_v1(&master_deck, &automation_actions);
+    let automation_record = CombatAutomationTrajectoryRecordV1::new(
+        CombatAutomationTrajectorySource::SearchCombat,
+        automation_actions,
+    )
+    .with_answer_claims(answer_claims);
+    trial.remember_combat_automation_trajectory(automation_record.clone());
+    let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
+    let resolution = RunCombatResolutionV1::new(
+        RunCombatResolutionKindV1::CompleteVictory,
+        resolution_before,
+        automation_record.clone(),
+        action_result.clone(),
+        resolution_after,
+    )?;
+    let message = format!(
+        "Oracle combat witness verified and applied: actions={} replay_engine_steps={} policy_cost={:.6}\n{}\n{}",
+        witness.actions.len(),
+        witness.replay_engine_steps,
+        witness.negative_log_policy,
+        render_action_result(&action_result),
+        super::render::render_run_control_state(&trial)
+    );
+    let outcome = RunProgressOutcome::action(message, action_result)
+        .with_trace_annotations(vec![automation_record.into_annotation()])
         .with_progress_step(super::RunProgressStepV1::CombatResolution(resolution));
     *session = trial;
     Ok(outcome)

@@ -1,3 +1,4 @@
+use super::coverage::threat_coverage_from_deck_facts_v1;
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::threat::empty_threat_profile_v1;
 use super::types::{
@@ -28,6 +29,7 @@ pub fn build_run_strategy_snapshot_v2_from_v1_with_threat(
     resources: StrategyResourceFactsV2,
     threats: StrategyThreatProfileV1,
 ) -> RunStrategySnapshotV2 {
+    let threat_coverage = threat_coverage_from_deck_facts_v1(&v1.deck, &threats);
     let mut packages = Vec::new();
     packages.extend(
         v1.plans
@@ -41,6 +43,7 @@ pub fn build_run_strategy_snapshot_v2_from_v1_with_threat(
         v1,
         resources,
         threats,
+        threat_coverage,
         packages,
     }
 }

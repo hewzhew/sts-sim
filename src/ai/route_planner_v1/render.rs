@@ -93,6 +93,19 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
                 ),
             );
         }
+        let envelope = &candidate.survival_envelope;
+        push_line(
+            &mut out,
+            format!(
+                "    survival envelope: exposure={:?} hp_margin={:.1} post_combat_heal={} potions={} forced_damage_rooms={} uncovered_threats={}",
+                envelope.threat_exposure,
+                envelope.conservative_hp_margin,
+                envelope.post_combat_heal,
+                envelope.potion_buffer_count,
+                envelope.forced_damage_rooms_before_recovery,
+                envelope.uncovered_threats.len(),
+            ),
+        );
     }
     push_line(&mut out, "");
     match trace.selected_index {

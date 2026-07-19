@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use super::context::RouteDecisionContextV1;
 use super::features::{
-    MapRouteTargetV1, NodeFeaturesV1, RouteCandidateViabilityV1, RouteMoveKindV1,
-    RoutePathSummaryV1, RouteSafetyFlagV1,
+    MapRouteTargetV1, NodeFeaturesV1, PathSurvivalEnvelopeV1, RouteCandidateViabilityV1,
+    RouteMoveKindV1, RoutePathSummaryV1, RouteSafetyFlagV1,
 };
 use super::score::{NeedVectorV1, RouteScoreTermsV1, RouteValueFactorsV1};
 use super::trace::{RouteDecisionTraceV1, RouteObjectiveV1, RouteSelectionModeV1};
 
 pub const MAP_DECISION_PACKET_SCHEMA_NAME: &str = "MapDecisionPacketV1";
-pub const MAP_DECISION_PACKET_SCHEMA_VERSION: u32 = 2;
+pub const MAP_DECISION_PACKET_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -80,6 +80,8 @@ pub struct RouteProjectionFrontierV1 {
     pub path_summary: RoutePathSummaryV1,
     #[serde(default)]
     pub viability: RouteCandidateViabilityV1,
+    #[serde(default)]
+    pub survival_envelope: PathSurvivalEnvelopeV1,
     pub metadata: RouteProjectionMetadataV1,
 }
 
@@ -164,6 +166,7 @@ impl MapDecisionPacketV1 {
                         projection: RouteProjectionFrontierV1 {
                             path_summary: candidate.path_summary.clone(),
                             viability: candidate.viability.clone(),
+                            survival_envelope: candidate.survival_envelope.clone(),
                             metadata: route_projection_metadata_v1(
                                 candidate.path_summary.path_count,
                                 trace.path_budget,

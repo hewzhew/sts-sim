@@ -60,6 +60,7 @@ pub(super) enum PotionGateReason {
     NoVisibleIncomingHpLoss,
     NoTacticalPressure,
     NotWounded,
+    NoSelectableCards,
     EscapeNotWin,
     RandomPotionGenerationUnsupported,
 }

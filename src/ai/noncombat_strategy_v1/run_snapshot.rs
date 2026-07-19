@@ -2,6 +2,7 @@ use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
+use super::coverage::threat_coverage_from_run_state_v1;
 use super::snapshot::build_run_strategy_snapshot_v1;
 use super::snapshot_v2::build_run_strategy_snapshot_v2_from_v1_with_threat;
 use super::threat::threat_profile_from_run_state_v1;
@@ -23,11 +24,13 @@ pub fn build_run_strategy_snapshot_from_run_state_with_route_v2(
     route: Option<StrategyRouteFutureV1>,
 ) -> RunStrategySnapshotV2 {
     let v1 = build_run_strategy_snapshot_v1(deck_facts_from_run_state_v1(run_state), route);
-    build_run_strategy_snapshot_v2_from_v1_with_threat(
+    let mut snapshot = build_run_strategy_snapshot_v2_from_v1_with_threat(
         v1,
         resource_facts_from_run_state_v2(run_state),
         threat_profile_from_run_state_v1(run_state),
-    )
+    );
+    snapshot.threat_coverage = threat_coverage_from_run_state_v1(run_state, &snapshot.threats);
+    snapshot
 }
 
 fn deck_facts_from_run_state_v1(run_state: &RunState) -> StrategyDeckFactsV1 {

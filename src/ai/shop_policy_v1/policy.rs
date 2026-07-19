@@ -58,6 +58,7 @@ pub fn build_shop_decision_context_v1(
         } else {
             ShopThreatWindowV1::Unknown
         },
+        next_elite_encounter: None,
     };
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
     let conversion_pressure =

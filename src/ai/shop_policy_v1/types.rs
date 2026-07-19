@@ -38,6 +38,9 @@ pub struct ShopVisitFactsV1 {
     pub maw_bank: ShopMawBankStateV1,
     pub future_shop: ShopFutureShopV1,
     pub next_threat: ShopThreatWindowV1,
+    /// Exact scheduled elite identity is oracle-only evidence. Generic callers
+    /// leave this as `None` and retain pool-level reasoning.
+    pub next_elite_encounter: Option<EncounterId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

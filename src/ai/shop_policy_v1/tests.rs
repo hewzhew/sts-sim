@@ -386,6 +386,73 @@ fn compiled_shop_card_purchase_uses_strategic_verdict() {
 }
 
 #[test]
+fn opening_guardian_shop_prefers_cheap_block_draw_over_unenabled_payoffs() {
+    let mut run_state = RunState::new(20260713006, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 2;
+    run_state.boss_key = Some(EncounterId::TheGuardian);
+    run_state.gold = 118;
+    run_state.add_card_to_deck(CardId::Berserk);
+
+    let mut shop = ShopState::new();
+    shop.purge_available = false;
+    shop.purge_cost = 75;
+    shop.cards = [
+        (CardId::HeavyBlade, 49),
+        (CardId::Clash, 52),
+        (CardId::ShrugItOff, 25),
+    ]
+    .into_iter()
+    .map(|(card_id, price)| ShopCard {
+        card_id,
+        upgrades: 0,
+        price,
+        can_buy: true,
+        blocked_reason: None,
+    })
+    .collect();
+
+    let context =
+        build_shop_decision_context_v1(&run_state, &shop).with_visit_facts(ShopVisitFactsV1 {
+            entry_gold: run_state.gold,
+            spent_gold_in_visit: false,
+            maw_bank: ShopMawBankStateV1::Absent,
+            future_shop: ShopFutureShopV1::Unknown,
+            next_threat: ShopThreatWindowV1::BossIn(14),
+            next_elite_encounter: None,
+        });
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecutePlanHead,
+    );
+    let rollout = compiled
+        .rollout_head
+        .as_ref()
+        .and_then(|projection| {
+            compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+        })
+        .expect("opening shop should compile an executable head");
+
+    assert!(
+        matches!(
+            rollout.plan.steps.first(),
+            Some(ShopPlanStepV1::BuyCard {
+                card: CardId::ShrugItOff,
+                cost: 25,
+                ..
+            })
+        ),
+        "without a strength source, cheap block+draw should outrank Heavy Blade/Clash: rollout={:?} candidates={:#?}",
+        rollout.plan,
+        compiled.candidate_plans
+    );
+}
+
+#[test]
 fn shop_policy_does_not_convert_high_gold_into_ordinary_relic_without_high_impact_signal() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;
@@ -1019,6 +1086,7 @@ fn typed_visit_facts_feed_threat_coverage_and_maw_bank_cost() {
             maw_bank: ShopMawBankStateV1::LiveUnspent,
             future_shop: ShopFutureShopV1::VisibleIn(4),
             next_threat: ShopThreatWindowV1::BossIn(2),
+            next_elite_encounter: None,
         });
     let compiled = compile_shop_decision_v1(
         &context,
@@ -1526,6 +1594,7 @@ fn shop_potion_deltas_keep_temporary_roles_distinct() {
             maw_bank: ShopMawBankStateV1::Absent,
             future_shop: ShopFutureShopV1::Unknown,
             next_threat: ShopThreatWindowV1::EliteIn(2),
+            next_elite_encounter: None,
         });
     let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
     let explosive = buy_potion_delta(&trace, PotionId::ExplosivePotion);
@@ -1566,6 +1635,7 @@ fn far_threat_does_not_admit_temporary_potion_rollout() {
             maw_bank: ShopMawBankStateV1::Absent,
             future_shop: ShopFutureShopV1::Unknown,
             next_threat: ShopThreatWindowV1::BossIn(13),
+            next_elite_encounter: None,
         });
     let compiled = compile_shop_decision_v1(
         &context,
@@ -1619,6 +1689,7 @@ fn explosive_potion_does_not_claim_champ_execute_or_scaling_pressure() {
             maw_bank: ShopMawBankStateV1::Absent,
             future_shop: ShopFutureShopV1::Unknown,
             next_threat: ShopThreatWindowV1::BossIn(2),
+            next_elite_encounter: None,
         });
     let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
     let explosive = buy_potion_delta(&trace, PotionId::ExplosivePotion);

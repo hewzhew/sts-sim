@@ -18,6 +18,7 @@ use crate::state::core::{ClientInput, EngineState};
 
 // Core search loop and frontier ownership.
 mod frontier;
+pub mod oracle_action_policy;
 mod outcome_score;
 mod search;
 mod transition;
@@ -86,6 +87,7 @@ mod deficit_evidence;
 mod diagnostics;
 mod diagnostics_tags;
 mod line_lab;
+mod mechanism_probe;
 mod rollout_probe;
 mod segment_plan;
 mod trajectory_report;
@@ -181,6 +183,12 @@ pub use deficit_evidence::{
 pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
+};
+pub use mechanism_probe::{
+    run_combat_mechanism_horizon_probe_v1, CombatMechanismDepthReportV1,
+    CombatMechanismEndpointStateV1, CombatMechanismEndpointV1, CombatMechanismHorizonProbeConfigV1,
+    CombatMechanismHorizonProbeReportV1, CombatMechanismPowerObservationV1,
+    COMBAT_MECHANISM_HORIZON_PROBE_SCHEMA_NAME, COMBAT_MECHANISM_HORIZON_PROBE_SCHEMA_VERSION,
 };
 pub use plugins::{
     CombatSearchAcceptancePlugin, CombatSearchAcceptancePluginId,

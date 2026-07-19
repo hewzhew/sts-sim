@@ -1,7 +1,8 @@
 use crate::state::map::node::RoomType;
 
 use super::types::{
-    NeedVectorV1, NodeFeaturesV1, RoutePathSummaryV1, RoutePathViabilityV1, RouteSafetyFlagV1,
+    NeedVectorV1, NodeFeaturesV1, PathSurvivalEnvelopeV1, PathThreatExposureV1, RoutePathSummaryV1,
+    RoutePathViabilityV1, RouteSafetyFlagV1,
 };
 
 pub(super) fn safety_flag(
@@ -9,6 +10,7 @@ pub(super) fn safety_flag(
     path: &RoutePathSummaryV1,
     needs: &NeedVectorV1,
     viability: &RoutePathViabilityV1,
+    envelope: &PathSurvivalEnvelopeV1,
     max_hp: i32,
 ) -> RouteSafetyFlagV1 {
     if !viability.survives_projected_segment {
@@ -18,6 +20,11 @@ pub(super) fn safety_flag(
     let no_pre_elite_bailout = !path.first_elite.can_bail_to_rest_before
         && !features.is_rest
         && viability.elite_included_before_recovery;
+    if envelope.threat_exposure == PathThreatExposureV1::ExposedWithoutBuffer
+        && (envelope.elite_before_recovery || envelope.boss_before_recovery)
+    {
+        return RouteSafetyFlagV1::RejectUnlessNoAlternative;
+    }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.45 {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }
@@ -28,6 +35,9 @@ pub(super) fn safety_flag(
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }
     if projected_survival_reserve_is_thin(viability, max_hp) {
+        return RouteSafetyFlagV1::RiskyButAllowed;
+    }
+    if envelope.threat_exposure != PathThreatExposureV1::Covered {
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {

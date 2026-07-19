@@ -1,3 +1,6 @@
+use crate::ai::noncombat_strategy_v1::{
+    build_run_strategy_snapshot_from_run_state_v2, RunStrategySnapshotV2,
+};
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, RouteWindowCoverageKind, RouteWindowFactsConfig,
     RouteWindowPath,
@@ -7,16 +10,18 @@ use crate::state::RunState;
 
 use super::context::build_route_decision_context_v1;
 use super::features::{
-    node_features, project_route_path_viability, summarize_route_path, summarize_route_path_family,
+    node_features, path_survival_envelope_v1, project_route_path_viability, summarize_route_path,
+    summarize_route_path_family,
 };
 use super::needs::estimate_needs;
 use super::risk::safety_flag;
 use super::scorer::{route_reasons, route_value_factors, score_route_candidate};
 use super::types::{
-    NeedVectorV1, NodeFeaturesV1, RouteCandidateTraceV1, RouteCandidateViabilityV1,
-    RouteDecisionContextV1, RouteDecisionTraceV1, RouteMoveKindV1, RoutePathSummaryV1,
-    RoutePathViabilityV1, RoutePlannerConfigV1, RouteSafetyFlagV1, RouteScoreTermsV1,
-    RouteValueFactorsV1, ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
+    NeedVectorV1, NodeFeaturesV1, PathSurvivalEnvelopeV1, RouteCandidateTraceV1,
+    RouteCandidateViabilityV1, RouteDecisionContextV1, RouteDecisionTraceV1, RouteMoveKindV1,
+    RoutePathSummaryV1, RoutePathViabilityV1, RoutePlannerConfigV1, RouteSafetyFlagV1,
+    RouteScoreTermsV1, RouteValueFactorsV1, ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    ROUTE_DECISION_TRACE_SCHEMA_VERSION,
 };
 
 pub fn plan_route_decision_v1(
@@ -25,9 +30,16 @@ pub fn plan_route_decision_v1(
     config: RoutePlannerConfigV1,
 ) -> RouteDecisionTraceV1 {
     let context = build_route_decision_context_v1(run_state);
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let needs = estimate_needs(&context, &config);
-    let mut candidates =
-        build_route_candidate_traces_v1(run_state, engine_state, &context, &needs, &config);
+    let mut candidates = build_route_candidate_traces_v1(
+        run_state,
+        engine_state,
+        &context,
+        &strategy,
+        &needs,
+        &config,
+    );
     sort_route_candidates_v1(&mut candidates);
     let selected_index = selected_index(&candidates);
     let mut warnings = Vec::new();
@@ -61,6 +73,7 @@ fn build_route_candidate_traces_v1(
     run_state: &RunState,
     engine_state: &EngineState,
     context: &RouteDecisionContextV1,
+    strategy: &RunStrategySnapshotV2,
     needs: &NeedVectorV1,
     config: &RoutePlannerConfigV1,
 ) -> Vec<RouteCandidateTraceV1> {
@@ -68,7 +81,15 @@ fn build_route_candidate_traces_v1(
         .legal_next_nodes
         .iter()
         .map(|target| {
-            build_route_candidate_trace_v1(run_state, engine_state, context, needs, config, target)
+            build_route_candidate_trace_v1(
+                run_state,
+                engine_state,
+                context,
+                strategy,
+                needs,
+                config,
+                target,
+            )
         })
         .collect()
 }
@@ -77,6 +98,7 @@ fn build_route_candidate_trace_v1(
     run_state: &RunState,
     engine_state: &EngineState,
     context: &RouteDecisionContextV1,
+    strategy: &RunStrategySnapshotV2,
     needs: &NeedVectorV1,
     config: &RoutePlannerConfigV1,
     target: &super::types::MapRouteTargetV1,
@@ -107,12 +129,14 @@ fn build_route_candidate_trace_v1(
         .enumerate()
         .map(|(path_index, path)| {
             evaluate_route_path(
+                run_state,
                 path_index,
                 path,
                 family.paths.len(),
                 &path_summary,
                 &features,
                 context,
+                strategy,
                 needs,
                 config,
                 target,
@@ -129,6 +153,9 @@ fn build_route_candidate_trace_v1(
     let representative_path_summary = representative
         .map(|evaluation| evaluation.path_summary.clone())
         .unwrap_or_else(|| path_summary.clone());
+    let survival_envelope = representative
+        .map(|evaluation| evaluation.survival_envelope.clone())
+        .unwrap_or_default();
     let value_factors = representative
         .map(|evaluation| evaluation.value_factors.clone())
         .unwrap_or_else(|| {
@@ -154,6 +181,19 @@ fn build_route_candidate_trace_v1(
         safety = RouteSafetyFlagV1::RiskyButAllowed;
     }
     let (reasons, mut cautions) = route_reasons(&features, &path_summary, safety);
+    if !survival_envelope.uncovered_threats.is_empty() {
+        let mut subjects = survival_envelope
+            .uncovered_threats
+            .iter()
+            .map(|gap| gap.subject.clone())
+            .collect::<Vec<_>>();
+        subjects.sort();
+        subjects.dedup();
+        cautions.push(format!(
+            "uncovered encounter capabilities before recovery: {}",
+            subjects.join(", ")
+        ));
+    }
     if surviving_path_count == 0 {
         cautions.push(if coverage_complete {
             "no visible continuation survives cumulative p90 HP pressure".to_string()
@@ -176,6 +216,7 @@ fn build_route_candidate_trace_v1(
         features,
         path_summary,
         viability,
+        survival_envelope,
         needs: needs.clone(),
         value_factors,
         total_score: representative
@@ -195,6 +236,7 @@ struct RoutePathEvaluation {
     path_index: usize,
     path_summary: RoutePathSummaryV1,
     viability: RoutePathViabilityV1,
+    survival_envelope: PathSurvivalEnvelopeV1,
     value_factors: RouteValueFactorsV1,
     score_terms: RouteScoreTermsV1,
     total_score: f32,
@@ -203,12 +245,14 @@ struct RoutePathEvaluation {
 
 #[allow(clippy::too_many_arguments)]
 fn evaluate_route_path(
+    run_state: &RunState,
     path_index: usize,
     path: &RouteWindowPath,
     family_path_count: usize,
     family_summary: &RoutePathSummaryV1,
     features: &NodeFeaturesV1,
     context: &RouteDecisionContextV1,
+    strategy: &RunStrategySnapshotV2,
     needs: &NeedVectorV1,
     config: &RoutePlannerConfigV1,
     target: &super::types::MapRouteTargetV1,
@@ -216,6 +260,15 @@ fn evaluate_route_path(
     let path_summary = summarize_route_path(path);
     let viability =
         project_route_path_viability(path, context.hp, &context.counters.unknown_belief, config);
+    let survival_envelope = path_survival_envelope_v1(
+        run_state,
+        path,
+        &path_summary,
+        family_summary,
+        &viability,
+        context,
+        strategy,
+    );
     let value_factors = route_value_factors(
         features,
         &path_summary,
@@ -229,11 +282,19 @@ fn evaluate_route_path(
     );
     let score_terms = score_route_candidate(&value_factors, needs, config);
     let total_score = score_terms.total();
-    let safety = safety_flag(features, &path_summary, needs, &viability, context.max_hp);
+    let safety = safety_flag(
+        features,
+        &path_summary,
+        needs,
+        &viability,
+        &survival_envelope,
+        context.max_hp,
+    );
     RoutePathEvaluation {
         path_index,
         path_summary,
         viability,
+        survival_envelope,
         value_factors,
         score_terms,
         total_score,

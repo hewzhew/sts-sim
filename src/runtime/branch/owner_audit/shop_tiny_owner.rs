@@ -20,7 +20,7 @@ use super::owner_candidate_eval::candidate_annotation;
 use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion};
 use super::shop_investment::shop_investment_for_surface;
-use super::shop_route_evidence::{future_elite_distance, future_shop_distance};
+use super::shop_route_evidence::{forced_future_elite_distance, future_shop_distance};
 
 pub(super) fn shop_tiny_owner_choices(
     session: &RunControlSession,
@@ -145,7 +145,7 @@ fn shop_visit_facts(session: &RunControlSession, floors_to_boss: i32) -> ShopVis
             .map(ShopFutureShopV1::VisibleIn)
             .unwrap_or(ShopFutureShopV1::NotVisible)
     };
-    let elite_distance = future_elite_distance(session);
+    let elite_distance = forced_future_elite_distance(session);
     let next_threat = match elite_distance {
         Some(distance) if i32::from(distance) < floors_to_boss => {
             ShopThreatWindowV1::EliteIn(distance)
@@ -155,6 +155,7 @@ fn shop_visit_facts(session: &RunControlSession, floors_to_boss: i32) -> ShopVis
         None if session.run_state.map.graph.is_empty() => ShopThreatWindowV1::Unknown,
         None => ShopThreatWindowV1::NoVisibleHardFight,
     };
+    let next_elite_encounter = elite_distance.and_then(|_| session.run_state.peek_next_elite());
     ShopVisitFactsV1 {
         entry_gold: visit_context
             .map(|context| context.entry_gold)
@@ -163,6 +164,7 @@ fn shop_visit_facts(session: &RunControlSession, floors_to_boss: i32) -> ShopVis
         maw_bank,
         future_shop,
         next_threat,
+        next_elite_encounter,
     }
 }
 
@@ -216,8 +218,9 @@ fn shop_plan_step_matches_choice(step: &ShopPlanStepV1, choice: &OwnerChoice) ->
 mod tests {
     use super::*;
     use sts_simulator::content::cards::CardId;
+    use sts_simulator::content::monsters::factory::EncounterId;
     use sts_simulator::content::potions::PotionId;
-    use sts_simulator::content::relics::RelicId;
+    use sts_simulator::content::relics::{RelicId, RelicState};
     use sts_simulator::eval::run_control::{
         build_decision_surface, DecisionCandidateKey, RunControlConfig,
     };
@@ -242,6 +245,33 @@ mod tests {
             CombatCard::new(CardId::Bloodletting, 11),
         ];
         session
+    }
+
+    fn compiled_step_for_exact_elite(
+        session: &RunControlSession,
+        shop: &ShopState,
+        distance: u8,
+        encounter: EncounterId,
+    ) -> ShopPlanStepV1 {
+        let context = build_shop_decision_context_v1(&session.run_state, shop).with_visit_facts(
+            ShopVisitFactsV1 {
+                entry_gold: session.run_state.gold,
+                spent_gold_in_visit: false,
+                maw_bank: ShopMawBankStateV1::Absent,
+                future_shop: ShopFutureShopV1::Unknown,
+                next_threat: ShopThreatWindowV1::EliteIn(distance),
+                next_elite_encounter: Some(encounter),
+            },
+        );
+        let compiled = compile_shop_decision_v1(
+            &context,
+            &ShopPolicyConfigV1::default(),
+            ShopCompileModeV1::ExecutePlanHead,
+        );
+        compiled_rollout_plan(&compiled)
+            .and_then(|plan| plan.steps.first())
+            .cloned()
+            .expect("exact next-elite shop case should compile an executable head")
     }
 
     #[test]
@@ -281,6 +311,87 @@ mod tests {
             "low HP Waffle should be treated as survival repair before cleanup/potions; got {:?}",
             choices.first().map(|choice| choice.label.as_str())
         );
+    }
+
+    #[test]
+    fn oracle_sentries_window_prefers_preserved_insect_over_starter_cleanup() {
+        let mut session = shop_session();
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 5;
+        session.run_state.current_hp = 76;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = 151;
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Strike, 3),
+            CombatCard::new(CardId::Strike, 4),
+            CombatCard::new(CardId::Strike, 5),
+            CombatCard::new(CardId::Defend, 6),
+            CombatCard::new(CardId::Defend, 7),
+            CombatCard::new(CardId::Defend, 8),
+            CombatCard::new(CardId::Defend, 9),
+            CombatCard::new(CardId::Bash, 10),
+            CombatCard::new(CardId::SwordBoomerang, 11),
+            CombatCard::new(CardId::Disarm, 12),
+            CombatCard::new(CardId::BattleTrance, 13),
+        ];
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::PreservedInsect,
+            price: 145,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let step = compiled_step_for_exact_elite(&session, &shop, 5, EncounterId::ThreeSentries);
+
+        assert!(matches!(
+            step,
+            ShopPlanStepV1::BuyRelic {
+                relic: RelicId::PreservedInsect,
+                cost: 145,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn oracle_sentries_window_prefers_aoe_purchase_over_generic_block_draw() {
+        let mut session = shop_session();
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 8;
+        session.run_state.current_hp = 65;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = 88;
+        let mut shop = ShopState::new();
+        shop.purge_cost = 100;
+        shop.cards.push(ShopCard {
+            card_id: CardId::Whirlwind,
+            upgrades: 0,
+            price: 39,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        shop.cards.push(ShopCard {
+            card_id: CardId::ShrugItOff,
+            upgrades: 0,
+            price: 52,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let step = compiled_step_for_exact_elite(&session, &shop, 2, EncounterId::ThreeSentries);
+
+        assert!(matches!(
+            step,
+            ShopPlanStepV1::BuyCard {
+                card: CardId::Whirlwind,
+                cost: 39,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -326,6 +437,141 @@ mod tests {
                 })
             ),
             "a generic temporary potion must not displace admitted deck cleanup without a typed pressure match; got {:?}",
+            choices.first().map(|choice| choice.label.as_str())
+        );
+    }
+
+    #[test]
+    fn optional_elite_does_not_promote_seed_shop_attacks_to_plan_head() {
+        let mut session = RunControlSession::new(RunControlConfig {
+            seed: 20260713006,
+            ascension_level: 0,
+            ..RunControlConfig::default()
+        });
+        session.run_state.floor_num = 2;
+        session.run_state.gold = 118;
+        session.run_state.add_card_to_deck(CardId::Berserk);
+        session.run_state.map.current_x = 6;
+        session.run_state.map.current_y = 1;
+        let mut shop = ShopState::new();
+        shop.purge_cost = 75;
+        shop.cards = [
+            (CardId::Clash, 0, 52),
+            (CardId::HeavyBlade, 0, 49),
+            (CardId::Intimidate, 0, 81),
+            (CardId::ShrugItOff, 0, 25),
+            (CardId::Evolve, 0, 71),
+            (CardId::Discovery, 0, 97),
+            (CardId::Violence, 0, 170),
+        ]
+        .into_iter()
+        .map(|(card_id, upgrades, price)| ShopCard {
+            card_id,
+            upgrades,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        })
+        .collect();
+        shop.relics = [
+            (RelicId::Pocketwatch, 287),
+            (RelicId::PreservedInsect, 146),
+            (RelicId::MembershipCard, 150),
+        ]
+        .into_iter()
+        .map(|(relic_id, price)| ShopRelic {
+            relic_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        })
+        .collect();
+        shop.potions = [
+            (PotionId::ColorlessPotion, 52),
+            (PotionId::AttackPotion, 48),
+            (PotionId::RegenPotion, 77),
+        ]
+        .into_iter()
+        .map(|(potion_id, price)| ShopPotion {
+            potion_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        })
+        .collect();
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let choices = shop_tiny_owner_choices(&session, &surface);
+        assert!(
+            !matches!(
+                choices.first().and_then(|choice| choice.key.as_ref()),
+                Some(DecisionCandidateKey::ShopBuyCard {
+                    card: CardId::HeavyBlade | CardId::Clash,
+                    ..
+                })
+            ),
+            "optional-elite evidence must not promote an unenabled attack: {:?}",
+            choices.first().map(|choice| choice.label.as_str())
+        );
+    }
+
+    #[test]
+    fn seed20260713006_pyramid_shop_does_not_buy_a_second_wild_strike() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 20;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.gold = 45;
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::RunicPyramid));
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::WildStrike, 0),
+            (CardId::ShrugItOff, 1),
+            (CardId::Clothesline, 0),
+            (CardId::Flex, 0),
+            (CardId::Feed, 0),
+            (CardId::Havoc, 1),
+            (CardId::Shockwave, 1),
+            (CardId::Disarm, 1),
+            (CardId::DeepBreath, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (id, upgrades))| {
+            let mut card = CombatCard::new(id, 20_000 + index as u32);
+            card.upgrades = upgrades;
+            card
+        })
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.cards.push(ShopCard {
+            card_id: CardId::WildStrike,
+            upgrades: 0,
+            price: 45,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let choices = shop_tiny_owner_choices(&session, &surface);
+
+        assert!(
+            matches!(
+                choices.first().and_then(|choice| choice.key.as_ref()),
+                Some(DecisionCandidateKey::ShopLeave)
+            ),
+            "Pyramid plus an existing Wild Strike and no status payoff should preserve gold instead of buying a second copy; got {:?}",
             choices.first().map(|choice| choice.label.as_str())
         );
     }

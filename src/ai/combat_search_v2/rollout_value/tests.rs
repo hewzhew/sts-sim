@@ -47,6 +47,16 @@ fn rollout_priority_does_not_rank_simulated_loss_above_unresolved_estimate() {
 }
 
 #[test]
+fn rollout_priority_gives_unevaluated_live_state_urgency_over_simulated_loss() {
+    let unevaluated = RolloutNodeEstimate::unevaluated();
+    let mut simulated_loss = RolloutNodeEstimate::unevaluated();
+    simulated_loss.evaluated = true;
+    simulated_loss.terminal = SearchTerminalLabel::Loss;
+
+    assert!(rollout_priority_value(&unevaluated) > rollout_priority_value(&simulated_loss));
+}
+
+#[test]
 fn rollout_priority_prefers_progress_over_safer_margin_between_simulated_losses() {
     let mut safer_stall = RolloutNodeEstimate::unevaluated();
     safer_stall.evaluated = true;

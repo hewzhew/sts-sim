@@ -198,6 +198,7 @@ mod tests {
                         scores: Vec::new(),
                     },
                     admission: None,
+                    card_reward_provenance: None,
                 },
             ),
             expansion,

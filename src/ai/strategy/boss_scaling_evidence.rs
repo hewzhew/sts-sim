@@ -85,7 +85,9 @@ pub fn assess_boss_scaling_evidence(
     if installs_corruption(admission) && deck.roles.exhaust_payoff_units > 0 {
         return BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75);
     }
-    if candidate_exhaust_payoff(card_semantics.as_ref()) && deck.roles.corruption_units > 0 {
+    if candidate_exhaust_payoff(card_semantics.as_ref())
+        && (deck.roles.exhaust_stream_units > 0 || deck.roles.corruption_units > 0)
+    {
         return if deck.roles.exhaust_payoff_units == 0 {
             BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75)
         } else {
@@ -274,6 +276,17 @@ mod tests {
             assess_boss_scaling_evidence(plan, Some((CardId::HeavyBlade, 0)), &admission);
 
         assert_eq!(evidence.label, "boss-strength-payoff");
+        assert!(evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn controlled_exhaust_stream_makes_first_payoff_boss_relevant() {
+        let (deck, plan) = deck_plan(&[CardId::TrueGrit]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::DarkEmbrace, 1);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::DarkEmbrace, 1)), &admission);
+
+        assert_eq!(evidence.label, "boss-exhaust-engine-pair");
         assert!(evidence.relevant_to_boss_plan);
     }
 

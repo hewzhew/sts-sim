@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::noncombat_strategy_v1::StrategyThreatCoverageGapV1;
 use crate::state::map::node::RoomType;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -119,4 +120,30 @@ pub enum RouteSafetyFlagV1 {
     Ok,
     RiskyButAllowed,
     RejectUnlessNoAlternative,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathThreatExposureV1 {
+    #[default]
+    Covered,
+    ExposedWithBuffer,
+    ExposedWithoutBuffer,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct PathSurvivalEnvelopeV1 {
+    pub current_hp: i32,
+    pub post_combat_heal: i32,
+    pub potion_buffer_count: usize,
+    pub forced_damage_rooms_before_recovery: usize,
+    pub hallway_fights_before_recovery: usize,
+    pub elite_before_recovery: bool,
+    pub boss_before_recovery: bool,
+    pub rest_escape_available: bool,
+    pub shop_escape_available: bool,
+    pub cumulative_hp_loss_p90: f32,
+    pub conservative_hp_margin: f32,
+    pub threat_exposure: PathThreatExposureV1,
+    pub uncovered_threats: Vec<StrategyThreatCoverageGapV1>,
 }

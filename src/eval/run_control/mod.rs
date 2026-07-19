@@ -37,6 +37,9 @@ mod input_gate;
 mod next_hint;
 mod noncombat_boundary;
 mod noncombat_policy_annotation;
+mod oracle_analysis_session;
+mod oracle_combat_policy;
+mod oracle_combat_work;
 mod oracle_neow;
 mod oracle_run_explorer;
 pub mod outcome;
@@ -57,6 +60,10 @@ mod selection_surface;
 mod session;
 mod session_trace;
 mod shop_legal;
+mod strategic_checkpoint_probe;
+mod strategic_encounter_probe;
+mod strategic_mechanism_probe;
+mod strategic_probe_calibration;
 mod trace_annotation;
 mod transition_report;
 mod view_model;
@@ -101,17 +108,30 @@ pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
 };
+pub use oracle_analysis_session::{
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1,
+    OracleAnalysisChildViewV1, OracleAnalysisChoiceViewV1, OracleAnalysisCombatJobCheckpointV1,
+    OracleAnalysisCombatProgressV1, OracleAnalysisEdgeKindV1, OracleAnalysisEdgeV1,
+    OracleAnalysisNodeSummaryV1, OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1,
+    OracleAnalysisSessionV1, OracleAnalysisTreeViewV1, ORACLE_ANALYSIS_SESSION_SCHEMA_NAME,
+    ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
+};
+pub use oracle_combat_work::OracleRunCombatWorkCheckpointV1;
 pub use oracle_neow::{
     expand_oracle_neow_candidates_v1, CompletedNeowCandidateV1, NeowOracleExpansionV1,
     NeowOracleReplayStepV1, UnresolvedNeowCandidateV1,
 };
 pub use oracle_run_explorer::{
-    drive_oracle_run_explorer_v1, seed_oracle_run_explorer_from_session_v1,
-    seed_oracle_run_explorer_v1, ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1,
-    OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunBoundaryV1,
-    OracleRunBranchV1, OracleRunCombatBudgetsV1, OracleRunDecisionOrderFnV1,
-    OracleRunExploreBudgetV1, OracleRunExploreResultV1, OracleRunExploreStopV1,
-    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
+    drive_oracle_run_explorer_v1, seed_oracle_run_explorer_from_checkpoint_v1,
+    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
+    ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1, OracleCombatSearchResumeKindV1,
+    OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunActiveCombatCheckpointV1,
+    OracleRunBoundaryV1, OracleRunBranchCheckpointV1, OracleRunBranchV1, OracleRunCombatBudgetsV1,
+    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunDecisionAnnotationFnV1,
+    OracleRunDecisionOrderFnV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
+    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
+    OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1,
+    OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
@@ -167,11 +187,48 @@ pub use session_trace::{
     SESSION_TRACE_SCHEMA_VERSION,
 };
 pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
+pub use strategic_checkpoint_probe::{
+    run_strategic_checkpoint_probe_decomposition_v1, StrategicCheckpointProbeDecompositionV1,
+    StrategicCheckpointProbeOmissionV1, StrategicCheckpointProbeStateSummaryV1,
+    StrategicCheckpointProbeVariantKindV1, StrategicCheckpointProbeVariantV1,
+    StrategicCheckpointReferenceRelationV1, STRATEGIC_CHECKPOINT_PROBE_SCHEMA_NAME,
+    STRATEGIC_CHECKPOINT_PROBE_SCHEMA_VERSION,
+};
+pub use strategic_encounter_probe::{
+    run_strategic_encounter_probe_suite_v1, run_strategic_encounter_probes_v1,
+    strategic_encounter_probe_plan_v1, StrategicCapabilityPredictionV1,
+    StrategicEncounterFrontierObservationV1, StrategicEncounterHeuristicEvidenceV1,
+    StrategicEncounterPrimaryEvidenceV1, StrategicEncounterProbeBudgetReportV1,
+    StrategicEncounterProbeBudgetV1, StrategicEncounterProbeHpBasisV1,
+    StrategicEncounterProbeObservationV1, StrategicEncounterProbePotionUseV1,
+    StrategicEncounterProbeReportV1, StrategicEncounterProbeSpecV1,
+    StrategicEncounterRolloutObservationV1, StrategicEncounterWinObservationV1,
+    STRATEGIC_ENCOUNTER_PROBE_SCHEMA_NAME, STRATEGIC_ENCOUNTER_PROBE_SCHEMA_VERSION,
+};
+pub use strategic_mechanism_probe::{
+    run_strategic_mechanism_probes_v1, strategic_mechanism_probe_plan_v1, StrategicMechanismKindV1,
+    StrategicMechanismProbeObservationV1, StrategicMechanismProbeOutcomeV1,
+    StrategicMechanismProbeReportV1, StrategicMechanismProbeSpecV1,
+    STRATEGIC_MECHANISM_PROBE_SCHEMA_NAME, STRATEGIC_MECHANISM_PROBE_SCHEMA_VERSION,
+};
+pub use strategic_probe_calibration::{
+    run_strategic_probe_calibration_v1, strategic_combat_edge_shadow_order_v1,
+    strategic_probe_resolved_label_v1, strategic_probe_shadow_order_key_v1,
+    validate_strategic_probe_shadow_ordering_v1, StrategicProbeCalibrationObservationV1,
+    StrategicProbeCalibrationPartitionV1, StrategicProbeCalibrationReportV1,
+    StrategicProbeFidelityConsistencyV1, StrategicProbeFidelityV1,
+    StrategicProbeHeldOutOrderingValidationV1, StrategicProbeOrderingCalibrationCaseV1,
+    StrategicProbeOwnerAuthorityV1, StrategicProbeResolvedLabelV1,
+    StrategicProbeSchedulingAuthorityV1, StrategicProbeShadowFidelityV1,
+    StrategicProbeShadowObservationV1, StrategicProbeShadowOrderKeyV1,
+    STRATEGIC_PROBE_CALIBRATION_SCHEMA_NAME, STRATEGIC_PROBE_CALIBRATION_SCHEMA_VERSION,
+};
 pub(crate) use trace_annotation::combat_automation_trajectories_v1;
 pub use trace_annotation::{
     annotations_have_combat_automation_trajectory_v1, combat_search_trace_summaries,
-    CombatAutomationActionV1, CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1,
-    CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
+    CardRewardFunctionV1, CardRewardObligationDeltaV1, CardRewardObligationSourceV1,
+    CardRewardOwnerProvenanceV1, CombatAutomationActionV1, CombatAutomationAnswerClaimV1,
+    CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
     CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1, CombatAutomationStepStateV1,
     CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
     CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary, CombatSearchTraceSummary,

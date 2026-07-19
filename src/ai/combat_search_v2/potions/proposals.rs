@@ -37,6 +37,20 @@ pub(super) fn semantic_potion_gate_decision(
     let Some(Some(potion)) = combat.entities.potions.get(*potion_index) else {
         return PotionGateDecision::reject(PotionGateReason::PotionSlotMissing);
     };
+    match potion.id {
+        crate::content::potions::PotionId::LiquidMemories
+            if combat.zones.discard_pile.is_empty() =>
+        {
+            return PotionGateDecision::reject(PotionGateReason::NoSelectableCards);
+        }
+        crate::content::potions::PotionId::GamblersBrew
+        | crate::content::potions::PotionId::Elixir
+            if combat.zones.hand.is_empty() =>
+        {
+            return PotionGateDecision::reject(PotionGateReason::NoSelectableCards);
+        }
+        _ => {}
+    }
 
     let semantics = potion_semantics(combat, potion.id);
     if matches!(semantics.uncertainty, PotionUncertainty::PassiveOnly) {

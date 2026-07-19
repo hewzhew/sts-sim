@@ -14,5 +14,6 @@ pub(super) fn candidate_annotation(
     ChoiceAnnotation::Candidate(OwnerCandidateDecision {
         admission,
         evaluation,
+        card_reward_provenance: None,
     })
 }

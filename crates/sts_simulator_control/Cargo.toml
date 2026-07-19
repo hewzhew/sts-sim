@@ -47,3 +47,19 @@ path = "../../src/bin/rl_dataset_export.rs"
 [[bin]]
 name = "oracle_run"
 path = "../../src/bin/oracle_run.rs"
+
+[[bin]]
+name = "oracle_lab"
+path = "../../src/bin/oracle_lab.rs"
+
+[[test]]
+name = "noncombat_strategy_contract"
+path = "tests/noncombat_strategy_contract.rs"
+
+[[test]]
+name = "strategic_encounter_probe_contract"
+path = "tests/strategic_encounter_probe_contract.rs"
+
+[[test]]
+name = "oracle_analysis_session_contract"
+path = "tests/oracle_analysis_session_contract.rs"

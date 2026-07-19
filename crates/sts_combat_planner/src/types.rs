@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
 use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
 use sts_core::engine::core::is_smoke_escape_stable_boundary;
 use sts_core::sim::combat::{CombatPosition, CombatTerminal};
@@ -85,17 +86,21 @@ pub struct TurnOptionGeneratorConfig {
     /// A transition starts only after this whole allowance is reserved. That
     /// makes splitting a deterministic budget between quanta replay-free.
     pub max_engine_steps_per_transition: usize,
+    /// Probability mass reserved for uniform exploration after expert weights
+    /// are normalized. One million means a fully uniform policy.
+    pub uniform_exploration_ppm: u32,
 }
 
 impl Default for TurnOptionGeneratorConfig {
     fn default() -> Self {
         Self {
             max_engine_steps_per_transition: 512,
+            uniform_exploration_ppm: 50_000,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TurnOptionAction {
     pub input: ClientInput,
     pub expected_successor_hash: String,
@@ -118,6 +123,7 @@ pub struct CompleteTurnOption {
     exact_successor_hash: String,
     exact_successor: CombatPosition,
     engine_steps: usize,
+    negative_log_policy: f64,
 }
 
 impl CompleteTurnOption {
@@ -126,6 +132,7 @@ impl CompleteTurnOption {
         actions: Vec<TurnOptionAction>,
         boundary: CompleteTurnOptionBoundary,
         exact_successor: CombatPosition,
+        negative_log_policy: f64,
     ) -> Self {
         let engine_steps = actions.iter().map(|action| action.engine_steps).sum();
         Self {
@@ -135,6 +142,7 @@ impl CompleteTurnOption {
             boundary,
             exact_successor,
             engine_steps,
+            negative_log_policy,
         }
     }
 
@@ -160,6 +168,10 @@ impl CompleteTurnOption {
 
     pub fn engine_steps(&self) -> usize {
         self.engine_steps
+    }
+
+    pub fn negative_log_policy(&self) -> f64 {
+        self.negative_log_policy
     }
 }
 
@@ -199,11 +211,24 @@ pub struct TurnOptionGenerationReport {
     pub before: CombatPlanningCounters,
     pub after: CombatPlanningCounters,
     pub granted: CombatPlanningCounters,
+    pub before_diagnostics: TurnOptionGenerationDiagnostics,
+    pub after_diagnostics: TurnOptionGenerationDiagnostics,
     pub retained_work_items: usize,
     pub newly_completed_options: usize,
     pub total_completed_options: usize,
     pub gaps: Vec<TurnOptionGenerationGap>,
     pub status: TurnOptionGenerationStatus,
+}
+
+/// Non-budget accounting for generation-time state merging. These counters
+/// describe work already performed; they never affect legality, priority, or
+/// stopping conditions.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TurnOptionGenerationDiagnostics {
+    pub applied_action_transitions: usize,
+    pub unique_successor_states: usize,
+    pub duplicate_exact_successors: usize,
+    pub completed_turn_options: usize,
 }
 
 pub(crate) fn exact_hash(position: &CombatPosition) -> String {

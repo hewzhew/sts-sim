@@ -2309,6 +2309,38 @@ mod tests {
     }
 
     #[test]
+    fn seed006_exhaust_payoff_closure_outranks_a_second_exhaust_source() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+            CardId::ShrugItOff,
+            CardId::Clothesline,
+            CardId::PommelStrike,
+            CardId::BattleTrance,
+            CardId::Cleave,
+            CardId::TrueGrit,
+            CardId::Uppercut,
+        ];
+
+        let dark_embrace =
+            reward_card_with_act_boss(&cards, CardId::DarkEmbrace, 1, 2, EncounterId::TheChamp);
+        let burning_pact =
+            reward_card_with_act_boss(&cards, CardId::BurningPact, 1, 2, EncounterId::TheChamp);
+
+        assert_eq!(dark_embrace.lane, CandidateLane::Mainline);
+        assert!(
+            dark_embrace.order_key(true) < burning_pact.order_key(true),
+            "the first payoff closes a live long-fight engine: dark_embrace={dark_embrace:#?} burning_pact={burning_pact:#?}"
+        );
+    }
+
+    #[test]
     fn first_real_draw_stays_mainline_in_thin_cantrip_deck() {
         let cards = vec![
             CardId::Strike,

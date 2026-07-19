@@ -15,7 +15,7 @@ pub(crate) fn candidate_impact(
     let mut evidence_notes = Vec::new();
 
     for dependency in &facts.pick_dependencies {
-        let assessment = assess_dependency(*dependency, deck, route);
+        let assessment = assess_dependency(*dependency, facts, deck, route);
         if let Some(gap) = blocker_for_assessment(&assessment) {
             push_gap(&mut approval_blockers, gap);
         }
@@ -63,6 +63,7 @@ pub(crate) fn candidate_impact(
 
 fn assess_dependency(
     dependency: CardRewardPickDependencyV1,
+    facts: &CardRewardFactsV1,
     deck: &DeckProfileV1,
     route: Option<&CardRewardRouteEvidenceV1>,
 ) -> CardRewardDependencyAssessmentV1 {
@@ -153,12 +154,23 @@ fn assess_dependency(
             }
         }
         CardRewardPickDependencyV1::ExhaustPackage => {
-            if deck.exhaust_generators > 0 || deck.exhaust_payoffs > 0 {
+            if deck.exhaust_generators > 0
+                || (facts.card == crate::content::cards::CardId::Corruption
+                    && deck.exhaust_payoffs > 0)
+            {
+                CardRewardDependencyAssessmentV1 {
+                    dependency,
+                    status: CardRewardDependencyStatusV1::Satisfied,
+                    reason: format!(
+                        "deck has {} exhaust generator(s) and {} payoff(s); the candidate closes or strengthens the package",
+                        deck.exhaust_generators, deck.exhaust_payoffs
+                    ),
+                }
+            } else if deck.exhaust_payoffs > 0 {
                 CardRewardDependencyAssessmentV1 {
                     dependency,
                     status: CardRewardDependencyStatusV1::Unknown,
-                    reason: "deck has exhaust-related cards, but no exhaust package evidence exists"
-                        .to_string(),
+                    reason: "deck has an exhaust payoff but no observed exhaust stream; timing must prove the additional payoff".to_string(),
                 }
             } else {
                 CardRewardDependencyAssessmentV1 {
@@ -169,12 +181,20 @@ fn assess_dependency(
             }
         }
         CardRewardPickDependencyV1::StatusPackage => {
-            if deck.status_generators > 0 || deck.status_payoffs > 0 {
+            if deck.status_generators > 0 {
+                CardRewardDependencyAssessmentV1 {
+                    dependency,
+                    status: CardRewardDependencyStatusV1::Satisfied,
+                    reason: format!(
+                        "deck has {} status generator(s); the candidate supplies a live payoff",
+                        deck.status_generators
+                    ),
+                }
+            } else if deck.status_payoffs > 0 {
                 CardRewardDependencyAssessmentV1 {
                     dependency,
                     status: CardRewardDependencyStatusV1::Unknown,
-                    reason: "deck has status-related cards, but no status package evidence exists"
-                        .to_string(),
+                    reason: "deck has a status payoff but no observed status generator".to_string(),
                 }
             } else {
                 CardRewardDependencyAssessmentV1 {

@@ -14,3 +14,31 @@ fn attacking_monster() -> MonsterEntity {
     monster.set_planned_move_id(1);
     monster
 }
+
+#[test]
+fn liquid_memories_without_a_discard_target_is_retained_only_as_low_policy_work() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![attacking_monster()];
+    combat.entities.potions = vec![
+        Some(Potion::with_affordance_truth(
+            PotionId::LiquidMemories,
+            1,
+            true,
+            true,
+            false,
+        )),
+        None,
+        None,
+    ];
+    let input = ClientInput::UsePotion {
+        potion_index: 0,
+        target: None,
+    };
+
+    assert!(!semantic_potion_action_allowed(&combat, &input));
+    combat
+        .zones
+        .discard_pile
+        .push(CombatCard::new(CardId::Strike, 11));
+    assert!(semantic_potion_action_allowed(&combat, &input));
+}

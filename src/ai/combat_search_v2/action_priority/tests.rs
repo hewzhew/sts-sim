@@ -89,6 +89,33 @@ fn add_visible_attacker(combat: &mut crate::runtime::combat::CombatState) {
     combat.entities.monsters.push(attacker);
 }
 
+#[test]
+fn vulnerable_setup_under_visible_attack_is_ranked_below_ending_turn() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Berserk, 10)];
+    add_visible_attacker(&mut combat);
+
+    let setup = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let end_turn = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::EndTurn,
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(setup.role_rank < end_turn.role_rank);
+}
+
 fn priority_for_input(
     engine: &EngineState,
     combat: &crate::runtime::combat::CombatState,

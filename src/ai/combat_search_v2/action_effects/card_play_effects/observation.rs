@@ -22,6 +22,7 @@ pub(super) struct DirectCardPlayEffectAccumulator {
     pub(super) conditional_draw_cards: i32,
     pub(super) enemy_weak: i32,
     pub(super) enemy_vulnerable: i32,
+    pub(super) player_vulnerable: i32,
 }
 
 pub(super) fn observe_card_play_effects(
@@ -128,7 +129,10 @@ fn observe_apply_power(
         PowerId::Weak if amount > 0 => {
             direct.enemy_weak = direct.enemy_weak.saturating_add(amount);
         }
-        PowerId::Vulnerable if amount > 0 => {
+        PowerId::Vulnerable if target == 0 && amount > 0 => {
+            direct.player_vulnerable = direct.player_vulnerable.saturating_add(amount);
+        }
+        PowerId::Vulnerable if target != 0 && amount > 0 => {
             direct.enemy_vulnerable = direct.enemy_vulnerable.saturating_add(amount);
         }
         _ => {}

@@ -17,6 +17,7 @@ pub(in crate::ai::combat_search_v2) struct DirectCardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) conditional_draw_cards: i32,
     pub(in crate::ai::combat_search_v2) enemy_weak: i32,
     pub(in crate::ai::combat_search_v2) enemy_vulnerable: i32,
+    pub(in crate::ai::combat_search_v2) player_vulnerable: i32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -59,6 +60,7 @@ pub(in crate::ai::combat_search_v2) struct CardPlayDirectEffectDiagnostics {
     pub(in crate::ai::combat_search_v2) visible_attack_mitigation_hint: i32,
     pub(in crate::ai::combat_search_v2) enemy_weak: i32,
     pub(in crate::ai::combat_search_v2) enemy_vulnerable: i32,
+    pub(in crate::ai::combat_search_v2) player_vulnerable: i32,
     pub(in crate::ai::combat_search_v2) enemy_strength_gain: i32,
     pub(in crate::ai::combat_search_v2) visible_attack_pressure_hint: i32,
     pub(in crate::ai::combat_search_v2) player_strength_gain: i32,
@@ -108,6 +110,7 @@ impl CardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) fn reactive_risk_score(self) -> i32 {
         self.enemy_scaling_risk_score()
             .saturating_add(self.reactive.player_hp_loss)
+            .saturating_add(self.direct.player_vulnerable)
             .saturating_add(self.reactive.attack_retaliation_player_block_loss_hint)
             .saturating_add(self.reactive.bad_draw_cards)
             .saturating_add(i32::from(self.reactive.forced_turn_end))
@@ -151,6 +154,7 @@ impl CardPlayEffectFacts {
                 visible_attack_mitigation_hint: self.direct.visible_attack_mitigation_hint,
                 enemy_weak: self.direct.enemy_weak,
                 enemy_vulnerable: self.direct.enemy_vulnerable,
+                player_vulnerable: self.direct.player_vulnerable,
                 enemy_strength_gain: self.direct.enemy_strength_gain,
                 visible_attack_pressure_hint: self.direct.visible_attack_pressure_hint,
                 player_strength_gain: self.direct.player_strength_gain,

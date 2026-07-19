@@ -14,7 +14,8 @@ use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
 use super::types::{
-    CardRewardDependencyStatusV1, CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1,
+    CardRewardDependencyStatusV1, CardRewardPickDependencyV1, CardRewardRouteEvidenceV1,
+    CardRewardSelectedRouteV1,
 };
 
 #[test]

@@ -486,7 +486,8 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
                 capture_path,
                 ..
             } => Some(format!("auto capture: {case_id} -> {capture_path}")),
-            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+            RunControlTraceAnnotationV1::CardRewardOwnerDecision { .. }
+            | RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
             | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }

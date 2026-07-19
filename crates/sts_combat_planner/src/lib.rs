@@ -1,8 +1,9 @@
 //! Exact, resumable planning over complete player-turn options.
 //!
-//! This module owns no combat policy. It turns the simulator's exact legal
-//! input surface into replayable options ending at the next supported combat
-//! boundary. Partial action prefixes remain private generator work.
+//! It turns the simulator's exact legal input surface into replayable options
+//! ending at the next supported combat boundary. Optional policies guide work
+//! order but never change legality or terminal truth. Partial action prefixes
+//! remain private generator work.
 //! The crate boundary also keeps planner iteration out of the core unit-test
 //! harness; production integration belongs to the control layer.
 
@@ -12,10 +13,12 @@ mod evidence;
 mod generator;
 mod outcome_dataset;
 mod outcome_model;
+mod policy;
 mod prospect;
 mod replay;
 mod selection_transaction;
 mod types;
+mod witness_search;
 
 pub use agenda::{
     CombatPlannerAgendaBudget, CombatPlannerAgendaConfig, CombatPlannerAgendaCounters,
@@ -46,6 +49,10 @@ pub use outcome_model::{
     CombatOutcomeModelTrainingConfigV1, CombatOutcomeModelV1, CombatOutcomeProbabilityIntervalV1,
     CombatOutcomeTrainingExampleV1, COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
 };
+pub use policy::{
+    CombatActionPolicy, CombatPolicyChoice, CombatStateGuideRank, SharedCombatActionPolicy,
+    UniformCombatActionPolicy,
+};
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
     ExactProspectError,
@@ -56,8 +63,14 @@ pub use replay::{
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,
     CompleteTurnOption, CompleteTurnOptionBoundary, GenerationInterruption, TurnOptionAction,
-    TurnOptionGenerationGap, TurnOptionGenerationGapKind, TurnOptionGenerationReport,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGenerationDiagnostics, TurnOptionGenerationGap, TurnOptionGenerationGapKind,
+    TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+};
+pub use witness_search::{
+    OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessCounters,
+    OracleCombatWitnessInterruption, OracleCombatWitnessProgressSnapshot,
+    OracleCombatWitnessQuantum, OracleCombatWitnessReplayError, OracleCombatWitnessReport,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, OracleCombatWitnessStatus,
 };
 
 #[cfg(test)]

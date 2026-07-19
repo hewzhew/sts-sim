@@ -6,7 +6,7 @@ use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::ai::strategy::shop_boss_preview::classify_shop_boss_preview_candidate;
 use sts_simulator::content::cards::CardId;
 use sts_simulator::content::relics::RelicId;
-use sts_simulator::eval::run_control::ShopVisitContextV1;
+use sts_simulator::eval::run_control::{CardRewardOwnerProvenanceV1, ShopVisitContextV1};
 
 use super::owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice};
 use super::policy_expansion_plan::{PolicyExpansionClass, PolicyExpansionEvidence};
@@ -252,6 +252,8 @@ pub(super) enum ChoiceAnnotationSnapshot {
         admission: Option<Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pressure_response: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card_reward_provenance: Option<Value>,
         detail: String,
     },
     BossRelic {
@@ -308,6 +310,10 @@ impl ChoiceAnnotationSnapshot {
                     decision.evaluation.candidate.kind,
                     decision.admission.as_ref(),
                 ),
+                card_reward_provenance: decision
+                    .card_reward_provenance
+                    .as_ref()
+                    .map(card_reward_provenance_value),
                 detail: render::render_candidate_decision_compact(decision),
             },
             ChoiceAnnotation::BossRelic(admission) => Self::BossRelic {
@@ -325,6 +331,30 @@ impl ChoiceAnnotationSnapshot {
             Self::Candidate { detail, .. } | Self::BossRelic { detail, .. } => Some(detail),
         }
     }
+}
+
+pub(super) fn card_reward_provenance_value(provenance: &CardRewardOwnerProvenanceV1) -> Value {
+    json!({
+        "functions": provenance.functions.iter().map(|function| format!("{function:?}")).collect::<Vec<_>>(),
+        "obligations": provenance.obligations.iter().map(|obligation| json!({
+            "source": format!("{:?}", obligation.source),
+            "subject": obligation.subject,
+            "deadline_nodes": obligation.deadline_nodes,
+            "gaps_before": obligation.gaps_before,
+            "gaps_after": obligation.gaps_after,
+        })).collect::<Vec<_>>(),
+        "liability": {
+            "hard_startup": provenance.hard_startup_liability,
+            "component_debt_count": provenance.component_debt_count,
+            "access_saturated": provenance.access_saturated,
+        },
+        "ordering": {
+            "stable_surface_index": provenance.stable_surface_index,
+            "owner_rank": provenance.owner_rank,
+            "tie_break_applied": provenance.tie_break_applied,
+            "is_discrepancy_if_selected": provenance.owner_rank > 1,
+        },
+    })
 }
 
 fn candidate_card_identity(kind: DecisionCandidateKind) -> Option<(CardId, u8)> {
@@ -533,6 +563,7 @@ mod tests {
                 scores: Vec::new(),
             },
             admission: None,
+            card_reward_provenance: None,
         });
 
         let snapshot = ChoiceAnnotationSnapshot::from_annotation(&annotation);
@@ -567,6 +598,7 @@ mod tests {
                 scores: Vec::new(),
             },
             admission: Some(admission),
+            card_reward_provenance: None,
         });
 
         let snapshot = ChoiceAnnotationSnapshot::from_annotation(&annotation);
@@ -611,6 +643,7 @@ mod tests {
                 scores: Vec::new(),
             },
             admission: None,
+            card_reward_provenance: None,
         });
 
         let snapshot = ChoiceAnnotationSnapshot::from_annotation(&annotation);
@@ -652,6 +685,7 @@ mod tests {
                         scores: Vec::new(),
                     },
                     admission: None,
+                    card_reward_provenance: None,
                 }),
                 expansion: OwnerChoiceExpansion::AutoAllowed,
             }

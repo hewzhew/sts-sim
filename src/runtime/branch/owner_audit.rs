@@ -255,6 +255,33 @@ pub(super) fn oracle_candidate_order(
     }
 }
 
+/// Captures the same typed evidence used to order a card-reward candidate.
+/// The oracle explorer invokes this immediately before materializing the
+/// selected edge, so the journal records the actual parent state rather than
+/// reconstructing an explanation after the run has moved on.
+pub(super) fn oracle_candidate_annotation(
+    session: &sts_simulator::eval::run_control::RunControlSession,
+    candidate_id: &str,
+) -> Option<sts_simulator::eval::run_control::RunControlTraceAnnotationV1> {
+    use owner_model::OwnerDecision;
+    use sts_simulator::eval::run_control::{build_decision_surface, RunControlTraceAnnotationV1};
+
+    let owner = boundary_router::owner_for_current_boundary(session)?;
+    let surface = build_decision_surface(session);
+    let OwnerDecision::Candidates(choices) = owners::owner_decision(session, owner, &surface)
+    else {
+        return None;
+    };
+    let provenance = choices
+        .into_iter()
+        .find(|choice| choice.candidate_id == candidate_id)?
+        .annotation
+        .candidate()?
+        .card_reward_provenance
+        .clone()?;
+    Some(RunControlTraceAnnotationV1::CardRewardOwnerDecision { provenance })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

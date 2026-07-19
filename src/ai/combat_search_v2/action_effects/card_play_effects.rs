@@ -57,6 +57,7 @@ fn card_play_facts_from_accumulator(
             conditional_draw_cards: accumulator.direct.conditional_draw_cards,
             enemy_weak: accumulator.direct.enemy_weak,
             enemy_vulnerable: accumulator.direct.enemy_vulnerable,
+            player_vulnerable: accumulator.direct.player_vulnerable,
             player_strength_gain: accumulator.direct.player_strength_gain,
             player_temporary_strength_gain: accumulator
                 .direct
