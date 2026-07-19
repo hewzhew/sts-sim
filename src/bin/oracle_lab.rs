@@ -1,11 +1,15 @@
+use std::io;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 use sts_simulator::eval::run_control::OracleAnalysisAdvanceRequestV1;
 use sts_simulator::runtime::branch::{
-    load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
-    save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
+    load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
+    serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisWorkspaceV1,
+    OracleRunBudget, OracleRunConfig,
 };
 
 #[derive(Debug, Parser)]
@@ -102,6 +106,24 @@ enum Command {
         workspace: PathBuf,
         #[arg(long)]
         node: Option<usize>,
+    },
+    /// Keep one analysis workspace resident and accept JSONL commands on stdin.
+    Serve {
+        #[arg(long)]
+        workspace: PathBuf,
+        /// Bind a persistent loopback endpoint instead of reading stdin.
+        #[arg(long)]
+        listen: Option<SocketAddr>,
+        /// Write connection metadata for `oracle_lab call`.
+        #[arg(long, requires = "listen")]
+        endpoint: Option<PathBuf>,
+    },
+    /// Send one JSON command to a resident loopback service.
+    Call {
+        #[arg(long)]
+        endpoint: PathBuf,
+        #[arg(long)]
+        request: String,
     },
 }
 
@@ -246,6 +268,29 @@ fn main() -> Result<(), String> {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
             print_json(&analysis.session.replay(node)?)
+        }
+        Command::Serve {
+            workspace,
+            listen,
+            endpoint,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            if let Some(listen) = listen {
+                let endpoint = endpoint
+                    .ok_or_else(|| "oracle_lab serve --listen requires --endpoint".to_string())?;
+                serve_oracle_analysis_tcp_v1(&workspace, analysis, listen, &endpoint)?;
+            } else {
+                if endpoint.is_some() {
+                    return Err("oracle_lab serve --endpoint requires --listen".to_string());
+                }
+                let stdin = io::stdin();
+                let stdout = io::stdout();
+                serve_oracle_analysis_jsonl_v1(&workspace, analysis, stdin.lock(), stdout.lock())?;
+            }
+            Ok(())
+        }
+        Command::Call { endpoint, request } => {
+            print_json(&call_oracle_analysis_tcp_v1(&endpoint, &request)?)
         }
     }
 }

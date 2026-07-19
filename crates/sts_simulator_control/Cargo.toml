@@ -63,3 +63,7 @@ path = "tests/strategic_encounter_probe_contract.rs"
 [[test]]
 name = "oracle_analysis_session_contract"
 path = "tests/oracle_analysis_session_contract.rs"
+
+[[test]]
+name = "oracle_analysis_service_contract"
+path = "tests/oracle_analysis_service_contract.rs"
