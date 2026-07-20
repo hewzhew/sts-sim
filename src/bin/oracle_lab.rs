@@ -1244,6 +1244,8 @@ fn main() -> Result<(), String> {
                         "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
                         "max_completed_turn_options_at_state": progress.max_completed_turn_options_at_state,
                         "generation_gap_count": progress.generation_gap_count,
+                        "watched_state": watched_state,
+                        "watched_states": watched_states,
                     },
                     "witness": witness.map(|witness| serde_json::json!({
                         "final_hp": witness.final_position.combat.entities.player.current_hp,
