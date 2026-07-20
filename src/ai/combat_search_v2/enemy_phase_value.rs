@@ -6,6 +6,7 @@ const SPLIT_MOVE_ID: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyPhaseValueV1 {
+    pub(super) phase_adjusted_living_enemy_count: usize,
     pub(super) raw_living_enemy_hp: i32,
     pub(super) raw_living_enemy_block: i32,
     pub(super) raw_living_enemy_effort: i32,
@@ -24,16 +25,29 @@ pub(super) fn enemy_phase_value(combat: &CombatState) -> EnemyPhaseValueV1 {
         .entities
         .monsters
         .iter()
-        .filter(|monster| monster.is_alive_for_action())
         .fold(EnemyPhaseValueV1::default(), |mut value, monster| {
-            let raw_hp = monster.current_hp.max(0);
-            let raw_block = monster.block.max(0);
+            let alive_for_action = monster.is_alive_for_action();
+            let awakened_rebirth_debt_hp = awakened_rebirth_debt_hp(monster);
+            if !alive_for_action && awakened_rebirth_debt_hp == 0 {
+                return value;
+            }
+            value.phase_adjusted_living_enemy_count =
+                value.phase_adjusted_living_enemy_count.saturating_add(1);
+            let raw_hp = if alive_for_action {
+                monster.current_hp.max(0)
+            } else {
+                0
+            };
+            let raw_block = if alive_for_action {
+                monster.block.max(0)
+            } else {
+                0
+            };
             let split_debt_hp = if is_split_pending_or_triggered(combat, monster) {
                 raw_hp
             } else {
                 0
             };
-            let awakened_rebirth_debt_hp = awakened_rebirth_debt_hp(monster);
             let adjusted_hp = raw_hp
                 .saturating_add(split_debt_hp)
                 .saturating_add(awakened_rebirth_debt_hp);

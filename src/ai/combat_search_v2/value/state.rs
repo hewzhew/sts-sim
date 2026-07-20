@@ -100,7 +100,10 @@ pub(in crate::ai::combat_search_v2) fn combat_search_state_value(
 ) -> CombatSearchStateValueV1 {
     let facts = combat_search_core_value_facts(&node.engine, &node.combat);
     CombatSearchStateValueV1 {
-        fewer_living_enemies: -(facts.living_enemy_count as i32),
+        fewer_living_enemies: -(facts
+            .phase_profile
+            .enemy_phase
+            .phase_adjusted_living_enemy_count as i32),
         phase_adjusted_enemy_effort_progress: -facts
             .phase_profile
             .enemy_phase
