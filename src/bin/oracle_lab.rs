@@ -17,7 +17,7 @@ use sts_combat_planner::{
     TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
-use sts_simulator::eval::combat_case::load_combat_case;
+use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case};
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, OracleAnalysisAdvanceRequestV1,
 };
@@ -70,6 +70,16 @@ enum Command {
         branch_id: Option<usize>,
         #[command(flatten)]
         budget: BudgetArgs,
+    },
+    /// Recover one exact combat branch from a stale analysis workspace without
+    /// restoring or validating unrelated frontier branches.
+    RecoverCombatCase {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        branch: usize,
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Run the production oracle combat planner directly on one exact case.
     CombatCase {
@@ -917,6 +927,26 @@ fn main() -> Result<(), String> {
             let view = analysis.view()?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
+        }
+        Command::RecoverCombatCase {
+            workspace,
+            branch,
+            output,
+        } => {
+            let case = sts_simulator::runtime::branch::recover_oracle_analysis_combat_case_v1(
+                &workspace, branch,
+            )?;
+            save_combat_case(&output, &case)?;
+            print_json(&json!({
+                "schema_name": "OracleRecoveredCombatCaseV1",
+                "workspace": workspace,
+                "branch_id": branch,
+                "output": output,
+                "source": case.source,
+                "run": case.run,
+                "combat": case.combat,
+                "path_steps": case.path.len(),
+            }))
         }
         Command::BuildValuePrototype {
             case,

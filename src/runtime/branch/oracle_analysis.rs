@@ -4,6 +4,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::eval::combat_lab_v1::atomic_write_json;
+use crate::eval::combat_case::{
+    CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
+    CombatCaseSource,
+};
 use crate::eval::run_control::{
     expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_from_checkpoint_v1,
     seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
@@ -256,6 +260,95 @@ pub fn load_oracle_analysis_workspace_v1(path: &Path) -> Result<OracleAnalysisWo
     let artifact = serde_json::from_slice::<OracleAnalysisWorkspaceArtifactV1>(&bytes)
         .map_err(|error| format!("failed to parse '{}': {error}", path.display()))?;
     OracleAnalysisWorkspaceV1::restore(artifact)
+}
+
+/// Recover one exact combat from an analysis workspace whose unrelated
+/// branches may no longer pass current whole-frontier validation.
+///
+/// The selected branch is still deserialized through the current checkpoint
+/// types. This deliberately bypasses only cross-branch fingerprint validation;
+/// it does not reinterpret or edit the saved combat state.
+pub fn recover_oracle_analysis_combat_case_v1(
+    path: &Path,
+    branch_id: usize,
+) -> Result<CombatCase, String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
+    let artifact = serde_json::from_slice::<OracleAnalysisWorkspaceArtifactV1>(&bytes)
+        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))?;
+    if artifact.schema_name != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME
+        || artifact.schema_version != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION
+    {
+        return Err(format!(
+            "unsupported oracle analysis workspace {} version {}",
+            artifact.schema_name, artifact.schema_version
+        ));
+    }
+    let saved = artifact
+        .session
+        .explorer
+        .branches
+        .into_iter()
+        .find(|branch| branch.branch_id == branch_id)
+        .ok_or_else(|| format!("oracle analysis workspace has no branch {branch_id}"))?;
+    let source = CombatCaseSource {
+        seed: artifact.seed,
+        ascension: artifact.ascension,
+        generation: saved.path_depth as usize,
+        branch_id: saved.branch_id,
+        parent_id: saved.parent_branch_id,
+    };
+    let path = saved
+        .replay
+        .iter()
+        .map(|step| CombatCasePathStep {
+            key: serde_json::to_value(&step.action).unwrap_or(serde_json::Value::Null),
+            label: step.label.clone(),
+            state_before: None,
+            decision_evidence: Some(serde_json::json!({
+                "candidate_id": step.candidate_id,
+                "recovered_from_branch": branch_id,
+            })),
+        })
+        .collect::<Vec<_>>();
+    let session = saved.session.into_session()?;
+    let position = session.current_active_combat_position()?;
+    let (search_nodes, search_ms) = if position.combat.meta.is_boss_fight {
+        (artifact.budget.boss_nodes, artifact.budget.boss_ms)
+    } else if position.combat.meta.is_elite_fight {
+        (artifact.budget.elite_nodes, artifact.budget.elite_ms)
+    } else {
+        (artifact.budget.hallway_nodes, artifact.budget.hallway_ms)
+    };
+    Ok(CombatCase::new(
+        source,
+        CombatCaseGap {
+            boundary: format!(
+                "Act {} Floor {} recovered oracle analysis combat",
+                session.run_state.act_num, session.run_state.floor_num
+            ),
+            reason: "selected_branch_recovery".to_string(),
+            search_nodes,
+            search_ms,
+            rescue_search_nodes: 0,
+            rescue_search_ms: 0,
+        },
+        CombatCaseRunSummary {
+            act: session.run_state.act_num,
+            floor: session.run_state.floor_num,
+            hp: session.run_state.current_hp,
+            max_hp: session.run_state.max_hp,
+            gold: session.run_state.gold,
+            deck_size: session.run_state.master_deck.len(),
+            relic_count: session.run_state.relics.len(),
+            potion_slots: session.run_state.potions.len(),
+        },
+        Vec::new(),
+        None,
+        path,
+        CombatCaseRngSummary::from_pool(&session.run_state.rng_pool),
+        position,
+    ))
 }
 
 fn validate_analysis_config(config: &OracleRunConfig) -> Result<(), String> {
