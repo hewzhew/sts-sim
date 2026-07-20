@@ -292,11 +292,10 @@ struct GuidedStateQueueEntry {
     anchor_priority: f64,
 }
 
-// A guide rank is lexicographic, not a calibrated scalar distance.  Share a
-// guide lane only among exact rank ties; treating the next three heap entries
-// as "near" silently overrules a strict guide preference.  Global liveness for
-// lower-ranked states remains the anchor's job.
-const GUIDED_EQUAL_BEST_SERVICE_WINDOW: usize = 4;
+// Keep guide ordering sharp while preventing one resumable near-best state
+// from owning a lane forever. Global liveness remains the anchor's job; this
+// tiny ordinal window only shares service among the guide's closest peers.
+const GUIDED_NEAR_BEST_SERVICE_WINDOW: usize = 4;
 
 impl Eq for GuidedStateQueueEntry {}
 
@@ -977,27 +976,16 @@ impl OracleCombatWitnessSession {
     }
 
     fn pop_guided_state(&mut self, guide_index: usize) -> Option<(usize, SearchState)> {
-        let mut equal_best = Vec::with_capacity(GUIDED_EQUAL_BEST_SERVICE_WINDOW);
-        let mut first_strictly_worse = None;
-        while equal_best.len() < GUIDED_EQUAL_BEST_SERVICE_WINDOW {
+        let mut near_best = Vec::with_capacity(GUIDED_NEAR_BEST_SERVICE_WINDOW);
+        while near_best.len() < GUIDED_NEAR_BEST_SERVICE_WINDOW {
             let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.pop() else {
                 break;
             };
             if self.entry_is_current(entry.state_id, entry.revision) {
-                if equal_best
-                    .first()
-                    .is_some_and(|best: &GuidedStateQueueEntry| entry.guide_rank != best.guide_rank)
-                {
-                    first_strictly_worse = Some(entry);
-                    break;
-                }
-                equal_best.push(entry);
+                near_best.push(entry);
             }
         }
-        if let Some(entry) = first_strictly_worse {
-            self.guided_frontiers[guide_index].push(entry);
-        }
-        let selected_index = least_served_guided_candidate_index(equal_best.iter().map(|entry| {
+        let selected_index = least_served_guided_candidate_index(near_best.iter().map(|entry| {
             self.states[entry.state_id]
                 .as_ref()
                 .expect("current guided entry owns a live state")
@@ -1005,8 +993,8 @@ impl OracleCombatWitnessSession {
                 .counters()
                 .generation_work
         }))?;
-        let selected = equal_best.remove(selected_index);
-        self.guided_frontiers[guide_index].extend(equal_best);
+        let selected = near_best.remove(selected_index);
+        self.guided_frontiers[guide_index].extend(near_best);
         let state = self.states[selected.state_id]
             .take()
             .expect("current queue entry owns a live state");
@@ -1235,7 +1223,7 @@ mod anchor_priority_tests {
     }
 
     #[test]
-    fn guided_equal_rank_service_window_prefers_the_least_served_state() {
+    fn guided_service_window_prefers_less_served_near_best_state() {
         assert_eq!(least_served_guided_candidate_index([64, 20, 0, 4]), Some(2));
         assert_eq!(least_served_guided_candidate_index([4, 4, 4, 4]), Some(0));
     }
