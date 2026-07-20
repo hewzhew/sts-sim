@@ -11,6 +11,7 @@ use crate::eval::run_control::{
     OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, RunControlConfig,
     RunControlSession,
 };
+use crate::state::core::ClientInput;
 
 use super::oracle_run::{
     oracle_combat_budgets, OracleRunBudget, OracleRunConfig, OracleRunContinuationV1,
@@ -222,6 +223,14 @@ impl OracleAnalysisWorkspaceV1 {
 
     pub fn accept_combat_incumbent(&mut self) -> Result<OracleAnalysisNodeViewV1, String> {
         self.session.accept_cursor_combat_incumbent()?;
+        self.view()
+    }
+
+    pub fn accept_combat_actions(
+        &mut self,
+        actions: &[ClientInput],
+    ) -> Result<OracleAnalysisNodeViewV1, String> {
+        self.session.accept_cursor_combat_actions(actions)?;
         self.view()
     }
 }

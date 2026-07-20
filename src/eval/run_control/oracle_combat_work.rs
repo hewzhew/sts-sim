@@ -17,6 +17,8 @@ use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
+use super::trace_annotation::CombatAutomationTrajectorySource;
+use crate::state::core::ClientInput;
 
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
@@ -34,6 +36,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     last_quantum_generation_work: usize,
     last_quantum_engine_steps: usize,
     search_resume_exact: bool,
+    witness_source: CombatAutomationTrajectorySource,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -149,6 +152,7 @@ impl OracleRunCombatWorkV1 {
             last_quantum_generation_work: 0,
             last_quantum_engine_steps: 0,
             search_resume_exact: false,
+            witness_source: CombatAutomationTrajectorySource::SearchCombat,
         })
     }
 
@@ -332,6 +336,67 @@ impl OracleRunCombatWorkV1 {
         self.search.witness().is_some()
     }
 
+    /// Replays an analyst-supplied exact action sequence from this job's
+    /// unchanged combat root and installs it only when every action is legal
+    /// and the simulator reaches a terminal victory. This is an explicit
+    /// oracle-analysis operation, not a search claim or heuristic shortcut.
+    pub(super) fn verify_and_restore_action_witness(
+        &mut self,
+        inputs: &[ClientInput],
+    ) -> Result<(), String> {
+        let stepper = crate::sim::combat::EngineCombatStepper;
+        let mut position = self.start.clone();
+        let mut actions = Vec::with_capacity(inputs.len());
+        let mut replay_engine_steps = 0usize;
+        for (index, input) in inputs.iter().enumerate() {
+            use crate::sim::combat::CombatStepper;
+
+            if stepper.choice_for_legal_input(&position, input).is_none() {
+                return Err(format!(
+                    "oracle combat witness action {index} is not legal at its exact state: {input:?}"
+                ));
+            }
+            let result = stepper.apply_to_stable(
+                &position,
+                input.clone(),
+                crate::sim::combat::CombatStepLimits {
+                    max_engine_steps: self.max_transition_steps,
+                    deadline: None,
+                },
+            );
+            if result.truncated {
+                return Err(format!(
+                    "oracle combat witness action {index} exceeded the transition limit"
+                ));
+            }
+            replay_engine_steps = replay_engine_steps.saturating_add(result.engine_steps);
+            actions.push(TurnOptionAction {
+                input: input.clone(),
+                expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &result.position.engine,
+                    &result.position.combat,
+                ),
+                engine_steps: result.engine_steps,
+            });
+            position = result.position;
+        }
+        if crate::sim::combat::combat_terminal(&position.engine, &position.combat)
+            != crate::sim::combat::CombatTerminal::Win
+        {
+            return Err("oracle combat witness actions did not reach terminal victory".to_string());
+        }
+        self.search.restore_verified_witness(OracleCombatWitness {
+            actions,
+            final_position: position,
+            // The sequence is accepted for its exact replay proof. Search
+            // may still replace it with an equal-HP, shorter witness later.
+            negative_log_policy: inputs.len() as f64,
+            replay_engine_steps,
+        })?;
+        self.witness_source = CombatAutomationTrajectorySource::OracleExactActions;
+        Ok(())
+    }
+
     pub(super) fn nodes_expanded(&self) -> u64 {
         self.prior_generation_work
             .saturating_add(self.search.counters().generation_work as u64)
@@ -407,7 +472,7 @@ impl OracleRunCombatWorkV1 {
             return Err("oracle combat parent changed before search commit".to_string());
         }
         if let Some(witness) = self.search.witness() {
-            return apply_oracle_combat_witness(session, &self.start, witness);
+            return apply_oracle_combat_witness(session, &self.start, witness, self.witness_source);
         }
         let status = self
             .last_status

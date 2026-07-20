@@ -10,6 +10,7 @@ use crate::content::relics::RelicState;
 use crate::runtime::combat::CombatCard;
 use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::sim::combat::CombatPosition;
+use crate::state::core::ClientInput;
 
 use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
@@ -1006,6 +1007,30 @@ impl OracleAnalysisSessionV1 {
         }
         self.materialize_combat_work(source_node_id, work)?
             .ok_or_else(|| "verified combat incumbent did not materialize a child".to_string())
+    }
+
+    pub fn accept_cursor_combat_actions(
+        &mut self,
+        actions: &[ClientInput],
+    ) -> Result<usize, String> {
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        let work = self.combat_jobs.get_mut(&source_node_id).ok_or_else(|| {
+            format!("oracle analysis node {source_node_id} has no resident combat search")
+        })?;
+        work.verify_and_restore_action_witness(actions)?;
+        let work = self
+            .combat_jobs
+            .remove(&source_node_id)
+            .expect("verified analysis combat job remains resident");
+        self.materialize_combat_work(source_node_id, work)?
+            .ok_or_else(|| "verified combat action witness did not materialize a child".to_string())
     }
 
     /// Discards only the cursor combat's retained search work and starts a

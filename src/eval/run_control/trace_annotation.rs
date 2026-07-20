@@ -26,6 +26,9 @@ use super::transition_report::CardSnapshot;
 #[serde(rename_all = "snake_case")]
 pub enum CombatAutomationTrajectorySource {
     SearchCombat,
+    /// An explicit action sequence supplied at an oracle-analysis boundary and
+    /// accepted only after exact legal replay reaches terminal victory.
+    OracleExactActions,
     CompleteLineSolver,
     TurnPlanRescue,
     #[serde(alias = "line_lab_turn_pool_rescue")]
@@ -38,6 +41,7 @@ impl CombatAutomationTrajectorySource {
     pub fn label(self) -> &'static str {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
+            CombatAutomationTrajectorySource::OracleExactActions => "oracle_exact_actions",
             CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
             CombatAutomationTrajectorySource::TurnPlanRescue => "turn_plan_rescue",
             CombatAutomationTrajectorySource::TurnPoolRescue => "turn_pool_rescue",
@@ -814,6 +818,19 @@ mod tests {
         assert_eq!(
             trajectory.label_role,
             "simulator_generated_not_teacher_label"
+        );
+    }
+
+    #[test]
+    fn oracle_exact_action_source_has_distinct_serialized_provenance() {
+        assert_eq!(
+            CombatAutomationTrajectorySource::OracleExactActions.label(),
+            "oracle_exact_actions"
+        );
+        assert_eq!(
+            serde_json::to_string(&CombatAutomationTrajectorySource::OracleExactActions)
+                .expect("trajectory source should serialize"),
+            "\"oracle_exact_actions\""
         );
     }
 

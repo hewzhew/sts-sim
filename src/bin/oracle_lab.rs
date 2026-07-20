@@ -74,9 +74,19 @@ enum Command {
         max_engine_steps_per_transition: usize,
         #[arg(long)]
         watch_state_hash: Option<String>,
-        /// Replay this exact legal input prefix before starting the planner.
+        /// Replay one or more exact legal input-prefix files in order before
+        /// starting the planner. Repeat the flag to compose verified segments.
         #[arg(long)]
-        prefix_actions: Option<PathBuf>,
+        prefix_actions: Vec<PathBuf>,
+        /// Print compact, card-labelled traces instead of raw action arrays.
+        #[arg(long)]
+        readable: bool,
+        /// Replay the prefix and print its exact successor without starting search.
+        #[arg(long)]
+        replay_only: bool,
+        /// Save the exact prefix successor as a standalone combat case.
+        #[arg(long)]
+        export_prefix_case: Option<PathBuf>,
     },
     /// Check when one exact complete-turn action sequence is generated.
     TurnMembership {
@@ -153,6 +163,14 @@ enum Command {
     AcceptCombat {
         #[arg(long)]
         workspace: PathBuf,
+    },
+    /// Replay and accept an explicit exact combat witness at the cursor.
+    AcceptCombatActions {
+        #[arg(long)]
+        workspace: PathBuf,
+        /// One or more action-list files, composed in flag order.
+        #[arg(long)]
+        actions: Vec<PathBuf>,
     },
     /// Restart tactical search from the cursor's unchanged exact combat state.
     RestartCombat {
@@ -334,20 +352,27 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
             watch_state_hash,
             prefix_actions,
+            readable,
+            replay_only,
+            export_prefix_case,
         } => {
             let case = load_combat_case(&case)?;
             let stepper = EngineCombatStepper;
-            let mut position = case.position;
+            let initial_position = case.position.clone();
+            let mut position = initial_position.clone();
             let prefix = prefix_actions
-                .as_ref()
+                .iter()
                 .map(|path| {
                     serde_json::from_slice::<Vec<ClientInput>>(
                         &std::fs::read(path).map_err(|error| error.to_string())?,
                     )
                     .map_err(|error| format!("invalid prefix action list: {error}"))
                 })
-                .transpose()?
-                .unwrap_or_default();
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            let mut prefix_replay_actions = Vec::with_capacity(prefix.len());
             for (action_index, input) in prefix.iter().enumerate() {
                 if stepper.choice_for_legal_input(&position, input).is_none() {
                     return Err(format!(
@@ -367,8 +392,56 @@ fn main() -> Result<(), String> {
                         "combat prefix action {action_index} exceeded the engine-step limit"
                     ));
                 }
+                prefix_replay_actions.push(TurnOptionAction {
+                    input: input.clone(),
+                    expected_successor_hash:
+                        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                            &step.position.engine,
+                            &step.position.combat,
+                        ),
+                    engine_steps: step.engine_steps,
+                });
                 position = step.position;
             }
+            if let Some(path) = export_prefix_case.as_ref() {
+                let mut focused_case = case.clone();
+                focused_case.position = position.clone();
+                focused_case.combat =
+                    sts_simulator::eval::combat_case::combat_summary(&focused_case.position);
+                focused_case.gap.boundary = format!(
+                    "{} + {} exact prefix actions",
+                    focused_case.gap.boundary,
+                    prefix.len()
+                );
+                focused_case.gap.reason = "oracle_lab_prefix_successor".to_string();
+                sts_simulator::eval::combat_case::save_combat_case(path, &focused_case)?;
+            }
+            if replay_only {
+                let prefix_trace = replay_combat_path(
+                    initial_position,
+                    &prefix_replay_actions,
+                    max_engine_steps_per_transition,
+                )?;
+                return print_json(&serde_json::json!({
+                    "schema_name": "OracleCombatPrefixReplayV1",
+                    "schema_version": 1,
+                    "action_count": prefix.len(),
+                    "exported_case": export_prefix_case,
+                    "trace": prefix_trace,
+                    "guide_components": {
+                        "progress": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&position),
+                        "survival": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&position),
+                        "horizon": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&position),
+                        "setup": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&position),
+                    },
+                    "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                        &position.engine,
+                        &position.combat,
+                    ),
+                    "successor": combat_position_snapshot(&position),
+                }));
+            }
+            let search_root_position = position.clone();
             let root = CombatDecisionRoot::new(position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
@@ -400,6 +473,76 @@ fn main() -> Result<(), String> {
                 .as_deref()
                 .and_then(|hash| search.state_progress_by_exact_hash(hash));
             let witness = report.witness.as_ref();
+            let prefix_trace = replay_combat_path(
+                initial_position,
+                &prefix_replay_actions,
+                max_engine_steps_per_transition,
+            )?;
+            let deepest_progress_trace = replay_combat_path(
+                search_root_position.clone(),
+                &progress.deepest_progress_actions,
+                max_engine_steps_per_transition,
+            )?;
+            let deepest_survival_trace =
+                if progress.deepest_survival_actions == progress.deepest_progress_actions {
+                    serde_json::json!({"same_as": "deepest_progress_trace"})
+                } else {
+                    replay_combat_path(
+                        search_root_position.clone(),
+                        &progress.deepest_survival_actions,
+                        max_engine_steps_per_transition,
+                    )?
+                };
+            let witness_trace = witness
+                .map(|witness| {
+                    replay_combat_path(
+                        search_root_position.clone(),
+                        &witness.actions,
+                        max_engine_steps_per_transition,
+                    )
+                })
+                .transpose()?;
+            if readable {
+                return print_json(&serde_json::json!({
+                    "schema_name": "OracleCombatCaseReadableV1",
+                    "schema_version": 1,
+                    "status": format!("{:?}", report.status),
+                    "elapsed_ms": started.elapsed().as_millis(),
+                    "budget": {
+                        "max_nodes": max_nodes,
+                        "wall_ms": wall_ms,
+                    },
+                    "counters": {
+                        "agenda_pops": report.after.agenda_pops,
+                        "generation_work": report.after.generation_work,
+                        "exact_states": report.after.exact_states,
+                        "completed_turn_options": report.after.completed_turn_options,
+                    },
+                    "prefix": {
+                        "trace": prefix_trace,
+                        "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                            &search_root_position.engine,
+                            &search_root_position.combat,
+                        ),
+                        "successor": combat_position_snapshot(&search_root_position),
+                    },
+                    "progress": {
+                        "max_player_turn": progress.max_player_turn,
+                        "deepest_survival_state": progress.deepest_survival_state,
+                        "deepest_survival_trace": deepest_survival_trace,
+                        "deepest_progress_state": progress.deepest_progress_state,
+                        "deepest_progress_trace": deepest_progress_trace,
+                        "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
+                        "max_completed_turn_options_at_state": progress.max_completed_turn_options_at_state,
+                        "generation_gap_count": progress.generation_gap_count,
+                    },
+                    "witness": witness.map(|witness| serde_json::json!({
+                        "final_hp": witness.final_position.combat.entities.player.current_hp,
+                        "hp_loss": initial_hp.saturating_sub(witness.final_position.combat.entities.player.current_hp),
+                        "trace": witness_trace,
+                    })),
+                }));
+            }
             print_json(&serde_json::json!({
                 "schema_name": "OracleCombatCaseProbeV1",
                 "schema_version": 1,
@@ -413,6 +556,12 @@ fn main() -> Result<(), String> {
                 "prefix": {
                     "action_count": prefix.len(),
                     "actions": prefix,
+                    "trace": prefix_trace,
+                    "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                        &search_root_position.engine,
+                        &search_root_position.combat,
+                    ),
+                    "successor": combat_position_snapshot(&search_root_position),
                 },
                 "counters": {
                     "agenda_pops": report.after.agenda_pops,
@@ -432,8 +581,10 @@ fn main() -> Result<(), String> {
                     "max_player_turn": progress.max_player_turn,
                     "deepest_survival_state": progress.deepest_survival_state,
                     "deepest_survival_actions": progress.deepest_survival_actions,
+                    "deepest_survival_trace": deepest_survival_trace,
                     "deepest_progress_state": progress.deepest_progress_state,
                     "deepest_progress_actions": progress.deepest_progress_actions,
+                    "deepest_progress_trace": deepest_progress_trace,
                     "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
                     "max_path_atomic_depth": progress.max_path_atomic_depth,
                     "max_completed_turn_options_at_state": progress.max_completed_turn_options_at_state,
@@ -463,6 +614,11 @@ fn main() -> Result<(), String> {
                 &std::fs::read(&actions).map_err(|error| error.to_string())?,
             )
             .map_err(|error| format!("invalid target action list: {error}"))?;
+            let target_policy_trace = target_atomic_policy_trace(
+                &case.position,
+                &target,
+                max_engine_steps_per_transition,
+            )?;
             let root = CombatDecisionRoot::new(case.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let mut generator = TurnOptionGeneratorSession::with_policy(
@@ -527,6 +683,7 @@ fn main() -> Result<(), String> {
                 "matched": matched.is_some(),
                 "match": matched,
                 "target_action_count": target.len(),
+                "target_policy_trace": target_policy_trace,
                 "status": format!("{:?}", last_status),
                 "elapsed_ms": started.elapsed().as_millis(),
                 "generation_work": counters.generation_work,
@@ -606,6 +763,27 @@ fn main() -> Result<(), String> {
         Command::AcceptCombat { workspace } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let view = analysis.accept_combat_incumbent()?;
+            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
+            print_json(&view)
+        }
+        Command::AcceptCombatActions { workspace, actions } => {
+            let action_lists = actions
+                .iter()
+                .map(|path| {
+                    serde_json::from_slice::<Vec<ClientInput>>(
+                        &std::fs::read(path).map_err(|error| error.to_string())?,
+                    )
+                    .map_err(|error| {
+                        format!(
+                            "invalid combat witness action list '{}': {error}",
+                            path.display()
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let actions = action_lists.into_iter().flatten().collect::<Vec<_>>();
+            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let view = analysis.accept_combat_actions(&actions)?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
         }
@@ -1046,6 +1224,76 @@ fn combat_action_label(
         }
         _ => combat_action_key(&position.combat, input),
     }
+}
+
+fn target_atomic_policy_trace(
+    initial: &sts_simulator::sim::combat::CombatPosition,
+    target: &[ClientInput],
+    max_engine_steps_per_transition: usize,
+) -> Result<Vec<Value>, String> {
+    const UNIFORM_EXPLORATION: f64 = 0.05;
+
+    let stepper = EngineCombatStepper;
+    let mut position = initial.clone();
+    let mut trace = Vec::with_capacity(target.len());
+    for (step_index, input) in target.iter().enumerate() {
+        let legal = stepper.atomic_actions(&position);
+        let weights =
+            sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
+                &position,
+                &legal,
+            );
+        let target_index = legal.iter().position(|candidate| candidate == input);
+        let (ordinal_rank, raw_weight, probability, negative_log_probability) = target_index
+            .and_then(|index| weights.get(index).copied().map(|weight| (index, weight)))
+            .map_or((None, None, None, None), |(_, weight)| {
+                let rank = 1 + weights
+                    .iter()
+                    .filter(|candidate| **candidate > weight)
+                    .count();
+                let total = weights.iter().sum::<f64>();
+                let uniform = 1.0 / weights.len().max(1) as f64;
+                let probability = ((1.0 - UNIFORM_EXPLORATION) * (weight / total)
+                    + UNIFORM_EXPLORATION * uniform)
+                    .max(f64::MIN_POSITIVE);
+                (
+                    Some(rank),
+                    Some(weight),
+                    Some(probability),
+                    Some(-probability.ln()),
+                )
+            });
+        trace.push(json!({
+            "step": step_index,
+            "turn": position.combat.turn.turn_count,
+            "action": combat_action_label(&position, input),
+            "legal_action_count": legal.len(),
+            "ordinal_rank": ordinal_rank,
+            "raw_weight": raw_weight,
+            "probability": probability,
+            "negative_log_probability": negative_log_probability,
+        }));
+        if target_index.is_none() {
+            return Err(format!(
+                "target action {step_index} is not on the exact atomic action surface: {input:?}"
+            ));
+        }
+        let result = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if result.truncated {
+            return Err(format!(
+                "target action {step_index} exceeded the exact transition limit"
+            ));
+        }
+        position = result.position;
+    }
+    Ok(trace)
 }
 
 fn compact_target_label(

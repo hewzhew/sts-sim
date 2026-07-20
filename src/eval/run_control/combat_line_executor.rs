@@ -114,6 +114,7 @@ pub(super) fn apply_oracle_combat_witness(
     session: &mut RunControlSession,
     start: &CombatPosition,
     witness: &sts_combat_planner::OracleCombatWitness,
+    trajectory_source: CombatAutomationTrajectorySource,
 ) -> Result<RunProgressOutcome, String> {
     if witness.actions.is_empty() {
         return Err("oracle combat witness contains no actions".to_string());
@@ -159,11 +160,9 @@ pub(super) fn apply_oracle_combat_witness(
         status,
     );
     let answer_claims = combat_automation_answer_claims_v1(&master_deck, &automation_actions);
-    let automation_record = CombatAutomationTrajectoryRecordV1::new(
-        CombatAutomationTrajectorySource::SearchCombat,
-        automation_actions,
-    )
-    .with_answer_claims(answer_claims);
+    let automation_record =
+        CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions)
+            .with_answer_claims(answer_claims);
     trial.remember_combat_automation_trajectory(automation_record.clone());
     let resolution_after = RunCombatResolutionBoundaryV1::capture(&trial);
     let resolution = RunCombatResolutionV1::new(
