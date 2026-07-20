@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::ai::combat_state_key::{
     combat_dominance_diagnostic_parts_v1, combat_dominance_key, combat_exact_state_hash_v1,
@@ -229,6 +229,257 @@ pub use witness_guidance::{
 
 pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
     combat_exact_state_hash_v1(engine, combat)
+}
+
+/// Runs the mature bounded no-potion tactical policy as a proposal donor.
+/// The caller must replay the returned inputs exactly before treating the
+/// proposal as a terminal witness.
+#[derive(Clone, Debug)]
+pub struct OracleRolloutWitnessProposalV1 {
+    pub actions: Vec<ClientInput>,
+    pub final_hp_hint: i32,
+}
+
+pub fn oracle_rollout_witness_proposal_v1(
+    position: &CombatPosition,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> Option<OracleRolloutWitnessProposalV1> {
+    let config = CombatSearchV2Config::default();
+    let mut performance = rollout_profile::RolloutPerformanceCounters::default();
+    let baseline = oracle_no_potion_suffix_proposal_v1(
+        SearchNode::root(position.engine.clone(), position.combat.clone()),
+        Vec::new(),
+        &config,
+        max_actions,
+        deadline,
+        &mut performance,
+    );
+    let severe_no_potion_loss = baseline.as_ref().is_none_or(|baseline| {
+        let player = &position.combat.entities.player;
+        let material_loss = (player.current_hp / 4).max(6);
+        player.current_hp.saturating_sub(baseline.final_hp_hint) >= material_loss
+    });
+    let mut best = baseline;
+
+    // Potions remain a scarce strategic resource, so the mature rollout does
+    // not consume them on its own. At the exact root, however, enumerate each
+    // legal use as one bounded prefix and let the same no-potion policy solve
+    // the suffix. A potion may replace the conserved baseline only when that
+    // baseline pays a material fraction of the HP actually available at the
+    // encounter (or finds no win). The
+    // caller still replays every input and successor hash before accepting a
+    // witness.
+    let potion_prefixes = transition::filtered_legal_actions(
+        EngineCombatStepper.atomic_action_choices(position),
+        CombatSearchV2PotionPolicy::All,
+        &position.combat,
+    )
+    .into_iter()
+    .filter(|choice| transition::is_use_potion_input(&choice.input))
+    .collect::<Vec<_>>();
+    for choice in potion_prefixes {
+        if deadline.is_some_and(|limit| Instant::now() >= limit) || max_actions == 0 {
+            break;
+        }
+        let result = EngineCombatStepper.apply_to_stable(
+            position,
+            choice.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: config.max_engine_steps_per_action,
+                deadline,
+            },
+        );
+        if result.truncated || result.timed_out {
+            continue;
+        }
+        let candidate = oracle_no_potion_suffix_proposal_v1(
+            SearchNode::root(result.position.engine, result.position.combat),
+            vec![choice.input],
+            &config,
+            max_actions.saturating_sub(1),
+            deadline,
+            &mut performance,
+        );
+        if severe_no_potion_loss
+            && candidate.as_ref().is_some_and(|candidate| {
+                best.as_ref()
+                    .is_none_or(|current| candidate.final_hp_hint > current.final_hp_hint)
+            })
+        {
+            best = candidate;
+        }
+    }
+    best
+}
+
+/// Runs the mature complete tactical search as a bounded proposal donor when
+/// a winning line needs potion use interleaved with ordinary card play.  The
+/// caller remains responsible for replaying every input and exact successor;
+/// this function never promotes the legacy report to authoritative evidence.
+pub fn oracle_search_witness_proposal_v1(
+    position: &CombatPosition,
+    max_nodes: usize,
+    deadline: Option<Instant>,
+) -> Option<OracleRolloutWitnessProposalV1> {
+    // The caller owns a separately bounded authoritative replay window.
+    // Reserving that work here as well cuts proposal search twice and can
+    // discard wins found at the edge of the tactical quantum.
+    let deadline = deadline?;
+    let remaining = deadline.checked_duration_since(Instant::now())?;
+    if remaining.is_zero() {
+        return None;
+    }
+    let has_potion = position.combat.entities.potions.iter().any(Option::is_some);
+
+    // Mixed potion search can spend nearly all of a tactical quantum inside
+    // attractive consumable branches and miss a strictly better conserved
+    // line.  Establish a bounded no-potion quality baseline first.  Exact
+    // Act 3 cases need only a small fraction of the quantum for that baseline;
+    // the rest remains available to prove that spending a potion is necessary
+    // or materially better.
+    let baseline_duration = if has_potion {
+        Duration::from_millis(1_000).min(remaining)
+    } else {
+        remaining
+    };
+    let baseline_deadline = Instant::now()
+        .checked_add(baseline_duration)
+        .map_or(deadline, |candidate| candidate.min(deadline));
+    let baseline_nodes = if has_potion {
+        (max_nodes / 10).max(1)
+    } else {
+        max_nodes
+    };
+    let baseline = oracle_search_witness_proposal_with_potions_v1(
+        position,
+        baseline_nodes,
+        baseline_deadline,
+        CombatSearchV2PotionPolicy::Never,
+        Some(0),
+    );
+    if !has_potion {
+        return baseline;
+    }
+
+    let player = &position.combat.entities.player;
+    let material_loss = (player.current_hp / 4).max(6);
+    let severe_no_potion_loss = baseline.as_ref().is_none_or(|proposal| {
+        player.current_hp.saturating_sub(proposal.final_hp_hint) >= material_loss
+    });
+    if !severe_no_potion_loss {
+        return baseline;
+    }
+
+    let remaining_nodes = max_nodes.saturating_sub(baseline_nodes).max(1);
+    // Once a conserved line exists, spend the remaining donor budget improving
+    // that line instead of opening the much larger consumable action tree.  A
+    // mixed search is useful only when the quick conserved pass found no win at
+    // all.  This keeps scarce potions for the run while still letting them
+    // unlock combats that the deck cannot solve unaided.
+    let (potion_policy, max_potions_used) = if baseline.is_some() {
+        (CombatSearchV2PotionPolicy::Never, Some(0))
+    } else {
+        (CombatSearchV2PotionPolicy::All, Some(3))
+    };
+    let searched = oracle_search_witness_proposal_with_potions_v1(
+        position,
+        remaining_nodes,
+        deadline,
+        potion_policy,
+        max_potions_used,
+    );
+    match (baseline, searched) {
+        (Some(baseline), Some(searched)) if searched.final_hp_hint > baseline.final_hp_hint => {
+            Some(searched)
+        }
+        (Some(baseline), _) => Some(baseline),
+        (None, searched) => searched,
+    }
+}
+
+fn oracle_search_witness_proposal_with_potions_v1(
+    position: &CombatPosition,
+    max_nodes: usize,
+    deadline: Instant,
+    potion_policy: CombatSearchV2PotionPolicy,
+    max_potions_used: Option<u32>,
+) -> Option<OracleRolloutWitnessProposalV1> {
+    let remaining = deadline.checked_duration_since(Instant::now())?;
+    if remaining.is_zero() {
+        return None;
+    }
+    let mut config = CombatSearchV2Config::default();
+    config.max_nodes = max_nodes;
+    config.wall_time = Some(remaining);
+    // The donor's useful legacy capability is quality improvement after the
+    // first survivable line. Authoritative replay now has its own small,
+    // bounded window in the caller, so stopping at the first complete win
+    // would throw that capability away (often preserving a near-death win).
+    config.satisfaction = CombatSearchV2Satisfaction::ZeroLossOrBudget;
+    config.potion_policy = potion_policy;
+    config.max_potions_used = max_potions_used;
+    let report = run_combat_search_v2(&position.engine, &position.combat, config);
+    let trajectory = report.best_win_trajectory?;
+    Some(OracleRolloutWitnessProposalV1 {
+        actions: trajectory
+            .actions
+            .into_iter()
+            .map(|action| action.input)
+            .collect(),
+        final_hp_hint: trajectory.final_hp,
+    })
+}
+
+fn oracle_no_potion_suffix_proposal_v1(
+    node: SearchNode,
+    mut prefix: Vec<ClientInput>,
+    config: &CombatSearchV2Config,
+    max_actions: usize,
+    deadline: Option<Instant>,
+    performance: &mut rollout_profile::RolloutPerformanceCounters,
+) -> Option<OracleRolloutWitnessProposalV1> {
+    let profile = combat_search_phase_profile(&node.engine, &node.combat);
+    let phase_aware = profile
+        .enemy_mechanics
+        .finite_survival_damage_mitigation_target_count
+        > 0
+        || profile.enemy_mechanics.guardian_open_count > 0
+        || profile.enemy_mechanics.guardian_defensive_count > 0
+        || profile.enemy_mechanics.bronze_automaton_count > 0
+        || profile.enemy_mechanics.bronze_orb_count > 0;
+    let estimate = if phase_aware {
+        rollout::phase_aware_no_potion_rollout(
+            &node,
+            &EngineCombatStepper,
+            config,
+            max_actions,
+            deadline,
+            performance,
+        )
+    } else {
+        rollout::conservative_no_potion_rollout(
+            &node,
+            &EngineCombatStepper,
+            config,
+            max_actions,
+            deadline,
+            performance,
+        )
+    };
+    if !estimate.is_replayable_terminal_win() {
+        return None;
+    }
+    prefix.extend(
+        estimate
+            .action_preview
+            .into_iter()
+            .map(|action| action.input),
+    );
+    Some(OracleRolloutWitnessProposalV1 {
+        actions: prefix,
+        final_hp_hint: estimate.final_hp,
+    })
 }
 
 pub(crate) fn combat_search_action_ordering_role_label_for_state(

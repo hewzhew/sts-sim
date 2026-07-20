@@ -13,6 +13,8 @@ pub(super) struct EnemyPhaseValueV1 {
     pub(super) phase_adjusted_living_enemy_effort: i32,
     pub(super) split_pending_count: usize,
     pub(super) split_debt_hp: i32,
+    pub(super) awakened_rebirth_pending_count: usize,
+    pub(super) awakened_rebirth_debt_hp: i32,
     pub(super) guardian_defensive_count: usize,
     pub(super) guardian_defensive_block: i32,
 }
@@ -26,16 +28,28 @@ pub(super) fn enemy_phase_value(combat: &CombatState) -> EnemyPhaseValueV1 {
         .fold(EnemyPhaseValueV1::default(), |mut value, monster| {
             let raw_hp = monster.current_hp.max(0);
             let raw_block = monster.block.max(0);
-            let adjusted_hp = phase_adjusted_enemy_hp(combat, monster);
+            let split_debt_hp = if is_split_pending_or_triggered(combat, monster) {
+                raw_hp
+            } else {
+                0
+            };
+            let awakened_rebirth_debt_hp = awakened_rebirth_debt_hp(monster);
+            let adjusted_hp = raw_hp
+                .saturating_add(split_debt_hp)
+                .saturating_add(awakened_rebirth_debt_hp);
             let adjusted_effort = adjusted_hp.saturating_add(raw_block);
             value.raw_living_enemy_hp += raw_hp;
             value.raw_living_enemy_block += raw_block;
             value.raw_living_enemy_effort += raw_hp.saturating_add(raw_block);
             value.phase_adjusted_living_enemy_hp += adjusted_hp;
             value.phase_adjusted_living_enemy_effort += adjusted_effort;
-            if adjusted_hp > raw_hp {
+            if split_debt_hp > 0 {
                 value.split_pending_count += 1;
-                value.split_debt_hp += adjusted_hp - raw_hp;
+                value.split_debt_hp += split_debt_hp;
+            }
+            if awakened_rebirth_debt_hp > 0 {
+                value.awakened_rebirth_pending_count += 1;
+                value.awakened_rebirth_debt_hp += awakened_rebirth_debt_hp;
             }
             if is_guardian_defensive(monster) {
                 value.guardian_defensive_count += 1;
@@ -45,12 +59,13 @@ pub(super) fn enemy_phase_value(combat: &CombatState) -> EnemyPhaseValueV1 {
         })
 }
 
-fn phase_adjusted_enemy_hp(combat: &CombatState, monster: &MonsterEntity) -> i32 {
-    let raw_hp = monster.current_hp.max(0);
-    if is_split_pending_or_triggered(combat, monster) {
-        raw_hp.saturating_mul(2)
+fn awakened_rebirth_debt_hp(monster: &MonsterEntity) -> i32 {
+    if EnemyId::from_id(monster.monster_type) == Some(EnemyId::AwakenedOne)
+        && monster.awakened_one.form1
+    {
+        monster.max_hp.max(0)
     } else {
-        raw_hp
+        0
     }
 }
 

@@ -67,6 +67,7 @@ pub struct OracleCombatWitnessCounters {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
+    pub policy_witness_proposals: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,6 +124,33 @@ pub struct OracleCombatWitnessProgressSnapshot {
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
     pub root_state: Option<OracleCombatWitnessStateProgressSnapshot>,
+    pub deepest_survival_state: Option<OracleCombatDeepStateSnapshot>,
+    pub deepest_progress_state: Option<OracleCombatDeepStateSnapshot>,
+    /// Exact public action prefix that reaches `deepest_survival_state`.
+    /// Diagnostic only; it has no authority over queue ordering.
+    pub deepest_survival_actions: Vec<TurnOptionAction>,
+    /// Exact public action prefix that reaches `deepest_progress_state`.
+    /// Diagnostic only; it has no authority over queue ordering.
+    pub deepest_progress_actions: Vec<TurnOptionAction>,
+    /// For each of the most recent retained player turns, the state with the
+    /// highest player HP (then least remaining enemy HP). This is diagnostic:
+    /// it exposes whether deeper search is advancing only along a dying line
+    /// without assigning that envelope any search authority.
+    pub recent_turn_survival_envelope: Vec<OracleCombatDeepStateSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatDeepStateSnapshot {
+    pub player_turn: u32,
+    pub player_hp: i32,
+    pub player_block: i32,
+    pub alive_enemy_count: usize,
+    pub enemy_total_hp: i32,
+    pub hand_size: usize,
+    pub draw_pile_size: usize,
+    pub discard_pile_size: usize,
+    pub exhaust_pile_size: usize,
+    pub path_atomic_depth: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -275,6 +303,12 @@ pub struct OracleCombatWitnessSession {
     replay_failure: Option<OracleCombatWitnessReplayError>,
 }
 
+// A policy proposal is a root-level capability donor, not another search
+// frontier. Re-running a bounded legacy rollout for every popped exact state
+// consumed most of the improvement budget after the first verified incumbent.
+// The planner owns all continuation search after this single proposal.
+const MAX_POLICY_WITNESS_PROPOSALS: usize = 1;
+
 impl OracleCombatWitnessSession {
     pub fn new(root: CombatDecisionRoot, config: OracleCombatWitnessConfig) -> Self {
         Self::with_policy(root, config, uniform_policy())
@@ -361,6 +395,8 @@ impl OracleCombatWitnessSession {
     }
 
     pub fn progress_snapshot(&self) -> OracleCombatWitnessProgressSnapshot {
+        let mut survival_by_turn =
+            std::collections::BTreeMap::<u32, OracleCombatDeepStateSnapshot>::new();
         let mut snapshot = OracleCombatWitnessProgressSnapshot {
             retained_states: self.retained_state_work(),
             queued_anchor_entries: self.anchor_frontier.len(),
@@ -375,15 +411,83 @@ impl OracleCombatWitnessSession {
             ..OracleCombatWitnessProgressSnapshot::default()
         };
         for state in self.states.iter().flatten() {
-            snapshot.max_player_turn = snapshot
-                .max_player_turn
-                .max(state.generator.root().position().combat.turn.turn_count);
+            let deep_state = deep_state_snapshot(state);
+            let replace_turn_survival =
+                survival_by_turn
+                    .get(&deep_state.player_turn)
+                    .is_none_or(|current| {
+                        (
+                            deep_state.player_hp,
+                            -deep_state.enemy_total_hp,
+                            -i32::try_from(deep_state.alive_enemy_count).unwrap_or(i32::MAX),
+                        ) > (
+                            current.player_hp,
+                            -current.enemy_total_hp,
+                            -i32::try_from(current.alive_enemy_count).unwrap_or(i32::MAX),
+                        )
+                    });
+            if replace_turn_survival {
+                survival_by_turn.insert(deep_state.player_turn, deep_state.clone());
+            }
+            if deep_state.player_turn > snapshot.max_player_turn {
+                snapshot.max_player_turn = deep_state.player_turn;
+                snapshot.deepest_survival_state = None;
+                snapshot.deepest_progress_state = None;
+                snapshot.deepest_survival_actions.clear();
+                snapshot.deepest_progress_actions.clear();
+            }
+            if deep_state.player_turn == snapshot.max_player_turn {
+                let replace_survival =
+                    snapshot
+                        .deepest_survival_state
+                        .as_ref()
+                        .is_none_or(|current| {
+                            (
+                                deep_state.player_hp,
+                                deep_state.player_block,
+                                -deep_state.enemy_total_hp,
+                            ) > (
+                                current.player_hp,
+                                current.player_block,
+                                -current.enemy_total_hp,
+                            )
+                        });
+                if replace_survival {
+                    snapshot.deepest_survival_state = Some(deep_state.clone());
+                    snapshot.deepest_survival_actions = state.actions.clone();
+                }
+                let replace_progress =
+                    snapshot
+                        .deepest_progress_state
+                        .as_ref()
+                        .is_none_or(|current| {
+                            (
+                                deep_state.enemy_total_hp,
+                                -deep_state.player_hp,
+                                -deep_state.player_block,
+                            ) < (
+                                current.enemy_total_hp,
+                                -current.player_hp,
+                                -current.player_block,
+                            )
+                        });
+                if replace_progress {
+                    snapshot.deepest_progress_state = Some(deep_state);
+                    snapshot.deepest_progress_actions = state.actions.clone();
+                }
+            }
             snapshot.max_path_atomic_depth =
                 snapshot.max_path_atomic_depth.max(state.path.atomic_depth);
             snapshot.max_completed_turn_options_at_state = snapshot
                 .max_completed_turn_options_at_state
                 .max(state.generator.completed_options().len());
         }
+        snapshot.recent_turn_survival_envelope = survival_by_turn
+            .into_values()
+            .rev()
+            .take(32)
+            .collect::<Vec<_>>();
+        snapshot.recent_turn_survival_envelope.reverse();
         snapshot
     }
 
@@ -448,6 +552,35 @@ impl OracleCombatWitnessSession {
             };
 
             self.used.agenda_pops = self.used.agenda_pops.saturating_add(1);
+            if self.used.policy_witness_proposals < MAX_POLICY_WITNESS_PROPOSALS {
+                self.used.policy_witness_proposals =
+                    self.used.policy_witness_proposals.saturating_add(1);
+                if let Some(proposal) = self
+                    .policy
+                    .witness_proposal(state.generator.root().position(), quantum.deadline)
+                {
+                    let mut actions = state.actions.clone();
+                    actions.extend(proposal.actions);
+                    let candidate = PendingWitnessReplay {
+                        actions,
+                        negative_log_policy: state.path.negative_log_policy,
+                        position: self.root.position().clone(),
+                        next_action: 0,
+                        engine_steps: 0,
+                        final_hp_hint: proposal.final_hp_hint,
+                    };
+                    let replace = self
+                        .pending_witness
+                        .as_ref()
+                        .is_none_or(|pending| pending_witness_better(&candidate, pending));
+                    if replace {
+                        self.pending_witness = Some(candidate);
+                    }
+                    self.states[state_id] = Some(state);
+                    self.queue_state(state_id);
+                    continue;
+                }
+            }
             let generation_grant = self.config.generation_work_per_agenda_pop.max(1).min(
                 self.granted_generation_work
                     .saturating_sub(self.used.generation_work),
@@ -614,11 +747,15 @@ impl OracleCombatWitnessSession {
         };
         state.queue_revision = state.queue_revision.saturating_add(1);
         let revision = state.queue_revision;
-        let priority = PathRank {
+        let path_priority = PathRank {
             atomic_depth: state.path.atomic_depth.saturating_add(local_depth),
             negative_log_policy: state.path.negative_log_policy + local_negative_log_policy,
         }
         .levin_log_priority();
+        let priority = service_aware_anchor_priority(
+            path_priority,
+            state.generator.counters().generation_work,
+        );
         let sequence_id = self.next_sequence_id;
         self.anchor_frontier.push(StateQueueEntry {
             state_id,
@@ -848,11 +985,21 @@ fn combined_anchor_priority(state: &SearchState) -> f64 {
     else {
         return f64::INFINITY;
     };
-    PathRank {
+    let path_priority = PathRank {
         atomic_depth: state.path.atomic_depth.saturating_add(local_depth),
         negative_log_policy: state.path.negative_log_policy + local_negative_log_policy,
     }
-    .levin_log_priority()
+    .levin_log_priority();
+    service_aware_anchor_priority(path_priority, state.generator.counters().generation_work)
+}
+
+/// The anchor is the liveness lane for resumable state generators.  A pure
+/// path rank can repeatedly select one attractive but very wide generator,
+/// leaving already materialized later-turn states with zero service.  Charging
+/// consumed generator work preserves the policy prior while making continued
+/// service progressively earn its budget.
+fn service_aware_anchor_priority(path_priority: f64, generation_work: usize) -> f64 {
+    path_priority + (generation_work.saturating_add(1) as f64).ln()
 }
 
 fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgressSnapshot {
@@ -868,6 +1015,46 @@ fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgr
         synced_options: state.synced_options,
         anchor_states_ahead: None,
         guided_states_ahead: None,
+    }
+}
+
+#[cfg(test)]
+mod anchor_priority_tests {
+    use super::service_aware_anchor_priority;
+
+    #[test]
+    fn consumed_generator_work_makes_anchor_service_progressively_less_preferred() {
+        let fresh = service_aware_anchor_priority(3.0, 0);
+        let once_served = service_aware_anchor_priority(3.0, 4);
+        let repeatedly_served = service_aware_anchor_priority(3.0, 64);
+
+        assert!(fresh < once_served);
+        assert!(once_served < repeatedly_served);
+    }
+}
+
+fn deep_state_snapshot(state: &SearchState) -> OracleCombatDeepStateSnapshot {
+    let combat = &state.generator.root().position().combat;
+    let alive_monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .collect::<Vec<_>>();
+    OracleCombatDeepStateSnapshot {
+        player_turn: combat.turn.turn_count,
+        player_hp: combat.entities.player.current_hp,
+        player_block: combat.entities.player.block,
+        alive_enemy_count: alive_monsters.len(),
+        enemy_total_hp: alive_monsters
+            .into_iter()
+            .map(|monster| monster.current_hp.max(0))
+            .sum(),
+        hand_size: combat.zones.hand.len(),
+        draw_pile_size: combat.zones.draw_pile.len(),
+        discard_pile_size: combat.zones.discard_pile.len(),
+        exhaust_pile_size: combat.zones.exhaust_pile.len(),
+        path_atomic_depth: state.path.atomic_depth,
     }
 }
 

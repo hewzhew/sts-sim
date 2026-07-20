@@ -27,8 +27,8 @@ use super::oracle_run_explorer::{
 };
 use super::{
     CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1,
-    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlTraceAnnotationV1,
-    RunDecisionAction, RunProgressStepV1,
+    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1,
+    RunControlTraceAnnotationV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -110,7 +110,15 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub exact_states: usize,
     pub completed_turn_options: usize,
     pub retained_state_work: usize,
+    pub root_state: Option<sts_combat_planner::OracleCombatWitnessStateProgressSnapshot>,
     pub max_player_turn: u32,
+    pub deepest_survival_state: Option<sts_combat_planner::OracleCombatDeepStateSnapshot>,
+    pub deepest_progress_state: Option<sts_combat_planner::OracleCombatDeepStateSnapshot>,
+    pub deepest_survival_actions: Vec<sts_combat_planner::TurnOptionAction>,
+    pub deepest_progress_actions: Vec<sts_combat_planner::TurnOptionAction>,
+    pub recent_turn_survival_envelope: Vec<sts_combat_planner::OracleCombatDeepStateSnapshot>,
+    pub pending_witness_replay: bool,
+    pub policy_witness_proposals: usize,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -495,6 +503,17 @@ impl OracleAnalysisSessionV1 {
         Ok(self.require_branch(node_id)?.journal.entries())
     }
 
+    pub fn continuation_parts(
+        &self,
+        node_id: usize,
+    ) -> Result<(RunProgressJournalV1, RunControlSessionCheckpointV1), String> {
+        let branch = self.require_branch(node_id)?;
+        Ok((
+            branch.journal.clone(),
+            RunControlSessionCheckpointV1::from_session(&branch.session),
+        ))
+    }
+
     pub fn combat_trajectory(
         &self,
         node_id: usize,
@@ -854,6 +873,22 @@ impl OracleAnalysisSessionV1 {
                 self.combat_budgets.for_session(&branch.session),
             )?;
             self.combat_jobs.insert(source_node_id, work);
+        } else {
+            let work = self
+                .combat_jobs
+                .get_mut(&source_node_id)
+                .expect("analysis combat job exists");
+            work.mark_search_resume_exact();
+            let requested_nodes = request.quantum_nodes.saturating_mul(request.max_quanta);
+            let requested_wall_ms = request.wall_ms.or_else(|| {
+                request.quantum_ms.map(|quantum_ms| {
+                    quantum_ms.saturating_mul(u64::try_from(request.max_quanta).unwrap_or(u64::MAX))
+                })
+            });
+            work.ensure_requested_allowance(
+                requested_nodes,
+                requested_wall_ms.map(Duration::from_millis),
+            );
         }
         let started = Instant::now();
         let deadline = request
@@ -866,6 +901,7 @@ impl OracleAnalysisSessionV1 {
         };
         let mut quanta_served = 0usize;
         let mut ready_to_finish = false;
+        let mut allowance_exhausted = false;
         for _ in 0..request.max_quanta {
             let work = self
                 .combat_jobs
@@ -876,16 +912,29 @@ impl OracleAnalysisSessionV1 {
                     quanta_served = quanta_served.saturating_add(1);
                 }
                 RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => break,
-                RunControlCombatWorkAdvanceV1::ReadyToFinish
-                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                RunControlCombatWorkAdvanceV1::ReadyToFinish => {
                     quanta_served = quanta_served.saturating_add(1);
                     ready_to_finish = true;
+                    break;
+                }
+                RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
+                    quanta_served = quanta_served.saturating_add(1);
+                    allowance_exhausted = true;
                     break;
                 }
             }
             if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 break;
             }
+        }
+        if allowance_exhausted {
+            return Ok(OracleAnalysisAdvanceReportV1 {
+                source_node_id,
+                status: OracleAnalysisAdvanceStatusV1::BudgetUnknown,
+                quanta_served,
+                elapsed_ms: elapsed_ms(started),
+                combat: self.combat_progress(source_node_id),
+            });
         }
         if !ready_to_finish {
             return Ok(OracleAnalysisAdvanceReportV1 {
@@ -902,22 +951,8 @@ impl OracleAnalysisSessionV1 {
             .remove(&source_node_id)
             .expect("ready analysis combat job exists");
         let final_progress = combat_progress_view(&work);
-        let child_node_id = self
-            .explorer
-            .materialize_explicit_combat(source_node_id, work)?;
+        let child_node_id = self.materialize_combat_work(source_node_id, work)?;
         let status = if let Some(child_node_id) = child_node_id {
-            let child = self.require_branch(child_node_id)?;
-            let edge_id = self.record_edge(
-                source_node_id,
-                child_node_id,
-                OracleAnalysisEdgeKindV1::CombatWitness,
-                format!(
-                    "combat witness -> {} HP",
-                    child.session.run_state.current_hp
-                ),
-                None,
-            );
-            self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);
             OracleAnalysisAdvanceStatusV1::BoundaryReached { child_node_id }
         } else {
             match self
@@ -946,6 +981,33 @@ impl OracleAnalysisSessionV1 {
         })
     }
 
+    /// Commits the current combat's already verified incumbent without asking
+    /// the search to spend more quality-improvement budget. This is an
+    /// explicit analyst action; BudgetUnknown never commits itself.
+    pub fn accept_cursor_combat_incumbent(&mut self) -> Result<usize, String> {
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        let Some(work) = self.combat_jobs.remove(&source_node_id) else {
+            return Err(format!(
+                "oracle analysis node {source_node_id} has no resident combat search"
+            ));
+        };
+        if !work.has_verified_witness() {
+            self.combat_jobs.insert(source_node_id, work);
+            return Err(format!(
+                "oracle analysis node {source_node_id} has no verified combat incumbent"
+            ));
+        }
+        self.materialize_combat_work(source_node_id, work)?
+            .ok_or_else(|| "verified combat incumbent did not materialize a child".to_string())
+    }
+
     /// Discards only the cursor combat's retained search work and starts a
     /// fresh tactical job from the same exact simulator state. Historical run
     /// state, journal entries, siblings, and navigation remain unchanged.
@@ -966,6 +1028,31 @@ impl OracleAnalysisSessionV1 {
         };
         self.combat_jobs.insert(node_id, work);
         Ok(())
+    }
+
+    fn materialize_combat_work(
+        &mut self,
+        source_node_id: usize,
+        work: OracleRunCombatWorkV1,
+    ) -> Result<Option<usize>, String> {
+        let child_node_id = self
+            .explorer
+            .materialize_explicit_combat(source_node_id, work)?;
+        if let Some(child_node_id) = child_node_id {
+            let child = self.require_branch(child_node_id)?;
+            let edge_id = self.record_edge(
+                source_node_id,
+                child_node_id,
+                OracleAnalysisEdgeKindV1::CombatWitness,
+                format!(
+                    "combat witness -> {} HP",
+                    child.session.run_state.current_hp
+                ),
+                None,
+            );
+            self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);
+        }
+        Ok(child_node_id)
     }
 
     fn require_branch(
@@ -1170,17 +1257,27 @@ fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatPro
         exact_states: progress.exact_states,
         completed_turn_options: progress.completed_turn_options,
         retained_state_work: progress.retained_state_work,
+        root_state: progress.root_state,
         max_player_turn: progress.max_player_turn,
+        deepest_survival_state: progress.deepest_survival_state,
+        deepest_progress_state: progress.deepest_progress_state,
+        deepest_survival_actions: progress.deepest_survival_actions,
+        deepest_progress_actions: progress.deepest_progress_actions,
+        recent_turn_survival_envelope: progress.recent_turn_survival_envelope,
+        pending_witness_replay: progress.pending_witness_replay,
+        policy_witness_proposals: progress.policy_witness_proposals,
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_hp_loss: progress.incumbent_hp_loss,
         incumbent_action_count: progress.incumbent_action_count,
         quantum_count: work.quantum_count(),
         remaining_nodes: work.remaining_nodes(),
         remaining_wall_ms: work.remaining_wall_ms(),
-        resume_kind: if work.restart_count() == 0 {
-            OracleCombatSearchResumeKindV1::Fresh
-        } else {
+        resume_kind: if work.restart_count() > 0 {
             OracleCombatSearchResumeKindV1::StateReplayExactSearchRestarted
+        } else if work.search_resume_exact() {
+            OracleCombatSearchResumeKindV1::SearchResumeExact
+        } else {
+            OracleCombatSearchResumeKindV1::Fresh
         },
         restart_count: work.restart_count(),
         last_status: progress.last_status,

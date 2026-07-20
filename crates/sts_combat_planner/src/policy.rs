@@ -1,8 +1,11 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use sts_core::state::core::ClientInput;
+
+use crate::types::TurnOptionAction;
 
 /// One exact choice on a concrete simulator action surface.
 ///
@@ -27,6 +30,15 @@ impl CombatStateGuideRank {
     }
 }
 
+/// A domain policy may cheaply propose a complete tactical suffix. The
+/// planner never trusts the proposal as an outcome: every action and exact
+/// successor hash is replayed from the original root before a witness exists.
+#[derive(Clone, Debug)]
+pub struct CombatPolicyWitnessProposal {
+    pub actions: Vec<TurnOptionAction>,
+    pub final_hp_hint: i32,
+}
+
 /// Supplies search guidance only. Returning a small weight never changes
 /// legality, and invalid weights are treated as neutral rather than trusted.
 pub trait CombatActionPolicy: Send + Sync {
@@ -45,6 +57,16 @@ pub trait CombatActionPolicy: Send + Sync {
     /// heuristics (for example, progress and survival).
     fn state_guide_ranks(&self, position: &CombatPosition) -> Vec<CombatStateGuideRank> {
         self.state_guide_rank(position).into_iter().collect()
+    }
+
+    /// Optional bounded tactical suffix proposal for the current exact state.
+    /// This is guidance only; the witness search owns legality and exact replay.
+    fn witness_proposal(
+        &self,
+        _position: &CombatPosition,
+        _deadline: Option<Instant>,
+    ) -> Option<CombatPolicyWitnessProposal> {
+        None
     }
 }
 

@@ -138,8 +138,8 @@ fn replace_shop_relic_slot(run_state: &mut RunState, shop: &mut ShopState, idx: 
         };
     };
 
-    if idx < shop.relics.len() {
-        shop.relics[idx] = replacement;
+    if idx <= shop.relics.len() {
+        shop.relics.insert(idx, replacement);
     } else {
         shop.relics.push(replacement);
     }
@@ -153,8 +153,8 @@ fn replace_shop_potion_slot(run_state: &mut RunState, shop: &mut ShopState, idx:
         can_buy: true,
         blocked_reason: None,
     };
-    if idx < shop.potions.len() {
-        shop.potions[idx] = replacement;
+    if idx <= shop.potions.len() {
+        shop.potions.insert(idx, replacement);
     } else {
         shop.potions.push(replacement);
     }
@@ -191,8 +191,8 @@ fn replace_shop_card_slot(
         can_buy: true,
         blocked_reason: None,
     };
-    if idx < shop.cards.len() {
-        shop.cards[idx] = replacement;
+    if idx <= shop.cards.len() {
+        shop.cards.insert(idx, replacement);
     } else {
         shop.cards.push(replacement);
     }
@@ -601,6 +601,47 @@ mod tests {
     }
 
     #[test]
+    fn buying_cauldron_returns_to_updated_shop_after_overlay_rewards() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 500;
+        let mut shop = ShopState::new();
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Cauldron,
+            price: 150,
+            can_buy: true,
+            blocked_reason: None,
+        });
+
+        let next = handle(&mut run_state, &mut shop, Some(ClientInput::BuyRelic(0)))
+            .expect("Cauldron should open an overlay reward screen");
+
+        let EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } = next
+        else {
+            panic!("expected reward overlay");
+        };
+        assert_eq!(run_state.gold, 350);
+        assert_eq!(shop.relics.len(), 0);
+        assert_eq!(
+            reward_state
+                .items
+                .iter()
+                .filter(|item| matches!(item, crate::state::rewards::RewardItem::Potion { .. }))
+                .count(),
+            5
+        );
+        let EngineState::Shop(return_shop) = *return_state else {
+            panic!("Cauldron overlay should return to shop");
+        };
+        assert!(
+            return_shop.relics.is_empty(),
+            "returning to shop must not resurrect the purchased Cauldron slot"
+        );
+    }
+
+    #[test]
     fn shop_can_reopen_pending_reward_overlay_once() {
         let mut run_state = RunState::new(1, 0, false, "Ironclad");
         let mut shop = ShopState::new();
@@ -824,6 +865,85 @@ mod tests {
         assert!(next.is_none());
         assert_eq!(shop.potions.len(), 1);
         assert!(run_state.potions.iter().any(|p| p.is_some()));
+    }
+
+    #[test]
+    fn courier_restock_preserves_unpurchased_neighbor_offers() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.gold = 1_000;
+        run_state.relics.clear();
+        run_state.relics.push(RelicState::new(RelicId::Courier));
+
+        let mut card_shop = ShopState::new();
+        card_shop.cards = vec![
+            ShopCard {
+                card_id: CardId::Strike,
+                upgrades: 0,
+                price: 10,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::Defend,
+                upgrades: 0,
+                price: 11,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+        handle(
+            &mut run_state,
+            &mut card_shop,
+            Some(ClientInput::BuyCard(0)),
+        );
+        assert_eq!(card_shop.cards.len(), 2);
+        assert_eq!(card_shop.cards[1].card_id, CardId::Defend);
+
+        let mut potion_shop = ShopState::new();
+        potion_shop.potions = vec![
+            ShopPotion {
+                potion_id: PotionId::BlockPotion,
+                price: 10,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopPotion {
+                potion_id: PotionId::StrengthPotion,
+                price: 11,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+        handle(
+            &mut run_state,
+            &mut potion_shop,
+            Some(ClientInput::BuyPotion(0)),
+        );
+        assert_eq!(potion_shop.potions.len(), 2);
+        assert_eq!(potion_shop.potions[1].potion_id, PotionId::StrengthPotion);
+
+        let mut relic_shop = ShopState::new();
+        relic_shop.relics = vec![
+            ShopRelic {
+                relic_id: RelicId::Akabeko,
+                price: 10,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopRelic {
+                relic_id: RelicId::Anchor,
+                price: 11,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ];
+        handle(
+            &mut run_state,
+            &mut relic_shop,
+            Some(ClientInput::BuyRelic(0)),
+        );
+        assert_eq!(relic_shop.relics.len(), 2);
+        assert_eq!(relic_shop.relics[1].relic_id, RelicId::Anchor);
     }
 
     #[test]

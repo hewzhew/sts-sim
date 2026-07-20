@@ -1119,6 +1119,34 @@ fn run_level_potion_discard_is_blocked_by_we_meet_again() {
 }
 
 #[test]
+fn run_level_potion_discard_works_inside_reward_overlay() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.potions = vec![Some(crate::content::potions::Potion::new(
+        crate::content::potions::PotionId::AncientPotion,
+        101,
+    ))];
+    let mut engine_state = EngineState::reward_overlay(
+        crate::state::rewards::RewardState::new(),
+        EngineState::Shop(crate::state::shop::ShopState::new()),
+    );
+    let expected_surface = engine_state.clone();
+    let mut combat_state = None;
+
+    assert!(tick_run(
+        &mut engine_state,
+        &mut run_state,
+        &mut combat_state,
+        Some(ClientInput::DiscardPotion(0)),
+    ));
+
+    assert!(run_state.potions[0].is_none());
+    assert_eq!(
+        engine_state, expected_surface,
+        "discarding a potion must not close the overlaid Cauldron reward screen"
+    );
+}
+
+#[test]
 fn run_level_potion_execution_respects_imported_affordance_flags() {
     let mut disabled_use = RunState::new(1, 0, false, "Ironclad");
     disabled_use.current_hp = 10;

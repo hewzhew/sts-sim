@@ -1,11 +1,14 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
+
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatDecisionRoot, OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, OracleCombatWitnessStatus,
-    TurnOptionGeneratorConfig,
+    CombatDecisionRoot, OracleCombatDeepStateSnapshot, OracleCombatWitness,
+    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessSession, OracleCombatWitnessStateProgressSnapshot,
+    OracleCombatWitnessStatus, TurnOptionAction, TurnOptionGeneratorConfig,
 };
 
 use super::combat_line_executor::apply_oracle_combat_witness;
@@ -30,6 +33,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     quanta_since_incumbent_improvement: usize,
     last_quantum_generation_work: usize,
     last_quantum_engine_steps: usize,
+    search_resume_exact: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -61,11 +65,18 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub retained_state_work: usize,
     pub queued_anchor_entries: usize,
     pub queued_guided_entries: Vec<usize>,
+    pub root_state: Option<OracleCombatWitnessStateProgressSnapshot>,
     pub max_player_turn: u32,
+    pub deepest_survival_state: Option<OracleCombatDeepStateSnapshot>,
+    pub deepest_progress_state: Option<OracleCombatDeepStateSnapshot>,
+    pub deepest_survival_actions: Vec<TurnOptionAction>,
+    pub deepest_progress_actions: Vec<TurnOptionAction>,
+    pub recent_turn_survival_envelope: Vec<OracleCombatDeepStateSnapshot>,
     pub max_path_atomic_depth: usize,
     pub max_completed_turn_options_at_state: usize,
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
+    pub policy_witness_proposals: usize,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -137,6 +148,7 @@ impl OracleRunCombatWorkV1 {
             quanta_since_incumbent_improvement: 0,
             last_quantum_generation_work: 0,
             last_quantum_engine_steps: 0,
+            search_resume_exact: false,
         })
     }
 
@@ -206,7 +218,7 @@ impl OracleRunCombatWorkV1 {
             return RunControlCombatWorkAdvanceV1::GlobalDeadlineReached;
         }
         let work = quantum.additional_nodes.min(self.remaining_work);
-        if work == 0 || self.remaining_wall_time == Some(Duration::ZERO) {
+        if work == 0 || wall_allowance_exhausted(self.remaining_wall_time) {
             return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
         }
         let requested_wall = quantum.soft_wall_ms.map(Duration::from_millis);
@@ -274,7 +286,7 @@ impl OracleRunCombatWorkV1 {
             OracleCombatWitnessStatus::Partial(_) => {
                 if self.remaining_work == 0
                     || self.remaining_engine_steps == 0
-                    || self.remaining_wall_time == Some(Duration::ZERO)
+                    || wall_allowance_exhausted(self.remaining_wall_time)
                 {
                     RunControlCombatWorkAdvanceV1::AllowanceExhausted
                 } else {
@@ -282,6 +294,42 @@ impl OracleRunCombatWorkV1 {
                 }
             }
         }
+    }
+
+    /// Extends only an exhausted allowance dimension. The tactical frontier,
+    /// transposition table, generators, and incumbent remain resident.
+    /// Ensures an explicit analysis request receives the allowance it asked
+    /// for without discarding an existing tactical frontier. In particular,
+    /// a two-second tail from the previous request must not consume a whole
+    /// autosave cycle before a requested thirty-second continuation begins.
+    pub(super) fn ensure_requested_allowance(
+        &mut self,
+        requested_nodes: usize,
+        requested_wall_time: Option<Duration>,
+    ) {
+        self.remaining_work = self.remaining_work.max(requested_nodes);
+        self.remaining_engine_steps = self
+            .remaining_engine_steps
+            .max(requested_nodes.saturating_mul(self.max_transition_steps));
+        if let (Some(remaining), Some(requested)) =
+            (&mut self.remaining_wall_time, requested_wall_time)
+        {
+            *remaining = (*remaining).max(requested);
+        }
+    }
+
+    pub(super) fn mark_search_resume_exact(&mut self) {
+        if self.quantum_count > 0 {
+            self.search_resume_exact = true;
+        }
+    }
+
+    pub(super) fn search_resume_exact(&self) -> bool {
+        self.search_resume_exact
+    }
+
+    pub(super) fn has_verified_witness(&self) -> bool {
+        self.search.witness().is_some()
     }
 
     pub(super) fn nodes_expanded(&self) -> u64 {
@@ -326,12 +374,19 @@ impl OracleRunCombatWorkV1 {
             retained_state_work: self.search.retained_state_work(),
             queued_anchor_entries: search_progress.queued_anchor_entries,
             queued_guided_entries: search_progress.queued_guided_entries,
+            root_state: search_progress.root_state,
             max_player_turn: search_progress.max_player_turn,
+            deepest_survival_state: search_progress.deepest_survival_state,
+            deepest_progress_state: search_progress.deepest_progress_state,
+            deepest_survival_actions: search_progress.deepest_survival_actions,
+            deepest_progress_actions: search_progress.deepest_progress_actions,
+            recent_turn_survival_envelope: search_progress.recent_turn_survival_envelope,
             max_path_atomic_depth: search_progress.max_path_atomic_depth,
             max_completed_turn_options_at_state: search_progress
                 .max_completed_turn_options_at_state,
             generation_gap_count: search_progress.generation_gap_count,
             pending_witness_replay: search_progress.pending_witness_replay,
+            policy_witness_proposals: counters.policy_witness_proposals,
             incumbent_final_hp,
             incumbent_hp_loss: incumbent_final_hp
                 .map(|final_hp| initial_hp.saturating_sub(final_hp).max(0)),
@@ -369,6 +424,22 @@ impl OracleRunCombatWorkV1 {
         .with_combat_search_rejection(
             RunControlCombatSearchRejection::NoCompleteWinningCandidate,
         ))
+    }
+}
+
+fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
+    remaining.is_some_and(|duration| duration < MIN_USABLE_WALL_ALLOWANCE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sub_millisecond_wall_tail_is_not_treated_as_usable_allowance() {
+        assert!(wall_allowance_exhausted(Some(Duration::from_micros(999))));
+        assert!(!wall_allowance_exhausted(Some(Duration::from_millis(1))));
+        assert!(!wall_allowance_exhausted(None));
     }
 }
 

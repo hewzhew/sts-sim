@@ -301,6 +301,34 @@ fn reward_candidates(
             }
         }
     }
+    let has_unclaimed_potion = reward
+        .items
+        .iter()
+        .any(|item| matches!(item, crate::state::rewards::RewardItem::Potion { .. }));
+    let is_we_meet_again = session
+        .run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
+    if has_unclaimed_potion
+        && session.run_state.find_empty_potion_slot().is_none()
+        && crate::content::potions::potion_can_discard_in_event(is_we_meet_again)
+    {
+        candidates.extend(session.run_state.potions.iter().enumerate().filter_map(
+            |(slot, potion)| {
+                let potion = potion.as_ref().filter(|potion| potion.can_discard)?;
+                Some(candidate(
+                    format!("discard-potion-{slot}"),
+                    format!(
+                        "Discard {} to make room for potion reward",
+                        get_potion_definition(potion.id).name
+                    ),
+                    ClientInput::DiscardPotion(slot),
+                    Some("the unclaimed potion reward remains available"),
+                ))
+            },
+        ));
+    }
     if reward.skippable {
         let (id, label, note, input) = if let Some(return_state) = overlay_return_state {
             (
@@ -1000,6 +1028,7 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::potions::{Potion, PotionId};
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::{
@@ -1115,5 +1144,44 @@ mod tests {
                 && candidate.action.executable_input() == Some(ClientInput::Cancel)
         }));
         assert!(!candidates.iter().any(|candidate| candidate.id == "skip"));
+    }
+
+    #[test]
+    fn full_potion_belt_can_discard_before_claiming_potion_reward() {
+        let mut session = RunControlSession::new(Default::default());
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::Elixir, 10)),
+            Some(Potion::new(PotionId::FairyPotion, 20)),
+            Some(Potion::new(PotionId::GamblersBrew, 30)),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::CultistPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let candidates = decision_candidates(&session);
+        let discard = candidates
+            .iter()
+            .find(|candidate| candidate.id == "discard-potion-0")
+            .expect("a full belt should expose discard actions before a potion reward");
+        assert_eq!(
+            discard.action.executable_input(),
+            Some(ClientInput::DiscardPotion(0))
+        );
+
+        session
+            .apply_decision_action(RunDecisionAction::Input(ClientInput::DiscardPotion(0)))
+            .expect("discarding from the reward screen should be executable");
+        assert!(session.run_state.potions[0].is_none());
+        let EngineState::RewardScreen(reward) = &session.engine_state else {
+            panic!("discarding a potion must preserve the reward screen");
+        };
+        assert!(matches!(
+            reward.items.as_slice(),
+            [RewardItem::Potion {
+                potion_id: PotionId::CultistPotion
+            }]
+        ));
     }
 }

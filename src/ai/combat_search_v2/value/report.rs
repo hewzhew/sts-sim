@@ -34,6 +34,11 @@ pub(in crate::ai::combat_search_v2) fn combat_search_frontier_value_report(
             .phase_adjusted_living_enemy_effort,
         split_pending_count: facts.phase_profile.enemy_phase.split_pending_count,
         split_debt_hp: facts.phase_profile.enemy_phase.split_debt_hp,
+        awakened_rebirth_pending_count: facts
+            .phase_profile
+            .enemy_phase
+            .awakened_rebirth_pending_count,
+        awakened_rebirth_debt_hp: facts.phase_profile.enemy_phase.awakened_rebirth_debt_hp,
         guardian_defensive_count: facts.phase_profile.enemy_phase.guardian_defensive_count,
         guardian_defensive_block: facts.phase_profile.enemy_phase.guardian_defensive_block,
         guardian_mode_shift_pending_count: facts

@@ -3758,10 +3758,12 @@ fn cauldron_burns_standard_card_reward_rng_before_removing_it_like_java_open() {
     let mut run = crate::state::run::RunState::new(21, 0, false, "Ironclad");
     let card_rng_before = run.rng_pool.card_rng.counter;
 
-    let Some(crate::state::core::EngineState::RewardScreen(rewards)) =
-        cauldron::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
+    let Some(crate::state::core::EngineState::RewardOverlay {
+        reward_state: rewards,
+        return_state,
+    }) = cauldron::on_equip(&mut run, crate::state::core::EngineState::MapNavigation)
     else {
-        panic!("expected Cauldron to open a reward screen");
+        panic!("expected Cauldron to open a reward overlay");
     };
 
     assert!(
@@ -3772,6 +3774,10 @@ fn cauldron_burns_standard_card_reward_rng_before_removing_it_like_java_open() {
         .items
         .iter()
         .all(|item| !matches!(item, crate::rewards::state::RewardItem::Card { .. })));
+    assert!(matches!(
+        *return_state,
+        crate::state::core::EngineState::MapNavigation
+    ));
 }
 
 #[test]

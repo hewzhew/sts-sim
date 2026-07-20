@@ -87,3 +87,41 @@ fn guardian_defensive_block_counts_as_phase_effort() {
     assert_eq!(value.guardian_defensive_count, 1);
     assert_eq!(value.guardian_defensive_block, 20);
 }
+
+#[test]
+fn awakened_one_form_one_includes_full_rebirth_phase_debt() {
+    let mut combat = blank_test_combat();
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 10;
+    awakened.current_hp = 1;
+    awakened.max_hp = 300;
+    awakened.awakened_one.form1 = true;
+    combat.entities.monsters = vec![awakened];
+
+    let value = enemy_phase_value(&combat);
+
+    assert_eq!(value.raw_living_enemy_hp, 1);
+    assert_eq!(value.phase_adjusted_living_enemy_hp, 301);
+    assert_eq!(value.phase_adjusted_living_enemy_effort, 301);
+    assert_eq!(value.split_pending_count, 0);
+    assert_eq!(value.split_debt_hp, 0);
+    assert_eq!(value.awakened_rebirth_pending_count, 1);
+    assert_eq!(value.awakened_rebirth_debt_hp, 300);
+}
+
+#[test]
+fn awakened_one_form_two_has_no_remaining_rebirth_debt() {
+    let mut combat = blank_test_combat();
+    let mut awakened = test_monster(EnemyId::AwakenedOne);
+    awakened.id = 11;
+    awakened.current_hp = 300;
+    awakened.max_hp = 300;
+    awakened.awakened_one.form1 = false;
+    combat.entities.monsters = vec![awakened];
+
+    let value = enemy_phase_value(&combat);
+
+    assert_eq!(value.phase_adjusted_living_enemy_hp, 300);
+    assert_eq!(value.awakened_rebirth_pending_count, 0);
+    assert_eq!(value.awakened_rebirth_debt_hp, 0);
+}

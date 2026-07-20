@@ -55,6 +55,8 @@ pub(super) fn combat_search_phase_profile_report(
         special_enemy_phase_count: profile.special_enemy_phase_count(),
         split_pending_count: profile.enemy_phase.split_pending_count,
         split_debt_hp: profile.enemy_phase.split_debt_hp,
+        awakened_rebirth_pending_count: profile.enemy_phase.awakened_rebirth_pending_count,
+        awakened_rebirth_debt_hp: profile.enemy_phase.awakened_rebirth_debt_hp,
         guardian_mode_shift_pending_count: profile
             .enemy_mechanics
             .guardian_mode_shift_pending_count,
@@ -81,6 +83,7 @@ impl CombatSearchPhaseProfileV1 {
     pub(super) fn special_enemy_phase_count(self) -> usize {
         self.enemy_phase
             .split_pending_count
+            .saturating_add(self.enemy_phase.awakened_rebirth_pending_count)
             .saturating_add(self.enemy_mechanics.guardian_mode_shift_pending_count)
             .saturating_add(self.enemy_mechanics.guardian_defensive_count)
             .saturating_add(self.enemy_mechanics.lagavulin_sleeping_count)

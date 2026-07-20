@@ -83,6 +83,13 @@ pub enum OracleAnalysisServiceCommandV1 {
         node: usize,
         owner_rank: u64,
     },
+    /// Apply a short, exact path of decision candidate ids while the workspace
+    /// stays resident, then autosave once. If a later candidate is unavailable,
+    /// the successfully applied prefix is retained and reported explicitly.
+    ChoosePath {
+        node: usize,
+        candidate_ids: Vec<String>,
+    },
     Focus {
         node: usize,
     },
@@ -101,6 +108,7 @@ pub enum OracleAnalysisServiceCommandV1 {
         #[serde(default)]
         wall_ms: Option<u64>,
     },
+    AcceptCombat,
     RestartCombat,
     History {
         #[serde(default)]
@@ -127,6 +135,10 @@ pub enum OracleAnalysisServiceCommandV1 {
         node: usize,
     },
     ExportCombatCase {
+        node: usize,
+        path: PathBuf,
+    },
+    ExportContinuation {
         node: usize,
         path: PathBuf,
     },
@@ -475,9 +487,9 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "view", "tree", "try",
-                    "focus", "choose", "follow", "back", "promote", "advance", "restart_combat", "history",
+                    "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary",
-                    "export_combat_case", "save", "shutdown"
+                    "export_combat_case", "export_continuation", "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
                 "autosave": "after every successful mutation",
@@ -550,6 +562,63 @@ fn execute_command(
             let view = workspace.try_choice(&choice_ref)?;
             (node_summary(&view), true, false, false)
         }
+        OracleAnalysisServiceCommandV1::ChoosePath {
+            node,
+            candidate_ids,
+        } => {
+            let current_node = workspace.session.cursor_node_id();
+            if current_node != node {
+                return Err(format!(
+                    "oracle choose_path expected cursor node {node}, but current cursor is {current_node}"
+                ));
+            }
+            if candidate_ids.is_empty() {
+                return Err("oracle choose_path requires at least one candidate id".to_string());
+            }
+
+            let mut applied = Vec::new();
+            let mut stopped = None;
+            for candidate_id in candidate_ids {
+                let current = workspace.view()?;
+                let matching = current
+                    .choices
+                    .iter()
+                    .filter(|choice| choice.candidate_id == candidate_id)
+                    .collect::<Vec<_>>();
+                let [choice] = matching.as_slice() else {
+                    stopped = Some(format!(
+                        "oracle node {} has {} choices with candidate id '{}'; expected exactly one",
+                        current.node_id,
+                        matching.len(),
+                        candidate_id
+                    ));
+                    break;
+                };
+                let parent_node_id = current.node_id;
+                let label = choice.label.clone();
+                let choice_ref = choice.choice_ref.clone();
+                let view = workspace.try_choice(&choice_ref)?;
+                applied.push(json!({
+                    "parent_node_id": parent_node_id,
+                    "child_node_id": view.node_id,
+                    "candidate_id": candidate_id,
+                    "label": label,
+                }));
+            }
+
+            let view = workspace.view()?;
+            (
+                json!({
+                    "completed": stopped.is_none(),
+                    "applied": applied,
+                    "stopped": stopped,
+                    "node": node_summary(&view),
+                }),
+                !applied.is_empty(),
+                false,
+                false,
+            )
+        }
         OracleAnalysisServiceCommandV1::Focus { node } => {
             workspace.session.focus_node(node)?;
             (node_summary(&workspace.view()?), true, false, false)
@@ -590,6 +659,10 @@ fn execute_command(
                 false,
                 false,
             )
+        }
+        OracleAnalysisServiceCommandV1::AcceptCombat => {
+            let view = workspace.accept_combat_incumbent()?;
+            (node_summary(&view), true, false, false)
         }
         OracleAnalysisServiceCommandV1::RestartCombat => {
             workspace.session.restart_cursor_combat_search()?;
@@ -752,6 +825,20 @@ fn execute_command(
                     "node_id": node,
                     "path": path,
                     "combat": case.combat,
+                }),
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::ExportContinuation { node, path } => {
+            let continuation = workspace.continuation(node)?;
+            super::oracle_run::save_oracle_run_continuation_v1(&path, &continuation)?;
+            (
+                json!({
+                    "node_id": node,
+                    "path": path,
+                    "journal_entries": continuation.journal.entries().len(),
                 }),
                 false,
                 false,

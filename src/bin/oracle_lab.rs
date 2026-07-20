@@ -20,7 +20,7 @@ use sts_simulator::runtime::branch::{
     serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisWorkspaceV1,
     OracleRunBudget, OracleRunConfig,
 };
-use sts_simulator::sim::combat::EngineCombatStepper;
+use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::state::core::ClientInput;
 
 #[derive(Debug, Parser)]
@@ -67,6 +67,9 @@ enum Command {
         max_engine_steps_per_transition: usize,
         #[arg(long)]
         watch_state_hash: Option<String>,
+        /// Replay this exact legal input prefix before starting the planner.
+        #[arg(long)]
+        prefix_actions: Option<PathBuf>,
     },
     /// Check when one exact complete-turn action sequence is generated.
     TurnMembership {
@@ -138,6 +141,11 @@ enum Command {
         quantum_ms: u64,
         #[arg(long)]
         wall_ms: Option<u64>,
+    },
+    /// Accept the current combat's already verified incumbent.
+    AcceptCombat {
+        #[arg(long)]
+        workspace: PathBuf,
     },
     /// Restart tactical search from the cursor's unchanged exact combat state.
     RestartCombat {
@@ -247,9 +255,43 @@ fn main() -> Result<(), String> {
             wall_ms,
             max_engine_steps_per_transition,
             watch_state_hash,
+            prefix_actions,
         } => {
             let case = load_combat_case(&case)?;
-            let root = CombatDecisionRoot::new(case.position)
+            let stepper = EngineCombatStepper;
+            let mut position = case.position;
+            let prefix = prefix_actions
+                .as_ref()
+                .map(|path| {
+                    serde_json::from_slice::<Vec<ClientInput>>(
+                        &std::fs::read(path).map_err(|error| error.to_string())?,
+                    )
+                    .map_err(|error| format!("invalid prefix action list: {error}"))
+                })
+                .transpose()?
+                .unwrap_or_default();
+            for (action_index, input) in prefix.iter().enumerate() {
+                if stepper.choice_for_legal_input(&position, input).is_none() {
+                    return Err(format!(
+                        "combat prefix action {action_index} is not legal at its exact state: {input:?}"
+                    ));
+                }
+                let step = stepper.apply_to_stable(
+                    &position,
+                    input.clone(),
+                    CombatStepLimits {
+                        max_engine_steps: max_engine_steps_per_transition,
+                        deadline: None,
+                    },
+                );
+                if step.truncated {
+                    return Err(format!(
+                        "combat prefix action {action_index} exceeded the engine-step limit"
+                    ));
+                }
+                position = step.position;
+            }
+            let root = CombatDecisionRoot::new(position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
             let mut search = OracleCombatWitnessSession::with_policy(
@@ -290,6 +332,10 @@ fn main() -> Result<(), String> {
                     "wall_ms": wall_ms,
                     "max_engine_steps_per_transition": max_engine_steps_per_transition,
                 },
+                "prefix": {
+                    "action_count": prefix.len(),
+                    "actions": prefix,
+                },
                 "counters": {
                     "agenda_pops": report.after.agenda_pops,
                     "generation_work": report.after.generation_work,
@@ -299,12 +345,18 @@ fn main() -> Result<(), String> {
                     "unique_successor_states": report.after.unique_successor_states,
                     "duplicate_exact_successors": report.after.duplicate_exact_successors,
                     "completed_turn_options": report.after.completed_turn_options,
+                    "policy_witness_proposals": report.after.policy_witness_proposals,
                 },
                 "progress": {
                     "retained_states": progress.retained_states,
                     "queued_anchor_entries": progress.queued_anchor_entries,
                     "queued_guided_entries": progress.queued_guided_entries,
                     "max_player_turn": progress.max_player_turn,
+                    "deepest_survival_state": progress.deepest_survival_state,
+                    "deepest_survival_actions": progress.deepest_survival_actions,
+                    "deepest_progress_state": progress.deepest_progress_state,
+                    "deepest_progress_actions": progress.deepest_progress_actions,
+                    "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
                     "max_path_atomic_depth": progress.max_path_atomic_depth,
                     "max_completed_turn_options_at_state": progress.max_completed_turn_options_at_state,
                     "generation_gap_count": progress.generation_gap_count,
@@ -472,6 +524,12 @@ fn main() -> Result<(), String> {
             })?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&AdvanceOutput { report, view })
+        }
+        Command::AcceptCombat { workspace } => {
+            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let view = analysis.accept_combat_incumbent()?;
+            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
+            print_json(&view)
         }
         Command::RestartCombat { workspace } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;

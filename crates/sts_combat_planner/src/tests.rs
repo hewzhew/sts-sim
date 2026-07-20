@@ -15,6 +15,7 @@ use sts_core::sim::combat_action_surface::{
 use sts_core::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 
 use super::*;
+use crate::types::exact_hash;
 
 const PLAY: ClientInput = ClientInput::PlayCard {
     card_index: 0,
@@ -46,6 +47,25 @@ impl CombatActionPolicy for PreferPlayPolicy {
                 .map(|monster| monster.current_hp.max(0))
                 .sum::<i32>(),
         ]))
+    }
+}
+
+#[derive(Clone)]
+struct FixedWitnessProposalPolicy {
+    proposal: CombatPolicyWitnessProposal,
+}
+
+impl CombatActionPolicy for FixedWitnessProposalPolicy {
+    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        vec![1.0; choices.len()]
+    }
+
+    fn witness_proposal(
+        &self,
+        _position: &CombatPosition,
+        _deadline: Option<std::time::Instant>,
+    ) -> Option<CombatPolicyWitnessProposal> {
+        Some(self.proposal.clone())
     }
 }
 
@@ -259,6 +279,34 @@ fn config() -> TurnOptionGeneratorConfig {
     }
 }
 
+fn exact_actions(
+    stepper: &dyn CombatStepper,
+    root: &CombatDecisionRoot,
+    inputs: impl IntoIterator<Item = ClientInput>,
+) -> Vec<TurnOptionAction> {
+    let mut position = root.position().clone();
+    inputs
+        .into_iter()
+        .map(|input| {
+            let result = stepper.apply_to_stable(
+                &position,
+                input.clone(),
+                CombatStepLimits {
+                    max_engine_steps: 4,
+                    deadline: None,
+                },
+            );
+            let action = TurnOptionAction {
+                input,
+                expected_successor_hash: exact_hash(&result.position),
+                engine_steps: result.engine_steps,
+            };
+            position = result.position;
+            action
+        })
+        .collect()
+}
+
 #[test]
 fn policy_guided_generator_emits_preferred_option_and_retains_siblings() {
     let stepper = TinyTurnStepper::lethal();
@@ -300,6 +348,77 @@ fn oracle_witness_search_crosses_turns_and_exactly_replays_first_win() {
         CombatTerminal::Win
     );
     assert!(witness.replay_engine_steps > 0);
+}
+
+#[test]
+fn policy_witness_proposal_only_becomes_a_witness_after_exact_root_replay() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let decision_root = root();
+    let proposal = CombatPolicyWitnessProposal {
+        actions: exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]),
+        final_hp_hint: decision_root.position().combat.entities.player.current_hp,
+    };
+    let mut session = OracleCombatWitnessSession::with_policy(
+        decision_root,
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        },
+        Arc::new(FixedWitnessProposalPolicy { proposal }),
+    );
+
+    let report = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(8, 8, 32),
+    );
+
+    assert_eq!(report.status, OracleCombatWitnessStatus::WitnessFound);
+    assert_eq!(report.after.policy_witness_proposals, 1);
+    assert_eq!(report.after.generation_work, 0);
+    let witness = report
+        .witness
+        .expect("proposal must be replayed into a witness");
+    assert_eq!(witness.actions.len(), 2);
+    assert_eq!(
+        stepper.terminal(&witness.final_position),
+        CombatTerminal::Win
+    );
+    assert!(witness.replay_engine_steps >= 2);
+}
+
+#[test]
+fn policy_witness_proposal_with_a_false_successor_is_rejected() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let decision_root = root();
+    let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
+    actions[0].expected_successor_hash = "forged-successor".to_owned();
+    let proposal = CombatPolicyWitnessProposal {
+        actions,
+        final_hp_hint: decision_root.position().combat.entities.player.current_hp,
+    };
+    let mut session = OracleCombatWitnessSession::with_policy(
+        decision_root,
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        },
+        Arc::new(FixedWitnessProposalPolicy { proposal }),
+    );
+
+    let report = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(8, 8, 32),
+    );
+
+    assert_eq!(
+        report.status,
+        OracleCombatWitnessStatus::ReplayMismatch(
+            OracleCombatWitnessReplayError::SuccessorMismatch { action_index: 0 }
+        )
+    );
+    assert!(report.witness.is_none());
 }
 
 #[test]

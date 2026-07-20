@@ -1,5 +1,6 @@
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use crate::state::core::ClientInput;
+use crate::{content::powers::PowerId, runtime::combat::CombatState};
 
 use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
 use super::frontier::SearchNode;
@@ -116,6 +117,87 @@ pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec
     ]
 }
 
+/// A non-authoritative long-horizon view for setup-heavy combats. Progress
+/// and survival guides can both prefer an earlier turn forever: the former
+/// because setup has not dealt damage yet, and the latter because later turns
+/// have usually paid some HP. Keeping horizon in its own queue gives those
+/// states service without calibrating turn depth against HP or enemy damage.
+pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
+    let value = combat_search_state_value(&node);
+    vec![
+        i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
+        value.fewer_living_enemies,
+        value.phase_adjusted_enemy_effort_progress,
+        value.enemy_effort_progress,
+        value.enemy_hp_progress,
+        value.survival_margin,
+        value.player_hp,
+    ]
+}
+
+/// An independent view of persistent player setup. Damage-first and
+/// survival-first guides both undervalue a turn which spends energy putting
+/// powers in play: the enemy is still healthy and the immediate block may
+/// already have expired by the next player boundary. This lane recognizes
+/// the resulting exact state, rather than assigning bonuses to the actions
+/// which happened to create it.
+pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
+    let value = combat_search_state_value(&node);
+    let (active_setup_powers, setup_power_mass) = player_setup_power_summary(&position.combat);
+    vec![
+        active_setup_powers,
+        setup_power_mass,
+        value.hand_damage,
+        value.hand_block,
+        i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
+        value.survival_margin,
+        value.player_hp,
+    ]
+}
+
+fn player_setup_power_summary(combat: &CombatState) -> (i32, i32) {
+    crate::content::powers::store::powers_for(combat, combat.entities.player.id)
+        .into_iter()
+        .flatten()
+        .filter(|power| player_power_is_positive_setup(power.power_type, power.amount))
+        .fold((0_i32, 0_i32), |(count, mass), power| {
+            let amount = if crate::content::powers::uses_sentinel_amount(power.power_type) {
+                1
+            } else {
+                power.amount.clamp(1, 12)
+            };
+            (count.saturating_add(1), mass.saturating_add(amount))
+        })
+}
+
+fn player_power_is_positive_setup(power: PowerId, amount: i32) -> bool {
+    if amount <= 0 && !crate::content::powers::uses_sentinel_amount(power) {
+        return false;
+    }
+    !matches!(
+        power,
+        PowerId::Vulnerable
+            | PowerId::Weak
+            | PowerId::Frail
+            | PowerId::LoseStrength
+            | PowerId::Entangle
+            | PowerId::Hex
+            | PowerId::NoDraw
+            | PowerId::NoBlock
+            | PowerId::Confusion
+            | PowerId::Constricted
+            | PowerId::Shackled
+            | PowerId::DrawReduction
+            | PowerId::Surrounded
+            | PowerId::BackAttack
+            | PowerId::EnergyDownPower
+            | PowerId::DexterityDown
+            | PowerId::CannotChangeStance
+    )
+}
+
 fn oracle_ordinal_rank_weight(rank: usize) -> f64 {
     1.0 / rank.saturating_add(1) as f64
 }
@@ -151,5 +233,17 @@ mod tests {
         assert_eq!(oracle_ordinal_rank_weight(1), 0.5);
         assert_eq!(oracle_ordinal_rank_weight(2), 1.0 / 3.0);
         assert_eq!(oracle_ordinal_rank_weight(15), 1.0 / 16.0);
+    }
+
+    #[test]
+    fn horizon_guide_exposes_turn_depth_as_its_primary_independent_rank() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+        combat.turn.turn_count = 7;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        let rank = oracle_combat_horizon_guide_components(&position);
+
+        assert_eq!(rank.first(), Some(&7));
     }
 }

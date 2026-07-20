@@ -50,8 +50,8 @@ pub use outcome_model::{
     CombatOutcomeTrainingExampleV1, COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
 };
 pub use policy::{
-    CombatActionPolicy, CombatPolicyChoice, CombatStateGuideRank, SharedCombatActionPolicy,
-    UniformCombatActionPolicy,
+    CombatActionPolicy, CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuideRank,
+    SharedCombatActionPolicy, UniformCombatActionPolicy,
 };
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
@@ -67,11 +67,12 @@ pub use types::{
     TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
 };
 pub use witness_search::{
-    OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessCounters,
-    OracleCombatWitnessInterruption, OracleCombatWitnessProgressSnapshot,
-    OracleCombatWitnessQuantum, OracleCombatWitnessReplayError, OracleCombatWitnessReport,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus,
+    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessConfig,
+    OracleCombatWitnessCounters, OracleCombatWitnessInterruption,
+    OracleCombatWitnessProgressSnapshot, OracleCombatWitnessQuantum,
+    OracleCombatWitnessReplayError, OracleCombatWitnessReport, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessSession, OracleCombatWitnessStateProgressSnapshot,
+    OracleCombatWitnessStatus,
 };
 
 #[cfg(test)]

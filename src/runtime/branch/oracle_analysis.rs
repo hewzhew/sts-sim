@@ -13,6 +13,7 @@ use crate::eval::run_control::{
 
 use super::oracle_run::{
     oracle_combat_budgets, OracleRunBudget, OracleRunConfig, OracleRunContinuationV1,
+    ORACLE_RUN_CONTINUATION_SCHEMA_NAME, ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
 };
 
 pub const ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME: &str = "OracleAnalysisWorkspace";
@@ -105,6 +106,19 @@ impl OracleAnalysisWorkspaceV1 {
         })
     }
 
+    pub fn continuation(&self, node_id: usize) -> Result<OracleRunContinuationV1, String> {
+        let (journal, session) = self.session.continuation_parts(node_id)?;
+        Ok(OracleRunContinuationV1 {
+            schema_name: ORACLE_RUN_CONTINUATION_SCHEMA_NAME.to_string(),
+            schema_version: ORACLE_RUN_CONTINUATION_SCHEMA_VERSION,
+            seed: self.seed,
+            ascension: self.ascension,
+            journal,
+            session,
+            explorer_frontier: None,
+        })
+    }
+
     pub fn restore(artifact: OracleAnalysisWorkspaceArtifactV1) -> Result<Self, String> {
         if artifact.schema_name != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_NAME
             || artifact.schema_version != ORACLE_ANALYSIS_WORKSPACE_SCHEMA_VERSION
@@ -158,6 +172,11 @@ impl OracleAnalysisWorkspaceV1 {
         let report = self.session.advance_cursor(request)?;
         let view = self.view()?;
         Ok((report, view))
+    }
+
+    pub fn accept_combat_incumbent(&mut self) -> Result<OracleAnalysisNodeViewV1, String> {
+        self.session.accept_cursor_combat_incumbent()?;
+        self.view()
     }
 }
 

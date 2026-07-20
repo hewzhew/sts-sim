@@ -177,6 +177,7 @@ fn is_run_level_potion_context(engine_state: &EngineState) -> bool {
             | EngineState::MapOverlay { .. }
             | EngineState::EventRoom
             | EngineState::RewardScreen(_)
+            | EngineState::RewardOverlay { .. }
             | EngineState::TreasureRoom(_)
             | EngineState::Campfire
             | EngineState::Shop(_)

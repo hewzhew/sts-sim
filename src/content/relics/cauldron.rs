@@ -3,9 +3,13 @@ use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
 pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<EngineState> {
-    let mut reward_state = match return_state {
-        EngineState::RewardScreen(reward_state) => reward_state,
-        _ => RewardState::new(),
+    let (mut reward_state, overlay_return) = match return_state {
+        EngineState::RewardScreen(reward_state) => (reward_state, None),
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => (reward_state, Some(*return_state)),
+        other => (RewardState::new(), Some(other)),
     };
 
     let potion_class = run_state.potion_class();
@@ -37,5 +41,8 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
         reward_state.items.remove(index);
     }
 
-    Some(EngineState::RewardScreen(reward_state))
+    Some(match overlay_return {
+        Some(return_state) => EngineState::reward_overlay(reward_state, return_state),
+        None => EngineState::RewardScreen(reward_state),
+    })
 }
