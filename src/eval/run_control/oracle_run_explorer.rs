@@ -420,15 +420,33 @@ impl OracleRunExplorerV1 {
     ) -> Result<OracleRunExplorerCheckpointV1, String> {
         let mut journal_nodes = Vec::<OracleRunJournalNodeCheckpointV1>::new();
         let mut journal_index = BTreeMap::<(Option<usize>, String), usize>::new();
+        let branch_by_id = self
+            .branches
+            .iter()
+            .map(|branch| (branch.branch_id, branch))
+            .collect::<BTreeMap<_, _>>();
+        let mut checkpointed_journals = BTreeMap::<usize, (Option<usize>, usize)>::new();
         let mut branches = Vec::with_capacity(branch_ids.len());
         for branch_id in branch_ids {
-            let branch = self
-                .branches
-                .iter()
-                .find(|branch| branch.branch_id == branch_id)
+            let branch = branch_by_id
+                .get(&branch_id)
+                .copied()
                 .ok_or_else(|| format!("missing live oracle branch {branch_id}"))?;
-            let mut journal_tip = None;
-            for entry in branch.journal.entries() {
+            let entries = branch.journal.entries();
+            let (mut journal_tip, inherited_entries) = branch
+                .parent_branch_id
+                .and_then(|parent_id| {
+                    let (parent_tip, parent_len) =
+                        checkpointed_journals.get(&parent_id).copied()?;
+                    let parent = branch_by_id.get(&parent_id).copied()?;
+                    let parent_entries = parent.journal.entries();
+                    (parent_entries.len() == parent_len
+                        && entries.len() >= parent_len
+                        && entries[..parent_len] == *parent_entries)
+                        .then_some((parent_tip, parent_len))
+                })
+                .unwrap_or((None, 0));
+            for entry in entries.iter().skip(inherited_entries) {
                 let hash = crate::eval::fingerprint::hash_serializable(entry);
                 let key = (journal_tip, hash);
                 let node_id = if let Some(node_id) = journal_index.get(&key).copied() {
@@ -447,6 +465,7 @@ impl OracleRunExplorerV1 {
                 };
                 journal_tip = Some(node_id);
             }
+            checkpointed_journals.insert(branch_id, (journal_tip, entries.len()));
             let mut session = RunControlSessionCheckpointV1::from_session(&branch.session);
             session.clear_combat_diagnostics_for_external_checkpoint();
             branches.push(OracleRunBranchCheckpointV1 {
