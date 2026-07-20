@@ -166,6 +166,12 @@ fn add_generic_components(
             );
         }
     }
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::StrengthPayoff)
+    {
+        add_strength_payoff_component(context, report);
+    }
     if context.same_card_count > 0
         && profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         && card_mechanics_profile_v1(profile.card).applies_no_draw_debuff
@@ -275,40 +281,44 @@ fn add_card_specific_components(
                 );
             }
         }
-        CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::LimitBreak => {
-            if context.startup.persistent_strength_source_count == 0 {
-                if context.startup.convertible_strength_source_count > 0 {
-                    push_signal(
-                        &mut report.positive_signals,
-                        CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported,
-                    );
-                    push_signal(
-                        &mut report.note_signals,
-                        CardComponentSignalKindV1::ConvertibleStrengthRequiresDrawTiming,
-                    );
-                } else if context.startup.temporary_strength_burst_count > 0 {
-                    push_signal(
-                        &mut report.note_signals,
-                        CardComponentSignalKindV1::StrengthPayoffTemporaryBurstOnly,
-                    );
-                    push_signal(
-                        &mut report.debt_signals,
-                        CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator,
-                    );
-                } else {
-                    push_signal(
-                        &mut report.debt_signals,
-                        CardComponentSignalKindV1::StrengthPayoffUnsupported,
-                    );
-                }
-            } else {
-                push_signal(
-                    &mut report.positive_signals,
-                    CardComponentSignalKindV1::StrengthPayoffSupported,
-                );
-            }
-        }
         _ => {}
+    }
+}
+
+fn add_strength_payoff_component(
+    context: &CardComponentSignalContextV1,
+    report: &mut CardComponentSignalReportV1,
+) {
+    if context.startup.persistent_strength_source_count == 0 {
+        if context.startup.convertible_strength_source_count > 0 {
+            push_signal(
+                &mut report.positive_signals,
+                CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported,
+            );
+            push_signal(
+                &mut report.note_signals,
+                CardComponentSignalKindV1::ConvertibleStrengthRequiresDrawTiming,
+            );
+        } else if context.startup.temporary_strength_burst_count > 0 {
+            push_signal(
+                &mut report.note_signals,
+                CardComponentSignalKindV1::StrengthPayoffTemporaryBurstOnly,
+            );
+            push_signal(
+                &mut report.debt_signals,
+                CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator,
+            );
+        } else {
+            push_signal(
+                &mut report.debt_signals,
+                CardComponentSignalKindV1::StrengthPayoffUnsupported,
+            );
+        }
+    } else {
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::StrengthPayoffSupported,
+        );
     }
 }
 

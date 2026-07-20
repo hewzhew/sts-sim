@@ -931,6 +931,45 @@ mod tests {
     }
 
     #[test]
+    fn supported_per_hit_scaler_is_not_discarded_at_the_donu_deca_deadline() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 46;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Inflame, 1),
+            (CardId::HeavyBlade, 0),
+            (CardId::SwordBoomerang, 1),
+            (CardId::Offering, 1),
+            (CardId::SecondWind, 1),
+            (CardId::FeelNoPain, 1),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::SeverSoul, 0),
+                (CardId::TwinStrike, 0),
+                (CardId::Whirlwind, 1),
+            ],
+        );
+
+        assert_eq!(
+            ordered.first(),
+            Some(&Some(CardId::Whirlwind)),
+            "an upgraded per-hit scaler backed by persistent Strength must remain visible at the two-target boss deadline: {ordered:?}; {diagnostics:#?}"
+        );
+        assert!(
+            ordered.iter().position(|card| *card == Some(CardId::Whirlwind))
+                < ordered.iter().position(Option::is_none),
+            "supported Whirlwind must not fall behind skip: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
     fn nearer_forced_sentries_obligation_can_outrank_farther_boss_scaling() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.act_num = 1;

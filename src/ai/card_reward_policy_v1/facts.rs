@@ -1,3 +1,7 @@
+use crate::ai::analysis::card_semantics::{
+    card_definition as strategic_card_definition, DamageScalingAxis, Mechanic, PayoffRequirement,
+    PlayEffect,
+};
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardTarget};
 use crate::state::rewards::RewardCard;
@@ -220,9 +224,6 @@ fn pick_dependencies(card_id: CardId) -> Vec<CardRewardPickDependencyV1> {
     let mut dependencies = Vec::new();
     match card_id {
         CardId::SearingBlow => dependencies.push(CardRewardPickDependencyV1::RouteUpgradeDensity),
-        CardId::HeavyBlade | CardId::LimitBreak | CardId::Reaper => {
-            dependencies.push(CardRewardPickDependencyV1::StrengthScaling)
-        }
         CardId::BodySlam | CardId::Barricade | CardId::Entrench | CardId::Juggernaut => {
             dependencies.push(CardRewardPickDependencyV1::BlockDensity)
         }
@@ -235,6 +236,20 @@ fn pick_dependencies(card_id: CardId) -> Vec<CardRewardPickDependencyV1> {
         }
         CardId::Rupture => dependencies.push(CardRewardPickDependencyV1::SelfDamagePackage),
         _ => {}
+    }
+    let strategic = strategic_card_definition(card_id);
+    if strategic
+        .payoff_requirements
+        .contains(&PayoffRequirement::WantsMechanic(Mechanic::Strength))
+        || strategic.play_effects.iter().any(|effect| {
+            matches!(
+                effect,
+                PlayEffect::DamageUses(Mechanic::Strength)
+                    | PlayEffect::DamageScalesWith(DamageScalingAxis::PerHitStrength)
+            )
+        })
+    {
+        dependencies.push(CardRewardPickDependencyV1::StrengthScaling);
     }
     if is_random_output(card_id) {
         dependencies.push(CardRewardPickDependencyV1::RandomOutputPolicy);
@@ -282,5 +297,18 @@ mod tests {
         assert!(facts.weak > 0);
         assert!(facts.vulnerable > 0);
         assert_eq!(facts.enemy_strength_down, 0);
+    }
+
+    #[test]
+    fn per_hit_strength_scalers_share_the_strength_payoff_semantics() {
+        for card in [CardId::Whirlwind, CardId::FiendFire] {
+            let facts = card_facts(&RewardCard::new(card, 0));
+            assert!(
+                facts
+                    .pick_dependencies
+                    .contains(&CardRewardPickDependencyV1::StrengthScaling),
+                "{card:?} should inherit strength payoff semantics from its damage model"
+            );
+        }
     }
 }

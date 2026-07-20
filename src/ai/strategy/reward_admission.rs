@@ -550,7 +550,10 @@ fn supported_damage_payoff_package(
     effect: &PlayEffect,
 ) -> Option<PackageKind> {
     match effect {
-        PlayEffect::DamageUses(Mechanic::Strength) if package_has_source(before.strength) => {
+        PlayEffect::DamageUses(Mechanic::Strength)
+        | PlayEffect::DamageScalesWith(DamageScalingAxis::PerHitStrength)
+            if package_has_source(before.strength) =>
+        {
             Some(PackageKind::Strength)
         }
         PlayEffect::DamageUses(Mechanic::Block) if package_has_source(before.block) => {
@@ -622,6 +625,32 @@ fn is_admission_burden(burden: &CardBurden) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn per_hit_strength_scaling_is_supported_by_an_existing_strength_source() {
+        let admission = assess_reward_admission(&[CardId::Inflame], CardId::Whirlwind);
+
+        assert_eq!(
+            admission.class,
+            RewardAdmissionClass::BuildsSupportedPackage
+        );
+        assert!(admission
+            .reasons
+            .contains(&RewardAdmissionReason::Supports(PackageKind::Strength)));
+    }
+
+    #[test]
+    fn per_hit_strength_scaling_does_not_invent_a_strength_package() {
+        let admission = assess_reward_admission(
+            &[CardId::Strike, CardId::Defend, CardId::Bash],
+            CardId::Whirlwind,
+        );
+
+        assert_eq!(admission.class, RewardAdmissionClass::ImmediateWork);
+        assert!(!admission
+            .reasons
+            .contains(&RewardAdmissionReason::Supports(PackageKind::Strength)));
+    }
 
     #[test]
     fn unsupported_rupture_is_payoff_not_engine_seed() {
