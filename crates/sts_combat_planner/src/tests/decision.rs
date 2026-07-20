@@ -121,7 +121,7 @@ fn deferral_preserves_the_exact_interrupted_prospect() {
     let mut session = CombatPlannerAgendaSession::new(root(), agenda_config());
     session.advance(
         &stepper,
-        CombatPlannerAgendaQuantum::deterministic(10, 10, 5),
+        CombatPlannerAgendaQuantum::deterministic(10, 10, 6),
     );
 
     let CombatPlannerDecisionResult::Deferred(deferral) = decide_combat_option(&session) else {

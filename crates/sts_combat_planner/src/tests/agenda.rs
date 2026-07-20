@@ -63,7 +63,7 @@ fn engine_budget_interruption_retains_verified_terminal_while_continuation_waits
 
     let interrupted = session.advance(
         &stepper,
-        CombatPlannerAgendaQuantum::deterministic(10, 10, 5),
+        CombatPlannerAgendaQuantum::deterministic(10, 10, 6),
     );
     assert_eq!(
         interrupted.status,
@@ -133,12 +133,35 @@ fn interleaves_root_discovery_with_one_continuation_quantum() {
         report.status,
         CombatPlannerAgendaStatus::Partial(CombatPlannerAgendaInterruption::AgendaItemBudget)
     );
-    assert_eq!(report.after.continuation_generation_work, 1);
+    assert_eq!(
+        report.after.continuation_generation_work,
+        session.prospects().len()
+    );
     assert!(!session.prospects().is_empty());
-    assert!(session.prospects().iter().all(|prospect| matches!(
-        prospect.continuation(),
-        ContinuationEvidence::Interrupted(ContinuationInterruption::GenerationWorkBudget)
-    )));
+    assert_eq!(
+        session
+            .prospects()
+            .iter()
+            .filter(|prospect| matches!(
+                prospect.continuation(),
+                ContinuationEvidence::Interrupted(
+                    ContinuationInterruption::GenerationWorkBudget
+                )
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        session
+            .prospects()
+            .iter()
+            .filter(|prospect| matches!(
+                prospect.continuation(),
+                ContinuationEvidence::PendingContinuationRefinement
+            ))
+            .count(),
+        1
+    );
 
     let completed = session.advance(
         &stepper,

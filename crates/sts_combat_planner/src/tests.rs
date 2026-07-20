@@ -353,17 +353,39 @@ fn exact_actions(
 }
 
 #[test]
-fn policy_guided_generator_emits_preferred_option_and_retains_siblings() {
+fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =
         TurnOptionGeneratorSession::with_policy(root(), config(), Arc::new(PreferPlayPolicy));
 
     let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(4, 8));
 
-    assert_eq!(report.newly_completed_options, 1);
+    assert_eq!(report.newly_completed_options, 2);
     assert_eq!(session.completed_options()[0].actions()[0].input, PLAY);
-    assert!(session.retained_work_items() > 0);
-    assert!(!session.is_finished());
+    assert!(session
+        .completed_options()
+        .iter()
+        .any(|option| option.actions()[0].input == ClientInput::EndTurn));
+    assert_eq!(session.retained_work_items(), 0);
+    assert!(session.is_finished());
+}
+
+#[test]
+fn generator_publishes_a_reached_turn_boundary_without_rescheduling_it() {
+    let stepper = TinyTurnStepper::plain();
+    let mut position = root().position().clone();
+    position.combat.turn.energy = 0;
+    let root = CombatDecisionRoot::new(position).unwrap();
+    let mut session = TurnOptionGeneratorSession::new(root, config());
+
+    // One work item expands the root and one executes EndTurn. The resulting
+    // next-player-turn state is already stable and must be published without
+    // requiring a third agenda pop merely to recognize the boundary.
+    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(2, 8));
+
+    assert_eq!(report.after.generation_work, 2);
+    assert_eq!(report.newly_completed_options, 1);
+    assert_eq!(session.completed_options()[0].actions()[0].input, ClientInput::EndTurn);
 }
 
 #[test]
@@ -597,7 +619,7 @@ fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() 
 
     session.advance(
         &stepper,
-        OracleCombatWitnessQuantum::deterministic(64, 256, 1_024),
+        OracleCombatWitnessQuantum::deterministic(1_024, 1_024, 4_096),
     );
     let membership = session.state_membership_by_exact_hash(&target_hash);
 

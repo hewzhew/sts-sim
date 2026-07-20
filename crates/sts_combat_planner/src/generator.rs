@@ -571,19 +571,36 @@ impl TurnOptionGeneratorSession {
                     let key =
                         combat_exact_state_key(&result.position.engine, &result.position.combat);
                     if self.seen.insert(key) {
-                        let priority = GeneratorWorkPriority::for_path(
-                            action.atomic_depth,
-                            action.negative_log_policy,
-                        );
-                        self.push_work(
-                            GeneratorWork::Expand(PartialTurnOption {
-                                position: result.position,
-                                actions,
-                                atomic_depth: action.atomic_depth,
-                                negative_log_policy: action.negative_log_policy,
-                            }),
-                            priority,
-                        );
+                        let partial = PartialTurnOption {
+                            position: result.position,
+                            actions,
+                            atomic_depth: action.atomic_depth,
+                            negative_log_policy: action.negative_log_policy,
+                        };
+                        let terminal = stepper.terminal(&partial.position);
+                        if let Some(boundary) =
+                            supported_boundary(&self.root, &partial.position, terminal)
+                        {
+                            // A stable atomic transition has already paid the
+                            // simulator cost and reached a complete-turn
+                            // boundary. Publish it now instead of routing it
+                            // back through the partial-turn agenda, where
+                            // thousands of unrelated prefixes could delay an
+                            // already-known successor.
+                            self.completed.push(CompleteTurnOption::new(
+                                self.root.exact_state_hash().to_owned(),
+                                partial.actions,
+                                boundary,
+                                partial.position,
+                                partial.negative_log_policy,
+                            ));
+                        } else {
+                            let priority = GeneratorWorkPriority::for_path(
+                                action.atomic_depth,
+                                action.negative_log_policy,
+                            );
+                            self.push_work(GeneratorWork::Expand(partial), priority);
+                        }
                     } else {
                         self.duplicate_exact_successors =
                             self.duplicate_exact_successors.saturating_add(1);
