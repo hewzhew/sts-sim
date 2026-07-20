@@ -4,7 +4,7 @@ use sts_simulator::ai::shop_policy_v1::{
     ShopThreatWindowV1, ShopVisitFactsV1,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
-    DecisionCandidateKind, DecisionPipelineContext,
+    CandidateLane, DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
@@ -41,19 +41,30 @@ pub(super) fn shop_tiny_owner_choices(
         })
         .enumerate()
         .collect::<Vec<_>>();
-    order_choices_by_compiled_step(choices, selected_step.as_ref())
+    order_choices_by_compiled_step(
+        choices,
+        selected_step.as_ref(),
+        session.membership_card_acquired_during_current_shop_visit(),
+    )
 }
 
 fn order_choices_by_compiled_step(
     mut choices: Vec<(usize, OwnerChoice)>,
     selected_step: Option<&ShopPlanStepV1>,
+    membership_followup_due: bool,
 ) -> Vec<OwnerChoice> {
-    let selected_choice_index = selected_step.and_then(|step| {
+    let compiled_choice_index = selected_step.and_then(|step| {
         choices
             .iter()
             .find(|(_, choice)| shop_plan_step_matches_choice(step, choice))
             .map(|(index, _)| *index)
     });
+    let selected_choice_index =
+        if membership_followup_due && matches!(selected_step, Some(ShopPlanStepV1::LeaveShop)) {
+            membership_followup_choice_index(&choices).or(compiled_choice_index)
+        } else {
+            compiled_choice_index
+        };
     let mut auto_purge_targets = Vec::new();
     for (index, choice) in choices.iter_mut() {
         if selected_choice_index.is_some() {
@@ -70,6 +81,37 @@ fn order_choices_by_compiled_step(
     }
     choices.sort_by_key(|(index, _)| (selected_choice_index != Some(*index), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn membership_followup_choice_index(choices: &[(usize, OwnerChoice)]) -> Option<usize> {
+    let eligible = choices
+        .iter()
+        .filter_map(|(index, choice)| {
+            let is_purchase = matches!(
+                choice.key.as_ref(),
+                Some(
+                    DecisionCandidateKey::ShopBuyCard { .. }
+                        | DecisionCandidateKey::ShopBuyRelic { .. }
+                        | DecisionCandidateKey::ShopBuyPotion { .. }
+                )
+            );
+            let evaluation = is_purchase
+                .then(|| choice.annotation.evaluation())
+                .flatten()?;
+            matches!(
+                evaluation.lane,
+                CandidateLane::Mainline | CandidateLane::Probe
+            )
+            .then_some((*index, evaluation))
+        })
+        .collect::<Vec<_>>();
+    let has_mainline = eligible
+        .iter()
+        .any(|(_, evaluation)| evaluation.lane == CandidateLane::Mainline);
+    eligible
+        .into_iter()
+        .min_by_key(|(index, evaluation)| (evaluation.order_key(has_mainline), *index))
+        .map(|(index, _)| index)
 }
 
 fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
@@ -222,10 +264,10 @@ mod tests {
     use sts_simulator::content::potions::PotionId;
     use sts_simulator::content::relics::{RelicId, RelicState};
     use sts_simulator::eval::run_control::{
-        build_decision_surface, DecisionCandidateKey, RunControlConfig,
+        build_decision_surface, DecisionCandidateKey, RunControlConfig, RunDecisionAction,
     };
     use sts_simulator::runtime::combat::CombatCard;
-    use sts_simulator::state::core::EngineState;
+    use sts_simulator::state::core::{ClientInput, EngineState};
     use sts_simulator::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
     fn shop_session() -> RunControlSession {
@@ -272,6 +314,82 @@ mod tests {
             .and_then(|plan| plan.steps.first())
             .cloned()
             .expect("exact next-elite shop case should compile an executable head")
+    }
+
+    #[test]
+    fn membership_bought_this_visit_redeems_a_same_shop_payoff_before_leaving() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 30;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.current_hp = 51;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = 317;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::WildStrike,
+            CardId::FlameBarrier,
+            CardId::ShrugItOff,
+            CardId::Inflame,
+            CardId::SecondWind,
+            CardId::LimitBreak,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| CombatCard::new(id, 30_000 + index as u32))
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.cards = [
+            (CardId::Rage, 76),
+            (CardId::Evolve, 71),
+            (CardId::TheBomb, 192),
+        ]
+        .into_iter()
+        .map(|(card_id, price)| ShopCard {
+            card_id,
+            upgrades: 0,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        })
+        .collect();
+        shop.relics = [
+            (RelicId::HappyFlower, 150),
+            (RelicId::Vajra, 145),
+            (RelicId::MembershipCard, 155),
+        ]
+        .into_iter()
+        .map(|(relic_id, price)| ShopRelic {
+            relic_id,
+            price,
+            can_buy: true,
+            blocked_reason: None,
+        })
+        .collect();
+        session.engine_state = EngineState::Shop(shop);
+
+        session
+            .apply_decision_action(RunDecisionAction::Input(ClientInput::BuyRelic(2)))
+            .expect("Membership Card purchase should resolve");
+
+        assert!(session.membership_card_acquired_during_current_shop_visit());
+        let surface = build_decision_surface(&session);
+        let choices = shop_tiny_owner_choices(&session, &surface);
+        assert!(
+            !matches!(
+                choices.first().and_then(|choice| choice.key.as_ref()),
+                Some(DecisionCandidateKey::ShopLeave)
+            ),
+            "a same-shop Membership investment must redeem one admitted discounted payoff before leaving; got {:?}",
+            choices.first().map(|choice| choice.label.as_str())
+        );
     }
 
     #[test]
@@ -598,7 +716,7 @@ mod tests {
             cost: 155,
         };
 
-        let ordered = order_choices_by_compiled_step(choices, Some(&stale_head));
+        let ordered = order_choices_by_compiled_step(choices, Some(&stale_head), false);
 
         assert!(ordered
             .iter()

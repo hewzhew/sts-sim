@@ -104,6 +104,8 @@ pub struct ShopVisitContextV1 {
     pub entry_floor: i32,
     pub entry_gold: i32,
     pub maw_bank_live_at_entry: bool,
+    #[serde(default)]
+    pub membership_card_owned_at_entry: bool,
     pub spent_gold_in_visit: bool,
 }
 
@@ -117,6 +119,10 @@ impl ShopVisitContextV1 {
                 .relics
                 .iter()
                 .any(|relic| relic.id == RelicId::MawBank && !relic.used_up),
+            membership_card_owned_at_entry: run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::MembershipCard),
             spent_gold_in_visit: false,
         }
     }
@@ -650,6 +656,17 @@ impl RunControlSession {
     pub fn shop_visit_context(&self) -> Option<ShopVisitContextV1> {
         self.shop_visit_context
             .filter(|context| context.matches_run_state(&self.run_state))
+    }
+
+    pub fn membership_card_acquired_during_current_shop_visit(&self) -> bool {
+        self.shop_visit_context().is_some_and(|context| {
+            !context.membership_card_owned_at_entry
+                && self
+                    .run_state
+                    .relics
+                    .iter()
+                    .any(|relic| relic.id == RelicId::MembershipCard)
+        })
     }
 
     pub(in crate::eval::run_control) fn observe_shop_visit_before_input(&mut self) {
