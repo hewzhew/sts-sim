@@ -601,6 +601,65 @@ impl OracleCombatWitnessSession {
         }
     }
 
+    /// Reports exact-state membership without ranking the state against every
+    /// other retained frontier entry. This is intended for bulk diagnostics
+    /// such as a replay-verified corridor: queue ranks are useful for one or
+    /// two watched states, but recomputing them for every state in a long
+    /// corridor makes report generation quadratic in the retained graph.
+    pub fn compact_state_membership_by_exact_hash(
+        &self,
+        exact_state_hash: &str,
+    ) -> OracleCombatWitnessStateMembershipSnapshot {
+        let progress = self
+            .states
+            .iter()
+            .flatten()
+            .find(|state| exact_hash(state.generator.root().position()) == exact_state_hash)
+            .map(state_progress_snapshot);
+        OracleCombatWitnessStateMembershipSnapshot {
+            exact_state_hash: exact_state_hash.to_owned(),
+            generated: self.generated_exact_state_hashes.contains(exact_state_hash),
+            accepted: self.accepted_exact_state_hashes.contains(exact_state_hash),
+            retained: progress.is_some(),
+            progress,
+        }
+    }
+
+    /// Bulk form of [`Self::compact_state_membership_by_exact_hash`]. Exact
+    /// hashes for retained states are computed once, so observing a long
+    /// replay corridor remains linear in the retained graph rather than
+    /// repeating the scan for every corridor turn.
+    pub fn compact_state_memberships_by_exact_hashes<'a>(
+        &self,
+        exact_state_hashes: impl IntoIterator<Item = &'a str>,
+    ) -> HashMap<String, OracleCombatWitnessStateMembershipSnapshot> {
+        let requested = exact_state_hashes
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<HashSet<_>>();
+        let mut retained = HashMap::new();
+        for state in self.states.iter().flatten() {
+            let exact_state_hash = exact_hash(state.generator.root().position());
+            if requested.contains(&exact_state_hash) {
+                retained.insert(exact_state_hash, state_progress_snapshot(state));
+            }
+        }
+        requested
+            .into_iter()
+            .map(|exact_state_hash| {
+                let progress = retained.remove(&exact_state_hash);
+                let membership = OracleCombatWitnessStateMembershipSnapshot {
+                    generated: self.generated_exact_state_hashes.contains(&exact_state_hash),
+                    accepted: self.accepted_exact_state_hashes.contains(&exact_state_hash),
+                    retained: progress.is_some(),
+                    exact_state_hash: exact_state_hash.clone(),
+                    progress,
+                };
+                (exact_state_hash, membership)
+            })
+            .collect()
+    }
+
     pub fn advance(
         &mut self,
         stepper: &dyn CombatStepper,

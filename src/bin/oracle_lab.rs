@@ -124,6 +124,12 @@ enum Command {
         /// `typed-feature` never reads an exact state hash while ranking.
         #[arg(long, value_enum, default_value_t = ShadowCorridorGuide::Exact)]
         shadow_corridor_guide: ShadowCorridorGuide,
+        /// Lab-only structural control: when an exact corridor is supplied,
+        /// suppress the ordinary state guides and retain only the sparse
+        /// exact-corridor lane plus the policy-only anchor. Actions are still
+        /// generated and executed normally; no witness action is forced.
+        #[arg(long, requires = "shadow_corridor_actions")]
+        shadow_corridor_only: bool,
         /// Load a distilled typed-feature prototype model. Unlike the
         /// corridor controls, inference does not load witness actions, exact
         /// hashes, or the source combat case.
@@ -569,6 +575,7 @@ impl CombatValuePrototypeArtifactV1 {
 #[derive(Clone, Debug)]
 struct ExactTurnCorridor {
     rank_by_exact_hash: HashMap<String, i32>,
+    atomic_rank_by_exact_hash: HashMap<String, i32>,
     typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
     action_count: usize,
     terminal_final_hp: i32,
@@ -576,10 +583,18 @@ struct ExactTurnCorridor {
 
 impl ExactTurnCorridor {
     fn report(&self, search: &OracleCombatWitnessSession, guide: ShadowCorridorGuide) -> Value {
+        let mut memberships = search.compact_state_memberships_by_exact_hashes(
+            self.rank_by_exact_hash.keys().map(String::as_str),
+        );
         let mut states = self
             .rank_by_exact_hash
             .iter()
-            .map(|(exact_hash, rank)| (*rank, search.state_membership_by_exact_hash(exact_hash)))
+            .map(|(exact_hash, rank)| {
+                let membership = memberships
+                    .remove(exact_hash)
+                    .expect("bulk corridor membership includes every requested hash");
+                (*rank, membership)
+            })
             .collect::<Vec<_>>();
         states.sort_by_key(|(rank, _)| *rank);
         json!({
@@ -589,6 +604,7 @@ impl ExactTurnCorridor {
             },
             "authority": "guide_only",
             "exact_turn_states": self.rank_by_exact_hash.len(),
+            "exact_atomic_prefix_states": self.atomic_rank_by_exact_hash.len(),
             "typed_feature_targets": self.typed_target_by_turn.len(),
             "typed_feature_count": self.typed_target_by_turn.values().next().map(|(_, features)| features.len()).unwrap_or_default(),
             "action_count": self.action_count,
@@ -605,8 +621,10 @@ impl ExactTurnCorridor {
 struct ExactCorridorShadowPolicy {
     base: SharedCombatActionPolicy,
     rank_by_exact_hash: Arc<HashMap<String, i32>>,
+    atomic_rank_by_exact_hash: Arc<HashMap<String, i32>>,
     typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
     guide: ShadowCorridorGuide,
+    shadow_only: bool,
 }
 
 struct AnchorOnlyPolicy {
@@ -662,8 +680,31 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         &self,
         position: &sts_simulator::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuideRank> {
-        let mut ranks = self.base.state_guide_ranks(position);
-        ranks.push(self.shadow_rank(position, position.combat.turn.turn_count));
+        let mut ranks = if self.shadow_only {
+            Vec::new()
+        } else {
+            self.base.state_guide_ranks(position)
+        };
+        match self.guide {
+            ShadowCorridorGuide::Exact => {
+                let exact_hash =
+                    sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                        &position.engine,
+                        &position.combat,
+                    );
+                if let Some(corridor_rank) = self.rank_by_exact_hash.get(&exact_hash).copied() {
+                    // An exact-corridor control is a sparse oracle lane. Do
+                    // not enqueue every non-corridor state with a low rank:
+                    // the guide scheduler's service-sharing window would let
+                    // those unrelated states dilute the perfect-information
+                    // control and make its result uninterpretable.
+                    ranks.push(CombatStateGuideRank::new(vec![1, corridor_rank]));
+                }
+            }
+            ShadowCorridorGuide::TypedFeature => {
+                ranks.push(self.shadow_rank(position, position.combat.turn.turn_count));
+            }
+        }
         ranks
     }
 
@@ -671,11 +712,29 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         &self,
         position: &sts_simulator::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuideRank> {
-        let mut ranks = self.base.turn_generation_guide_ranks(position);
-        if self.guide == ShadowCorridorGuide::TypedFeature {
-            ranks.push(
-                self.shadow_rank(position, position.combat.turn.turn_count.saturating_add(1)),
-            );
+        let mut ranks = if self.shadow_only {
+            Vec::new()
+        } else {
+            self.base.turn_generation_guide_ranks(position)
+        };
+        match self.guide {
+            ShadowCorridorGuide::Exact => {
+                let exact_hash =
+                    sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                        &position.engine,
+                        &position.combat,
+                    );
+                if let Some(atomic_rank) =
+                    self.atomic_rank_by_exact_hash.get(&exact_hash).copied()
+                {
+                    ranks.push(CombatStateGuideRank::new(vec![1, atomic_rank]));
+                }
+            }
+            ShadowCorridorGuide::TypedFeature => {
+                ranks.push(
+                    self.shadow_rank(position, position.combat.turn.turn_count.saturating_add(1)),
+                );
+            }
         }
         ranks
     }
@@ -726,12 +785,15 @@ fn exact_corridor_shadow_policy(
     base: SharedCombatActionPolicy,
     corridor: &ExactTurnCorridor,
     guide: ShadowCorridorGuide,
+    shadow_only: bool,
 ) -> SharedCombatActionPolicy {
     Arc::new(ExactCorridorShadowPolicy {
         base,
         rank_by_exact_hash: Arc::new(corridor.rank_by_exact_hash.clone()),
+        atomic_rank_by_exact_hash: Arc::new(corridor.atomic_rank_by_exact_hash.clone()),
         typed_target_by_turn: Arc::new(corridor.typed_target_by_turn.clone()),
         guide,
+        shadow_only,
     })
 }
 
@@ -742,8 +804,10 @@ fn value_prototype_shadow_policy(
     Arc::new(ExactCorridorShadowPolicy {
         base,
         rank_by_exact_hash: Arc::new(HashMap::new()),
+        atomic_rank_by_exact_hash: Arc::new(HashMap::new()),
         typed_target_by_turn: Arc::new(artifact.targets_by_turn()),
         guide: ShadowCorridorGuide::TypedFeature,
+        shadow_only: false,
     })
 }
 
@@ -822,14 +886,15 @@ fn load_exact_turn_corridor(
     let stepper = EngineCombatStepper;
     let mut position = case.position;
     let mut rank_by_exact_hash = HashMap::new();
+    let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
-    rank_by_exact_hash.insert(
+    let initial_exact_hash =
         sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
             &position.engine,
             &position.combat,
-        ),
-        0,
-    );
+        );
+    rank_by_exact_hash.insert(initial_exact_hash.clone(), 0);
+    atomic_rank_by_exact_hash.insert(initial_exact_hash, 0);
     typed_target_by_turn.insert(
         position.combat.turn.turn_count,
         (0, typed_combat_feature_components(&position)),
@@ -857,6 +922,13 @@ fn load_exact_turn_corridor(
             ));
         }
         position = step.position;
+        atomic_rank_by_exact_hash.insert(
+            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                &position.engine,
+                &position.combat,
+            ),
+            i32::try_from(action_index.saturating_add(1)).unwrap_or(i32::MAX),
+        );
         if step.terminal == sts_simulator::sim::combat::CombatTerminal::Unresolved
             && position.combat.turn.turn_count != previous_turn
         {
@@ -879,6 +951,7 @@ fn load_exact_turn_corridor(
     }
     Ok(ExactTurnCorridor {
         rank_by_exact_hash,
+        atomic_rank_by_exact_hash,
         typed_target_by_turn,
         action_count: actions.len(),
         terminal_final_hp: position.combat.entities.player.current_hp,
@@ -977,6 +1050,7 @@ fn main() -> Result<(), String> {
             shadow_corridor_actions,
             shadow_corridor_case,
             shadow_corridor_guide,
+            shadow_corridor_only,
             shadow_value_prototype,
             export_witness_actions,
             export_augmented_value_prototype,
@@ -1093,6 +1167,7 @@ fn main() -> Result<(), String> {
                                 base_policy,
                                 &corridor,
                                 shadow_corridor_guide,
+                                shadow_corridor_only,
                             );
                             (policy, Some(corridor), None)
                         }

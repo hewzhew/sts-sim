@@ -622,10 +622,21 @@ fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() 
         OracleCombatWitnessQuantum::deterministic(1_024, 1_024, 4_096),
     );
     let membership = session.state_membership_by_exact_hash(&target_hash);
+    let compact = session.compact_state_membership_by_exact_hash(&target_hash);
+    let mut bulk = session.compact_state_memberships_by_exact_hashes([target_hash.as_str()]);
+    let bulk = bulk.remove(&target_hash).expect("requested membership");
 
     assert!(membership.generated);
     assert!(membership.accepted);
     assert_eq!(membership.retained, membership.progress.is_some());
+    assert_eq!(compact.generated, membership.generated);
+    assert_eq!(compact.accepted, membership.accepted);
+    assert_eq!(compact.retained, membership.retained);
+    assert_eq!(bulk, compact);
+    if let Some(progress) = compact.progress {
+        assert_eq!(progress.anchor_states_ahead, None);
+        assert_eq!(progress.guided_states_ahead, None);
+    }
 }
 
 #[test]
