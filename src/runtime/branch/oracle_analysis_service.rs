@@ -58,7 +58,7 @@ pub struct OracleAnalysisServiceEndpointV1 {
     pub process_id: u32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OracleAnalysisServiceCommandV1 {
     Ping,

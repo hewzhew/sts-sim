@@ -5,11 +5,14 @@ use std::time::{Duration, Instant};
 
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
+use serde_json::{json, Value};
 use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, OracleCombatWitnessConfig,
     OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession,
 };
+use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, OracleAnalysisAdvanceRequestV1,
@@ -17,10 +20,11 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::runtime::branch::{
     call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
-    serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisWorkspaceV1,
-    OracleRunBudget, OracleRunConfig,
+    serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1,
+    OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
+use sts_simulator::sim::combat_action::{combat_action_key, target_label};
 use sts_simulator::state::core::ClientInput;
 
 #[derive(Debug, Parser)]
@@ -46,12 +50,15 @@ enum Command {
         #[command(flatten)]
         budget: BudgetArgs,
     },
-    /// Import the exact selected state from an oracle_run continuation.
+    /// Import an exact state from an oracle_run continuation.
     Import {
         #[arg(long)]
         continuation: PathBuf,
         #[arg(long)]
         workspace: PathBuf,
+        /// Import one retained frontier branch instead of the report-selected state.
+        #[arg(long)]
+        branch_id: Option<usize>,
         #[command(flatten)]
         budget: BudgetArgs,
     },
@@ -177,6 +184,69 @@ enum Command {
         #[arg(long)]
         request: String,
     },
+    /// Use typed commands against a resident oracle workspace.
+    Live {
+        #[arg(long)]
+        endpoint: PathBuf,
+        #[command(subcommand)]
+        command: LiveCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum LiveCommand {
+    /// Show the current node, choices, and tactical progress.
+    Status {
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Continue the current tactical search and return its new status.
+    Advance {
+        #[arg(long, default_value_t = 100_000)]
+        max_quanta: usize,
+        #[arg(long, default_value_t = 4_096)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 100)]
+        quantum_ms: u64,
+        #[arg(long, default_value_t = 10_000)]
+        wall_ms: u64,
+    },
+    /// Choose an owner-ranked decision at the current node.
+    Choose {
+        #[arg(long)]
+        owner_rank: u64,
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Accept the current combat incumbent and materialize its child node.
+    Accept,
+    /// Restart tactical search at the unchanged exact combat state.
+    Restart,
+    /// Print a compact timeline for the current or selected node.
+    Timeline {
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 30)]
+        tail: usize,
+    },
+    /// Export the current or selected exact combat case.
+    ExportCase {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Show the exact combat root plus replayed deepest search trajectories.
+    Combat {
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 512)]
+        max_engine_steps_per_transition: usize,
+    },
+    /// Save the resident workspace immediately.
+    Save,
+    /// Save and stop the resident workspace service.
+    Shutdown,
 }
 
 #[derive(Clone, Copy, Debug, Args)]
@@ -236,6 +306,7 @@ fn main() -> Result<(), String> {
         Command::Import {
             continuation,
             workspace,
+            branch_id,
             budget,
         } => {
             let continuation = load_oracle_run_continuation_v1(&continuation)?;
@@ -244,7 +315,14 @@ fn main() -> Result<(), String> {
                 ascension: continuation.ascension,
                 budget: budget.into_budget(),
             };
-            let analysis = OracleAnalysisWorkspaceV1::from_continuation(config, continuation)?;
+            let analysis = match branch_id {
+                Some(branch_id) => OracleAnalysisWorkspaceV1::from_continuation_branch(
+                    config,
+                    continuation,
+                    branch_id,
+                )?,
+                None => OracleAnalysisWorkspaceV1::from_continuation(config, continuation)?,
+            };
             let view = analysis.view()?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
@@ -566,6 +644,538 @@ fn main() -> Result<(), String> {
         Command::Call { endpoint, request } => {
             print_json(&call_oracle_analysis_tcp_v1(&endpoint, &request)?)
         }
+        Command::Live { endpoint, command } => run_live_command(&endpoint, command),
+    }
+}
+
+fn run_live_command(endpoint: &std::path::Path, command: LiveCommand) -> Result<(), String> {
+    match command {
+        LiveCommand::Status { node } => {
+            let result = live_call(endpoint, OracleAnalysisServiceCommandV1::Status { node })?;
+            print_json(&compact_live_node(&result))
+        }
+        LiveCommand::Advance {
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+        } => {
+            let before = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::Status { node: None },
+            )?;
+            let result = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::Advance {
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    wall_ms: Some(wall_ms),
+                },
+            )?;
+            print_json(&compact_live_advance(&before, &result))
+        }
+        LiveCommand::Choose { owner_rank, node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            let result = live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::Choose { node, owner_rank },
+            )?;
+            print_json(&compact_live_node(&result))
+        }
+        LiveCommand::Accept => {
+            let result = live_call(endpoint, OracleAnalysisServiceCommandV1::AcceptCombat)?;
+            print_json(&compact_live_node(&result))
+        }
+        LiveCommand::Restart => {
+            let result = live_call(endpoint, OracleAnalysisServiceCommandV1::RestartCombat)?;
+            print_json(&compact_live_node(&result))
+        }
+        LiveCommand::Timeline { node, tail } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::Timeline { node, tail },
+            )?)
+        }
+        LiveCommand::ExportCase { path, node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::ExportCombatCase { node, path },
+            )?)
+        }
+        LiveCommand::Combat {
+            node,
+            max_engine_steps_per_transition,
+        } => print_json(&live_combat_diagnostic(
+            endpoint,
+            node,
+            max_engine_steps_per_transition,
+        )?),
+        LiveCommand::Save => {
+            print_json(&live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?)
+        }
+        LiveCommand::Shutdown => print_json(&live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::Shutdown,
+        )?),
+    }
+}
+
+fn compact_live_node(node: &Value) -> Value {
+    json!({
+        "node": node.get("node_id"),
+        "parent": node.get("canonical_parent_node_id"),
+        "act": node.get("act"),
+        "floor": node.get("floor"),
+        "hp": node.get("current_hp"),
+        "max_hp": node.get("max_hp"),
+        "gold": node.get("gold"),
+        "boundary": node.get("boundary"),
+        "choices": node.get("choices"),
+        "children": node.get("children"),
+        "encounter": compact_encounter(node.get("encounter")),
+        "combat": compact_combat_progress(node.get("combat")),
+    })
+}
+
+fn compact_live_advance(before: &Value, result: &Value) -> Value {
+    let report = result.get("report");
+    let before_combat = before.get("combat");
+    let after_combat = report.and_then(|report| report.get("combat"));
+    json!({
+        "status": report.and_then(|report| report.get("status")),
+        "elapsed_ms": report.and_then(|report| report.get("elapsed_ms")),
+        "quanta": report.and_then(|report| report.get("quanta_served")),
+        "work_delta": {
+            "generation_work": value_u64(after_combat, "generation_work").saturating_sub(value_u64(before_combat, "generation_work")),
+            "exact_states": value_u64(after_combat, "exact_states").saturating_sub(value_u64(before_combat, "exact_states")),
+            "completed_turn_options": value_u64(after_combat, "completed_turn_options").saturating_sub(value_u64(before_combat, "completed_turn_options")),
+        },
+        "combat": compact_combat_progress(after_combat),
+        "node": result.get("node"),
+    })
+}
+
+fn value_u64(value: Option<&Value>, field: &str) -> u64 {
+    value
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn compact_encounter(encounter: Option<&Value>) -> Value {
+    let Some(encounter) = encounter.filter(|value| !value.is_null()) else {
+        return Value::Null;
+    };
+    json!({
+        "turn": encounter.get("turn"),
+        "phase": encounter.get("phase"),
+        "energy": encounter.get("energy"),
+        "player_block": encounter.get("player_block"),
+        "hand": encounter.get("hand").and_then(Value::as_array).map(|cards| cards.iter().map(card_value_label).collect::<Vec<_>>()),
+        "draw": encounter.get("draw_pile_count"),
+        "discard": encounter.get("discard_pile_count"),
+        "exhaust": encounter.get("exhaust_pile_count"),
+        "monsters": encounter.get("monsters"),
+    })
+}
+
+fn compact_combat_progress(combat: Option<&Value>) -> Value {
+    let Some(combat) = combat.filter(|value| !value.is_null()) else {
+        return Value::Null;
+    };
+    json!({
+        "generation_work": combat.get("generation_work"),
+        "exact_states": combat.get("exact_states"),
+        "completed_turn_options": combat.get("completed_turn_options"),
+        "max_player_turn": combat.get("max_player_turn"),
+        "deepest_progress": combat.get("deepest_progress_state"),
+        "deepest_survival": combat.get("deepest_survival_state"),
+        "incumbent_final_hp": combat.get("incumbent_final_hp"),
+        "incumbent_hp_loss": combat.get("incumbent_hp_loss"),
+        "incumbent_actions": combat.get("incumbent_action_count"),
+        "last_status": combat.get("last_status"),
+        "quantum_count": combat.get("quantum_count"),
+        "remaining_nodes": combat.get("remaining_nodes"),
+        "remaining_wall_ms": combat.get("remaining_wall_ms"),
+        "resume_kind": combat.get("resume_kind"),
+        "restart_count": combat.get("restart_count"),
+    })
+}
+
+fn live_call(
+    endpoint: &std::path::Path,
+    command: OracleAnalysisServiceCommandV1,
+) -> Result<Value, String> {
+    let request = serde_json::to_string(&command)
+        .map_err(|error| format!("failed to encode typed oracle command: {error}"))?;
+    let response = call_oracle_analysis_tcp_v1(endpoint, &request)?;
+    if !response.ok {
+        return Err(response
+            .error
+            .unwrap_or_else(|| format!("oracle service returned event '{}'", response.event)));
+    }
+    response.result.ok_or_else(|| {
+        format!(
+            "oracle service event '{}' returned no result",
+            response.event
+        )
+    })
+}
+
+fn resolve_live_node(endpoint: &std::path::Path, node: Option<usize>) -> Result<usize, String> {
+    if let Some(node) = node {
+        return Ok(node);
+    }
+    live_call(
+        endpoint,
+        OracleAnalysisServiceCommandV1::Status { node: None },
+    )?
+    .get("node_id")
+    .and_then(Value::as_u64)
+    .and_then(|node| usize::try_from(node).ok())
+    .ok_or_else(|| "oracle status did not contain a valid current node_id".to_string())
+}
+
+fn live_combat_diagnostic(
+    endpoint: &std::path::Path,
+    node: Option<usize>,
+    max_engine_steps_per_transition: usize,
+) -> Result<Value, String> {
+    let node = resolve_live_node(endpoint, node)?;
+    let view = live_call(
+        endpoint,
+        OracleAnalysisServiceCommandV1::View { node: Some(node) },
+    )?;
+    if view.get("encounter").is_none_or(Value::is_null) {
+        return Err(format!(
+            "oracle node {node} is not at an active combat boundary"
+        ));
+    }
+
+    let temporary_case = std::env::temp_dir().join(format!(
+        "oracle-lab-live-combat-{}-{node}.json",
+        std::process::id()
+    ));
+    live_call(
+        endpoint,
+        OracleAnalysisServiceCommandV1::ExportCombatCase {
+            node,
+            path: temporary_case.clone(),
+        },
+    )?;
+    let case_result = load_combat_case(&temporary_case);
+    let _ = std::fs::remove_file(&temporary_case);
+    let case = case_result?;
+
+    let progress_actions = combat_action_path(&view, "deepest_progress_actions")?;
+    let survival_actions = combat_action_path(&view, "deepest_survival_actions")?;
+    let search = compact_combat_progress(view.get("combat"));
+    let deepest_progress_trace = replay_combat_path(
+        case.position.clone(),
+        &progress_actions,
+        max_engine_steps_per_transition,
+    )?;
+    let deepest_survival_trace = if survival_actions == progress_actions {
+        json!({"same_as": "deepest_progress_trace"})
+    } else {
+        replay_combat_path(
+            case.position.clone(),
+            &survival_actions,
+            max_engine_steps_per_transition,
+        )?
+    };
+
+    Ok(json!({
+        "schema_name": "OracleLiveCombatDiagnosticV1",
+        "schema_version": 1,
+        "node": {
+            "node_id": node,
+            "act": view.get("act"),
+            "floor": view.get("floor"),
+            "hp": view.get("current_hp"),
+            "max_hp": view.get("max_hp"),
+            "boundary": view.get("boundary"),
+            "state_fingerprint": view.get("state_fingerprint"),
+        },
+        "run": {
+            "deck": case.position.combat.meta.master_deck_snapshot.iter().map(card_label).collect::<Vec<_>>(),
+            "relics": case.position.combat.entities.player.relics.iter().map(|relic| format!("{:?}", relic.id)).collect::<Vec<_>>(),
+            "potions": case.position.combat.entities.potions.iter().map(|potion| potion.as_ref().map(|potion| format!("{:?}", potion.id))).collect::<Vec<_>>(),
+        },
+        "root": combat_position_snapshot(&case.position),
+        "search": search,
+        "deepest_progress_trace": deepest_progress_trace,
+        "deepest_survival_trace": deepest_survival_trace,
+    }))
+}
+
+fn combat_action_path(view: &Value, field: &str) -> Result<Vec<TurnOptionAction>, String> {
+    let Some(actions) = view.get("combat").and_then(|combat| combat.get(field)) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_value(actions.clone())
+        .map_err(|error| format!("invalid oracle combat {field}: {error}"))
+}
+
+fn replay_combat_path(
+    mut position: sts_simulator::sim::combat::CombatPosition,
+    actions: &[TurnOptionAction],
+    max_engine_steps_per_transition: usize,
+) -> Result<Value, String> {
+    let stepper = EngineCombatStepper;
+    let mut turns = Vec::new();
+    let mut turn_number = position.combat.turn.turn_count;
+    let mut turn_start_hp = position.combat.entities.player.current_hp;
+    let mut turn_actions = Vec::new();
+    let mut terminal = stepper.terminal(&position);
+
+    for (index, action) in actions.iter().enumerate() {
+        let action_key = combat_action_label(&position, &action.input);
+        if stepper
+            .choice_for_legal_input(&position, &action.input)
+            .is_none()
+        {
+            return Err(format!(
+                "diagnostic path action {index} is not legal at turn {}: {action_key}",
+                position.combat.turn.turn_count
+            ));
+        }
+        let result = stepper.apply_to_stable(
+            &position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if result.truncated {
+            return Err(format!(
+                "diagnostic path action {index} exceeded {max_engine_steps_per_transition} engine steps: {action_key}"
+            ));
+        }
+        turn_actions.push(action_key);
+        position = result.position;
+        terminal = result.terminal;
+        let next_turn = position.combat.turn.turn_count;
+        if next_turn != turn_number
+            || !matches!(
+                terminal,
+                sts_simulator::sim::combat::CombatTerminal::Unresolved
+            )
+        {
+            turns.push(json!({
+                "turn": turn_number,
+                "start_hp": turn_start_hp,
+                "actions": turn_actions,
+                "end": combat_turn_snapshot(&position),
+                "terminal": format!("{terminal:?}"),
+            }));
+            turn_number = next_turn;
+            turn_start_hp = position.combat.entities.player.current_hp;
+            turn_actions = Vec::new();
+        }
+    }
+    if !turn_actions.is_empty() {
+        turns.push(json!({
+            "turn": turn_number,
+            "start_hp": turn_start_hp,
+            "actions": turn_actions,
+            "end": combat_turn_snapshot(&position),
+            "terminal": format!("{terminal:?}"),
+            "partial": true,
+        }));
+    }
+
+    Ok(json!({
+        "action_count": actions.len(),
+        "turns": turns,
+        "terminal": format!("{terminal:?}"),
+    }))
+}
+
+fn combat_action_label(
+    position: &sts_simulator::sim::combat::CombatPosition,
+    input: &ClientInput,
+) -> String {
+    match input {
+        ClientInput::PlayCard { card_index, target } => position
+            .combat
+            .zones
+            .hand
+            .get(*card_index)
+            .map(|card| {
+                let target = compact_target_label(&position.combat, *target);
+                if target == "none" {
+                    format!("play {}", card_label(card))
+                } else {
+                    format!("play {} -> {target}", card_label(card))
+                }
+            })
+            .unwrap_or_else(|| combat_action_key(&position.combat, input)),
+        ClientInput::UsePotion {
+            potion_index,
+            target,
+        } => {
+            let potion = position
+                .combat
+                .entities
+                .potions
+                .get(*potion_index)
+                .and_then(Option::as_ref)
+                .map(|potion| format!("{:?}", potion.id))
+                .unwrap_or_else(|| format!("slot {potion_index}"));
+            let target = compact_target_label(&position.combat, *target);
+            if target == "none" {
+                format!("use {potion}")
+            } else {
+                format!("use {potion} -> {target}")
+            }
+        }
+        ClientInput::EndTurn => "end turn".to_string(),
+        ClientInput::SubmitSelection(resolution) => {
+            let selected = resolution
+                .selected_card_uuids()
+                .into_iter()
+                .map(|uuid| combat_card_uuid_label(&position.combat, uuid))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("select {selected}")
+        }
+        _ => combat_action_key(&position.combat, input),
+    }
+}
+
+fn compact_target_label(
+    combat: &sts_simulator::runtime::combat::CombatState,
+    target: Option<usize>,
+) -> String {
+    let Some(target) = target else {
+        return "none".to_string();
+    };
+    combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| monster.id == target)
+        .map(|monster| {
+            let label = EnemyId::from_id(monster.monster_type)
+                .map(|enemy| enemy.get_name())
+                .unwrap_or("Unknown");
+            format!("{label}[{}]", monster.slot)
+        })
+        .unwrap_or_else(|| target_label(combat, Some(target)))
+}
+
+fn combat_card_uuid_label(
+    combat: &sts_simulator::runtime::combat::CombatState,
+    uuid: u32,
+) -> String {
+    combat
+        .zones
+        .hand
+        .iter()
+        .chain(&combat.zones.draw_pile)
+        .chain(&combat.zones.discard_pile)
+        .chain(&combat.zones.exhaust_pile)
+        .find(|card| card.uuid == uuid)
+        .map(card_label)
+        .unwrap_or_else(|| format!("card#{uuid}"))
+}
+
+fn combat_turn_snapshot(position: &sts_simulator::sim::combat::CombatPosition) -> Value {
+    let combat = &position.combat;
+    let player = &combat.entities.player;
+    json!({
+        "hp": player.current_hp,
+        "block": player.block,
+        "energy": combat.turn.energy,
+        "player_powers": combat_power_labels(combat, player.id),
+        "hand": combat.zones.hand.iter().map(card_label).collect::<Vec<_>>().join(" | "),
+        "piles": format!("draw {} / discard {} / exhaust {}", combat.zones.draw_pile.len(), combat.zones.discard_pile.len(), combat.zones.exhaust_pile.len()),
+        "monsters": combat.entities.monsters.iter().map(|monster| monster_state_label(combat, monster)).collect::<Vec<_>>(),
+    })
+}
+
+fn combat_position_snapshot(position: &sts_simulator::sim::combat::CombatPosition) -> Value {
+    let combat = &position.combat;
+    let player = &combat.entities.player;
+    json!({
+        "turn": combat.turn.turn_count,
+        "phase": format!("{:?}", combat.turn.current_phase),
+        "player": {
+            "hp": player.current_hp,
+            "max_hp": player.max_hp,
+            "block": player.block,
+            "energy": combat.turn.energy,
+            "powers": combat_power_labels(combat, player.id),
+        },
+        "hand": combat.zones.hand.iter().map(card_label).collect::<Vec<_>>().join(" | "),
+        "piles": format!("draw {} / discard {} / exhaust {}", combat.zones.draw_pile.len(), combat.zones.discard_pile.len(), combat.zones.exhaust_pile.len()),
+        "monsters": combat.entities.monsters.iter().map(|monster| monster_state_label(combat, monster)).collect::<Vec<_>>(),
+    })
+}
+
+fn combat_power_labels(
+    combat: &sts_simulator::runtime::combat::CombatState,
+    entity: sts_simulator::EntityId,
+) -> Vec<String> {
+    sts_simulator::content::powers::store::powers_for(combat, entity)
+        .unwrap_or_default()
+        .iter()
+        .map(|power| format!("{:?}:{}", power.power_type, power.amount))
+        .collect()
+}
+
+fn monster_state_label(
+    combat: &sts_simulator::runtime::combat::CombatState,
+    monster: &sts_simulator::runtime::combat::MonsterEntity,
+) -> String {
+    let label = EnemyId::from_id(monster.monster_type)
+        .map(|enemy| enemy.get_name())
+        .unwrap_or("Unknown");
+    if !monster.is_alive_for_action() {
+        return format!("{label}[{}] dead", monster.slot);
+    }
+    let intent = monster
+        .move_state
+        .planned_visible_spec
+        .as_ref()
+        .map(|intent| format!("{intent:?}"))
+        .unwrap_or_else(|| format!("move:{}", monster.planned_move_id()));
+    let powers = combat_power_labels(combat, monster.id);
+    let powers = if powers.is_empty() {
+        String::new()
+    } else {
+        format!(" powers=[{}]", powers.join(", "))
+    };
+    format!(
+        "{label}[{}] {}/{} block={} intent={intent}{powers}",
+        monster.slot, monster.current_hp, monster.max_hp, monster.block
+    )
+}
+
+fn card_label(card: &sts_simulator::runtime::combat::CombatCard) -> String {
+    let upgrade = if card.upgrades == 0 {
+        String::new()
+    } else {
+        format!("+{}", card.upgrades)
+    };
+    format!("{}{}", cards::java_id(card.id), upgrade)
+}
+
+fn card_value_label(card: &Value) -> String {
+    let id = card
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("UnknownCard");
+    let upgrades = card.get("upgrades").and_then(Value::as_u64).unwrap_or(0);
+    if upgrades == 0 {
+        id.to_string()
+    } else {
+        format!("{id}+{upgrades}")
     }
 }
 

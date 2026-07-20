@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
-    expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_from_session_v1,
-    seed_oracle_run_explorer_v1, OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
-    OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
-    RunControlConfig, RunControlSession,
+    expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_from_checkpoint_v1,
+    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
+    OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, RunControlConfig,
+    RunControlSession,
 };
 
 use super::oracle_run::{
@@ -87,6 +88,51 @@ impl OracleAnalysisWorkspaceV1 {
         let explorer = seed_oracle_run_explorer_from_session_v1(
             continuation.session.into_session()?,
             continuation.journal,
+            &combat_budgets,
+            Some(super::owner_audit::oracle_candidate_order),
+        )?;
+        let cursor = explorer.branches.first().map(|branch| branch.branch_id);
+        let analysis = OracleAnalysisSessionV1::from_explorer(
+            explorer,
+            cursor,
+            combat_budgets,
+            Some(super::owner_audit::oracle_candidate_order),
+            Some(super::owner_audit::oracle_candidate_annotation),
+        )?;
+        Ok(Self {
+            seed: config.seed,
+            ascension: config.ascension,
+            budget: config.budget,
+            session: analysis,
+        })
+    }
+
+    pub fn from_continuation_branch(
+        config: OracleRunConfig,
+        continuation: OracleRunContinuationV1,
+        branch_id: usize,
+    ) -> Result<Self, String> {
+        validate_analysis_config(&config)?;
+        if continuation.seed != config.seed || continuation.ascension != config.ascension {
+            return Err(format!(
+                "oracle continuation is seed {} A{}, requested analysis is seed {} A{}",
+                continuation.seed, continuation.ascension, config.seed, config.ascension
+            ));
+        }
+        let combat_budgets = oracle_combat_budgets(&config);
+        let frontier = continuation.explorer_frontier.ok_or_else(|| {
+            "oracle continuation has no retained frontier from which to import a branch".to_string()
+        })?;
+        let mut restored = seed_oracle_run_explorer_from_checkpoint_v1(frontier, &combat_budgets)?;
+        let branch_index = restored
+            .branches
+            .iter()
+            .position(|branch| branch.branch_id == branch_id)
+            .ok_or_else(|| format!("oracle continuation does not retain branch {branch_id}"))?;
+        let branch = restored.branches.swap_remove(branch_index);
+        let explorer = seed_oracle_run_explorer_from_session_v1(
+            branch.session,
+            branch.journal,
             &combat_budgets,
             Some(super::owner_audit::oracle_candidate_order),
         )?;
