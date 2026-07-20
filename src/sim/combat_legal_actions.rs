@@ -13,6 +13,15 @@ pub fn engine_atomic_actions(engine: &EngineState, combat: &CombatState) -> Vec<
     match engine {
         EngineState::CombatPlayerTurn => {
             moves.push(ClientInput::EndTurn);
+            // Smoke Bomb disables the combat UI in the Java game while the
+            // escape animation finishes.  Our deterministic engine models
+            // that animation as an end-turn transition, so EndTurn is the
+            // only admissible input once escape has started.  Exposing cards
+            // or more potions here lets search manufacture a fake
+            // "victory" by acting after it has already committed to escape.
+            if combat.turn.counters.player_escaping {
+                return moves;
+            }
             for (potion_index, maybe_potion) in combat.entities.potions.iter().enumerate() {
                 let Some(potion) = maybe_potion.as_ref() else {
                     continue;
@@ -197,6 +206,28 @@ mod tests {
                 }
             )),
             "Smoke Bomb is not usable in boss combat"
+        );
+    }
+
+    #[test]
+    fn smoke_escape_in_progress_only_exposes_the_forced_end_turn() {
+        let mut combat = build_fixture_combat();
+        combat.turn.counters.player_escaping = true;
+        combat.entities.potions = vec![
+            Some(Potion::with_affordance_truth(
+                PotionId::EnergyPotion,
+                1,
+                true,
+                true,
+                false,
+            )),
+            None,
+            None,
+        ];
+
+        assert_eq!(
+            engine_atomic_actions(&EngineState::CombatPlayerTurn, &combat),
+            vec![ClientInput::EndTurn]
         );
     }
 

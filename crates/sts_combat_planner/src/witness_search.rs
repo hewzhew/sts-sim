@@ -454,6 +454,12 @@ impl OracleCombatWitnessSession {
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
+        if witness.final_position.combat.runtime.combat_smoked {
+            return Err(
+                "restored oracle combat witness is a Smoke Bomb escape, not a terminal victory"
+                    .to_string(),
+            );
+        }
         if sts_core::sim::combat::combat_terminal(
             &witness.final_position.engine,
             &witness.final_position.combat,
@@ -1177,7 +1183,9 @@ impl OracleCombatWitnessSession {
             replay.next_action = replay.next_action.saturating_add(1);
         }
 
-        if stepper.terminal(&replay.position) != CombatTerminal::Win {
+        if stepper.terminal(&replay.position) != CombatTerminal::Win
+            || replay.position.combat.runtime.combat_smoked
+        {
             let error = OracleCombatWitnessReplayError::FinalStateIsNotWin;
             self.replay_failure = Some(error.clone());
             self.pending_witness = None;

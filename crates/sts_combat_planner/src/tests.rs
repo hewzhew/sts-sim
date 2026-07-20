@@ -549,6 +549,33 @@ fn verified_witness_survives_a_serialized_search_restart() {
 }
 
 #[test]
+fn smoke_bomb_escape_cannot_be_restored_as_a_victory_witness() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let config = OracleCombatWitnessConfig {
+        generator: config(),
+        generation_work_per_agenda_pop: 1,
+        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+    };
+    let mut source =
+        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
+    let report = source.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(1_000, 1_000, 4_000),
+    );
+    let mut escaped = report.witness.expect("verified witness");
+    escaped.final_position.combat.runtime.combat_smoked = true;
+
+    let mut restarted =
+        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
+    let error = restarted
+        .restore_verified_witness(escaped)
+        .expect_err("escape is not victory");
+
+    assert!(error.contains("Smoke Bomb escape"));
+    assert!(restarted.witness().is_none());
+}
+
+#[test]
 fn oracle_witness_search_retains_work_across_split_quanta() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let make_session = || {

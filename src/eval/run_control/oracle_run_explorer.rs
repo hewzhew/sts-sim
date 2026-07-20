@@ -845,7 +845,17 @@ impl OracleRunExplorerV1 {
         let nodes_expanded = progress.generation_work;
         let _ = finalization_deadline;
         let mut session = parent.session.clone();
-        let outcome = pending.work.finish_and_apply(&mut session)?;
+        let outcome = pending
+            .work
+            .finish_and_apply(&mut session)
+            .map_err(|error| {
+                format!(
+                "oracle combat branch {} at Act {} Floor {} failed to commit its witness: {error}",
+                parent.branch_id,
+                parent.session.run_state.act_num,
+                parent.session.run_state.floor_num
+            )
+            })?;
         if outcome.progress_steps.is_empty() {
             let rejection = outcome.combat_search_rejection.ok_or_else(|| {
                 format!(

@@ -119,6 +119,12 @@ pub(super) fn apply_oracle_combat_witness(
     if witness.actions.is_empty() {
         return Err("oracle combat witness contains no actions".to_string());
     }
+    if witness.final_position.combat.runtime.combat_smoked {
+        return Err(
+            "oracle combat victory witness is a Smoke Bomb escape and must use the escape resolution channel"
+                .to_string(),
+        );
+    }
     if session.current_active_combat_position()? != *start {
         return Err("oracle combat parent changed before witness commit".to_string());
     }
@@ -130,7 +136,18 @@ pub(super) fn apply_oracle_combat_witness(
     let mut automation_actions = Vec::with_capacity(witness.actions.len());
     trial.mark_current_combat_search_resolved();
     for (step_index, action) in witness.actions.iter().enumerate() {
-        let position = trial.current_combat_position_for_actions()?;
+        let position = trial.current_combat_position_for_actions().map_err(|error| {
+            format!(
+                "oracle witness lost its active combat before action {step_index}/{} ({:?}): {error}; witness inputs={:?}",
+                witness.actions.len(),
+                action.input,
+                witness
+                    .actions
+                    .iter()
+                    .map(|step| &step.input)
+                    .collect::<Vec<_>>()
+            )
+        })?;
         let choice = EngineCombatStepper
             .choice_for_legal_input(&position, &action.input)
             .ok_or_else(|| format!("oracle witness action {step_index} is no longer legal"))?;

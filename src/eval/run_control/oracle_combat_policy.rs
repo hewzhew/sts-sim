@@ -201,9 +201,13 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
             });
             current = step.position;
         }
-        (stepper.terminal(&current) == CombatTerminal::Win).then_some(CombatPolicyWitnessProposal {
-            actions,
-            final_hp_hint: proposal.final_hp_hint,
-        })
+        // `CombatTerminal` predates typed escape outcomes and therefore also
+        // calls a post-Smoke-Bomb reward screen `Win`.  Such a line belongs
+        // to run-control's escape channel, never to the exact-victory donor.
+        (stepper.terminal(&current) == CombatTerminal::Win && !current.combat.runtime.combat_smoked)
+            .then_some(CombatPolicyWitnessProposal {
+                actions,
+                final_hp_hint: proposal.final_hp_hint,
+            })
     }
 }
