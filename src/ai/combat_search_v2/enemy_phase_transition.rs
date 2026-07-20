@@ -26,6 +26,12 @@ use transition_rules::{
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyPhaseTransitionHint {
+    /// Exact immediate damage progress from the simulator's resolved card
+    /// actions, including multi-hit damage, Strength, Vulnerable, and relic
+    /// modifiers.  Action ordering must not infer lethality from a card's
+    /// single-hit base damage.
+    pub(super) projected_damage_progress: i32,
+    pub(super) projected_target_lethal: bool,
     pub(super) split_trigger_count: usize,
     pub(super) split_debt_hp: i32,
     pub(super) guardian_mode_shift_trigger_count: usize,
@@ -127,6 +133,35 @@ fn play_card_phase_transition_hint(
         &mut projection,
         actions.into_iter().map(|action| action.action),
     );
+
+    let target_kind = cards::effective_target(card);
+    let relevant = projection
+        .monsters
+        .values()
+        .filter(|projected| match target_kind {
+            cards::CardTarget::AllEnemy => true,
+            cards::CardTarget::Enemy | cards::CardTarget::SelfAndEnemy => {
+                target == Some(projected.entity_id)
+            }
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    hint.projected_damage_progress = relevant.iter().fold(0_i32, |total, projected| {
+        let initial_block = combat
+            .entities
+            .monsters
+            .iter()
+            .find(|monster| monster.id == projected.entity_id)
+            .map_or(0, |monster| monster.block);
+        let before = projected.current_hp.saturating_add(initial_block);
+        let after = projected
+            .projected_hp
+            .saturating_add(projected.projected_block);
+        total.saturating_add(before.saturating_sub(after).max(0))
+    });
+    hint.projected_target_lethal = relevant
+        .iter()
+        .any(|projected| projected.current_hp > 0 && projected.projected_hp <= 0);
 
     for projected in projection.monsters.values() {
         observe_split_transition(&mut hint, projected);

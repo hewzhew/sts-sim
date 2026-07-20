@@ -268,6 +268,64 @@ fn lethal_play_card_gets_lethal_role() {
 }
 
 #[test]
+fn multi_hit_lethal_uses_resolved_strength_vulnerable_and_paper_frog_damage() {
+    use crate::content::powers::{store, PowerId};
+    use crate::content::relics::{RelicId, RelicState};
+    use crate::runtime::combat::{Power, PowerPayload};
+
+    let mut combat = blank_test_combat();
+    combat
+        .entities
+        .player
+        .add_relic(RelicState::new(RelicId::PaperFrog));
+    let player = combat.entities.player.id;
+    store::set_powers_for(
+        &mut combat,
+        player,
+        vec![Power {
+            power_type: PowerId::Strength,
+            instance_id: None,
+            amount: 6,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let mut monster = test_monster(EnemyId::Cultist);
+    monster.id = 1;
+    monster.current_hp = 37;
+    monster.max_hp = 300;
+    combat.entities.monsters = vec![monster];
+    store::set_powers_for(
+        &mut combat,
+        1,
+        vec![Power {
+            power_type: PowerId::Vulnerable,
+            instance_id: None,
+            amount: 1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    combat.zones.hand = vec![CombatCard::new(CardId::TwinStrike, 10)];
+
+    let priority = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(priority.role, ActionOrderingRole::LethalCard);
+    assert_eq!(priority.target_progress, 37);
+}
+
+#[test]
 fn timed_threat_damage_progress_orders_before_neutral_target() {
     let mut combat = blank_test_combat();
     let mut neutral = test_monster(EnemyId::Repulsor);

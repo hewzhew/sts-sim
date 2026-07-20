@@ -38,7 +38,7 @@ pub(super) fn priority_for_play_card(
     let def = cards::get_card_definition(card.id);
     let target_kind = cards::effective_target(card);
     let resource_timing = resource_timing_facts_for_play(combat, card_index, target);
-    let damage = evaluated
+    let declared_damage = evaluated
         .base_damage_mut
         .max(resource_timing.conversion_damage_hint)
         .max(0);
@@ -49,15 +49,6 @@ pub(super) fn priority_for_play_card(
         .max(resource_timing.conversion_block_hint)
         .max(0)
         .saturating_add(effects.reactive.player_block);
-    let target_progress = target_progress_hint(combat, target_kind, target, damage)
-        .saturating_add(effects.reactive.enemy_damage);
-    let timed_threat = (target_progress > 0)
-        .then(|| target.and_then(|entity_id| timed_enemy_threat_for_target(combat, entity_id)))
-        .flatten();
-    let mitigation = effects.net_mitigation_ordering_score().max(0);
-    let reactive_risk = effects.reactive_risk_score();
-    let target_lethal = target_progress_kills(combat, target_kind, target, damage);
-    let future_debuff = effects.has_future_debuff();
     let phase_transition = enemy_phase_transition_hint_for_input_with_effects(
         combat,
         card_index,
@@ -66,6 +57,24 @@ pub(super) fn priority_for_play_card(
         effects,
         plugins.phase_guard,
     );
+    let damage = declared_damage.max(phase_transition.projected_damage_progress);
+    let target_progress = phase_transition
+        .projected_damage_progress
+        .max(target_progress_hint(
+            combat,
+            target_kind,
+            target,
+            declared_damage,
+        ))
+        .saturating_add(effects.reactive.enemy_damage);
+    let timed_threat = (target_progress > 0)
+        .then(|| target.and_then(|entity_id| timed_enemy_threat_for_target(combat, entity_id)))
+        .flatten();
+    let mitigation = effects.net_mitigation_ordering_score().max(0);
+    let reactive_risk = effects.reactive_risk_score();
+    let target_lethal = phase_transition.projected_target_lethal
+        || target_progress_kills(combat, target_kind, target, declared_damage);
+    let future_debuff = effects.has_future_debuff();
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);
     let visible_damage = visible_incoming_damage(combat);
