@@ -1,6 +1,12 @@
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use crate::state::core::ClientInput;
-use crate::{content::powers::PowerId, runtime::combat::CombatState};
+use crate::{
+    content::{
+        cards::{get_card_definition, CardType},
+        powers::{store, PowerId},
+    },
+    runtime::combat::CombatState,
+};
 
 use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
 use super::frontier::SearchNode;
@@ -145,20 +151,33 @@ pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<
 pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i32> {
     let node = SearchNode::root(position.engine.clone(), position.combat.clone());
     let value = combat_search_state_value(&node);
-    let (active_setup_powers, setup_power_mass) = player_setup_power_summary(&position.combat);
+    let setup = player_setup_summary(&position.combat);
     vec![
-        active_setup_powers,
-        setup_power_mass,
-        value.hand_damage,
-        value.hand_block,
-        i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
-        value.survival_margin,
+        setup.exhaust_engine_connected,
+        setup.status_access_engine_connected,
+        setup.exhaust_engine_fuel,
         value.player_hp,
+        value.survival_margin,
+        setup.active_power_count,
+        setup.active_power_mass,
+        value.hand_block,
+        value.hand_damage,
+        i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
     ]
 }
 
-fn player_setup_power_summary(combat: &CombatState) -> (i32, i32) {
-    crate::content::powers::store::powers_for(combat, combat.entities.player.id)
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PlayerSetupSummary {
+    exhaust_engine_connected: i32,
+    status_access_engine_connected: i32,
+    exhaust_engine_fuel: i32,
+    active_power_count: i32,
+    active_power_mass: i32,
+}
+
+fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
+    let player = combat.entities.player.id;
+    let (active_power_count, active_power_mass) = store::powers_for(combat, player)
         .into_iter()
         .flatten()
         .filter(|power| player_power_is_positive_setup(power.power_type, power.amount))
@@ -169,7 +188,34 @@ fn player_setup_power_summary(combat: &CombatState) -> (i32, i32) {
                 power.amount.clamp(1, 12)
             };
             (count.saturating_add(1), mass.saturating_add(amount))
-        })
+        });
+    let unexhausted_cards = combat
+        .zones
+        .hand
+        .iter()
+        .chain(&combat.zones.draw_pile)
+        .chain(&combat.zones.discard_pile);
+    let (remaining_skills, remaining_statuses) = unexhausted_cards.fold(
+        (0_i32, 0_i32),
+        |(skills, statuses), card| match get_card_definition(card.id).card_type {
+            CardType::Skill => (skills.saturating_add(1), statuses),
+            CardType::Status => (skills, statuses.saturating_add(1)),
+            _ => (skills, statuses),
+        },
+    );
+    let exhaust_engine_connected = i32::from(
+        store::has_power(combat, player, PowerId::Corruption)
+            && store::has_power(combat, player, PowerId::DarkEmbrace),
+    );
+    let status_access_engine_connected =
+        i32::from(remaining_statuses > 0 && store::has_power(combat, player, PowerId::Evolve));
+    PlayerSetupSummary {
+        exhaust_engine_connected,
+        status_access_engine_connected,
+        exhaust_engine_fuel: remaining_skills.saturating_mul(exhaust_engine_connected),
+        active_power_count,
+        active_power_mass,
+    }
 }
 
 fn player_power_is_positive_setup(power: PowerId, amount: i32) -> bool {
@@ -207,7 +253,7 @@ mod tests {
     use super::*;
     use crate::content::cards::CardId;
     use crate::content::monsters::EnemyId;
-    use crate::runtime::combat::CombatCard;
+    use crate::runtime::combat::{CombatCard, Power, PowerPayload};
     use crate::state::core::EngineState;
 
     #[test]
@@ -245,5 +291,58 @@ mod tests {
         let rank = oracle_combat_horizon_guide_components(&position);
 
         assert_eq!(rank.first(), Some(&7));
+    }
+
+    #[test]
+    fn setup_summary_recognizes_connected_engines_and_remaining_fuel() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat.entities.power_db.insert(
+            player,
+            vec![
+                test_power(PowerId::DarkEmbrace),
+                test_power(PowerId::Corruption),
+                test_power(PowerId::Evolve),
+            ],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::ShrugItOff, 21),
+            CombatCard::new(CardId::Wound, 22),
+        ];
+        combat.zones.draw_pile = vec![CombatCard::new(CardId::TrueGrit, 23)];
+
+        let summary = player_setup_summary(&combat);
+
+        assert_eq!(summary.exhaust_engine_connected, 1);
+        assert_eq!(summary.status_access_engine_connected, 1);
+        assert_eq!(summary.exhaust_engine_fuel, 2);
+    }
+
+    #[test]
+    fn evolve_without_status_burden_is_not_a_connected_status_engine() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat
+            .entities
+            .power_db
+            .insert(player, vec![test_power(PowerId::Evolve)]);
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 31)];
+
+        let summary = player_setup_summary(&combat);
+
+        assert_eq!(summary.status_access_engine_connected, 0);
+        assert_eq!(summary.exhaust_engine_connected, 0);
+        assert_eq!(summary.exhaust_engine_fuel, 0);
+    }
+
+    fn test_power(power_type: PowerId) -> Power {
+        Power {
+            power_type,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            payload: PowerPayload::None,
+            just_applied: false,
+        }
     }
 }
