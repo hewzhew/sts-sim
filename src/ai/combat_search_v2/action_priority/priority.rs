@@ -11,6 +11,7 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) role_rank: i32,
     pub(in crate::ai::combat_search_v2) potion_tactical_rank: i32,
     pub(in crate::ai::combat_search_v2) mitigation: i32,
+    pub(in crate::ai::combat_search_v2) action_supply: i32,
     pub(in crate::ai::combat_search_v2) reactive_risk: i32,
     pub(in crate::ai::combat_search_v2) targets_timed_threat: i32,
     pub(in crate::ai::combat_search_v2) timed_threat_urgency: i32,
@@ -37,6 +38,7 @@ impl ActionOrderingPriority {
             role_rank: ROLE_END_TURN,
             potion_tactical_rank: 0,
             mitigation: 0,
+            action_supply: 0,
             reactive_risk: 0,
             targets_timed_threat: 0,
             timed_threat_urgency: 0,
@@ -64,6 +66,7 @@ impl Ord for ActionOrderingPriority {
             .cmp(&other.role_rank)
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
+            .then_with(|| self.action_supply.cmp(&other.action_supply))
             .then_with(|| self.reactive_risk.cmp(&other.reactive_risk))
             .then_with(|| self.targets_timed_threat.cmp(&other.targets_timed_threat))
             .then_with(|| self.timed_threat_urgency.cmp(&other.timed_threat_urgency))

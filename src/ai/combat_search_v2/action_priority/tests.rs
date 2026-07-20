@@ -90,6 +90,135 @@ fn add_visible_attacker(combat: &mut crate::runtime::combat::CombatState) {
 }
 
 #[test]
+fn weak_against_a_visible_attack_is_ranked_as_real_mitigation() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Intimidate, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    add_visible_attacker(&mut combat);
+
+    let weak = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: Some(2),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(weak.effects.direct.enemy_weak > 0);
+    assert!(weak.effects.direct.visible_attack_mitigation_hint > 0);
+    assert_eq!(weak.role, ActionOrderingRole::SustainedMitigation);
+    assert!(weak > strike, "weak={weak:?} strike={strike:?}");
+}
+
+#[test]
+fn weak_without_a_visible_attack_is_not_promoted_to_immediate_mitigation() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.zones.hand = vec![CombatCard::new(CardId::Intimidate, 10)];
+    let mut cultist = test_monster(EnemyId::Cultist);
+    cultist.id = 1;
+    combat.entities.monsters = vec![cultist];
+
+    let weak = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert!(weak.effects.direct.enemy_weak > 0);
+    assert_eq!(weak.effects.direct.visible_attack_mitigation_hint, 0);
+    assert_ne!(weak.role, ActionOrderingRole::SustainedMitigation);
+}
+
+#[test]
+fn draw_and_energy_gain_are_ranked_as_immediate_action_supply() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.entities.player.current_hp = 40;
+    let mut warcry = CombatCard::new(CardId::Warcry, 10);
+    warcry.upgrades = 1;
+    let mut bloodletting = CombatCard::new(CardId::Bloodletting, 11);
+    bloodletting.upgrades = 1;
+    combat.zones.hand = vec![warcry, bloodletting, CombatCard::new(CardId::Strike, 12)];
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    combat.entities.monsters = vec![monster];
+
+    for card_index in [0, 1] {
+        let supply = priority_for_input(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            &ClientInput::PlayCard {
+                card_index,
+                target: None,
+            },
+            CombatSearchV2PhaseGuardPolicy::Default,
+            CombatSearchV2SetupBiasPolicy::Default,
+        );
+        assert_eq!(supply.role, ActionOrderingRole::ImmediateActionSupply);
+        assert!(supply.action_supply > 0, "supply={supply:?}");
+    }
+}
+
+#[test]
+fn unusable_draw_and_lethal_self_damage_do_not_claim_immediate_supply() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.entities.player.current_hp = 3;
+    let mut warcry = CombatCard::new(CardId::Warcry, 10);
+    warcry.upgrades = 1;
+    let mut bloodletting = CombatCard::new(CardId::Bloodletting, 11);
+    bloodletting.upgrades = 1;
+    combat.zones.hand = vec![warcry, bloodletting];
+    combat.entities.power_db.insert(
+        0,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::NoDraw,
+            instance_id: None,
+            amount: -1,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+
+    for card_index in [0, 1] {
+        let action = priority_for_input(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            &ClientInput::PlayCard {
+                card_index,
+                target: None,
+            },
+            CombatSearchV2PhaseGuardPolicy::Default,
+            CombatSearchV2SetupBiasPolicy::Default,
+        );
+        assert_ne!(action.role, ActionOrderingRole::ImmediateActionSupply);
+    }
+}
+
+#[test]
 fn vulnerable_setup_under_visible_attack_is_ranked_below_ending_turn() {
     let mut combat = blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Berserk, 10)];

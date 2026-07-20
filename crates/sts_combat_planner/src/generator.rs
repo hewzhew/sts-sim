@@ -175,6 +175,9 @@ pub struct TurnOptionGeneratorSession {
     gaps: Vec<TurnOptionGenerationGap>,
     applied_action_transitions: usize,
     duplicate_exact_successors: usize,
+    atomic_state_expansions: usize,
+    anchor_work_pops: usize,
+    guided_work_pops: usize,
     used: CombatPlanningCounters,
     granted: CombatPlanningCounters,
 }
@@ -215,6 +218,9 @@ impl TurnOptionGeneratorSession {
             gaps: Vec::new(),
             applied_action_transitions: 0,
             duplicate_exact_successors: 0,
+            atomic_state_expansions: 0,
+            anchor_work_pops: 0,
+            guided_work_pops: 0,
             used: CombatPlanningCounters::default(),
             granted: CombatPlanningCounters::default(),
         };
@@ -230,12 +236,133 @@ impl TurnOptionGeneratorSession {
         &self.completed
     }
 
+    /// Diagnostic membership for one exact partial-turn position.  `seen`
+    /// records both live and already-expanded states, so this distinguishes a
+    /// prefix that was never generated from one that was generated and later
+    /// consumed.  It does not change retention or scheduling.
+    pub fn has_seen_exact_position(&self, position: &CombatPosition) -> bool {
+        self.seen
+            .contains(&combat_exact_state_key(&position.engine, &position.combat))
+    }
+
+    /// Counts still-live generator work rooted at one exact partial-turn
+    /// position as `(expand, apply_action, structured_selection)`.  This is a
+    /// diagnostic view only; inspecting it does not affect queue order.
+    pub fn live_work_counts_at_exact_position(
+        &self,
+        position: &CombatPosition,
+    ) -> (usize, usize, usize) {
+        let target = combat_exact_state_key(&position.engine, &position.combat);
+        let counts = self
+            .work
+            .iter()
+            .filter_map(Option::as_ref)
+            .filter(|work| {
+                combat_exact_state_key(&work.position().engine, &work.position().combat) == target
+            })
+            .fold((0, 0, 0), |mut counts, work| {
+                match work {
+                    GeneratorWork::Expand(_) => counts.0 += 1,
+                    GeneratorWork::ApplyAction(_) => counts.1 += 1,
+                    GeneratorWork::StructuredSelection(_) => counts.2 += 1,
+                }
+                counts
+            });
+        counts
+    }
+
+    /// Reports whether a particular exact atomic transition is already
+    /// waiting in the live work queue for this parent position.
+    pub fn has_live_action_transition(
+        &self,
+        position: &CombatPosition,
+        input: &ClientInput,
+    ) -> bool {
+        let target = combat_exact_state_key(&position.engine, &position.combat);
+        self.work.iter().filter_map(Option::as_ref).any(|work| {
+            matches!(
+                work,
+                GeneratorWork::ApplyAction(action)
+                    if combat_exact_state_key(
+                        &action.parent.position.engine,
+                        &action.parent.position.combat,
+                    ) == target
+                        && action.input == *input
+            )
+        })
+    }
+
+    /// One-based live queue ranks for an exact pending expansion, returned as
+    /// `(anchor_rank, guide_ranks)`. Lower is scheduled earlier within that
+    /// view. This exposes queue placement without mutating queues.
+    pub fn live_expand_queue_ranks_at_exact_position(
+        &self,
+        position: &CombatPosition,
+    ) -> Option<(usize, Vec<usize>)> {
+        let target_key = combat_exact_state_key(&position.engine, &position.combat);
+        let target_work_id = self
+            .work
+            .iter()
+            .enumerate()
+            .find_map(|(work_id, work)| match work.as_ref()? {
+                GeneratorWork::Expand(partial)
+                    if combat_exact_state_key(
+                        &partial.position.engine,
+                        &partial.position.combat,
+                    ) == target_key =>
+                {
+                    Some(work_id)
+                }
+                _ => None,
+            })?;
+        let target_anchor = self
+            .anchor_frontier
+            .iter()
+            .find(|entry| entry.work_id == target_work_id)?;
+        let anchor_rank = 1 + self
+            .anchor_frontier
+            .iter()
+            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| *entry > target_anchor)
+            .count();
+        let guide_ranks = self
+            .guided_frontiers
+            .iter()
+            .map(|frontier| {
+                let Some(target) = frontier
+                    .iter()
+                    .find(|entry| entry.work_id == target_work_id)
+                else {
+                    return 0;
+                };
+                1 + frontier
+                    .iter()
+                    .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+                    .filter(|entry| *entry > target)
+                    .count()
+            })
+            .collect();
+        Some((anchor_rank, guide_ranks))
+    }
+
     pub fn gaps(&self) -> &[TurnOptionGenerationGap] {
         &self.gaps
     }
 
     pub fn counters(&self) -> CombatPlanningCounters {
         self.used
+    }
+
+    pub fn atomic_state_expansions(&self) -> usize {
+        self.atomic_state_expansions
+    }
+
+    pub fn anchor_work_pops(&self) -> usize {
+        self.anchor_work_pops
+    }
+
+    pub fn guided_work_pops(&self) -> usize {
+        self.guided_work_pops
     }
 
     pub fn granted_budget(&self) -> CombatPlanningCounters {
@@ -262,18 +389,21 @@ impl TurnOptionGeneratorSession {
     pub(crate) fn best_retained_path_bound(&mut self) -> Option<(usize, f64)> {
         while let Some(entry) = self.anchor_frontier.peek() {
             if self.work.get(entry.work_id).is_some_and(Option::is_some) {
-                return Some((
-                    entry.priority.atomic_depth,
-                    entry.priority.negative_log_policy,
-                ));
+                break;
             }
             self.anchor_frontier.pop();
         }
-        None
+        self.anchor_frontier.peek().map(|entry| {
+            (
+                entry.priority.atomic_depth,
+                entry.priority.negative_log_policy,
+            )
+        })
     }
 
     pub(crate) fn best_retained_path_bound_snapshot(&self) -> Option<(usize, f64)> {
-        self.anchor_frontier
+        let anchor = self
+            .anchor_frontier
             .iter()
             .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
             .min_by(|left, right| {
@@ -292,7 +422,8 @@ impl TurnOptionGeneratorSession {
                     entry.priority.atomic_depth,
                     entry.priority.negative_log_policy,
                 )
-            })
+            });
+        anchor
     }
 
     pub(crate) fn release_unused_grant(&mut self) -> CombatPlanningCounters {
@@ -349,14 +480,19 @@ impl TurnOptionGeneratorSession {
                 .expect("non-empty generator has scheduled work");
             self.used.generation_work = self.used.generation_work.saturating_add(1);
             match work {
-                GeneratorWork::Expand(partial) => self.expand(stepper, partial),
+                GeneratorWork::Expand(partial) => {
+                    self.atomic_state_expansions = self.atomic_state_expansions.saturating_add(1);
+                    self.expand(stepper, partial);
+                }
                 GeneratorWork::StructuredSelection(mut selection) => {
+                    let remaining_inputs = selection.cursor.remaining_input_count().max(1);
                     if let Some(input) = selection.cursor.next_input() {
-                        let input_conditional_mass = if selection.cursor.is_exhausted() {
-                            selection.remaining_conditional_mass
-                        } else {
-                            selection.remaining_conditional_mass * 0.5
-                        };
+                        // Every concrete member of a finite symbolic family
+                        // receives equal conditional mass. The former
+                        // geometric split made enumeration order an
+                        // exponential strategic prior (1/2, 1/4, 1/8, ...).
+                        let input_conditional_mass =
+                            selection.remaining_conditional_mass / remaining_inputs as f64;
                         if !selection.cursor.is_exhausted() {
                             selection.remaining_conditional_mass -= input_conditional_mass;
                             let residual_negative_log = selection.family_negative_log_policy
@@ -469,7 +605,7 @@ impl TurnOptionGeneratorSession {
             granted: self.granted,
             before_diagnostics,
             after_diagnostics: self.diagnostics(),
-            retained_work_items: self.live_work_items,
+            retained_work_items: self.retained_work_items(),
             newly_completed_options: self.completed.len().saturating_sub(completed_before),
             total_completed_options: self.completed.len(),
             gaps: self.gaps.clone(),
@@ -529,6 +665,7 @@ impl TurnOptionGeneratorSession {
             let probability = probabilities.next().expect("one probability per action");
             let negative_log_policy = partial.negative_log_policy - probability.ln();
             let atomic_depth = partial.atomic_depth.saturating_add(1);
+            let priority = GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
             self.push_work(
                 GeneratorWork::ApplyAction(ActionTransitionWork {
                     parent: partial.clone(),
@@ -536,7 +673,7 @@ impl TurnOptionGeneratorSession {
                     atomic_depth,
                     negative_log_policy,
                 }),
-                GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy),
+                priority,
             );
         }
         if !surface.selection_families.is_empty()
@@ -590,9 +727,9 @@ impl TurnOptionGeneratorSession {
         });
     }
 
-    fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) {
+    fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
         debug_assert!(priority.levin_log_priority.is_finite());
-        let guide_ranks = self.policy.state_guide_ranks(work.position());
+        let guide_ranks = self.policy.turn_generation_guide_ranks(work.position());
         let work_id = self.work.len();
         self.work.push(Some(work));
         let entry = GeneratorQueueEntry {
@@ -616,6 +753,7 @@ impl TurnOptionGeneratorSession {
         }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
         self.live_work_items = self.live_work_items.saturating_add(1);
+        work_id
     }
 
     fn next_scheduled_work_is_apply_action(&mut self) -> bool {
@@ -657,6 +795,11 @@ impl TurnOptionGeneratorSession {
                 .take()
                 .expect("scheduled generator work must still be live");
             self.live_work_items = self.live_work_items.saturating_sub(1);
+            if lane == 0 {
+                self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
+            } else {
+                self.guided_work_pops = self.guided_work_pops.saturating_add(1);
+            }
             self.next_scheduler_lane = (lane + 1) % lane_count;
             return Some(work);
         }
@@ -705,6 +848,15 @@ fn deadline_reached(deadline: Option<Instant>) -> bool {
 mod priority_tests {
     use super::*;
 
+    fn test_root() -> CombatDecisionRoot {
+        let mut combat = sts_core::test_support::blank_test_combat();
+        combat.entities.monsters = vec![sts_core::test_support::test_monster(
+            sts_core::content::monsters::EnemyId::JawWorm,
+        )];
+        CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+            .expect("test combat is a player-turn root")
+    }
+
     fn guided_entry(
         guide: i32,
         cumulative_negative_log_policy: f64,
@@ -729,5 +881,37 @@ mod priority_tests {
         let locally_greedy = guided_entry(9, 0.01, 1, 1);
 
         assert!(improved_after_setup > locally_greedy);
+    }
+
+    #[test]
+    fn action_transition_does_not_bypass_global_priority() {
+        let mut session =
+            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
+        let GeneratorWork::Expand(parent) =
+            session.pop_scheduled_work().expect("root expansion work")
+        else {
+            panic!("root work must be an expansion");
+        };
+
+        for _ in 0..32 {
+            session.push_work(
+                GeneratorWork::Expand(parent.clone()),
+                GeneratorWorkPriority::for_path(1, 0.0),
+            );
+        }
+        session.push_work(
+            GeneratorWork::ApplyAction(ActionTransitionWork {
+                parent,
+                input: ClientInput::EndTurn,
+                atomic_depth: 1,
+                negative_log_policy: 100.0,
+            }),
+            GeneratorWorkPriority::for_path(1, 100.0),
+        );
+
+        assert!(matches!(
+            session.pop_scheduled_work(),
+            Some(GeneratorWork::Expand(_))
+        ));
     }
 }

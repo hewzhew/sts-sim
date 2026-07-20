@@ -15,9 +15,12 @@ pub(super) struct CardPlayEffectAccumulator {
 pub(super) struct DirectCardPlayEffectAccumulator {
     pub(super) enemy_strength_down_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_gain_by_target: BTreeMap<usize, i32>,
+    pub(super) enemy_weak_by_target: BTreeMap<usize, i32>,
     pub(super) shackled_targets: BTreeSet<usize>,
     pub(super) player_strength_gain: i32,
     pub(super) player_lose_strength: i32,
+    pub(super) player_hp_loss: i32,
+    pub(super) player_energy_gain: i32,
     pub(super) declared_draw_cards: i32,
     pub(super) conditional_draw_cards: i32,
     pub(super) enemy_weak: i32,
@@ -69,6 +72,20 @@ pub(super) fn observe_direct_action(
         } => observe_apply_power(direct, target, power_id, amount),
         Action::DrawCards(amount) | Action::DrawCardsWithHistory { amount, .. } => {
             direct.declared_draw_cards = direct.declared_draw_cards.saturating_add(amount as i32);
+        }
+        Action::GainEnergy { amount } => {
+            direct.player_energy_gain = direct.player_energy_gain.saturating_add(amount.max(0));
+        }
+        Action::LoseHp {
+            target: 0, amount, ..
+        }
+        | Action::PoisonLoseHp { target: 0, amount } => {
+            direct.player_hp_loss = direct.player_hp_loss.saturating_add(amount.max(0));
+        }
+        Action::DoubleEnergy => {
+            direct.player_energy_gain = direct
+                .player_energy_gain
+                .saturating_add(i32::from(combat.turn.energy));
         }
         Action::ExpertiseDraw { target_hand_size } => {
             let hand_after_play = combat.zones.hand.len().saturating_sub(1) as i32;
@@ -126,8 +143,9 @@ fn observe_apply_power(
         PowerId::Shackled if amount > 0 => {
             direct.shackled_targets.insert(target);
         }
-        PowerId::Weak if amount > 0 => {
+        PowerId::Weak if target != 0 && amount > 0 => {
             direct.enemy_weak = direct.enemy_weak.saturating_add(amount);
+            *direct.enemy_weak_by_target.entry(target).or_default() += amount;
         }
         PowerId::Vulnerable if target == 0 && amount > 0 => {
             direct.player_vulnerable = direct.player_vulnerable.saturating_add(amount);

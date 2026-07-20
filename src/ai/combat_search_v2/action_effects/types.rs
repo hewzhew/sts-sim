@@ -13,6 +13,7 @@ pub(in crate::ai::combat_search_v2) struct DirectCardPlayEffectFacts {
     pub(in crate::ai::combat_search_v2) visible_attack_pressure_hint: i32,
     pub(in crate::ai::combat_search_v2) player_strength_gain: i32,
     pub(in crate::ai::combat_search_v2) player_temporary_strength_gain: i32,
+    pub(in crate::ai::combat_search_v2) player_energy_gain: i32,
     pub(in crate::ai::combat_search_v2) declared_draw_cards: i32,
     pub(in crate::ai::combat_search_v2) conditional_draw_cards: i32,
     pub(in crate::ai::combat_search_v2) enemy_weak: i32,
@@ -86,6 +87,7 @@ pub(in crate::ai::combat_search_v2) struct CardPlayReactiveEffectDiagnostics {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct CardPlayAccessEffectDiagnostics {
+    pub(in crate::ai::combat_search_v2) player_energy_gain: i32,
     pub(in crate::ai::combat_search_v2) declared_draw_cards: i32,
     pub(in crate::ai::combat_search_v2) conditional_draw_cards: i32,
     pub(in crate::ai::combat_search_v2) total_draw_cards: i32,
@@ -184,6 +186,7 @@ impl CardPlayEffectFacts {
                 enemy_vulnerable: self.reactive.enemy_vulnerable,
             },
             access: CardPlayAccessEffectDiagnostics {
+                player_energy_gain: self.direct.player_energy_gain,
                 declared_draw_cards: self.direct.declared_draw_cards,
                 conditional_draw_cards: self.direct.conditional_draw_cards,
                 total_draw_cards: self.total_draw_cards(),

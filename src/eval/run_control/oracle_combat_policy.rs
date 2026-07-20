@@ -75,6 +75,31 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
         ]
     }
 
+    fn turn_generation_guide_ranks(&self, position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+        vec![
+            CombatStateGuideRank::new(
+                crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(
+                    position,
+                ),
+            ),
+            CombatStateGuideRank::new(
+                crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(
+                    position,
+                ),
+            ),
+            CombatStateGuideRank::new(
+                crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_turn_generation_guide_components(
+                    position,
+                ),
+            ),
+            CombatStateGuideRank::new(
+                crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(
+                    position,
+                ),
+            ),
+        ]
+    }
+
     fn witness_proposal(
         &self,
         position: &CombatPosition,

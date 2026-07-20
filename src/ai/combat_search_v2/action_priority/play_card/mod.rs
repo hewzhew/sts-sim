@@ -13,6 +13,7 @@ use super::super::visible_incoming_damage;
 use super::constants::*;
 use super::*;
 use crate::content::cards::{self, CardType};
+use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatState;
 
 use setup::{
@@ -78,6 +79,18 @@ pub(super) fn priority_for_play_card(
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);
     let visible_damage = visible_incoming_damage(combat);
+    let available_hand_slots = 10_i32
+        .saturating_sub(i32::try_from(combat.zones.hand.len().saturating_sub(1)).unwrap_or(10));
+    let effective_draw_supply = if combat.get_power(0, PowerId::NoDraw) != 0 {
+        0
+    } else {
+        effects.total_draw_cards().max(0).min(available_hand_slots)
+    };
+    let immediate_action_supply =
+        effective_draw_supply.saturating_add(effects.direct.player_energy_gain.max(0));
+    let safe_immediate_action_supply = immediate_action_supply > 0
+        && effects.reactive.player_hp_loss < combat.entities.player.current_hp
+        && !effects.reactive.forced_turn_end;
     let current_turn_retaliation_protection = if def.card_type == CardType::Skill
         && block > 0
         && resource_timing.hand_exhaust_target_count == 0
@@ -166,6 +179,11 @@ pub(super) fn priority_for_play_card(
         (ActionOrderingRole::DeferredSetup, ROLE_DEFERRED_SETUP)
     } else if prevents_hp_loss && reactive_risk == 0 {
         (ActionOrderingRole::PreventHpLoss, ROLE_PREVENT_HP_LOSS)
+    } else if safe_immediate_action_supply {
+        (
+            ActionOrderingRole::ImmediateActionSupply,
+            ROLE_IMMEDIATE_ACTION_SUPPLY,
+        )
     } else if target_progress > 0 {
         (ActionOrderingRole::DamageProgress, ROLE_DAMAGE_PROGRESS)
     } else if prevents_hp_loss {
@@ -185,6 +203,7 @@ pub(super) fn priority_for_play_card(
             .saturating_add(phase_hint.role_rank_adjustment)
             .saturating_add(resource_timing.role_rank_adjustment),
         mitigation,
+        action_supply: immediate_action_supply,
         reactive_risk: -reactive_risk,
         targets_timed_threat: i32::from(
             timed_threat.is_some_and(|fact| fact.canceled_by_owner_death),

@@ -9,6 +9,7 @@ pub(super) const ROLE_PREVENT_HP_LOSS: i32 = 85;
 pub(super) const ROLE_CURRENT_TURN_RETALIATION_PROTECTION: i32 = ROLE_PREVENT_HP_LOSS;
 pub(super) const ROLE_CURRENT_TURN_ATTACK_SETUP: i32 = 80;
 pub(super) const ROLE_DEFERRED_SETUP: i32 = 75;
+pub(super) const ROLE_IMMEDIATE_ACTION_SUPPLY: i32 = 70;
 pub(super) const ROLE_DAMAGE_PROGRESS: i32 = 60;
 pub(super) const ROLE_REACTIVE_RISK_PREVENT_HP_LOSS: i32 = 55;
 pub(super) const ROLE_BLOCK: i32 = 45;

@@ -59,6 +59,16 @@ pub trait CombatActionPolicy: Send + Sync {
         self.state_guide_rank(position).into_iter().collect()
     }
 
+    /// Guidance for partial states while constructing one complete player
+    /// turn.  It is deliberately separate from turn-boundary guidance: a
+    /// learned boundary value may describe the current state well while
+    /// actively discouraging every action needed to reach the next boundary.
+    /// Existing policies retain their behavior unless they opt into the
+    /// distinction.
+    fn turn_generation_guide_ranks(&self, position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+        self.state_guide_ranks(position)
+    }
+
     /// Optional bounded tactical suffix proposal for the current exact state.
     /// This is guidance only; the witness search owns legality and exact replay.
     fn witness_proposal(

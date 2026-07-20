@@ -142,6 +142,35 @@ pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<
     ]
 }
 
+/// A horizon view specifically for partial states inside one player turn.
+/// The ordinary horizon guide starts with `turn_count`, which is constant
+/// until EndTurn and therefore cannot help a lazy complete-turn generator
+/// expose longer setup sequences.  This view rewards realized action depth
+/// first, then persistent assets and concrete combat progress.  It owns only
+/// one guide lane; the anchor, progress, survival, and setup lanes remain
+/// independent.
+pub fn oracle_combat_turn_generation_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
+    let value = combat_search_state_value(&node);
+    let setup = player_setup_summary(&position.combat);
+    vec![
+        i32::from(position.combat.turn.counters.cards_played_this_turn),
+        setup.exhaust_engine_connected,
+        setup.status_access_engine_connected,
+        setup.active_power_count,
+        setup.active_power_mass,
+        value.sustained_mitigation,
+        value.fewer_living_enemies,
+        value.phase_adjusted_enemy_effort_progress,
+        value.enemy_effort_progress,
+        value.enemy_hp_progress,
+        i32::from(position.combat.turn.energy),
+        value.hand_playable_cards,
+        value.player_hp,
+        value.player_block,
+    ]
+}
+
 /// An independent view of persistent player setup. Damage-first and
 /// survival-first guides both undervalue a turn which spends energy putting
 /// powers in play: the enemy is still healthy and the immediate block may
@@ -291,6 +320,22 @@ mod tests {
         let rank = oracle_combat_horizon_guide_components(&position);
 
         assert_eq!(rank.first(), Some(&7));
+    }
+
+    #[test]
+    fn turn_generation_horizon_uses_realized_in_turn_depth() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+        let shallow = CombatPosition::new(EngineState::CombatPlayerTurn, combat.clone());
+        combat.turn.counters.cards_played_this_turn = 3;
+        let deep = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        let shallow_rank = oracle_combat_turn_generation_guide_components(&shallow);
+        let deep_rank = oracle_combat_turn_generation_guide_components(&deep);
+
+        assert_eq!(shallow_rank.first(), Some(&0));
+        assert_eq!(deep_rank.first(), Some(&3));
+        assert!(deep_rank > shallow_rank);
     }
 
     #[test]

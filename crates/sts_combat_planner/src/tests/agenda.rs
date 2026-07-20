@@ -126,7 +126,7 @@ fn interleaves_root_discovery_with_one_continuation_quantum() {
 
     let report = session.advance(
         &stepper,
-        CombatPlannerAgendaQuantum::deterministic(6, 100, 100),
+        CombatPlannerAgendaQuantum::deterministic(7, 100, 100),
     );
 
     assert_eq!(

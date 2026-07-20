@@ -67,12 +67,13 @@ pub use types::{
     TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
 };
 pub use witness_search::{
-    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessConfig,
+    OracleCombatDeepStateSnapshot, OracleCombatOneTurnLossEvidence,
+    OracleCombatOneTurnViabilityEvidence, OracleCombatWitness, OracleCombatWitnessConfig,
     OracleCombatWitnessCounters, OracleCombatWitnessInterruption,
     OracleCombatWitnessProgressSnapshot, OracleCombatWitnessQuantum,
     OracleCombatWitnessReplayError, OracleCombatWitnessReport, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, OracleCombatWitnessStateProgressSnapshot,
-    OracleCombatWitnessStatus,
+    OracleCombatWitnessSession, OracleCombatWitnessStateMembershipSnapshot,
+    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus,
 };
 
 #[cfg(test)]

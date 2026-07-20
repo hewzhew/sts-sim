@@ -9,6 +9,7 @@ pub(in crate::ai::combat_search_v2) enum ActionOrderingRole {
     CurrentTurnRetaliationProtection,
     CurrentTurnAttackSetup,
     DeferredSetup,
+    ImmediateActionSupply,
     DamageProgress,
     ReactiveRiskPreventHpLoss,
     Block,
@@ -36,6 +37,7 @@ impl ActionOrderingRole {
             }
             ActionOrderingRole::CurrentTurnAttackSetup => "current_turn_attack_setup",
             ActionOrderingRole::DeferredSetup => "deferred_setup",
+            ActionOrderingRole::ImmediateActionSupply => "immediate_action_supply",
             ActionOrderingRole::DamageProgress => "damage_progress",
             ActionOrderingRole::ReactiveRiskPreventHpLoss => "reactive_risk_prevent_hp_loss",
             ActionOrderingRole::Block => "block",

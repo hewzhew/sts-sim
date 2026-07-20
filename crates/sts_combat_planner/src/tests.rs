@@ -38,6 +38,10 @@ impl CombatActionPolicy for PreferPlayPolicy {
 
     fn state_guide_rank(&self, position: &CombatPosition) -> Option<CombatStateGuideRank> {
         Some(CombatStateGuideRank::new(vec![
+            i32::from(matches!(
+                position.engine,
+                EngineState::GameOver(sts_core::state::core::RunResult::Victory)
+            )),
             position.combat.turn.turn_count as i32,
             -position
                 .combat
@@ -53,6 +57,47 @@ impl CombatActionPolicy for PreferPlayPolicy {
 #[derive(Clone)]
 struct FixedWitnessProposalPolicy {
     proposal: CombatPolicyWitnessProposal,
+}
+
+#[derive(Clone)]
+struct SplitGuidePolicy {
+    boundary_calls: Arc<AtomicI32>,
+    generation_calls: Arc<AtomicI32>,
+}
+
+impl CombatActionPolicy for SplitGuidePolicy {
+    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        vec![1.0; choices.len()]
+    }
+
+    fn state_guide_ranks(&self, _position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+        self.boundary_calls.fetch_add(1, Ordering::Relaxed);
+        vec![CombatStateGuideRank::new(vec![1])]
+    }
+
+    fn turn_generation_guide_ranks(&self, _position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+        self.generation_calls.fetch_add(1, Ordering::Relaxed);
+        vec![CombatStateGuideRank::new(vec![2])]
+    }
+}
+
+#[test]
+fn witness_search_keeps_boundary_and_turn_generation_guides_separate() {
+    let boundary_calls = Arc::new(AtomicI32::new(0));
+    let generation_calls = Arc::new(AtomicI32::new(0));
+    let policy = Arc::new(SplitGuidePolicy {
+        boundary_calls: boundary_calls.clone(),
+        generation_calls: generation_calls.clone(),
+    });
+
+    let _session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig::default(),
+        policy,
+    );
+
+    assert_eq!(boundary_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(generation_calls.load(Ordering::Relaxed), 1);
 }
 
 impl CombatActionPolicy for FixedWitnessProposalPolicy {
@@ -313,7 +358,7 @@ fn policy_guided_generator_emits_preferred_option_and_retains_siblings() {
     let mut session =
         TurnOptionGeneratorSession::with_policy(root(), config(), Arc::new(PreferPlayPolicy));
 
-    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(3, 4));
+    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(4, 8));
 
     assert_eq!(report.newly_completed_options, 1);
     assert_eq!(session.completed_options()[0].actions()[0].input, PLAY);
@@ -531,6 +576,34 @@ fn oracle_witness_search_retains_work_across_split_quanta() {
             .map(|action| action.input)
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() {
+    let stepper = TinyTurnStepper::plain();
+    let decision_root = root();
+    let target_hash = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn])[0]
+        .expected_successor_hash
+        .clone();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        decision_root,
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(64, 256, 1_024),
+    );
+    let membership = session.state_membership_by_exact_hash(&target_hash);
+
+    assert!(membership.generated);
+    assert!(membership.accepted);
+    assert_eq!(membership.retained, membership.progress.is_some());
 }
 
 #[test]
@@ -770,6 +843,66 @@ fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
         }
     );
     assert!(prospect.total_enemy_hp.delta() < 0);
+}
+
+#[test]
+fn witness_search_records_only_gap_free_exhaustive_one_turn_loss() {
+    let stepper = TinyTurnStepper::losing();
+    let expected_hash = root().exact_state_hash().to_owned();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    session.set_one_turn_loss_evidence_limit(1);
+
+    let report = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(32, 128, 512),
+    );
+
+    assert_eq!(report.after.exhaustive_one_turn_losses, 1);
+    let evidence = session.one_turn_loss_evidence();
+    assert_eq!(evidence.len(), 1);
+    assert_eq!(evidence[0].exact_state_hash, expected_hash);
+    assert!(evidence[0].actions.is_empty());
+    assert!(evidence[0].terminal_loss_turn_options > 0);
+}
+
+#[test]
+fn witness_search_records_exact_one_turn_viability_witness() {
+    let stepper = TinyTurnStepper::plain();
+    let expected_hash = root().exact_state_hash().to_owned();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    session.set_one_turn_viability_evidence_limit(1);
+
+    let report = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(16, 64, 256),
+    );
+
+    assert!(report.after.exact_one_turn_viable_states >= 1);
+    let evidence = session.one_turn_viability_evidence();
+    assert_eq!(evidence.len(), 1);
+    assert_eq!(evidence[0].exact_state_hash, expected_hash);
+    assert!(evidence[0].actions.is_empty());
+    assert_eq!(
+        evidence[0].witness_boundary,
+        CompleteTurnOptionBoundary::NextPlayerTurn
+    );
+    assert!(!evidence[0].witness_turn_actions.is_empty());
 }
 
 mod agenda;

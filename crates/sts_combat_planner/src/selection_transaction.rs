@@ -16,6 +16,7 @@ pub(super) struct SelectionTransactionCursor {
     min_len: usize,
     max_len: usize,
     next_indices: Option<Vec<usize>>,
+    remaining_input_count: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +71,9 @@ impl SelectionTransactionCursor {
         let next_indices = (min_len <= max_len)
             .then(|| first_valid_indices(&candidates, min_len))
             .flatten();
+        let remaining_input_count = next_indices.as_ref().map_or(0, |_| {
+            ordered_distinct_sequence_count(distinct_count, min_len, max_len)
+        });
 
         Ok(Self {
             encoding: family.input_encoding,
@@ -77,6 +81,7 @@ impl SelectionTransactionCursor {
             min_len,
             max_len,
             next_indices,
+            remaining_input_count,
         })
     }
 
@@ -85,7 +90,12 @@ impl SelectionTransactionCursor {
         let input = self.compile(&indices);
         self.next_indices =
             next_valid_indices(&self.candidates, &indices, self.min_len, self.max_len);
+        self.remaining_input_count = self.remaining_input_count.saturating_sub(1);
         Some(input)
+    }
+
+    pub(super) fn remaining_input_count(&self) -> usize {
+        self.remaining_input_count
     }
 
     pub(super) fn is_exhausted(&self) -> bool {
@@ -115,6 +125,15 @@ impl SelectionTransactionCursor {
             }
         }
     }
+}
+
+fn ordered_distinct_sequence_count(distinct_count: usize, min_len: usize, max_len: usize) -> usize {
+    (min_len..=max_len.min(distinct_count)).fold(0usize, |total, len| {
+        let permutations = (0..len).fold(1usize, |count, offset| {
+            count.saturating_mul(distinct_count.saturating_sub(offset))
+        });
+        total.saturating_add(permutations)
+    })
 }
 
 fn first_valid_indices(candidates: &[SelectionCandidate], len: usize) -> Option<Vec<usize>> {
@@ -214,10 +233,12 @@ mod tests {
             ),
         };
         let mut cursor = SelectionTransactionCursor::new(&family).unwrap();
+        assert_eq!(cursor.remaining_input_count(), 6);
         let inputs = std::iter::from_fn(|| cursor.next_input()).collect::<Vec<_>>();
 
         assert_eq!(inputs.len(), 6);
         assert_ne!(inputs[0], inputs[1]);
         assert!(cursor.is_exhausted());
+        assert_eq!(cursor.remaining_input_count(), 0);
     }
 }

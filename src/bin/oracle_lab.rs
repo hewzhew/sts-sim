@@ -1,14 +1,18 @@
+use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use clap::{Args, Parser, Subcommand};
-use serde::Serialize;
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    CombatDecisionRoot, CombatPlanningQuantum, OracleCombatWitnessConfig,
-    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    CombatActionPolicy, CombatDecisionRoot, CombatPlanningQuantum, CombatPolicyChoice,
+    CombatPolicyWitnessProposal, CombatStateGuideRank, OracleCombatOneTurnLossEvidence,
+    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
     TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
     TurnOptionGeneratorSession,
 };
@@ -33,6 +37,11 @@ use sts_simulator::state::core::ClientInput;
     about = "Inspect and steer exact oracle-run variations without editing checkpoints"
 )]
 struct Cli {
+    /// Proves that Cargo's canonical `cargo oracle-lab` alias launched this
+    /// process. Direct execution is intentionally rejected so that a stale or
+    /// wrongly-profiled oracle laboratory cannot silently produce evidence.
+    #[arg(long, hide = true, global = true)]
+    canonical_fast_run: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -72,8 +81,14 @@ enum Command {
         wall_ms: u64,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+        /// Lab-only control: keep the action policy but disable every state
+        /// guide, leaving the single Levin/PHS-style anchor ordering.
         #[arg(long)]
-        watch_state_hash: Option<String>,
+        anchor_only: bool,
+        /// Repeat to inspect membership for several exact corridor states in
+        /// one search run.
+        #[arg(long)]
+        watch_state_hash: Vec<String>,
         /// Replay one or more exact legal input-prefix files in order before
         /// starting the planner. Repeat the flag to compose verified segments.
         #[arg(long)]
@@ -87,6 +102,54 @@ enum Command {
         /// Save the exact prefix successor as a standalone combat case.
         #[arg(long)]
         export_prefix_case: Option<PathBuf>,
+        /// Lab-only perfect-information control: replay this verified combat
+        /// witness and add its exact player-turn states as a fifth shadow
+        /// guide. Requires --shadow-corridor-case.
+        #[arg(long, requires = "shadow_corridor_case")]
+        shadow_corridor_actions: Option<PathBuf>,
+        /// Combat start corresponding to --shadow-corridor-actions.
+        #[arg(long, requires = "shadow_corridor_actions")]
+        shadow_corridor_case: Option<PathBuf>,
+        /// How the lab-only corridor guide recognizes promising states.
+        /// `typed-feature` never reads an exact state hash while ranking.
+        #[arg(long, value_enum, default_value_t = ShadowCorridorGuide::Exact)]
+        shadow_corridor_guide: ShadowCorridorGuide,
+        /// Load a distilled typed-feature prototype model. Unlike the
+        /// corridor controls, inference does not load witness actions, exact
+        /// hashes, or the source combat case.
+        #[arg(
+            long,
+            conflicts_with = "shadow_corridor_actions",
+            conflicts_with = "shadow_corridor_case"
+        )]
+        shadow_value_prototype: Option<PathBuf>,
+        /// If a replay-verified win is found, save its exact ClientInput list.
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
+        /// Add newly proven one-turn loss prototypes to the loaded value
+        /// artifact and save a new generation. Requires evidence collection.
+        #[arg(long, requires = "shadow_value_prototype")]
+        export_augmented_value_prototype: Option<PathBuf>,
+        /// Retain at most this many gap-free states whose fully enumerated
+        /// complete-turn language consists only of terminal losses.
+        #[arg(long, default_value_t = 0)]
+        one_turn_loss_evidence_limit: usize,
+        /// Retain at most this many states with an exact complete option that
+        /// reaches the next player turn or wins immediately.
+        #[arg(long, default_value_t = 0)]
+        one_turn_viability_evidence_limit: usize,
+    },
+    /// Distill one exact terminal witness into a typed-feature prototype
+    /// artifact for lab-only state-value inference.
+    BuildValuePrototype {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        actions: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
     },
     /// Check when one exact complete-turn action sequence is generated.
     TurnMembership {
@@ -102,6 +165,9 @@ enum Command {
         quantum_work: usize,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+        /// Lab-only control: keep action weights but disable all state guides.
+        #[arg(long)]
+        anchor_only: bool,
     },
     /// View the current cursor or another exact analysis node.
     View {
@@ -304,8 +370,515 @@ struct AdvanceOutput<T, U> {
     view: U,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+enum ShadowCorridorGuide {
+    #[default]
+    Exact,
+    TypedFeature,
+}
+
+const COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME: &str = "CombatValuePrototypeArtifactV1";
+const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 1;
+const COMBAT_TYPED_FEATURE_SCHEMA: &str = "existing-combat-guides/concatenated-v1";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CombatValuePrototypeArtifactV1 {
+    schema_name: String,
+    schema_version: u32,
+    feature_schema: String,
+    training_authority: String,
+    source_action_count: usize,
+    source_terminal_final_hp: i32,
+    feature_count: usize,
+    prototypes: Vec<CombatValuePrototypeV1>,
+    #[serde(default)]
+    one_turn_viability_prototypes: Vec<CombatValueStatePrototypeV1>,
+    #[serde(default)]
+    one_turn_loss_prototypes: Vec<CombatValueStatePrototypeV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CombatValuePrototypeV1 {
+    player_turn: u32,
+    value_rank: i32,
+    features: Vec<i32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CombatValueStatePrototypeV1 {
+    player_turn: u32,
+    features: Vec<i32>,
+}
+
+impl CombatValuePrototypeArtifactV1 {
+    fn from_corridor(corridor: &ExactTurnCorridor) -> Self {
+        let mut prototypes = corridor
+            .typed_target_by_turn
+            .iter()
+            .map(
+                |(player_turn, (value_rank, features))| CombatValuePrototypeV1 {
+                    player_turn: *player_turn,
+                    value_rank: *value_rank,
+                    features: features.clone(),
+                },
+            )
+            .collect::<Vec<_>>();
+        prototypes.sort_by_key(|prototype| prototype.player_turn);
+        Self {
+            schema_name: COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME.to_string(),
+            schema_version: COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION,
+            feature_schema: COMBAT_TYPED_FEATURE_SCHEMA.to_string(),
+            training_authority: "exact_terminal_win_demonstration".to_string(),
+            source_action_count: corridor.action_count,
+            source_terminal_final_hp: corridor.terminal_final_hp,
+            feature_count: prototypes
+                .first()
+                .map(|prototype| prototype.features.len())
+                .unwrap_or_default(),
+            prototypes,
+            one_turn_viability_prototypes: Vec::new(),
+            one_turn_loss_prototypes: Vec::new(),
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.schema_name != COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME
+            || self.schema_version != COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION
+            || self.feature_schema != COMBAT_TYPED_FEATURE_SCHEMA
+        {
+            return Err("unsupported combat value prototype schema".to_string());
+        }
+        if self.prototypes.is_empty() || self.feature_count == 0 {
+            return Err("combat value prototype artifact is empty".to_string());
+        }
+        if self
+            .prototypes
+            .iter()
+            .any(|prototype| prototype.features.len() != self.feature_count)
+            || self
+                .one_turn_loss_prototypes
+                .iter()
+                .any(|prototype| prototype.features.len() != self.feature_count)
+            || self
+                .one_turn_viability_prototypes
+                .iter()
+                .any(|prototype| prototype.features.len() != self.feature_count)
+        {
+            return Err("combat value prototype feature widths disagree".to_string());
+        }
+        if self
+            .prototypes
+            .windows(2)
+            .any(|pair| pair[0].player_turn >= pair[1].player_turn)
+        {
+            return Err("combat value prototypes must have unique ascending turns".to_string());
+        }
+        Ok(())
+    }
+
+    fn targets_by_turn(&self) -> HashMap<u32, (i32, Vec<i32>)> {
+        self.prototypes
+            .iter()
+            .map(|prototype| {
+                (
+                    prototype.player_turn,
+                    (prototype.value_rank, prototype.features.clone()),
+                )
+            })
+            .collect()
+    }
+
+    fn add_one_turn_viability_evidence(
+        &mut self,
+        evidence: &[OracleCombatOneTurnViabilityEvidence],
+    ) {
+        let mut known = self
+            .one_turn_viability_prototypes
+            .iter()
+            .map(|prototype| (prototype.player_turn, prototype.features.clone()))
+            .collect::<std::collections::HashSet<_>>();
+        for sample in evidence {
+            let player_turn = sample.position.combat.turn.turn_count;
+            let features = typed_combat_feature_components(&sample.position);
+            if known.insert((player_turn, features.clone())) {
+                self.one_turn_viability_prototypes
+                    .push(CombatValueStatePrototypeV1 {
+                        player_turn,
+                        features,
+                    });
+            }
+        }
+        self.one_turn_viability_prototypes
+            .sort_by_key(|prototype| prototype.player_turn);
+    }
+
+    fn add_one_turn_loss_evidence(&mut self, evidence: &[OracleCombatOneTurnLossEvidence]) {
+        let mut known = self
+            .one_turn_loss_prototypes
+            .iter()
+            .map(|prototype| (prototype.player_turn, prototype.features.clone()))
+            .collect::<std::collections::HashSet<_>>();
+        for sample in evidence {
+            let player_turn = sample.position.combat.turn.turn_count;
+            let features = typed_combat_feature_components(&sample.position);
+            if known.insert((player_turn, features.clone())) {
+                self.one_turn_loss_prototypes
+                    .push(CombatValueStatePrototypeV1 {
+                        player_turn,
+                        features,
+                    });
+            }
+        }
+        self.one_turn_loss_prototypes
+            .sort_by_key(|prototype| prototype.player_turn);
+    }
+
+    fn report(&self) -> Value {
+        json!({
+            "kind": "typed_feature_value_prototype",
+            "authority": "guide_only",
+            "feature_schema": self.feature_schema,
+            "training_authority": self.training_authority,
+            "feature_count": self.feature_count,
+            "prototype_count": self.prototypes.len(),
+            "one_turn_viability_prototype_count": self.one_turn_viability_prototypes.len(),
+            "one_turn_viability_prototype_authority": "training_evidence_only",
+            "one_turn_loss_prototype_count": self.one_turn_loss_prototypes.len(),
+            "one_turn_loss_prototype_authority": "training_evidence_only",
+            "source_action_count": self.source_action_count,
+            "source_terminal_final_hp": self.source_terminal_final_hp,
+            "runtime_reads_exact_hashes": false,
+            "runtime_reads_witness_actions": false,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ExactTurnCorridor {
+    rank_by_exact_hash: HashMap<String, i32>,
+    typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
+    action_count: usize,
+    terminal_final_hp: i32,
+}
+
+impl ExactTurnCorridor {
+    fn report(&self, search: &OracleCombatWitnessSession, guide: ShadowCorridorGuide) -> Value {
+        let mut states = self
+            .rank_by_exact_hash
+            .iter()
+            .map(|(exact_hash, rank)| (*rank, search.state_membership_by_exact_hash(exact_hash)))
+            .collect::<Vec<_>>();
+        states.sort_by_key(|(rank, _)| *rank);
+        json!({
+            "kind": match guide {
+                ShadowCorridorGuide::Exact => "exact_verified_turn_corridor_shadow",
+                ShadowCorridorGuide::TypedFeature => "typed_feature_corridor_shadow",
+            },
+            "authority": "guide_only",
+            "exact_turn_states": self.rank_by_exact_hash.len(),
+            "typed_feature_targets": self.typed_target_by_turn.len(),
+            "typed_feature_count": self.typed_target_by_turn.values().next().map(|(_, features)| features.len()).unwrap_or_default(),
+            "action_count": self.action_count,
+            "terminal": "Win",
+            "terminal_final_hp": self.terminal_final_hp,
+            "states": states.into_iter().map(|(rank, membership)| json!({
+                "corridor_rank": rank,
+                "membership": membership,
+            })).collect::<Vec<_>>(),
+        })
+    }
+}
+
+struct ExactCorridorShadowPolicy {
+    base: SharedCombatActionPolicy,
+    rank_by_exact_hash: Arc<HashMap<String, i32>>,
+    typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
+    guide: ShadowCorridorGuide,
+}
+
+struct AnchorOnlyPolicy {
+    base: SharedCombatActionPolicy,
+}
+
+impl CombatActionPolicy for AnchorOnlyPolicy {
+    fn weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn state_guide_ranks(
+        &self,
+        _position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        Vec::new()
+    }
+
+    fn turn_generation_guide_ranks(
+        &self,
+        _position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        Vec::new()
+    }
+
+    fn witness_proposal(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        deadline: Option<Instant>,
+    ) -> Option<CombatPolicyWitnessProposal> {
+        self.base.witness_proposal(position, deadline)
+    }
+}
+
+fn anchor_only_policy(base: SharedCombatActionPolicy) -> SharedCombatActionPolicy {
+    Arc::new(AnchorOnlyPolicy { base })
+}
+
+impl CombatActionPolicy for ExactCorridorShadowPolicy {
+    fn weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn state_guide_ranks(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        let mut ranks = self.base.state_guide_ranks(position);
+        ranks.push(self.shadow_rank(position, position.combat.turn.turn_count));
+        ranks
+    }
+
+    fn turn_generation_guide_ranks(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        let mut ranks = self.base.turn_generation_guide_ranks(position);
+        if self.guide == ShadowCorridorGuide::TypedFeature {
+            ranks.push(
+                self.shadow_rank(position, position.combat.turn.turn_count.saturating_add(1)),
+            );
+        }
+        ranks
+    }
+
+    fn witness_proposal(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        deadline: Option<Instant>,
+    ) -> Option<CombatPolicyWitnessProposal> {
+        self.base.witness_proposal(position, deadline)
+    }
+}
+
+impl ExactCorridorShadowPolicy {
+    fn shadow_rank(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        target_turn: u32,
+    ) -> CombatStateGuideRank {
+        let shadow_rank = match self.guide {
+            ShadowCorridorGuide::Exact => {
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                );
+                let corridor_rank = self.rank_by_exact_hash.get(&exact_hash).copied();
+                vec![
+                    i32::from(corridor_rank.is_some()),
+                    corridor_rank.unwrap_or_default(),
+                ]
+            }
+            ShadowCorridorGuide::TypedFeature => {
+                self.typed_target_by_turn.get(&target_turn).map_or_else(
+                    || vec![0, i32::MIN / 4, 0],
+                    |(corridor_rank, target)| {
+                        let candidate = typed_combat_feature_components(position);
+                        let distance = normalized_feature_distance(target, &candidate);
+                        vec![i32::from(distance == 0), -distance, *corridor_rank]
+                    },
+                )
+            }
+        };
+        CombatStateGuideRank::new(shadow_rank)
+    }
+}
+
+fn exact_corridor_shadow_policy(
+    base: SharedCombatActionPolicy,
+    corridor: &ExactTurnCorridor,
+    guide: ShadowCorridorGuide,
+) -> SharedCombatActionPolicy {
+    Arc::new(ExactCorridorShadowPolicy {
+        base,
+        rank_by_exact_hash: Arc::new(corridor.rank_by_exact_hash.clone()),
+        typed_target_by_turn: Arc::new(corridor.typed_target_by_turn.clone()),
+        guide,
+    })
+}
+
+fn value_prototype_shadow_policy(
+    base: SharedCombatActionPolicy,
+    artifact: &CombatValuePrototypeArtifactV1,
+) -> SharedCombatActionPolicy {
+    Arc::new(ExactCorridorShadowPolicy {
+        base,
+        rank_by_exact_hash: Arc::new(HashMap::new()),
+        typed_target_by_turn: Arc::new(artifact.targets_by_turn()),
+        guide: ShadowCorridorGuide::TypedFeature,
+    })
+}
+
+fn load_value_prototype(path: &PathBuf) -> Result<CombatValuePrototypeArtifactV1, String> {
+    let artifact = serde_json::from_slice::<CombatValuePrototypeArtifactV1>(
+        &std::fs::read(path).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("invalid combat value prototype artifact: {error}"))?;
+    artifact.validate()?;
+    Ok(artifact)
+}
+
+fn save_value_prototype(
+    path: &PathBuf,
+    artifact: &CombatValuePrototypeArtifactV1,
+) -> Result<(), String> {
+    artifact.validate()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let bytes = serde_json::to_vec_pretty(artifact).map_err(|error| error.to_string())?;
+    std::fs::write(path, bytes).map_err(|error| error.to_string())
+}
+
+fn typed_combat_feature_components(
+    position: &sts_simulator::sim::combat::CombatPosition,
+) -> Vec<i32> {
+    let mut features =
+        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(
+            position,
+        );
+    features.extend(
+        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(
+            position,
+        ),
+    );
+    features.extend(
+        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(
+            position,
+        ),
+    );
+    features.extend(
+        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(
+            position,
+        ),
+    );
+    features
+}
+
+fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
+    let distance = target
+        .iter()
+        .zip(candidate)
+        .map(|(target, candidate)| {
+            let difference = i64::from(*target).abs_diff(i64::from(*candidate)) as i64;
+            let scale = i64::from(*target)
+                .abs()
+                .max(i64::from(*candidate).abs())
+                .max(1);
+            difference.saturating_mul(1_024) / scale
+        })
+        .fold(0_i64, i64::saturating_add);
+    i32::try_from(distance).unwrap_or(i32::MAX)
+}
+
+fn load_exact_turn_corridor(
+    case_path: &PathBuf,
+    actions_path: &PathBuf,
+    max_engine_steps_per_transition: usize,
+) -> Result<ExactTurnCorridor, String> {
+    let case = load_combat_case(case_path)?;
+    let actions = serde_json::from_slice::<Vec<ClientInput>>(
+        &std::fs::read(actions_path).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("invalid shadow corridor action list: {error}"))?;
+    let stepper = EngineCombatStepper;
+    let mut position = case.position;
+    let mut rank_by_exact_hash = HashMap::new();
+    let mut typed_target_by_turn = HashMap::new();
+    rank_by_exact_hash.insert(
+        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            &position.engine,
+            &position.combat,
+        ),
+        0,
+    );
+    typed_target_by_turn.insert(
+        position.combat.turn.turn_count,
+        (0, typed_combat_feature_components(&position)),
+    );
+    let mut next_turn_rank = 1i32;
+    for (action_index, input) in actions.iter().enumerate() {
+        if stepper.choice_for_legal_input(&position, input).is_none() {
+            return Err(format!(
+                "shadow corridor action {action_index} is not legal at turn {}: {input:?}",
+                position.combat.turn.turn_count
+            ));
+        }
+        let previous_turn = position.combat.turn.turn_count;
+        let step = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated {
+            return Err(format!(
+                "shadow corridor action {action_index} exceeded the engine-step limit"
+            ));
+        }
+        position = step.position;
+        if step.terminal == sts_simulator::sim::combat::CombatTerminal::Unresolved
+            && position.combat.turn.turn_count != previous_turn
+        {
+            rank_by_exact_hash.insert(
+                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                ),
+                next_turn_rank,
+            );
+            typed_target_by_turn.insert(
+                position.combat.turn.turn_count,
+                (next_turn_rank, typed_combat_feature_components(&position)),
+            );
+            next_turn_rank = next_turn_rank.saturating_add(1);
+        }
+    }
+    if stepper.terminal(&position) != sts_simulator::sim::combat::CombatTerminal::Win {
+        return Err("shadow corridor action list is not an exact terminal win".to_string());
+    }
+    Ok(ExactTurnCorridor {
+        rank_by_exact_hash,
+        typed_target_by_turn,
+        action_count: actions.len(),
+        terminal_final_hp: position.combat.entities.player.current_hp,
+    })
+}
+
 fn main() -> Result<(), String> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    validate_canonical_launch(cli.canonical_fast_run)?;
+    match cli.command {
         Command::New {
             seed,
             ascension,
@@ -345,16 +918,40 @@ fn main() -> Result<(), String> {
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
         }
+        Command::BuildValuePrototype {
+            case,
+            actions,
+            output,
+            max_engine_steps_per_transition,
+        } => {
+            let corridor =
+                load_exact_turn_corridor(&case, &actions, max_engine_steps_per_transition)?;
+            let artifact = CombatValuePrototypeArtifactV1::from_corridor(&corridor);
+            save_value_prototype(&output, &artifact)?;
+            print_json(&json!({
+                "output": output,
+                "artifact": artifact.report(),
+            }))
+        }
         Command::CombatCase {
             case,
             max_nodes,
             wall_ms,
             max_engine_steps_per_transition,
+            anchor_only,
             watch_state_hash,
             prefix_actions,
             readable,
             replay_only,
             export_prefix_case,
+            shadow_corridor_actions,
+            shadow_corridor_case,
+            shadow_corridor_guide,
+            shadow_value_prototype,
+            export_witness_actions,
+            export_augmented_value_prototype,
+            one_turn_loss_evidence_limit,
+            one_turn_viability_evidence_limit,
         } => {
             let case = load_combat_case(&case)?;
             let stepper = EngineCombatStepper;
@@ -445,6 +1042,39 @@ fn main() -> Result<(), String> {
             let root = CombatDecisionRoot::new(position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
+            let base_policy = existing_combat_knowledge_policy_v1();
+            let (policy, shadow_corridor, mut shadow_value_artifact) =
+                if let Some(model_path) = shadow_value_prototype.as_ref() {
+                    let artifact = load_value_prototype(model_path)?;
+                    let policy = value_prototype_shadow_policy(base_policy, &artifact);
+                    (policy, None, Some(artifact))
+                } else {
+                    match (
+                        shadow_corridor_case.as_ref(),
+                        shadow_corridor_actions.as_ref(),
+                    ) {
+                        (Some(case_path), Some(actions_path)) => {
+                            let corridor = load_exact_turn_corridor(
+                                case_path,
+                                actions_path,
+                                max_engine_steps_per_transition,
+                            )?;
+                            let policy = exact_corridor_shadow_policy(
+                                base_policy,
+                                &corridor,
+                                shadow_corridor_guide,
+                            );
+                            (policy, Some(corridor), None)
+                        }
+                        (None, None) => (base_policy, None, None),
+                        _ => unreachable!("clap requires both shadow corridor arguments"),
+                    }
+                };
+            let policy = if anchor_only {
+                anchor_only_policy(policy)
+            } else {
+                policy
+            };
             let mut search = OracleCombatWitnessSession::with_policy(
                 root,
                 OracleCombatWitnessConfig {
@@ -455,8 +1085,10 @@ fn main() -> Result<(), String> {
                     generation_work_per_agenda_pop: 4,
                     satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
                 },
-                existing_combat_knowledge_policy_v1(),
+                policy,
             );
+            search.set_one_turn_loss_evidence_limit(one_turn_loss_evidence_limit);
+            search.set_one_turn_viability_evidence_limit(one_turn_viability_evidence_limit);
             let started = Instant::now();
             let report = search.advance(
                 &EngineCombatStepper,
@@ -469,10 +1101,76 @@ fn main() -> Result<(), String> {
                 },
             );
             let progress = search.progress_snapshot();
-            let watched_state = watch_state_hash
-                .as_deref()
-                .and_then(|hash| search.state_progress_by_exact_hash(hash));
+            if let (Some(path), Some(artifact)) = (
+                export_augmented_value_prototype.as_ref(),
+                shadow_value_artifact.as_mut(),
+            ) {
+                artifact.add_one_turn_viability_evidence(search.one_turn_viability_evidence());
+                artifact.add_one_turn_loss_evidence(search.one_turn_loss_evidence());
+                save_value_prototype(path, artifact)?;
+            }
+            let shadow_corridor_report = shadow_corridor
+                .as_ref()
+                .map(|corridor| corridor.report(&search, shadow_corridor_guide))
+                .or_else(|| {
+                    shadow_value_artifact
+                        .as_ref()
+                        .map(CombatValuePrototypeArtifactV1::report)
+                });
+            let one_turn_viability_evidence = search
+                .one_turn_viability_evidence()
+                .iter()
+                .map(|evidence| {
+                    json!({
+                        "proof": "ExactWitness",
+                        "horizon": "BeforeNextPlayerTurnOrWin",
+                        "exact_state_hash": evidence.exact_state_hash,
+                        "player_turn": evidence.position.combat.turn.turn_count,
+                        "player_hp": evidence.position.combat.entities.player.current_hp,
+                        "witness_boundary": format!("{:?}", evidence.witness_boundary),
+                        "path_action_count": evidence.actions.len(),
+                        "witness_turn_action_count": evidence.witness_turn_actions.len(),
+                        "typed_features": typed_combat_feature_components(&evidence.position),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let one_turn_loss_evidence = search
+                .one_turn_loss_evidence()
+                .iter()
+                .map(|evidence| {
+                    json!({
+                        "proof": "ExhaustiveRefutation",
+                        "horizon": "BeforeNextPlayerTurn",
+                        "exact_state_hash": evidence.exact_state_hash,
+                        "player_turn": evidence.position.combat.turn.turn_count,
+                        "player_hp": evidence.position.combat.entities.player.current_hp,
+                        "terminal_loss_turn_options": evidence.terminal_loss_turn_options,
+                        "path_action_count": evidence.actions.len(),
+                        "typed_features": typed_combat_feature_components(&evidence.position),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let watched_states = watch_state_hash
+                .iter()
+                .map(|hash| search.state_membership_by_exact_hash(hash))
+                .collect::<Vec<_>>();
+            let watched_state = (watched_states.len() == 1)
+                .then(|| watched_states.first().cloned())
+                .flatten();
             let witness = report.witness.as_ref();
+            if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), witness) {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let actions = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                let bytes =
+                    serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?;
+                std::fs::write(path, bytes).map_err(|error| error.to_string())?;
+            }
             let prefix_trace = replay_combat_path(
                 initial_position,
                 &prefix_replay_actions,
@@ -506,17 +1204,28 @@ fn main() -> Result<(), String> {
                 return print_json(&serde_json::json!({
                     "schema_name": "OracleCombatCaseReadableV1",
                     "schema_version": 1,
+                    "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                     "status": format!("{:?}", report.status),
                     "elapsed_ms": started.elapsed().as_millis(),
                     "budget": {
                         "max_nodes": max_nodes,
                         "wall_ms": wall_ms,
                     },
+                    "shadow_corridor": shadow_corridor_report,
+                    "one_turn_viability_evidence": one_turn_viability_evidence,
+                    "one_turn_loss_evidence": one_turn_loss_evidence,
+                    "exported_augmented_value_prototype": export_augmented_value_prototype,
+                    "exported_witness_actions": witness
+                        .is_some()
+                        .then_some(export_witness_actions.as_ref())
+                        .flatten(),
                     "counters": {
                         "agenda_pops": report.after.agenda_pops,
                         "generation_work": report.after.generation_work,
                         "exact_states": report.after.exact_states,
                         "completed_turn_options": report.after.completed_turn_options,
+                        "exact_one_turn_viable_states": report.after.exact_one_turn_viable_states,
+                        "exhaustive_one_turn_losses": report.after.exhaustive_one_turn_losses,
                     },
                     "prefix": {
                         "trace": prefix_trace,
@@ -546,6 +1255,7 @@ fn main() -> Result<(), String> {
             print_json(&serde_json::json!({
                 "schema_name": "OracleCombatCaseProbeV1",
                 "schema_version": 1,
+                "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": started.elapsed().as_millis(),
                 "budget": {
@@ -553,6 +1263,14 @@ fn main() -> Result<(), String> {
                     "wall_ms": wall_ms,
                     "max_engine_steps_per_transition": max_engine_steps_per_transition,
                 },
+                "shadow_corridor": shadow_corridor_report,
+                "one_turn_viability_evidence": one_turn_viability_evidence,
+                "one_turn_loss_evidence": one_turn_loss_evidence,
+                "exported_augmented_value_prototype": export_augmented_value_prototype,
+                "exported_witness_actions": witness
+                    .is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
                 "prefix": {
                     "action_count": prefix.len(),
                     "actions": prefix,
@@ -573,6 +1291,8 @@ fn main() -> Result<(), String> {
                     "duplicate_exact_successors": report.after.duplicate_exact_successors,
                     "completed_turn_options": report.after.completed_turn_options,
                     "policy_witness_proposals": report.after.policy_witness_proposals,
+                    "exact_one_turn_viable_states": report.after.exact_one_turn_viable_states,
+                    "exhaustive_one_turn_losses": report.after.exhaustive_one_turn_losses,
                 },
                 "progress": {
                     "retained_states": progress.retained_states,
@@ -591,6 +1311,7 @@ fn main() -> Result<(), String> {
                     "generation_gap_count": progress.generation_gap_count,
                     "root_state": progress.root_state,
                     "watched_state": watched_state,
+                    "watched_states": watched_states,
                 },
                 "witness": witness.map(|witness| serde_json::json!({
                     "final_hp": witness.final_position.combat.entities.player.current_hp,
@@ -608,31 +1329,40 @@ fn main() -> Result<(), String> {
             wall_ms,
             quantum_work,
             max_engine_steps_per_transition,
+            anchor_only,
         } => {
             let case = load_combat_case(&case)?;
             let target: Vec<ClientInput> = serde_json::from_slice(
                 &std::fs::read(&actions).map_err(|error| error.to_string())?,
             )
             .map_err(|error| format!("invalid target action list: {error}"))?;
-            let target_policy_trace = target_atomic_policy_trace(
-                &case.position,
-                &target,
-                max_engine_steps_per_transition,
-            )?;
+            let (target_policy_trace, target_successor_exact_state_hash, target_prefix_positions) =
+                target_atomic_policy_trace(
+                    &case.position,
+                    &target,
+                    max_engine_steps_per_transition,
+                )?;
             let root = CombatDecisionRoot::new(case.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let policy = existing_combat_knowledge_policy_v1();
+            let policy = if anchor_only {
+                anchor_only_policy(policy)
+            } else {
+                policy
+            };
             let mut generator = TurnOptionGeneratorSession::with_policy(
                 root,
                 TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition,
                     ..TurnOptionGeneratorConfig::default()
                 },
-                existing_combat_knowledge_policy_v1(),
+                policy,
             );
             let started = Instant::now();
             let deadline = started + Duration::from_millis(wall_ms);
             let mut scanned_options = 0usize;
             let mut matched = None;
+            let mut prefix_insertions = vec![None; target_prefix_positions.len()];
             let mut last_status = TurnOptionGenerationStatus::Partial(
                 sts_combat_planner::GenerationInterruption::GenerationWorkBudget,
             );
@@ -652,15 +1382,34 @@ fn main() -> Result<(), String> {
                     },
                 );
                 last_status = report.status;
+                for (index, position) in target_prefix_positions.iter().enumerate() {
+                    if prefix_insertions[index].is_none()
+                        && generator.has_seen_exact_position(position)
+                    {
+                        let anchor_rank = generator
+                            .live_expand_queue_ranks_at_exact_position(position)
+                            .map(|(anchor, _)| anchor);
+                        prefix_insertions[index] = Some((
+                            report.after.generation_work,
+                            generator.anchor_work_pops(),
+                            anchor_rank,
+                        ));
+                    }
+                }
                 for option in &generator.completed_options()[scanned_options..] {
-                    if option.actions().len() == target.len()
+                    let exact_action_match = option.actions().len() == target.len()
                         && option
                             .actions()
                             .iter()
                             .zip(&target)
-                            .all(|(actual, expected)| actual.input == *expected)
-                    {
+                            .all(|(actual, expected)| actual.input == *expected);
+                    let equivalent_successor_match =
+                        option.exact_successor_hash() == target_successor_exact_state_hash;
+                    if exact_action_match || equivalent_successor_match {
                         matched = Some(serde_json::json!({
+                            "match_kind": if exact_action_match { "exact_actions" } else { "equivalent_exact_successor" },
+                            "exact_action_match": exact_action_match,
+                            "equivalent_successor_match": equivalent_successor_match,
                             "generation_work": report.after.generation_work,
                             "engine_steps": report.after.engine_steps,
                             "elapsed_ms": started.elapsed().as_millis(),
@@ -677,17 +1426,70 @@ fn main() -> Result<(), String> {
                 }
             }
             let counters = generator.counters();
+            let target_prefix_membership = target_prefix_positions
+                .iter()
+                .enumerate()
+                .map(|(index, position)| {
+                    let insertion = prefix_insertions[index].map(
+                        |(generation_work, anchor_pops, anchor_rank)| {
+                            serde_json::json!({
+                                "generation_work": generation_work,
+                                "anchor_pops": anchor_pops,
+                                "anchor_rank": anchor_rank,
+                                "anchor_pops_since": generator
+                                    .anchor_work_pops()
+                                    .saturating_sub(anchor_pops),
+                            })
+                        },
+                    );
+                    let (live_expand, live_apply_action, live_structured_selection) =
+                        generator.live_work_counts_at_exact_position(position);
+                    let queue_ranks = generator
+                        .live_expand_queue_ranks_at_exact_position(position)
+                        .map(|(anchor, guides)| serde_json::json!({
+                            "anchor": anchor,
+                            "guides": guides,
+                        }));
+                    serde_json::json!({
+                        "through_action": index + 1,
+                        "exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                            &position.engine,
+                            &position.combat,
+                        ),
+                        "seen": generator.has_seen_exact_position(position),
+                        "first_observed": insertion,
+                        "live_work": {
+                            "expand": live_expand,
+                            "apply_action": live_apply_action,
+                            "structured_selection": live_structured_selection,
+                        },
+                        "live_expand_queue_ranks": queue_ranks,
+                        "next_target_transition_live": target.get(index + 1).map(|next| {
+                            generator.has_live_action_transition(position, next)
+                        }),
+                    })
+                })
+                .collect::<Vec<_>>();
             print_json(&serde_json::json!({
                 "schema_name": "OracleTurnMembershipProbeV1",
                 "schema_version": 1,
+                "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                 "matched": matched.is_some(),
                 "match": matched,
                 "target_action_count": target.len(),
+                "target_successor_exact_state_hash": target_successor_exact_state_hash,
                 "target_policy_trace": target_policy_trace,
+                "target_prefix_membership": target_prefix_membership,
                 "status": format!("{:?}", last_status),
                 "elapsed_ms": started.elapsed().as_millis(),
                 "generation_work": counters.generation_work,
                 "engine_steps": counters.engine_steps,
+                "scheduler_counters": {
+                    "atomic_state_expansions": generator.atomic_state_expansions(),
+                    "anchor_work_pops": generator.anchor_work_pops(),
+                    "guided_work_pops": generator.guided_work_pops(),
+                    "applied_action_transitions": generator.diagnostics().applied_action_transitions,
+                },
                 "completed_turn_options": generator.completed_options().len(),
                 "retained_work_items": generator.retained_work_items(),
                 "finished": generator.is_finished(),
@@ -824,6 +1626,52 @@ fn main() -> Result<(), String> {
         }
         Command::Live { endpoint, command } => run_live_command(&endpoint, command),
     }
+}
+
+fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
+    const REQUIRED_PROFILE: &str = "fast-run";
+    const BUILT_PROFILE: &str = env!("STS_CARGO_PROFILE");
+    const REPOSITORY_ROOT: &str = env!("STS_REPOSITORY_ROOT");
+
+    if !canonical_fast_run {
+        return Err(
+            "oracle_lab refuses direct execution; run `cargo oracle-lab <command> ...`".to_string(),
+        );
+    }
+    if BUILT_PROFILE != REQUIRED_PROFILE {
+        return Err(format!(
+            "oracle_lab was built with forbidden profile `{BUILT_PROFILE}`; \
+             run `cargo oracle-lab <command> ...`"
+        ));
+    }
+    let executable_name = if cfg!(windows) {
+        "oracle_lab.exe"
+    } else {
+        "oracle_lab"
+    };
+    let expected = PathBuf::from(REPOSITORY_ROOT)
+        .join("target")
+        .join(REQUIRED_PROFILE)
+        .join(executable_name);
+    let current = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|error| format!("failed to identify running oracle_lab: {error}"))?;
+    let expected = expected.canonicalize().map_err(|error| {
+        format!(
+            "canonical oracle_lab artifact is missing at {}: {error}; \
+             run `cargo oracle-lab <command> ...`",
+            expected.display()
+        )
+    })?;
+    if current != expected {
+        return Err(format!(
+            "oracle_lab refuses non-canonical artifact {}; expected {}; \
+             run `cargo oracle-lab <command> ...`",
+            current.display(),
+            expected.display()
+        ));
+    }
+    Ok(())
 }
 
 fn run_live_command(endpoint: &std::path::Path, command: LiveCommand) -> Result<(), String> {
@@ -1107,6 +1955,7 @@ fn replay_combat_path(
     let mut turns = Vec::new();
     let mut turn_number = position.combat.turn.turn_count;
     let mut turn_start_hp = position.combat.entities.player.current_hp;
+    let mut turn_start_action_index = 1usize;
     let mut turn_actions = Vec::new();
     let mut terminal = stepper.terminal(&position);
 
@@ -1146,6 +1995,10 @@ fn replay_combat_path(
         {
             turns.push(json!({
                 "turn": turn_number,
+                "action_range": {
+                    "first": turn_start_action_index,
+                    "last": index + 1,
+                },
                 "start_hp": turn_start_hp,
                 "actions": turn_actions,
                 "end": combat_turn_snapshot(&position),
@@ -1153,12 +2006,17 @@ fn replay_combat_path(
             }));
             turn_number = next_turn;
             turn_start_hp = position.combat.entities.player.current_hp;
+            turn_start_action_index = index + 2;
             turn_actions = Vec::new();
         }
     }
     if !turn_actions.is_empty() {
         turns.push(json!({
             "turn": turn_number,
+            "action_range": {
+                "first": turn_start_action_index,
+                "last": actions.len(),
+            },
             "start_hp": turn_start_hp,
             "actions": turn_actions,
             "end": combat_turn_snapshot(&position),
@@ -1230,12 +2088,20 @@ fn target_atomic_policy_trace(
     initial: &sts_simulator::sim::combat::CombatPosition,
     target: &[ClientInput],
     max_engine_steps_per_transition: usize,
-) -> Result<Vec<Value>, String> {
+) -> Result<
+    (
+        Vec<Value>,
+        String,
+        Vec<sts_simulator::sim::combat::CombatPosition>,
+    ),
+    String,
+> {
     const UNIFORM_EXPLORATION: f64 = 0.05;
 
     let stepper = EngineCombatStepper;
     let mut position = initial.clone();
     let mut trace = Vec::with_capacity(target.len());
+    let mut prefix_positions = Vec::with_capacity(target.len());
     for (step_index, input) in target.iter().enumerate() {
         let legal = stepper.atomic_actions(&position);
         let weights =
@@ -1244,6 +2110,8 @@ fn target_atomic_policy_trace(
                 &legal,
             );
         let target_index = legal.iter().position(|candidate| candidate == input);
+        let exact_input_is_legal =
+            target_index.is_some() || stepper.choice_for_legal_input(&position, input).is_some();
         let (ordinal_rank, raw_weight, probability, negative_log_probability) = target_index
             .and_then(|index| weights.get(index).copied().map(|weight| (index, weight)))
             .map_or((None, None, None, None), |(_, weight)| {
@@ -1272,10 +2140,11 @@ fn target_atomic_policy_trace(
             "raw_weight": raw_weight,
             "probability": probability,
             "negative_log_probability": negative_log_probability,
+            "surface": if target_index.is_some() { "atomic" } else { "structured_selection" },
         }));
-        if target_index.is_none() {
+        if !exact_input_is_legal {
             return Err(format!(
-                "target action {step_index} is not on the exact atomic action surface: {input:?}"
+                "target action {step_index} is not on the exact legal action surface: {input:?}"
             ));
         }
         let result = stepper.apply_to_stable(
@@ -1292,8 +2161,16 @@ fn target_atomic_policy_trace(
             ));
         }
         position = result.position;
+        prefix_positions.push(position.clone());
     }
-    Ok(trace)
+    Ok((
+        trace,
+        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            &position.engine,
+            &position.combat,
+        ),
+        prefix_positions,
+    ))
 }
 
 fn compact_target_label(

@@ -8,7 +8,7 @@ mod observation;
 mod reactive_observation;
 use monster_signals::{
     is_living_monster_id, monster_attack_relevance, visible_strength_down_mitigation_hint,
-    visible_strength_gain_pressure_hint,
+    visible_strength_gain_pressure_hint, visible_weak_mitigation_hint,
 };
 use observation::{observe_card_play_effects, CardPlayEffectAccumulator};
 
@@ -51,6 +51,10 @@ fn card_play_facts_from_accumulator(
     combat: &CombatState,
     accumulator: CardPlayEffectAccumulator,
 ) -> CardPlayEffectFacts {
+    let mut reactive = accumulator.reactive;
+    reactive.player_hp_loss = reactive
+        .player_hp_loss
+        .saturating_add(accumulator.direct.player_hp_loss);
     let mut facts = CardPlayEffectFacts {
         direct: DirectCardPlayEffectFacts {
             declared_draw_cards: accumulator.direct.declared_draw_cards,
@@ -63,9 +67,10 @@ fn card_play_facts_from_accumulator(
                 .direct
                 .player_strength_gain
                 .min(accumulator.direct.player_lose_strength),
+            player_energy_gain: accumulator.direct.player_energy_gain,
             ..DirectCardPlayEffectFacts::default()
         },
-        reactive: accumulator.reactive,
+        reactive,
     };
 
     for (target, amount) in accumulator.direct.enemy_strength_down_by_target {
@@ -102,6 +107,15 @@ fn card_play_facts_from_accumulator(
             .direct
             .visible_attack_pressure_hint
             .saturating_add(visible_strength_gain_pressure_hint(combat, target, amount));
+    }
+    for (target, amount) in accumulator.direct.enemy_weak_by_target {
+        if !is_living_monster_id(combat, target) {
+            continue;
+        }
+        facts.direct.visible_attack_mitigation_hint = facts
+            .direct
+            .visible_attack_mitigation_hint
+            .saturating_add(visible_weak_mitigation_hint(combat, target, amount));
     }
 
     facts

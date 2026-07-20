@@ -13,3 +13,7 @@ test-core = ["test", "-p", "sts_simulator", "--lib"]
 test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 test-control = ["test", "-p", "sts_simulator_control", "--lib"]
 check-workspace = ["check", "--workspace", "--all-targets"]
+# The oracle laboratory is deliberately runnable through one Cargo-owned
+# entrypoint.  The hidden token and the binary's embedded profile/path checks
+# reject stale binaries and accidental `--release --target-dir ...` builds.
+oracle-lab = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]

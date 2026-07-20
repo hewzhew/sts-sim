@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,12 @@ pub struct OracleCombatWitnessCounters {
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
     pub policy_witness_proposals: usize,
+    /// Exact player-turn states with at least one complete option reaching
+    /// the next player turn or terminal win.
+    pub exact_one_turn_viable_states: usize,
+    /// Exact player-turn states whose complete, gap-free turn language
+    /// contains only terminal losses.
+    pub exhaustive_one_turn_losses: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,6 +107,32 @@ pub struct OracleCombatWitness {
     pub final_position: CombatPosition,
     pub negative_log_policy: f64,
     pub replay_engine_steps: usize,
+}
+
+/// A bounded diagnostic sample proving that one exact player-turn state
+/// cannot reach another player turn. This is stronger than observing one bad
+/// action: the generator finished without a gap and every complete turn option
+/// ended in terminal loss.
+#[derive(Clone, Debug)]
+pub struct OracleCombatOneTurnLossEvidence {
+    pub exact_state_hash: String,
+    pub position: CombatPosition,
+    /// Exact replay prefix from the witness-search root to this state.
+    pub actions: Vec<TurnOptionAction>,
+    pub terminal_loss_turn_options: usize,
+}
+
+/// An existential counterpart to `OracleCombatOneTurnLossEvidence`: one
+/// replayable complete turn proves that this exact state can either reach the
+/// next player turn or win immediately.
+#[derive(Clone, Debug)]
+pub struct OracleCombatOneTurnViabilityEvidence {
+    pub exact_state_hash: String,
+    pub position: CombatPosition,
+    /// Exact replay prefix from the witness-search root to this state.
+    pub actions: Vec<TurnOptionAction>,
+    pub witness_boundary: CompleteTurnOptionBoundary,
+    pub witness_turn_actions: Vec<TurnOptionAction>,
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +199,18 @@ pub struct OracleCombatWitnessStateProgressSnapshot {
     pub guided_states_ahead: Option<Vec<usize>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatWitnessStateMembershipSnapshot {
+    pub exact_state_hash: String,
+    /// At least one complete turn option produced this exact successor.
+    pub generated: bool,
+    /// At least one generated path passed canonical path ownership.
+    pub accepted: bool,
+    /// The accepted state still owns resumable generator work.
+    pub retained: bool,
+    pub progress: Option<OracleCombatWitnessStateProgressSnapshot>,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct PathRank {
     atomic_depth: usize,
@@ -204,6 +248,7 @@ struct SearchState {
     generator: TurnOptionGeneratorSession,
     synced_options: usize,
     synced_gaps: usize,
+    one_turn_viability_recorded: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -247,10 +292,11 @@ struct GuidedStateQueueEntry {
     anchor_priority: f64,
 }
 
-// Keep guide ordering sharp while preventing one resumable near-best state
-// from owning a lane forever.  Global liveness remains the anchor's job; this
-// tiny ordinal window only shares service among the guide's closest peers.
-const GUIDED_NEAR_BEST_SERVICE_WINDOW: usize = 4;
+// A guide rank is lexicographic, not a calibrated scalar distance.  Share a
+// guide lane only among exact rank ties; treating the next three heap entries
+// as "near" silently overrules a strict guide preference.  Global liveness for
+// lower-ranked states remains the anchor's job.
+const GUIDED_EQUAL_BEST_SERVICE_WINDOW: usize = 4;
 
 impl Eq for GuidedStateQueueEntry {}
 
@@ -297,6 +343,8 @@ pub struct OracleCombatWitnessSession {
     guided_frontiers: Vec<BinaryHeap<GuidedStateQueueEntry>>,
     next_scheduler_lane: usize,
     best_paths: HashMap<CombatExactStateKey, PathRank>,
+    generated_exact_state_hashes: HashSet<String>,
+    accepted_exact_state_hashes: HashSet<String>,
     next_sequence_id: u64,
     used: OracleCombatWitnessCounters,
     granted_agenda_pops: usize,
@@ -306,6 +354,10 @@ pub struct OracleCombatWitnessSession {
     pending_witness: Option<PendingWitnessReplay>,
     witness: Option<OracleCombatWitness>,
     replay_failure: Option<OracleCombatWitnessReplayError>,
+    one_turn_loss_evidence_limit: usize,
+    one_turn_loss_evidence: Vec<OracleCombatOneTurnLossEvidence>,
+    one_turn_viability_evidence_limit: usize,
+    one_turn_viability_evidence: Vec<OracleCombatOneTurnViabilityEvidence>,
 }
 
 // A policy proposal is a root-level capability donor, not another search
@@ -325,6 +377,7 @@ impl OracleCombatWitnessSession {
         policy: SharedCombatActionPolicy,
     ) -> Self {
         let exact_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
+        let root_exact_state_hash = root.exact_state_hash().to_owned();
         let path = PathRank {
             atomic_depth: 0,
             negative_log_policy: 0.0,
@@ -342,6 +395,7 @@ impl OracleCombatWitnessSession {
             ),
             synced_options: 0,
             synced_gaps: 0,
+            one_turn_viability_recorded: false,
         };
         let mut session = Self {
             root,
@@ -352,6 +406,8 @@ impl OracleCombatWitnessSession {
             guided_frontiers: Vec::new(),
             next_scheduler_lane: 0,
             best_paths: HashMap::from([(exact_key, path)]),
+            generated_exact_state_hashes: HashSet::from([root_exact_state_hash.clone()]),
+            accepted_exact_state_hashes: HashSet::from([root_exact_state_hash]),
             next_sequence_id: 0,
             used: OracleCombatWitnessCounters {
                 exact_states: 1,
@@ -364,6 +420,10 @@ impl OracleCombatWitnessSession {
             pending_witness: None,
             witness: None,
             replay_failure: None,
+            one_turn_loss_evidence_limit: 0,
+            one_turn_loss_evidence: Vec::new(),
+            one_turn_viability_evidence_limit: 0,
+            one_turn_viability_evidence: Vec::new(),
         };
         session.queue_state(0);
         session
@@ -371,6 +431,27 @@ impl OracleCombatWitnessSession {
 
     pub fn witness(&self) -> Option<&OracleCombatWitness> {
         self.witness.as_ref()
+    }
+
+    /// Opts into bounded collection of exact one-turn loss certificates.
+    /// The default limit is zero, so production search pays no position-clone
+    /// or action-prefix storage cost.
+    pub fn set_one_turn_loss_evidence_limit(&mut self, limit: usize) {
+        self.one_turn_loss_evidence_limit = limit;
+        self.one_turn_loss_evidence.truncate(limit);
+    }
+
+    pub fn one_turn_loss_evidence(&self) -> &[OracleCombatOneTurnLossEvidence] {
+        &self.one_turn_loss_evidence
+    }
+
+    pub fn set_one_turn_viability_evidence_limit(&mut self, limit: usize) {
+        self.one_turn_viability_evidence_limit = limit;
+        self.one_turn_viability_evidence.truncate(limit);
+    }
+
+    pub fn one_turn_viability_evidence(&self) -> &[OracleCombatOneTurnViabilityEvidence] {
+        &self.one_turn_viability_evidence
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
@@ -505,6 +586,20 @@ impl OracleCombatWitnessSession {
             .flatten()
             .find(|state| exact_hash(state.generator.root().position()) == exact_state_hash)
             .map(|state| self.state_progress_snapshot_with_ranks(state))
+    }
+
+    pub fn state_membership_by_exact_hash(
+        &self,
+        exact_state_hash: &str,
+    ) -> OracleCombatWitnessStateMembershipSnapshot {
+        let progress = self.state_progress_by_exact_hash(exact_state_hash);
+        OracleCombatWitnessStateMembershipSnapshot {
+            exact_state_hash: exact_state_hash.to_owned(),
+            generated: self.generated_exact_state_hashes.contains(exact_state_hash),
+            accepted: self.accepted_exact_state_hashes.contains(exact_state_hash),
+            retained: progress.is_some(),
+            progress,
+        }
     }
 
     pub fn advance(
@@ -659,7 +754,13 @@ impl OracleCombatWitnessSession {
                 self.accept_option(&state, option);
             }
 
-            if !state.generator.is_finished() {
+            self.record_one_turn_viability_evidence(&mut state);
+
+            let generator_finished = state.generator.is_finished();
+            if generator_finished {
+                self.record_one_turn_loss_evidence(&state);
+            }
+            if !generator_finished {
                 self.states[state_id] = Some(state);
                 self.queue_state(state_id);
             }
@@ -704,6 +805,9 @@ impl OracleCombatWitnessSession {
                 }
             }
             CompleteTurnOptionBoundary::NextPlayerTurn => {
+                let exact_state_hash = option.exact_successor_hash().to_owned();
+                self.generated_exact_state_hashes
+                    .insert(exact_state_hash.clone());
                 let exact_key = combat_exact_state_key(
                     &option.exact_successor().engine,
                     &option.exact_successor().combat,
@@ -715,6 +819,7 @@ impl OracleCombatWitnessSession {
                 if !should_insert {
                     return;
                 }
+                self.accepted_exact_state_hashes.insert(exact_state_hash);
                 let Ok(root) = CombatDecisionRoot::new(option.exact_successor().clone()) else {
                     return;
                 };
@@ -734,11 +839,68 @@ impl OracleCombatWitnessSession {
                     ),
                     synced_options: 0,
                     synced_gaps: 0,
+                    one_turn_viability_recorded: false,
                 }));
                 self.queue_state(state_id);
             }
             CompleteTurnOptionBoundary::TerminalLoss | CompleteTurnOptionBoundary::Escape => {}
         }
+    }
+
+    fn record_one_turn_loss_evidence(&mut self, state: &SearchState) {
+        if self.one_turn_loss_evidence_limit == 0 {
+            return;
+        }
+        let options = state.generator.completed_options();
+        if options.is_empty()
+            || !state.generator.gaps().is_empty()
+            || !options
+                .iter()
+                .all(|option| option.boundary() == CompleteTurnOptionBoundary::TerminalLoss)
+        {
+            return;
+        }
+        self.used.exhaustive_one_turn_losses =
+            self.used.exhaustive_one_turn_losses.saturating_add(1);
+        if self.one_turn_loss_evidence.len() >= self.one_turn_loss_evidence_limit {
+            return;
+        }
+        self.one_turn_loss_evidence
+            .push(OracleCombatOneTurnLossEvidence {
+                exact_state_hash: state.generator.root().exact_state_hash().to_owned(),
+                position: state.generator.root().position().clone(),
+                actions: state.actions.clone(),
+                terminal_loss_turn_options: options.len(),
+            });
+    }
+
+    fn record_one_turn_viability_evidence(&mut self, state: &mut SearchState) {
+        if self.one_turn_viability_evidence_limit == 0 || state.one_turn_viability_recorded {
+            return;
+        }
+        let Some(option) = state.generator.completed_options().iter().find(|option| {
+            matches!(
+                option.boundary(),
+                CompleteTurnOptionBoundary::NextPlayerTurn
+                    | CompleteTurnOptionBoundary::TerminalWin
+            )
+        }) else {
+            return;
+        };
+        state.one_turn_viability_recorded = true;
+        self.used.exact_one_turn_viable_states =
+            self.used.exact_one_turn_viable_states.saturating_add(1);
+        if self.one_turn_viability_evidence.len() >= self.one_turn_viability_evidence_limit {
+            return;
+        }
+        self.one_turn_viability_evidence
+            .push(OracleCombatOneTurnViabilityEvidence {
+                exact_state_hash: state.generator.root().exact_state_hash().to_owned(),
+                position: state.generator.root().position().clone(),
+                actions: state.actions.clone(),
+                witness_boundary: option.boundary(),
+                witness_turn_actions: option.actions().to_vec(),
+            });
     }
 
     fn queue_state(&mut self, state_id: usize) {
@@ -815,16 +977,27 @@ impl OracleCombatWitnessSession {
     }
 
     fn pop_guided_state(&mut self, guide_index: usize) -> Option<(usize, SearchState)> {
-        let mut near_best = Vec::with_capacity(GUIDED_NEAR_BEST_SERVICE_WINDOW);
-        while near_best.len() < GUIDED_NEAR_BEST_SERVICE_WINDOW {
+        let mut equal_best = Vec::with_capacity(GUIDED_EQUAL_BEST_SERVICE_WINDOW);
+        let mut first_strictly_worse = None;
+        while equal_best.len() < GUIDED_EQUAL_BEST_SERVICE_WINDOW {
             let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.pop() else {
                 break;
             };
             if self.entry_is_current(entry.state_id, entry.revision) {
-                near_best.push(entry);
+                if equal_best
+                    .first()
+                    .is_some_and(|best: &GuidedStateQueueEntry| entry.guide_rank != best.guide_rank)
+                {
+                    first_strictly_worse = Some(entry);
+                    break;
+                }
+                equal_best.push(entry);
             }
         }
-        let selected_index = least_served_guided_candidate_index(near_best.iter().map(|entry| {
+        if let Some(entry) = first_strictly_worse {
+            self.guided_frontiers[guide_index].push(entry);
+        }
+        let selected_index = least_served_guided_candidate_index(equal_best.iter().map(|entry| {
             self.states[entry.state_id]
                 .as_ref()
                 .expect("current guided entry owns a live state")
@@ -832,8 +1005,8 @@ impl OracleCombatWitnessSession {
                 .counters()
                 .generation_work
         }))?;
-        let selected = near_best.remove(selected_index);
-        self.guided_frontiers[guide_index].extend(near_best);
+        let selected = equal_best.remove(selected_index);
+        self.guided_frontiers[guide_index].extend(equal_best);
         let state = self.states[selected.state_id]
             .take()
             .expect("current queue entry owns a live state");
@@ -1062,7 +1235,7 @@ mod anchor_priority_tests {
     }
 
     #[test]
-    fn guided_service_window_prefers_less_served_near_best_state() {
+    fn guided_equal_rank_service_window_prefers_the_least_served_state() {
         assert_eq!(least_served_guided_candidate_index([64, 20, 0, 4]), Some(2));
         assert_eq!(least_served_guided_candidate_index([4, 4, 4, 4]), Some(0));
     }
