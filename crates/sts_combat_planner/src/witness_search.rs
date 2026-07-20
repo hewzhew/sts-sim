@@ -247,6 +247,11 @@ struct GuidedStateQueueEntry {
     anchor_priority: f64,
 }
 
+// Keep guide ordering sharp while preventing one resumable near-best state
+// from owning a lane forever.  Global liveness remains the anchor's job; this
+// tiny ordinal window only shares service among the guide's closest peers.
+const GUIDED_NEAR_BEST_SERVICE_WINDOW: usize = 4;
+
 impl Eq for GuidedStateQueueEntry {}
 
 impl PartialEq for GuidedStateQueueEntry {
@@ -810,15 +815,29 @@ impl OracleCombatWitnessSession {
     }
 
     fn pop_guided_state(&mut self, guide_index: usize) -> Option<(usize, SearchState)> {
-        while let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.pop() {
+        let mut near_best = Vec::with_capacity(GUIDED_NEAR_BEST_SERVICE_WINDOW);
+        while near_best.len() < GUIDED_NEAR_BEST_SERVICE_WINDOW {
+            let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.pop() else {
+                break;
+            };
             if self.entry_is_current(entry.state_id, entry.revision) {
-                let state = self.states[entry.state_id]
-                    .take()
-                    .expect("current queue entry owns a live state");
-                return Some((entry.state_id, state));
+                near_best.push(entry);
             }
         }
-        None
+        let selected_index = least_served_guided_candidate_index(near_best.iter().map(|entry| {
+            self.states[entry.state_id]
+                .as_ref()
+                .expect("current guided entry owns a live state")
+                .generator
+                .counters()
+                .generation_work
+        }))?;
+        let selected = near_best.remove(selected_index);
+        self.guided_frontiers[guide_index].extend(near_best);
+        let state = self.states[selected.state_id]
+            .take()
+            .expect("current queue entry owns a live state");
+        Some((selected.state_id, state))
     }
 
     fn entry_is_current(&self, state_id: usize, revision: u64) -> bool {
@@ -979,6 +998,16 @@ impl OracleCombatWitnessSession {
     }
 }
 
+fn least_served_guided_candidate_index(
+    generation_work: impl IntoIterator<Item = usize>,
+) -> Option<usize> {
+    generation_work
+        .into_iter()
+        .enumerate()
+        .min_by_key(|(rank_index, work)| (*work, *rank_index))
+        .map(|(index, _)| index)
+}
+
 fn combined_anchor_priority(state: &SearchState) -> f64 {
     let Some((local_depth, local_negative_log_policy)) =
         state.generator.best_retained_path_bound_snapshot()
@@ -1020,7 +1049,7 @@ fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgr
 
 #[cfg(test)]
 mod anchor_priority_tests {
-    use super::service_aware_anchor_priority;
+    use super::{least_served_guided_candidate_index, service_aware_anchor_priority};
 
     #[test]
     fn consumed_generator_work_makes_anchor_service_progressively_less_preferred() {
@@ -1030,6 +1059,12 @@ mod anchor_priority_tests {
 
         assert!(fresh < once_served);
         assert!(once_served < repeatedly_served);
+    }
+
+    #[test]
+    fn guided_service_window_prefers_less_served_near_best_state() {
+        assert_eq!(least_served_guided_candidate_index([64, 20, 0, 4]), Some(2));
+        assert_eq!(least_served_guided_candidate_index([4, 4, 4, 4]), Some(0));
     }
 }
 
