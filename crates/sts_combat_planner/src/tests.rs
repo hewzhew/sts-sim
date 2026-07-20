@@ -385,7 +385,10 @@ fn generator_publishes_a_reached_turn_boundary_without_rescheduling_it() {
 
     assert_eq!(report.after.generation_work, 2);
     assert_eq!(report.newly_completed_options, 1);
-    assert_eq!(session.completed_options()[0].actions()[0].input, ClientInput::EndTurn);
+    assert_eq!(
+        session.completed_options()[0].actions()[0].input,
+        ClientInput::EndTurn
+    );
 }
 
 #[test]

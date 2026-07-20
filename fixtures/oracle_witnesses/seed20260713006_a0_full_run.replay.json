@@ -1,0 +1,21 @@
+{
+  "node_id": 0,
+  "report": {
+    "act": 3,
+    "ascension": 0,
+    "combat_actions": 919,
+    "combat_resolutions": 26,
+    "current_hp": 13,
+    "decisions": 196,
+    "engine_state": "GameOver(Victory)",
+    "final_fingerprint": "c0a040c6b2ea2075d0fef0e59f1b908347b19c77e2f13ae38f6331ab1cb75543",
+    "floor": 48,
+    "forced_transitions": 0,
+    "journal_entries": 222,
+    "max_hp": 100,
+    "seed": 20260713006
+  },
+  "schema_name": "ExactOracleRunWitnessReplayV1",
+  "schema_version": 1,
+  "workspace": "fixtures\\oracle_witnesses\\seed20260713006_a0_full_run.workspace.json"
+}

@@ -649,7 +649,9 @@ impl OracleCombatWitnessSession {
             .map(|exact_state_hash| {
                 let progress = retained.remove(&exact_state_hash);
                 let membership = OracleCombatWitnessStateMembershipSnapshot {
-                    generated: self.generated_exact_state_hashes.contains(&exact_state_hash),
+                    generated: self
+                        .generated_exact_state_hashes
+                        .contains(&exact_state_hash),
                     accepted: self.accepted_exact_state_hashes.contains(&exact_state_hash),
                     retained: progress.is_some(),
                     exact_state_hash: exact_state_hash.clone(),

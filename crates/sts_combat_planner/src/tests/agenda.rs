@@ -144,9 +144,7 @@ fn interleaves_root_discovery_with_one_continuation_quantum() {
             .iter()
             .filter(|prospect| matches!(
                 prospect.continuation(),
-                ContinuationEvidence::Interrupted(
-                    ContinuationInterruption::GenerationWorkBudget
-                )
+                ContinuationEvidence::Interrupted(ContinuationInterruption::GenerationWorkBudget)
             ))
             .count(),
         1

@@ -51,6 +51,7 @@ mod planner_boundary_capture;
 mod planner_capture;
 mod progress_journal;
 mod progress_options;
+mod progress_replay;
 mod progress_step;
 pub mod registry;
 mod render;
@@ -165,6 +166,7 @@ pub use progress_options::{
     RunControlAutoStepOptions, RunControlCombatSearchQuantum, RunControlCombatSegmentMode,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
+pub use progress_replay::{exact_replay_run_progress_journal_v1, ExactRunProgressReplayReportV1};
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{

@@ -81,6 +81,14 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Replay the selected workspace node's entire committed journal from the
+    /// canonical seed state and verify its exact final session fingerprint.
+    VerifyRunWitness {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        node: usize,
+    },
     /// Run the production oracle combat planner directly on one exact case.
     CombatCase {
         #[arg(long)]
@@ -687,11 +695,10 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash =
-                    sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
-                        &position.engine,
-                        &position.combat,
-                    );
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                );
                 if let Some(corridor_rank) = self.rank_by_exact_hash.get(&exact_hash).copied() {
                     // An exact-corridor control is a sparse oracle lane. Do
                     // not enqueue every non-corridor state with a low rank:
@@ -719,13 +726,11 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash =
-                    sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
-                        &position.engine,
-                        &position.combat,
-                    );
-                if let Some(atomic_rank) =
-                    self.atomic_rank_by_exact_hash.get(&exact_hash).copied()
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                );
+                if let Some(atomic_rank) = self.atomic_rank_by_exact_hash.get(&exact_hash).copied()
                 {
                     ranks.push(CombatStateGuideRank::new(vec![1, atomic_rank]));
                 }
@@ -888,11 +893,10 @@ fn load_exact_turn_corridor(
     let mut rank_by_exact_hash = HashMap::new();
     let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
-    let initial_exact_hash =
-        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
-            &position.engine,
-            &position.combat,
-        );
+    let initial_exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+        &position.engine,
+        &position.combat,
+    );
     rank_by_exact_hash.insert(initial_exact_hash.clone(), 0);
     atomic_rank_by_exact_hash.insert(initial_exact_hash, 0);
     typed_target_by_turn.insert(
@@ -1019,6 +1023,24 @@ fn main() -> Result<(), String> {
                 "run": case.run,
                 "combat": case.combat,
                 "path_steps": case.path.len(),
+            }))
+        }
+        Command::VerifyRunWitness { workspace, node } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let continuation = analysis.continuation(node)?;
+            let expected_final = continuation.session.into_session()?;
+            let report = sts_simulator::eval::run_control::exact_replay_run_progress_journal_v1(
+                analysis.seed,
+                analysis.ascension,
+                &continuation.journal,
+                &expected_final,
+            )?;
+            print_json(&json!({
+                "schema_name": "ExactOracleRunWitnessReplayV1",
+                "schema_version": 1,
+                "workspace": workspace,
+                "node_id": node,
+                "report": report,
             }))
         }
         Command::BuildValuePrototype {
