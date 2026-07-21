@@ -21,6 +21,76 @@ fn disarm_reports_persistent_enemy_strength_down_without_card_id_special_case() 
 }
 
 #[test]
+fn artifact_blocks_disarm_in_action_effect_facts() {
+    let mut combat = blank_test_combat();
+    let mut guardian = test_monster(EnemyId::TheGuardian);
+    guardian.id = 1;
+    guardian.set_planned_move_id(6);
+    combat.entities.monsters = vec![guardian];
+    insert_power(&mut combat, 1, PowerId::Artifact, 1);
+
+    let facts = card_play_effect_facts(
+        &combat,
+        &CombatCard::new(CardId::Disarm, 10),
+        Some(1),
+    );
+
+    assert_eq!(facts.direct.persistent_enemy_strength_down, 0);
+    assert_eq!(facts.direct.temporary_enemy_strength_down, 0);
+    assert_eq!(facts.direct.visible_attack_mitigation_hint, 0);
+}
+
+#[test]
+fn artifact_is_consumed_in_card_action_order_before_later_debuffs() {
+    let mut combat = blank_test_combat();
+    let mut guardian = test_monster(EnemyId::TheGuardian);
+    guardian.id = 1;
+    combat.entities.monsters = vec![guardian];
+    insert_power(&mut combat, 1, PowerId::Artifact, 1);
+
+    let facts = card_play_effect_facts(
+        &combat,
+        &CombatCard::new(CardId::Shockwave, 10),
+        None,
+    );
+
+    assert_eq!(facts.direct.enemy_weak, 0, "the first debuff is absorbed");
+    assert_eq!(
+        facts.direct.enemy_vulnerable, 3,
+        "the later debuff applies after Artifact is consumed"
+    );
+}
+
+#[test]
+fn enough_artifact_blocks_every_direct_debuff_from_one_card() {
+    let mut combat = blank_test_combat();
+    let mut guardian = test_monster(EnemyId::TheGuardian);
+    guardian.id = 1;
+    combat.entities.monsters = vec![guardian];
+    insert_power(&mut combat, 1, PowerId::Artifact, 2);
+
+    let facts = card_play_effect_facts(
+        &combat,
+        &CombatCard::new(CardId::Shockwave, 10),
+        None,
+    );
+
+    assert_eq!(facts.direct.enemy_weak, 0);
+    assert_eq!(facts.direct.enemy_vulnerable, 0);
+}
+
+#[test]
+fn player_artifact_makes_flex_strength_persistent_in_action_effect_facts() {
+    let mut combat = blank_test_combat();
+    insert_power(&mut combat, 0, PowerId::Artifact, 1);
+
+    let facts = card_play_effect_facts(&combat, &CombatCard::new(CardId::Flex, 10), None);
+
+    assert_eq!(facts.direct.player_strength_gain, 2);
+    assert_eq!(facts.direct.player_temporary_strength_gain, 0);
+}
+
+#[test]
 fn state_mitigation_score_counts_negative_enemy_strength() {
     let mut combat = blank_test_combat();
     let mut monster = test_monster(EnemyId::Cultist);

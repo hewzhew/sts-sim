@@ -321,6 +321,37 @@ mod tests {
     }
 
     #[test]
+    fn disarm_policy_prefers_a_target_without_artifact() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut blocked = crate::test_support::test_monster(EnemyId::Cultist);
+        blocked.id = 1;
+        let mut exposed = crate::test_support::test_monster(EnemyId::Cultist);
+        exposed.id = 2;
+        combat.entities.monsters = vec![blocked, exposed];
+        combat.entities.power_db.insert(
+            1,
+            vec![test_power_amount(PowerId::Artifact, 1)],
+        );
+        combat.zones.hand = vec![CombatCard::new(CardId::Disarm, 11)];
+        combat.turn.energy = 1;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(2),
+            },
+        ];
+
+        let weights = oracle_atomic_action_policy_weights(&position, &inputs);
+
+        assert!(weights[1] > weights[0]);
+    }
+
+    #[test]
     fn ordinal_rank_guidance_is_weak_rather_than_exponential() {
         assert_eq!(oracle_ordinal_rank_weight(0), 1.0);
         assert_eq!(oracle_ordinal_rank_weight(1), 0.5);

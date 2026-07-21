@@ -13,6 +13,7 @@ pub(super) struct CardPlayEffectAccumulator {
 
 #[derive(Default)]
 pub(super) struct DirectCardPlayEffectAccumulator {
+    pub(super) artifact_consumed_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_down_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_gain_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_weak_by_target: BTreeMap<usize, i32>,
@@ -69,7 +70,7 @@ pub(super) fn observe_direct_action(
             power_id,
             amount,
             ..
-        } => observe_apply_power(direct, target, power_id, amount),
+        } => observe_apply_power(combat, direct, target, power_id, amount),
         Action::DrawCards(amount) | Action::DrawCardsWithHistory { amount, .. } => {
             direct.declared_draw_cards = direct.declared_draw_cards.saturating_add(amount as i32);
         }
@@ -116,11 +117,28 @@ pub(super) fn observe_direct_action(
 }
 
 fn observe_apply_power(
+    combat: &CombatState,
     direct: &mut DirectCardPlayEffectAccumulator,
     target: usize,
     power_id: PowerId,
     amount: i32,
 ) {
+    if crate::content::powers::is_debuff_application(power_id, amount) {
+        let available_artifact = crate::content::powers::store::power_amount(
+            combat,
+            target,
+            PowerId::Artifact,
+        )
+        .max(0);
+        let consumed = direct
+            .artifact_consumed_by_target
+            .entry(target)
+            .or_default();
+        if *consumed < available_artifact {
+            *consumed = consumed.saturating_add(1);
+            return;
+        }
+    }
     match power_id {
         PowerId::Strength if target == 0 && amount > 0 => {
             direct.player_strength_gain = direct.player_strength_gain.saturating_add(amount);
