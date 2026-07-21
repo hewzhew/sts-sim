@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::io;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,10 +21,9 @@ use sts_simulator::eval::run_control::{
     ExistingCombatKnowledgeAdvisorV1, OracleAnalysisAdvanceRequestV1,
 };
 use sts_simulator::runtime::branch::{
-    call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
-    load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
-    save_oracle_run_continuation_v1, serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1,
-    OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
+    save_oracle_analysis_workspace_v1, save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1,
+    OracleRunBudget, OracleRunConfig,
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
@@ -321,20 +318,6 @@ enum Command {
         /// oracle_run continuation, instead of only oracle-lab variation edges.
         #[arg(long)]
         journal: bool,
-    },
-    /// Keep one analysis workspace resident and accept JSONL commands on stdin.
-    Serve {
-        #[arg(long)]
-        workspace: PathBuf,
-        /// Register a loopback service under a short, reusable local name.
-        #[arg(long, conflicts_with_all = ["listen", "endpoint"])]
-        session: Option<String>,
-        /// Bind a persistent loopback endpoint instead of reading stdin.
-        #[arg(long, conflicts_with = "session")]
-        listen: Option<SocketAddr>,
-        /// Write connection metadata for a lightweight `cargo ol` client.
-        #[arg(long, requires = "listen", conflicts_with = "session")]
-        endpoint: Option<PathBuf>,
     },
 }
 
@@ -1973,74 +1956,7 @@ fn main() -> Result<(), String> {
                 print_json(&analysis.session.replay(node)?)
             }
         }
-        Command::Serve {
-            workspace,
-            session,
-            listen,
-            endpoint,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            if let Some(session) = session {
-                let endpoint = session_endpoint_path(&session)?;
-                reject_active_named_session(&session, &endpoint)?;
-                serve_oracle_analysis_tcp_v1(
-                    &workspace,
-                    analysis,
-                    "127.0.0.1:0"
-                        .parse()
-                        .expect("static loopback address must parse"),
-                    &endpoint,
-                )?;
-            } else if let Some(listen) = listen {
-                let endpoint = endpoint
-                    .ok_or_else(|| "oracle_lab serve --listen requires --endpoint".to_string())?;
-                serve_oracle_analysis_tcp_v1(&workspace, analysis, listen, &endpoint)?;
-            } else {
-                if endpoint.is_some() {
-                    return Err("oracle_lab serve --endpoint requires --listen".to_string());
-                }
-                let stdin = io::stdin();
-                let stdout = io::stdout();
-                serve_oracle_analysis_jsonl_v1(&workspace, analysis, stdin.lock(), stdout.lock())?;
-            }
-            Ok(())
-        }
     }
-}
-
-fn session_endpoint_path(session: &str) -> Result<PathBuf, String> {
-    if session.is_empty()
-        || session.len() > 64
-        || matches!(session, "." | "..")
-        || !session.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-        })
-        || !session
-            .chars()
-            .next()
-            .is_some_and(|character| character.is_ascii_alphanumeric())
-    {
-        return Err(format!(
-            "invalid oracle session name `{session}`; use 1-64 ASCII letters, digits, '.', '_' or '-', starting with a letter or digit"
-        ));
-    }
-    Ok(PathBuf::from(env!("STS_REPOSITORY_ROOT"))
-        .join("target")
-        .join("oracle-lab")
-        .join("sessions")
-        .join(format!("{session}.endpoint.json")))
-}
-
-fn reject_active_named_session(session: &str, endpoint: &std::path::Path) -> Result<(), String> {
-    if !endpoint.exists() {
-        return Ok(());
-    }
-    if call_oracle_analysis_tcp_v1(endpoint, r#"{"command":"ping"}"#).is_ok() {
-        return Err(format!(
-            "oracle session `{session}` is already running; use `cargo ol live --session {session} status`"
-        ));
-    }
-    Ok(())
 }
 
 fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {

@@ -17,7 +17,7 @@ check-workspace = ["check", "--workspace", "--all-targets"]
 # entrypoint.  The hidden token and the binary's embedded profile/path checks
 # reject stale binaries and accidental `--release --target-dir ...` builds.
 oracle-lab = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
-# The routine live client compiles independently from the simulator/search
-# library. Heavy/offline commands are forwarded to the canonical oracle_lab
-# artifact without making the client depend on it.
-ol = ["run", "--quiet", "--profile", "fast-run", "-p", "oracle_lab_client", "--bin", "oracle_lab_client", "--", "--canonical-fast-run"]
+# Short alias for the same one-shot laboratory. Keeping both aliases on one
+# executable prevents a resident helper from locking the canonical Windows
+# artifact or leaving endpoint/process state behind.
+ol = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
