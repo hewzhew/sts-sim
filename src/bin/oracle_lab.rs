@@ -24,6 +24,7 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::runtime::branch::{
     call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
+    save_oracle_run_continuation_v1,
     serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1,
     OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
@@ -70,6 +71,15 @@ enum Command {
         branch_id: Option<usize>,
         #[command(flatten)]
         budget: BudgetArgs,
+    },
+    /// Export one exact analysis node as an oracle_run continuation.
+    ExportContinuation {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Recover one exact combat branch from a stale analysis workspace without
     /// restoring or validating unrelated frontier branches.
@@ -1008,6 +1018,24 @@ fn main() -> Result<(), String> {
             let view = analysis.view()?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
+        }
+        Command::ExportContinuation {
+            workspace,
+            node,
+            output,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+            let continuation = analysis.continuation(node)?;
+            let journal_entries = continuation.journal.entries().len();
+            save_oracle_run_continuation_v1(&output, &continuation)?;
+            print_json(&json!({
+                "schema_name": "OracleAnalysisContinuationExportV1",
+                "workspace": workspace,
+                "node_id": node,
+                "output": output,
+                "journal_entries": journal_entries,
+            }))
         }
         Command::RecoverCombatCase {
             workspace,
