@@ -880,21 +880,18 @@ fn ensure_artifact_fresh(
             depfile.display()
         )
     })?;
-    let root = repository_root();
-    let mut dependencies = depfile_dependencies(&depfile_text);
-    dependencies.extend([
-        root.join("Cargo.toml"),
-        root.join("Cargo.lock"),
-        root.join(".cargo/config.toml"),
-        root.join("crates/oracle_lab_protocol/Cargo.toml"),
-        root.join("crates/sts_combat_planner/Cargo.toml"),
-        root.join("crates/sts_simulator_control/Cargo.toml"),
-    ]);
-    let stale_dependency = dependencies.into_iter().find(|dependency| {
-        fs::metadata(dependency)
-            .and_then(|metadata| metadata.modified())
-            .is_ok_and(|modified| modified > executable_modified)
-    });
+    // Cargo's depfile is the authoritative list of files that contributed to
+    // this artifact.  Extending it with workspace manifests creates false
+    // positives: Cargo may correctly determine that an unrelated manifest
+    // edit does not require relinking this binary, while an mtime comparison
+    // cannot make that distinction.
+    let stale_dependency = depfile_dependencies(&depfile_text)
+        .into_iter()
+        .find(|dependency| {
+            fs::metadata(dependency)
+                .and_then(|metadata| metadata.modified())
+                .is_ok_and(|modified| modified > executable_modified)
+        });
     if let Some(dependency) = stale_dependency {
         return Err(format!(
             "{label} is stale: '{}' is newer than '{}'. Rebuild once with `{rebuild_command}`; refusing to run stale search code",
