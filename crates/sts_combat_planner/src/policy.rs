@@ -27,6 +27,11 @@ impl CombatStateGuideRank {
     pub fn new(components: impl Into<Vec<i32>>) -> Self {
         Self(components.into())
     }
+
+    /// Read-only diagnostic view of the policy-owned lexicographic rank.
+    pub fn components(&self) -> &[i32] {
+        &self.0
+    }
 }
 
 /// Opaque identity for one guide queue.

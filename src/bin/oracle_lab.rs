@@ -336,6 +336,19 @@ enum Command {
         #[arg(long)]
         anchor_only: bool,
     },
+    /// Audit action-policy order and exact one-step successor guides at one turn prefix.
+    TurnActionAudit {
+        #[arg(long)]
+        case: PathBuf,
+        /// Optional exact action list used only to reach the audited prefix.
+        #[arg(long)]
+        actions: Option<PathBuf>,
+        /// Number of actions from --actions to replay before auditing.
+        #[arg(long, default_value_t = 0, requires = "actions")]
+        through: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
     /// View the current cursor or another exact analysis node.
     View {
         #[arg(long)]
@@ -2414,6 +2427,178 @@ fn main() -> Result<(), String> {
                     "negative_log_policy": witness.negative_log_policy,
                     "actions": witness.actions,
                 })),
+            }))
+        }
+        Command::TurnActionAudit {
+            case,
+            actions,
+            through,
+            max_engine_steps_per_transition,
+        } => {
+            let case = load_combat_case(&case)?;
+            let mut position = case.position;
+            if let Some(actions) = actions {
+                let actions = serde_json::from_slice::<Vec<ClientInput>>(
+                    &std::fs::read(actions).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| format!("invalid prefix action list: {error}"))?;
+                if through > actions.len() {
+                    return Err(format!(
+                        "--through {through} exceeds the {} available prefix actions",
+                        actions.len()
+                    ));
+                }
+                for (index, input) in actions.into_iter().take(through).enumerate() {
+                    if EngineCombatStepper
+                        .choice_for_legal_input(&position, &input)
+                        .is_none()
+                    {
+                        return Err(format!("prefix action {index} is not legal"));
+                    }
+                    let result = EngineCombatStepper.apply_to_stable(
+                        &position,
+                        input,
+                        CombatStepLimits {
+                            max_engine_steps: max_engine_steps_per_transition,
+                            deadline: None,
+                        },
+                    );
+                    if result.truncated || result.timed_out {
+                        return Err(format!(
+                            "prefix action {index} did not reach a stable state"
+                        ));
+                    }
+                    position = result.position;
+                }
+            }
+
+            let policy = existing_combat_knowledge_policy_v1();
+            let surface = EngineCombatStepper.legal_action_surface(&position);
+            let choices = surface
+                .atomic_actions
+                .iter()
+                .map(CombatPolicyChoice::Atomic)
+                .chain(
+                    surface
+                        .selection_families
+                        .iter()
+                        .map(CombatPolicyChoice::StructuredSelection),
+                )
+                .collect::<Vec<_>>();
+            let raw_weights = policy.weights(&position, &choices);
+            let raw_weights = (raw_weights.len() == choices.len())
+                .then_some(raw_weights)
+                .unwrap_or_else(|| vec![1.0; choices.len()]);
+            let safe_weights = raw_weights
+                .iter()
+                .map(|weight| {
+                    if weight.is_finite() && *weight > 0.0 {
+                        *weight
+                    } else {
+                        1.0
+                    }
+                })
+                .collect::<Vec<_>>();
+            let total = safe_weights.iter().sum::<f64>();
+            let uniform = 1.0 / safe_weights.len().max(1) as f64;
+            let probabilities = safe_weights
+                .iter()
+                .map(|weight| 0.95 * (*weight / total) + 0.05 * uniform)
+                .collect::<Vec<_>>();
+            let atomic = surface
+                .atomic_actions
+                .iter()
+                .enumerate()
+                .map(|(index, input)| {
+                    let result = EngineCombatStepper.apply_to_stable(
+                        &position,
+                        input.clone(),
+                        CombatStepLimits {
+                            max_engine_steps: max_engine_steps_per_transition,
+                            deadline: None,
+                        },
+                    );
+                    let raw_weight = safe_weights[index];
+                    let rank = 1 + safe_weights
+                        .iter()
+                        .filter(|candidate| **candidate > raw_weight)
+                        .count();
+                    let successor_guides = (!result.truncated && !result.timed_out)
+                        .then(|| {
+                            policy
+                                .turn_generation_guides(&result.position)
+                                .into_iter()
+                                .map(|guide| json!({
+                                    "lane": guide.lane.value(),
+                                    "components": guide.rank.components(),
+                                }))
+                                .collect::<Vec<_>>()
+                        });
+                    json!({
+                        "canonical_index": index,
+                        "label": combat_action_label(&position, input),
+                        "key": combat_action_key(&position.combat, input),
+                        "raw_weight": raw_weight,
+                        "probability": probabilities[index],
+                        "ordinal_rank": rank,
+                        "transition": {
+                            "truncated": result.truncated,
+                            "timed_out": result.timed_out,
+                            "engine_steps": result.engine_steps,
+                            "terminal": format!("{:?}", result.terminal),
+                            "exact_successor_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                                &result.position.engine,
+                                &result.position.combat,
+                            ),
+                            "snapshot": combat_turn_snapshot(&result.position),
+                            "generation_guides": successor_guides,
+                        },
+                    })
+                })
+                .collect::<Vec<_>>();
+            let family_offset = surface.atomic_actions.len();
+            let structured_families = surface
+                .selection_families
+                .iter()
+                .enumerate()
+                .map(|(index, family)| {
+                    let weight_index = family_offset + index;
+                    let raw_weight = safe_weights[weight_index];
+                    let rank = 1 + safe_weights
+                        .iter()
+                        .filter(|candidate| **candidate > raw_weight)
+                        .count();
+                    json!({
+                        "family_index": index,
+                        "reason": format!("{:?}", family.reason),
+                        "declared_min": family.declared_min,
+                        "effective_max": family.effective_max,
+                        "eligible_domain_count": family.eligible_domain_count,
+                        "raw_weight": raw_weight,
+                        "probability": probabilities[weight_index],
+                        "ordinal_rank": rank,
+                    })
+                })
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleTurnActionAuditV1",
+                "schema_version": 1,
+                "through": through,
+                "position_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                ),
+                "position": combat_turn_snapshot(&position),
+                "current_generation_guides": policy
+                    .turn_generation_guides(&position)
+                    .into_iter()
+                    .map(|guide| json!({
+                        "lane": guide.lane.value(),
+                        "components": guide.rank.components(),
+                    }))
+                    .collect::<Vec<_>>(),
+                "atomic_actions": atomic,
+                "structured_families": structured_families,
             }))
         }
         Command::TurnMembership {
