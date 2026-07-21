@@ -631,6 +631,132 @@ fn candidate_race_preserves_parent_local_deferred_windows_and_prefixes() {
 }
 
 #[test]
+fn lineage_parent_consensus_uses_ordinal_guide_evidence() {
+    let mut weaker_position = root().position().clone();
+    weaker_position.combat.turn.energy = 1;
+    let mut stronger_position = root().position().clone();
+    stronger_position.combat.turn.energy = 0;
+    let windows = vec![
+        LayeredCombatLineageWindow {
+            parent_candidate_index: 0,
+            parent_exact_state_hash: "weaker".to_owned(),
+            window: LayeredCombatDeferredWindow {
+                relative_turn_depth: 2,
+                window_discrepancy: 0,
+                source_window_index: 0,
+                candidates: vec![LayeredCombatFrontierState {
+                    exact_state_hash: "weaker-child".to_owned(),
+                    position: weaker_position,
+                    actions: Vec::new(),
+                    negative_log_policy: 2.0,
+                }],
+            },
+        },
+        LayeredCombatLineageWindow {
+            parent_candidate_index: 1,
+            parent_exact_state_hash: "stronger".to_owned(),
+            window: LayeredCombatDeferredWindow {
+                relative_turn_depth: 2,
+                window_discrepancy: 0,
+                source_window_index: 0,
+                candidates: vec![LayeredCombatFrontierState {
+                    exact_state_hash: "stronger-child".to_owned(),
+                    position: stronger_position,
+                    actions: Vec::new(),
+                    negative_log_policy: 1.0,
+                }],
+            },
+        },
+    ];
+
+    let ranked = rank_layered_combat_lineage_parents(&windows, &SharedGuidePolicy);
+
+    assert_eq!(ranked.len(), 2);
+    assert_eq!(ranked[0].parent_candidate_index, 1);
+    assert_eq!(ranked[0].consensus_rank, 1);
+    assert_eq!(ranked[0].anchor_rank, 1);
+    assert_eq!(ranked[0].guide_ranks, vec![(SHARED_TEST_GUIDE, 1)]);
+    assert_eq!(ranked[1].parent_candidate_index, 0);
+    assert_eq!(ranked[1].consensus_rank, 2);
+}
+
+#[test]
+fn lineage_portfolio_keeps_selected_parents_resumable_and_replays_the_winner() {
+    let source_config = LayeredCombatWitnessConfig {
+        generator: config(),
+        beam_width: 1,
+        retained_per_view: 1,
+        minimum_generation_work_per_layer: 16,
+        maximum_generation_work_per_layer: 64,
+        candidate_pool_multiplier: 2,
+        generation_quantum_work: 4,
+        max_turn_layers: 1,
+    };
+    let policy: SharedCombatActionPolicy = Arc::new(PreferPlayPolicy);
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut source =
+        LayeredCombatWitnessSession::with_policy(root(), source_config, policy.clone());
+    source.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+    let lineages = source
+        .deferred_windows()
+        .into_iter()
+        .enumerate()
+        .map(
+            |(parent_candidate_index, window)| LayeredCombatLineageWindow {
+                parent_candidate_index,
+                parent_exact_state_hash: window.candidates[0].exact_state_hash.clone(),
+                window,
+            },
+        )
+        .collect::<Vec<_>>();
+    let mut portfolio = LayeredCombatLineagePortfolioSession::from_lineage_windows(
+        root(),
+        lineages,
+        LayeredCombatLineagePortfolioConfig {
+            candidate_race: LayeredCombatCandidateRaceConfig {
+                continuation: LayeredCombatWitnessConfig {
+                    max_turn_layers: 3,
+                    ..source_config
+                },
+                service_quantum_work: 4,
+            },
+            parents_per_view: 1,
+            windows_per_parent: 1,
+            service_quantum_work: 16,
+        },
+        policy,
+    );
+
+    let report = portfolio.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert_eq!(
+        report.status,
+        LayeredCombatLineagePortfolioStatus::WitnessFound
+    );
+    assert!(report.selected_parent_count >= 1);
+    let witness = report.witness.expect("selected lineage should win");
+    assert_eq!(
+        stepper.terminal(&witness.final_position),
+        CombatTerminal::Win
+    );
+    assert!(witness.actions.len() >= 2);
+}
+
+#[test]
 fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =

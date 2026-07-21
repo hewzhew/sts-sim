@@ -7,14 +7,15 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, LayeredCombatCandidateRaceConfig,
-    LayeredCombatCandidateRaceSession, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
-    LayeredCombatWitnessSession, OracleCombatOneTurnLossEvidence,
-    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
-    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
-    TurnOptionGeneratorSession,
+    rank_layered_combat_lineage_parents, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
+    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
+    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
+    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
+    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
+    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
+    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
+    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
@@ -268,6 +269,19 @@ enum Command {
         /// continuation window.
         #[arg(long)]
         lineage_window_summaries: bool,
+        /// After every source candidate exposes one exact layer, continue a
+        /// bounded union of the strongest parents from each independent guide
+        /// view. No scalar consensus winner receives exclusive authority.
+        #[arg(long)]
+        continue_parent_portfolio: bool,
+        #[arg(long, default_value_t = 2)]
+        portfolio_parents_per_view: usize,
+        #[arg(long, default_value_t = 1)]
+        portfolio_windows_per_parent: usize,
+        #[arg(long, default_value_t = 2_048)]
+        portfolio_service_quantum_work: usize,
+        #[arg(long, default_value_t = 10)]
+        nested_continuation_turn_layers: usize,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -1424,11 +1438,17 @@ fn main() -> Result<(), String> {
             continuation_service_quantum_work,
             watch_exact_state_hash,
             lineage_window_summaries,
+            continue_parent_portfolio,
+            portfolio_parents_per_view,
+            portfolio_windows_per_parent,
+            portfolio_service_quantum_work,
+            nested_continuation_turn_layers,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
             let loaded = load_combat_case(&case)?;
             let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let original_position = loaded.position.clone();
             let original_root = CombatDecisionRoot::new(loaded.position.clone())
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let source_root = CombatDecisionRoot::new(loaded.position)
@@ -1476,7 +1496,11 @@ fn main() -> Result<(), String> {
             let candidate_count = window.candidates.len();
             let selected_window_discrepancy = window.window_discrepancy;
             let continuation = LayeredCombatWitnessConfig {
-                max_turn_layers: continuation_turn_layers,
+                max_turn_layers: if continue_parent_portfolio {
+                    1
+                } else {
+                    continuation_turn_layers
+                },
                 ..base_config
             };
             let mut race = LayeredCombatCandidateRaceSession::from_window(
@@ -1486,7 +1510,7 @@ fn main() -> Result<(), String> {
                     continuation,
                     service_quantum_work: continuation_service_quantum_work,
                 },
-                policy,
+                policy.clone(),
             );
             let remaining_work = max_nodes.saturating_sub(source_report.counters.generation_work);
             let race_report = race.advance(
@@ -1499,6 +1523,43 @@ fn main() -> Result<(), String> {
                 &EngineCombatStepper,
             );
             let lineage_windows = race.deferred_lineage_windows();
+            let lineage_parent_ranks =
+                rank_layered_combat_lineage_parents(&lineage_windows, policy.as_ref());
+            let mut portfolio_report = None;
+            if continue_parent_portfolio && race_report.witness.is_none() {
+                let portfolio_root = CombatDecisionRoot::new(original_position.clone())
+                    .map_err(|error| format!("invalid portfolio combat root: {error:?}"))?;
+                let nested_config = LayeredCombatWitnessConfig {
+                    max_turn_layers: nested_continuation_turn_layers,
+                    ..base_config
+                };
+                let mut portfolio = LayeredCombatLineagePortfolioSession::from_lineage_windows(
+                    portfolio_root,
+                    lineage_windows.clone(),
+                    LayeredCombatLineagePortfolioConfig {
+                        candidate_race: LayeredCombatCandidateRaceConfig {
+                            continuation: nested_config,
+                            service_quantum_work: continuation_service_quantum_work,
+                        },
+                        parents_per_view: portfolio_parents_per_view,
+                        windows_per_parent: portfolio_windows_per_parent,
+                        service_quantum_work: portfolio_service_quantum_work,
+                    },
+                    policy.clone(),
+                );
+                let remaining_work = max_nodes
+                    .saturating_sub(source_report.counters.generation_work)
+                    .saturating_sub(race_report.counters.generation_work);
+                portfolio_report = Some(portfolio.advance(
+                    LayeredCombatWitnessQuantum {
+                        additional_generation_work: remaining_work,
+                        additional_engine_steps:
+                            remaining_work.saturating_mul(max_engine_steps_per_transition.max(1)),
+                        deadline: Some(deadline),
+                    },
+                    &EngineCombatStepper,
+                ));
+            }
             let watched_lineage_states =
                 lineage_windows
                     .iter()
@@ -1574,10 +1635,11 @@ fn main() -> Result<(), String> {
                     })
                     .collect::<Vec<_>>()
             });
-            if let (Some(path), Some(witness)) = (
-                export_witness_actions.as_ref(),
-                race_report.witness.as_ref(),
-            ) {
+            let final_witness = portfolio_report
+                .as_ref()
+                .and_then(|report| report.witness.as_ref())
+                .or(race_report.witness.as_ref());
+            if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), final_witness) {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
                 }
@@ -1625,12 +1687,42 @@ fn main() -> Result<(), String> {
                     })).collect::<Vec<_>>(),
                 },
                 "lineage_window_count": lineage_windows.len(),
+                "lineage_parent_ranks": lineage_parent_ranks.iter().map(|parent| json!({
+                    "parent_candidate_index": parent.parent_candidate_index,
+                    "parent_exact_state_hash": parent.parent_exact_state_hash,
+                    "consensus_rank": parent.consensus_rank,
+                    "rank_sum": parent.rank_sum,
+                    "anchor_rank": parent.anchor_rank,
+                    "guide_ranks": parent.guide_ranks.iter().map(|(lane, rank)| json!({
+                        "lane": lane.value(),
+                        "rank": rank,
+                    })).collect::<Vec<_>>(),
+                })).collect::<Vec<_>>(),
                 "lineage_window_summaries": lineage_window_summaries,
                 "watched_lineage_states": watched_lineage_states,
-                "exported_witness_actions": race_report.witness.is_some()
+                "lineage_portfolio": portfolio_report.as_ref().map(|report| json!({
+                    "status": format!("{:?}", report.status),
+                    "generation_work": report.counters.generation_work,
+                    "engine_steps": report.counters.engine_steps,
+                    "services": report.counters.services,
+                    "selected_parent_count": report.selected_parent_count,
+                    "deferred_parent_count": report.deferred_parent_count,
+                    "deferred_window_count": report.deferred_window_count,
+                    "entries": report.entries.iter().map(|entry| json!({
+                        "parent_candidate_index": entry.parent_candidate_index,
+                        "parent_consensus_rank": entry.parent_consensus_rank,
+                        "source_window_index": entry.source_window_index,
+                        "window_discrepancy": entry.window_discrepancy,
+                        "generation_work": entry.generation_work,
+                        "engine_steps": entry.engine_steps,
+                        "terminal": entry.terminal,
+                        "found_witness": entry.found_witness,
+                    })).collect::<Vec<_>>(),
+                })),
+                "exported_witness_actions": final_witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
-                "witness": race_report.witness.as_ref().map(|witness| json!({
+                "witness": final_witness.map(|witness| json!({
                     "final_hp": witness.final_position.combat.entities.player.current_hp,
                     "hp_loss": initial_hp.saturating_sub(
                         witness.final_position.combat.entities.player.current_hp,

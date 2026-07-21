@@ -159,6 +159,16 @@ pub struct LayeredCombatLineageWindow {
     pub window: LayeredCombatDeferredWindow,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayeredCombatLineageParentRank {
+    pub parent_candidate_index: usize,
+    pub parent_exact_state_hash: String,
+    pub consensus_rank: usize,
+    pub rank_sum: usize,
+    pub anchor_rank: usize,
+    pub guide_ranks: Vec<(CombatGuideLaneId, usize)>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LayeredCombatCandidateRaceConfig {
     pub continuation: LayeredCombatWitnessConfig,
@@ -196,6 +206,52 @@ pub struct LayeredCombatCandidateRaceReport {
     pub status: LayeredCombatCandidateRaceStatus,
     pub counters: LayeredCombatCandidateRaceCounters,
     pub candidates: Vec<LayeredCombatCandidateRaceEntryReport>,
+    pub witness: Option<OracleCombatWitness>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LayeredCombatLineagePortfolioConfig {
+    pub candidate_race: LayeredCombatCandidateRaceConfig,
+    pub parents_per_view: usize,
+    pub windows_per_parent: usize,
+    pub service_quantum_work: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LayeredCombatLineagePortfolioStatus {
+    WitnessFound,
+    Partial(LayeredCombatWitnessInterruption),
+    SelectedPortfolioExhausted,
+    ReplayMismatch(OracleCombatWitnessReplayError),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LayeredCombatLineagePortfolioCounters {
+    pub generation_work: usize,
+    pub engine_steps: usize,
+    pub services: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayeredCombatLineagePortfolioEntryReport {
+    pub parent_candidate_index: usize,
+    pub parent_consensus_rank: usize,
+    pub source_window_index: usize,
+    pub window_discrepancy: usize,
+    pub generation_work: usize,
+    pub engine_steps: usize,
+    pub terminal: bool,
+    pub found_witness: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct LayeredCombatLineagePortfolioReport {
+    pub status: LayeredCombatLineagePortfolioStatus,
+    pub counters: LayeredCombatLineagePortfolioCounters,
+    pub selected_parent_count: usize,
+    pub deferred_parent_count: usize,
+    pub deferred_window_count: usize,
+    pub entries: Vec<LayeredCombatLineagePortfolioEntryReport>,
     pub witness: Option<OracleCombatWitness>,
 }
 
@@ -280,6 +336,27 @@ pub struct LayeredCombatCandidateRaceSession {
     counters: LayeredCombatCandidateRaceCounters,
     next_service_view: usize,
     terminal_status: Option<LayeredCombatCandidateRaceStatus>,
+    witness: Option<OracleCombatWitness>,
+}
+
+struct LineagePortfolioEntry {
+    parent_rank: LayeredCombatLineageParentRank,
+    source_window_index: usize,
+    window_discrepancy: usize,
+    race: Box<LayeredCombatCandidateRaceSession>,
+    found_witness: bool,
+}
+
+pub struct LayeredCombatLineagePortfolioSession {
+    config: LayeredCombatLineagePortfolioConfig,
+    entries: Vec<LineagePortfolioEntry>,
+    selected_parent_count: usize,
+    deferred_parent_count: usize,
+    deferred_window_count: usize,
+    service_views: Vec<CandidateRaceServiceView>,
+    next_service_view: usize,
+    counters: LayeredCombatLineagePortfolioCounters,
+    terminal_status: Option<LayeredCombatLineagePortfolioStatus>,
     witness: Option<OracleCombatWitness>,
 }
 
@@ -1114,6 +1191,386 @@ impl LayeredCombatCandidateRaceSession {
             witness: self.witness.clone(),
         }
     }
+}
+
+/// Orders parent lineages using ordinal evidence from every independent guide
+/// view. Raw guide components are never added or compared across lanes. This
+/// is a scheduling hint only: every exact child remains available to a later
+/// resumable pass.
+pub fn rank_layered_combat_lineage_parents(
+    windows: &[LayeredCombatLineageWindow],
+    policy: &dyn super::policy::CombatActionPolicy,
+) -> Vec<LayeredCombatLineageParentRank> {
+    struct ParentEvidence {
+        parent_candidate_index: usize,
+        parent_exact_state_hash: String,
+        best_anchor_cost: f64,
+        best_guides: BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
+    }
+
+    let mut by_parent = BTreeMap::<usize, ParentEvidence>::new();
+    let mut guide_lanes = BTreeSet::<CombatGuideLaneId>::new();
+    for lineage in windows {
+        let evidence = by_parent
+            .entry(lineage.parent_candidate_index)
+            .or_insert_with(|| ParentEvidence {
+                parent_candidate_index: lineage.parent_candidate_index,
+                parent_exact_state_hash: lineage.parent_exact_state_hash.clone(),
+                best_anchor_cost: f64::INFINITY,
+                best_guides: BTreeMap::new(),
+            });
+        debug_assert_eq!(
+            evidence.parent_exact_state_hash,
+            lineage.parent_exact_state_hash
+        );
+        for candidate in &lineage.window.candidates {
+            let anchor_cost =
+                candidate.negative_log_policy + (candidate.actions.len().max(1) as f64).ln();
+            evidence.best_anchor_cost = evidence.best_anchor_cost.min(anchor_cost);
+            for guide in policy.state_guides(&candidate.position) {
+                guide_lanes.insert(guide.lane);
+                match evidence.best_guides.entry(guide.lane) {
+                    std::collections::btree_map::Entry::Vacant(vacant) => {
+                        vacant.insert(guide.rank);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut occupied) => {
+                        if guide.rank > *occupied.get() {
+                            occupied.insert(guide.rank);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let evidence = by_parent.into_values().collect::<Vec<_>>();
+    let missing_rank = evidence.len().saturating_add(1);
+    let mut ranked = evidence
+        .iter()
+        .map(|candidate| {
+            let anchor_rank = 1usize.saturating_add(
+                evidence
+                    .iter()
+                    .filter(|other| other.best_anchor_cost < candidate.best_anchor_cost)
+                    .count(),
+            );
+            let guide_ranks = guide_lanes
+                .iter()
+                .copied()
+                .map(|lane| {
+                    let rank = candidate
+                        .best_guides
+                        .get(&lane)
+                        .map_or(missing_rank, |rank| {
+                            1usize.saturating_add(
+                                evidence
+                                    .iter()
+                                    .filter_map(|other| other.best_guides.get(&lane))
+                                    .filter(|other_rank| *other_rank > rank)
+                                    .count(),
+                            )
+                        });
+                    (lane, rank)
+                })
+                .collect::<Vec<_>>();
+            let rank_sum = guide_ranks
+                .iter()
+                .fold(anchor_rank, |sum, (_, rank)| sum.saturating_add(*rank));
+            LayeredCombatLineageParentRank {
+                parent_candidate_index: candidate.parent_candidate_index,
+                parent_exact_state_hash: candidate.parent_exact_state_hash.clone(),
+                consensus_rank: 0,
+                rank_sum,
+                anchor_rank,
+                guide_ranks,
+            }
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by_key(|parent| {
+        (
+            parent.rank_sum,
+            parent.anchor_rank,
+            parent.parent_candidate_index,
+        )
+    });
+    for (index, parent) in ranked.iter_mut().enumerate() {
+        parent.consensus_rank = index.saturating_add(1);
+    }
+    ranked
+}
+
+impl LayeredCombatLineagePortfolioSession {
+    pub fn from_lineage_windows(
+        original_root: CombatDecisionRoot,
+        windows: Vec<LayeredCombatLineageWindow>,
+        config: LayeredCombatLineagePortfolioConfig,
+        policy: SharedCombatActionPolicy,
+    ) -> Self {
+        let parent_ranks = rank_layered_combat_lineage_parents(&windows, policy.as_ref());
+        let parents_per_view = config.parents_per_view.max(1);
+        let selected_parents = parent_ranks
+            .iter()
+            .filter(|parent| {
+                parent.anchor_rank <= parents_per_view
+                    || parent
+                        .guide_ranks
+                        .iter()
+                        .any(|(_, rank)| *rank <= parents_per_view)
+            })
+            .map(|parent| parent.parent_candidate_index)
+            .collect::<BTreeSet<_>>();
+        let selected_parent_count = selected_parents.len();
+        let deferred_parent_count = parent_ranks.len().saturating_sub(selected_parent_count);
+        let parent_rank_by_index = parent_ranks
+            .into_iter()
+            .map(|rank| (rank.parent_candidate_index, rank))
+            .collect::<BTreeMap<_, _>>();
+        let mut windows_by_parent = BTreeMap::<usize, Vec<LayeredCombatLineageWindow>>::new();
+        for window in windows {
+            windows_by_parent
+                .entry(window.parent_candidate_index)
+                .or_default()
+                .push(window);
+        }
+        for parent_windows in windows_by_parent.values_mut() {
+            parent_windows.sort_by_key(|lineage| {
+                (
+                    lineage.window.window_discrepancy,
+                    lineage.window.source_window_index,
+                )
+            });
+        }
+
+        let original_position = original_root.position().clone();
+        let windows_per_parent = config.windows_per_parent.max(1);
+        let mut deferred_window_count = 0usize;
+        let mut entries = Vec::new();
+        for (parent_candidate_index, parent_windows) in windows_by_parent {
+            if !selected_parents.contains(&parent_candidate_index) {
+                deferred_window_count = deferred_window_count.saturating_add(parent_windows.len());
+                continue;
+            }
+            let Some(parent_rank) = parent_rank_by_index.get(&parent_candidate_index).cloned()
+            else {
+                deferred_window_count = deferred_window_count.saturating_add(parent_windows.len());
+                continue;
+            };
+            for (window_index, lineage) in parent_windows.into_iter().enumerate() {
+                if window_index >= windows_per_parent {
+                    deferred_window_count = deferred_window_count.saturating_add(1);
+                    continue;
+                }
+                let source_window_index = lineage.window.source_window_index;
+                let window_discrepancy = lineage.window.window_discrepancy;
+                let root = CombatDecisionRoot::new(original_position.clone())
+                    .expect("portfolio root was already validated");
+                entries.push(LineagePortfolioEntry {
+                    parent_rank: parent_rank.clone(),
+                    source_window_index,
+                    window_discrepancy,
+                    race: Box::new(LayeredCombatCandidateRaceSession::from_window(
+                        root,
+                        lineage.window,
+                        config.candidate_race,
+                        policy.clone(),
+                    )),
+                    found_witness: false,
+                });
+            }
+        }
+        entries.sort_by_key(|entry| {
+            (
+                entry.parent_rank.consensus_rank,
+                entry.window_discrepancy,
+                entry.source_window_index,
+                entry.parent_rank.parent_candidate_index,
+            )
+        });
+        let mut service_views = vec![CandidateRaceServiceView::Anchor];
+        let guide_lanes = entries
+            .iter()
+            .flat_map(|entry| entry.parent_rank.guide_ranks.iter().map(|(lane, _)| *lane))
+            .collect::<BTreeSet<_>>();
+        service_views.extend(guide_lanes.into_iter().map(CandidateRaceServiceView::Guide));
+        let terminal_status = entries
+            .is_empty()
+            .then_some(LayeredCombatLineagePortfolioStatus::SelectedPortfolioExhausted);
+        Self {
+            config,
+            entries,
+            selected_parent_count,
+            deferred_parent_count,
+            deferred_window_count,
+            service_views,
+            next_service_view: 0,
+            counters: LayeredCombatLineagePortfolioCounters::default(),
+            terminal_status,
+            witness: None,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.terminal_status.is_some()
+    }
+
+    pub fn advance(
+        &mut self,
+        quantum: LayeredCombatWitnessQuantum,
+        stepper: &dyn CombatStepper,
+    ) -> LayeredCombatLineagePortfolioReport {
+        if let Some(status) = self.terminal_status.clone() {
+            return self.snapshot(status);
+        }
+        let work_limit = self
+            .counters
+            .generation_work
+            .saturating_add(quantum.additional_generation_work);
+        let engine_step_limit = self
+            .counters
+            .engine_steps
+            .saturating_add(quantum.additional_engine_steps);
+        loop {
+            if deadline_reached(quantum.deadline) {
+                return self.snapshot(LayeredCombatLineagePortfolioStatus::Partial(
+                    LayeredCombatWitnessInterruption::Deadline,
+                ));
+            }
+            if self.counters.generation_work >= work_limit {
+                return self.snapshot(LayeredCombatLineagePortfolioStatus::Partial(
+                    LayeredCombatWitnessInterruption::GenerationWorkBudget,
+                ));
+            }
+            if self.counters.engine_steps >= engine_step_limit {
+                return self.snapshot(LayeredCombatLineagePortfolioStatus::Partial(
+                    LayeredCombatWitnessInterruption::EngineStepBudget,
+                ));
+            }
+            let Some(entry_index) = self.next_entry_index() else {
+                let status = LayeredCombatLineagePortfolioStatus::SelectedPortfolioExhausted;
+                self.terminal_status = Some(status.clone());
+                return self.snapshot(status);
+            };
+            let remaining_work = work_limit.saturating_sub(self.counters.generation_work);
+            let remaining_steps = engine_step_limit.saturating_sub(self.counters.engine_steps);
+            let service_work = self.config.service_quantum_work.max(1).min(remaining_work);
+            let before = self.entries[entry_index].race.counters.clone();
+            let report = self.entries[entry_index].race.advance(
+                LayeredCombatWitnessQuantum {
+                    additional_generation_work: service_work,
+                    additional_engine_steps: remaining_steps.min(
+                        service_work.saturating_mul(
+                            self.config
+                                .candidate_race
+                                .continuation
+                                .generator
+                                .max_engine_steps_per_transition
+                                .max(1),
+                        ),
+                    ),
+                    deadline: quantum.deadline,
+                },
+                stepper,
+            );
+            let after = self.entries[entry_index].race.counters.clone();
+            let used_work = after.generation_work.saturating_sub(before.generation_work);
+            let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
+            self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
+            self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
+            self.counters.services = self.counters.services.saturating_add(1);
+            if let Some(witness) = report.witness {
+                self.entries[entry_index].found_witness = true;
+                self.witness = Some(witness);
+                let status = LayeredCombatLineagePortfolioStatus::WitnessFound;
+                self.terminal_status = Some(status.clone());
+                return self.snapshot(status);
+            }
+            if let LayeredCombatCandidateRaceStatus::ReplayMismatch(error) = report.status {
+                let status = LayeredCombatLineagePortfolioStatus::ReplayMismatch(error);
+                self.terminal_status = Some(status.clone());
+                return self.snapshot(status);
+            }
+            if used_work == 0 && used_steps == 0 && !self.entries[entry_index].race.is_terminal() {
+                return self.snapshot(LayeredCombatLineagePortfolioStatus::Partial(
+                    LayeredCombatWitnessInterruption::EngineStepBudget,
+                ));
+            }
+        }
+    }
+
+    fn next_entry_index(&mut self) -> Option<usize> {
+        if self.service_views.is_empty() {
+            return None;
+        }
+        let requested_view = self.service_views[self.next_service_view % self.service_views.len()];
+        self.next_service_view = self.next_service_view.saturating_add(1);
+        select_lineage_portfolio_entry(&self.entries, requested_view).or_else(|| {
+            select_lineage_portfolio_entry(&self.entries, CandidateRaceServiceView::Anchor)
+        })
+    }
+
+    fn snapshot(
+        &self,
+        status: LayeredCombatLineagePortfolioStatus,
+    ) -> LayeredCombatLineagePortfolioReport {
+        LayeredCombatLineagePortfolioReport {
+            status,
+            counters: self.counters.clone(),
+            selected_parent_count: self.selected_parent_count,
+            deferred_parent_count: self.deferred_parent_count,
+            deferred_window_count: self.deferred_window_count,
+            entries: self
+                .entries
+                .iter()
+                .map(|entry| LayeredCombatLineagePortfolioEntryReport {
+                    parent_candidate_index: entry.parent_rank.parent_candidate_index,
+                    parent_consensus_rank: entry.parent_rank.consensus_rank,
+                    source_window_index: entry.source_window_index,
+                    window_discrepancy: entry.window_discrepancy,
+                    generation_work: entry.race.counters.generation_work,
+                    engine_steps: entry.race.counters.engine_steps,
+                    terminal: entry.race.is_terminal(),
+                    found_witness: entry.found_witness,
+                })
+                .collect(),
+            witness: self.witness.clone(),
+        }
+    }
+}
+
+fn select_lineage_portfolio_entry(
+    entries: &[LineagePortfolioEntry],
+    view: CandidateRaceServiceView,
+) -> Option<usize> {
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| !entry.race.is_terminal())
+        .filter_map(|(index, entry)| {
+            let view_rank = match view {
+                CandidateRaceServiceView::Anchor => Some(entry.parent_rank.anchor_rank),
+                CandidateRaceServiceView::Guide(lane) => entry
+                    .parent_rank
+                    .guide_ranks
+                    .iter()
+                    .find_map(|(entry_lane, rank)| (*entry_lane == lane).then_some(*rank)),
+            }?;
+            let work = entry.race.counters.generation_work as u128;
+            let view_rank = view_rank.max(1) as u128;
+            let window_rank = entry.window_discrepancy.saturating_add(1) as u128;
+            Some((
+                (
+                    work.saturating_add(1)
+                        .saturating_mul(view_rank)
+                        .saturating_mul(window_rank),
+                    view_rank,
+                    window_rank,
+                    entry.parent_rank.consensus_rank,
+                    entry.parent_rank.parent_candidate_index,
+                ),
+                index,
+            ))
+        })
+        .min_by_key(|(key, _)| *key)
+        .map(|(_, index)| index)
 }
 
 fn select_candidate_race_entry(

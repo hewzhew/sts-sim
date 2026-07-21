@@ -35,11 +35,15 @@ pub use evidence::{
 };
 pub use generator::TurnOptionGeneratorSession;
 pub use layered_witness_search::{
-    search_layered_combat_witness, LayeredCombatCandidateRaceConfig,
-    LayeredCombatCandidateRaceCounters, LayeredCombatCandidateRaceEntryReport,
-    LayeredCombatCandidateRaceReport, LayeredCombatCandidateRaceSession,
-    LayeredCombatCandidateRaceStatus, LayeredCombatDeferredWindow, LayeredCombatFrontierState,
-    LayeredCombatLayerReport, LayeredCombatLineageWindow, LayeredCombatParentWorkReport,
+    rank_layered_combat_lineage_parents, search_layered_combat_witness,
+    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceCounters,
+    LayeredCombatCandidateRaceEntryReport, LayeredCombatCandidateRaceReport,
+    LayeredCombatCandidateRaceSession, LayeredCombatCandidateRaceStatus,
+    LayeredCombatDeferredWindow, LayeredCombatFrontierState, LayeredCombatLayerReport,
+    LayeredCombatLineageParentRank, LayeredCombatLineagePortfolioConfig,
+    LayeredCombatLineagePortfolioCounters, LayeredCombatLineagePortfolioEntryReport,
+    LayeredCombatLineagePortfolioReport, LayeredCombatLineagePortfolioSession,
+    LayeredCombatLineagePortfolioStatus, LayeredCombatLineageWindow, LayeredCombatParentWorkReport,
     LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessCounters,
     LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum, LayeredCombatWitnessReport,
     LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
