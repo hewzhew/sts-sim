@@ -268,6 +268,8 @@ struct CandidateRaceEntry {
     prefix_actions: Vec<TurnOptionAction>,
     prefix_negative_log_policy: f64,
     session: Box<LayeredCombatWitnessSession>,
+    continuation_anchor_cost: Option<f64>,
+    continuation_guides: BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
     found_witness: bool,
 }
 
@@ -276,8 +278,15 @@ pub struct LayeredCombatCandidateRaceSession {
     config: LayeredCombatCandidateRaceConfig,
     entries: Vec<CandidateRaceEntry>,
     counters: LayeredCombatCandidateRaceCounters,
+    next_service_view: usize,
     terminal_status: Option<LayeredCombatCandidateRaceStatus>,
     witness: Option<OracleCombatWitness>,
+}
+
+#[derive(Clone, Copy)]
+enum CandidateRaceServiceView {
+    Anchor,
+    Guide(CombatGuideLaneId),
 }
 
 impl BeamState {
@@ -393,6 +402,19 @@ impl LayeredCombatWitnessSession {
             )
         });
         windows
+    }
+
+    fn visit_frontier_states(&self, mut visit: impl FnMut(&BeamState)) {
+        for cohort in self.agenda.values().chain(self.depth_limited.iter()) {
+            for state in &cohort.states {
+                visit(state);
+            }
+        }
+        if let Some(active) = self.active_layer.as_ref() {
+            for worker in &active.workers {
+                visit(&worker.parent);
+            }
+        }
     }
 
     pub fn advance(
@@ -841,6 +863,8 @@ impl LayeredCombatCandidateRaceSession {
                         config.continuation,
                         policy.clone(),
                     )),
+                    continuation_anchor_cost: None,
+                    continuation_guides: BTreeMap::new(),
                     found_witness: false,
                 })
             })
@@ -853,6 +877,7 @@ impl LayeredCombatCandidateRaceSession {
             config,
             entries,
             counters: LayeredCombatCandidateRaceCounters::default(),
+            next_service_view: 0,
             terminal_status,
             witness: None,
         }
@@ -965,6 +990,7 @@ impl LayeredCombatCandidateRaceSession {
             self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
             self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
             self.counters.services = self.counters.services.saturating_add(1);
+            self.refresh_entry_guidance(entry_index);
 
             if let Some(candidate_witness) = candidate_report.witness {
                 let entry = &mut self.entries[entry_index];
@@ -997,35 +1023,72 @@ impl LayeredCombatCandidateRaceSession {
         }
     }
 
-    fn next_entry_index(&self) -> Option<usize> {
+    fn next_entry_index(&mut self) -> Option<usize> {
         let needs_first_layer = self
             .entries
             .iter()
             .any(|entry| !entry.session.is_terminal() && entry.session.completed_layers() == 0);
-        self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                !entry.session.is_terminal()
-                    && (!needs_first_layer || entry.session.completed_layers() == 0)
-            })
-            .min_by_key(|(_, entry)| {
-                let work = entry.session.counters().generation_work as u128;
-                let rank = entry.candidate_index.saturating_add(1) as u128;
-                if needs_first_layer {
+        if needs_first_layer {
+            return self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| {
+                    !entry.session.is_terminal() && entry.session.completed_layers() == 0
+                })
+                .min_by_key(|(_, entry)| {
+                    let work = entry.session.counters().generation_work as u128;
+                    let rank = entry.candidate_index.saturating_add(1) as u128;
                     // A retained candidate must first receive enough service
                     // to expose one exact next-turn layer. Before that point,
                     // its presentation index is not evidence that the whole
                     // continuation is weak.
                     (work, rank)
-                } else {
-                    // Once every live candidate has crossed the same semantic
-                    // boundary, use the deterministic retained order to focus
-                    // deeper continuation work without revoking resumability.
-                    (work.saturating_add(1).saturating_mul(rank), rank)
+                })
+                .map(|(index, _)| index);
+        }
+
+        let mut service_views = vec![CandidateRaceServiceView::Anchor];
+        let guide_lanes = self
+            .entries
+            .iter()
+            .filter(|entry| !entry.session.is_terminal())
+            .flat_map(|entry| entry.continuation_guides.keys().copied())
+            .collect::<BTreeSet<_>>();
+        service_views.extend(guide_lanes.into_iter().map(CandidateRaceServiceView::Guide));
+        let requested_view = service_views[self.next_service_view % service_views.len()];
+        self.next_service_view = self.next_service_view.saturating_add(1);
+        select_candidate_race_entry(&self.entries, requested_view).or_else(|| {
+            select_candidate_race_entry(&self.entries, CandidateRaceServiceView::Anchor)
+        })
+    }
+
+    fn refresh_entry_guidance(&mut self, entry_index: usize) {
+        let entry = &mut self.entries[entry_index];
+        let policy = entry.session.policy.clone();
+        let prefix_negative_log_policy = entry.prefix_negative_log_policy;
+        let mut anchor_cost = None::<f64>;
+        let mut guides = BTreeMap::<CombatGuideLaneId, CombatStateGuideRank>::new();
+        entry.session.visit_frontier_states(|state| {
+            let candidate_anchor = prefix_negative_log_policy + state.policy_priority();
+            if anchor_cost.is_none_or(|incumbent| candidate_anchor < incumbent) {
+                anchor_cost = Some(candidate_anchor);
+            }
+            for guide in policy.state_guides(&state.position) {
+                match guides.entry(guide.lane) {
+                    std::collections::btree_map::Entry::Vacant(vacant) => {
+                        vacant.insert(guide.rank);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut occupied) => {
+                        if guide.rank > *occupied.get() {
+                            occupied.insert(guide.rank);
+                        }
+                    }
                 }
-            })
-            .map(|(index, _)| index)
+            }
+        });
+        entry.continuation_anchor_cost = anchor_cost;
+        entry.continuation_guides = guides;
     }
 
     fn snapshot(
@@ -1050,6 +1113,99 @@ impl LayeredCombatCandidateRaceSession {
                 .collect(),
             witness: self.witness.clone(),
         }
+    }
+}
+
+fn select_candidate_race_entry(
+    entries: &[CandidateRaceEntry],
+    view: CandidateRaceServiceView,
+) -> Option<usize> {
+    let mut ranked = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            if entry.session.is_terminal() {
+                return false;
+            }
+            match view {
+                CandidateRaceServiceView::Anchor => entry.continuation_anchor_cost.is_some(),
+                CandidateRaceServiceView::Guide(lane) => {
+                    entry.continuation_guides.contains_key(&lane)
+                }
+            }
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| {
+        let left = &entries[*left];
+        let right = &entries[*right];
+        match view {
+            CandidateRaceServiceView::Anchor => left
+                .continuation_anchor_cost
+                .expect("anchor entry was checked for eligibility")
+                .total_cmp(
+                    &right
+                        .continuation_anchor_cost
+                        .expect("anchor entry was checked for eligibility"),
+                ),
+            CandidateRaceServiceView::Guide(lane) => right
+                .continuation_guides
+                .get(&lane)
+                .expect("guide entry was checked for eligibility")
+                .cmp(
+                    left.continuation_guides
+                        .get(&lane)
+                        .expect("guide entry was checked for eligibility"),
+                )
+                .then_with(|| {
+                    left.continuation_anchor_cost
+                        .unwrap_or(f64::INFINITY)
+                        .total_cmp(&right.continuation_anchor_cost.unwrap_or(f64::INFINITY))
+                }),
+        }
+        .then_with(|| left.candidate_index.cmp(&right.candidate_index))
+    });
+    let generation_work = entries
+        .iter()
+        .map(|entry| entry.session.counters().generation_work)
+        .collect::<Vec<_>>();
+    select_ranked_service_index(&ranked, &generation_work)
+}
+
+fn select_ranked_service_index(ranked: &[usize], generation_work: &[usize]) -> Option<usize> {
+    ranked
+        .iter()
+        .copied()
+        .enumerate()
+        .min_by_key(|(ordinal_rank, entry_index)| {
+            let work = generation_work
+                .get(*entry_index)
+                .copied()
+                .unwrap_or(usize::MAX) as u128;
+            let rank = ordinal_rank.saturating_add(1) as u128;
+            (
+                work.saturating_add(1).saturating_mul(rank),
+                *ordinal_rank,
+                *entry_index,
+            )
+        })
+        .map(|(_, entry_index)| entry_index)
+}
+
+#[cfg(test)]
+mod candidate_race_priority_tests {
+    use super::select_ranked_service_index;
+
+    #[test]
+    fn guide_rank_accelerates_service_without_permanently_starving_a_sibling() {
+        // Entry 1 is first in this guide view even though its stable index is
+        // larger, so it receives the first service quantum.
+        assert_eq!(select_ranked_service_index(&[1, 0], &[0, 0]), Some(1));
+
+        // Once entry 1 has consumed enough deterministic generator work, the
+        // lower-ranked sibling becomes due. Rank guides service; it does not
+        // revoke resumability from another live exact lineage.
+        assert_eq!(select_ranked_service_index(&[1, 0], &[0, 4]), Some(0));
     }
 }
 
