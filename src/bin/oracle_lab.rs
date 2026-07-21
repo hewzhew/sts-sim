@@ -10,12 +10,13 @@ use sts_combat_planner::{
     rank_layered_combat_lineage_parents, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
+    LayeredCombatLineagePortfolioSession, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessSession, OracleCombatOneTurnLossEvidence,
+    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
+    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
@@ -280,6 +281,10 @@ enum Command {
         portfolio_windows_per_parent: usize,
         #[arg(long, default_value_t = 2_048)]
         portfolio_service_quantum_work: usize,
+        /// Repeat the parent-portfolio split this many additional turn
+        /// boundaries before entering the final layered continuation.
+        #[arg(long, default_value_t = 0)]
+        portfolio_recursive_splits: usize,
         #[arg(long, default_value_t = 10)]
         nested_continuation_turn_layers: usize,
         #[arg(long)]
@@ -1442,6 +1447,7 @@ fn main() -> Result<(), String> {
             portfolio_parents_per_view,
             portfolio_windows_per_parent,
             portfolio_service_quantum_work,
+            portfolio_recursive_splits,
             nested_continuation_turn_layers,
             export_witness_actions,
         } => {
@@ -1544,6 +1550,7 @@ fn main() -> Result<(), String> {
                         parents_per_view: portfolio_parents_per_view,
                         windows_per_parent: portfolio_windows_per_parent,
                         service_quantum_work: portfolio_service_quantum_work,
+                        recursive_splits: portfolio_recursive_splits,
                     },
                     policy.clone(),
                 );
@@ -1708,16 +1715,7 @@ fn main() -> Result<(), String> {
                     "selected_parent_count": report.selected_parent_count,
                     "deferred_parent_count": report.deferred_parent_count,
                     "deferred_window_count": report.deferred_window_count,
-                    "entries": report.entries.iter().map(|entry| json!({
-                        "parent_candidate_index": entry.parent_candidate_index,
-                        "parent_consensus_rank": entry.parent_consensus_rank,
-                        "source_window_index": entry.source_window_index,
-                        "window_discrepancy": entry.window_discrepancy,
-                        "generation_work": entry.generation_work,
-                        "engine_steps": entry.engine_steps,
-                        "terminal": entry.terminal,
-                        "found_witness": entry.found_witness,
-                    })).collect::<Vec<_>>(),
+                    "entries": lineage_portfolio_entries_json(&report.entries),
                 })),
                 "exported_witness_actions": final_witness.is_some()
                     .then_some(export_witness_actions.as_ref())
@@ -3502,4 +3500,27 @@ fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
             .map_err(|error| format!("failed to serialize oracle_lab output: {error}"))?
     );
     Ok(())
+}
+
+fn lineage_portfolio_entries_json(
+    entries: &[LayeredCombatLineagePortfolioEntryReport],
+) -> Vec<Value> {
+    entries
+        .iter()
+        .map(|entry| {
+            json!({
+                "parent_candidate_index": entry.parent_candidate_index,
+                "parent_exact_state_hash": entry.parent_exact_state_hash,
+                "parent_consensus_rank": entry.parent_consensus_rank,
+                "source_window_index": entry.source_window_index,
+                "window_discrepancy": entry.window_discrepancy,
+                "generation_work": entry.generation_work,
+                "engine_steps": entry.engine_steps,
+                "recursive_splits_remaining": entry.recursive_splits_remaining,
+                "terminal": entry.terminal,
+                "found_witness": entry.found_witness,
+                "child_entries": lineage_portfolio_entries_json(&entry.child_entries),
+            })
+        })
+        .collect()
 }

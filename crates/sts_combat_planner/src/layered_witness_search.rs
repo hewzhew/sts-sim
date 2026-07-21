@@ -215,6 +215,7 @@ pub struct LayeredCombatLineagePortfolioConfig {
     pub parents_per_view: usize,
     pub windows_per_parent: usize,
     pub service_quantum_work: usize,
+    pub recursive_splits: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -235,13 +236,16 @@ pub struct LayeredCombatLineagePortfolioCounters {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LayeredCombatLineagePortfolioEntryReport {
     pub parent_candidate_index: usize,
+    pub parent_exact_state_hash: String,
     pub parent_consensus_rank: usize,
     pub source_window_index: usize,
     pub window_discrepancy: usize,
     pub generation_work: usize,
     pub engine_steps: usize,
+    pub recursive_splits_remaining: usize,
     pub terminal: bool,
     pub found_witness: bool,
+    pub child_entries: Vec<LayeredCombatLineagePortfolioEntryReport>,
 }
 
 #[derive(Clone, Debug)]
@@ -343,11 +347,21 @@ struct LineagePortfolioEntry {
     parent_rank: LayeredCombatLineageParentRank,
     source_window_index: usize,
     window_discrepancy: usize,
-    race: Box<LayeredCombatCandidateRaceSession>,
+    completed_generation_work: usize,
+    completed_engine_steps: usize,
+    recursive_splits_remaining: usize,
+    continuation: LineagePortfolioContinuation,
     found_witness: bool,
 }
 
+enum LineagePortfolioContinuation {
+    CandidateRace(Box<LayeredCombatCandidateRaceSession>),
+    ChildPortfolio(Box<LayeredCombatLineagePortfolioSession>),
+}
+
 pub struct LayeredCombatLineagePortfolioSession {
+    original_root: CombatPosition,
+    policy: SharedCombatActionPolicy,
     config: LayeredCombatLineagePortfolioConfig,
     entries: Vec<LineagePortfolioEntry>,
     selected_parent_count: usize,
@@ -1363,15 +1377,24 @@ impl LayeredCombatLineagePortfolioSession {
                 let window_discrepancy = lineage.window.window_discrepancy;
                 let root = CombatDecisionRoot::new(original_position.clone())
                     .expect("portfolio root was already validated");
+                let mut race_config = config.candidate_race;
+                if config.recursive_splits > 0 {
+                    race_config.continuation.max_turn_layers = 1;
+                }
                 entries.push(LineagePortfolioEntry {
                     parent_rank: parent_rank.clone(),
                     source_window_index,
                     window_discrepancy,
-                    race: Box::new(LayeredCombatCandidateRaceSession::from_window(
-                        root,
-                        lineage.window,
-                        config.candidate_race,
-                        policy.clone(),
+                    completed_generation_work: 0,
+                    completed_engine_steps: 0,
+                    recursive_splits_remaining: config.recursive_splits,
+                    continuation: LineagePortfolioContinuation::CandidateRace(Box::new(
+                        LayeredCombatCandidateRaceSession::from_window(
+                            root,
+                            lineage.window,
+                            race_config,
+                            policy.clone(),
+                        ),
                     )),
                     found_witness: false,
                 });
@@ -1395,6 +1418,8 @@ impl LayeredCombatLineagePortfolioSession {
             .is_empty()
             .then_some(LayeredCombatLineagePortfolioStatus::SelectedPortfolioExhausted);
         Self {
+            original_root: original_position,
+            policy,
             config,
             entries,
             selected_parent_count,
@@ -1452,43 +1477,112 @@ impl LayeredCombatLineagePortfolioSession {
             let remaining_work = work_limit.saturating_sub(self.counters.generation_work);
             let remaining_steps = engine_step_limit.saturating_sub(self.counters.engine_steps);
             let service_work = self.config.service_quantum_work.max(1).min(remaining_work);
-            let before = self.entries[entry_index].race.counters.clone();
-            let report = self.entries[entry_index].race.advance(
-                LayeredCombatWitnessQuantum {
-                    additional_generation_work: service_work,
-                    additional_engine_steps: remaining_steps.min(
-                        service_work.saturating_mul(
-                            self.config
-                                .candidate_race
-                                .continuation
-                                .generator
-                                .max_engine_steps_per_transition
-                                .max(1),
-                        ),
+            let before_work = self.entries[entry_index].generation_work();
+            let before_steps = self.entries[entry_index].engine_steps();
+            let entry_quantum = LayeredCombatWitnessQuantum {
+                additional_generation_work: service_work,
+                additional_engine_steps: remaining_steps.min(
+                    service_work.saturating_mul(
+                        self.config
+                            .candidate_race
+                            .continuation
+                            .generator
+                            .max_engine_steps_per_transition
+                            .max(1),
                     ),
-                    deadline: quantum.deadline,
-                },
-                stepper,
-            );
-            let after = self.entries[entry_index].race.counters.clone();
-            let used_work = after.generation_work.saturating_sub(before.generation_work);
-            let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
+                ),
+                deadline: quantum.deadline,
+            };
+            let original_root = self.original_root.clone();
+            let policy = self.policy.clone();
+            let config = self.config;
+            let (witness, replay_mismatch, recursive_windows) = {
+                let entry = &mut self.entries[entry_index];
+                match &mut entry.continuation {
+                    LineagePortfolioContinuation::CandidateRace(race) => {
+                        let report = race.advance(entry_quantum, stepper);
+                        let replay_mismatch = match &report.status {
+                            LayeredCombatCandidateRaceStatus::ReplayMismatch(error) => {
+                                Some(error.clone())
+                            }
+                            _ => None,
+                        };
+                        let recursive_windows = (matches!(
+                            &report.status,
+                            LayeredCombatCandidateRaceStatus::CandidatesExhausted
+                        ) && entry.recursive_splits_remaining > 0)
+                            .then(|| race.deferred_lineage_windows());
+                        (report.witness, replay_mismatch, recursive_windows)
+                    }
+                    LineagePortfolioContinuation::ChildPortfolio(child) => {
+                        let report = child.advance(entry_quantum, stepper);
+                        let replay_mismatch = match &report.status {
+                            LayeredCombatLineagePortfolioStatus::ReplayMismatch(error) => {
+                                Some(error.clone())
+                            }
+                            _ => None,
+                        };
+                        (report.witness, replay_mismatch, None)
+                    }
+                }
+            };
+            let transformed = if let Some(windows) = recursive_windows {
+                let entry = &mut self.entries[entry_index];
+                let (race_work, race_steps) = match &entry.continuation {
+                    LineagePortfolioContinuation::CandidateRace(race) => {
+                        (race.counters.generation_work, race.counters.engine_steps)
+                    }
+                    LineagePortfolioContinuation::ChildPortfolio(_) => unreachable!(
+                        "only an exhausted candidate race can produce recursive windows"
+                    ),
+                };
+                entry.completed_generation_work =
+                    entry.completed_generation_work.saturating_add(race_work);
+                entry.completed_engine_steps =
+                    entry.completed_engine_steps.saturating_add(race_steps);
+                entry.recursive_splits_remaining =
+                    entry.recursive_splits_remaining.saturating_sub(1);
+                let root = CombatDecisionRoot::new(original_root)
+                    .expect("portfolio root was already validated");
+                entry.continuation = LineagePortfolioContinuation::ChildPortfolio(Box::new(
+                    LayeredCombatLineagePortfolioSession::from_lineage_windows(
+                        root,
+                        windows,
+                        LayeredCombatLineagePortfolioConfig {
+                            recursive_splits: entry.recursive_splits_remaining,
+                            ..config
+                        },
+                        policy,
+                    ),
+                ));
+                true
+            } else {
+                false
+            };
+            let after_work = self.entries[entry_index].generation_work();
+            let after_steps = self.entries[entry_index].engine_steps();
+            let used_work = after_work.saturating_sub(before_work);
+            let used_steps = after_steps.saturating_sub(before_steps);
             self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
             self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
             self.counters.services = self.counters.services.saturating_add(1);
-            if let Some(witness) = report.witness {
+            if let Some(witness) = witness {
                 self.entries[entry_index].found_witness = true;
                 self.witness = Some(witness);
                 let status = LayeredCombatLineagePortfolioStatus::WitnessFound;
                 self.terminal_status = Some(status.clone());
                 return self.snapshot(status);
             }
-            if let LayeredCombatCandidateRaceStatus::ReplayMismatch(error) = report.status {
+            if let Some(error) = replay_mismatch {
                 let status = LayeredCombatLineagePortfolioStatus::ReplayMismatch(error);
                 self.terminal_status = Some(status.clone());
                 return self.snapshot(status);
             }
-            if used_work == 0 && used_steps == 0 && !self.entries[entry_index].race.is_terminal() {
+            if used_work == 0
+                && used_steps == 0
+                && !transformed
+                && !self.entries[entry_index].is_terminal()
+            {
                 return self.snapshot(LayeredCombatLineagePortfolioStatus::Partial(
                     LayeredCombatWitnessInterruption::EngineStepBudget,
                 ));
@@ -1522,16 +1616,73 @@ impl LayeredCombatLineagePortfolioSession {
                 .iter()
                 .map(|entry| LayeredCombatLineagePortfolioEntryReport {
                     parent_candidate_index: entry.parent_rank.parent_candidate_index,
+                    parent_exact_state_hash: entry.parent_rank.parent_exact_state_hash.clone(),
                     parent_consensus_rank: entry.parent_rank.consensus_rank,
                     source_window_index: entry.source_window_index,
                     window_discrepancy: entry.window_discrepancy,
-                    generation_work: entry.race.counters.generation_work,
-                    engine_steps: entry.race.counters.engine_steps,
-                    terminal: entry.race.is_terminal(),
+                    generation_work: entry.generation_work(),
+                    engine_steps: entry.engine_steps(),
+                    recursive_splits_remaining: entry.recursive_splits_remaining,
+                    terminal: entry.is_terminal(),
                     found_witness: entry.found_witness,
+                    child_entries: entry.child_entry_reports(),
                 })
                 .collect(),
             witness: self.witness.clone(),
+        }
+    }
+}
+
+impl LineagePortfolioEntry {
+    fn generation_work(&self) -> usize {
+        self.completed_generation_work
+            .saturating_add(match &self.continuation {
+                LineagePortfolioContinuation::CandidateRace(race) => race.counters.generation_work,
+                LineagePortfolioContinuation::ChildPortfolio(child) => {
+                    child.counters.generation_work
+                }
+            })
+    }
+
+    fn engine_steps(&self) -> usize {
+        self.completed_engine_steps
+            .saturating_add(match &self.continuation {
+                LineagePortfolioContinuation::CandidateRace(race) => race.counters.engine_steps,
+                LineagePortfolioContinuation::ChildPortfolio(child) => child.counters.engine_steps,
+            })
+    }
+
+    fn is_terminal(&self) -> bool {
+        match &self.continuation {
+            LineagePortfolioContinuation::CandidateRace(race) => race.is_terminal(),
+            LineagePortfolioContinuation::ChildPortfolio(child) => child.is_terminal(),
+        }
+    }
+
+    fn child_entry_reports(&self) -> Vec<LayeredCombatLineagePortfolioEntryReport> {
+        match &self.continuation {
+            LineagePortfolioContinuation::CandidateRace(_) => Vec::new(),
+            LineagePortfolioContinuation::ChildPortfolio(child) => child
+                .entries
+                .iter()
+                .map(LineagePortfolioEntry::report)
+                .collect(),
+        }
+    }
+
+    fn report(&self) -> LayeredCombatLineagePortfolioEntryReport {
+        LayeredCombatLineagePortfolioEntryReport {
+            parent_candidate_index: self.parent_rank.parent_candidate_index,
+            parent_exact_state_hash: self.parent_rank.parent_exact_state_hash.clone(),
+            parent_consensus_rank: self.parent_rank.consensus_rank,
+            source_window_index: self.source_window_index,
+            window_discrepancy: self.window_discrepancy,
+            generation_work: self.generation_work(),
+            engine_steps: self.engine_steps(),
+            recursive_splits_remaining: self.recursive_splits_remaining,
+            terminal: self.is_terminal(),
+            found_witness: self.found_witness,
+            child_entries: self.child_entry_reports(),
         }
     }
 }
@@ -1543,7 +1694,7 @@ fn select_lineage_portfolio_entry(
     entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| !entry.race.is_terminal())
+        .filter(|(_, entry)| !entry.is_terminal())
         .filter_map(|(index, entry)| {
             let view_rank = match view {
                 CandidateRaceServiceView::Anchor => Some(entry.parent_rank.anchor_rank),
@@ -1553,7 +1704,7 @@ fn select_lineage_portfolio_entry(
                     .iter()
                     .find_map(|(entry_lane, rank)| (*entry_lane == lane).then_some(*rank)),
             }?;
-            let work = entry.race.counters.generation_work as u128;
+            let work = entry.generation_work() as u128;
             let view_rank = view_rank.max(1) as u128;
             let window_rank = entry.window_discrepancy.saturating_add(1) as u128;
             Some((

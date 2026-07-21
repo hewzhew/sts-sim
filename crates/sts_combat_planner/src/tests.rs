@@ -681,7 +681,7 @@ fn lineage_parent_consensus_uses_ordinal_guide_evidence() {
 }
 
 #[test]
-fn lineage_portfolio_keeps_selected_parents_resumable_and_replays_the_winner() {
+fn lineage_portfolio_recurses_at_turn_boundaries_and_replays_the_winner() {
     let source_config = LayeredCombatWitnessConfig {
         generator: config(),
         beam_width: 1,
@@ -730,6 +730,7 @@ fn lineage_portfolio_keeps_selected_parents_resumable_and_replays_the_winner() {
             parents_per_view: 1,
             windows_per_parent: 1,
             service_quantum_work: 16,
+            recursive_splits: 1,
         },
         policy,
     );
@@ -748,6 +749,10 @@ fn lineage_portfolio_keeps_selected_parents_resumable_and_replays_the_winner() {
         LayeredCombatLineagePortfolioStatus::WitnessFound
     );
     assert!(report.selected_parent_count >= 1);
+    assert!(report
+        .entries
+        .iter()
+        .any(|entry| entry.recursive_splits_remaining == 0));
     let witness = report.witness.expect("selected lineage should win");
     assert_eq!(
         stepper.terminal(&witness.final_position),
