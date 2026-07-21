@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 oracle_lab_protocol = { path = "../oracle_lab_protocol" }
 sts_core = { package = "sts_simulator", path = "../.." }
+sts_combat_legacy = { path = "../sts_combat_legacy" }
 sts_combat_planner = { path = "../sts_combat_planner" }
 blake2 = "0.10"
 flate2 = "1.0"

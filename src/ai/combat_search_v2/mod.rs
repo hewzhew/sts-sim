@@ -69,7 +69,7 @@ mod phase_profile;
 mod timed_enemy_threat;
 
 // Pending choice and potion boundaries.
-pub(crate) mod pending_choice_action_prefix;
+pub mod pending_choice_action_prefix;
 mod pending_choice_fanout;
 mod pending_choice_ordering;
 mod pending_choice_profile;
@@ -180,7 +180,7 @@ pub use deficit_evidence::{
     derive_combat_deficit_evidence, CombatDeficitEvidenceFlag, CombatDeficitEvidenceObservations,
     CombatDeficitEvidenceReport,
 };
-pub(crate) use external_payoff::has_external_payoff_opportunity;
+pub use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
 };
@@ -208,10 +208,10 @@ pub use search::{
 };
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;
-pub(crate) use turn_plan_probe::enumerate_combat_search_v2_turn_plan_probe_candidates;
+pub use turn_plan_probe::enumerate_combat_search_v2_turn_plan_probe_candidates;
 #[cfg(test)]
 pub(crate) use turn_plan_probe_report::CombatSearchV2TurnPlanProbeStepReport;
-pub(crate) use turn_plan_probe_report::{
+pub use turn_plan_probe_report::{
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
 };
 pub use turn_plan_rescue::{find_combat_turn_plan_rescue_win_v0, CombatTurnPlanRescueWin};
@@ -482,7 +482,7 @@ fn oracle_no_potion_suffix_proposal_v1(
     })
 }
 
-pub(crate) fn combat_search_action_ordering_role_label_for_state(
+pub fn combat_search_action_ordering_role_label_for_state(
     engine: &EngineState,
     combat: &CombatState,
     input: &ClientInput,
@@ -506,14 +506,14 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state_with_plugins(
         .label()
 }
 
-pub(crate) fn combat_search_phase_profile_report_for_state(
+pub fn combat_search_phase_profile_report_for_state(
     engine: &EngineState,
     combat: &CombatState,
 ) -> CombatSearchV2PhaseProfileReport {
     combat_search_phase_profile_report(combat_search_phase_profile(engine, combat))
 }
 
-pub(crate) fn filter_combat_search_legal_actions(
+pub fn filter_combat_search_legal_actions(
     choices: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,
     combat: &CombatState,

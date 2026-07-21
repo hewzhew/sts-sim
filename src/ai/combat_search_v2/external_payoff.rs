@@ -3,7 +3,7 @@ use crate::content::cards::CardId;
 use crate::runtime::combat::{CombatCard, CombatState, MetaChange};
 use std::collections::HashMap;
 
-pub(crate) fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
+pub fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
     combat
         .meta
         .master_deck_snapshot

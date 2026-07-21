@@ -154,11 +154,11 @@ impl PendingChoiceActionFamily {
     }
 }
 
-pub(crate) struct CanonicalPendingChoiceInputIter {
+pub struct CanonicalPendingChoiceInputIter {
     work: VecDeque<PendingChoiceActionWork>,
 }
 
-pub(crate) fn canonical_pending_choice_inputs(
+pub fn canonical_pending_choice_inputs(
     choice: &PendingChoice,
 ) -> Option<CanonicalPendingChoiceInputIter> {
     let family = PendingChoiceActionFamily::from_choice(choice)?;

@@ -16,7 +16,7 @@ const TURN_PLAN_PROBE_MAX_INNER_NODES: usize = 256;
 const TURN_PLAN_PROBE_MAX_END_STATES: usize = 24;
 const TURN_PLAN_PROBE_PER_BUCKET_LIMIT: usize = TURN_PLAN_PROBE_MAX_END_STATES;
 
-pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
+pub fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     engine: &EngineState,
     combat: &CombatState,
     config: &CombatSearchV2Config,

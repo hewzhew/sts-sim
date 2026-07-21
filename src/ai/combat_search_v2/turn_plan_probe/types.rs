@@ -5,13 +5,13 @@ use super::super::turn_plan_probe_report::{
 };
 
 #[derive(Clone)]
-pub(crate) struct CombatSearchV2TurnPlanProbeCandidate {
-    pub(crate) report: CombatSearchV2TurnPlanProbeCandidateReport,
-    pub(crate) position: CombatPosition,
+pub struct CombatSearchV2TurnPlanProbeCandidate {
+    pub report: CombatSearchV2TurnPlanProbeCandidateReport,
+    pub position: CombatPosition,
 }
 
 #[derive(Clone)]
-pub(crate) struct CombatSearchV2TurnPlanProbeEnumeration {
-    pub(crate) report: CombatSearchV2TurnPlanProbeRootReport,
-    pub(crate) candidates: Vec<CombatSearchV2TurnPlanProbeCandidate>,
+pub struct CombatSearchV2TurnPlanProbeEnumeration {
+    pub report: CombatSearchV2TurnPlanProbeRootReport,
+    pub candidates: Vec<CombatSearchV2TurnPlanProbeCandidate>,
 }

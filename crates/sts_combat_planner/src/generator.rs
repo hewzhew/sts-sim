@@ -764,8 +764,8 @@ impl TurnOptionGeneratorSession {
         let probabilities = normalized_probabilities(weights, self.config.uniform_exploration_ppm);
         let mut probabilities = probabilities.into_iter();
         // Every outgoing action observes the same immutable parent position.
-        // Sharing it avoids cloning the full combat state and action prefix
-        // once per legal action while preserving the exact search graph.
+        // Sharing it avoids one full combat-state and action-prefix clone for
+        // every legal action while preserving the exact search graph.
         let parent = Arc::new(partial);
         for input in surface.atomic_actions {
             let probability = probabilities.next().expect("one probability per action");
