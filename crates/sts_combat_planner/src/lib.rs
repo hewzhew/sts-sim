@@ -11,6 +11,7 @@ mod agenda;
 mod decision;
 mod evidence;
 mod generator;
+mod layered_witness_search;
 mod policy;
 mod prospect;
 mod replay;
@@ -33,6 +34,11 @@ pub use evidence::{
     ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
 pub use generator::TurnOptionGeneratorSession;
+pub use layered_witness_search::{
+    search_layered_combat_witness, LayeredCombatFrontierState, LayeredCombatLayerReport,
+    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessCounters,
+    LayeredCombatWitnessInterruption, LayeredCombatWitnessReport, LayeredCombatWitnessStatus,
+};
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
     CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy, UniformCombatActionPolicy,

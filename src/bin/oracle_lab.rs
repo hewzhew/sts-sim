@@ -7,8 +7,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, OracleCombatOneTurnLossEvidence,
+    search_layered_combat_witness, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
+    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
+    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, OracleCombatOneTurnLossEvidence,
     OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
     TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
@@ -192,6 +193,39 @@ enum Command {
         /// reaches the next player turn or wins immediately.
         #[arg(long, default_value_t = 0)]
         one_turn_viability_evidence_limit: usize,
+    },
+    /// Lab-only turn-synchronous beam control. It never invokes the legacy
+    /// suffix donor or the production Widen/Deepen agenda.
+    CombatCaseLayered {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long, default_value_t = 250_000)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long, default_value_t = 32)]
+        beam_width: usize,
+        #[arg(long, default_value_t = 6)]
+        retained_per_view: usize,
+        /// Minimum shared generator work before one turn layer may close.
+        #[arg(long, default_value_t = 640)]
+        minimum_generation_work_per_layer: usize,
+        /// Hard shared generator-work ceiling for one turn layer.
+        #[arg(long, default_value_t = 8_192)]
+        maximum_generation_work_per_layer: usize,
+        /// Close a sufficiently worked layer when it has this many beam-widths
+        /// of exact next-turn candidates.
+        #[arg(long, default_value_t = 8)]
+        candidate_pool_multiplier: usize,
+        #[arg(long, default_value_t = 8)]
+        generation_quantum_work: usize,
+        #[arg(long, default_value_t = 32)]
+        max_turn_layers: usize,
+        /// If a replay-verified win is found, save its exact ClientInput list.
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
     },
     /// Distill one exact terminal witness into a typed-feature prototype
     /// artifact for lab-only state-value inference.
@@ -1134,6 +1168,153 @@ fn main() -> Result<(), String> {
             print_json(&json!({
                 "output": output,
                 "artifact": artifact.report(),
+            }))
+        }
+        Command::CombatCaseLayered {
+            case,
+            max_nodes,
+            wall_ms,
+            max_engine_steps_per_transition,
+            beam_width,
+            retained_per_view,
+            minimum_generation_work_per_layer,
+            maximum_generation_work_per_layer,
+            candidate_pool_multiplier,
+            generation_quantum_work,
+            max_turn_layers,
+            export_witness_actions,
+        } => {
+            let command_started = Instant::now();
+            let loaded = load_combat_case(&case)?;
+            let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let root = CombatDecisionRoot::new(loaded.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let deadline = Instant::now() + Duration::from_millis(wall_ms);
+            let report = search_layered_combat_witness(
+                root,
+                LayeredCombatWitnessConfig {
+                    generator: TurnOptionGeneratorConfig {
+                        max_engine_steps_per_transition,
+                        ..TurnOptionGeneratorConfig::default()
+                    },
+                    beam_width,
+                    retained_per_view,
+                    minimum_generation_work_per_layer,
+                    maximum_generation_work_per_layer,
+                    candidate_pool_multiplier,
+                    generation_quantum_work,
+                    max_turn_layers,
+                },
+                LayeredCombatWitnessBudget {
+                    max_generation_work: max_nodes,
+                    max_engine_steps: max_nodes.saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(deadline),
+                },
+                existing_combat_knowledge_policy_v1(),
+                &EngineCombatStepper,
+            );
+            if let (Some(path), Some(witness)) =
+                (export_witness_actions.as_ref(), report.witness.as_ref())
+            {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let inputs = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            let frontier = report
+                .frontier
+                .iter()
+                .map(|state| {
+                    json!({
+                        "exact_state_hash": state.exact_state_hash,
+                        "player_turn": state.position.combat.turn.turn_count,
+                        "player_hp": state.position.combat.entities.player.current_hp,
+                        "enemy_hp": state.position.combat.entities.monsters.iter()
+                            .map(|monster| monster.current_hp.max(0))
+                            .sum::<i32>(),
+                        "path_action_count": state.actions.len(),
+                        "negative_log_policy": state.negative_log_policy,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let layers = report
+                .layers
+                .iter()
+                .map(|layer| {
+                    json!({
+                        "player_turn": layer.player_turn,
+                        "parent_states": layer.parent_states,
+                        "expanded_parents": layer.expanded_parents,
+                        "generation_work": layer.generation_work,
+                        "completed_turn_options": layer.completed_turn_options,
+                        "unique_next_turn_states": layer.unique_next_turn_states,
+                        "duplicate_next_turn_states": layer.duplicate_next_turn_states,
+                        "retained_next_turn_states": layer.retained_next_turn_states,
+                        "retained_exact_state_hashes": layer.retained_exact_state_hashes,
+                        "truncated_parents": layer.truncated_parents,
+                    })
+                })
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleCombatCaseLayeredV1",
+                "schema_version": 1,
+                "case": case,
+                "runtime": oracle_lab_runtime_identity(),
+                "mode": {
+                    "scheduler": "turn_synchronous_multi_view_beam",
+                    "v2_donor_enabled": false,
+                },
+                "status": format!("{:?}", report.status),
+                "elapsed_ms": command_started.elapsed().as_millis(),
+                "config": {
+                    "beam_width": beam_width,
+                    "retained_per_view": retained_per_view,
+                    "minimum_generation_work_per_layer": minimum_generation_work_per_layer,
+                    "maximum_generation_work_per_layer": maximum_generation_work_per_layer,
+                    "candidate_pool_multiplier": candidate_pool_multiplier,
+                    "generation_quantum_work": generation_quantum_work,
+                    "max_turn_layers": max_turn_layers,
+                },
+                "budget": {
+                    "generation_work": max_nodes,
+                    "wall_ms": wall_ms,
+                    "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                },
+                "work": {
+                    "generation_work": report.counters.generation_work,
+                    "engine_steps": report.counters.engine_steps,
+                    "expanded_parents": report.counters.expanded_parents,
+                    "completed_turn_options": report.counters.completed_turn_options,
+                    "unique_next_turn_states": report.counters.unique_next_turn_states,
+                    "duplicate_next_turn_states": report.counters.duplicate_next_turn_states,
+                    "truncated_parents": report.counters.truncated_parents,
+                    "completed_layers": report.counters.completed_layers,
+                },
+                "layers": layers,
+                "frontier": frontier,
+                "generation_gap_count": report.generation_gaps.len(),
+                "exported_witness_actions": report.witness.is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
+                "witness": report.witness.as_ref().map(|witness| json!({
+                    "discovery_source": witness.discovery_source,
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "hp_loss": initial_hp.saturating_sub(
+                        witness.final_position.combat.entities.player.current_hp,
+                    ),
+                    "action_count": witness.actions.len(),
+                    "negative_log_policy": witness.negative_log_policy,
+                    "replay_engine_steps": witness.replay_engine_steps,
+                })),
             }))
         }
         Command::CombatCase {
