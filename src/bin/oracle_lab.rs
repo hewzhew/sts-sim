@@ -1276,6 +1276,7 @@ fn main() -> Result<(), String> {
                                 "candidate_index": candidate_index,
                                 "action_count": candidate.actions.len(),
                                 "negative_log_policy": candidate.negative_log_policy,
+                                "guides": existing_combat_guide_diagnostics(&candidate.position),
                             })
                         })
                 })
@@ -1310,6 +1311,7 @@ fn main() -> Result<(), String> {
                             .sum::<i32>(),
                         "path_action_count": state.actions.len(),
                         "negative_log_policy": state.negative_log_policy,
+                        "guides": existing_combat_guide_diagnostics(&state.position),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -3245,6 +3247,17 @@ fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
         10_002 => "typed_corridor_control",
         _ => "policy_defined",
     }
+}
+
+fn existing_combat_guide_diagnostics(
+    position: &sts_simulator::sim::combat::CombatPosition,
+) -> Value {
+    json!({
+        "progress": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
+        "survival": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(position),
+        "horizon": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
+        "setup": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
+    })
 }
 
 fn oracle_lab_runtime_identity() -> Value {
