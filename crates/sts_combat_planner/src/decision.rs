@@ -1,8 +1,7 @@
 use super::{
-    CombatDecisionRootError, CombatOutcomeModelApplicabilityV1, CombatOutcomeModelV1,
-    CombatPlannerAgendaSession, CompleteTurnOption, CompleteTurnOptionBoundary,
-    ContinuationEvidence, ContinuationInterruption, OptionProspect, OptionProspectId, ReplayError,
-    TurnOptionGenerationGap,
+    CombatDecisionRootError, CombatPlannerAgendaSession, CompleteTurnOption,
+    CompleteTurnOptionBoundary, ContinuationEvidence, ContinuationInterruption, OptionProspect,
+    OptionProspectId, ReplayError, TurnOptionGenerationGap,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,17 +43,8 @@ pub struct CombatPlannerDecision {
 pub enum CombatPlannerDecisionBasis {
     OnlyCompleteOption,
     VerifiedTerminalWin,
-    PreferredExactWinningHorizon {
-        turn_boundaries: u16,
-    },
-    EquivalentExactSuccessor {
-        exact_successor_hash: String,
-    },
-    PreferredCalibratedOutcome {
-        model_id: String,
-        lower_goal_success_basis_points: u16,
-        upper_goal_success_basis_points: u16,
-    },
+    PreferredExactWinningHorizon { turn_boundaries: u16 },
+    EquivalentExactSuccessor { exact_successor_hash: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,14 +72,6 @@ pub enum CombatPlannerDecisionGap {
         boundary: CompleteTurnOptionBoundary,
     },
     IncomparableExactProspects,
-    OutcomeModelNotApplicable {
-        prospect_id: OptionProspectId,
-        applicability: CombatOutcomeModelApplicabilityV1,
-    },
-    OutcomeModelIndistinguishable {
-        model_id: String,
-        contenders: Vec<OptionProspectId>,
-    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -237,109 +219,6 @@ pub fn decide_combat_option(session: &CombatPlannerAgendaSession) -> CombatPlann
             .collect(),
         gaps: vec![CombatPlannerDecisionGap::IncomparableExactProspects],
     })
-}
-
-/// Consults a calibrated outcome model only after exact comparison has
-/// exhausted its authority. Selection requires every contender to be
-/// in-domain and one conservative success interval to separate from all
-/// alternatives; otherwise the typed deferral is preserved.
-pub fn decide_combat_option_with_outcome_model(
-    session: &CombatPlannerAgendaSession,
-    model: &CombatOutcomeModelV1,
-) -> CombatPlannerDecisionResult {
-    let exact = decide_combat_option(session);
-    let CombatPlannerDecisionResult::Deferred(mut deferral) = exact else {
-        return exact;
-    };
-    if deferral.gaps != [CombatPlannerDecisionGap::IncomparableExactProspects] {
-        return CombatPlannerDecisionResult::Deferred(deferral);
-    }
-
-    let contenders = session
-        .prospects()
-        .iter()
-        .filter(|prospect| {
-            deferral.nondominated_prospects.contains(&prospect.id())
-                && prospect.option().boundary() == CompleteTurnOptionBoundary::NextPlayerTurn
-        })
-        .map(|prospect| {
-            (
-                prospect,
-                model.evaluate(prospect.option().exact_successor()),
-            )
-        })
-        .collect::<Vec<_>>();
-    if contenders.is_empty() {
-        return CombatPlannerDecisionResult::Deferred(deferral);
-    }
-
-    for (prospect, estimate) in &contenders {
-        if estimate.applicability != CombatOutcomeModelApplicabilityV1::InDomain {
-            deferral
-                .gaps
-                .push(CombatPlannerDecisionGap::OutcomeModelNotApplicable {
-                    prospect_id: prospect.id(),
-                    applicability: estimate.applicability.clone(),
-                });
-        }
-    }
-    if deferral.gaps.len() != 1 {
-        return CombatPlannerDecisionResult::Deferred(deferral);
-    }
-
-    let selected_index = contenders
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| {
-            left.1
-                .goal_success_probability
-                .total_cmp(&right.1.goal_success_probability)
-        })
-        .map(|(index, _)| index)
-        .expect("non-empty outcome contenders");
-    let selected = &contenders[selected_index];
-    let separated = contenders.iter().enumerate().all(|(index, contender)| {
-        index == selected_index
-            || selected.1.goal_success_interval.lower > contender.1.goal_success_interval.upper
-    });
-    if !separated {
-        deferral
-            .gaps
-            .push(CombatPlannerDecisionGap::OutcomeModelIndistinguishable {
-                model_id: selected.1.model_id.clone(),
-                contenders: contenders
-                    .iter()
-                    .map(|(prospect, _)| prospect.id())
-                    .collect(),
-            });
-        return CombatPlannerDecisionResult::Deferred(deferral);
-    }
-
-    let alternatives = contenders
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| *index != selected_index)
-        .map(|(_, (prospect, _))| prospect.id())
-        .collect();
-    selected_result(
-        session,
-        selected.0,
-        alternatives,
-        CombatPlannerDecisionBasis::PreferredCalibratedOutcome {
-            model_id: selected.1.model_id.clone(),
-            lower_goal_success_basis_points: probability_basis_points(
-                selected.1.goal_success_interval.lower,
-            ),
-            upper_goal_success_basis_points: probability_basis_points(
-                selected.1.goal_success_interval.upper,
-            ),
-        },
-        CombatEvaluationContext::ORACLE_EXACT_ONE_TURN,
-    )
-}
-
-fn probability_basis_points(probability: f64) -> u16 {
-    (probability.clamp(0.0, 1.0) * 10_000.0).round() as u16
 }
 
 fn selected_result(

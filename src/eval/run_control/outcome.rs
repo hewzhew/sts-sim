@@ -1,16 +1,11 @@
 use std::fs;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-use sts_combat_planner::{
-    CombatOutcomeDatasetErrorV1, CombatOutcomeFeatureVectorV1, CombatOutcomeLabelProvenanceV1,
-    CombatOutcomeTrainingBatchV1, CombatOutcomeTrainingCaseV1, CombatOutcomeTrainingExampleV1,
-};
-
 use crate::engine::run_loop::FinishedActiveCombat;
 use crate::runtime::combat::CombatState;
 use crate::sim::combat::{combat_terminal, CombatTerminal};
 use crate::state::core::ClientInput;
+use serde::{Deserialize, Serialize};
 
 pub const COMBAT_BASELINE_OUTCOME_SCHEMA_NAME: &str = "CombatBaselineOutcomeV1";
 pub const COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION: u32 = 1;
@@ -41,10 +36,6 @@ impl CombatBaselineOutcomeV1 {
 pub struct CombatOutcomeTracker {
     active: Option<CombatOutcomeDraft>,
     last: Option<CombatBaselineOutcomeV1>,
-    #[serde(default)]
-    last_training_examples: Vec<CombatOutcomeTrainingExampleV1>,
-    #[serde(default)]
-    training_cases: Vec<CombatOutcomeTrainingCaseV1>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -52,8 +43,6 @@ struct CombatOutcomeDraft {
     start_hp: i32,
     potions_used: u32,
     potions_discarded: u32,
-    observed_turns: Vec<CombatOutcomeFeatureVectorV1>,
-    last_observed_turn: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,26 +69,8 @@ impl CombatOutcomeTracker {
             start_hp: combat.entities.player.current_hp,
             potions_used: 0,
             potions_discarded: 0,
-            observed_turns: vec![CombatOutcomeFeatureVectorV1::from_combat(combat)],
-            last_observed_turn: Some(combat.turn.turn_count),
         });
         true
-    }
-
-    pub fn observe_player_turn_boundary(&mut self, combat: Option<&CombatState>) {
-        let Some(combat) = combat else {
-            return;
-        };
-        let Some(active) = self.active.as_mut() else {
-            return;
-        };
-        if active.last_observed_turn == Some(combat.turn.turn_count) {
-            return;
-        }
-        active
-            .observed_turns
-            .push(CombatOutcomeFeatureVectorV1::from_combat(combat));
-        active.last_observed_turn = Some(combat.turn.turn_count);
     }
 
     pub fn observe_input_before(
@@ -161,23 +132,18 @@ impl CombatOutcomeTracker {
     pub fn finish(
         &mut self,
         case_id: impl Into<String>,
-        split_group_id: impl Into<String>,
         finished: &FinishedActiveCombat,
-        continuation_policy_manifest: impl Into<String>,
     ) -> CombatBaselineOutcomeV1 {
         let draft = self.active.take().unwrap_or(CombatOutcomeDraft {
             start_hp: finished.combat_state.entities.player.current_hp,
             potions_used: 0,
             potions_discarded: 0,
-            observed_turns: Vec::new(),
-            last_observed_turn: None,
         });
         let final_hp = finished.combat_state.entities.player.current_hp;
-        let case_id = case_id.into();
         let outcome = CombatBaselineOutcomeV1 {
             schema_name: COMBAT_BASELINE_OUTCOME_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_BASELINE_OUTCOME_SCHEMA_VERSION,
-            case_id: case_id.clone(),
+            case_id: case_id.into(),
             terminal: combat_terminal(&finished.engine_state, &finished.combat_state),
             start_hp: draft.start_hp,
             final_hp,
@@ -192,58 +158,12 @@ impl CombatOutcomeTracker {
                 .card_ids_played_this_combat
                 .len() as u32,
         };
-        let continuation_policy_manifest = continuation_policy_manifest.into();
-        self.last_training_examples = match outcome.terminal {
-            CombatTerminal::Win | CombatTerminal::Loss => draft
-                .observed_turns
-                .into_iter()
-                .map(|features| CombatOutcomeTrainingExampleV1 {
-                    features,
-                    victory: outcome.terminal == CombatTerminal::Win,
-                    terminal_hp_fraction: f64::from(final_hp.max(0))
-                        / f64::from(finished.combat_state.entities.player.max_hp.max(1)),
-                    provenance: CombatOutcomeLabelProvenanceV1::RealizedBehaviorCombat,
-                    continuation_policy_manifest: continuation_policy_manifest.clone(),
-                })
-                .collect(),
-            CombatTerminal::Unresolved => Vec::new(),
-        };
-        if !self.last_training_examples.is_empty() {
-            self.training_cases.push(CombatOutcomeTrainingCaseV1 {
-                case_id,
-                split_group_id: split_group_id.into(),
-                examples: self.last_training_examples.clone(),
-            });
-        }
         self.last = Some(outcome.clone());
         outcome
     }
 
     pub fn last(&self) -> Option<&CombatBaselineOutcomeV1> {
         self.last.as_ref()
-    }
-
-    pub fn last_training_examples(&self) -> &[CombatOutcomeTrainingExampleV1] {
-        &self.last_training_examples
-    }
-
-    pub fn training_batches(
-        &self,
-    ) -> Result<Vec<CombatOutcomeTrainingBatchV1>, CombatOutcomeDatasetErrorV1> {
-        let mut cases_by_policy = std::collections::BTreeMap::<String, Vec<_>>::new();
-        for case in &self.training_cases {
-            let Some(example) = case.examples.first() else {
-                continue;
-            };
-            cases_by_policy
-                .entry(example.continuation_policy_manifest.clone())
-                .or_default()
-                .push(case.clone());
-        }
-        cases_by_policy
-            .into_iter()
-            .map(|(policy, cases)| CombatOutcomeTrainingBatchV1::new(policy, cases))
-            .collect()
     }
 }
 
@@ -346,8 +266,6 @@ mod tests {
 
         let mut tracker = CombatOutcomeTracker::default();
         tracker.ensure_started(Some(&combat_state));
-        combat_state.turn.turn_count = combat_state.turn.turn_count.saturating_add(1);
-        tracker.observe_player_turn_boundary(Some(&combat_state));
         combat_state.entities.player.current_hp = 65;
         for monster in &mut combat_state.entities.monsters {
             monster.current_hp = 0;
@@ -358,21 +276,12 @@ mod tests {
             ),
             combat_state,
         };
-        let outcome = tracker.finish("jaw", "test-run-root", &finished, "test-realized-policy-v1");
+        let outcome = tracker.finish("jaw", &finished);
 
         assert_eq!(outcome.start_hp, 72);
         assert_eq!(outcome.final_hp, 65);
         assert_eq!(outcome.hp_loss, 7);
         assert_eq!(outcome.cards_played, 1);
-        assert_eq!(tracker.last_training_examples().len(), 2);
-        assert!(tracker
-            .last_training_examples()
-            .iter()
-            .all(|example| example.continuation_policy_manifest == "test-realized-policy-v1"));
-        let batches = tracker.training_batches().expect("training batch is valid");
-        assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].cases[0].case_id, "jaw");
-        assert_eq!(batches[0].cases[0].split_group_id, "test-run-root");
     }
 
     fn sample_baseline() -> CombatBaselineOutcomeV1 {

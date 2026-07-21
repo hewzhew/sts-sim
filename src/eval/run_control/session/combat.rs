@@ -130,23 +130,6 @@ impl RunControlSession {
         self.combat_outcomes.last()
     }
 
-    pub fn last_combat_outcome_training_examples(
-        &self,
-    ) -> &[sts_combat_planner::CombatOutcomeTrainingExampleV1] {
-        self.combat_outcomes.last_training_examples()
-    }
-
-    /// Returns all realized combat cases from this run, separated by the
-    /// continuation policy that produced their labels.
-    pub fn combat_outcome_training_batches(
-        &self,
-    ) -> Result<
-        Vec<sts_combat_planner::CombatOutcomeTrainingBatchV1>,
-        sts_combat_planner::CombatOutcomeDatasetErrorV1,
-    > {
-        self.combat_outcomes.training_batches()
-    }
-
     pub fn last_completed_combat_automation_trajectory(
         &self,
     ) -> Option<&CombatAutomationTrajectoryRecordV1> {

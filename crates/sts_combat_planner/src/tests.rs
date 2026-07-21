@@ -133,7 +133,6 @@ struct TinyTurnStepper {
     duplicate_play_surface: bool,
     lethal_from_turn: Option<u32>,
     terminal_loss: bool,
-    play_damage: i32,
     calls: Arc<Mutex<Vec<ClientInput>>>,
     successor_salt: Arc<AtomicI32>,
 }
@@ -145,7 +144,6 @@ impl TinyTurnStepper {
             duplicate_play_surface: false,
             lethal_from_turn: None,
             terminal_loss: false,
-            play_damage: 0,
             calls: Arc::new(Mutex::new(Vec::new())),
             successor_salt: Arc::new(AtomicI32::new(0)),
         }
@@ -182,13 +180,6 @@ impl TinyTurnStepper {
     fn losing() -> Self {
         Self {
             terminal_loss: true,
-            ..Self::plain()
-        }
-    }
-
-    fn damaging(play_damage: i32) -> Self {
-        Self {
-            play_damage,
             ..Self::plain()
         }
     }
@@ -263,9 +254,6 @@ impl CombatStepper for TinyTurnStepper {
                     target: None,
                 } => {
                     next.combat.turn.energy = 0;
-                    if let Some(monster) = next.combat.entities.monsters.first_mut() {
-                        monster.current_hp = monster.current_hp.saturating_sub(self.play_damage);
-                    }
                     next.combat.turn.turn_start_draw_modifier +=
                         self.successor_salt.load(Ordering::SeqCst);
                     if self.opens_selection {

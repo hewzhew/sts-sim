@@ -17,53 +17,6 @@ fn finish_agenda(stepper: &TinyTurnStepper) -> CombatPlannerAgendaSession {
     session
 }
 
-fn outcome_example(enemy_hp: i32, energy: u8, victory: bool) -> CombatOutcomeTrainingExampleV1 {
-    let mut position = root().position().clone();
-    position.combat.turn.turn_count = 2;
-    position.combat.turn.energy = energy;
-    position.combat.entities.monsters[0].current_hp = enemy_hp;
-    CombatOutcomeTrainingExampleV1::from_position(
-        &position,
-        victory,
-        if victory { 50 } else { 0 },
-        80,
-        CombatOutcomeLabelProvenanceV1::ExactScenarioReplay,
-        "tiny-exact-continuation-v1",
-    )
-}
-
-fn calibrated_outcome_model() -> CombatOutcomeModelV1 {
-    let training = (0..24)
-        .flat_map(|index| {
-            [
-                outcome_example(16 + index % 8, (index % 2) as u8, true),
-                outcome_example(36 + index % 8, (index % 2) as u8, false),
-            ]
-        })
-        .collect::<Vec<_>>();
-    let calibration = (0..8)
-        .flat_map(|index| {
-            [
-                outcome_example(18 + index % 4, (index % 2) as u8, true),
-                outcome_example(38 + index % 4, (index % 2) as u8, false),
-            ]
-        })
-        .collect::<Vec<_>>();
-    let config = CombatOutcomeModelTrainingConfigV1 {
-        epochs: 4_000,
-        learning_rate: 0.2,
-        ..CombatOutcomeModelTrainingConfigV1::default()
-    };
-    CombatOutcomeModelV1::fit(
-        "exact-outcome-test-v1",
-        "tiny-exact-continuation-v1",
-        &training,
-        &calibration,
-        config,
-    )
-    .unwrap()
-}
-
 #[test]
 fn defers_instead_of_ranking_partial_evidence() {
     let stepper = TinyTurnStepper::lethal();
@@ -164,25 +117,6 @@ fn leaves_different_nonwinning_exact_states_incomparable() {
         vec![CombatPlannerDecisionGap::IncomparableExactProspects]
     );
     assert_eq!(deferral.nondominated_prospects.len(), 2);
-}
-
-#[test]
-fn calibrated_outcome_model_selects_only_when_success_intervals_separate() {
-    let session = finish_agenda(&TinyTurnStepper::damaging(20));
-
-    let result = decide_combat_option_with_outcome_model(&session, &calibrated_outcome_model());
-    let CombatPlannerDecisionResult::Selected(decision) = result else {
-        panic!("calibrated separated outcome estimates should select: {result:?}");
-    };
-    assert!(matches!(
-        decision.basis,
-        CombatPlannerDecisionBasis::PreferredCalibratedOutcome { .. }
-    ));
-    assert_eq!(decision.selected_option.actions().len(), 2);
-    assert!(matches!(
-        decision.selected_option.actions()[0].input,
-        ClientInput::PlayCard { .. }
-    ));
 }
 
 #[test]

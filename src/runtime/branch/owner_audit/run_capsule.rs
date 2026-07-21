@@ -109,9 +109,6 @@ impl RunCapsule {
         if let Some(save) =
             self.save_frontier(args, generation, next_branch_id, frontier, "running", None)?
         {
-            if let Some(branch) = frontier.front() {
-                self.save_outcome_training_batches(args, branch)?;
-            }
             return Ok(save);
         }
         if let Some(branch) = frontier.front() {
@@ -127,8 +124,7 @@ impl RunCapsule {
         generation: usize,
         branch: &Branch,
     ) -> Result<(), String> {
-        self.store.write_result(args, generation, branch)?;
-        self.save_outcome_training_batches(args, branch)
+        self.store.write_result(args, generation, branch)
     }
 
     pub(super) fn save_completed_result(
@@ -139,8 +135,7 @@ impl RunCapsule {
         reason: &'static str,
     ) -> Result<(), String> {
         self.store
-            .write_completed_result(args, generation, branch, reason)?;
-        self.save_outcome_training_batches(args, branch)
+            .write_completed_result(args, generation, branch, reason)
     }
 
     pub(super) fn save_paused_recovery(
@@ -177,26 +172,6 @@ impl RunCapsule {
             return Ok(self.store.terminal_summary());
         }
         Ok(ArtifactWriteSummary::default())
-    }
-
-    fn save_outcome_training_batches(&self, args: Args, branch: &Branch) -> Result<(), String> {
-        let run_id = self.store.trajectory_run_id(args)?;
-        let root = self.store.root_path().join("combat_outcome_training");
-        for (index, mut batch) in branch
-            .session
-            .combat_outcome_training_batches()
-            .map_err(|error| format!("invalid combat outcome training data: {error:?}"))?
-            .into_iter()
-            .enumerate()
-        {
-            for case in &mut batch.cases {
-                case.case_id = format!("{run_id}:{}", case.case_id);
-            }
-            let path = root.join(format!("policy-{index:02}.json"));
-            sts_combat_planner::save_combat_outcome_training_batch_v1(&path, &batch)
-                .map_err(|error| format!("could not save {}: {error:?}", path.display()))?;
-        }
-        Ok(())
     }
 
     pub(super) fn record_stopped_trajectory(
