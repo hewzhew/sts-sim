@@ -108,6 +108,8 @@ pub struct OracleAnalysisChildViewV1 {
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatProgressV1 {
+    pub historical_generation_work: u64,
+    pub current_search_generation_work: u64,
     pub generation_work: u64,
     pub exact_states: usize,
     pub completed_turn_options: usize,
@@ -1346,6 +1348,8 @@ fn parse_choice_ref(value: &str) -> Result<(usize, &str), String> {
 fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatProgressV1 {
     let progress: OracleRunCombatWorkProgressV1 = work.progress();
     OracleAnalysisCombatProgressV1 {
+        historical_generation_work: progress.historical_generation_work,
+        current_search_generation_work: progress.current_search_generation_work,
         generation_work: progress.generation_work,
         exact_states: progress.exact_states,
         completed_turn_options: progress.completed_turn_options,

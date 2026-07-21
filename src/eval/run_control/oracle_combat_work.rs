@@ -75,6 +75,12 @@ pub struct OracleRunCombatWorkCheckpointV1 {
 
 #[derive(Clone, Debug)]
 pub(super) struct OracleRunCombatWorkProgressV1 {
+    /// Work charged by earlier search attempts whose frontier was not
+    /// serialized and therefore is not present in the current session.
+    pub historical_generation_work: u64,
+    /// Work represented by the currently resident search frontier.
+    pub current_search_generation_work: u64,
+    /// Historical plus current work. This is accounting, not resumable depth.
     pub generation_work: u64,
     pub engine_steps: usize,
     pub exact_states: usize,
@@ -518,6 +524,8 @@ impl OracleRunCombatWorkV1 {
         let incumbent_final_hp =
             incumbent.map(|witness| witness.final_position.combat.entities.player.current_hp);
         OracleRunCombatWorkProgressV1 {
+            historical_generation_work: self.prior_generation_work,
+            current_search_generation_work: counters.generation_work as u64,
             generation_work: self
                 .prior_generation_work
                 .saturating_add(counters.generation_work as u64),

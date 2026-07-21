@@ -115,6 +115,8 @@ fn compact_combat_progress(combat: Option<&OracleAnalysisCombatProgressV1>) -> V
         return Value::Null;
     };
     json!({
+        "historical_generation_work": combat.historical_generation_work,
+        "current_search_generation_work": combat.current_search_generation_work,
         "generation_work": combat.generation_work,
         "exact_states": combat.exact_states,
         "completed_turn_options": combat.completed_turn_options,

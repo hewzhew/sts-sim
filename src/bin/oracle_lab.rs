@@ -330,7 +330,11 @@ enum Command {
         #[arg(long)]
         workspace: PathBuf,
     },
-    /// Incrementally search the combat at the current cursor.
+    /// Run one bounded tactical attempt at the current cursor.
+    ///
+    /// Exact state, accounting, and any verified witness persist in the
+    /// workspace. The in-memory tactical frontier does not survive a process
+    /// exit, so repeated invocations restart search from the same combat root.
     Advance {
         #[arg(long)]
         workspace: PathBuf,
