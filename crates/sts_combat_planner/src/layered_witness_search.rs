@@ -96,6 +96,96 @@ pub struct LayeredCombatWitnessCounters {
     pub deferred_windows: usize,
     pub recovered_window_expansions: usize,
     pub maximum_window_discrepancy: usize,
+    pub solved_suffix_matches: usize,
+    pub solved_suffix_replay_engine_steps: usize,
+}
+
+#[derive(Clone, Debug)]
+struct LayeredCombatSolvedSuffix {
+    actions: Arc<[TurnOptionAction]>,
+    negative_log_policy: f64,
+    final_hp: i32,
+}
+
+/// Exact, replay-verified tactical suffixes keyed by their complete combat
+/// state. This is proof reuse, not heuristic authority: a match becomes a
+/// witness only after the composed prefix and suffix replay from the current
+/// search root to a terminal win.
+#[derive(Clone, Debug, Default)]
+pub struct LayeredCombatSolvedSuffixIndex {
+    by_exact_state_hash: HashMap<String, LayeredCombatSolvedSuffix>,
+}
+
+impl LayeredCombatSolvedSuffixIndex {
+    pub fn len(&self) -> usize {
+        self.by_exact_state_hash.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_exact_state_hash.is_empty()
+    }
+
+    pub fn insert_verified_inputs(
+        &mut self,
+        root: CombatDecisionRoot,
+        inputs: impl IntoIterator<Item = sts_core::state::core::ClientInput>,
+        max_engine_steps_per_transition: usize,
+        stepper: &dyn CombatStepper,
+    ) -> Result<(), OracleCombatWitnessReplayError> {
+        let mut position = root.position().clone();
+        let mut actions = Vec::new();
+        for (action_index, input) in inputs.into_iter().enumerate() {
+            if stepper.choice_for_legal_input(&position, &input).is_none() {
+                return Err(OracleCombatWitnessReplayError::IllegalInput { action_index });
+            }
+            let step = stepper.apply_to_stable(
+                &position,
+                input.clone(),
+                CombatStepLimits {
+                    max_engine_steps: max_engine_steps_per_transition,
+                    deadline: None,
+                },
+            );
+            if step.truncated || step.timed_out {
+                return Err(OracleCombatWitnessReplayError::TransitionStepLimit { action_index });
+            }
+            actions.push(TurnOptionAction {
+                input,
+                expected_successor_hash: exact_hash(&step.position),
+                engine_steps: step.engine_steps,
+            });
+            position = step.position;
+        }
+        if stepper.terminal(&position) != CombatTerminal::Win {
+            return Err(OracleCombatWitnessReplayError::FinalStateIsNotWin);
+        }
+        let suffix = LayeredCombatSolvedSuffix {
+            // Imported exact actions do not carry the policy distribution that
+            // originally discovered them. Keep the existing conservative
+            // action-count surrogate used for restored/advisor trajectories;
+            // it affects diagnostics only, never suffix matching or validity.
+            negative_log_policy: actions.len() as f64,
+            actions: Arc::from(actions),
+            final_hp: position.combat.entities.player.current_hp,
+        };
+        let exact_state_hash = root.exact_state_hash().to_owned();
+        let replace = self
+            .by_exact_state_hash
+            .get(&exact_state_hash)
+            .is_none_or(|current| {
+                suffix.final_hp > current.final_hp
+                    || (suffix.final_hp == current.final_hp
+                        && suffix.actions.len() < current.actions.len())
+            });
+        if replace {
+            self.by_exact_state_hash.insert(exact_state_hash, suffix);
+        }
+        Ok(())
+    }
+
+    fn get(&self, exact_state_hash: &str) -> Option<&LayeredCombatSolvedSuffix> {
+        self.by_exact_state_hash.get(exact_state_hash)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -311,6 +401,8 @@ pub struct LayeredCombatWitnessSession {
     original_root: CombatPosition,
     config: LayeredCombatWitnessConfig,
     policy: SharedCombatActionPolicy,
+    solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
+    checked_root_suffix: bool,
     agenda: CohortAgenda,
     next_cohort_id: usize,
     depth_limited: Vec<BeamCohort>,
@@ -362,6 +454,7 @@ enum LineagePortfolioContinuation {
 pub struct LayeredCombatLineagePortfolioSession {
     original_root: CombatPosition,
     policy: SharedCombatActionPolicy,
+    solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
     config: LayeredCombatLineagePortfolioConfig,
     entries: Vec<LineagePortfolioEntry>,
     selected_parent_count: usize,
@@ -421,6 +514,20 @@ impl LayeredCombatWitnessSession {
         config: LayeredCombatWitnessConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
+        Self::with_policy_and_solved_suffixes(
+            root,
+            config,
+            policy,
+            Arc::new(LayeredCombatSolvedSuffixIndex::default()),
+        )
+    }
+
+    pub fn with_policy_and_solved_suffixes(
+        root: CombatDecisionRoot,
+        config: LayeredCombatWitnessConfig,
+        policy: SharedCombatActionPolicy,
+        solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
+    ) -> Self {
         let original_root = root.position().clone();
         let root_state = BeamState {
             exact_state_hash: root.exact_state_hash().to_owned(),
@@ -445,6 +552,8 @@ impl LayeredCombatWitnessSession {
             original_root,
             config,
             policy,
+            solved_suffixes,
+            checked_root_suffix: false,
             agenda,
             next_cohort_id,
             depth_limited: Vec::new(),
@@ -515,6 +624,38 @@ impl LayeredCombatWitnessSession {
     ) -> LayeredCombatWitnessReport {
         if let Some(status) = self.terminal_status.clone() {
             return self.snapshot(status);
+        }
+        if !self.checked_root_suffix {
+            self.checked_root_suffix = true;
+            let root_hash = exact_hash(&self.original_root);
+            if let Some(result) = compose_solved_suffix(
+                &self.original_root,
+                &root_hash,
+                Vec::new(),
+                0.0,
+                self.solved_suffixes.as_ref(),
+                stepper,
+            ) {
+                self.counters.solved_suffix_matches =
+                    self.counters.solved_suffix_matches.saturating_add(1);
+                match result {
+                    Ok(witness) => {
+                        self.counters.solved_suffix_replay_engine_steps = self
+                            .counters
+                            .solved_suffix_replay_engine_steps
+                            .saturating_add(witness.replay_engine_steps);
+                        self.witness = Some(witness);
+                        let status = LayeredCombatWitnessStatus::WitnessFound;
+                        self.terminal_status = Some(status.clone());
+                        return self.snapshot(status);
+                    }
+                    Err(error) => {
+                        let status = LayeredCombatWitnessStatus::ReplayMismatch(error);
+                        self.terminal_status = Some(status.clone());
+                        return self.snapshot(status);
+                    }
+                }
+            }
         }
         let work_limit = self
             .counters
@@ -671,6 +812,8 @@ impl LayeredCombatWitnessSession {
         deadline: Option<Instant>,
         stepper: &dyn CombatStepper,
     ) -> bool {
+        let solved_suffixes = self.solved_suffixes.clone();
+        let original_root = self.original_root.clone();
         let Some(active) = self.active_layer.as_mut() else {
             return false;
         };
@@ -772,6 +915,33 @@ impl LayeredCombatWitnessSession {
                         atomic_depth,
                         negative_log_policy,
                     };
+                    if let Some(result) = compose_solved_suffix(
+                        &original_root,
+                        &candidate.exact_state_hash,
+                        flatten_action_trail(candidate.trail.as_ref()),
+                        candidate.negative_log_policy,
+                        solved_suffixes.as_ref(),
+                        stepper,
+                    ) {
+                        self.counters.solved_suffix_matches =
+                            self.counters.solved_suffix_matches.saturating_add(1);
+                        match result {
+                            Ok(witness) => {
+                                self.counters.solved_suffix_replay_engine_steps = self
+                                    .counters
+                                    .solved_suffix_replay_engine_steps
+                                    .saturating_add(witness.replay_engine_steps);
+                                self.witness = Some(witness);
+                                self.terminal_status =
+                                    Some(LayeredCombatWitnessStatus::WitnessFound);
+                            }
+                            Err(error) => {
+                                self.terminal_status =
+                                    Some(LayeredCombatWitnessStatus::ReplayMismatch(error));
+                            }
+                        }
+                        break;
+                    }
                     match active
                         .next_by_hash
                         .entry(candidate.exact_state_hash.clone())
@@ -938,6 +1108,22 @@ impl LayeredCombatCandidateRaceSession {
         config: LayeredCombatCandidateRaceConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
+        Self::from_window_with_solved_suffixes(
+            original_root,
+            window,
+            config,
+            policy,
+            Arc::new(LayeredCombatSolvedSuffixIndex::default()),
+        )
+    }
+
+    pub fn from_window_with_solved_suffixes(
+        original_root: CombatDecisionRoot,
+        window: LayeredCombatDeferredWindow,
+        config: LayeredCombatCandidateRaceConfig,
+        policy: SharedCombatActionPolicy,
+        solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
+    ) -> Self {
         let entries = window
             .candidates
             .into_iter()
@@ -949,11 +1135,14 @@ impl LayeredCombatCandidateRaceSession {
                     exact_state_hash: candidate.exact_state_hash,
                     prefix_actions: candidate.actions,
                     prefix_negative_log_policy: candidate.negative_log_policy,
-                    session: Box::new(LayeredCombatWitnessSession::with_policy(
-                        root,
-                        config.continuation,
-                        policy.clone(),
-                    )),
+                    session: Box::new(
+                        LayeredCombatWitnessSession::with_policy_and_solved_suffixes(
+                            root,
+                            config.continuation,
+                            policy.clone(),
+                            solved_suffixes.clone(),
+                        ),
+                    ),
                     continuation_anchor_cost: None,
                     continuation_guides: BTreeMap::new(),
                     found_witness: false,
@@ -1319,6 +1508,22 @@ impl LayeredCombatLineagePortfolioSession {
         config: LayeredCombatLineagePortfolioConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
+        Self::from_lineage_windows_with_solved_suffixes(
+            original_root,
+            windows,
+            config,
+            policy,
+            Arc::new(LayeredCombatSolvedSuffixIndex::default()),
+        )
+    }
+
+    pub fn from_lineage_windows_with_solved_suffixes(
+        original_root: CombatDecisionRoot,
+        windows: Vec<LayeredCombatLineageWindow>,
+        config: LayeredCombatLineagePortfolioConfig,
+        policy: SharedCombatActionPolicy,
+        solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
+    ) -> Self {
         let parent_ranks = rank_layered_combat_lineage_parents(&windows, policy.as_ref());
         let parents_per_view = config.parents_per_view.max(1);
         let selected_parents = parent_ranks
@@ -1389,11 +1594,12 @@ impl LayeredCombatLineagePortfolioSession {
                     completed_engine_steps: 0,
                     recursive_splits_remaining: config.recursive_splits,
                     continuation: LineagePortfolioContinuation::CandidateRace(Box::new(
-                        LayeredCombatCandidateRaceSession::from_window(
+                        LayeredCombatCandidateRaceSession::from_window_with_solved_suffixes(
                             root,
                             lineage.window,
                             race_config,
                             policy.clone(),
+                            solved_suffixes.clone(),
                         ),
                     )),
                     found_witness: false,
@@ -1420,6 +1626,7 @@ impl LayeredCombatLineagePortfolioSession {
         Self {
             original_root: original_position,
             policy,
+            solved_suffixes,
             config,
             entries,
             selected_parent_count,
@@ -1495,6 +1702,7 @@ impl LayeredCombatLineagePortfolioSession {
             };
             let original_root = self.original_root.clone();
             let policy = self.policy.clone();
+            let solved_suffixes = self.solved_suffixes.clone();
             let config = self.config;
             let (witness, replay_mismatch, recursive_windows) = {
                 let entry = &mut self.entries[entry_index];
@@ -1545,7 +1753,7 @@ impl LayeredCombatLineagePortfolioSession {
                 let root = CombatDecisionRoot::new(original_root)
                     .expect("portfolio root was already validated");
                 entry.continuation = LineagePortfolioContinuation::ChildPortfolio(Box::new(
-                    LayeredCombatLineagePortfolioSession::from_lineage_windows(
+                    LayeredCombatLineagePortfolioSession::from_lineage_windows_with_solved_suffixes(
                         root,
                         windows,
                         LayeredCombatLineagePortfolioConfig {
@@ -1553,6 +1761,7 @@ impl LayeredCombatLineagePortfolioSession {
                             ..config
                         },
                         policy,
+                        solved_suffixes,
                     ),
                 ));
                 true
@@ -2103,6 +2312,30 @@ fn replay_witness(
         replay_engine_steps: engine_steps,
         discovery_source: OracleCombatWitnessDiscoverySource::PlannerSearch,
     })
+}
+
+fn compose_solved_suffix(
+    original_root: &CombatPosition,
+    exact_state_hash: &str,
+    mut prefix_actions: Vec<TurnOptionAction>,
+    prefix_negative_log_policy: f64,
+    solved_suffixes: &LayeredCombatSolvedSuffixIndex,
+    stepper: &dyn CombatStepper,
+) -> Option<Result<OracleCombatWitness, OracleCombatWitnessReplayError>> {
+    let suffix = solved_suffixes.get(exact_state_hash)?;
+    prefix_actions.extend(suffix.actions.iter().cloned());
+    Some(
+        replay_witness(
+            original_root,
+            &prefix_actions,
+            prefix_negative_log_policy + suffix.negative_log_policy,
+            stepper,
+        )
+        .map(|mut witness| {
+            witness.discovery_source = OracleCombatWitnessDiscoverySource::SolvedSuffixComposition;
+            witness
+        }),
+    )
 }
 
 fn report(

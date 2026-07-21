@@ -11,12 +11,12 @@ use sts_combat_planner::{
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
-    LayeredCombatLineagePortfolioSession, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
-    LayeredCombatWitnessSession, OracleCombatOneTurnLossEvidence,
-    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
-    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
-    TurnOptionGeneratorSession,
+    LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
+    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
+    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
+    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
+    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
@@ -287,6 +287,10 @@ enum Command {
         portfolio_recursive_splits: usize,
         #[arg(long, default_value_t = 10)]
         nested_continuation_turn_layers: usize,
+        #[arg(long)]
+        solved_suffix_case: Option<PathBuf>,
+        #[arg(long)]
+        solved_suffix_actions: Option<PathBuf>,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -1119,6 +1123,46 @@ fn load_exact_turn_corridor(
     })
 }
 
+fn load_layered_solved_suffix_index(
+    case_path: Option<&PathBuf>,
+    actions_path: Option<&PathBuf>,
+    max_engine_steps_per_transition: usize,
+) -> Result<Arc<LayeredCombatSolvedSuffixIndex>, String> {
+    let (Some(case_path), Some(actions_path)) = (case_path, actions_path) else {
+        if case_path.is_some() || actions_path.is_some() {
+            return Err(
+                "--solved-suffix-case and --solved-suffix-actions must be provided together"
+                    .to_string(),
+            );
+        }
+        return Ok(Arc::new(LayeredCombatSolvedSuffixIndex::default()));
+    };
+    let corridor =
+        load_exact_turn_corridor(case_path, actions_path, max_engine_steps_per_transition)?;
+    let mut suffixes = LayeredCombatSolvedSuffixIndex::default();
+    for (turn_index, position) in corridor.positions_by_rank.iter().enumerate() {
+        let inputs = corridor.transition_actions[turn_index..]
+            .iter()
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>();
+        let root = CombatDecisionRoot::new(position.clone()).map_err(|error| {
+            format!("invalid solved suffix root at turn segment {turn_index}: {error:?}")
+        })?;
+        suffixes
+            .insert_verified_inputs(
+                root,
+                inputs,
+                max_engine_steps_per_transition,
+                &EngineCombatStepper,
+            )
+            .map_err(|error| {
+                format!("solved suffix turn segment {turn_index} failed replay: {error:?}")
+            })?;
+    }
+    Ok(Arc::new(suffixes))
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
     validate_canonical_launch(cli.canonical_fast_run)?;
@@ -1449,6 +1493,8 @@ fn main() -> Result<(), String> {
             portfolio_service_quantum_work,
             portfolio_recursive_splits,
             nested_continuation_turn_layers,
+            solved_suffix_case,
+            solved_suffix_actions,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -1461,6 +1507,11 @@ fn main() -> Result<(), String> {
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let deadline = Instant::now() + Duration::from_millis(wall_ms);
             let policy = existing_combat_knowledge_policy_v1();
+            let solved_suffixes = load_layered_solved_suffix_index(
+                solved_suffix_case.as_ref(),
+                solved_suffix_actions.as_ref(),
+                max_engine_steps_per_transition,
+            )?;
             let base_config = LayeredCombatWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition,
@@ -1474,8 +1525,12 @@ fn main() -> Result<(), String> {
                 generation_quantum_work,
                 max_turn_layers: 1,
             };
-            let mut source =
-                LayeredCombatWitnessSession::with_policy(source_root, base_config, policy.clone());
+            let mut source = LayeredCombatWitnessSession::with_policy_and_solved_suffixes(
+                source_root,
+                base_config,
+                policy.clone(),
+                solved_suffixes.clone(),
+            );
             let source_report = source.advance(
                 LayeredCombatWitnessQuantum {
                     additional_generation_work: maximum_generation_work_per_layer.max(1),
@@ -1486,6 +1541,54 @@ fn main() -> Result<(), String> {
                 },
                 &EngineCombatStepper,
             );
+            if let Some(witness) = source_report.witness.as_ref() {
+                if let Some(path) = export_witness_actions.as_ref() {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                    }
+                    let inputs = witness
+                        .actions
+                        .iter()
+                        .map(|action| action.input.clone())
+                        .collect::<Vec<_>>();
+                    std::fs::write(
+                        path,
+                        serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                return print_json(&json!({
+                    "schema_name": "OracleCombatCaseLayeredWindowRaceV1",
+                    "schema_version": 1,
+                    "case": case,
+                    "runtime": oracle_lab_runtime_identity(),
+                    "mode": {
+                        "scheduler": "resumable_candidate_continuation_race",
+                        "v2_donor_enabled": false,
+                        "solved_suffix_count": solved_suffixes.len(),
+                    },
+                    "elapsed_ms": command_started.elapsed().as_millis(),
+                    "source": {
+                        "status": format!("{:?}", source_report.status),
+                        "generation_work": source_report.counters.generation_work,
+                        "solved_suffix_matches": source_report.counters.solved_suffix_matches,
+                        "solved_suffix_replay_engine_steps": source_report.counters.solved_suffix_replay_engine_steps,
+                    },
+                    "race": null,
+                    "lineage_portfolio": null,
+                    "exported_witness_actions": export_witness_actions,
+                    "witness": {
+                        "final_hp": witness.final_position.combat.entities.player.current_hp,
+                        "hp_loss": initial_hp.saturating_sub(
+                            witness.final_position.combat.entities.player.current_hp,
+                        ),
+                        "action_count": witness.actions.len(),
+                        "negative_log_policy": witness.negative_log_policy,
+                        "replay_engine_steps": witness.replay_engine_steps,
+                        "discovery_source": format!("{:?}", witness.discovery_source),
+                    },
+                }));
+            }
             let window = source
                 .deferred_windows()
                 .into_iter()
@@ -1509,7 +1612,7 @@ fn main() -> Result<(), String> {
                 },
                 ..base_config
             };
-            let mut race = LayeredCombatCandidateRaceSession::from_window(
+            let mut race = LayeredCombatCandidateRaceSession::from_window_with_solved_suffixes(
                 original_root,
                 window,
                 LayeredCombatCandidateRaceConfig {
@@ -1517,6 +1620,7 @@ fn main() -> Result<(), String> {
                     service_quantum_work: continuation_service_quantum_work,
                 },
                 policy.clone(),
+                solved_suffixes.clone(),
             );
             let remaining_work = max_nodes.saturating_sub(source_report.counters.generation_work);
             let race_report = race.advance(
@@ -1539,21 +1643,23 @@ fn main() -> Result<(), String> {
                     max_turn_layers: nested_continuation_turn_layers,
                     ..base_config
                 };
-                let mut portfolio = LayeredCombatLineagePortfolioSession::from_lineage_windows(
-                    portfolio_root,
-                    lineage_windows.clone(),
-                    LayeredCombatLineagePortfolioConfig {
-                        candidate_race: LayeredCombatCandidateRaceConfig {
-                            continuation: nested_config,
-                            service_quantum_work: continuation_service_quantum_work,
+                let mut portfolio =
+                    LayeredCombatLineagePortfolioSession::from_lineage_windows_with_solved_suffixes(
+                        portfolio_root,
+                        lineage_windows.clone(),
+                        LayeredCombatLineagePortfolioConfig {
+                            candidate_race: LayeredCombatCandidateRaceConfig {
+                                continuation: nested_config,
+                                service_quantum_work: continuation_service_quantum_work,
+                            },
+                            parents_per_view: portfolio_parents_per_view,
+                            windows_per_parent: portfolio_windows_per_parent,
+                            service_quantum_work: portfolio_service_quantum_work,
+                            recursive_splits: portfolio_recursive_splits,
                         },
-                        parents_per_view: portfolio_parents_per_view,
-                        windows_per_parent: portfolio_windows_per_parent,
-                        service_quantum_work: portfolio_service_quantum_work,
-                        recursive_splits: portfolio_recursive_splits,
-                    },
-                    policy.clone(),
-                );
+                        policy.clone(),
+                        solved_suffixes.clone(),
+                    );
                 let remaining_work = max_nodes
                     .saturating_sub(source_report.counters.generation_work)
                     .saturating_sub(race_report.counters.generation_work);
@@ -1669,6 +1775,7 @@ fn main() -> Result<(), String> {
                 "mode": {
                     "scheduler": "resumable_candidate_continuation_race",
                     "v2_donor_enabled": false,
+                    "solved_suffix_count": solved_suffixes.len(),
                 },
                 "elapsed_ms": command_started.elapsed().as_millis(),
                 "source": {
@@ -1728,6 +1835,7 @@ fn main() -> Result<(), String> {
                     "action_count": witness.actions.len(),
                     "negative_log_policy": witness.negative_log_policy,
                     "replay_engine_steps": witness.replay_engine_steps,
+                    "discovery_source": format!("{:?}", witness.discovery_source),
                 })),
             }))
         }

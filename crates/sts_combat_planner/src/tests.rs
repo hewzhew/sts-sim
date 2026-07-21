@@ -390,6 +390,69 @@ fn layered_search_keeps_a_complete_turn_sibling_until_the_next_layer() {
 }
 
 #[test]
+fn layered_search_replays_a_composed_exact_suffix_from_its_own_root() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let original_root = root();
+    let next_turn = stepper.apply_to_stable(
+        original_root.position(),
+        ClientInput::EndTurn,
+        CombatStepLimits {
+            max_engine_steps: 4,
+            deadline: None,
+        },
+    );
+    let suffix_root = CombatDecisionRoot::new(next_turn.position).unwrap();
+    let mut suffixes = LayeredCombatSolvedSuffixIndex::default();
+    suffixes
+        .insert_verified_inputs(suffix_root, [PLAY], 4, &stepper)
+        .unwrap();
+    let mut session = LayeredCombatWitnessSession::with_policy_and_solved_suffixes(
+        original_root,
+        LayeredCombatWitnessConfig {
+            generator: config(),
+            beam_width: 4,
+            retained_per_view: 2,
+            minimum_generation_work_per_layer: 16,
+            maximum_generation_work_per_layer: 64,
+            candidate_pool_multiplier: 2,
+            generation_quantum_work: 4,
+            max_turn_layers: 1,
+        },
+        Arc::new(PreferPlayPolicy),
+        Arc::new(suffixes),
+    );
+
+    let report = session.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert_eq!(report.status, LayeredCombatWitnessStatus::WitnessFound);
+    assert_eq!(report.counters.solved_suffix_matches, 1);
+    let witness = report.witness.expect("composed suffix should replay");
+    assert_eq!(
+        witness.discovery_source,
+        OracleCombatWitnessDiscoverySource::SolvedSuffixComposition
+    );
+    assert_eq!(
+        witness
+            .actions
+            .iter()
+            .map(|action| action.input.clone())
+            .collect::<Vec<_>>(),
+        vec![ClientInput::EndTurn, PLAY]
+    );
+    assert_eq!(
+        stepper.terminal(&witness.final_position),
+        CombatTerminal::Win
+    );
+}
+
+#[test]
 fn layered_search_recovers_a_winning_sibling_from_the_next_beam_window() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let report = search_layered_combat_witness(

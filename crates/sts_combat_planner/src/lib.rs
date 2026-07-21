@@ -44,9 +44,9 @@ pub use layered_witness_search::{
     LayeredCombatLineagePortfolioCounters, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioReport, LayeredCombatLineagePortfolioSession,
     LayeredCombatLineagePortfolioStatus, LayeredCombatLineageWindow, LayeredCombatParentWorkReport,
-    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessCounters,
-    LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum, LayeredCombatWitnessReport,
-    LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
+    LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessBudget, LayeredCombatWitnessConfig,
+    LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
