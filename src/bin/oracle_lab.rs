@@ -24,9 +24,8 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::runtime::branch::{
     call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1,
-    save_oracle_run_continuation_v1,
-    serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1,
-    OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    save_oracle_run_continuation_v1, serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1,
+    OracleAnalysisServiceCommandV1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
@@ -122,6 +121,19 @@ enum Command {
         /// one search run.
         #[arg(long)]
         watch_state_hash: Vec<String>,
+        /// Replay one complete verified witness and watch every exact player-
+        /// turn boundary without adding corridor guidance or changing search.
+        #[arg(long)]
+        watch_corridor_actions: Option<PathBuf>,
+        /// Start search after this many complete player turns from the watched
+        /// witness. This reuses the verified action file and avoids hand-
+        /// slicing JSON prefixes.
+        #[arg(
+            long,
+            requires = "watch_corridor_actions",
+            conflicts_with = "prefix_actions"
+        )]
+        corridor_prefix_turns: Option<usize>,
         /// Replay one or more exact legal input-prefix files in order before
         /// starting the planner. Repeat the flag to compose verified segments.
         #[arg(long)]
@@ -194,8 +206,20 @@ enum Command {
     TurnMembership {
         #[arg(long)]
         case: PathBuf,
-        #[arg(long)]
-        actions: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "corridor_actions",
+            conflicts_with = "corridor_actions"
+        )]
+        actions: Option<PathBuf>,
+        /// Complete verified witness from which one turn transition is
+        /// selected without hand-slicing action JSON.
+        #[arg(long, required_unless_present = "actions", requires = "corridor_rank")]
+        corridor_actions: Option<PathBuf>,
+        /// Zero-based player-turn boundary in --corridor-actions. The last
+        /// boundary checks the terminal winning segment.
+        #[arg(long, requires = "corridor_actions")]
+        corridor_rank: Option<usize>,
         #[arg(long, default_value_t = 100_000)]
         max_work: usize,
         #[arg(long, default_value_t = 5_000)]
@@ -604,12 +628,14 @@ struct ExactTurnCorridor {
     rank_by_exact_hash: HashMap<String, i32>,
     atomic_rank_by_exact_hash: HashMap<String, i32>,
     typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
+    positions_by_rank: Vec<sts_simulator::sim::combat::CombatPosition>,
+    transition_actions: Vec<Vec<ClientInput>>,
     action_count: usize,
     terminal_final_hp: i32,
 }
 
 impl ExactTurnCorridor {
-    fn report(&self, search: &OracleCombatWitnessSession, guide: ShadowCorridorGuide) -> Value {
+    fn membership_states(&self, search: &OracleCombatWitnessSession) -> Vec<Value> {
         let mut memberships = search.compact_state_memberships_by_exact_hashes(
             self.rank_by_exact_hash.keys().map(String::as_str),
         );
@@ -624,6 +650,18 @@ impl ExactTurnCorridor {
             })
             .collect::<Vec<_>>();
         states.sort_by_key(|(rank, _)| *rank);
+        states
+            .into_iter()
+            .map(|(rank, membership)| {
+                json!({
+                    "corridor_rank": rank,
+                    "membership": membership,
+                })
+            })
+            .collect()
+    }
+
+    fn report(&self, search: &OracleCombatWitnessSession, guide: ShadowCorridorGuide) -> Value {
         json!({
             "kind": match guide {
                 ShadowCorridorGuide::Exact => "exact_verified_turn_corridor_shadow",
@@ -637,10 +675,20 @@ impl ExactTurnCorridor {
             "action_count": self.action_count,
             "terminal": "Win",
             "terminal_final_hp": self.terminal_final_hp,
-            "states": states.into_iter().map(|(rank, membership)| json!({
-                "corridor_rank": rank,
-                "membership": membership,
-            })).collect::<Vec<_>>(),
+            "states": self.membership_states(search),
+        })
+    }
+
+    fn diagnostic_report(&self, search: &OracleCombatWitnessSession) -> Value {
+        json!({
+            "kind": "exact_verified_turn_corridor_watch",
+            "authority": "diagnostic_only",
+            "changes_search_order": false,
+            "exact_turn_states": self.rank_by_exact_hash.len(),
+            "action_count": self.action_count,
+            "terminal": "Win",
+            "terminal_final_hp": self.terminal_final_hp,
+            "states": self.membership_states(search),
         })
     }
 }
@@ -955,6 +1003,9 @@ fn load_exact_turn_corridor(
         (0, typed_combat_feature_components(&position)),
     );
     let mut next_turn_rank = 1i32;
+    let mut positions_by_rank = vec![position.clone()];
+    let mut transition_actions = Vec::new();
+    let mut current_transition_actions = Vec::new();
     for (action_index, input) in actions.iter().enumerate() {
         if stepper.choice_for_legal_input(&position, input).is_none() {
             return Err(format!(
@@ -963,6 +1014,7 @@ fn load_exact_turn_corridor(
             ));
         }
         let previous_turn = position.combat.turn.turn_count;
+        current_transition_actions.push(input.clone());
         let step = stepper.apply_to_stable(
             &position,
             input.clone(),
@@ -987,6 +1039,8 @@ fn load_exact_turn_corridor(
         if step.terminal == sts_simulator::sim::combat::CombatTerminal::Unresolved
             && position.combat.turn.turn_count != previous_turn
         {
+            transition_actions.push(std::mem::take(&mut current_transition_actions));
+            positions_by_rank.push(position.clone());
             rank_by_exact_hash.insert(
                 sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
                     &position.engine,
@@ -1004,10 +1058,22 @@ fn load_exact_turn_corridor(
     if stepper.terminal(&position) != sts_simulator::sim::combat::CombatTerminal::Win {
         return Err("shadow corridor action list is not an exact terminal win".to_string());
     }
+    if !current_transition_actions.is_empty() {
+        transition_actions.push(current_transition_actions);
+    }
+    if transition_actions.len() != positions_by_rank.len() {
+        return Err(format!(
+            "verified corridor has {} boundaries but {} outgoing turn segments",
+            positions_by_rank.len(),
+            transition_actions.len()
+        ));
+    }
     Ok(ExactTurnCorridor {
         rank_by_exact_hash,
         atomic_rank_by_exact_hash,
         typed_target_by_turn,
+        positions_by_rank,
+        transition_actions,
         action_count: actions.len(),
         terminal_final_hp: position.combat.entities.player.current_hp,
     })
@@ -1135,6 +1201,8 @@ fn main() -> Result<(), String> {
             anchor_only,
             without_v2_donor,
             watch_state_hash,
+            watch_corridor_actions,
+            corridor_prefix_turns,
             prefix_actions,
             readable,
             replay_only,
@@ -1149,11 +1217,17 @@ fn main() -> Result<(), String> {
             one_turn_loss_evidence_limit,
             one_turn_viability_evidence_limit,
         } => {
+            let watched_corridor = watch_corridor_actions
+                .as_ref()
+                .map(|actions| {
+                    load_exact_turn_corridor(&case, actions, max_engine_steps_per_transition)
+                })
+                .transpose()?;
             let case = load_combat_case(&case)?;
             let stepper = EngineCombatStepper;
             let initial_position = case.position.clone();
             let mut position = initial_position.clone();
-            let prefix = prefix_actions
+            let mut prefix = prefix_actions
                 .iter()
                 .map(|path| {
                     serde_json::from_slice::<Vec<ClientInput>>(
@@ -1165,6 +1239,33 @@ fn main() -> Result<(), String> {
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();
+            if let Some(turns) = corridor_prefix_turns {
+                let actions_path = watch_corridor_actions
+                    .as_ref()
+                    .expect("clap requires watched corridor actions");
+                let corridor_actions = serde_json::from_slice::<Vec<ClientInput>>(
+                    &std::fs::read(actions_path).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| format!("invalid corridor action list: {error}"))?;
+                if turns > 0 {
+                    let mut ended_turns = 0_usize;
+                    for input in corridor_actions {
+                        let ends_turn = matches!(input, ClientInput::EndTurn);
+                        prefix.push(input);
+                        if ends_turn {
+                            ended_turns = ended_turns.saturating_add(1);
+                            if ended_turns == turns {
+                                break;
+                            }
+                        }
+                    }
+                    if ended_turns != turns {
+                        return Err(format!(
+                            "corridor contains only {ended_turns} completed player turns; requested prefix {turns}"
+                        ));
+                    }
+                }
+            }
             let mut prefix_replay_actions = Vec::with_capacity(prefix.len());
             for (action_index, input) in prefix.iter().enumerate() {
                 if stepper.choice_for_legal_input(&position, input).is_none() {
@@ -1356,6 +1457,9 @@ fn main() -> Result<(), String> {
                 .iter()
                 .map(|hash| search.state_membership_by_exact_hash(hash))
                 .collect::<Vec<_>>();
+            let watched_corridor_report = watched_corridor
+                .as_ref()
+                .map(|corridor| corridor.diagnostic_report(&search));
             let watched_state = (watched_states.len() == 1)
                 .then(|| watched_states.first().cloned())
                 .flatten();
@@ -1415,6 +1519,7 @@ fn main() -> Result<(), String> {
                         "wall_ms": wall_ms,
                     },
                     "shadow_corridor": shadow_corridor_report,
+                    "watched_corridor": watched_corridor_report,
                     "one_turn_viability_evidence": one_turn_viability_evidence,
                     "one_turn_loss_evidence": one_turn_loss_evidence,
                     "exported_augmented_value_prototype": export_augmented_value_prototype,
@@ -1471,6 +1576,7 @@ fn main() -> Result<(), String> {
                     "max_engine_steps_per_transition": max_engine_steps_per_transition,
                 },
                 "shadow_corridor": shadow_corridor_report,
+                "watched_corridor": watched_corridor_report,
                 "one_turn_viability_evidence": one_turn_viability_evidence,
                 "one_turn_loss_evidence": one_turn_loss_evidence,
                 "exported_augmented_value_prototype": export_augmented_value_prototype,
@@ -1533,24 +1639,56 @@ fn main() -> Result<(), String> {
         Command::TurnMembership {
             case,
             actions,
+            corridor_actions,
+            corridor_rank,
             max_work,
             wall_ms,
             quantum_work,
             max_engine_steps_per_transition,
             anchor_only,
         } => {
-            let case = load_combat_case(&case)?;
-            let target: Vec<ClientInput> = serde_json::from_slice(
-                &std::fs::read(&actions).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| format!("invalid target action list: {error}"))?;
+            let (root_position, target, selected_corridor_rank) =
+                match (actions.as_ref(), corridor_actions.as_ref(), corridor_rank) {
+                    (Some(actions), None, None) => {
+                        let case = load_combat_case(&case)?;
+                        let target = serde_json::from_slice::<Vec<ClientInput>>(
+                            &std::fs::read(actions).map_err(|error| error.to_string())?,
+                        )
+                        .map_err(|error| format!("invalid target action list: {error}"))?;
+                        (case.position, target, None)
+                    }
+                    (None, Some(corridor_actions), Some(rank)) => {
+                        let corridor = load_exact_turn_corridor(
+                            &case,
+                            corridor_actions,
+                            max_engine_steps_per_transition,
+                        )?;
+                        let root_position = corridor
+                            .positions_by_rank
+                            .get(rank)
+                            .cloned()
+                            .ok_or_else(|| {
+                                format!(
+                                    "corridor rank {rank} is out of range 0..{}",
+                                    corridor.positions_by_rank.len()
+                                )
+                            })?;
+                        let target = corridor
+                            .transition_actions
+                            .get(rank)
+                            .cloned()
+                            .expect("verified corridor has one transition per boundary");
+                        (root_position, target, Some(rank))
+                    }
+                    _ => unreachable!("clap selects either actions or corridor rank"),
+                };
             let (target_policy_trace, target_successor_exact_state_hash, target_prefix_positions) =
                 target_atomic_policy_trace(
-                    &case.position,
+                    &root_position,
                     &target,
                     max_engine_steps_per_transition,
                 )?;
-            let root = CombatDecisionRoot::new(case.position)
+            let root = CombatDecisionRoot::new(root_position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let policy = existing_combat_knowledge_policy_v1();
             let policy = if anchor_only {
@@ -1685,6 +1823,7 @@ fn main() -> Result<(), String> {
                 "matched": matched.is_some(),
                 "match": matched,
                 "target_action_count": target.len(),
+                "corridor_rank": selected_corridor_rank,
                 "target_successor_exact_state_hash": target_successor_exact_state_hash,
                 "target_policy_trace": target_policy_trace,
                 "target_prefix_membership": target_prefix_membership,
