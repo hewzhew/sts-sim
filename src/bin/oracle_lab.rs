@@ -15,15 +15,16 @@ use sts_combat_planner::{
     TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
-use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case};
+use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
-    ExistingCombatKnowledgeAdvisorV1, OracleAnalysisAdvanceRequestV1,
+    ExistingCombatKnowledgeAdvisorV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
+    RunProgressStepV1,
 };
 use sts_simulator::runtime::branch::{
     load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
-    save_oracle_analysis_workspace_v1, save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1,
-    OracleRunBudget, OracleRunConfig,
+    oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1,
+    save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
@@ -240,6 +241,58 @@ enum Command {
         workspace: PathBuf,
         #[arg(long)]
         node: Option<usize>,
+    },
+    /// Show a compact actionable summary of the current or selected node.
+    Status {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+    },
+    /// Choose one candidate by its owner rank at the current cursor.
+    Choose {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        owner_rank: u64,
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Apply the owner's first choice for a bounded number of decisions.
+    Owner {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=64))]
+        steps: u8,
+    },
+    /// Print a compact tail of the committed run journal.
+    Timeline {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 30)]
+        tail: usize,
+    },
+    /// Export the current or selected exact combat as a standalone case.
+    ExportCombatCase {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Show the exact combat root, search progress, action families, and traces.
+    Combat {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+        #[arg(long, default_value_t = 512)]
+        max_engine_steps_per_transition: usize,
     },
     /// List every materialized variation and its edges.
     Tree {
@@ -1851,6 +1904,126 @@ fn main() -> Result<(), String> {
             };
             print_json(&view)
         }
+        Command::Status {
+            workspace,
+            node,
+            limit,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let view = selected_analysis_view(&analysis, node)?;
+            print_json(&compact_node_summary(&view, limit))
+        }
+        Command::Choose {
+            workspace,
+            owner_rank,
+            node,
+        } => {
+            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            if let Some(expected) = node {
+                let actual = analysis.session.cursor_node_id();
+                if expected != actual {
+                    return Err(format!(
+                        "oracle choose expected cursor node {expected}, but current cursor is {actual}"
+                    ));
+                }
+            }
+            let current = analysis.view()?;
+            let matches = current
+                .choices
+                .iter()
+                .filter(|choice| choice.owner_rank == owner_rank)
+                .collect::<Vec<_>>();
+            let [choice] = matches.as_slice() else {
+                return Err(format!(
+                    "oracle node {} has {} choices with owner rank {owner_rank}; expected exactly one",
+                    current.node_id,
+                    matches.len()
+                ));
+            };
+            let view = analysis.try_choice(&choice.choice_ref.clone())?;
+            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
+            print_json(&compact_node_summary(&view, 8))
+        }
+        Command::Owner { workspace, steps } => {
+            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let mut applied = Vec::new();
+            let mut stopped = "step_limit";
+            for _ in 0..steps {
+                let current = analysis.view()?;
+                let choices = current
+                    .choices
+                    .iter()
+                    .filter(|choice| choice.owner_rank == 0)
+                    .collect::<Vec<_>>();
+                let [choice] = choices.as_slice() else {
+                    stopped = if choices.is_empty() {
+                        "no_owner_choice"
+                    } else {
+                        "ambiguous_owner_choice"
+                    };
+                    break;
+                };
+                let candidate_id = choice.candidate_id.clone();
+                let label = choice.label.clone();
+                let choice_ref = choice.choice_ref.clone();
+                applied.push(json!({
+                    "node": current.node_id,
+                    "candidate_id": candidate_id,
+                    "label": label,
+                }));
+                analysis.try_choice(&choice_ref)?;
+            }
+            if !applied.is_empty() {
+                save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
+            }
+            print_json(&json!({
+                "requested_steps": steps,
+                "applied_count": applied.len(),
+                "applied": applied,
+                "stopped": stopped,
+                "status": compact_node_summary(&analysis.view()?, 8),
+            }))
+        }
+        Command::Timeline {
+            workspace,
+            node,
+            tail,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+            if tail == 0 || tail > 500 {
+                return Err("timeline tail must be in 1..=500".to_string());
+            }
+            print_json(&compact_timeline(&analysis, node, tail)?)
+        }
+        Command::ExportCombatCase {
+            workspace,
+            node,
+            output,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+            let case = analysis_combat_case(&analysis, node)?;
+            save_combat_case(&output, &case)?;
+            print_json(&json!({
+                "node": node,
+                "output": output,
+                "combat": case.combat,
+            }))
+        }
+        Command::Combat {
+            workspace,
+            node,
+            max_engine_steps_per_transition,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
+            print_json(&oracle_live_combat_diagnostic_v1(
+                &analysis,
+                node,
+                max_engine_steps_per_transition,
+            )?)
+        }
         Command::Tree { workspace } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             print_json(&analysis.session.tree())
@@ -1957,6 +2130,141 @@ fn main() -> Result<(), String> {
             }
         }
     }
+}
+
+fn selected_analysis_view(
+    analysis: &OracleAnalysisWorkspaceV1,
+    node: Option<usize>,
+) -> Result<OracleAnalysisNodeViewV1, String> {
+    if let Some(node) = node {
+        analysis.session.view_node(node)
+    } else {
+        analysis.view()
+    }
+}
+
+fn compact_node_summary(view: &OracleAnalysisNodeViewV1, limit: usize) -> Value {
+    let choices = view
+        .choices
+        .iter()
+        .take(limit)
+        .map(|choice| {
+            json!({
+                "choice_ref": choice.choice_ref,
+                "kind": choice.kind,
+                "candidate_id": choice.candidate_id,
+                "label": choice.label,
+                "owner_rank": choice.owner_rank,
+                "path_discrepancy": choice.path_discrepancy,
+            })
+        })
+        .collect::<Vec<_>>();
+    let children = view
+        .children
+        .iter()
+        .take(limit)
+        .map(|child| {
+            json!({
+                "edge_id": child.edge_id,
+                "child_node_id": child.child_node_id,
+                "kind": child.kind,
+                "label": child.label,
+                "is_on_mainline": child.is_on_mainline,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "node": view.node_id,
+        "parent": view.canonical_parent_node_id,
+        "act": view.act,
+        "floor": view.floor,
+        "hp": view.current_hp,
+        "max_hp": view.max_hp,
+        "gold": view.gold,
+        "boundary": view.boundary,
+        "event": view.event,
+        "choice_count": view.choices.len(),
+        "choices_shown": choices.len(),
+        "choices_truncated": view.choices.len() > choices.len(),
+        "choices": choices,
+        "child_count": view.children.len(),
+        "children_shown": children.len(),
+        "children_truncated": view.children.len() > children.len(),
+        "children": children,
+        "encounter": view.encounter,
+        "combat": view.combat,
+    })
+}
+
+fn compact_timeline(
+    analysis: &OracleAnalysisWorkspaceV1,
+    node: usize,
+    tail: usize,
+) -> Result<Value, String> {
+    let entries = analysis.session.journal_entries(node)?;
+    let start = entries.len().saturating_sub(tail);
+    let compact = entries[start..]
+        .iter()
+        .enumerate()
+        .map(|(offset, entry)| match entry {
+            RunProgressStepV1::Decision(record) => json!({
+                "journal_index": start + offset,
+                "kind": "decision",
+                "location": record.before.location,
+                "title": record.before.title,
+                "chosen": record.result.chosen_label,
+                "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
+            }),
+            RunProgressStepV1::ForcedTransition(record) => json!({
+                "journal_index": start + offset,
+                "kind": "forced_transition",
+                "location": record.before.location,
+                "title": record.before.title,
+            }),
+            RunProgressStepV1::CombatResolution(record) => json!({
+                "journal_index": start + offset,
+                "kind": "combat_resolution",
+                "location": record.before.location,
+                "title": record.before.title,
+                "resolution": record.kind,
+                "actions": record.trajectory.action_count,
+                "changes": record.result.changes,
+            }),
+            RunProgressStepV1::Stop(record) => json!({
+                "journal_index": start + offset,
+                "kind": "stop",
+                "stop_kind": record.kind,
+                "reason": record.reason,
+            }),
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "node": node,
+        "total_entries": entries.len(),
+        "returned_entries": compact.len(),
+        "entries": compact,
+    }))
+}
+
+fn analysis_combat_case(
+    analysis: &OracleAnalysisWorkspaceV1,
+    node: usize,
+) -> Result<CombatCase, String> {
+    let view = analysis.session.view_node(node)?;
+    let (search_nodes, search_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
+        (analysis.budget.boss_nodes, analysis.budget.boss_ms)
+    } else if view.encounter.as_ref().is_some_and(|it| it.is_elite) {
+        (analysis.budget.elite_nodes, analysis.budget.elite_ms)
+    } else {
+        (analysis.budget.hallway_nodes, analysis.budget.hallway_ms)
+    };
+    analysis.session.combat_case(
+        node,
+        analysis.seed,
+        analysis.ascension,
+        search_nodes,
+        search_ms,
+    )
 }
 
 fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
