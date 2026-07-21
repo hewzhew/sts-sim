@@ -316,6 +316,17 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
             .collect()
     }
 
+    fn structured_selection_member_weights(
+        &self,
+        position: &CombatPosition,
+        _family: &crate::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[crate::state::core::ClientInput],
+    ) -> Vec<f64> {
+        crate::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
+            position, members,
+        )
+    }
+
     fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
         vec![
             CombatStateGuide::new(

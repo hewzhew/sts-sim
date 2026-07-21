@@ -928,6 +928,31 @@ impl TurnOptionGeneratorSession {
                 .zip(selection_probabilities)
             {
                 match SelectionTransactionCursor::new(&family) {
+                    Ok(mut cursor) if family.declared_min == 1 && family.effective_max == 1 => {
+                        let members =
+                            std::iter::from_fn(|| cursor.next_input()).collect::<Vec<_>>();
+                        let weights = self.policy.structured_selection_member_weights(
+                            &parent.position,
+                            &family,
+                            &members,
+                        );
+                        let weights = (weights.len() == members.len())
+                            .then_some(weights)
+                            .unwrap_or_else(|| vec![1.0; members.len()]);
+                        let probabilities =
+                            normalized_probabilities(weights, self.config.uniform_exploration_ppm)
+                                .into_iter()
+                                .map(|member_probability| probability * member_probability)
+                                .collect::<Vec<_>>();
+                        if let Some(cursor) =
+                            AtomicActionCursorWork::new(parent.clone(), members, probabilities)
+                        {
+                            let priority = cursor
+                                .priority()
+                                .expect("ranked selection retains probability mass");
+                            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                        }
+                    }
                     Ok(cursor) if !cursor.is_exhausted() => {
                         let family_negative_log_policy =
                             parent.negative_log_policy - probability.ln();

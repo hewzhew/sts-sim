@@ -83,6 +83,19 @@ pub struct CombatPolicyWitnessProposal {
 pub trait CombatActionPolicy: Send + Sync {
     fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64>;
 
+    /// Optional ordering inside a finite structured family after its exact
+    /// concrete inputs are known. The default remains uniform and therefore
+    /// preserves canonical cursor order. A generator may call this only when
+    /// materializing the family cannot cause combinatorial expansion.
+    fn structured_selection_member_weights(
+        &self,
+        _position: &CombatPosition,
+        _family: &CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        vec![1.0; members.len()]
+    }
+
     /// Optional state guidance for choosing between already materialized exact
     /// turn-boundary states. It never changes legality, duplicate ownership,
     /// or terminal claims. Search retains a policy-only anchor queue even when

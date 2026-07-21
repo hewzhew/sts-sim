@@ -11,6 +11,7 @@ use sts_core::sim::combat::{
 };
 use sts_core::sim::combat_action_surface::{
     combat_legal_action_surface_v2, pending_choice_input_is_legal, CombatLegalActionSurfaceV2,
+    CombatSelectionActionFamilyV2,
 };
 use sts_core::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 
@@ -52,6 +53,34 @@ impl CombatActionPolicy for PreferPlayPolicy {
                 .map(|monster| monster.current_hp.max(0))
                 .sum::<i32>(),
         ]))
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PreferSelection22Policy;
+
+impl CombatActionPolicy for PreferSelection22Policy {
+    fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        PreferPlayPolicy.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        _position: &CombatPosition,
+        _family: &CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        members
+            .iter()
+            .map(|input| match input {
+                ClientInput::SubmitSelection(resolution)
+                    if resolution.selected_card_uuids() == [22] =>
+                {
+                    100.0
+                }
+                _ => 1.0,
+            })
+            .collect()
     }
 }
 
@@ -129,7 +158,7 @@ fn witness_search_keeps_boundary_and_turn_generation_guides_separate() {
 
 #[derive(Clone)]
 struct TinyTurnStepper {
-    opens_selection: bool,
+    selection_size: Option<u8>,
     duplicate_play_surface: bool,
     lethal_from_turn: Option<u32>,
     terminal_loss: bool,
@@ -140,7 +169,7 @@ struct TinyTurnStepper {
 impl TinyTurnStepper {
     fn plain() -> Self {
         Self {
-            opens_selection: false,
+            selection_size: None,
             duplicate_play_surface: false,
             lethal_from_turn: None,
             terminal_loss: false,
@@ -151,7 +180,14 @@ impl TinyTurnStepper {
 
     fn with_selection() -> Self {
         Self {
-            opens_selection: true,
+            selection_size: Some(2),
+            ..Self::plain()
+        }
+    }
+
+    fn with_single_selection() -> Self {
+        Self {
+            selection_size: Some(1),
             ..Self::plain()
         }
     }
@@ -256,11 +292,11 @@ impl CombatStepper for TinyTurnStepper {
                     next.combat.turn.energy = 0;
                     next.combat.turn.turn_start_draw_modifier +=
                         self.successor_salt.load(Ordering::SeqCst);
-                    if self.opens_selection {
+                    if let Some(selection_size) = self.selection_size {
                         next.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
                             candidate_uuids: vec![11, 22],
-                            min_cards: 2,
-                            max_cards: 2,
+                            min_cards: selection_size,
+                            max_cards: selection_size,
                             can_cancel: false,
                             reason: HandSelectReason::Discard,
                         });
@@ -1405,6 +1441,40 @@ fn ordered_structured_selections_survive_complete_option_generation() {
         .collect::<Vec<_>>();
     assert!(submitted_orders.contains(&vec![11, 22]));
     assert!(submitted_orders.contains(&vec![22, 11]));
+}
+
+#[test]
+fn singleton_selection_member_policy_reorders_without_removing_siblings() {
+    let stepper = TinyTurnStepper::with_single_selection();
+    let mut uniform = TurnOptionGeneratorSession::new(root(), config());
+    finish(&mut uniform, &stepper);
+    let uniform_members = uniform
+        .completed_options()
+        .iter()
+        .flat_map(|option| option.actions())
+        .filter_map(|action| match &action.input {
+            ClientInput::SubmitSelection(resolution) => Some(resolution.selected_card_uuids()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(uniform_members, vec![vec![11], vec![22]]);
+
+    let mut guided = TurnOptionGeneratorSession::with_policy(
+        root(),
+        config(),
+        Arc::new(PreferSelection22Policy),
+    );
+    finish(&mut guided, &stepper);
+    let guided_members = guided
+        .completed_options()
+        .iter()
+        .flat_map(|option| option.actions())
+        .filter_map(|action| match &action.input {
+            ClientInput::SubmitSelection(resolution) => Some(resolution.selected_card_uuids()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(guided_members, vec![vec![22], vec![11]]);
 }
 
 #[test]

@@ -797,6 +797,16 @@ impl CombatActionPolicy for AnchorOnlyPolicy {
         self.base.weights(position, choices)
     }
 
+    fn structured_selection_member_weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
     fn state_guides(
         &self,
         _position: &sts_simulator::sim::combat::CombatPosition,
@@ -823,6 +833,16 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         choices: &[CombatPolicyChoice<'_>],
     ) -> Vec<f64> {
         self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
     }
 
     fn state_guides(
