@@ -39,10 +39,10 @@ pub use layered_witness_search::{
     LayeredCombatCandidateRaceCounters, LayeredCombatCandidateRaceEntryReport,
     LayeredCombatCandidateRaceReport, LayeredCombatCandidateRaceSession,
     LayeredCombatCandidateRaceStatus, LayeredCombatDeferredWindow, LayeredCombatFrontierState,
-    LayeredCombatLayerReport, LayeredCombatParentWorkReport, LayeredCombatWitnessBudget,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption,
-    LayeredCombatWitnessQuantum, LayeredCombatWitnessReport, LayeredCombatWitnessSession,
-    LayeredCombatWitnessStatus,
+    LayeredCombatLayerReport, LayeredCombatLineageWindow, LayeredCombatParentWorkReport,
+    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessCounters,
+    LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum, LayeredCombatWitnessReport,
+    LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,

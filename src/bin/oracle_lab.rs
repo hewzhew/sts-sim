@@ -261,6 +261,13 @@ enum Command {
         continuation_turn_layers: usize,
         #[arg(long, default_value_t = 256)]
         continuation_service_quantum_work: usize,
+        /// Locate exact states inside parent-local continuation windows.
+        #[arg(long)]
+        watch_exact_state_hash: Vec<String>,
+        /// Include one compact best-per-view summary for every parent-local
+        /// continuation window.
+        #[arg(long)]
+        lineage_window_summaries: bool,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -1415,6 +1422,8 @@ fn main() -> Result<(), String> {
             generation_quantum_work,
             continuation_turn_layers,
             continuation_service_quantum_work,
+            watch_exact_state_hash,
+            lineage_window_summaries,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -1489,6 +1498,82 @@ fn main() -> Result<(), String> {
                 },
                 &EngineCombatStepper,
             );
+            let lineage_windows = race.deferred_lineage_windows();
+            let watched_lineage_states =
+                lineage_windows
+                    .iter()
+                    .flat_map(|lineage| {
+                        lineage
+                        .window
+                        .candidates
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, candidate)| {
+                            watch_exact_state_hash.contains(&candidate.exact_state_hash)
+                        })
+                        .map(|(candidate_index, candidate)| json!({
+                            "exact_state_hash": candidate.exact_state_hash,
+                            "parent_candidate_index": lineage.parent_candidate_index,
+                            "parent_exact_state_hash": lineage.parent_exact_state_hash,
+                            "relative_turn_depth": lineage.window.relative_turn_depth,
+                            "window_discrepancy": lineage.window.window_discrepancy,
+                            "source_window_index": lineage.window.source_window_index,
+                            "candidate_index": candidate_index,
+                            "action_count": candidate.actions.len(),
+                            "negative_log_policy": candidate.negative_log_policy,
+                            "guides": existing_combat_guide_diagnostics(&candidate.position),
+                        }))
+                    })
+                    .collect::<Vec<_>>();
+            let lineage_window_summaries = lineage_window_summaries.then(|| {
+                lineage_windows
+                    .iter()
+                    .map(|lineage| {
+                        let best_policy = lineage
+                            .window
+                            .candidates
+                            .iter()
+                            .map(|candidate| candidate.negative_log_policy)
+                            .min_by(f64::total_cmp);
+                        let best_progress = lineage
+                            .window
+                            .candidates
+                            .iter()
+                            .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&candidate.position))
+                            .max();
+                        let best_survival = lineage
+                            .window
+                            .candidates
+                            .iter()
+                            .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&candidate.position))
+                            .max();
+                        let best_horizon = lineage
+                            .window
+                            .candidates
+                            .iter()
+                            .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&candidate.position))
+                            .max();
+                        let best_setup = lineage
+                            .window
+                            .candidates
+                            .iter()
+                            .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&candidate.position))
+                            .max();
+                        json!({
+                            "parent_candidate_index": lineage.parent_candidate_index,
+                            "parent_exact_state_hash": lineage.parent_exact_state_hash,
+                            "source_window_index": lineage.window.source_window_index,
+                            "window_discrepancy": lineage.window.window_discrepancy,
+                            "candidate_count": lineage.window.candidates.len(),
+                            "best_policy_negative_log": best_policy,
+                            "best_progress": best_progress,
+                            "best_survival": best_survival,
+                            "best_horizon": best_horizon,
+                            "best_setup": best_setup,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
             if let (Some(path), Some(witness)) = (
                 export_witness_actions.as_ref(),
                 race_report.witness.as_ref(),
@@ -1539,6 +1624,9 @@ fn main() -> Result<(), String> {
                         "found_witness": candidate.found_witness,
                     })).collect::<Vec<_>>(),
                 },
+                "lineage_window_count": lineage_windows.len(),
+                "lineage_window_summaries": lineage_window_summaries,
+                "watched_lineage_states": watched_lineage_states,
                 "exported_witness_actions": race_report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),

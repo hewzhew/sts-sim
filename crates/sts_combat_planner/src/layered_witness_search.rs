@@ -152,6 +152,13 @@ pub struct LayeredCombatDeferredWindow {
     pub candidates: Vec<LayeredCombatFrontierState>,
 }
 
+#[derive(Clone, Debug)]
+pub struct LayeredCombatLineageWindow {
+    pub parent_candidate_index: usize,
+    pub parent_exact_state_hash: String,
+    pub window: LayeredCombatDeferredWindow,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LayeredCombatCandidateRaceConfig {
     pub continuation: LayeredCombatWitnessConfig,
@@ -853,6 +860,44 @@ impl LayeredCombatCandidateRaceSession {
 
     pub fn is_terminal(&self) -> bool {
         self.terminal_status.is_some()
+    }
+
+    /// Returns deferred windows without merging candidates from different
+    /// parent lineages. Prefix actions and policy cost are rebased to the
+    /// race's original root so a later witness remains exactly replayable.
+    pub fn deferred_lineage_windows(&self) -> Vec<LayeredCombatLineageWindow> {
+        self.entries
+            .iter()
+            .flat_map(|entry| {
+                entry.session.deferred_windows().into_iter().map(|window| {
+                    let candidates = window
+                        .candidates
+                        .into_iter()
+                        .map(|candidate| {
+                            let mut actions = entry.prefix_actions.clone();
+                            actions.extend(candidate.actions);
+                            LayeredCombatFrontierState {
+                                exact_state_hash: candidate.exact_state_hash,
+                                position: candidate.position,
+                                actions,
+                                negative_log_policy: entry.prefix_negative_log_policy
+                                    + candidate.negative_log_policy,
+                            }
+                        })
+                        .collect();
+                    LayeredCombatLineageWindow {
+                        parent_candidate_index: entry.candidate_index,
+                        parent_exact_state_hash: entry.exact_state_hash.clone(),
+                        window: LayeredCombatDeferredWindow {
+                            relative_turn_depth: window.relative_turn_depth.saturating_add(1),
+                            window_discrepancy: window.window_discrepancy,
+                            source_window_index: window.source_window_index,
+                            candidates,
+                        },
+                    }
+                })
+            })
+            .collect()
     }
 
     pub fn advance(

@@ -556,6 +556,81 @@ fn candidate_continuation_race_resumes_multiple_candidates_until_one_wins() {
 }
 
 #[test]
+fn candidate_race_preserves_parent_local_deferred_windows_and_prefixes() {
+    let config = LayeredCombatWitnessConfig {
+        generator: config(),
+        beam_width: 1,
+        retained_per_view: 1,
+        minimum_generation_work_per_layer: 16,
+        maximum_generation_work_per_layer: 64,
+        candidate_pool_multiplier: 2,
+        generation_quantum_work: 4,
+        max_turn_layers: 1,
+    };
+    let policy: SharedCombatActionPolicy = Arc::new(PreferPlayPolicy);
+    let stepper = TinyTurnStepper::plain();
+    let mut source = LayeredCombatWitnessSession::with_policy(root(), config, policy.clone());
+    let source_report = source.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(
+        source_report.status,
+        LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::TurnLayerBudget)
+    );
+    let combined_window = LayeredCombatDeferredWindow {
+        relative_turn_depth: 1,
+        window_discrepancy: 0,
+        source_window_index: 0,
+        candidates: source
+            .deferred_windows()
+            .into_iter()
+            .flat_map(|window| window.candidates)
+            .collect(),
+    };
+    let parent_prefixes = combined_window
+        .candidates
+        .iter()
+        .map(|candidate| candidate.actions.clone())
+        .collect::<Vec<_>>();
+    let mut race = LayeredCombatCandidateRaceSession::from_window(
+        root(),
+        combined_window,
+        LayeredCombatCandidateRaceConfig {
+            continuation: config,
+            service_quantum_work: 4,
+        },
+        policy,
+    );
+    let report = race.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(
+        report.status,
+        LayeredCombatCandidateRaceStatus::CandidatesExhausted
+    );
+
+    let lineage_windows = race.deferred_lineage_windows();
+    assert!(!lineage_windows.is_empty());
+    for lineage in lineage_windows {
+        let prefix = &parent_prefixes[lineage.parent_candidate_index];
+        for candidate in lineage.window.candidates {
+            assert!(candidate.actions.starts_with(prefix));
+            assert!(candidate.actions.len() > prefix.len());
+        }
+    }
+}
+
+#[test]
 fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =
