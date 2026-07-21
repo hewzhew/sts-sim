@@ -483,6 +483,79 @@ fn layered_session_resumes_mid_layer_without_repaying_generation_work() {
 }
 
 #[test]
+fn candidate_continuation_race_resumes_multiple_candidates_until_one_wins() {
+    let source_config = LayeredCombatWitnessConfig {
+        generator: config(),
+        beam_width: 1,
+        retained_per_view: 1,
+        minimum_generation_work_per_layer: 16,
+        maximum_generation_work_per_layer: 64,
+        candidate_pool_multiplier: 2,
+        generation_quantum_work: 4,
+        max_turn_layers: 1,
+    };
+    let policy: SharedCombatActionPolicy = Arc::new(PreferPlayPolicy);
+    let mut source =
+        LayeredCombatWitnessSession::with_policy(root(), source_config, policy.clone());
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let source_report = source.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(
+        source_report.status,
+        LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::TurnLayerBudget)
+    );
+    let windows = source.deferred_windows();
+    assert_eq!(windows.len(), 2);
+    let combined_window = LayeredCombatDeferredWindow {
+        relative_turn_depth: 1,
+        window_discrepancy: 0,
+        source_window_index: 0,
+        candidates: windows
+            .into_iter()
+            .flat_map(|window| window.candidates)
+            .collect(),
+    };
+    let continuation = LayeredCombatWitnessConfig {
+        max_turn_layers: 3,
+        ..source_config
+    };
+    let mut race = LayeredCombatCandidateRaceSession::from_window(
+        root(),
+        combined_window,
+        LayeredCombatCandidateRaceConfig {
+            continuation,
+            service_quantum_work: 4,
+        },
+        policy,
+    );
+    let report = race.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert_eq!(
+        report.status,
+        LayeredCombatCandidateRaceStatus::WitnessFound
+    );
+    let witness = report.witness.expect("the second candidate should win");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+    assert_eq!(witness.actions[1].input, PLAY);
+    assert!(report.candidates[0].generation_work > 0);
+    assert!(report.candidates[1].generation_work > 0);
+    assert!(report.candidates[1].found_witness);
+}
+
+#[test]
 fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =

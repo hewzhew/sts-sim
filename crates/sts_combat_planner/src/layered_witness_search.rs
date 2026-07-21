@@ -145,6 +145,54 @@ pub struct LayeredCombatWitnessReport {
 }
 
 #[derive(Clone, Debug)]
+pub struct LayeredCombatDeferredWindow {
+    pub relative_turn_depth: usize,
+    pub window_discrepancy: usize,
+    pub source_window_index: usize,
+    pub candidates: Vec<LayeredCombatFrontierState>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LayeredCombatCandidateRaceConfig {
+    pub continuation: LayeredCombatWitnessConfig,
+    pub service_quantum_work: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LayeredCombatCandidateRaceStatus {
+    WitnessFound,
+    Partial(LayeredCombatWitnessInterruption),
+    CandidatesExhausted,
+    ReplayMismatch(OracleCombatWitnessReplayError),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LayeredCombatCandidateRaceCounters {
+    pub generation_work: usize,
+    pub engine_steps: usize,
+    pub services: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LayeredCombatCandidateRaceEntryReport {
+    pub candidate_index: usize,
+    pub exact_state_hash: String,
+    pub generation_work: usize,
+    pub engine_steps: usize,
+    pub completed_layers: usize,
+    pub terminal: bool,
+    pub found_witness: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct LayeredCombatCandidateRaceReport {
+    pub status: LayeredCombatCandidateRaceStatus,
+    pub counters: LayeredCombatCandidateRaceCounters,
+    pub candidates: Vec<LayeredCombatCandidateRaceEntryReport>,
+    pub witness: Option<OracleCombatWitness>,
+}
+
+#[derive(Clone, Debug)]
 struct BeamState {
     exact_state_hash: String,
     position: CombatPosition,
@@ -204,6 +252,24 @@ pub struct LayeredCombatWitnessSession {
     layers: Vec<LayeredCombatLayerReport>,
     generation_gaps: Vec<TurnOptionGenerationGap>,
     terminal_status: Option<LayeredCombatWitnessStatus>,
+    witness: Option<OracleCombatWitness>,
+}
+
+struct CandidateRaceEntry {
+    candidate_index: usize,
+    exact_state_hash: String,
+    prefix_actions: Vec<TurnOptionAction>,
+    prefix_negative_log_policy: f64,
+    session: Box<LayeredCombatWitnessSession>,
+    found_witness: bool,
+}
+
+pub struct LayeredCombatCandidateRaceSession {
+    original_root: CombatPosition,
+    config: LayeredCombatCandidateRaceConfig,
+    entries: Vec<CandidateRaceEntry>,
+    counters: LayeredCombatCandidateRaceCounters,
+    terminal_status: Option<LayeredCombatCandidateRaceStatus>,
     witness: Option<OracleCombatWitness>,
 }
 
@@ -288,8 +354,38 @@ impl LayeredCombatWitnessSession {
         &self.counters
     }
 
+    pub fn completed_layers(&self) -> usize {
+        self.counters.completed_layers
+    }
+
     pub fn is_terminal(&self) -> bool {
         self.terminal_status.is_some()
+    }
+
+    pub fn deferred_windows(&self) -> Vec<LayeredCombatDeferredWindow> {
+        let mut windows = self
+            .agenda
+            .values()
+            .chain(self.depth_limited.iter())
+            .map(|cohort| LayeredCombatDeferredWindow {
+                relative_turn_depth: cohort.relative_turn_depth,
+                window_discrepancy: cohort.window_discrepancy,
+                source_window_index: cohort.source_window_index,
+                candidates: cohort
+                    .states
+                    .iter()
+                    .map(BeamState::public_snapshot)
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        windows.sort_by_key(|window| {
+            (
+                window.relative_turn_depth,
+                window.window_discrepancy,
+                window.source_window_index,
+            )
+        });
+        windows
     }
 
     pub fn advance(
@@ -712,6 +808,203 @@ impl LayeredCombatWitnessSession {
             self.generation_gaps.clone(),
             self.witness.clone(),
         )
+    }
+}
+
+impl LayeredCombatCandidateRaceSession {
+    pub fn from_window(
+        original_root: CombatDecisionRoot,
+        window: LayeredCombatDeferredWindow,
+        config: LayeredCombatCandidateRaceConfig,
+        policy: SharedCombatActionPolicy,
+    ) -> Self {
+        let entries = window
+            .candidates
+            .into_iter()
+            .enumerate()
+            .filter_map(|(candidate_index, candidate)| {
+                let root = CombatDecisionRoot::new(candidate.position).ok()?;
+                Some(CandidateRaceEntry {
+                    candidate_index,
+                    exact_state_hash: candidate.exact_state_hash,
+                    prefix_actions: candidate.actions,
+                    prefix_negative_log_policy: candidate.negative_log_policy,
+                    session: Box::new(LayeredCombatWitnessSession::with_policy(
+                        root,
+                        config.continuation,
+                        policy.clone(),
+                    )),
+                    found_witness: false,
+                })
+            })
+            .collect::<Vec<_>>();
+        let terminal_status = entries
+            .is_empty()
+            .then_some(LayeredCombatCandidateRaceStatus::CandidatesExhausted);
+        Self {
+            original_root: original_root.position().clone(),
+            config,
+            entries,
+            counters: LayeredCombatCandidateRaceCounters::default(),
+            terminal_status,
+            witness: None,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.terminal_status.is_some()
+    }
+
+    pub fn advance(
+        &mut self,
+        quantum: LayeredCombatWitnessQuantum,
+        stepper: &dyn CombatStepper,
+    ) -> LayeredCombatCandidateRaceReport {
+        if let Some(status) = self.terminal_status.clone() {
+            return self.snapshot(status);
+        }
+        let work_limit = self
+            .counters
+            .generation_work
+            .saturating_add(quantum.additional_generation_work);
+        let engine_step_limit = self
+            .counters
+            .engine_steps
+            .saturating_add(quantum.additional_engine_steps);
+
+        loop {
+            if deadline_reached(quantum.deadline) {
+                return self.snapshot(LayeredCombatCandidateRaceStatus::Partial(
+                    LayeredCombatWitnessInterruption::Deadline,
+                ));
+            }
+            if self.counters.generation_work >= work_limit {
+                return self.snapshot(LayeredCombatCandidateRaceStatus::Partial(
+                    LayeredCombatWitnessInterruption::GenerationWorkBudget,
+                ));
+            }
+            if self.counters.engine_steps >= engine_step_limit {
+                return self.snapshot(LayeredCombatCandidateRaceStatus::Partial(
+                    LayeredCombatWitnessInterruption::EngineStepBudget,
+                ));
+            }
+            let Some(entry_index) = self.next_entry_index() else {
+                let status = LayeredCombatCandidateRaceStatus::CandidatesExhausted;
+                self.terminal_status = Some(status.clone());
+                return self.snapshot(status);
+            };
+
+            let remaining_work = work_limit.saturating_sub(self.counters.generation_work);
+            let remaining_steps = engine_step_limit.saturating_sub(self.counters.engine_steps);
+            let service_work = self.config.service_quantum_work.max(1).min(remaining_work);
+            let before = self.entries[entry_index].session.counters().clone();
+            let candidate_report = self.entries[entry_index].session.advance(
+                LayeredCombatWitnessQuantum {
+                    additional_generation_work: service_work,
+                    additional_engine_steps: remaining_steps.min(
+                        service_work.saturating_mul(
+                            self.config
+                                .continuation
+                                .generator
+                                .max_engine_steps_per_transition
+                                .max(1),
+                        ),
+                    ),
+                    deadline: quantum.deadline,
+                },
+                stepper,
+            );
+            let after = self.entries[entry_index].session.counters().clone();
+            let used_work = after.generation_work.saturating_sub(before.generation_work);
+            let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
+            self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
+            self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
+            self.counters.services = self.counters.services.saturating_add(1);
+
+            if let Some(candidate_witness) = candidate_report.witness {
+                let entry = &mut self.entries[entry_index];
+                let mut actions = entry.prefix_actions.clone();
+                actions.extend(candidate_witness.actions);
+                let negative_log_policy =
+                    entry.prefix_negative_log_policy + candidate_witness.negative_log_policy;
+                match replay_witness(&self.original_root, &actions, negative_log_policy, stepper) {
+                    Ok(witness) => {
+                        entry.found_witness = true;
+                        self.witness = Some(witness);
+                        let status = LayeredCombatCandidateRaceStatus::WitnessFound;
+                        self.terminal_status = Some(status.clone());
+                        return self.snapshot(status);
+                    }
+                    Err(error) => {
+                        let status = LayeredCombatCandidateRaceStatus::ReplayMismatch(error);
+                        self.terminal_status = Some(status.clone());
+                        return self.snapshot(status);
+                    }
+                }
+            }
+            if used_work == 0 && used_steps == 0 && !self.entries[entry_index].session.is_terminal()
+            {
+                let status = LayeredCombatCandidateRaceStatus::Partial(
+                    LayeredCombatWitnessInterruption::EngineStepBudget,
+                );
+                return self.snapshot(status);
+            }
+        }
+    }
+
+    fn next_entry_index(&self) -> Option<usize> {
+        let needs_first_layer = self
+            .entries
+            .iter()
+            .any(|entry| !entry.session.is_terminal() && entry.session.completed_layers() == 0);
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                !entry.session.is_terminal()
+                    && (!needs_first_layer || entry.session.completed_layers() == 0)
+            })
+            .min_by_key(|(_, entry)| {
+                let work = entry.session.counters().generation_work as u128;
+                let rank = entry.candidate_index.saturating_add(1) as u128;
+                if needs_first_layer {
+                    // A retained candidate must first receive enough service
+                    // to expose one exact next-turn layer. Before that point,
+                    // its presentation index is not evidence that the whole
+                    // continuation is weak.
+                    (work, rank)
+                } else {
+                    // Once every live candidate has crossed the same semantic
+                    // boundary, use the deterministic retained order to focus
+                    // deeper continuation work without revoking resumability.
+                    (work.saturating_add(1).saturating_mul(rank), rank)
+                }
+            })
+            .map(|(index, _)| index)
+    }
+
+    fn snapshot(
+        &self,
+        status: LayeredCombatCandidateRaceStatus,
+    ) -> LayeredCombatCandidateRaceReport {
+        LayeredCombatCandidateRaceReport {
+            status,
+            counters: self.counters.clone(),
+            candidates: self
+                .entries
+                .iter()
+                .map(|entry| LayeredCombatCandidateRaceEntryReport {
+                    candidate_index: entry.candidate_index,
+                    exact_state_hash: entry.exact_state_hash.clone(),
+                    generation_work: entry.session.counters().generation_work,
+                    engine_steps: entry.session.counters().engine_steps,
+                    completed_layers: entry.session.completed_layers(),
+                    terminal: entry.session.is_terminal(),
+                    found_witness: entry.found_witness,
+                })
+                .collect(),
+            witness: self.witness.clone(),
+        }
     }
 }
 

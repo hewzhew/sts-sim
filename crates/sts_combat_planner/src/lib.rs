@@ -35,10 +35,14 @@ pub use evidence::{
 };
 pub use generator::TurnOptionGeneratorSession;
 pub use layered_witness_search::{
-    search_layered_combat_witness, LayeredCombatFrontierState, LayeredCombatLayerReport,
-    LayeredCombatParentWorkReport, LayeredCombatWitnessBudget, LayeredCombatWitnessConfig,
-    LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum,
-    LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
+    search_layered_combat_witness, LayeredCombatCandidateRaceConfig,
+    LayeredCombatCandidateRaceCounters, LayeredCombatCandidateRaceEntryReport,
+    LayeredCombatCandidateRaceReport, LayeredCombatCandidateRaceSession,
+    LayeredCombatCandidateRaceStatus, LayeredCombatDeferredWindow, LayeredCombatFrontierState,
+    LayeredCombatLayerReport, LayeredCombatParentWorkReport, LayeredCombatWitnessBudget,
+    LayeredCombatWitnessConfig, LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption,
+    LayeredCombatWitnessQuantum, LayeredCombatWitnessReport, LayeredCombatWitnessSession,
+    LayeredCombatWitnessStatus,
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,

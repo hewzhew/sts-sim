@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 use sts_combat_planner::{
     search_layered_combat_witness, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, OracleCombatOneTurnLossEvidence,
+    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
+    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessSession, OracleCombatOneTurnLossEvidence,
     OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
     TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
@@ -224,6 +226,38 @@ enum Command {
         #[arg(long, default_value_t = 32)]
         max_turn_layers: usize,
         /// If a replay-verified win is found, save its exact ClientInput list.
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
+    },
+    /// Generate one exact turn boundary, select one deferred beam window,
+    /// then dovetail resumable layered continuations for its candidates.
+    CombatCaseLayeredWindowRace {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        source_window_index: usize,
+        #[arg(long, default_value_t = 500_000)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 20_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long, default_value_t = 32)]
+        beam_width: usize,
+        #[arg(long, default_value_t = 6)]
+        retained_per_view: usize,
+        #[arg(long, default_value_t = 640)]
+        minimum_generation_work_per_layer: usize,
+        #[arg(long, default_value_t = 8_192)]
+        maximum_generation_work_per_layer: usize,
+        #[arg(long, default_value_t = 8)]
+        candidate_pool_multiplier: usize,
+        #[arg(long, default_value_t = 8)]
+        generation_quantum_work: usize,
+        #[arg(long, default_value_t = 3)]
+        continuation_turn_layers: usize,
+        #[arg(long, default_value_t = 256)]
+        continuation_service_quantum_work: usize,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -1321,6 +1355,158 @@ fn main() -> Result<(), String> {
                     .flatten(),
                 "witness": report.witness.as_ref().map(|witness| json!({
                     "discovery_source": witness.discovery_source,
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "hp_loss": initial_hp.saturating_sub(
+                        witness.final_position.combat.entities.player.current_hp,
+                    ),
+                    "action_count": witness.actions.len(),
+                    "negative_log_policy": witness.negative_log_policy,
+                    "replay_engine_steps": witness.replay_engine_steps,
+                })),
+            }))
+        }
+        Command::CombatCaseLayeredWindowRace {
+            case,
+            source_window_index,
+            max_nodes,
+            wall_ms,
+            max_engine_steps_per_transition,
+            beam_width,
+            retained_per_view,
+            minimum_generation_work_per_layer,
+            maximum_generation_work_per_layer,
+            candidate_pool_multiplier,
+            generation_quantum_work,
+            continuation_turn_layers,
+            continuation_service_quantum_work,
+            export_witness_actions,
+        } => {
+            let command_started = Instant::now();
+            let loaded = load_combat_case(&case)?;
+            let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let original_root = CombatDecisionRoot::new(loaded.position.clone())
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let source_root = CombatDecisionRoot::new(loaded.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let deadline = Instant::now() + Duration::from_millis(wall_ms);
+            let policy = existing_combat_knowledge_policy_v1();
+            let base_config = LayeredCombatWitnessConfig {
+                generator: TurnOptionGeneratorConfig {
+                    max_engine_steps_per_transition,
+                    ..TurnOptionGeneratorConfig::default()
+                },
+                beam_width,
+                retained_per_view,
+                minimum_generation_work_per_layer,
+                maximum_generation_work_per_layer,
+                candidate_pool_multiplier,
+                generation_quantum_work,
+                max_turn_layers: 1,
+            };
+            let mut source =
+                LayeredCombatWitnessSession::with_policy(source_root, base_config, policy.clone());
+            let source_report = source.advance(
+                LayeredCombatWitnessQuantum {
+                    additional_generation_work: maximum_generation_work_per_layer.max(1),
+                    additional_engine_steps: maximum_generation_work_per_layer
+                        .max(1)
+                        .saturating_mul(max_engine_steps_per_transition.max(1)),
+                    deadline: Some(deadline),
+                },
+                &EngineCombatStepper,
+            );
+            let window = source
+                .deferred_windows()
+                .into_iter()
+                .find(|window| {
+                    window.relative_turn_depth == 1
+                        && window.source_window_index == source_window_index
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "deferred window {source_window_index} was not generated; source status={:?}",
+                        source_report.status
+                    )
+                })?;
+            let candidate_count = window.candidates.len();
+            let selected_window_discrepancy = window.window_discrepancy;
+            let continuation = LayeredCombatWitnessConfig {
+                max_turn_layers: continuation_turn_layers,
+                ..base_config
+            };
+            let mut race = LayeredCombatCandidateRaceSession::from_window(
+                original_root,
+                window,
+                LayeredCombatCandidateRaceConfig {
+                    continuation,
+                    service_quantum_work: continuation_service_quantum_work,
+                },
+                policy,
+            );
+            let remaining_work = max_nodes.saturating_sub(source_report.counters.generation_work);
+            let race_report = race.advance(
+                LayeredCombatWitnessQuantum {
+                    additional_generation_work: remaining_work,
+                    additional_engine_steps: remaining_work
+                        .saturating_mul(max_engine_steps_per_transition.max(1)),
+                    deadline: Some(deadline),
+                },
+                &EngineCombatStepper,
+            );
+            if let (Some(path), Some(witness)) = (
+                export_witness_actions.as_ref(),
+                race_report.witness.as_ref(),
+            ) {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let inputs = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            print_json(&json!({
+                "schema_name": "OracleCombatCaseLayeredWindowRaceV1",
+                "schema_version": 1,
+                "case": case,
+                "runtime": oracle_lab_runtime_identity(),
+                "mode": {
+                    "scheduler": "resumable_candidate_continuation_race",
+                    "v2_donor_enabled": false,
+                },
+                "elapsed_ms": command_started.elapsed().as_millis(),
+                "source": {
+                    "status": format!("{:?}", source_report.status),
+                    "generation_work": source_report.counters.generation_work,
+                    "source_window_index": source_window_index,
+                    "window_discrepancy": selected_window_discrepancy,
+                    "candidate_count": candidate_count,
+                },
+                "race": {
+                    "status": format!("{:?}", race_report.status),
+                    "generation_work": race_report.counters.generation_work,
+                    "engine_steps": race_report.counters.engine_steps,
+                    "services": race_report.counters.services,
+                    "candidates": race_report.candidates.iter().map(|candidate| json!({
+                        "candidate_index": candidate.candidate_index,
+                        "exact_state_hash": candidate.exact_state_hash,
+                        "generation_work": candidate.generation_work,
+                        "engine_steps": candidate.engine_steps,
+                        "completed_layers": candidate.completed_layers,
+                        "terminal": candidate.terminal,
+                        "found_witness": candidate.found_witness,
+                    })).collect::<Vec<_>>(),
+                },
+                "exported_witness_actions": race_report.witness.is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
+                "witness": race_report.witness.as_ref().map(|witness| json!({
                     "final_hp": witness.final_position.combat.entities.player.current_hp,
                     "hp_loss": initial_hp.saturating_sub(
                         witness.final_position.combat.entities.player.current_hp,
