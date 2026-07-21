@@ -390,6 +390,38 @@ fn layered_search_keeps_a_complete_turn_sibling_until_the_next_layer() {
 }
 
 #[test]
+fn layered_search_recovers_a_winning_sibling_from_the_next_beam_window() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let report = search_layered_combat_witness(
+        root(),
+        LayeredCombatWitnessConfig {
+            generator: config(),
+            beam_width: 1,
+            retained_per_view: 1,
+            minimum_generation_work_per_layer: 16,
+            maximum_generation_work_per_layer: 64,
+            candidate_pool_multiplier: 2,
+            generation_quantum_work: 4,
+            max_turn_layers: 4,
+        },
+        LayeredCombatWitnessBudget {
+            max_generation_work: 256,
+            max_engine_steps: 1_024,
+            deadline: None,
+        },
+        Arc::new(PreferPlayPolicy),
+        &stepper,
+    );
+
+    assert_eq!(report.status, LayeredCombatWitnessStatus::WitnessFound);
+    let witness = report.witness.expect("the deferred sibling should win");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+    assert_eq!(witness.actions[1].input, PLAY);
+    assert!(report.counters.deferred_windows > 0);
+    assert!(report.counters.recovered_window_expansions > 0);
+}
+
+#[test]
 fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =

@@ -1251,8 +1251,18 @@ fn main() -> Result<(), String> {
                 .iter()
                 .map(|layer| {
                     json!({
+                        "relative_turn_depth": layer.relative_turn_depth,
+                        "window_discrepancy": layer.window_discrepancy,
+                        "source_window_index": layer.source_window_index,
                         "player_turn": layer.player_turn,
                         "parent_states": layer.parent_states,
+                        "parent_exact_state_hashes": layer.parent_exact_state_hashes,
+                        "parent_work": layer.parent_work.iter().map(|parent| json!({
+                            "exact_state_hash": parent.exact_state_hash,
+                            "generation_work": parent.generation_work,
+                            "completed_turn_options": parent.completed_turn_options,
+                            "finished": parent.finished,
+                        })).collect::<Vec<_>>(),
                         "expanded_parents": layer.expanded_parents,
                         "generation_work": layer.generation_work,
                         "completed_turn_options": layer.completed_turn_options,
@@ -1261,6 +1271,7 @@ fn main() -> Result<(), String> {
                         "retained_next_turn_states": layer.retained_next_turn_states,
                         "retained_exact_state_hashes": layer.retained_exact_state_hashes,
                         "truncated_parents": layer.truncated_parents,
+                        "emitted_windows": layer.emitted_windows,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1270,7 +1281,7 @@ fn main() -> Result<(), String> {
                 "case": case,
                 "runtime": oracle_lab_runtime_identity(),
                 "mode": {
-                    "scheduler": "turn_synchronous_multi_view_beam",
+                    "scheduler": "recoverable_turn_synchronous_multi_view_beam",
                     "v2_donor_enabled": false,
                 },
                 "status": format!("{:?}", report.status),
@@ -1298,6 +1309,9 @@ fn main() -> Result<(), String> {
                     "duplicate_next_turn_states": report.counters.duplicate_next_turn_states,
                     "truncated_parents": report.counters.truncated_parents,
                     "completed_layers": report.counters.completed_layers,
+                    "deferred_windows": report.counters.deferred_windows,
+                    "recovered_window_expansions": report.counters.recovered_window_expansions,
+                    "maximum_window_discrepancy": report.counters.maximum_window_discrepancy,
                 },
                 "layers": layers,
                 "frontier": frontier,
