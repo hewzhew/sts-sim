@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
@@ -55,7 +54,6 @@ impl CombatGuideLaneId {
 pub struct CombatStateGuide {
     pub lane: CombatGuideLaneId,
     pub rank: CombatStateGuideRank,
-    pub deferred: bool,
 }
 
 impl CombatStateGuide {
@@ -63,45 +61,12 @@ impl CombatStateGuide {
         Self {
             lane,
             rank: CombatStateGuideRank::new(components),
-            deferred: false,
         }
     }
 
     pub fn from_rank(lane: CombatGuideLaneId, rank: CombatStateGuideRank) -> Self {
-        Self {
-            lane,
-            rank,
-            deferred: false,
-        }
+        Self { lane, rank }
     }
-
-    /// Publishes a cheap first-play rank whose expensive evidence is computed
-    /// only if this exact guide lane actually receives service.
-    pub fn deferred(lane: CombatGuideLaneId, components: impl Into<Vec<i32>>) -> Self {
-        Self {
-            lane,
-            rank: CombatStateGuideRank::new(components),
-            deferred: true,
-        }
-    }
-
-    pub fn deferred_from_rank(lane: CombatGuideLaneId, rank: CombatStateGuideRank) -> Self {
-        Self {
-            lane,
-            rank,
-            deferred: true,
-        }
-    }
-}
-
-/// Result of servicing one deferred guide entry. A retry consumes the current
-/// bounded service quantum but keeps the entry deferred for a later quantum;
-/// unsupported guides become ordinary eager entries at their initial rank.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DeferredCombatGuideRefinement {
-    Ready(CombatStateGuideRank),
-    RetryLater,
-    Unsupported,
 }
 
 /// A domain policy may cheaply propose a complete tactical suffix. The
@@ -144,18 +109,6 @@ pub trait CombatActionPolicy: Send + Sync {
     /// distinction.
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.state_guides(position)
-    }
-
-    /// Lazily refines one state guide after its lane wins scheduler service.
-    /// The returned rank remains non-authoritative guidance: it cannot create
-    /// actions, successors, or terminal evidence.
-    fn refine_deferred_guide(
-        &self,
-        _lane: CombatGuideLaneId,
-        _position: &CombatPosition,
-        _deadline: Option<Instant>,
-    ) -> DeferredCombatGuideRefinement {
-        DeferredCombatGuideRefinement::Unsupported
     }
 }
 

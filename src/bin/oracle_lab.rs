@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
     CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, DeferredCombatGuideRefinement,
-    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, OracleCombatOneTurnLossEvidence,
+    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
+    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case};
@@ -118,10 +118,6 @@ enum Command {
         /// priors and state guides.
         #[arg(long)]
         without_v2_donor: bool,
-        /// Lab-only capability migration: add V2's action-free lazy rollout
-        /// value as an independent guide lane. Disabled in production.
-        #[arg(long)]
-        v2_rollout_guide: bool,
         /// Repeat to inspect membership for several exact corridor states in
         /// one search run.
         #[arg(long)]
@@ -839,15 +835,6 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         }
         ranks
     }
-
-    fn refine_deferred_guide(
-        &self,
-        lane: CombatGuideLaneId,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        deadline: Option<Instant>,
-    ) -> DeferredCombatGuideRefinement {
-        self.base.refine_deferred_guide(lane, position, deadline)
-    }
 }
 
 impl ExactCorridorShadowPolicy {
@@ -1198,7 +1185,6 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
             anchor_only,
             without_v2_donor,
-            v2_rollout_guide,
             watch_state_hash,
             watch_corridor_actions,
             corridor_prefix_turns,
@@ -1341,11 +1327,7 @@ fn main() -> Result<(), String> {
             let root = CombatDecisionRoot::new(position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
-            let base_policy = if v2_rollout_guide {
-                sts_simulator::eval::run_control::existing_combat_knowledge_policy_with_rollout_guide_v1()
-            } else {
-                existing_combat_knowledge_policy_v1()
-            };
+            let base_policy = existing_combat_knowledge_policy_v1();
             let (policy, shadow_corridor, mut shadow_value_artifact) =
                 if let Some(model_path) = shadow_value_prototype.as_ref() {
                     let artifact = load_value_prototype(model_path)?;
@@ -1517,7 +1499,6 @@ fn main() -> Result<(), String> {
                     "runtime": oracle_lab_runtime_identity(),
                     "mode": {
                         "v2_donor_enabled": !without_v2_donor,
-                        "v2_rollout_guide_enabled": v2_rollout_guide,
                         "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                     },
                     "status": format!("{:?}", report.status),
@@ -1544,11 +1525,6 @@ fn main() -> Result<(), String> {
                         "exact_states": report.after.exact_states,
                         "completed_turn_options": report.after.completed_turn_options,
                         "applied_action_transitions": report.after.applied_action_transitions,
-                        "deferred_guide_refinements": report.after.deferred_guide_refinements,
-                        "deferred_guide_ready": report.after.deferred_guide_ready,
-                        "deferred_guide_retries": report.after.deferred_guide_retries,
-                        "deferred_guide_unsupported": report.after.deferred_guide_unsupported,
-                        "deferred_guide_refinement_ms": report.after.deferred_guide_refinement_elapsed_us as f64 / 1_000.0,
                     },
                     "frontier": {
                         "retained_states": progress.retained_states,
@@ -1624,7 +1600,6 @@ fn main() -> Result<(), String> {
                     "schema_name": "OracleCombatCaseReadableV1",
                     "schema_version": 1,
                     "v2_donor_enabled": !without_v2_donor,
-                    "v2_rollout_guide_enabled": v2_rollout_guide,
                     "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                     "status": format!("{:?}", report.status),
                     "elapsed_ms": started.elapsed().as_millis(),
@@ -1686,7 +1661,6 @@ fn main() -> Result<(), String> {
                 "schema_name": "OracleCombatCaseProbeV1",
                 "schema_version": 1,
                 "v2_donor_enabled": !without_v2_donor,
-                "v2_rollout_guide_enabled": v2_rollout_guide,
                 "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": started.elapsed().as_millis(),
@@ -2978,7 +2952,6 @@ fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
         3 => "horizon",
         4 => "setup",
         5 => "turn_depth",
-        6 => "v2_lazy_rollout_experiment",
         10_001 => "exact_corridor_control",
         10_002 => "typed_corridor_control",
         _ => "policy_defined",

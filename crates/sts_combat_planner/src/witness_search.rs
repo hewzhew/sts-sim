@@ -72,11 +72,6 @@ pub struct OracleCombatWitnessCounters {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
-    pub deferred_guide_refinements: usize,
-    pub deferred_guide_ready: usize,
-    pub deferred_guide_retries: usize,
-    pub deferred_guide_unsupported: usize,
-    pub deferred_guide_refinement_elapsed_us: u128,
     pub policy_witness_proposals: usize,
     /// Exact player-turn states with at least one complete option reaching
     /// the next player turn or terminal win.
@@ -1098,45 +1093,6 @@ impl OracleCombatWitnessSession {
                 .used
                 .completed_turn_options
                 .saturating_add(generation.newly_completed_options);
-            self.used.deferred_guide_refinements =
-                self.used.deferred_guide_refinements.saturating_add(
-                    generation
-                        .after_diagnostics
-                        .deferred_guide_refinements
-                        .saturating_sub(generation.before_diagnostics.deferred_guide_refinements),
-                );
-            self.used.deferred_guide_retries = self.used.deferred_guide_retries.saturating_add(
-                generation
-                    .after_diagnostics
-                    .deferred_guide_retries
-                    .saturating_sub(generation.before_diagnostics.deferred_guide_retries),
-            );
-            self.used.deferred_guide_ready = self.used.deferred_guide_ready.saturating_add(
-                generation
-                    .after_diagnostics
-                    .deferred_guide_ready
-                    .saturating_sub(generation.before_diagnostics.deferred_guide_ready),
-            );
-            self.used.deferred_guide_unsupported =
-                self.used.deferred_guide_unsupported.saturating_add(
-                    generation
-                        .after_diagnostics
-                        .deferred_guide_unsupported
-                        .saturating_sub(generation.before_diagnostics.deferred_guide_unsupported),
-                );
-            self.used.deferred_guide_refinement_elapsed_us = self
-                .used
-                .deferred_guide_refinement_elapsed_us
-                .saturating_add(
-                    generation
-                        .after_diagnostics
-                        .deferred_guide_refinement_elapsed_us
-                        .saturating_sub(
-                            generation
-                                .before_diagnostics
-                                .deferred_guide_refinement_elapsed_us,
-                        ),
-                );
             state.generator.release_unused_grant();
             self.gaps
                 .extend(generation.gaps[state.synced_gaps..].iter().cloned());

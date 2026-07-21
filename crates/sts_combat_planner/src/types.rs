@@ -229,11 +229,6 @@ pub struct TurnOptionGenerationDiagnostics {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
-    pub deferred_guide_refinements: usize,
-    pub deferred_guide_ready: usize,
-    pub deferred_guide_retries: usize,
-    pub deferred_guide_unsupported: usize,
-    pub deferred_guide_refinement_elapsed_us: u128,
 }
 
 pub(crate) fn exact_hash(position: &CombatPosition) -> String {

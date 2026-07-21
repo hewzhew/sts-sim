@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use std::time::{Duration, Instant};
 
 use sts_combat_planner::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
-    CombatStateGuide, CombatStateGuideRank, DeferredCombatGuideRefinement, TurnOptionAction,
+    CombatStateGuide, TurnOptionAction,
 };
 
 use crate::sim::combat::{
@@ -279,57 +279,17 @@ fn materialize_advisor_proposal(
     })
 }
 
-pub(super) struct ExistingCombatKnowledgePolicy {
-    rollout_guide: Option<Mutex<crate::ai::combat_search_v2::OracleRolloutGuideV1>>,
-}
-
-impl Default for ExistingCombatKnowledgePolicy {
-    fn default() -> Self {
-        Self {
-            rollout_guide: None,
-        }
-    }
-}
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct ExistingCombatKnowledgePolicy;
 
 const GUIDE_PROGRESS: CombatGuideLaneId = CombatGuideLaneId::new(1);
 const GUIDE_SURVIVAL: CombatGuideLaneId = CombatGuideLaneId::new(2);
 const GUIDE_HORIZON: CombatGuideLaneId = CombatGuideLaneId::new(3);
 const GUIDE_SETUP: CombatGuideLaneId = CombatGuideLaneId::new(4);
 const GUIDE_TURN_DEPTH: CombatGuideLaneId = CombatGuideLaneId::new(5);
-const GUIDE_ROLLOUT: CombatGuideLaneId = CombatGuideLaneId::new(6);
 
 pub fn existing_combat_knowledge_policy_v1() -> sts_combat_planner::SharedCombatActionPolicy {
-    Arc::new(ExistingCombatKnowledgePolicy::default())
-}
-
-pub fn existing_combat_knowledge_policy_with_rollout_guide_v1(
-) -> sts_combat_planner::SharedCombatActionPolicy {
-    Arc::new(ExistingCombatKnowledgePolicy {
-        rollout_guide: Some(Mutex::new(
-            crate::ai::combat_search_v2::OracleRolloutGuideV1::new(
-                384,
-                80,
-                Duration::from_millis(10),
-            ),
-        )),
-    })
-}
-
-impl ExistingCombatKnowledgePolicy {
-    fn rollout_guide(&self, position: &CombatPosition) -> Option<CombatStateGuide> {
-        let guide = self
-            .rollout_guide
-            .as_ref()?
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match guide.cached_components(position) {
-            Some(components) => Some(CombatStateGuide::new(GUIDE_ROLLOUT, components)),
-            None => Some(CombatStateGuide::deferred(
-                GUIDE_ROLLOUT,
-                crate::ai::combat_search_v2::OracleRolloutGuideV1::initial_components(),
-            )),
-        }
-    }
+    Arc::new(ExistingCombatKnowledgePolicy)
 }
 
 impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
@@ -357,7 +317,7 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
     }
 
     fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
-        let mut guides = vec![
+        vec![
             CombatStateGuide::new(
                 GUIDE_PROGRESS,
                 crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
@@ -374,13 +334,11 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
                 GUIDE_SETUP,
                 crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
             ),
-        ];
-        guides.extend(self.rollout_guide(position));
-        guides
+        ]
     }
 
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
-        let mut guides = vec![
+        vec![
             CombatStateGuide::new(
                 GUIDE_PROGRESS,
                 crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
@@ -397,36 +355,6 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
                 GUIDE_SETUP,
                 crate::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
             ),
-        ];
-        guides.extend(self.rollout_guide(position));
-        guides
-    }
-
-    fn refine_deferred_guide(
-        &self,
-        lane: CombatGuideLaneId,
-        position: &CombatPosition,
-        deadline: Option<Instant>,
-    ) -> DeferredCombatGuideRefinement {
-        if lane != GUIDE_ROLLOUT {
-            return DeferredCombatGuideRefinement::Unsupported;
-        }
-        let Some(rollout_guide) = self.rollout_guide.as_ref() else {
-            return DeferredCombatGuideRefinement::Unsupported;
-        };
-        let mut guide = rollout_guide
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match guide.evaluate(position, deadline) {
-            crate::ai::combat_search_v2::OracleRolloutGuideEvaluationV1::Ready(components) => {
-                DeferredCombatGuideRefinement::Ready(CombatStateGuideRank::new(components))
-            }
-            crate::ai::combat_search_v2::OracleRolloutGuideEvaluationV1::RetryLater => {
-                DeferredCombatGuideRefinement::RetryLater
-            }
-            crate::ai::combat_search_v2::OracleRolloutGuideEvaluationV1::BudgetExhausted => {
-                DeferredCombatGuideRefinement::Unsupported
-            }
-        }
+        ]
     }
 }

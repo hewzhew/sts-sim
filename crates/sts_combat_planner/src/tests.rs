@@ -64,13 +64,7 @@ struct SplitGuidePolicy {
 #[derive(Clone, Copy)]
 struct SharedGuidePolicy;
 
-#[derive(Clone)]
-struct DeferredGuidePolicy {
-    refinement_calls: Arc<AtomicI32>,
-}
-
 const SHARED_TEST_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(77);
-const DEFERRED_TEST_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(78);
 
 impl CombatActionPolicy for SharedGuidePolicy {
     fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
@@ -93,50 +87,6 @@ impl CombatActionPolicy for SharedGuidePolicy {
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.state_guides(position)
     }
-}
-
-impl CombatActionPolicy for DeferredGuidePolicy {
-    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
-        vec![1.0; choices.len()]
-    }
-
-    fn state_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
-        vec![CombatStateGuide::deferred(DEFERRED_TEST_GUIDE, vec![0])]
-    }
-
-    fn refine_deferred_guide(
-        &self,
-        lane: CombatGuideLaneId,
-        _position: &CombatPosition,
-        _deadline: Option<std::time::Instant>,
-    ) -> DeferredCombatGuideRefinement {
-        assert_eq!(lane, DEFERRED_TEST_GUIDE);
-        self.refinement_calls.fetch_add(1, Ordering::Relaxed);
-        DeferredCombatGuideRefinement::Ready(CombatStateGuideRank::new(vec![9]))
-    }
-}
-
-#[test]
-fn deferred_guide_is_evaluated_only_after_its_lane_receives_service() {
-    let refinement_calls = Arc::new(AtomicI32::new(0));
-    let policy = Arc::new(DeferredGuidePolicy {
-        refinement_calls: refinement_calls.clone(),
-    });
-    let stepper = TinyTurnStepper::plain();
-    let mut generator = TurnOptionGeneratorSession::with_policy(root(), config(), policy);
-
-    assert_eq!(refinement_calls.load(Ordering::Relaxed), 0);
-    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(DEFERRED_TEST_GUIDE));
-    let refined = generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 0));
-    assert_eq!(refined.after.generation_work, 1);
-    assert_eq!(refinement_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(stepper.calls.lock().unwrap().len(), 0);
-
-    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(DEFERRED_TEST_GUIDE));
-    let expanded = generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 0));
-    assert_eq!(expanded.after.generation_work, 2);
-    assert_eq!(refinement_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(stepper.calls.lock().unwrap().len(), 0);
 }
 
 impl CombatActionPolicy for SplitGuidePolicy {

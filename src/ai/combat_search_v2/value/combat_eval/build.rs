@@ -35,57 +35,6 @@ pub(in crate::ai::combat_search_v2) fn combat_eval_from_rollout_estimate(
     }
 }
 
-/// Encodes the exact `CombatEvalV2::cmp` order as lexicographic integers for
-/// consumers that must not depend on V2's private evaluation representation.
-pub(in crate::ai::combat_search_v2) fn combat_eval_guide_components(
-    eval: CombatEvalV2,
-) -> Vec<i32> {
-    let mut components = vec![eval.outcome as i32, eval.evidence as i32];
-    match eval.outcome {
-        CombatEvalOutcomeClass::Win => components.extend([
-            eval.persistent_adjusted_hp,
-            eval.final_hp,
-            eval.persistent_run_value,
-            eval.risk_margin,
-            eval.enemy_progress,
-            eval.phase_stability,
-        ]),
-        CombatEvalOutcomeClass::Loss => components.extend([
-            eval.progress as i32,
-            eval.enemy_progress,
-            eval.phase_stability,
-            eval.risk_margin,
-            eval.final_hp,
-        ]),
-        CombatEvalOutcomeClass::Unresolved if eval.survival.is_danger() => components.extend([
-            0,
-            eval.survival as i32,
-            eval.risk_margin,
-            eval.progress as i32,
-            eval.enemy_progress,
-            eval.phase_stability,
-            eval.persistent_adjusted_hp,
-            eval.final_hp,
-        ]),
-        CombatEvalOutcomeClass::Unresolved => components.extend([
-            1,
-            eval.progress as i32,
-            eval.enemy_progress,
-            eval.phase_stability,
-            eval.survival as i32,
-            eval.risk_margin,
-            eval.persistent_adjusted_hp,
-            eval.final_hp,
-        ]),
-    }
-    components.extend([
-        eval.resource_conservation,
-        eval.faster_turns,
-        eval.fewer_cards_played,
-    ]);
-    components
-}
-
 fn rollout_evidence(estimate: &RolloutNodeEstimate) -> CombatEvalEvidenceKind {
     if !estimate.evaluated {
         CombatEvalEvidenceKind::None

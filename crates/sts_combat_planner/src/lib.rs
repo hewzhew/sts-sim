@@ -51,8 +51,7 @@ pub use outcome_model::{
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
-    CombatStateGuide, CombatStateGuideRank, DeferredCombatGuideRefinement,
-    SharedCombatActionPolicy, UniformCombatActionPolicy,
+    CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy, UniformCombatActionPolicy,
 };
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,

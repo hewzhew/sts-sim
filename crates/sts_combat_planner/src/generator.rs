@@ -8,7 +8,7 @@ use sts_core::state::core::{ClientInput, EngineState};
 
 use super::policy::{
     normalized_probabilities, uniform_policy, CombatGuideLaneId, CombatPolicyChoice,
-    CombatStateGuideRank, DeferredCombatGuideRefinement, SharedCombatActionPolicy,
+    CombatStateGuideRank, SharedCombatActionPolicy,
 };
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
@@ -110,7 +110,6 @@ struct GuidedGeneratorQueueEntry {
     work_id: usize,
     sequence_id: u64,
     guide_rank: CombatStateGuideRank,
-    deferred: bool,
     anchor_priority: GeneratorWorkPriority,
 }
 
@@ -197,11 +196,6 @@ pub struct TurnOptionGeneratorSession {
     atomic_state_expansions: usize,
     anchor_work_pops: usize,
     guided_work_pops: usize,
-    deferred_guide_refinements: usize,
-    deferred_guide_ready: usize,
-    deferred_guide_retries: usize,
-    deferred_guide_unsupported: usize,
-    deferred_guide_refinement_elapsed_us: u128,
     used: CombatPlanningCounters,
     granted: CombatPlanningCounters,
 }
@@ -245,11 +239,6 @@ impl TurnOptionGeneratorSession {
             atomic_state_expansions: 0,
             anchor_work_pops: 0,
             guided_work_pops: 0,
-            deferred_guide_refinements: 0,
-            deferred_guide_ready: 0,
-            deferred_guide_retries: 0,
-            deferred_guide_unsupported: 0,
-            deferred_guide_refinement_elapsed_us: 0,
             used: CombatPlanningCounters::default(),
             granted: CombatPlanningCounters::default(),
         };
@@ -410,11 +399,6 @@ impl TurnOptionGeneratorSession {
             unique_successor_states: self.seen.len().saturating_sub(1),
             duplicate_exact_successors: self.duplicate_exact_successors,
             completed_turn_options: self.completed.len(),
-            deferred_guide_refinements: self.deferred_guide_refinements,
-            deferred_guide_ready: self.deferred_guide_ready,
-            deferred_guide_retries: self.deferred_guide_retries,
-            deferred_guide_unsupported: self.deferred_guide_unsupported,
-            deferred_guide_refinement_elapsed_us: self.deferred_guide_refinement_elapsed_us,
         }
     }
 
@@ -551,10 +535,6 @@ impl TurnOptionGeneratorSession {
             }
             if self.used.generation_work >= self.granted.generation_work {
                 break Some(GenerationInterruption::GenerationWorkBudget);
-            }
-            if self.refine_next_scheduled_guide(quantum.deadline) {
-                self.used.generation_work = self.used.generation_work.saturating_add(1);
-                continue;
             }
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
             if self.next_scheduled_work_is_apply_action()
@@ -838,16 +818,7 @@ impl TurnOptionGeneratorSession {
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
         debug_assert!(priority.levin_log_priority.is_finite());
-        let materialized_exact_state = matches!(&work, GeneratorWork::Expand(_));
-        let guides = self
-            .policy
-            .turn_generation_guides(work.position())
-            .into_iter()
-            // Deferred evidence evaluates an exact state, not an action which
-            // has not yet been applied. Eager ranks may still guide transition
-            // work using its materialized parent state.
-            .filter(|guide| materialized_exact_state || !guide.deferred)
-            .collect::<Vec<_>>();
+        let guides = self.policy.turn_generation_guides(work.position());
         let work_id = self.work.len();
         self.work.push(Some(work));
         let entry = GeneratorQueueEntry {
@@ -865,7 +836,6 @@ impl TurnOptionGeneratorSession {
                     work_id,
                     sequence_id: self.next_sequence_id,
                     guide_rank: guide.rank,
-                    deferred: guide.deferred,
                     anchor_priority: priority,
                 });
         }
@@ -879,63 +849,6 @@ impl TurnOptionGeneratorSession {
             .and_then(|work_id| self.work.get(work_id))
             .and_then(Option::as_ref)
             .is_some_and(|work| matches!(work, GeneratorWork::ApplyAction(_)))
-    }
-
-    /// Refines only the deferred entry selected by the current scheduler
-    /// lane. This is the lazy-on-pop boundary: states that never win service
-    /// never pay rollout or other expensive guide costs.
-    fn refine_next_scheduled_guide(&mut self, deadline: Option<Instant>) -> bool {
-        let Some((scheduler_lane, work_id)) = self.peek_scheduled_work() else {
-            return false;
-        };
-        if scheduler_lane == 0 {
-            return false;
-        }
-        let guide_index = scheduler_lane - 1;
-        let Some(entry) = self.guided_frontiers[guide_index].entries.peek() else {
-            return false;
-        };
-        if !entry.deferred {
-            return false;
-        }
-        debug_assert_eq!(entry.work_id, work_id);
-        let guide_lane = entry.guide_lane;
-        let position = self.work[work_id]
-            .as_ref()
-            .expect("deferred guide work must still be live")
-            .position()
-            .clone();
-        let refinement_started = Instant::now();
-        let refinement = self
-            .policy
-            .refine_deferred_guide(guide_lane, &position, deadline);
-        self.deferred_guide_refinements = self.deferred_guide_refinements.saturating_add(1);
-        self.deferred_guide_refinement_elapsed_us = self
-            .deferred_guide_refinement_elapsed_us
-            .saturating_add(refinement_started.elapsed().as_micros());
-        let mut entry = self.guided_frontiers[guide_index]
-            .entries
-            .pop()
-            .expect("peeked deferred guide entry");
-        match refinement {
-            DeferredCombatGuideRefinement::Ready(rank) => {
-                self.deferred_guide_ready = self.deferred_guide_ready.saturating_add(1);
-                entry.guide_rank = rank;
-                entry.deferred = false;
-            }
-            DeferredCombatGuideRefinement::RetryLater => {
-                self.deferred_guide_retries = self.deferred_guide_retries.saturating_add(1);
-            }
-            DeferredCombatGuideRefinement::Unsupported => {
-                self.deferred_guide_unsupported = self.deferred_guide_unsupported.saturating_add(1);
-                entry.deferred = false;
-            }
-        }
-        self.guided_frontiers[guide_index].entries.push(entry);
-        self.guided_work_pops = self.guided_work_pops.saturating_add(1);
-        let lane_count = self.guided_frontiers.len().saturating_add(1);
-        self.next_scheduler_lane = (scheduler_lane + 1) % lane_count;
-        true
     }
 
     fn peek_scheduled_work(&mut self) -> Option<(usize, usize)> {
@@ -1065,7 +978,6 @@ mod priority_tests {
             work_id: sequence_id as usize,
             sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![guide]),
-            deferred: false,
             anchor_priority: GeneratorWorkPriority::for_path(
                 atomic_depth,
                 cumulative_negative_log_policy,

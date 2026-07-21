@@ -118,8 +118,8 @@ pub use oracle_analysis_session::{
     ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
 pub use oracle_combat_policy::{
-    existing_combat_knowledge_policy_v1, existing_combat_knowledge_policy_with_rollout_guide_v1,
-    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
+    existing_combat_knowledge_policy_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
+    ExistingCombatKnowledgeAdvisorV1,
 };
 pub use oracle_combat_work::OracleRunCombatWorkCheckpointV1;
 pub use oracle_neow::{
