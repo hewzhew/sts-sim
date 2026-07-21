@@ -120,6 +120,8 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub recent_turn_survival_envelope: Vec<sts_combat_planner::OracleCombatDeepStateSnapshot>,
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
+    pub incumbent_discovery_source:
+        Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -1291,6 +1293,7 @@ fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatPro
         recent_turn_survival_envelope: progress.recent_turn_survival_envelope,
         pending_witness_replay: progress.pending_witness_replay,
         policy_witness_proposals: progress.policy_witness_proposals,
+        incumbent_discovery_source: progress.incumbent_discovery_source,
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_hp_loss: progress.incumbent_hp_loss,
         incumbent_action_count: progress.incumbent_action_count,

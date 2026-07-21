@@ -26,6 +26,9 @@ use super::transition_report::CardSnapshot;
 #[serde(rename_all = "snake_case")]
 pub enum CombatAutomationTrajectorySource {
     SearchCombat,
+    /// A complete suffix proposed by the legacy CombatSearchV2 teacher and
+    /// accepted only after authoritative exact replay by the new planner.
+    V2Donor,
     /// An explicit action sequence supplied at an oracle-analysis boundary and
     /// accepted only after exact legal replay reaches terminal victory.
     OracleExactActions,
@@ -41,6 +44,7 @@ impl CombatAutomationTrajectorySource {
     pub fn label(self) -> &'static str {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
+            CombatAutomationTrajectorySource::V2Donor => "v2_donor",
             CombatAutomationTrajectorySource::OracleExactActions => "oracle_exact_actions",
             CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
             CombatAutomationTrajectorySource::TurnPlanRescue => "turn_plan_rescue",

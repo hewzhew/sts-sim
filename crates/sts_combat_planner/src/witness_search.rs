@@ -107,6 +107,21 @@ pub struct OracleCombatWitness {
     pub final_position: CombatPosition,
     pub negative_log_policy: f64,
     pub replay_engine_steps: usize,
+    #[serde(default)]
+    pub discovery_source: OracleCombatWitnessDiscoverySource,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleCombatWitnessDiscoverySource {
+    /// Older serialized witnesses predate discovery provenance. They remain
+    /// exact replay evidence but cannot prove which search capability found
+    /// their action sequence.
+    #[default]
+    LegacyUnattributed,
+    PlannerSearch,
+    PolicyProposal,
+    RestoredExactActions,
 }
 
 /// A bounded diagnostic sample proving that one exact player-turn state
@@ -326,6 +341,7 @@ impl PartialOrd for GuidedStateQueueEntry {
 
 struct PendingWitnessReplay {
     actions: Vec<TurnOptionAction>,
+    discovery_source: OracleCombatWitnessDiscoverySource,
     negative_log_policy: f64,
     position: CombatPosition,
     next_action: usize,
@@ -729,6 +745,7 @@ impl OracleCombatWitnessSession {
                     actions.extend(proposal.actions);
                     let candidate = PendingWitnessReplay {
                         actions,
+                        discovery_source: OracleCombatWitnessDiscoverySource::PolicyProposal,
                         negative_log_policy: state.path.negative_log_policy,
                         position: self.root.position().clone(),
                         next_action: 0,
@@ -856,6 +873,7 @@ impl OracleCombatWitnessSession {
             CompleteTurnOptionBoundary::TerminalWin => {
                 let candidate = PendingWitnessReplay {
                     actions,
+                    discovery_source: OracleCombatWitnessDiscoverySource::PlannerSearch,
                     negative_log_policy: path.negative_log_policy,
                     position: self.root.position().clone(),
                     next_action: 0,
@@ -1200,6 +1218,7 @@ impl OracleCombatWitnessSession {
             final_position: replay.position,
             negative_log_policy: replay.negative_log_policy,
             replay_engine_steps: replay.engine_steps,
+            discovery_source: replay.discovery_source,
         };
         let replace = self
             .witness

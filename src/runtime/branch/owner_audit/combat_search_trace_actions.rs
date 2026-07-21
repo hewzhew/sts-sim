@@ -25,6 +25,7 @@ fn is_complete_search_source(source: CombatAutomationTrajectorySource) -> bool {
     matches!(
         source,
         CombatAutomationTrajectorySource::SearchCombat
+            | CombatAutomationTrajectorySource::V2Donor
             | CombatAutomationTrajectorySource::CompleteLineSolver
             | CombatAutomationTrajectorySource::TurnPlanRescue
             | CombatAutomationTrajectorySource::TurnPoolRescue

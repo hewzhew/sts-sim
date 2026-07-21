@@ -6,9 +6,10 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
     CombatDecisionRoot, OracleCombatDeepStateSnapshot, OracleCombatWitness,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, OracleCombatWitnessStateProgressSnapshot,
-    OracleCombatWitnessStatus, TurnOptionAction, TurnOptionGeneratorConfig,
+    OracleCombatWitnessConfig, OracleCombatWitnessDiscoverySource, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus, TurnOptionAction,
+    TurnOptionGeneratorConfig,
 };
 
 use super::combat_line_executor::apply_oracle_combat_witness;
@@ -80,6 +81,7 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
+    pub incumbent_discovery_source: Option<OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -392,6 +394,7 @@ impl OracleRunCombatWorkV1 {
             // may still replace it with an equal-HP, shorter witness later.
             negative_log_policy: inputs.len() as f64,
             replay_engine_steps,
+            discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
         })?;
         self.witness_source = CombatAutomationTrajectorySource::OracleExactActions;
         Ok(())
@@ -452,6 +455,7 @@ impl OracleRunCombatWorkV1 {
             generation_gap_count: search_progress.generation_gap_count,
             pending_witness_replay: search_progress.pending_witness_replay,
             policy_witness_proposals: counters.policy_witness_proposals,
+            incumbent_discovery_source: incumbent.map(|witness| witness.discovery_source),
             incumbent_final_hp,
             incumbent_hp_loss: incumbent_final_hp
                 .map(|final_hp| initial_hp.saturating_sub(final_hp).max(0)),
@@ -472,7 +476,19 @@ impl OracleRunCombatWorkV1 {
             return Err("oracle combat parent changed before search commit".to_string());
         }
         if let Some(witness) = self.search.witness() {
-            return apply_oracle_combat_witness(session, &self.start, witness, self.witness_source);
+            let source = match witness.discovery_source {
+                OracleCombatWitnessDiscoverySource::PolicyProposal => {
+                    CombatAutomationTrajectorySource::V2Donor
+                }
+                OracleCombatWitnessDiscoverySource::PlannerSearch => {
+                    CombatAutomationTrajectorySource::SearchCombat
+                }
+                OracleCombatWitnessDiscoverySource::RestoredExactActions => {
+                    CombatAutomationTrajectorySource::OracleExactActions
+                }
+                OracleCombatWitnessDiscoverySource::LegacyUnattributed => self.witness_source,
+            };
+            return apply_oracle_combat_witness(session, &self.start, witness, source);
         }
         let status = self
             .last_status

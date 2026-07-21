@@ -113,6 +113,11 @@ enum Command {
         /// guide, leaving the single Levin/PHS-style anchor ordering.
         #[arg(long)]
         anchor_only: bool,
+        /// Diagnostic capability boundary: disable the legacy CombatSearchV2
+        /// complete-suffix donor while retaining the new planner's action
+        /// priors and state guides.
+        #[arg(long)]
+        without_v2_donor: bool,
         /// Repeat to inspect membership for several exact corridor states in
         /// one search run.
         #[arg(long)]
@@ -653,6 +658,38 @@ struct AnchorOnlyPolicy {
     base: SharedCombatActionPolicy,
 }
 
+struct GuidanceOnlyPolicy {
+    base: SharedCombatActionPolicy,
+}
+
+impl CombatActionPolicy for GuidanceOnlyPolicy {
+    fn weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn state_guide_ranks(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        self.base.state_guide_ranks(position)
+    }
+
+    fn turn_generation_guide_ranks(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuideRank> {
+        self.base.turn_generation_guide_ranks(position)
+    }
+}
+
+fn guidance_only_policy(base: SharedCombatActionPolicy) -> SharedCombatActionPolicy {
+    Arc::new(GuidanceOnlyPolicy { base })
+}
+
 impl CombatActionPolicy for AnchorOnlyPolicy {
     fn weights(
         &self,
@@ -1096,6 +1133,7 @@ fn main() -> Result<(), String> {
             wall_ms,
             max_engine_steps_per_transition,
             anchor_only,
+            without_v2_donor,
             watch_state_hash,
             prefix_actions,
             readable,
@@ -1201,6 +1239,11 @@ fn main() -> Result<(), String> {
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
             let base_policy = existing_combat_knowledge_policy_v1();
+            let base_policy = if without_v2_donor {
+                guidance_only_policy(base_policy)
+            } else {
+                base_policy
+            };
             let (policy, shadow_corridor, mut shadow_value_artifact) =
                 if let Some(model_path) = shadow_value_prototype.as_ref() {
                     let artifact = load_value_prototype(model_path)?;
@@ -1363,6 +1406,7 @@ fn main() -> Result<(), String> {
                 return print_json(&serde_json::json!({
                     "schema_name": "OracleCombatCaseReadableV1",
                     "schema_version": 1,
+                    "v2_donor_enabled": !without_v2_donor,
                     "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                     "status": format!("{:?}", report.status),
                     "elapsed_ms": started.elapsed().as_millis(),
@@ -1407,6 +1451,7 @@ fn main() -> Result<(), String> {
                         "watched_states": watched_states,
                     },
                     "witness": witness.map(|witness| serde_json::json!({
+                        "discovery_source": witness.discovery_source,
                         "final_hp": witness.final_position.combat.entities.player.current_hp,
                         "hp_loss": initial_hp.saturating_sub(witness.final_position.combat.entities.player.current_hp),
                         "trace": witness_trace,
@@ -1416,6 +1461,7 @@ fn main() -> Result<(), String> {
             print_json(&serde_json::json!({
                 "schema_name": "OracleCombatCaseProbeV1",
                 "schema_version": 1,
+                "v2_donor_enabled": !without_v2_donor,
                 "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": started.elapsed().as_millis(),
@@ -1475,6 +1521,7 @@ fn main() -> Result<(), String> {
                     "watched_states": watched_states,
                 },
                 "witness": witness.map(|witness| serde_json::json!({
+                    "discovery_source": witness.discovery_source,
                     "final_hp": witness.final_position.combat.entities.player.current_hp,
                     "hp_loss": initial_hp.saturating_sub(witness.final_position.combat.entities.player.current_hp),
                     "action_count": witness.actions.len(),

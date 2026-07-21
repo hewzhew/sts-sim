@@ -69,7 +69,8 @@ pub use types::{
 pub use witness_search::{
     OracleCombatDeepStateSnapshot, OracleCombatOneTurnLossEvidence,
     OracleCombatOneTurnViabilityEvidence, OracleCombatWitness, OracleCombatWitnessConfig,
-    OracleCombatWitnessCounters, OracleCombatWitnessInterruption,
+    OracleCombatWitnessCounters, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessInterruption,
     OracleCombatWitnessProgressSnapshot, OracleCombatWitnessQuantum,
     OracleCombatWitnessReplayError, OracleCombatWitnessReport, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessSession, OracleCombatWitnessStateMembershipSnapshot,

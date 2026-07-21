@@ -411,6 +411,10 @@ fn oracle_witness_search_crosses_turns_and_exactly_replays_first_win() {
 
     assert_eq!(report.status, OracleCombatWitnessStatus::WitnessFound);
     let witness = report.witness.expect("verified witness");
+    assert_eq!(
+        witness.discovery_source,
+        OracleCombatWitnessDiscoverySource::PlannerSearch
+    );
     assert_eq!(witness.actions.first().unwrap().input, ClientInput::EndTurn);
     assert_eq!(witness.actions.last().unwrap().input, PLAY);
     assert_eq!(
@@ -449,6 +453,10 @@ fn policy_witness_proposal_only_becomes_a_witness_after_exact_root_replay() {
     let witness = report
         .witness
         .expect("proposal must be replayed into a witness");
+    assert_eq!(
+        witness.discovery_source,
+        OracleCombatWitnessDiscoverySource::PolicyProposal
+    );
     assert_eq!(witness.actions.len(), 2);
     assert_eq!(
         stepper.terminal(&witness.final_position),
