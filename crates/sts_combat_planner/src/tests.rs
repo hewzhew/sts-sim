@@ -876,6 +876,37 @@ fn shared_guide_publishes_and_services_the_best_partial_expansion() {
 }
 
 #[test]
+fn atomic_siblings_share_one_resumable_cursor_and_one_service_emits_one_edge() {
+    let stepper = TinyTurnStepper::plain();
+    let decision_root = root();
+    let mut session = TurnOptionGeneratorSession::with_policy(
+        decision_root.clone(),
+        config(),
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let discovery = session.advance(&stepper, CombatPlanningQuantum::deterministic(1, 8));
+    assert_eq!(discovery.after_diagnostics.applied_action_transitions, 0);
+    assert_eq!(session.retained_work_items(), 1);
+    assert_eq!(
+        session.live_work_counts_at_exact_position(decision_root.position()),
+        (0, 2, 0),
+        "one cursor owns both concrete atomic siblings"
+    );
+
+    let first_edge = session.advance(&stepper, CombatPlanningQuantum::deterministic(1, 8));
+    assert_eq!(first_edge.after_diagnostics.applied_action_transitions, 1);
+    assert_eq!(
+        first_edge
+            .after_diagnostics
+            .applied_action_transitions
+            .saturating_sub(first_edge.before_diagnostics.applied_action_transitions),
+        1,
+        "one cursor service must not turn into eager all-successor expansion"
+    );
+}
+
+#[test]
 fn generator_publishes_a_reached_turn_boundary_without_rescheduling_it() {
     let stepper = TinyTurnStepper::plain();
     let mut position = root().position().clone();

@@ -36,6 +36,88 @@ struct ActionTransitionWork {
 }
 
 #[derive(Clone, Debug)]
+struct AtomicActionCandidate {
+    input: ClientInput,
+    conditional_probability: f64,
+    negative_log_policy: f64,
+}
+
+#[derive(Clone, Debug)]
+struct AtomicActionCursorWork {
+    parent: Arc<PartialTurnOption>,
+    candidates: Vec<AtomicActionCandidate>,
+    next_candidate: usize,
+}
+
+impl AtomicActionCursorWork {
+    fn new(
+        parent: Arc<PartialTurnOption>,
+        inputs: Vec<ClientInput>,
+        probabilities: Vec<f64>,
+    ) -> Option<Self> {
+        let mut candidates = inputs
+            .into_iter()
+            .zip(probabilities)
+            .map(|(input, conditional_probability)| AtomicActionCandidate {
+                input,
+                conditional_probability,
+                negative_log_policy: parent.negative_log_policy - conditional_probability.ln(),
+            })
+            .collect::<Vec<_>>();
+        // Stable ordering preserves the simulator's canonical surface order
+        // for equal policy mass while exposing the most likely concrete edge
+        // first.
+        candidates.sort_by(|left, right| {
+            right
+                .conditional_probability
+                .total_cmp(&left.conditional_probability)
+        });
+        (!candidates.is_empty()).then_some(Self {
+            parent,
+            candidates,
+            next_candidate: 0,
+        })
+    }
+
+    fn current_transition(&self) -> Option<ActionTransitionWork> {
+        let candidate = self.candidates.get(self.next_candidate)?;
+        Some(ActionTransitionWork {
+            parent: self.parent.clone(),
+            input: candidate.input.clone(),
+            atomic_depth: self.parent.atomic_depth.saturating_add(1),
+            negative_log_policy: candidate.negative_log_policy,
+        })
+    }
+
+    fn consume_current(&mut self) {
+        self.next_candidate = self.next_candidate.saturating_add(1);
+    }
+
+    fn remaining_candidate_count(&self) -> usize {
+        self.candidates.len().saturating_sub(self.next_candidate)
+    }
+
+    fn contains_input(&self, input: &ClientInput) -> bool {
+        self.candidates[self.next_candidate..]
+            .iter()
+            .any(|candidate| candidate.input == *input)
+    }
+
+    fn priority(&self) -> Option<GeneratorWorkPriority> {
+        let remaining_probability = self.candidates[self.next_candidate..]
+            .iter()
+            .map(|candidate| candidate.conditional_probability)
+            .sum::<f64>();
+        (remaining_probability > 0.0).then(|| {
+            GeneratorWorkPriority::for_path(
+                self.parent.atomic_depth.saturating_add(1),
+                self.parent.negative_log_policy - remaining_probability.ln(),
+            )
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
 struct StructuredSelectionWork {
     parent: Arc<PartialTurnOption>,
     cursor: SelectionTransactionCursor,
@@ -46,6 +128,7 @@ struct StructuredSelectionWork {
 #[derive(Clone, Debug)]
 enum GeneratorWork {
     Expand(PartialTurnOption),
+    AtomicActions(AtomicActionCursorWork),
     ApplyAction(ActionTransitionWork),
     StructuredSelection(StructuredSelectionWork),
 }
@@ -54,10 +137,17 @@ impl GeneratorWork {
     fn position(&self) -> &CombatPosition {
         match self {
             Self::Expand(partial) => &partial.position,
+            Self::AtomicActions(actions) => &actions.parent.position,
             Self::ApplyAction(action) => &action.parent.position,
             Self::StructuredSelection(selection) => &selection.parent.position,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActionTransitionStatus {
+    Consumed,
+    TimedOut,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -267,8 +357,10 @@ impl TurnOptionGeneratorSession {
     }
 
     /// Counts still-live generator work rooted at one exact partial-turn
-    /// position as `(expand, apply_action, structured_selection)`.  This is a
-    /// diagnostic view only; inspecting it does not affect queue order.
+    /// position as `(expand, pending_atomic_actions, structured_selection)`.
+    /// Atomic siblings share one resumable cursor, but the second component
+    /// remains a count of concrete transitions so membership reports stay
+    /// comparable. This is a diagnostic view only.
     pub fn live_work_counts_at_exact_position(
         &self,
         position: &CombatPosition,
@@ -284,6 +376,9 @@ impl TurnOptionGeneratorSession {
             .fold((0, 0, 0), |mut counts, work| {
                 match work {
                     GeneratorWork::Expand(_) => counts.0 += 1,
+                    GeneratorWork::AtomicActions(actions) => {
+                        counts.1 += actions.remaining_candidate_count()
+                    }
                     GeneratorWork::ApplyAction(_) => counts.1 += 1,
                     GeneratorWork::StructuredSelection(_) => counts.2 += 1,
                 }
@@ -300,17 +395,26 @@ impl TurnOptionGeneratorSession {
         input: &ClientInput,
     ) -> bool {
         let target = combat_exact_state_key(&position.engine, &position.combat);
-        self.work.iter().filter_map(Option::as_ref).any(|work| {
-            matches!(
-                work,
-                GeneratorWork::ApplyAction(action)
-                    if combat_exact_state_key(
+        self.work
+            .iter()
+            .filter_map(Option::as_ref)
+            .any(|work| match work {
+                GeneratorWork::AtomicActions(actions) => {
+                    combat_exact_state_key(
+                        &actions.parent.position.engine,
+                        &actions.parent.position.combat,
+                    ) == target
+                        && actions.contains_input(input)
+                }
+                GeneratorWork::ApplyAction(action) => {
+                    combat_exact_state_key(
                         &action.parent.position.engine,
                         &action.parent.position.combat,
                     ) == target
                         && action.input == *input
-            )
-        })
+                }
+                _ => false,
+            })
     }
 
     /// One-based live queue ranks for an exact pending expansion, returned as
@@ -548,7 +652,7 @@ impl TurnOptionGeneratorSession {
                 break Some(GenerationInterruption::GenerationWorkBudget);
             }
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-            if self.next_scheduled_work_is_apply_action()
+            if self.next_scheduled_work_applies_transition()
                 && self
                     .granted
                     .engine_steps
@@ -566,6 +670,28 @@ impl TurnOptionGeneratorSession {
                 GeneratorWork::Expand(partial) => {
                     self.atomic_state_expansions = self.atomic_state_expansions.saturating_add(1);
                     self.expand(stepper, partial);
+                }
+                GeneratorWork::AtomicActions(mut cursor) => {
+                    let action = cursor
+                        .current_transition()
+                        .expect("a scheduled atomic cursor has a candidate");
+                    if self.apply_action_transition(
+                        stepper,
+                        action,
+                        transition_reservation,
+                        quantum.deadline,
+                    ) == ActionTransitionStatus::TimedOut
+                    {
+                        let priority = cursor
+                            .priority()
+                            .expect("a timed-out cursor retains its candidate");
+                        self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                        break Some(GenerationInterruption::Deadline);
+                    }
+                    cursor.consume_current();
+                    if let Some(priority) = cursor.priority() {
+                        self.push_work(GeneratorWork::AtomicActions(cursor), priority);
+                    }
                 }
                 GeneratorWork::StructuredSelection(mut selection) => {
                     let remaining_inputs = selection.cursor.remaining_input_count().max(1);
@@ -606,87 +732,19 @@ impl TurnOptionGeneratorSession {
                     }
                 }
                 GeneratorWork::ApplyAction(action) => {
-                    if stepper
-                        .choice_for_legal_input(&action.parent.position, &action.input)
-                        .is_none()
-                    {
-                        self.record_gap(
-                            TurnOptionGenerationGapKind::GeneratedInputRejected,
-                            &action.parent,
-                        );
-                        continue;
-                    }
-                    let result = stepper.apply_to_stable(
-                        &action.parent.position,
-                        action.input.clone(),
-                        CombatStepLimits {
-                            max_engine_steps: transition_reservation,
-                            deadline: quantum.deadline,
-                        },
+                    let priority = GeneratorWorkPriority::for_path(
+                        action.atomic_depth,
+                        action.negative_log_policy,
                     );
-                    self.used.engine_steps =
-                        self.used.engine_steps.saturating_add(result.engine_steps);
-                    if result.timed_out {
-                        let priority = GeneratorWorkPriority::for_path(
-                            action.atomic_depth,
-                            action.negative_log_policy,
-                        );
+                    if self.apply_action_transition(
+                        stepper,
+                        action.clone(),
+                        transition_reservation,
+                        quantum.deadline,
+                    ) == ActionTransitionStatus::TimedOut
+                    {
                         self.push_work(GeneratorWork::ApplyAction(action), priority);
                         break Some(GenerationInterruption::Deadline);
-                    }
-                    if result.truncated {
-                        self.record_gap(
-                            TurnOptionGenerationGapKind::TransitionStepLimit,
-                            &action.parent,
-                        );
-                        continue;
-                    }
-
-                    self.applied_action_transitions =
-                        self.applied_action_transitions.saturating_add(1);
-
-                    let mut actions = action.parent.actions.clone();
-                    actions.push(TurnOptionAction {
-                        input: action.input,
-                        expected_successor_hash: exact_hash(&result.position),
-                        engine_steps: result.engine_steps,
-                    });
-                    let key =
-                        combat_exact_state_key(&result.position.engine, &result.position.combat);
-                    if self.seen.insert(key) {
-                        let partial = PartialTurnOption {
-                            position: result.position,
-                            actions,
-                            atomic_depth: action.atomic_depth,
-                            negative_log_policy: action.negative_log_policy,
-                        };
-                        let terminal = stepper.terminal(&partial.position);
-                        if let Some(boundary) =
-                            supported_boundary(&self.root, &partial.position, terminal)
-                        {
-                            // A stable atomic transition has already paid the
-                            // simulator cost and reached a complete-turn
-                            // boundary. Publish it now instead of routing it
-                            // back through the partial-turn agenda, where
-                            // thousands of unrelated prefixes could delay an
-                            // already-known successor.
-                            self.publish_completed(CompleteTurnOption::new(
-                                self.root.exact_state_hash().to_owned(),
-                                partial.actions,
-                                boundary,
-                                partial.position,
-                                partial.negative_log_policy,
-                            ));
-                        } else {
-                            let priority = GeneratorWorkPriority::for_path(
-                                action.atomic_depth,
-                                action.negative_log_policy,
-                            );
-                            self.push_work(GeneratorWork::Expand(partial), priority);
-                        }
-                    } else {
-                        self.duplicate_exact_successors =
-                            self.duplicate_exact_successors.saturating_add(1);
                     }
                 }
             }
@@ -713,6 +771,83 @@ impl TurnOptionGeneratorSession {
             gaps: self.gaps.clone(),
             status,
         }
+    }
+
+    fn apply_action_transition(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        action: ActionTransitionWork,
+        transition_reservation: usize,
+        deadline: Option<Instant>,
+    ) -> ActionTransitionStatus {
+        if stepper
+            .choice_for_legal_input(&action.parent.position, &action.input)
+            .is_none()
+        {
+            self.record_gap(
+                TurnOptionGenerationGapKind::GeneratedInputRejected,
+                &action.parent,
+            );
+            return ActionTransitionStatus::Consumed;
+        }
+        let result = stepper.apply_to_stable(
+            &action.parent.position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: transition_reservation,
+                deadline,
+            },
+        );
+        self.used.engine_steps = self.used.engine_steps.saturating_add(result.engine_steps);
+        if result.timed_out {
+            return ActionTransitionStatus::TimedOut;
+        }
+        if result.truncated {
+            self.record_gap(
+                TurnOptionGenerationGapKind::TransitionStepLimit,
+                &action.parent,
+            );
+            return ActionTransitionStatus::Consumed;
+        }
+
+        self.applied_action_transitions = self.applied_action_transitions.saturating_add(1);
+        let mut actions = action.parent.actions.clone();
+        actions.push(TurnOptionAction {
+            input: action.input,
+            expected_successor_hash: exact_hash(&result.position),
+            engine_steps: result.engine_steps,
+        });
+        let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
+        if self.seen.insert(key) {
+            let partial = PartialTurnOption {
+                position: result.position,
+                actions,
+                atomic_depth: action.atomic_depth,
+                negative_log_policy: action.negative_log_policy,
+            };
+            let terminal = stepper.terminal(&partial.position);
+            if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
+                // A stable atomic transition has already paid the simulator
+                // cost and reached a complete-turn boundary. Publish it now
+                // instead of routing it back through the partial-turn agenda.
+                self.publish_completed(CompleteTurnOption::new(
+                    self.root.exact_state_hash().to_owned(),
+                    partial.actions,
+                    boundary,
+                    partial.position,
+                    partial.negative_log_policy,
+                ));
+            } else {
+                let priority = GeneratorWorkPriority::for_path(
+                    action.atomic_depth,
+                    action.negative_log_policy,
+                );
+                self.push_work(GeneratorWork::Expand(partial), priority);
+            }
+        } else {
+            self.duplicate_exact_successors = self.duplicate_exact_successors.saturating_add(1);
+        }
+        ActionTransitionStatus::Consumed
     }
 
     fn expand(&mut self, stepper: &dyn CombatStepper, partial: PartialTurnOption) {
@@ -762,25 +897,22 @@ impl TurnOptionGeneratorSession {
             .then_some(weights)
             .unwrap_or_else(|| vec![1.0; policy_choices.len()]);
         let probabilities = normalized_probabilities(weights, self.config.uniform_exploration_ppm);
-        let mut probabilities = probabilities.into_iter();
+        let atomic_action_count = surface.atomic_actions.len();
+        let atomic_probabilities = probabilities[..atomic_action_count].to_vec();
+        let selection_probabilities = probabilities[atomic_action_count..].to_vec();
         // Every outgoing action observes the same immutable parent position.
         // Sharing it avoids one full combat-state and action-prefix clone for
         // every legal action while preserving the exact search graph.
         let parent = Arc::new(partial);
-        for input in surface.atomic_actions {
-            let probability = probabilities.next().expect("one probability per action");
-            let negative_log_policy = parent.negative_log_policy - probability.ln();
-            let atomic_depth = parent.atomic_depth.saturating_add(1);
-            let priority = GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
-            self.push_work(
-                GeneratorWork::ApplyAction(ActionTransitionWork {
-                    parent: parent.clone(),
-                    input,
-                    atomic_depth,
-                    negative_log_policy,
-                }),
-                priority,
-            );
+        if let Some(cursor) = AtomicActionCursorWork::new(
+            parent.clone(),
+            surface.atomic_actions,
+            atomic_probabilities,
+        ) {
+            let priority = cursor
+                .priority()
+                .expect("a new atomic cursor contains probability mass");
+            self.push_work(GeneratorWork::AtomicActions(cursor), priority);
         }
         if !surface.selection_families.is_empty()
             && !stepper.supports_canonical_pending_choice_actions()
@@ -790,10 +922,11 @@ impl TurnOptionGeneratorSession {
                 &parent,
             );
         } else {
-            for family in surface.selection_families {
-                let probability = probabilities
-                    .next()
-                    .expect("one probability per structured family");
+            for (family, probability) in surface
+                .selection_families
+                .into_iter()
+                .zip(selection_probabilities)
+            {
                 match SelectionTransactionCursor::new(&family) {
                     Ok(cursor) if !cursor.is_exhausted() => {
                         let family_negative_log_policy =
@@ -816,7 +949,6 @@ impl TurnOptionGeneratorSession {
                 }
             }
         }
-        debug_assert!(probabilities.next().is_none());
         if surface_is_empty {
             self.record_gap(
                 TurnOptionGenerationGapKind::EmptyLegalActionSurface,
@@ -866,11 +998,16 @@ impl TurnOptionGeneratorSession {
         work_id
     }
 
-    fn next_scheduled_work_is_apply_action(&mut self) -> bool {
+    fn next_scheduled_work_applies_transition(&mut self) -> bool {
         self.peek_scheduled_work_id()
             .and_then(|work_id| self.work.get(work_id))
             .and_then(Option::as_ref)
-            .is_some_and(|work| matches!(work, GeneratorWork::ApplyAction(_)))
+            .is_some_and(|work| {
+                matches!(
+                    work,
+                    GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
+                )
+            })
     }
 
     fn peek_scheduled_work(&mut self) -> Option<(usize, usize)> {
@@ -1013,6 +1150,52 @@ mod priority_tests {
         let locally_greedy = guided_entry(9, 0.01, 1, 1);
 
         assert!(improved_after_setup > locally_greedy);
+    }
+
+    #[test]
+    fn atomic_cursor_conserves_residual_probability_mass() {
+        let mut session =
+            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
+        let GeneratorWork::Expand(parent) =
+            session.pop_scheduled_work().expect("root expansion work")
+        else {
+            panic!("root work must be an expansion");
+        };
+        let mut cursor = AtomicActionCursorWork::new(
+            Arc::new(parent),
+            vec![
+                ClientInput::EndTurn,
+                ClientInput::Cancel,
+                ClientInput::Proceed,
+            ],
+            vec![0.2, 0.5, 0.3],
+        )
+        .expect("non-empty action surface");
+
+        let initial = cursor.priority().unwrap();
+        assert!(initial.negative_log_policy.abs() < 1.0e-12);
+        assert_eq!(
+            cursor.current_transition().unwrap().input,
+            ClientInput::Cancel,
+            "the most probable concrete edge is emitted first"
+        );
+
+        cursor.consume_current();
+        let residual = cursor.priority().unwrap();
+        assert!((residual.negative_log_policy - (-0.5_f64.ln())).abs() < 1.0e-12);
+        let next_concrete = cursor.current_transition().unwrap();
+        assert!(residual.negative_log_policy <= next_concrete.negative_log_policy);
+
+        cursor.consume_current();
+        let final_residual = cursor.priority().unwrap();
+        let final_concrete = cursor.current_transition().unwrap();
+        assert_eq!(
+            final_residual.negative_log_policy.to_bits(),
+            final_concrete.negative_log_policy.to_bits(),
+            "one remaining edge has exactly the cursor's residual bound"
+        );
+        cursor.consume_current();
+        assert!(cursor.priority().is_none());
     }
 
     #[test]
