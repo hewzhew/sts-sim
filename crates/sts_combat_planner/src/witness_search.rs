@@ -724,7 +724,7 @@ impl OracleCombatWitnessSession {
                 snapshot.max_path_atomic_depth.max(state.path.atomic_depth);
             snapshot.max_completed_turn_options_at_state = snapshot
                 .max_completed_turn_options_at_state
-                .max(state.generator.completed_options().len());
+                .max(state.generator.total_completed_options());
         }
         snapshot.recent_turn_survival_envelope = survival_by_turn
             .into_values()
@@ -1098,8 +1098,16 @@ impl OracleCombatWitnessSession {
                 .extend(generation.gaps[state.synced_gaps..].iter().cloned());
             state.synced_gaps = generation.gaps.len();
 
-            let new_options = state.generator.completed_options()[state.synced_options..].to_vec();
-            state.synced_options = state.generator.completed_options().len();
+            let retaining_one_turn_evidence =
+                self.one_turn_loss_evidence_limit > 0 || self.one_turn_viability_evidence_limit > 0;
+            let new_options = if retaining_one_turn_evidence {
+                let options = state.generator.completed_options()[state.synced_options..].to_vec();
+                state.synced_options = state.generator.completed_options().len();
+                options
+            } else {
+                state.synced_options = 0;
+                state.generator.take_completed_options()
+            };
             for option in new_options {
                 let root_option = state.actions.is_empty().then(|| {
                     (
@@ -1728,7 +1736,7 @@ fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgr
         path_negative_log_policy: state.path.negative_log_policy,
         generator_work: counters.generation_work,
         generator_engine_steps: counters.engine_steps,
-        completed_turn_options: state.generator.completed_options().len(),
+        completed_turn_options: state.generator.total_completed_options(),
         retained_generator_work_items: state.generator.retained_work_items(),
         synced_options: state.synced_options,
         anchor_states_ahead: None,

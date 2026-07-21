@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
+use std::sync::Arc;
 use std::time::Instant;
 
 use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
@@ -28,7 +29,7 @@ struct PartialTurnOption {
 
 #[derive(Clone, Debug)]
 struct ActionTransitionWork {
-    parent: PartialTurnOption,
+    parent: Arc<PartialTurnOption>,
     input: ClientInput,
     atomic_depth: usize,
     negative_log_policy: f64,
@@ -36,7 +37,7 @@ struct ActionTransitionWork {
 
 #[derive(Clone, Debug)]
 struct StructuredSelectionWork {
-    parent: PartialTurnOption,
+    parent: Arc<PartialTurnOption>,
     cursor: SelectionTransactionCursor,
     family_negative_log_policy: f64,
     remaining_conditional_mass: f64,
@@ -190,6 +191,7 @@ pub struct TurnOptionGeneratorSession {
     next_sequence_id: u64,
     seen: HashSet<CombatExactStateKey>,
     completed: Vec<CompleteTurnOption>,
+    total_completed_options: usize,
     gaps: Vec<TurnOptionGenerationGap>,
     applied_action_transitions: usize,
     duplicate_exact_successors: usize,
@@ -233,6 +235,7 @@ impl TurnOptionGeneratorSession {
             next_sequence_id: 0,
             seen,
             completed: Vec::new(),
+            total_completed_options: 0,
             gaps: Vec::new(),
             applied_action_transitions: 0,
             duplicate_exact_successors: 0,
@@ -398,8 +401,16 @@ impl TurnOptionGeneratorSession {
             applied_action_transitions: self.applied_action_transitions,
             unique_successor_states: self.seen.len().saturating_sub(1),
             duplicate_exact_successors: self.duplicate_exact_successors,
-            completed_turn_options: self.completed.len(),
+            completed_turn_options: self.total_completed_options,
         }
+    }
+
+    pub(crate) fn take_completed_options(&mut self) -> Vec<CompleteTurnOption> {
+        std::mem::take(&mut self.completed)
+    }
+
+    pub(crate) fn total_completed_options(&self) -> usize {
+        self.total_completed_options
     }
 
     pub fn is_finished(&self) -> bool {
@@ -520,7 +531,7 @@ impl TurnOptionGeneratorSession {
     ) -> TurnOptionGenerationReport {
         let before = self.used;
         let before_diagnostics = self.diagnostics();
-        let completed_before = self.completed.len();
+        let completed_before = self.total_completed_options;
         self.granted = self.granted.saturating_add(CombatPlanningCounters {
             generation_work: quantum.additional_generation_work,
             engine_steps: quantum.additional_engine_steps,
@@ -634,7 +645,7 @@ impl TurnOptionGeneratorSession {
                     self.applied_action_transitions =
                         self.applied_action_transitions.saturating_add(1);
 
-                    let mut actions = action.parent.actions;
+                    let mut actions = action.parent.actions.clone();
                     actions.push(TurnOptionAction {
                         input: action.input,
                         expected_successor_hash: exact_hash(&result.position),
@@ -659,7 +670,7 @@ impl TurnOptionGeneratorSession {
                             // back through the partial-turn agenda, where
                             // thousands of unrelated prefixes could delay an
                             // already-known successor.
-                            self.completed.push(CompleteTurnOption::new(
+                            self.publish_completed(CompleteTurnOption::new(
                                 self.root.exact_state_hash().to_owned(),
                                 partial.actions,
                                 boundary,
@@ -695,8 +706,10 @@ impl TurnOptionGeneratorSession {
             before_diagnostics,
             after_diagnostics: self.diagnostics(),
             retained_work_items: self.retained_work_items(),
-            newly_completed_options: self.completed.len().saturating_sub(completed_before),
-            total_completed_options: self.completed.len(),
+            newly_completed_options: self
+                .total_completed_options
+                .saturating_sub(completed_before),
+            total_completed_options: self.total_completed_options,
             gaps: self.gaps.clone(),
             status,
         }
@@ -705,7 +718,7 @@ impl TurnOptionGeneratorSession {
     fn expand(&mut self, stepper: &dyn CombatStepper, partial: PartialTurnOption) {
         let terminal = stepper.terminal(&partial.position);
         if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
-            self.completed.push(CompleteTurnOption::new(
+            self.publish_completed(CompleteTurnOption::new(
                 self.root.exact_state_hash().to_owned(),
                 partial.actions,
                 boundary,
@@ -750,14 +763,18 @@ impl TurnOptionGeneratorSession {
             .unwrap_or_else(|| vec![1.0; policy_choices.len()]);
         let probabilities = normalized_probabilities(weights, self.config.uniform_exploration_ppm);
         let mut probabilities = probabilities.into_iter();
+        // Every outgoing action observes the same immutable parent position.
+        // Sharing it avoids cloning the full combat state and action prefix
+        // once per legal action while preserving the exact search graph.
+        let parent = Arc::new(partial);
         for input in surface.atomic_actions {
             let probability = probabilities.next().expect("one probability per action");
-            let negative_log_policy = partial.negative_log_policy - probability.ln();
-            let atomic_depth = partial.atomic_depth.saturating_add(1);
+            let negative_log_policy = parent.negative_log_policy - probability.ln();
+            let atomic_depth = parent.atomic_depth.saturating_add(1);
             let priority = GeneratorWorkPriority::for_path(atomic_depth, negative_log_policy);
             self.push_work(
                 GeneratorWork::ApplyAction(ActionTransitionWork {
-                    parent: partial.clone(),
+                    parent: parent.clone(),
                     input,
                     atomic_depth,
                     negative_log_policy,
@@ -770,7 +787,7 @@ impl TurnOptionGeneratorSession {
         {
             self.record_gap(
                 TurnOptionGenerationGapKind::UnsupportedStructuredChoice,
-                &partial,
+                &parent,
             );
         } else {
             for family in surface.selection_families {
@@ -780,22 +797,22 @@ impl TurnOptionGeneratorSession {
                 match SelectionTransactionCursor::new(&family) {
                     Ok(cursor) if !cursor.is_exhausted() => {
                         let family_negative_log_policy =
-                            partial.negative_log_policy - probability.ln();
+                            parent.negative_log_policy - probability.ln();
                         self.push_work(
                             GeneratorWork::StructuredSelection(StructuredSelectionWork {
-                                parent: partial.clone(),
+                                parent: parent.clone(),
                                 cursor,
                                 family_negative_log_policy,
                                 remaining_conditional_mass: 1.0,
                             }),
                             GeneratorWorkPriority::for_path(
-                                partial.atomic_depth.saturating_add(1),
+                                parent.atomic_depth.saturating_add(1),
                                 family_negative_log_policy,
                             ),
                         );
                     }
                     Ok(_) => {}
-                    Err(kind) => self.record_gap(kind, &partial),
+                    Err(kind) => self.record_gap(kind, &parent),
                 }
             }
         }
@@ -803,7 +820,7 @@ impl TurnOptionGeneratorSession {
         if surface_is_empty {
             self.record_gap(
                 TurnOptionGenerationGapKind::EmptyLegalActionSurface,
-                &partial,
+                &parent,
             );
         }
     }
@@ -814,6 +831,11 @@ impl TurnOptionGeneratorSession {
             exact_state_hash: exact_hash(&partial.position),
             action_depth: partial.actions.len(),
         });
+    }
+
+    fn publish_completed(&mut self, option: CompleteTurnOption) {
+        self.total_completed_options = self.total_completed_options.saturating_add(1);
+        self.completed.push(option);
     }
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
@@ -1011,7 +1033,7 @@ mod priority_tests {
         }
         session.push_work(
             GeneratorWork::ApplyAction(ActionTransitionWork {
-                parent,
+                parent: Arc::new(parent),
                 input: ClientInput::EndTurn,
                 atomic_depth: 1,
                 negative_log_policy: 100.0,
