@@ -17,7 +17,6 @@ check-workspace = ["check", "--workspace", "--all-targets"]
 # entrypoint.  The hidden token and the binary's embedded profile/path checks
 # reject stale binaries and accidental `--release --target-dir ...` builds.
 oracle-lab = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
-# Short alias for the same one-shot laboratory. Keeping both aliases on one
-# executable prevents a resident helper from locking the canonical Windows
-# artifact or leaving endpoint/process state behind.
+# Build-owning convenience alias. For repeated diagnostics, `./ol` invokes the
+# same canonical binary directly and lets its depfile guard reject stale code.
 ol = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]

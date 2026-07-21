@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -2310,7 +2310,57 @@ fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
             expected.display()
         ));
     }
+    validate_source_freshness(&expected)?;
     Ok(())
+}
+
+fn validate_source_freshness(executable: &Path) -> Result<(), String> {
+    let executable_modified = std::fs::metadata(executable)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| {
+            format!(
+                "failed to inspect canonical oracle laboratory '{}': {error}",
+                executable.display()
+            )
+        })?;
+    let depfile = executable.with_extension("d");
+    let depfile_text = std::fs::read_to_string(&depfile).map_err(|error| {
+        format!(
+            "canonical oracle dependency manifest is missing at '{}': {error}; rebuild with `cargo oracle-lab --help`",
+            depfile.display()
+        )
+    })?;
+    let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
+    let mut dependencies = depfile_dependencies(&depfile_text);
+    dependencies.extend([
+        repository.join("Cargo.toml"),
+        repository.join("Cargo.lock"),
+        repository.join(".cargo/config.toml"),
+        repository.join("crates/sts_combat_planner/Cargo.toml"),
+        repository.join("crates/sts_simulator_control/Cargo.toml"),
+    ]);
+    if let Some(stale) = dependencies.into_iter().find(|dependency| {
+        std::fs::metadata(dependency)
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| modified > executable_modified)
+    }) {
+        return Err(format!(
+            "canonical oracle laboratory is stale: '{}' is newer than '{}'; rebuild once with `cargo oracle-lab --help`",
+            stale.display(),
+            executable.display()
+        ));
+    }
+    Ok(())
+}
+
+fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
+    depfile
+        .lines()
+        .filter_map(|line| line.split_once(": ").map(|(_, dependencies)| dependencies))
+        .flat_map(str::split_whitespace)
+        .filter(|dependency| !dependency.ends_with(':'))
+        .map(PathBuf::from)
+        .collect()
 }
 
 fn combat_policy_surface(

@@ -1,4 +1,8 @@
 fn main() {
+    println!("cargo:rerun-if-changed=../../.cargo/config.toml");
+    println!("cargo:rerun-if-changed=../../Cargo.toml");
+    println!("cargo:rerun-if-changed=../../Cargo.lock");
+    println!("cargo:rerun-if-changed=Cargo.toml");
     // Cargo's PROFILE environment variable reports the inherited base
     // (`release`) for custom profiles. OUT_DIR retains the actual profile
     // directory: target/<profile>/build/<package-hash>/out.
