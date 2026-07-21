@@ -7,10 +7,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    search_layered_combat_witness, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
-    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatWitnessBudget, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
+    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, LayeredCombatCandidateRaceConfig,
+    LayeredCombatCandidateRaceSession, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
     LayeredCombatWitnessSession, OracleCombatOneTurnLossEvidence,
     OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
@@ -225,6 +224,10 @@ enum Command {
         generation_quantum_work: usize,
         #[arg(long, default_value_t = 32)]
         max_turn_layers: usize,
+        /// Report where these exact states reside in deferred beam windows
+        /// without exporting the complete frontier.
+        #[arg(long)]
+        watch_exact_state_hash: Vec<String>,
         /// If a replay-verified win is found, save its exact ClientInput list.
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
@@ -1216,6 +1219,7 @@ fn main() -> Result<(), String> {
             candidate_pool_multiplier,
             generation_quantum_work,
             max_turn_layers,
+            watch_exact_state_hash,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -1224,29 +1228,58 @@ fn main() -> Result<(), String> {
             let root = CombatDecisionRoot::new(loaded.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let deadline = Instant::now() + Duration::from_millis(wall_ms);
-            let report = search_layered_combat_witness(
-                root,
-                LayeredCombatWitnessConfig {
-                    generator: TurnOptionGeneratorConfig {
-                        max_engine_steps_per_transition,
-                        ..TurnOptionGeneratorConfig::default()
-                    },
-                    beam_width,
-                    retained_per_view,
-                    minimum_generation_work_per_layer,
-                    maximum_generation_work_per_layer,
-                    candidate_pool_multiplier,
-                    generation_quantum_work,
-                    max_turn_layers,
+            let config = LayeredCombatWitnessConfig {
+                generator: TurnOptionGeneratorConfig {
+                    max_engine_steps_per_transition,
+                    ..TurnOptionGeneratorConfig::default()
                 },
-                LayeredCombatWitnessBudget {
-                    max_generation_work: max_nodes,
-                    max_engine_steps: max_nodes.saturating_mul(max_engine_steps_per_transition),
+                beam_width,
+                retained_per_view,
+                minimum_generation_work_per_layer,
+                maximum_generation_work_per_layer,
+                candidate_pool_multiplier,
+                generation_quantum_work,
+                max_turn_layers,
+            };
+            let mut session = LayeredCombatWitnessSession::with_policy(
+                root,
+                config,
+                existing_combat_knowledge_policy_v1(),
+            );
+            let report = session.advance(
+                LayeredCombatWitnessQuantum {
+                    additional_generation_work: max_nodes,
+                    additional_engine_steps: max_nodes
+                        .saturating_mul(max_engine_steps_per_transition),
                     deadline: Some(deadline),
                 },
-                existing_combat_knowledge_policy_v1(),
                 &EngineCombatStepper,
             );
+            let watched_states = session
+                .deferred_windows()
+                .into_iter()
+                .flat_map(|window| {
+                    let watch_exact_state_hash = &watch_exact_state_hash;
+                    window
+                        .candidates
+                        .into_iter()
+                        .enumerate()
+                        .filter(move |(_, candidate)| {
+                            watch_exact_state_hash.contains(&candidate.exact_state_hash)
+                        })
+                        .map(move |(candidate_index, candidate)| {
+                            json!({
+                                "exact_state_hash": candidate.exact_state_hash,
+                                "relative_turn_depth": window.relative_turn_depth,
+                                "window_discrepancy": window.window_discrepancy,
+                                "source_window_index": window.source_window_index,
+                                "candidate_index": candidate_index,
+                                "action_count": candidate.actions.len(),
+                                "negative_log_policy": candidate.negative_log_policy,
+                            })
+                        })
+                })
+                .collect::<Vec<_>>();
             if let (Some(path), Some(witness)) =
                 (export_witness_actions.as_ref(), report.witness.as_ref())
             {
@@ -1350,6 +1383,7 @@ fn main() -> Result<(), String> {
                 "layers": layers,
                 "frontier": frontier,
                 "generation_gap_count": report.generation_gaps.len(),
+                "watched_states": watched_states,
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
