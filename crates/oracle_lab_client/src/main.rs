@@ -454,6 +454,7 @@ fn compact_live_advance(before: &Value, result: &Value) -> Value {
         "quanta": report.and_then(|report| report.get("quanta_served")),
         "work_delta": {
             "generation_work": value_u64(after_combat, "generation_work").saturating_sub(value_u64(before_combat, "generation_work")),
+            "current_search_generation_work": value_u64(after_combat, "current_search_generation_work").saturating_sub(value_u64(before_combat, "current_search_generation_work")),
             "exact_states": value_u64(after_combat, "exact_states").saturating_sub(value_u64(before_combat, "exact_states")),
             "completed_turn_options": value_u64(after_combat, "completed_turn_options").saturating_sub(value_u64(before_combat, "completed_turn_options")),
         },
@@ -492,6 +493,8 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
     };
     json!({
         "generation_work": combat.get("generation_work"),
+        "historical_generation_work": combat.get("historical_generation_work"),
+        "current_search_generation_work": combat.get("current_search_generation_work"),
         "exact_states": combat.get("exact_states"),
         "completed_turn_options": combat.get("completed_turn_options"),
         "max_player_turn": combat.get("max_player_turn"),
@@ -705,16 +708,15 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
         }));
     }
 
-    let executable = heavy_executable()?;
+    let executable = service_executable()?;
     let mut command = ProcessCommand::new(&executable);
     command
         .current_dir(repository_root())
         .arg("--canonical-fast-run")
-        .arg("serve")
         .arg("--workspace")
         .arg(&workspace)
-        .arg("--session")
-        .arg(session)
+        .arg("--endpoint")
+        .arg(&endpoint_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -823,19 +825,58 @@ fn heavy_executable() -> Result<PathBuf, String> {
     Ok(executable)
 }
 
+fn service_executable() -> Result<PathBuf, String> {
+    let executable = repository_root()
+        .join("target")
+        .join("fast-run")
+        .join(if cfg!(windows) {
+            "oracle_lab_service.exe"
+        } else {
+            "oracle_lab_service"
+        });
+    if !executable.is_file() {
+        return Err(format!(
+            "resident oracle host is missing at {}; build it once with `cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab_service`",
+            executable.display()
+        ));
+    }
+    ensure_service_artifact_fresh(&executable)?;
+    Ok(executable)
+}
+
 fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
+    ensure_artifact_fresh(
+        executable,
+        "heavy oracle laboratory",
+        "cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab",
+    )
+}
+
+fn ensure_service_artifact_fresh(executable: &Path) -> Result<(), String> {
+    ensure_artifact_fresh(
+        executable,
+        "resident oracle host",
+        "cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab_service",
+    )
+}
+
+fn ensure_artifact_fresh(
+    executable: &Path,
+    label: &str,
+    rebuild_command: &str,
+) -> Result<(), String> {
     let executable_modified = fs::metadata(executable)
         .and_then(|metadata| metadata.modified())
         .map_err(|error| {
             format!(
-                "failed to inspect heavy oracle laboratory '{}': {error}",
+                "failed to inspect {label} '{}': {error}",
                 executable.display()
             )
         })?;
     let depfile = executable.with_extension("d");
     let depfile_text = fs::read_to_string(&depfile).map_err(|error| {
         format!(
-            "heavy oracle dependency manifest is missing at '{}': {error}; rebuild the canonical artifact",
+            "{label} dependency manifest is missing at '{}': {error}; rebuild with `{rebuild_command}`",
             depfile.display()
         )
     })?;
@@ -856,7 +897,7 @@ fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
     });
     if let Some(dependency) = stale_dependency {
         return Err(format!(
-            "heavy oracle laboratory is stale: '{}' is newer than '{}'. Rebuild once with `cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab`; refusing to run stale search code",
+            "{label} is stale: '{}' is newer than '{}'. Rebuild once with `{rebuild_command}`; refusing to run stale search code",
             dependency.display(),
             executable.display()
         ));
@@ -944,6 +985,11 @@ fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
             expected.display()
         ));
     }
+    ensure_artifact_fresh(
+        &current,
+        "lightweight oracle client",
+        "cargo build --profile fast-run -p oracle_lab_client --bin oracle_lab_client",
+    )?;
     Ok(())
 }
 
@@ -1156,13 +1202,21 @@ D:\rust\src\bin\oracle_lab.rs:
                 {"label": "c"}
             ],
             "children": [],
-            "event": {"title": "test"}
+            "event": {"title": "test"},
+            "combat": {
+                "generation_work": 125,
+                "historical_generation_work": 100,
+                "current_search_generation_work": 25
+            }
         });
         let compact = compact_live_node(&node, 2);
         assert_eq!(compact.get("choice_count"), Some(&json!(3)));
         assert_eq!(compact.get("choices_shown"), Some(&json!(2)));
         assert_eq!(compact.get("choices_truncated"), Some(&json!(true)));
         assert_eq!(compact.get("event"), node.get("event"));
+        assert_eq!(compact["combat"]["generation_work"], 125);
+        assert_eq!(compact["combat"]["historical_generation_work"], 100);
+        assert_eq!(compact["combat"]["current_search_generation_work"], 25);
     }
 
     #[test]

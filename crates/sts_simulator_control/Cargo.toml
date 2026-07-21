@@ -53,6 +53,10 @@ path = "../../src/bin/oracle_run.rs"
 name = "oracle_lab"
 path = "../../src/bin/oracle_lab.rs"
 
+[[bin]]
+name = "oracle_lab_service"
+path = "../../src/bin/oracle_lab_service.rs"
+
 [[test]]
 name = "noncombat_strategy_contract"
 path = "tests/noncombat_strategy_contract.rs"

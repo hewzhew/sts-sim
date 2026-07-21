@@ -20,3 +20,7 @@ oracle-lab = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_co
 # Build-owning convenience alias. For repeated diagnostics, `./ol` invokes the
 # same canonical binary directly and lets its depfile guard reject stale code.
 ol = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
+# Resident mode is explicit: this lightweight client controls a dedicated
+# service binary whose process lifetime preserves the in-memory combat search.
+# The one-shot oracle_lab executable remains independently rebuildable.
+ol-live = ["run", "--quiet", "--profile", "fast-run", "-p", "oracle_lab_client", "--bin", "oracle_lab_client", "--", "--canonical-fast-run"]
