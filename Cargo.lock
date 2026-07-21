@@ -219,6 +219,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "oracle_lab_client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oracle_lab_protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "oracle_lab_protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,6 +351,7 @@ dependencies = [
  "blake2",
  "clap",
  "flate2",
+ "oracle_lab_protocol",
  "serde",
  "serde_json",
  "smallvec",

@@ -50,7 +50,8 @@ pub use outcome_model::{
     CombatOutcomeTrainingExampleV1, COMBAT_OUTCOME_FEATURE_SCHEMA_V1,
 };
 pub use policy::{
-    CombatActionPolicy, CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuideRank,
+    CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
+    CombatStateGuide, CombatStateGuideRank, DeferredCombatGuideRefinement,
     SharedCombatActionPolicy, UniformCombatActionPolicy,
 };
 pub use prospect::{
@@ -67,14 +68,15 @@ pub use types::{
     TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
 };
 pub use witness_search::{
-    OracleCombatDeepStateSnapshot, OracleCombatOneTurnLossEvidence,
-    OracleCombatOneTurnViabilityEvidence, OracleCombatWitness, OracleCombatWitnessConfig,
+    OracleCombatDeepStateSnapshot, OracleCombatGuideQueueSnapshot, OracleCombatGuideRankSnapshot,
+    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
+    OracleCombatRootActionFamilySnapshot, OracleCombatWitness, OracleCombatWitnessConfig,
     OracleCombatWitnessCounters, OracleCombatWitnessDiscoverySource,
-    OracleCombatWitnessInterruption,
-    OracleCombatWitnessProgressSnapshot, OracleCombatWitnessQuantum,
-    OracleCombatWitnessReplayError, OracleCombatWitnessReport, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, OracleCombatWitnessStateMembershipSnapshot,
-    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus,
+    OracleCombatWitnessInterruption, OracleCombatWitnessProgressSnapshot,
+    OracleCombatWitnessQuantum, OracleCombatWitnessReplayError, OracleCombatWitnessReport,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    OracleCombatWitnessStateMembershipSnapshot, OracleCombatWitnessStateProgressSnapshot,
+    OracleCombatWitnessStatus,
 };
 
 #[cfg(test)]

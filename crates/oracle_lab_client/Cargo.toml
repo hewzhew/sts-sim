@@ -1,0 +1,15 @@
+[package]
+name = "oracle_lab_client"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "oracle_lab_client"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+oracle_lab_protocol = { path = "../oracle_lab_protocol" }
+serde = "1.0"
+serde_json = "1.0"

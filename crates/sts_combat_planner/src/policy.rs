@@ -30,6 +30,80 @@ impl CombatStateGuideRank {
     }
 }
 
+/// Opaque identity for one guide queue.
+///
+/// A policy may expose different guide sets at player-turn boundaries and
+/// while constructing a turn.  Equal ids mean equal semantics, so a partial
+/// expansion can safely publish its best retained promise back to the outer
+/// search.  Different ids are never compared or joined merely because they
+/// occupy the same vector position.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CombatGuideLaneId(u32);
+
+impl CombatGuideLaneId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+}
+
+/// One opaque rank in one explicitly identified guide queue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CombatStateGuide {
+    pub lane: CombatGuideLaneId,
+    pub rank: CombatStateGuideRank,
+    pub deferred: bool,
+}
+
+impl CombatStateGuide {
+    pub fn new(lane: CombatGuideLaneId, components: impl Into<Vec<i32>>) -> Self {
+        Self {
+            lane,
+            rank: CombatStateGuideRank::new(components),
+            deferred: false,
+        }
+    }
+
+    pub fn from_rank(lane: CombatGuideLaneId, rank: CombatStateGuideRank) -> Self {
+        Self {
+            lane,
+            rank,
+            deferred: false,
+        }
+    }
+
+    /// Publishes a cheap first-play rank whose expensive evidence is computed
+    /// only if this exact guide lane actually receives service.
+    pub fn deferred(lane: CombatGuideLaneId, components: impl Into<Vec<i32>>) -> Self {
+        Self {
+            lane,
+            rank: CombatStateGuideRank::new(components),
+            deferred: true,
+        }
+    }
+
+    pub fn deferred_from_rank(lane: CombatGuideLaneId, rank: CombatStateGuideRank) -> Self {
+        Self {
+            lane,
+            rank,
+            deferred: true,
+        }
+    }
+}
+
+/// Result of servicing one deferred guide entry. A retry consumes the current
+/// bounded service quantum but keeps the entry deferred for a later quantum;
+/// unsupported guides become ordinary eager entries at their initial rank.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeferredCombatGuideRefinement {
+    Ready(CombatStateGuideRank),
+    RetryLater,
+    Unsupported,
+}
+
 /// A domain policy may cheaply propose a complete tactical suffix. The
 /// planner never trusts the proposal as an outcome: every action and exact
 /// successor hash is replayed from the original root before a witness exists.
@@ -55,8 +129,11 @@ pub trait CombatActionPolicy: Send + Sync {
     /// Independent guide queues over one shared exact-state graph. Keeping
     /// ranks separate avoids inventing a calibration between unlike domain
     /// heuristics (for example, progress and survival).
-    fn state_guide_ranks(&self, position: &CombatPosition) -> Vec<CombatStateGuideRank> {
-        self.state_guide_rank(position).into_iter().collect()
+    fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        self.state_guide_rank(position)
+            .map(|rank| CombatStateGuide::from_rank(CombatGuideLaneId::new(0), rank))
+            .into_iter()
+            .collect()
     }
 
     /// Guidance for partial states while constructing one complete player
@@ -65,18 +142,20 @@ pub trait CombatActionPolicy: Send + Sync {
     /// actively discouraging every action needed to reach the next boundary.
     /// Existing policies retain their behavior unless they opt into the
     /// distinction.
-    fn turn_generation_guide_ranks(&self, position: &CombatPosition) -> Vec<CombatStateGuideRank> {
-        self.state_guide_ranks(position)
+    fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        self.state_guides(position)
     }
 
-    /// Optional bounded tactical suffix proposal for the current exact state.
-    /// This is guidance only; the witness search owns legality and exact replay.
-    fn witness_proposal(
+    /// Lazily refines one state guide after its lane wins scheduler service.
+    /// The returned rank remains non-authoritative guidance: it cannot create
+    /// actions, successors, or terminal evidence.
+    fn refine_deferred_guide(
         &self,
+        _lane: CombatGuideLaneId,
         _position: &CombatPosition,
         _deadline: Option<Instant>,
-    ) -> Option<CombatPolicyWitnessProposal> {
-        None
+    ) -> DeferredCombatGuideRefinement {
+        DeferredCombatGuideRefinement::Unsupported
     }
 }
 

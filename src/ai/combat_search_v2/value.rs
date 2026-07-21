@@ -4,8 +4,8 @@ mod report;
 mod state;
 
 pub(super) use combat_eval::{
-    combat_eval_from_rollout_estimate, CombatEvalOutcomeClass, CombatEvalProgressBucket,
-    CombatEvalSurvivalBucket, CombatEvalV2,
+    combat_eval_from_rollout_estimate, combat_eval_guide_components, CombatEvalOutcomeClass,
+    CombatEvalProgressBucket, CombatEvalSurvivalBucket, CombatEvalV2,
 };
 #[cfg(test)]
 use facts::combat_search_core_value_facts;

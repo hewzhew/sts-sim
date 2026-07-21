@@ -5,9 +5,9 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatDecisionRoot, OracleCombatDeepStateSnapshot, OracleCombatWitness,
-    OracleCombatWitnessConfig, OracleCombatWitnessDiscoverySource, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    CombatDecisionRoot, OracleCombatDeepStateSnapshot, OracleCombatRootActionFamilySnapshot,
+    OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
     OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus, TurnOptionAction,
     TurnOptionGeneratorConfig,
 };
@@ -15,7 +15,10 @@ use sts_combat_planner::{
 use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
-use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
+use super::oracle_combat_policy::{
+    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
+    ExistingCombatKnowledgePolicy,
+};
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
@@ -24,6 +27,11 @@ use crate::state::core::ClientInput;
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
     search: OracleCombatWitnessSession,
+    advisor: Option<ExistingCombatKnowledgeAdvisorV1>,
+    advisor_nodes: u64,
+    advisor_elapsed: Duration,
+    advisor_complete: bool,
+    advisor_failure: Option<String>,
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
@@ -55,6 +63,14 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     pub quanta_since_incumbent_improvement: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incumbent: Option<OracleCombatWitness>,
+    #[serde(default)]
+    pub advisor_nodes: u64,
+    #[serde(default)]
+    pub advisor_elapsed_ms: u64,
+    #[serde(default)]
+    pub advisor_complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advisor_failure: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +97,10 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
+    pub advisor_nodes: u64,
+    pub advisor_elapsed_ms: u64,
+    pub advisor_active: bool,
+    pub advisor_failure: Option<String>,
     pub incumbent_discovery_source: Option<OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
@@ -93,6 +113,10 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
 }
 
 impl OracleRunCombatWorkV1 {
+    pub(super) fn root_action_families(&self) -> Vec<OracleCombatRootActionFamilySnapshot> {
+        self.search.root_action_families()
+    }
+
     pub(super) fn new(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
@@ -136,11 +160,20 @@ impl OracleRunCombatWorkV1 {
                 generation_work_per_agenda_pop: 4,
                 satisfaction,
             },
-            Arc::new(ExistingCombatKnowledgePolicy),
+            Arc::new(ExistingCombatKnowledgePolicy::default()),
         );
+        let advisor = Some(ExistingCombatKnowledgeAdvisorV1::new(
+            &prepared.start,
+            max_transition_steps,
+        ));
         Ok(Self {
             start: prepared.start,
             search,
+            advisor,
+            advisor_nodes: 0,
+            advisor_elapsed: Duration::ZERO,
+            advisor_complete: false,
+            advisor_failure: None,
             remaining_work: max_work,
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
@@ -180,8 +213,19 @@ impl OracleRunCombatWorkV1 {
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
+        work.advisor_nodes = checkpoint.advisor_nodes;
+        work.advisor_elapsed = Duration::from_millis(checkpoint.advisor_elapsed_ms);
+        work.advisor_complete = checkpoint.advisor_complete;
+        work.advisor_failure = checkpoint.advisor_failure;
+        if work.advisor_complete {
+            work.advisor = None;
+        } else if let Some(advisor) = &mut work.advisor {
+            advisor.restore_charged_usage(work.advisor_nodes, work.advisor_elapsed);
+        }
         if let Some(incumbent) = checkpoint.incumbent {
             work.search.restore_verified_witness(incumbent)?;
+            work.advisor = None;
+            work.advisor_complete = true;
         }
         Ok(work)
     }
@@ -209,6 +253,10 @@ impl OracleRunCombatWorkV1 {
             incumbent_revision: self.incumbent_revision,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             incumbent: self.search.witness().cloned(),
+            advisor_nodes: self.advisor_nodes,
+            advisor_elapsed_ms: self.advisor_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+            advisor_complete: self.advisor_complete,
+            advisor_failure: self.advisor_failure.clone(),
         }
     }
 
@@ -240,6 +288,46 @@ impl OracleRunCombatWorkV1 {
             };
         }
         let deadline = soft_wall.and_then(|duration| now.checked_add(duration));
+        self.last_quantum_generation_work = 0;
+        self.last_quantum_engine_steps = 0;
+        if let Some(advisor) = &mut self.advisor {
+            let hard_wall = [self.remaining_wall_time, global_remaining]
+                .into_iter()
+                .flatten()
+                .min();
+            let advisor_status = advisor.advance(soft_wall, hard_wall);
+            self.advisor_nodes = advisor.total_nodes();
+            self.advisor_elapsed = advisor.total_elapsed();
+            match advisor_status {
+                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Pending) => {
+                    if let Some(remaining) = &mut self.remaining_wall_time {
+                        *remaining = remaining.saturating_sub(now.elapsed());
+                    }
+                    self.quantum_count = self.quantum_count.saturating_add(1);
+                    self.quanta_since_incumbent_improvement =
+                        self.quanta_since_incumbent_improvement.saturating_add(1);
+                    return if wall_allowance_exhausted(self.remaining_wall_time) {
+                        RunControlCombatWorkAdvanceV1::AllowanceExhausted
+                    } else {
+                        RunControlCombatWorkAdvanceV1::Pending
+                    };
+                }
+                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Proposal(proposal)) => {
+                    self.search.offer_witness_proposal(proposal);
+                    self.advisor = None;
+                    self.advisor_complete = true;
+                }
+                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Exhausted) => {
+                    self.advisor = None;
+                    self.advisor_complete = true;
+                }
+                Err(error) => {
+                    self.advisor = None;
+                    self.advisor_complete = true;
+                    self.advisor_failure = Some(error);
+                }
+            }
+        }
         let before = self.search.counters();
         let before_incumbent_hp = self
             .search
@@ -455,6 +543,10 @@ impl OracleRunCombatWorkV1 {
             generation_gap_count: search_progress.generation_gap_count,
             pending_witness_replay: search_progress.pending_witness_replay,
             policy_witness_proposals: counters.policy_witness_proposals,
+            advisor_nodes: self.advisor_nodes,
+            advisor_elapsed_ms: self.advisor_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+            advisor_active: self.advisor.is_some(),
+            advisor_failure: self.advisor_failure.clone(),
             incumbent_discovery_source: incumbent.map(|witness| witness.discovery_source),
             incumbent_final_hp,
             incumbent_hp_loss: incumbent_final_hp

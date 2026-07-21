@@ -5,8 +5,13 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
+use sts_core::state::core::ClientInput;
 
-use super::policy::{uniform_policy, CombatStateGuideRank, SharedCombatActionPolicy};
+use super::generator::{RetainedGuidePromise, TurnOptionGeneratorPreferredLane};
+use super::policy::{
+    uniform_policy, CombatGuideLaneId, CombatPolicyWitnessProposal, CombatStateGuide,
+    CombatStateGuideRank, SharedCombatActionPolicy,
+};
 use super::types::{
     exact_hash, CombatDecisionRoot, CompleteTurnOptionBoundary, TurnOptionAction,
     TurnOptionGenerationGap, TurnOptionGeneratorConfig,
@@ -67,6 +72,11 @@ pub struct OracleCombatWitnessCounters {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
+    pub deferred_guide_refinements: usize,
+    pub deferred_guide_ready: usize,
+    pub deferred_guide_retries: usize,
+    pub deferred_guide_unsupported: usize,
+    pub deferred_guide_refinement_elapsed_us: u128,
     pub policy_witness_proposals: usize,
     /// Exact player-turn states with at least one complete option reaching
     /// the next player turn or terminal win.
@@ -165,6 +175,7 @@ pub struct OracleCombatWitnessProgressSnapshot {
     pub retained_states: usize,
     pub queued_anchor_entries: usize,
     pub queued_guided_entries: Vec<usize>,
+    pub guide_queues: Vec<OracleCombatGuideQueueSnapshot>,
     pub max_player_turn: u32,
     pub max_path_atomic_depth: usize,
     pub max_completed_turn_options_at_state: usize,
@@ -187,6 +198,18 @@ pub struct OracleCombatWitnessProgressSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatGuideQueueSnapshot {
+    pub lane_id: u32,
+    pub entries: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatGuideRankSnapshot {
+    pub lane_id: u32,
+    pub states_ahead: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OracleCombatDeepStateSnapshot {
     pub player_turn: u32,
     pub player_hp: i32,
@@ -198,6 +221,69 @@ pub struct OracleCombatDeepStateSnapshot {
     pub discard_pile_size: usize,
     pub exhaust_pile_size: usize,
     pub path_atomic_depth: usize,
+}
+
+/// Read-only attribution of current search work to the first atomic action
+/// taken at the combat root. This distinguishes root generation, admission,
+/// retention, and downstream service without forcing or rerunning one action.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OracleCombatRootActionFamilySnapshot {
+    pub first_action: ClientInput,
+    pub best_root_negative_log_policy: Option<f64>,
+    pub completed_root_turn_options: usize,
+    pub unique_root_successors: usize,
+    pub accepted_root_successors: usize,
+    pub retained_root_successors: usize,
+    pub accepted_descendants: usize,
+    pub retained_descendants: usize,
+    pub descendant_generation_work: usize,
+    pub descendant_completed_turn_options: usize,
+    pub max_player_turn: u32,
+    pub best_hp_at_max_turn: Option<i32>,
+    pub lowest_enemy_hp_at_max_turn: Option<i32>,
+}
+
+#[derive(Clone)]
+struct RootActionFamilyAccumulator {
+    snapshot: OracleCombatRootActionFamilySnapshot,
+    root_successors: HashSet<String>,
+    accepted_root_successors: HashSet<String>,
+    accepted_descendants: HashSet<String>,
+    retained_root_successors: HashSet<String>,
+}
+
+impl RootActionFamilyAccumulator {
+    fn new(first_action: ClientInput) -> Self {
+        Self {
+            snapshot: OracleCombatRootActionFamilySnapshot {
+                first_action,
+                best_root_negative_log_policy: None,
+                completed_root_turn_options: 0,
+                unique_root_successors: 0,
+                accepted_root_successors: 0,
+                retained_root_successors: 0,
+                accepted_descendants: 0,
+                retained_descendants: 0,
+                descendant_generation_work: 0,
+                descendant_completed_turn_options: 0,
+                max_player_turn: 0,
+                best_hp_at_max_turn: None,
+                lowest_enemy_hp_at_max_turn: None,
+            },
+            root_successors: HashSet::new(),
+            accepted_root_successors: HashSet::new(),
+            accepted_descendants: HashSet::new(),
+            retained_root_successors: HashSet::new(),
+        }
+    }
+
+    fn finish(mut self) -> OracleCombatRootActionFamilySnapshot {
+        self.snapshot.unique_root_successors = self.root_successors.len();
+        self.snapshot.accepted_root_successors = self.accepted_root_successors.len();
+        self.snapshot.accepted_descendants = self.accepted_descendants.len();
+        self.snapshot.retained_root_successors = self.retained_root_successors.len();
+        self.snapshot
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -212,6 +298,7 @@ pub struct OracleCombatWitnessStateProgressSnapshot {
     pub synced_options: usize,
     pub anchor_states_ahead: Option<usize>,
     pub guided_states_ahead: Option<Vec<usize>>,
+    pub guided_lane_ranks: Option<Vec<OracleCombatGuideRankSnapshot>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -257,7 +344,7 @@ impl PathRank {
 struct SearchState {
     exact_key: CombatExactStateKey,
     path: PathRank,
-    guide_ranks: Vec<CombatStateGuideRank>,
+    guides: Vec<CombatStateGuide>,
     queue_revision: u64,
     actions: Vec<TurnOptionAction>,
     generator: TurnOptionGeneratorSession,
@@ -299,7 +386,7 @@ impl PartialOrd for StateQueueEntry {
 
 #[derive(Clone, Debug)]
 struct GuidedStateQueueEntry {
-    guide_index: usize,
+    guide_lane: CombatGuideLaneId,
     state_id: usize,
     revision: u64,
     sequence_id: u64,
@@ -317,10 +404,21 @@ impl Eq for GuidedStateQueueEntry {}
 impl PartialEq for GuidedStateQueueEntry {
     fn eq(&self, other: &Self) -> bool {
         self.state_id == other.state_id
-            && self.guide_index == other.guide_index
+            && self.guide_lane == other.guide_lane
             && self.revision == other.revision
             && self.sequence_id == other.sequence_id
     }
+}
+
+struct GuidedStateFrontier {
+    lane: CombatGuideLaneId,
+    entries: BinaryHeap<GuidedStateQueueEntry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum WitnessSchedulerLane {
+    Anchor,
+    Guide(CombatGuideLaneId),
 }
 
 impl Ord for GuidedStateQueueEntry {
@@ -347,6 +445,8 @@ struct PendingWitnessReplay {
     next_action: usize,
     engine_steps: usize,
     final_hp_hint: i32,
+    last_boundary_turn: u32,
+    verified_boundaries: Vec<(usize, CombatPosition)>,
 }
 
 pub struct OracleCombatWitnessSession {
@@ -355,11 +455,12 @@ pub struct OracleCombatWitnessSession {
     policy: SharedCombatActionPolicy,
     states: Vec<Option<SearchState>>,
     anchor_frontier: BinaryHeap<StateQueueEntry>,
-    guided_frontiers: Vec<BinaryHeap<GuidedStateQueueEntry>>,
+    guided_frontiers: Vec<GuidedStateFrontier>,
     next_scheduler_lane: usize,
     best_paths: HashMap<CombatExactStateKey, PathRank>,
     generated_exact_state_hashes: HashSet<String>,
     accepted_exact_state_hashes: HashSet<String>,
+    root_action_families: Vec<RootActionFamilyAccumulator>,
     next_sequence_id: u64,
     used: OracleCombatWitnessCounters,
     granted_agenda_pops: usize,
@@ -374,12 +475,6 @@ pub struct OracleCombatWitnessSession {
     one_turn_viability_evidence_limit: usize,
     one_turn_viability_evidence: Vec<OracleCombatOneTurnViabilityEvidence>,
 }
-
-// A policy proposal is a root-level capability donor, not another search
-// frontier. Re-running a bounded legacy rollout for every popped exact state
-// consumed most of the improvement budget after the first verified incumbent.
-// The planner owns all continuation search after this single proposal.
-const MAX_POLICY_WITNESS_PROPOSALS: usize = 1;
 
 impl OracleCombatWitnessSession {
     pub fn new(root: CombatDecisionRoot, config: OracleCombatWitnessConfig) -> Self {
@@ -400,7 +495,7 @@ impl OracleCombatWitnessSession {
         let state = SearchState {
             exact_key: exact_key.clone(),
             path,
-            guide_ranks: policy.state_guide_ranks(root.position()),
+            guides: policy.state_guides(root.position()),
             queue_revision: 0,
             actions: Vec::new(),
             generator: TurnOptionGeneratorSession::with_policy(
@@ -423,6 +518,7 @@ impl OracleCombatWitnessSession {
             best_paths: HashMap::from([(exact_key, path)]),
             generated_exact_state_hashes: HashSet::from([root_exact_state_hash.clone()]),
             accepted_exact_state_hashes: HashSet::from([root_exact_state_hash]),
+            root_action_families: Vec::new(),
             next_sequence_id: 0,
             used: OracleCombatWitnessCounters {
                 exact_states: 1,
@@ -442,6 +538,40 @@ impl OracleCombatWitnessSession {
         };
         session.queue_state(0);
         session
+    }
+
+    /// Offers an externally computed tactical line for authoritative replay.
+    ///
+    /// The advisor owns neither legality nor terminal truth. Every action and
+    /// expected exact successor is replayed from this session's unchanged
+    /// combat root before the proposal can become a witness. Keeping this
+    /// operation explicit avoids hiding a stateful search inside the otherwise
+    /// stateless action-guidance policy.
+    pub fn offer_witness_proposal(&mut self, proposal: CombatPolicyWitnessProposal) -> bool {
+        self.used.policy_witness_proposals = self.used.policy_witness_proposals.saturating_add(1);
+        let action_count = proposal.actions.len();
+        let candidate = PendingWitnessReplay {
+            actions: proposal.actions,
+            discovery_source: OracleCombatWitnessDiscoverySource::PolicyProposal,
+            // The advisor does not expose calibrated policy probabilities.
+            // Charge one neutral unit per proposed atomic input rather than
+            // pretending its path has zero Levin cost.
+            negative_log_policy: action_count as f64,
+            position: self.root.position().clone(),
+            next_action: 0,
+            engine_steps: 0,
+            final_hp_hint: proposal.final_hp_hint,
+            last_boundary_turn: self.root.turn_count(),
+            verified_boundaries: Vec::new(),
+        };
+        let replace = self
+            .pending_witness
+            .as_ref()
+            .is_none_or(|pending| pending_witness_better(&candidate, pending));
+        if replace {
+            self.pending_witness = Some(candidate);
+        }
+        replace
     }
 
     pub fn witness(&self) -> Option<&OracleCombatWitness> {
@@ -507,7 +637,19 @@ impl OracleCombatWitnessSession {
         let mut snapshot = OracleCombatWitnessProgressSnapshot {
             retained_states: self.retained_state_work(),
             queued_anchor_entries: self.anchor_frontier.len(),
-            queued_guided_entries: self.guided_frontiers.iter().map(BinaryHeap::len).collect(),
+            queued_guided_entries: self
+                .guided_frontiers
+                .iter()
+                .map(|frontier| frontier.entries.len())
+                .collect(),
+            guide_queues: self
+                .guided_frontiers
+                .iter()
+                .map(|frontier| OracleCombatGuideQueueSnapshot {
+                    lane_id: frontier.lane.value(),
+                    entries: frontier.entries.len(),
+                })
+                .collect(),
             generation_gap_count: self.gaps.len(),
             pending_witness_replay: self.pending_witness.is_some(),
             root_state: self
@@ -596,6 +738,155 @@ impl OracleCombatWitnessSession {
             .collect::<Vec<_>>();
         snapshot.recent_turn_survival_envelope.reverse();
         snapshot
+    }
+
+    pub fn root_action_families(&self) -> Vec<OracleCombatRootActionFamilySnapshot> {
+        let mut families = self.root_action_families.clone();
+        for family in &mut families {
+            family.snapshot.retained_descendants = 0;
+            family.retained_root_successors.clear();
+        }
+        for state in self.states.iter().flatten() {
+            if !self
+                .best_paths
+                .get(&state.exact_key)
+                .is_some_and(|rank| rank.same_as(state.path))
+            {
+                continue;
+            }
+            let Some(first_action) = state.actions.first() else {
+                continue;
+            };
+            let Some(family) = families
+                .iter_mut()
+                .find(|family| family.snapshot.first_action == first_action.input)
+            else {
+                continue;
+            };
+            family.snapshot.retained_descendants =
+                family.snapshot.retained_descendants.saturating_add(1);
+            let state_hash = exact_hash(state.generator.root().position());
+            if family.root_successors.contains(&state_hash) {
+                family.retained_root_successors.insert(state_hash);
+            }
+        }
+
+        let mut snapshots = families
+            .into_iter()
+            .map(RootActionFamilyAccumulator::finish)
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| {
+            left.best_root_negative_log_policy
+                .unwrap_or(f64::INFINITY)
+                .total_cmp(&right.best_root_negative_log_policy.unwrap_or(f64::INFINITY))
+        });
+        snapshots
+    }
+
+    fn root_action_family_index(&mut self, input: &ClientInput) -> usize {
+        self.root_action_families
+            .iter()
+            .position(|family| family.snapshot.first_action == *input)
+            .unwrap_or_else(|| {
+                self.root_action_families
+                    .push(RootActionFamilyAccumulator::new(input.clone()));
+                self.root_action_families.len() - 1
+            })
+    }
+
+    fn record_root_option_generated(&mut self, option: &super::CompleteTurnOption) {
+        let Some(first_action) = option.actions().first() else {
+            return;
+        };
+        let family_index = self.root_action_family_index(&first_action.input);
+        let family = &mut self.root_action_families[family_index];
+        family.snapshot.completed_root_turn_options = family
+            .snapshot
+            .completed_root_turn_options
+            .saturating_add(1);
+        family.snapshot.best_root_negative_log_policy = Some(
+            family
+                .snapshot
+                .best_root_negative_log_policy
+                .map_or(option.negative_log_policy(), |current| {
+                    current.min(option.negative_log_policy())
+                }),
+        );
+        family
+            .root_successors
+            .insert(option.exact_successor_hash().to_owned());
+    }
+
+    fn record_root_option_admission(&mut self, input: &ClientInput, successor: &str) {
+        if !self.accepted_exact_state_hashes.contains(successor) {
+            return;
+        }
+        let family_index = self.root_action_family_index(input);
+        self.root_action_families[family_index]
+            .accepted_root_successors
+            .insert(successor.to_owned());
+    }
+
+    fn record_descendant_service(
+        &mut self,
+        state: &SearchState,
+        generation_work: usize,
+        completed_turn_options: usize,
+    ) {
+        let Some(first_action) = state.actions.first() else {
+            return;
+        };
+        let family_index = self.root_action_family_index(&first_action.input);
+        let family = &mut self.root_action_families[family_index];
+        family.snapshot.descendant_generation_work = family
+            .snapshot
+            .descendant_generation_work
+            .saturating_add(generation_work);
+        family.snapshot.descendant_completed_turn_options = family
+            .snapshot
+            .descendant_completed_turn_options
+            .saturating_add(completed_turn_options);
+    }
+
+    fn record_descendant_acceptance(
+        &mut self,
+        input: &ClientInput,
+        exact_state_hash: &str,
+        position: &CombatPosition,
+    ) {
+        let family_index = self.root_action_family_index(input);
+        let family = &mut self.root_action_families[family_index];
+        family
+            .accepted_descendants
+            .insert(exact_state_hash.to_owned());
+        let player_hp = position.combat.entities.player.current_hp;
+        let player_turn = position.combat.turn.turn_count;
+        let enemy_total_hp = position
+            .combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| monster.is_alive_for_action())
+            .map(|monster| monster.current_hp.max(0))
+            .sum::<i32>();
+        if player_turn > family.snapshot.max_player_turn {
+            family.snapshot.max_player_turn = player_turn;
+            family.snapshot.best_hp_at_max_turn = Some(player_hp);
+            family.snapshot.lowest_enemy_hp_at_max_turn = Some(enemy_total_hp);
+        } else if player_turn == family.snapshot.max_player_turn {
+            family.snapshot.best_hp_at_max_turn = Some(
+                family
+                    .snapshot
+                    .best_hp_at_max_turn
+                    .map_or(player_hp, |hp| hp.max(player_hp)),
+            );
+            family.snapshot.lowest_enemy_hp_at_max_turn = Some(
+                family
+                    .snapshot
+                    .lowest_enemy_hp_at_max_turn
+                    .map_or(enemy_total_hp, |hp| hp.min(enemy_total_hp)),
+            );
+        }
     }
 
     pub fn state_progress_by_exact_hash(
@@ -725,7 +1016,7 @@ impl OracleCombatWitnessSession {
                     OracleCombatWitnessInterruption::GenerationWorkBudget,
                 );
             }
-            let Some((state_id, mut state)) = self.pop_scheduled_state() else {
+            let Some((state_id, mut state, scheduled_lane)) = self.pop_scheduled_state() else {
                 break if self.gaps.is_empty() {
                     OracleCombatWitnessStatus::FrontierExhausted
                 } else {
@@ -734,36 +1025,6 @@ impl OracleCombatWitnessSession {
             };
 
             self.used.agenda_pops = self.used.agenda_pops.saturating_add(1);
-            if self.used.policy_witness_proposals < MAX_POLICY_WITNESS_PROPOSALS {
-                self.used.policy_witness_proposals =
-                    self.used.policy_witness_proposals.saturating_add(1);
-                if let Some(proposal) = self
-                    .policy
-                    .witness_proposal(state.generator.root().position(), quantum.deadline)
-                {
-                    let mut actions = state.actions.clone();
-                    actions.extend(proposal.actions);
-                    let candidate = PendingWitnessReplay {
-                        actions,
-                        discovery_source: OracleCombatWitnessDiscoverySource::PolicyProposal,
-                        negative_log_policy: state.path.negative_log_policy,
-                        position: self.root.position().clone(),
-                        next_action: 0,
-                        engine_steps: 0,
-                        final_hp_hint: proposal.final_hp_hint,
-                    };
-                    let replace = self
-                        .pending_witness
-                        .as_ref()
-                        .is_none_or(|pending| pending_witness_better(&candidate, pending));
-                    if replace {
-                        self.pending_witness = Some(candidate);
-                    }
-                    self.states[state_id] = Some(state);
-                    self.queue_state(state_id);
-                    continue;
-                }
-            }
             let generation_grant = self.config.generation_work_per_agenda_pop.max(1).min(
                 self.granted_generation_work
                     .saturating_sub(self.used.generation_work),
@@ -782,6 +1043,10 @@ impl OracleCombatWitnessSession {
                     self.granted_engine_steps
                         .saturating_sub(self.used.engine_steps),
                 );
+            state.generator.prefer_lane(match scheduled_lane {
+                WitnessSchedulerLane::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
+                WitnessSchedulerLane::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
+            });
             let generation = state.generator.advance(
                 stepper,
                 CombatPlanningQuantum {
@@ -790,12 +1055,19 @@ impl OracleCombatWitnessSession {
                     deadline: quantum.deadline,
                 },
             );
-            self.used.generation_work = self.used.generation_work.saturating_add(
-                generation
-                    .after
-                    .generation_work
-                    .saturating_sub(generation.before.generation_work),
+            let generation_work_delta = generation
+                .after
+                .generation_work
+                .saturating_sub(generation.before.generation_work);
+            self.record_descendant_service(
+                &state,
+                generation_work_delta,
+                generation.newly_completed_options,
             );
+            self.used.generation_work = self
+                .used
+                .generation_work
+                .saturating_add(generation_work_delta);
             self.used.engine_steps = self.used.engine_steps.saturating_add(
                 generation
                     .after
@@ -826,6 +1098,45 @@ impl OracleCombatWitnessSession {
                 .used
                 .completed_turn_options
                 .saturating_add(generation.newly_completed_options);
+            self.used.deferred_guide_refinements =
+                self.used.deferred_guide_refinements.saturating_add(
+                    generation
+                        .after_diagnostics
+                        .deferred_guide_refinements
+                        .saturating_sub(generation.before_diagnostics.deferred_guide_refinements),
+                );
+            self.used.deferred_guide_retries = self.used.deferred_guide_retries.saturating_add(
+                generation
+                    .after_diagnostics
+                    .deferred_guide_retries
+                    .saturating_sub(generation.before_diagnostics.deferred_guide_retries),
+            );
+            self.used.deferred_guide_ready = self.used.deferred_guide_ready.saturating_add(
+                generation
+                    .after_diagnostics
+                    .deferred_guide_ready
+                    .saturating_sub(generation.before_diagnostics.deferred_guide_ready),
+            );
+            self.used.deferred_guide_unsupported =
+                self.used.deferred_guide_unsupported.saturating_add(
+                    generation
+                        .after_diagnostics
+                        .deferred_guide_unsupported
+                        .saturating_sub(generation.before_diagnostics.deferred_guide_unsupported),
+                );
+            self.used.deferred_guide_refinement_elapsed_us = self
+                .used
+                .deferred_guide_refinement_elapsed_us
+                .saturating_add(
+                    generation
+                        .after_diagnostics
+                        .deferred_guide_refinement_elapsed_us
+                        .saturating_sub(
+                            generation
+                                .before_diagnostics
+                                .deferred_guide_refinement_elapsed_us,
+                        ),
+                );
             state.generator.release_unused_grant();
             self.gaps
                 .extend(generation.gaps[state.synced_gaps..].iter().cloned());
@@ -834,7 +1145,19 @@ impl OracleCombatWitnessSession {
             let new_options = state.generator.completed_options()[state.synced_options..].to_vec();
             state.synced_options = state.generator.completed_options().len();
             for option in new_options {
+                let root_option = state.actions.is_empty().then(|| {
+                    (
+                        option.actions().first().map(|action| action.input.clone()),
+                        option.exact_successor_hash().to_owned(),
+                    )
+                });
+                if state.actions.is_empty() {
+                    self.record_root_option_generated(&option);
+                }
                 self.accept_option(&state, option);
+                if let Some((Some(first_action), successor)) = root_option {
+                    self.record_root_option_admission(&first_action, &successor);
+                }
             }
 
             self.record_one_turn_viability_evidence(&mut state);
@@ -879,6 +1202,8 @@ impl OracleCombatWitnessSession {
                     next_action: 0,
                     engine_steps: 0,
                     final_hp_hint: option.exact_successor().combat.entities.player.current_hp,
+                    last_boundary_turn: self.root.turn_count(),
+                    verified_boundaries: Vec::new(),
                 };
                 let replace = self
                     .pending_witness
@@ -889,46 +1214,64 @@ impl OracleCombatWitnessSession {
                 }
             }
             CompleteTurnOptionBoundary::NextPlayerTurn => {
-                let exact_state_hash = option.exact_successor_hash().to_owned();
-                self.generated_exact_state_hashes
-                    .insert(exact_state_hash.clone());
-                let exact_key = combat_exact_state_key(
-                    &option.exact_successor().engine,
-                    &option.exact_successor().combat,
-                );
-                let should_insert = self
-                    .best_paths
-                    .get(&exact_key)
-                    .is_none_or(|known| path.better_than(*known));
-                if !should_insert {
-                    return;
-                }
-                self.accepted_exact_state_hashes.insert(exact_state_hash);
-                let Ok(root) = CombatDecisionRoot::new(option.exact_successor().clone()) else {
-                    return;
-                };
-                self.best_paths.insert(exact_key.clone(), path);
-                self.used.exact_states = self.best_paths.len();
-                let state_id = self.states.len();
-                self.states.push(Some(SearchState {
-                    exact_key,
-                    path,
-                    guide_ranks: self.policy.state_guide_ranks(root.position()),
-                    queue_revision: 0,
+                self.accept_exact_player_turn_state(
+                    option.exact_successor().clone(),
                     actions,
-                    generator: TurnOptionGeneratorSession::with_policy(
-                        root,
-                        self.config.generator,
-                        self.policy.clone(),
-                    ),
-                    synced_options: 0,
-                    synced_gaps: 0,
-                    one_turn_viability_recorded: false,
-                }));
-                self.queue_state(state_id);
+                    path,
+                );
             }
             CompleteTurnOptionBoundary::TerminalLoss | CompleteTurnOptionBoundary::Escape => {}
         }
+    }
+
+    fn accept_exact_player_turn_state(
+        &mut self,
+        position: CombatPosition,
+        actions: Vec<TurnOptionAction>,
+        path: PathRank,
+    ) {
+        let exact_state_hash = exact_hash(&position);
+        self.generated_exact_state_hashes
+            .insert(exact_state_hash.clone());
+        let exact_key = combat_exact_state_key(&position.engine, &position.combat);
+        let should_insert = self
+            .best_paths
+            .get(&exact_key)
+            .is_none_or(|known| path.better_than(*known));
+        if !should_insert {
+            return;
+        }
+        let Ok(root) = CombatDecisionRoot::new(position) else {
+            return;
+        };
+        if let Some(first_action) = actions.first() {
+            self.record_descendant_acceptance(
+                &first_action.input,
+                &exact_state_hash,
+                root.position(),
+            );
+        }
+        self.accepted_exact_state_hashes
+            .insert(exact_state_hash.clone());
+        self.best_paths.insert(exact_key.clone(), path);
+        self.used.exact_states = self.best_paths.len();
+        let state_id = self.states.len();
+        self.states.push(Some(SearchState {
+            exact_key,
+            path,
+            guides: self.policy.state_guides(root.position()),
+            queue_revision: 0,
+            actions,
+            generator: TurnOptionGeneratorSession::with_policy(
+                root,
+                self.config.generator,
+                self.policy.clone(),
+            ),
+            synced_options: 0,
+            synced_gaps: 0,
+            one_turn_viability_recorded: false,
+        }));
+        self.queue_state(state_id);
     }
 
     fn record_one_turn_loss_evidence(&mut self, state: &SearchState) {
@@ -988,61 +1331,87 @@ impl OracleCombatWitnessSession {
     }
 
     fn queue_state(&mut self, state_id: usize) {
-        let Some(state) = self.states.get_mut(state_id).and_then(Option::as_mut) else {
-            return;
-        };
-        let Some((local_depth, local_negative_log_policy)) =
-            state.generator.best_retained_path_bound()
+        let sequence_id = self.next_sequence_id;
+        let Some((revision, priority, guide_entries)) = self
+            .states
+            .get_mut(state_id)
+            .and_then(Option::as_mut)
+            .and_then(|state| {
+                let (local_depth, local_negative_log_policy) =
+                    state.generator.best_retained_path_bound()?;
+                state.queue_revision = state.queue_revision.saturating_add(1);
+                let revision = state.queue_revision;
+                let path_priority = PathRank {
+                    atomic_depth: state.path.atomic_depth.saturating_add(local_depth),
+                    negative_log_policy: state.path.negative_log_policy + local_negative_log_policy,
+                }
+                .levin_log_priority();
+                let priority = service_aware_anchor_priority(
+                    path_priority,
+                    state.generator.counters().generation_work,
+                );
+                let guides = state.guides.clone();
+                let mut guide_entries = Vec::with_capacity(guides.len());
+                for guide in guides {
+                    let retained_promise = if state.generator.has_guide_lane(guide.lane) {
+                        state
+                            .generator
+                            .best_retained_guide_promise(guide.lane)
+                            .map(|promise| {
+                                let promise_priority = combined_promise_priority(state, &promise);
+                                (promise.rank, promise_priority)
+                            })
+                    } else {
+                        None
+                    };
+                    let (guide_rank, guide_anchor_priority) =
+                        strongest_guide_view(guide.rank, priority, retained_promise);
+                    guide_entries.push((guide.lane, guide_rank, guide_anchor_priority));
+                }
+                Some((revision, priority, guide_entries))
+            })
         else {
             return;
         };
-        state.queue_revision = state.queue_revision.saturating_add(1);
-        let revision = state.queue_revision;
-        let path_priority = PathRank {
-            atomic_depth: state.path.atomic_depth.saturating_add(local_depth),
-            negative_log_policy: state.path.negative_log_policy + local_negative_log_policy,
-        }
-        .levin_log_priority();
-        let priority = service_aware_anchor_priority(
-            path_priority,
-            state.generator.counters().generation_work,
-        );
-        let sequence_id = self.next_sequence_id;
         self.anchor_frontier.push(StateQueueEntry {
             state_id,
             revision,
             sequence_id,
             priority,
         });
-        if self.guided_frontiers.len() < state.guide_ranks.len() {
-            self.guided_frontiers
-                .resize_with(state.guide_ranks.len(), BinaryHeap::new);
-        }
-        for (guide_index, guide_rank) in state.guide_ranks.iter().cloned().enumerate() {
-            self.guided_frontiers[guide_index].push(GuidedStateQueueEntry {
-                guide_index,
-                state_id,
-                revision,
-                sequence_id,
-                guide_rank,
-                anchor_priority: priority,
-            });
+        for (guide_lane, guide_rank, guide_anchor_priority) in guide_entries {
+            let frontier_index = self.ensure_guide_frontier(guide_lane);
+            self.guided_frontiers[frontier_index]
+                .entries
+                .push(GuidedStateQueueEntry {
+                    guide_lane,
+                    state_id,
+                    revision,
+                    sequence_id,
+                    guide_rank,
+                    anchor_priority: guide_anchor_priority,
+                });
         }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
     }
 
-    fn pop_scheduled_state(&mut self) -> Option<(usize, SearchState)> {
+    fn pop_scheduled_state(&mut self) -> Option<(usize, SearchState, WitnessSchedulerLane)> {
         let lane_count = self.guided_frontiers.len().saturating_add(1);
         for offset in 0..lane_count {
             let lane = (self.next_scheduler_lane + offset) % lane_count;
+            let scheduled_lane = if lane == 0 {
+                WitnessSchedulerLane::Anchor
+            } else {
+                WitnessSchedulerLane::Guide(self.guided_frontiers[lane - 1].lane)
+            };
             let state = if lane == 0 {
                 self.pop_anchor_state()
             } else {
                 self.pop_guided_state(lane - 1)
             };
-            if state.is_some() {
+            if let Some((state_id, state)) = state {
                 self.next_scheduler_lane = (lane + 1) % lane_count;
-                return state;
+                return Some((state_id, state, scheduled_lane));
             }
         }
         None
@@ -1063,7 +1432,7 @@ impl OracleCombatWitnessSession {
     fn pop_guided_state(&mut self, guide_index: usize) -> Option<(usize, SearchState)> {
         let mut near_best = Vec::with_capacity(GUIDED_NEAR_BEST_SERVICE_WINDOW);
         while near_best.len() < GUIDED_NEAR_BEST_SERVICE_WINDOW {
-            let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.pop() else {
+            let Some(entry) = self.guided_frontiers.get_mut(guide_index)?.entries.pop() else {
                 break;
             };
             if self.entry_is_current(entry.state_id, entry.revision) {
@@ -1079,11 +1448,28 @@ impl OracleCombatWitnessSession {
                 .generation_work
         }))?;
         let selected = near_best.remove(selected_index);
-        self.guided_frontiers[guide_index].extend(near_best);
+        self.guided_frontiers[guide_index].entries.extend(near_best);
         let state = self.states[selected.state_id]
             .take()
             .expect("current queue entry owns a live state");
         Some((selected.state_id, state))
+    }
+
+    fn guide_frontier_index(&self, lane: CombatGuideLaneId) -> Option<usize> {
+        self.guided_frontiers
+            .iter()
+            .position(|frontier| frontier.lane == lane)
+    }
+
+    fn ensure_guide_frontier(&mut self, lane: CombatGuideLaneId) -> usize {
+        if let Some(index) = self.guide_frontier_index(lane) {
+            return index;
+        }
+        self.guided_frontiers.push(GuidedStateFrontier {
+            lane,
+            entries: BinaryHeap::new(),
+        });
+        self.guided_frontiers.len() - 1
     }
 
     fn entry_is_current(&self, state_id: usize, revision: u64) -> bool {
@@ -1105,20 +1491,27 @@ impl OracleCombatWitnessSession {
     ) -> OracleCombatWitnessStateProgressSnapshot {
         let mut snapshot = state_progress_snapshot(state);
         let target_anchor = combined_anchor_priority(state);
+        let target_guides = effective_guide_promises_snapshot(state);
         let mut anchor_states_ahead = 0usize;
-        let mut guided_states_ahead = vec![0usize; state.guide_ranks.len()];
+        let mut guided_states_ahead = vec![0usize; target_guides.len()];
         for other in self.states.iter().flatten() {
             let other_anchor = combined_anchor_priority(other);
+            let other_guides = effective_guide_promises_snapshot(other);
             if other_anchor.total_cmp(&target_anchor) == Ordering::Less {
                 anchor_states_ahead = anchor_states_ahead.saturating_add(1);
             }
-            for (guide_index, target_rank) in state.guide_ranks.iter().enumerate() {
-                let Some(other_rank) = other.guide_ranks.get(guide_index) else {
+            for (guide_index, (target_lane, target_rank, target_guide_anchor)) in
+                target_guides.iter().enumerate()
+            {
+                let Some((_, other_rank, other_guide_anchor)) = other_guides
+                    .iter()
+                    .find(|(other_lane, _, _)| other_lane == target_lane)
+                else {
                     continue;
                 };
                 if other_rank > target_rank
                     || (other_rank == target_rank
-                        && other_anchor.total_cmp(&target_anchor) == Ordering::Less)
+                        && other_guide_anchor.total_cmp(target_guide_anchor) == Ordering::Less)
                 {
                     guided_states_ahead[guide_index] =
                         guided_states_ahead[guide_index].saturating_add(1);
@@ -1126,6 +1519,18 @@ impl OracleCombatWitnessSession {
             }
         }
         snapshot.anchor_states_ahead = Some(anchor_states_ahead);
+        snapshot.guided_lane_ranks = Some(
+            target_guides
+                .iter()
+                .zip(&guided_states_ahead)
+                .map(
+                    |((lane, _, _), states_ahead)| OracleCombatGuideRankSnapshot {
+                        lane_id: lane.value(),
+                        states_ahead: *states_ahead,
+                    },
+                )
+                .collect(),
+        );
         snapshot.guided_states_ahead = Some(guided_states_ahead);
         snapshot
     }
@@ -1199,6 +1604,19 @@ impl OracleCombatWitnessSession {
             }
             replay.position = result.position;
             replay.next_action = replay.next_action.saturating_add(1);
+            let successor_turn = replay.position.combat.turn.turn_count;
+            if replay.discovery_source == OracleCombatWitnessDiscoverySource::PolicyProposal
+                && matches!(
+                    replay.position.engine,
+                    sts_core::state::core::EngineState::CombatPlayerTurn
+                )
+                && successor_turn > replay.last_boundary_turn
+            {
+                replay
+                    .verified_boundaries
+                    .push((replay.next_action, replay.position.clone()));
+                replay.last_boundary_turn = successor_turn;
+            }
         }
 
         if stepper.terminal(&replay.position) != CombatTerminal::Win
@@ -1213,6 +1631,19 @@ impl OracleCombatWitnessSession {
             .pending_witness
             .take()
             .expect("checked pending witness");
+        if replay.discovery_source == OracleCombatWitnessDiscoverySource::PolicyProposal {
+            for (action_count, position) in &replay.verified_boundaries {
+                let actions = replay.actions[..*action_count].to_vec();
+                self.accept_exact_player_turn_state(
+                    position.clone(),
+                    actions,
+                    PathRank {
+                        atomic_depth: *action_count,
+                        negative_log_policy: *action_count as f64,
+                    },
+                );
+            }
+        }
         let candidate = OracleCombatWitness {
             actions: replay.actions,
             final_position: replay.position,
@@ -1271,6 +1702,59 @@ fn combined_anchor_priority(state: &SearchState) -> f64 {
     service_aware_anchor_priority(path_priority, state.generator.counters().generation_work)
 }
 
+fn combined_promise_priority(state: &SearchState, promise: &RetainedGuidePromise) -> f64 {
+    let path_priority = PathRank {
+        atomic_depth: state.path.atomic_depth.saturating_add(promise.atomic_depth),
+        negative_log_policy: state.path.negative_log_policy + promise.negative_log_policy,
+    }
+    .levin_log_priority();
+    service_aware_anchor_priority(path_priority, state.generator.counters().generation_work)
+}
+
+fn effective_guide_promises_snapshot(
+    state: &SearchState,
+) -> Vec<(CombatGuideLaneId, CombatStateGuideRank, f64)> {
+    let anchor_priority = combined_anchor_priority(state);
+    state
+        .guides
+        .iter()
+        .map(|guide| {
+            let retained_promise = if state.generator.has_guide_lane(guide.lane) {
+                state
+                    .generator
+                    .best_retained_guide_promise_snapshot(guide.lane)
+                    .map(|promise| {
+                        let promise_priority = combined_promise_priority(state, &promise);
+                        (promise.rank, promise_priority)
+                    })
+            } else {
+                None
+            };
+            let (rank, priority) =
+                strongest_guide_view(guide.rank.clone(), anchor_priority, retained_promise);
+            (guide.lane, rank, priority)
+        })
+        .collect()
+}
+
+fn strongest_guide_view(
+    boundary_rank: CombatStateGuideRank,
+    boundary_anchor_priority: f64,
+    retained_promise: Option<(CombatStateGuideRank, f64)>,
+) -> (CombatStateGuideRank, f64) {
+    let Some((promise_rank, promise_anchor_priority)) = retained_promise else {
+        return (boundary_rank, boundary_anchor_priority);
+    };
+    match promise_rank.cmp(&boundary_rank) {
+        Ordering::Greater => (promise_rank, promise_anchor_priority),
+        Ordering::Less => (boundary_rank, boundary_anchor_priority),
+        Ordering::Equal if promise_anchor_priority < boundary_anchor_priority => {
+            (promise_rank, promise_anchor_priority)
+        }
+        Ordering::Equal => (boundary_rank, boundary_anchor_priority),
+    }
+}
+
 /// The anchor is the liveness lane for resumable state generators.  A pure
 /// path rank can repeatedly select one attractive but very wide generator,
 /// leaving already materialized later-turn states with zero service.  Charging
@@ -1293,12 +1777,16 @@ fn state_progress_snapshot(state: &SearchState) -> OracleCombatWitnessStateProgr
         synced_options: state.synced_options,
         anchor_states_ahead: None,
         guided_states_ahead: None,
+        guided_lane_ranks: None,
     }
 }
 
 #[cfg(test)]
 mod anchor_priority_tests {
-    use super::{least_served_guided_candidate_index, service_aware_anchor_priority};
+    use super::{
+        least_served_guided_candidate_index, service_aware_anchor_priority, strongest_guide_view,
+    };
+    use crate::policy::CombatStateGuideRank;
 
     #[test]
     fn consumed_generator_work_makes_anchor_service_progressively_less_preferred() {
@@ -1314,6 +1802,32 @@ mod anchor_priority_tests {
     fn guided_service_window_prefers_less_served_near_best_state() {
         assert_eq!(least_served_guided_candidate_index([64, 20, 0, 4]), Some(2));
         assert_eq!(least_served_guided_candidate_index([4, 4, 4, 4]), Some(0));
+    }
+
+    #[test]
+    fn partial_promise_can_improve_but_cannot_downgrade_boundary_guide() {
+        let boundary = CombatStateGuideRank::new(vec![7]);
+        let weaker = CombatStateGuideRank::new(vec![6]);
+        let stronger = CombatStateGuideRank::new(vec![8]);
+
+        assert_eq!(
+            strongest_guide_view(boundary.clone(), 3.0, Some((weaker, 1.0))),
+            (boundary.clone(), 3.0)
+        );
+        assert_eq!(
+            strongest_guide_view(boundary, 3.0, Some((stronger.clone(), 9.0))),
+            (stronger, 9.0)
+        );
+    }
+
+    #[test]
+    fn equal_guide_view_keeps_the_better_anchor_tiebreak() {
+        let rank = CombatStateGuideRank::new(vec![7]);
+
+        assert_eq!(
+            strongest_guide_view(rank.clone(), 3.0, Some((rank.clone(), 2.0))),
+            (rank, 2.0)
+        );
     }
 }
 

@@ -11,6 +11,8 @@ repository = "https://github.com/hewzhew/sts-sim"
 [workspace]
 members = [
     ".",
+    "crates/oracle_lab_client",
+    "crates/oracle_lab_protocol",
     "crates/sts_combat_planner",
     "crates/sts_simulator_control",
     "tools/architecture_checks",

@@ -209,13 +209,8 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
     let (active_power_count, active_power_mass) = store::powers_for(combat, player)
         .into_iter()
         .flatten()
-        .filter(|power| player_power_is_positive_setup(power.power_type, power.amount))
-        .fold((0_i32, 0_i32), |(count, mass), power| {
-            let amount = if crate::content::powers::uses_sentinel_amount(power.power_type) {
-                1
-            } else {
-                power.amount.clamp(1, 12)
-            };
+        .filter_map(|power| realized_player_setup_power_amount(combat, player, power))
+        .fold((0_i32, 0_i32), |(count, mass), amount| {
             (count.saturating_add(1), mass.saturating_add(amount))
         });
     let unexhausted_cards = combat
@@ -245,6 +240,29 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
         active_power_count,
         active_power_mass,
     }
+}
+
+fn realized_player_setup_power_amount(
+    combat: &CombatState,
+    player: crate::EntityId,
+    power: &crate::runtime::combat::Power,
+) -> Option<i32> {
+    if !player_power_is_positive_setup(power.power_type, power.amount) {
+        return None;
+    }
+    let amount = if crate::content::powers::uses_sentinel_amount(power.power_type) {
+        1
+    } else {
+        power.amount.clamp(1, 12)
+    };
+    let scheduled_rollback = match power.power_type {
+        PowerId::Strength => store::power_amount(combat, player, PowerId::LoseStrength),
+        PowerId::Dexterity => store::power_amount(combat, player, PowerId::DexterityDown),
+        _ => 0,
+    }
+    .max(0);
+    let realized = amount.saturating_sub(scheduled_rollback);
+    (realized > 0).then_some(realized)
 }
 
 fn player_power_is_positive_setup(power: PowerId, amount: i32) -> bool {
@@ -380,11 +398,66 @@ mod tests {
         assert_eq!(summary.exhaust_engine_fuel, 0);
     }
 
+    #[test]
+    fn scheduled_strength_rollback_is_not_persistent_setup() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat.entities.power_db.insert(
+            player,
+            vec![
+                test_power_amount(PowerId::Strength, 5),
+                test_power_amount(PowerId::LoseStrength, 5),
+            ],
+        );
+
+        let summary = player_setup_summary(&combat);
+
+        assert_eq!(summary.active_power_count, 0);
+        assert_eq!(summary.active_power_mass, 0);
+    }
+
+    #[test]
+    fn setup_counts_only_strength_that_survives_a_scheduled_rollback() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat.entities.power_db.insert(
+            player,
+            vec![
+                test_power_amount(PowerId::Strength, 9),
+                test_power_amount(PowerId::LoseStrength, 5),
+            ],
+        );
+
+        let summary = player_setup_summary(&combat);
+
+        assert_eq!(summary.active_power_count, 1);
+        assert_eq!(summary.active_power_mass, 4);
+    }
+
+    #[test]
+    fn cleansed_strength_rollback_becomes_realized_setup() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat
+            .entities
+            .power_db
+            .insert(player, vec![test_power_amount(PowerId::Strength, 5)]);
+
+        let summary = player_setup_summary(&combat);
+
+        assert_eq!(summary.active_power_count, 1);
+        assert_eq!(summary.active_power_mass, 5);
+    }
+
     fn test_power(power_type: PowerId) -> Power {
+        test_power_amount(power_type, -1)
+    }
+
+    fn test_power_amount(power_type: PowerId, amount: i32) -> Power {
         Power {
             power_type,
             instance_id: None,
-            amount: -1,
+            amount,
             extra_data: 0,
             payload: PowerPayload::None,
             just_applied: false,

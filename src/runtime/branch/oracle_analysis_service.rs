@@ -1,167 +1,26 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use blake2::{Blake2s256, Digest};
-use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
+
+pub use oracle_lab_protocol::{
+    call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
+    OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1,
+    ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA, ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
+    ORACLE_ANALYSIS_SERVICE_PROTOCOL, ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION,
+};
 
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1};
 
-use super::{save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1};
-
-pub const ORACLE_ANALYSIS_SERVICE_PROTOCOL: &str = "oracle-analysis-jsonl";
-pub const ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION: u32 = 1;
-pub const ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA: &str = "OracleAnalysisServiceEndpoint";
-pub const ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION: u32 = 1;
-
-#[derive(Clone, Debug)]
-pub struct OracleAnalysisServiceRequestV1 {
-    pub id: Option<Value>,
-    pub auth_token: Option<String>,
-    pub command: OracleAnalysisServiceCommandV1,
-}
-
-impl<'de> Deserialize<'de> for OracleAnalysisServiceRequestV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut object = serde_json::Map::<String, Value>::deserialize(deserializer)?;
-        let id = object.remove("id");
-        let auth_token = object
-            .remove("auth_token")
-            .map(serde_json::from_value::<String>)
-            .transpose()
-            .map_err(D::Error::custom)?;
-        let command = OracleAnalysisServiceCommandV1::deserialize(Value::Object(object))
-            .map_err(D::Error::custom)?;
-        Ok(Self {
-            id,
-            auth_token,
-            command,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OracleAnalysisServiceEndpointV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub address: SocketAddr,
-    pub auth_token: String,
-    pub workspace: PathBuf,
-    pub process_id: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
-pub enum OracleAnalysisServiceCommandV1 {
-    Ping,
-    Capabilities,
-    Status {
-        #[serde(default)]
-        node: Option<usize>,
-    },
-    Explain {
-        node: usize,
-        owner_rank: u64,
-    },
-    View {
-        #[serde(default)]
-        node: Option<usize>,
-    },
-    Tree,
-    Try {
-        choice_ref: String,
-    },
-    Choose {
-        node: usize,
-        owner_rank: u64,
-    },
-    /// Apply a short, exact path of decision candidate ids while the workspace
-    /// stays resident, then autosave once. If a later candidate is unavailable,
-    /// the successfully applied prefix is retained and reported explicitly.
-    ChoosePath {
-        node: usize,
-        candidate_ids: Vec<String>,
-    },
-    Focus {
-        node: usize,
-    },
-    Follow {
-        edge: u64,
-    },
-    Back,
-    Promote,
-    Advance {
-        #[serde(default = "default_max_quanta")]
-        max_quanta: usize,
-        #[serde(default = "default_quantum_nodes")]
-        quantum_nodes: usize,
-        #[serde(default = "default_quantum_ms")]
-        quantum_ms: u64,
-        #[serde(default)]
-        wall_ms: Option<u64>,
-    },
-    AcceptCombat,
-    RestartCombat,
-    History {
-        #[serde(default)]
-        node: Option<usize>,
-    },
-    Journal {
-        node: usize,
-        #[serde(default = "default_journal_tail")]
-        tail: usize,
-    },
-    Timeline {
-        node: usize,
-        #[serde(default = "default_journal_tail")]
-        tail: usize,
-    },
-    JournalEntry {
-        node: usize,
-        index: usize,
-    },
-    Trajectory {
-        node: usize,
-    },
-    CombatSummary {
-        node: usize,
-    },
-    ExportCombatCase {
-        node: usize,
-        path: PathBuf,
-    },
-    ExportContinuation {
-        node: usize,
-        path: PathBuf,
-    },
-    Save,
-    Shutdown,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct OracleAnalysisServiceResponseV1 {
-    pub protocol: String,
-    pub protocol_version: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<Value>,
-    pub event: String,
-    pub ok: bool,
-    pub revision: u64,
-    pub saved_revision: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
+use super::{
+    oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OracleAnalysisServiceExitV1 {
@@ -270,53 +129,6 @@ pub fn serve_oracle_analysis_tcp_v1(
         }
     }
     Err("oracle analysis listener stopped unexpectedly".to_string())
-}
-
-pub fn call_oracle_analysis_tcp_v1(
-    endpoint_path: &Path,
-    request_json: &str,
-) -> Result<OracleAnalysisServiceResponseV1, String> {
-    let bytes = fs::read(endpoint_path).map_err(|error| {
-        format!(
-            "failed to read oracle service endpoint '{}': {error}",
-            endpoint_path.display()
-        )
-    })?;
-    let endpoint =
-        serde_json::from_slice::<OracleAnalysisServiceEndpointV1>(&bytes).map_err(|error| {
-            format!(
-                "failed to parse oracle service endpoint '{}': {error}",
-                endpoint_path.display()
-            )
-        })?;
-    validate_endpoint(&endpoint)?;
-    let mut request = serde_json::from_str::<Value>(request_json)
-        .map_err(|error| format!("invalid oracle service request JSON: {error}"))?;
-    let object = request
-        .as_object_mut()
-        .ok_or_else(|| "oracle service request must be a JSON object".to_string())?;
-    object.insert("auth_token".to_string(), json!(endpoint.auth_token));
-
-    let mut stream = TcpStream::connect(endpoint.address).map_err(|error| {
-        format!(
-            "failed to connect to oracle service at {}: {error}",
-            endpoint.address
-        )
-    })?;
-    serde_json::to_writer(&mut stream, &request)
-        .map_err(|error| format!("failed to serialize oracle service request: {error}"))?;
-    stream
-        .write_all(b"\n")
-        .map_err(|error| format!("failed to write oracle service request: {error}"))?;
-    stream
-        .flush()
-        .map_err(|error| format!("failed to flush oracle service request: {error}"))?;
-    let mut response = String::new();
-    BufReader::new(stream)
-        .read_line(&mut response)
-        .map_err(|error| format!("failed to read oracle service response: {error}"))?;
-    serde_json::from_str::<OracleAnalysisServiceResponseV1>(&response)
-        .map_err(|error| format!("failed to parse oracle service response: {error}"))
 }
 
 struct OracleAnalysisServiceState {
@@ -488,7 +300,7 @@ fn execute_command(
                 "commands": [
                     "ping", "capabilities", "status", "explain", "view", "tree", "try",
                     "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
-                    "journal", "timeline", "journal_entry", "trajectory", "combat_summary",
+                    "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
@@ -795,6 +607,15 @@ fn execute_command(
             false,
             false,
         ),
+        OracleAnalysisServiceCommandV1::CombatDiagnostic {
+            node,
+            max_engine_steps_per_transition,
+        } => (
+            oracle_live_combat_diagnostic_v1(workspace, node, max_engine_steps_per_transition)?,
+            false,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::ExportCombatCase { node, path } => {
             let view = workspace.session.view_node(node)?;
             let (search_nodes, search_ms) = if view
@@ -956,6 +777,7 @@ fn node_summary(view: &OracleAnalysisNodeViewV1) -> Value {
         "current_hp": view.current_hp,
         "max_hp": view.max_hp,
         "gold": view.gold,
+        "event": view.event,
         "choice_count": choices.len(),
         "choices": choices,
         "child_count": children.len(),
@@ -982,21 +804,6 @@ fn annotation_kind<T: Serialize>(annotation: &T) -> Option<String> {
         .map(str::to_string)
 }
 
-fn validate_endpoint(endpoint: &OracleAnalysisServiceEndpointV1) -> Result<(), String> {
-    if endpoint.schema_name != ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA
-        || endpoint.schema_version != ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION
-    {
-        return Err("unsupported oracle analysis service endpoint schema".to_string());
-    }
-    if !endpoint.address.ip().is_loopback() {
-        return Err(format!(
-            "oracle analysis endpoint is not loopback-only: {}",
-            endpoint.address
-        ));
-    }
-    Ok(())
-}
-
 fn service_auth_token(workspace_path: &Path, address: SocketAddr) -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1012,20 +819,4 @@ fn service_auth_token(workspace_path: &Path, address: SocketAddr) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
-}
-
-const fn default_max_quanta() -> usize {
-    1
-}
-
-const fn default_quantum_nodes() -> usize {
-    50_000
-}
-
-const fn default_quantum_ms() -> u64 {
-    1_000
-}
-
-const fn default_journal_tail() -> usize {
-    32
 }

@@ -154,7 +154,10 @@ use turn_prefix::{
 use turn_sequence::{
     summarize_turn_sequence, TurnSequenceDiagnosticsCollector, TurnSequenceSummary,
 };
-use value::{combat_search_frontier_value_report, COMBAT_SEARCH_FRONTIER_VALUE_POLICY};
+use value::{
+    combat_eval_from_rollout_estimate, combat_eval_guide_components,
+    combat_search_frontier_value_report, CombatEvalV2, COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
+};
 use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 
 pub use action_facts::{
@@ -229,6 +232,87 @@ pub use witness_guidance::{
 
 pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
     combat_exact_state_hash_v1(engine, combat)
+}
+
+/// Action-free, lazily evaluated view of V2's mature rollout value. This is a
+/// capability-migration boundary: it exposes only an ordered state rank, never
+/// V2's selected actions or a claimed witness.
+pub struct OracleRolloutGuideV1 {
+    cache: RolloutCache,
+    config: CombatSearchV2Config,
+    ranks: HashMap<CombatExactStateKey, Vec<i32>>,
+    per_evaluation_wall_time: Duration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OracleRolloutGuideEvaluationV1 {
+    Ready(Vec<i32>),
+    RetryLater,
+    BudgetExhausted,
+}
+
+impl OracleRolloutGuideV1 {
+    pub fn new(
+        max_evaluations: usize,
+        max_actions: usize,
+        per_evaluation_wall_time: Duration,
+    ) -> Self {
+        let config = CombatSearchV2Config::default();
+        Self {
+            cache: RolloutCache::new(
+                CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion,
+                max_evaluations,
+                max_actions,
+                config.rollout_beam_width,
+                0,
+            ),
+            config,
+            ranks: HashMap::new(),
+            per_evaluation_wall_time,
+        }
+    }
+
+    pub fn initial_components() -> Vec<i32> {
+        combat_eval_guide_components(CombatEvalV2::default())
+    }
+
+    pub fn cached_components(&self, position: &CombatPosition) -> Option<Vec<i32>> {
+        self.ranks
+            .get(&combat_exact_state_key(&position.engine, &position.combat))
+            .cloned()
+    }
+
+    pub fn evaluate(
+        &mut self,
+        position: &CombatPosition,
+        deadline: Option<Instant>,
+    ) -> OracleRolloutGuideEvaluationV1 {
+        let key = combat_exact_state_key(&position.engine, &position.combat);
+        if let Some(rank) = self.ranks.get(&key).cloned() {
+            return OracleRolloutGuideEvaluationV1::Ready(rank);
+        }
+        if self.cache.evaluations as usize >= self.cache.max_evaluations {
+            return OracleRolloutGuideEvaluationV1::BudgetExhausted;
+        }
+        let now = Instant::now();
+        if deadline.is_some_and(|limit| now >= limit) {
+            return OracleRolloutGuideEvaluationV1::RetryLater;
+        }
+        let local_deadline = now
+            .checked_add(self.per_evaluation_wall_time)
+            .map(|local| deadline.map_or(local, |outer| local.min(outer)))
+            .or(deadline);
+        let node = SearchNode::root(position.engine.clone(), position.combat.clone());
+        let estimate =
+            self.cache
+                .estimate(&node, &EngineCombatStepper, &self.config, local_deadline, 0);
+        if !estimate.is_evaluated() && local_deadline.is_some_and(|limit| Instant::now() >= limit) {
+            return OracleRolloutGuideEvaluationV1::RetryLater;
+        }
+        let rank = combat_eval_guide_components(combat_eval_from_rollout_estimate(&estimate));
+        self.ranks.insert(key, rank.clone());
+        OracleRolloutGuideEvaluationV1::Ready(rank)
+    }
 }
 
 /// Runs the mature bounded no-potion tactical policy as a proposal donor.

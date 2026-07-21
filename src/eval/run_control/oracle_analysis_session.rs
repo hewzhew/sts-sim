@@ -3,10 +3,11 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sts_combat_planner::OracleCombatRootActionFamilySnapshot;
 
-use crate::content::monsters::EnemyId;
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
+use crate::content::{cards, monsters::EnemyId};
 use crate::runtime::combat::CombatCard;
 use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::sim::combat::CombatPosition;
@@ -120,8 +121,11 @@ pub struct OracleAnalysisCombatProgressV1 {
     pub recent_turn_survival_envelope: Vec<sts_combat_planner::OracleCombatDeepStateSnapshot>,
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
-    pub incumbent_discovery_source:
-        Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
+    pub advisor_nodes: u64,
+    pub advisor_elapsed_ms: u64,
+    pub advisor_active: bool,
+    pub advisor_failure: Option<String>,
+    pub incumbent_discovery_source: Option<sts_combat_planner::OracleCombatWitnessDiscoverySource>,
     pub incumbent_final_hp: Option<i32>,
     pub incumbent_hp_loss: Option<i32>,
     pub incumbent_action_count: Option<usize>,
@@ -193,6 +197,15 @@ pub struct OracleAnalysisCombatSummaryV1 {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct OracleAnalysisEventViewV1 {
+    pub id: String,
+    pub screen: usize,
+    pub completed: bool,
+    pub combat_pending: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleAnalysisNodeViewV1 {
     pub node_id: usize,
     pub canonical_parent_node_id: Option<usize>,
@@ -214,8 +227,37 @@ pub struct OracleAnalysisNodeViewV1 {
     pub recent_replay: Vec<OracleRunReplayStepV1>,
     pub choices: Vec<OracleAnalysisChoiceViewV1>,
     pub children: Vec<OracleAnalysisChildViewV1>,
+    pub event: Option<OracleAnalysisEventViewV1>,
     pub encounter: Option<OracleAnalysisEncounterViewV1>,
     pub combat: Option<OracleAnalysisCombatProgressV1>,
+}
+
+fn oracle_analysis_choice_label(deck: &[CombatCard], choice: &LazyOracleRunDecisionV1) -> String {
+    let RunDecisionAction::Input(ClientInput::SubmitSelection(resolution)) = &choice.action else {
+        return choice.label.clone();
+    };
+    let selected = resolution
+        .selected_card_uuids()
+        .into_iter()
+        .map(|uuid| {
+            deck.iter()
+                .find(|card| card.uuid == uuid)
+                .map(|card| {
+                    let upgrade = if card.upgrades == 0 {
+                        String::new()
+                    } else {
+                        format!("+{}", card.upgrades)
+                    };
+                    format!("{}{} (#{uuid})", cards::java_id(card.id), upgrade)
+                })
+                .unwrap_or_else(|| format!("card #{uuid}"))
+        })
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        choice.label.clone()
+    } else {
+        format!("Select {}", selected.join(", "))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -601,6 +643,16 @@ impl OracleAnalysisSessionV1 {
         })
     }
 
+    pub(crate) fn combat_root_action_families(
+        &self,
+        node_id: usize,
+    ) -> Result<Vec<OracleCombatRootActionFamilySnapshot>, String> {
+        self.combat_jobs
+            .get(&node_id)
+            .map(OracleRunCombatWorkV1::root_action_families)
+            .ok_or_else(|| format!("oracle node {node_id} has no resident combat search"))
+    }
+
     pub fn combat_case(
         &self,
         node_id: usize,
@@ -719,22 +771,26 @@ impl OracleAnalysisSessionV1 {
                 })
                 .then_with(|| left.candidate_id.cmp(&right.candidate_id))
         });
+        let deck = &branch.session.run_state.master_deck;
         let choices = choices
             .into_iter()
-            .map(|choice| OracleAnalysisChoiceViewV1 {
-                choice_ref: choice_ref(&choice),
-                kind: choice.kind,
-                candidate_id: choice.candidate_id.clone(),
-                label: choice.label.clone(),
-                action: choice.action.clone(),
-                owner_rank: choice
-                    .path_discrepancy
-                    .saturating_sub(branch.path_discrepancy),
-                path_discrepancy: choice.path_discrepancy,
-                path_negative_log_policy: choice.path_negative_log_policy,
-                annotation: self
-                    .decision_annotation
-                    .and_then(|annotate| annotate(&branch.session, &choice.candidate_id)),
+            .map(|choice| {
+                let label = oracle_analysis_choice_label(deck, &choice);
+                OracleAnalysisChoiceViewV1 {
+                    choice_ref: choice_ref(&choice),
+                    kind: choice.kind,
+                    candidate_id: choice.candidate_id.clone(),
+                    label,
+                    action: choice.action.clone(),
+                    owner_rank: choice
+                        .path_discrepancy
+                        .saturating_sub(branch.path_discrepancy),
+                    path_discrepancy: choice.path_discrepancy,
+                    path_negative_log_policy: choice.path_negative_log_policy,
+                    annotation: self
+                        .decision_annotation
+                        .and_then(|annotate| annotate(&branch.session, &choice.candidate_id)),
+                }
             })
             .collect();
         let mainline_edges = self
@@ -762,6 +818,15 @@ impl OracleAnalysisSessionV1 {
             .cloned()
             .collect();
         let run = &branch.session.run_state;
+        let event = run
+            .event_state
+            .as_ref()
+            .map(|event| OracleAnalysisEventViewV1 {
+                id: format!("{:?}", event.id),
+                screen: event.current_screen,
+                completed: event.completed,
+                combat_pending: event.combat_pending,
+            });
         let encounter = branch.session.active_combat.as_ref().map(|active| {
             let combat = &active.combat_state;
             OracleAnalysisEncounterViewV1 {
@@ -825,6 +890,7 @@ impl OracleAnalysisSessionV1 {
             recent_replay,
             choices,
             children,
+            event,
             encounter,
             combat: self.combat_progress(node_id),
         })
@@ -1293,6 +1359,10 @@ fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatPro
         recent_turn_survival_envelope: progress.recent_turn_survival_envelope,
         pending_witness_replay: progress.pending_witness_replay,
         policy_witness_proposals: progress.policy_witness_proposals,
+        advisor_nodes: progress.advisor_nodes,
+        advisor_elapsed_ms: progress.advisor_elapsed_ms,
+        advisor_active: progress.advisor_active,
+        advisor_failure: progress.advisor_failure,
         incumbent_discovery_source: progress.incumbent_discovery_source,
         incumbent_final_hp: progress.incumbent_final_hp,
         incumbent_hp_loss: progress.incumbent_hp_loss,

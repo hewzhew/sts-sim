@@ -117,7 +117,10 @@ pub use oracle_analysis_session::{
     OracleAnalysisSessionV1, OracleAnalysisTreeViewV1, ORACLE_ANALYSIS_SESSION_SCHEMA_NAME,
     ORACLE_ANALYSIS_SESSION_SCHEMA_VERSION,
 };
-pub use oracle_combat_policy::existing_combat_knowledge_policy_v1;
+pub use oracle_combat_policy::{
+    existing_combat_knowledge_policy_v1, existing_combat_knowledge_policy_with_rollout_guide_v1,
+    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
+};
 pub use oracle_combat_work::OracleRunCombatWorkCheckpointV1;
 pub use oracle_neow::{
     expand_oracle_neow_candidates_v1, CompletedNeowCandidateV1, NeowOracleExpansionV1,

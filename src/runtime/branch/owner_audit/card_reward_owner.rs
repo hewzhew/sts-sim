@@ -963,7 +963,9 @@ mod tests {
             "an upgraded per-hit scaler backed by persistent Strength must remain visible at the two-target boss deadline: {ordered:?}; {diagnostics:#?}"
         );
         assert!(
-            ordered.iter().position(|card| *card == Some(CardId::Whirlwind))
+            ordered
+                .iter()
+                .position(|card| *card == Some(CardId::Whirlwind))
                 < ordered.iter().position(Option::is_none),
             "supported Whirlwind must not fall behind skip: {ordered:?}; {diagnostics:#?}"
         );

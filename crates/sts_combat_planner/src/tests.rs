@@ -15,6 +15,7 @@ use sts_core::sim::combat_action_surface::{
 use sts_core::state::core::{ClientInput, EngineState, HandSelectReason, PendingChoice};
 
 use super::*;
+use crate::generator::TurnOptionGeneratorPreferredLane;
 use crate::types::exact_hash;
 
 const PLAY: ClientInput = ClientInput::PlayCard {
@@ -55,14 +56,87 @@ impl CombatActionPolicy for PreferPlayPolicy {
 }
 
 #[derive(Clone)]
-struct FixedWitnessProposalPolicy {
-    proposal: CombatPolicyWitnessProposal,
-}
-
-#[derive(Clone)]
 struct SplitGuidePolicy {
     boundary_calls: Arc<AtomicI32>,
     generation_calls: Arc<AtomicI32>,
+}
+
+#[derive(Clone, Copy)]
+struct SharedGuidePolicy;
+
+#[derive(Clone)]
+struct DeferredGuidePolicy {
+    refinement_calls: Arc<AtomicI32>,
+}
+
+const SHARED_TEST_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(77);
+const DEFERRED_TEST_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(78);
+
+impl CombatActionPolicy for SharedGuidePolicy {
+    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        choices
+            .iter()
+            .map(|choice| match choice {
+                CombatPolicyChoice::Atomic(input) if **input == PLAY => 100.0,
+                _ => 1.0,
+            })
+            .collect()
+    }
+
+    fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        vec![CombatStateGuide::new(
+            SHARED_TEST_GUIDE,
+            vec![i32::from(position.combat.turn.energy == 0)],
+        )]
+    }
+
+    fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        self.state_guides(position)
+    }
+}
+
+impl CombatActionPolicy for DeferredGuidePolicy {
+    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        vec![1.0; choices.len()]
+    }
+
+    fn state_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
+        vec![CombatStateGuide::deferred(DEFERRED_TEST_GUIDE, vec![0])]
+    }
+
+    fn refine_deferred_guide(
+        &self,
+        lane: CombatGuideLaneId,
+        _position: &CombatPosition,
+        _deadline: Option<std::time::Instant>,
+    ) -> DeferredCombatGuideRefinement {
+        assert_eq!(lane, DEFERRED_TEST_GUIDE);
+        self.refinement_calls.fetch_add(1, Ordering::Relaxed);
+        DeferredCombatGuideRefinement::Ready(CombatStateGuideRank::new(vec![9]))
+    }
+}
+
+#[test]
+fn deferred_guide_is_evaluated_only_after_its_lane_receives_service() {
+    let refinement_calls = Arc::new(AtomicI32::new(0));
+    let policy = Arc::new(DeferredGuidePolicy {
+        refinement_calls: refinement_calls.clone(),
+    });
+    let stepper = TinyTurnStepper::plain();
+    let mut generator = TurnOptionGeneratorSession::with_policy(root(), config(), policy);
+
+    assert_eq!(refinement_calls.load(Ordering::Relaxed), 0);
+    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(DEFERRED_TEST_GUIDE));
+    let refined = generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 0));
+    assert_eq!(refined.after.generation_work, 1);
+    assert_eq!(refinement_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(stepper.calls.lock().unwrap().len(), 0);
+
+    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(DEFERRED_TEST_GUIDE));
+    let expanded = generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 0));
+    assert_eq!(expanded.after.generation_work, 2);
+    assert_eq!(refinement_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(stepper.calls.lock().unwrap().len(), 0);
 }
 
 impl CombatActionPolicy for SplitGuidePolicy {
@@ -70,14 +144,14 @@ impl CombatActionPolicy for SplitGuidePolicy {
         vec![1.0; choices.len()]
     }
 
-    fn state_guide_ranks(&self, _position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+    fn state_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.boundary_calls.fetch_add(1, Ordering::Relaxed);
-        vec![CombatStateGuideRank::new(vec![1])]
+        vec![CombatStateGuide::new(CombatGuideLaneId::new(1), vec![1])]
     }
 
-    fn turn_generation_guide_ranks(&self, _position: &CombatPosition) -> Vec<CombatStateGuideRank> {
+    fn turn_generation_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.generation_calls.fetch_add(1, Ordering::Relaxed);
-        vec![CombatStateGuideRank::new(vec![2])]
+        vec![CombatStateGuide::new(CombatGuideLaneId::new(2), vec![2])]
     }
 }
 
@@ -93,25 +167,14 @@ fn witness_search_keeps_boundary_and_turn_generation_guides_separate() {
     let _session = OracleCombatWitnessSession::with_policy(
         root(),
         OracleCombatWitnessConfig::default(),
-        policy,
+        policy.clone(),
     );
 
     assert_eq!(boundary_calls.load(Ordering::Relaxed), 1);
     assert_eq!(generation_calls.load(Ordering::Relaxed), 1);
-}
-
-impl CombatActionPolicy for FixedWitnessProposalPolicy {
-    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
-        vec![1.0; choices.len()]
-    }
-
-    fn witness_proposal(
-        &self,
-        _position: &CombatPosition,
-        _deadline: Option<std::time::Instant>,
-    ) -> Option<CombatPolicyWitnessProposal> {
-        Some(self.proposal.clone())
-    }
+    let generator = TurnOptionGeneratorSession::with_policy(root(), config(), policy);
+    assert!(!generator.has_guide_lane(CombatGuideLaneId::new(1)));
+    assert!(generator.has_guide_lane(CombatGuideLaneId::new(2)));
 }
 
 #[derive(Clone)]
@@ -371,6 +434,39 @@ fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
 }
 
 #[test]
+fn shared_guide_publishes_and_services_the_best_partial_expansion() {
+    let stepper = TinyTurnStepper::plain();
+    let mut generator =
+        TurnOptionGeneratorSession::with_policy(root(), config(), Arc::new(SharedGuidePolicy));
+
+    assert_eq!(
+        generator
+            .best_retained_guide_promise(SHARED_TEST_GUIDE)
+            .expect("root guide promise")
+            .rank,
+        CombatStateGuideRank::new(vec![0])
+    );
+
+    generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 4));
+    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(SHARED_TEST_GUIDE));
+    generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 4));
+
+    assert_eq!(
+        generator
+            .best_retained_guide_promise(SHARED_TEST_GUIDE)
+            .expect("partial-state guide promise")
+            .rank,
+        CombatStateGuideRank::new(vec![1]),
+        "the resumable parent must publish its best retained partial state, not its stale root rank"
+    );
+
+    let guided_before = generator.guided_work_pops();
+    generator.prefer_lane(TurnOptionGeneratorPreferredLane::Guide(SHARED_TEST_GUIDE));
+    generator.advance(&stepper, CombatPlanningQuantum::deterministic(1, 4));
+    assert_eq!(generator.guided_work_pops(), guided_before + 1);
+}
+
+#[test]
 fn generator_publishes_a_reached_turn_boundary_without_rescheduling_it() {
     let stepper = TinyTurnStepper::plain();
     let mut position = root().position().clone();
@@ -432,15 +528,15 @@ fn policy_witness_proposal_only_becomes_a_witness_after_exact_root_replay() {
         actions: exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]),
         final_hp_hint: decision_root.position().combat.entities.player.current_hp,
     };
-    let mut session = OracleCombatWitnessSession::with_policy(
+    let mut session = OracleCombatWitnessSession::new(
         decision_root,
         OracleCombatWitnessConfig {
             generator: config(),
             generation_work_per_agenda_pop: 1,
             satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
         },
-        Arc::new(FixedWitnessProposalPolicy { proposal }),
     );
+    assert!(session.offer_witness_proposal(proposal));
 
     let report = session.advance(
         &stepper,
@@ -450,6 +546,10 @@ fn policy_witness_proposal_only_becomes_a_witness_after_exact_root_replay() {
     assert_eq!(report.status, OracleCombatWitnessStatus::WitnessFound);
     assert_eq!(report.after.policy_witness_proposals, 1);
     assert_eq!(report.after.generation_work, 0);
+    assert_eq!(
+        report.after.exact_states, 2,
+        "the verified next-turn boundary from an advisor line joins the canonical graph"
+    );
     let witness = report
         .witness
         .expect("proposal must be replayed into a witness");
@@ -475,15 +575,15 @@ fn policy_witness_proposal_with_a_false_successor_is_rejected() {
         actions,
         final_hp_hint: decision_root.position().combat.entities.player.current_hp,
     };
-    let mut session = OracleCombatWitnessSession::with_policy(
+    let mut session = OracleCombatWitnessSession::new(
         decision_root,
         OracleCombatWitnessConfig {
             generator: config(),
             generation_work_per_agenda_pop: 1,
             satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
         },
-        Arc::new(FixedWitnessProposalPolicy { proposal }),
     );
+    assert!(session.offer_witness_proposal(proposal));
 
     let report = session.advance(
         &stepper,
@@ -675,6 +775,46 @@ fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() 
         assert_eq!(progress.anchor_states_ahead, None);
         assert_eq!(progress.guided_states_ahead, None);
     }
+}
+
+#[test]
+fn root_action_families_attribute_generation_and_downstream_service() {
+    let stepper = TinyTurnStepper::plain();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 4,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        },
+        Arc::new(UniformCombatActionPolicy),
+    );
+
+    session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(256, 256, 1_024),
+    );
+    let families = session.root_action_families();
+    let play = families
+        .iter()
+        .find(|family| family.first_action == PLAY)
+        .expect("play-rooted family");
+    let end_turn = families
+        .iter()
+        .find(|family| family.first_action == ClientInput::EndTurn)
+        .expect("end-turn-rooted family");
+
+    assert!(play.completed_root_turn_options > 0);
+    assert!(play.unique_root_successors > 0);
+    assert!(play.accepted_root_successors > 0);
+    assert!(end_turn.completed_root_turn_options > 0);
+    assert!(families.iter().any(|family| {
+        family.retained_descendants > 0 && family.descendant_generation_work > 0
+    }));
+    assert!(families.iter().all(|family| {
+        family.retained_descendants <= family.accepted_descendants
+            && family.retained_root_successors <= family.accepted_root_successors
+    }));
 }
 
 #[test]
