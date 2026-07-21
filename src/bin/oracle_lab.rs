@@ -273,6 +273,10 @@ enum Command {
         workspace: PathBuf,
         #[arg(long)]
         node: Option<usize>,
+        /// Print the committed run journal, including history imported from an
+        /// oracle_run continuation, instead of only oracle-lab variation edges.
+        #[arg(long)]
+        journal: bool,
     },
     /// Keep one analysis workspace resident and accept JSONL commands on stdin.
     Serve {
@@ -1725,10 +1729,18 @@ fn main() -> Result<(), String> {
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
         }
-        Command::History { workspace, node } => {
+        Command::History {
+            workspace,
+            node,
+            journal,
+        } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            print_json(&analysis.session.replay(node)?)
+            if journal {
+                print_json(&analysis.session.journal_entries(node)?)
+            } else {
+                print_json(&analysis.session.replay(node)?)
+            }
         }
         Command::Serve {
             workspace,
