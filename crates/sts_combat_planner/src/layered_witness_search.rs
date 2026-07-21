@@ -59,6 +59,13 @@ pub struct LayeredCombatWitnessBudget {
     pub deadline: Option<Instant>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct LayeredCombatWitnessQuantum {
+    pub additional_generation_work: usize,
+    pub additional_engine_steps: usize,
+    pub deadline: Option<Instant>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LayeredCombatWitnessInterruption {
     GenerationWorkBudget,
@@ -164,10 +171,40 @@ struct LayerWorker {
     generator: TurnOptionGeneratorSession,
 }
 
+struct ActiveLayer {
+    relative_turn_depth: usize,
+    window_discrepancy: usize,
+    source_window_index: usize,
+    player_turn: u32,
+    parent_states: usize,
+    parent_exact_state_hashes: Vec<String>,
+    layer_before: LayeredCombatWitnessCounters,
+    workers: Vec<LayerWorker>,
+    service_views: Vec<LayerServiceView>,
+    next_service_view: usize,
+    next_by_hash: HashMap<String, BeamState>,
+    generation_work: usize,
+}
+
 #[derive(Clone, Copy)]
 enum LayerServiceView {
     Anchor,
     Guide(CombatGuideLaneId),
+}
+
+pub struct LayeredCombatWitnessSession {
+    original_root: CombatPosition,
+    config: LayeredCombatWitnessConfig,
+    policy: SharedCombatActionPolicy,
+    agenda: CohortAgenda,
+    next_cohort_id: usize,
+    depth_limited: Vec<BeamCohort>,
+    active_layer: Option<ActiveLayer>,
+    counters: LayeredCombatWitnessCounters,
+    layers: Vec<LayeredCombatLayerReport>,
+    generation_gaps: Vec<TurnOptionGenerationGap>,
+    terminal_status: Option<LayeredCombatWitnessStatus>,
+    witness: Option<OracleCombatWitness>,
 }
 
 impl BeamState {
@@ -194,297 +231,381 @@ pub fn search_layered_combat_witness(
     policy: SharedCombatActionPolicy,
     stepper: &dyn CombatStepper,
 ) -> LayeredCombatWitnessReport {
-    let original_root = root.position().clone();
-    let root_state = BeamState {
-        exact_state_hash: root.exact_state_hash().to_owned(),
-        position: root.position().clone(),
-        trail: None,
-        atomic_depth: 0,
-        negative_log_policy: 0.0,
-    };
-    let mut counters = LayeredCombatWitnessCounters::default();
-    let mut layers = Vec::new();
-    let mut generation_gaps = Vec::new();
-    let mut agenda = BTreeMap::new();
-    let mut next_cohort_id = 0usize;
-    enqueue_cohort(
-        &mut agenda,
-        BeamCohort {
-            states: vec![root_state],
-            relative_turn_depth: 0,
-            window_discrepancy: 0,
-            source_window_index: 0,
+    let mut session = LayeredCombatWitnessSession::with_policy(root, config, policy);
+    session.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: budget.max_generation_work,
+            additional_engine_steps: budget.max_engine_steps,
+            deadline: budget.deadline,
         },
-        &mut next_cohort_id,
-    );
-    let mut depth_limited = Vec::new();
+        stepper,
+    )
+}
 
-    loop {
-        if deadline_reached(budget.deadline) {
-            return report(
-                LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::Deadline),
-                counters,
-                layers,
-                best_frontier(&agenda, &depth_limited),
-                generation_gaps,
-                None,
-            );
-        }
-        if counters.generation_work >= budget.max_generation_work {
-            return report(
-                LayeredCombatWitnessStatus::Partial(
-                    LayeredCombatWitnessInterruption::GenerationWorkBudget,
-                ),
-                counters,
-                layers,
-                best_frontier(&agenda, &depth_limited),
-                generation_gaps,
-                None,
-            );
-        }
-        if counters.engine_steps >= budget.max_engine_steps {
-            return report(
-                LayeredCombatWitnessStatus::Partial(
-                    LayeredCombatWitnessInterruption::EngineStepBudget,
-                ),
-                counters,
-                layers,
-                best_frontier(&agenda, &depth_limited),
-                generation_gaps,
-                None,
-            );
-        }
-
-        let Some((_, cohort)) = agenda.pop_first() else {
-            let status = if !depth_limited.is_empty() {
-                LayeredCombatWitnessStatus::Partial(
-                    LayeredCombatWitnessInterruption::TurnLayerBudget,
-                )
-            } else if generation_gaps.is_empty() {
-                LayeredCombatWitnessStatus::FrontierExhausted
-            } else {
-                LayeredCombatWitnessStatus::MechanicsGap
-            };
-            return report(
-                status,
-                counters,
-                layers,
-                best_frontier(&agenda, &depth_limited),
-                generation_gaps,
-                None,
-            );
+impl LayeredCombatWitnessSession {
+    pub fn with_policy(
+        root: CombatDecisionRoot,
+        config: LayeredCombatWitnessConfig,
+        policy: SharedCombatActionPolicy,
+    ) -> Self {
+        let original_root = root.position().clone();
+        let root_state = BeamState {
+            exact_state_hash: root.exact_state_hash().to_owned(),
+            position: root.position().clone(),
+            trail: None,
+            atomic_depth: 0,
+            negative_log_policy: 0.0,
         };
-        if cohort.relative_turn_depth >= config.max_turn_layers {
-            depth_limited.push(cohort);
-            continue;
-        }
-        if cohort.source_window_index > 0 {
-            counters.recovered_window_expansions =
-                counters.recovered_window_expansions.saturating_add(1);
-        }
-
-        let beam = cohort.states;
-
-        let player_turn = beam
-            .first()
-            .map(|state| state.position.combat.turn.turn_count)
-            .unwrap_or_default();
-        debug_assert!(beam
-            .iter()
-            .all(|state| state.position.combat.turn.turn_count == player_turn));
-        let parent_states = beam.len();
-        let parent_exact_state_hashes = beam
-            .iter()
-            .map(|state| state.exact_state_hash.clone())
-            .collect::<Vec<_>>();
-        let layer_before = counters.clone();
-        let mut next_by_hash = HashMap::<String, BeamState>::new();
-        let mut layer_gap_count = 0usize;
-
-        let mut guide_lanes = BTreeSet::new();
-        let mut workers = beam
-            .iter()
-            .filter_map(|parent| {
-                let parent_root = CombatDecisionRoot::new(parent.position.clone()).ok()?;
-                let generator = TurnOptionGeneratorSession::with_policy(
-                    parent_root,
-                    config.generator,
-                    policy.clone(),
-                );
-                for guide in policy.turn_generation_guides(&parent.position) {
-                    guide_lanes.insert(guide.lane);
-                }
-                Some(LayerWorker {
-                    parent: parent.clone(),
-                    generator,
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut service_views = vec![LayerServiceView::Anchor];
-        service_views.extend(guide_lanes.into_iter().map(LayerServiceView::Guide));
-        let layer_work_limit = config.maximum_generation_work_per_layer.max(1).min(
-            budget
-                .max_generation_work
-                .saturating_sub(counters.generation_work),
+        let mut agenda = BTreeMap::new();
+        let mut next_cohort_id = 0usize;
+        enqueue_cohort(
+            &mut agenda,
+            BeamCohort {
+                states: vec![root_state],
+                relative_turn_depth: 0,
+                window_discrepancy: 0,
+                source_window_index: 0,
+            },
+            &mut next_cohort_id,
         );
-        let candidate_pool_target = config
+        Self {
+            original_root,
+            config,
+            policy,
+            agenda,
+            next_cohort_id,
+            depth_limited: Vec::new(),
+            active_layer: None,
+            counters: LayeredCombatWitnessCounters::default(),
+            layers: Vec::new(),
+            generation_gaps: Vec::new(),
+            terminal_status: None,
+            witness: None,
+        }
+    }
+
+    pub fn counters(&self) -> &LayeredCombatWitnessCounters {
+        &self.counters
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.terminal_status.is_some()
+    }
+
+    pub fn advance(
+        &mut self,
+        quantum: LayeredCombatWitnessQuantum,
+        stepper: &dyn CombatStepper,
+    ) -> LayeredCombatWitnessReport {
+        if let Some(status) = self.terminal_status.clone() {
+            return self.snapshot(status);
+        }
+        let work_limit = self
+            .counters
+            .generation_work
+            .saturating_add(quantum.additional_generation_work);
+        let engine_step_limit = self
+            .counters
+            .engine_steps
+            .saturating_add(quantum.additional_engine_steps);
+
+        loop {
+            if deadline_reached(quantum.deadline) {
+                return self.snapshot(LayeredCombatWitnessStatus::Partial(
+                    LayeredCombatWitnessInterruption::Deadline,
+                ));
+            }
+            if self.counters.generation_work >= work_limit {
+                return self.snapshot(LayeredCombatWitnessStatus::Partial(
+                    LayeredCombatWitnessInterruption::GenerationWorkBudget,
+                ));
+            }
+            if self.counters.engine_steps >= engine_step_limit {
+                return self.snapshot(LayeredCombatWitnessStatus::Partial(
+                    LayeredCombatWitnessInterruption::EngineStepBudget,
+                ));
+            }
+
+            if self.active_layer.is_none() && !self.start_next_layer() {
+                let status = if !self.depth_limited.is_empty() {
+                    LayeredCombatWitnessStatus::Partial(
+                        LayeredCombatWitnessInterruption::TurnLayerBudget,
+                    )
+                } else if self.generation_gaps.is_empty() {
+                    LayeredCombatWitnessStatus::FrontierExhausted
+                } else {
+                    LayeredCombatWitnessStatus::MechanicsGap
+                };
+                self.terminal_status = Some(status.clone());
+                return self.snapshot(status);
+            }
+
+            if self.active_layer_is_complete() {
+                self.finish_active_layer();
+                continue;
+            }
+
+            let remaining_work = work_limit.saturating_sub(self.counters.generation_work);
+            let remaining_steps = engine_step_limit.saturating_sub(self.counters.engine_steps);
+            if !self.service_active_layer(
+                remaining_work,
+                remaining_steps,
+                quantum.deadline,
+                stepper,
+            ) {
+                self.finish_active_layer();
+                continue;
+            }
+            if let Some(status) = self.terminal_status.clone() {
+                return self.snapshot(status);
+            }
+        }
+    }
+
+    fn start_next_layer(&mut self) -> bool {
+        loop {
+            let Some((_, cohort)) = self.agenda.pop_first() else {
+                return false;
+            };
+            if cohort.relative_turn_depth >= self.config.max_turn_layers {
+                self.depth_limited.push(cohort);
+                continue;
+            }
+            if cohort.source_window_index > 0 {
+                self.counters.recovered_window_expansions =
+                    self.counters.recovered_window_expansions.saturating_add(1);
+            }
+
+            let player_turn = cohort
+                .states
+                .first()
+                .map(|state| state.position.combat.turn.turn_count)
+                .unwrap_or_default();
+            debug_assert!(cohort
+                .states
+                .iter()
+                .all(|state| state.position.combat.turn.turn_count == player_turn));
+            let parent_exact_state_hashes = cohort
+                .states
+                .iter()
+                .map(|state| state.exact_state_hash.clone())
+                .collect::<Vec<_>>();
+            let mut guide_lanes = BTreeSet::new();
+            let workers = cohort
+                .states
+                .iter()
+                .filter_map(|parent| {
+                    let parent_root = CombatDecisionRoot::new(parent.position.clone()).ok()?;
+                    let generator = TurnOptionGeneratorSession::with_policy(
+                        parent_root,
+                        self.config.generator,
+                        self.policy.clone(),
+                    );
+                    for guide in self.policy.turn_generation_guides(&parent.position) {
+                        guide_lanes.insert(guide.lane);
+                    }
+                    Some(LayerWorker {
+                        parent: parent.clone(),
+                        generator,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let mut service_views = vec![LayerServiceView::Anchor];
+            service_views.extend(guide_lanes.into_iter().map(LayerServiceView::Guide));
+            self.active_layer = Some(ActiveLayer {
+                relative_turn_depth: cohort.relative_turn_depth,
+                window_discrepancy: cohort.window_discrepancy,
+                source_window_index: cohort.source_window_index,
+                player_turn,
+                parent_states: cohort.states.len(),
+                parent_exact_state_hashes,
+                layer_before: self.counters.clone(),
+                workers,
+                service_views,
+                next_service_view: 0,
+                next_by_hash: HashMap::new(),
+                generation_work: 0,
+            });
+            return true;
+        }
+    }
+
+    fn active_layer_is_complete(&self) -> bool {
+        let Some(active) = self.active_layer.as_ref() else {
+            return false;
+        };
+        let candidate_pool_target = self
+            .config
             .beam_width
             .max(1)
-            .saturating_mul(config.candidate_pool_multiplier.max(1));
-        let mut layer_work = 0usize;
-        let mut next_service_view = 0usize;
+            .saturating_mul(self.config.candidate_pool_multiplier.max(1));
+        active.generation_work >= self.config.maximum_generation_work_per_layer.max(1)
+            || (active.generation_work >= self.config.minimum_generation_work_per_layer
+                && active.next_by_hash.len() >= candidate_pool_target)
+            || active
+                .workers
+                .iter()
+                .all(|worker| worker.generator.is_finished())
+    }
 
-        while layer_work < layer_work_limit
-            && (layer_work < config.minimum_generation_work_per_layer
-                || next_by_hash.len() < candidate_pool_target)
-            && workers.iter().any(|worker| !worker.generator.is_finished())
-        {
-            if deadline_reached(budget.deadline) {
-                return report(
-                    LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::Deadline),
-                    counters,
-                    layers,
-                    beam,
-                    generation_gaps,
-                    None,
-                );
-            }
-            let remaining_steps = budget
-                .max_engine_steps
-                .saturating_sub(counters.engine_steps);
-            if remaining_steps == 0 {
-                return report(
-                    LayeredCombatWitnessStatus::Partial(
-                        LayeredCombatWitnessInterruption::EngineStepBudget,
+    fn service_active_layer(
+        &mut self,
+        remaining_work: usize,
+        remaining_steps: usize,
+        deadline: Option<Instant>,
+        stepper: &dyn CombatStepper,
+    ) -> bool {
+        let Some(active) = self.active_layer.as_mut() else {
+            return false;
+        };
+        if active.workers.is_empty() || active.service_views.is_empty() {
+            return false;
+        }
+        let requested_view =
+            active.service_views[active.next_service_view % active.service_views.len()];
+        active.next_service_view = active.next_service_view.saturating_add(1);
+        let Some((worker_index, actual_view)) =
+            select_layer_worker(&active.workers, requested_view)
+                .or_else(|| select_layer_worker(&active.workers, LayerServiceView::Anchor))
+        else {
+            return false;
+        };
+        let worker = &mut active.workers[worker_index];
+        worker.generator.prefer_lane(match actual_view {
+            LayerServiceView::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
+            LayerServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
+        });
+        let layer_remaining = self
+            .config
+            .maximum_generation_work_per_layer
+            .max(1)
+            .saturating_sub(active.generation_work);
+        let work = self
+            .config
+            .generation_quantum_work
+            .max(1)
+            .min(layer_remaining)
+            .min(remaining_work);
+        if work == 0 || remaining_steps == 0 {
+            return false;
+        }
+        let before = worker.generator.counters();
+        worker.generator.advance(
+            stepper,
+            CombatPlanningQuantum {
+                additional_generation_work: work,
+                additional_engine_steps: remaining_steps.min(
+                    work.saturating_mul(
+                        self.config.generator.max_engine_steps_per_transition.max(1),
                     ),
-                    counters,
-                    layers,
-                    beam,
-                    generation_gaps,
-                    None,
-                );
-            }
-            let requested_view = service_views[next_service_view % service_views.len()];
-            next_service_view = next_service_view.saturating_add(1);
-            let (worker_index, actual_view) = select_layer_worker(&workers, requested_view)
-                .or_else(|| select_layer_worker(&workers, LayerServiceView::Anchor))
-                .expect("a live layer has a serviceable generator");
-            let worker = &mut workers[worker_index];
-            worker.generator.prefer_lane(match actual_view {
-                LayerServiceView::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
-                LayerServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
-            });
-            let work = config
-                .generation_quantum_work
-                .max(1)
-                .min(layer_work_limit.saturating_sub(layer_work));
-            let before = worker.generator.counters();
-            worker.generator.advance(
-                stepper,
-                CombatPlanningQuantum {
-                    additional_generation_work: work,
-                    additional_engine_steps: remaining_steps.min(
-                        work.saturating_mul(
-                            config.generator.max_engine_steps_per_transition.max(1),
-                        ),
-                    ),
-                    deadline: budget.deadline,
-                },
-            );
-            let after = worker.generator.counters();
-            let used_work = after.generation_work.saturating_sub(before.generation_work);
-            let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
-            if used_work == 0 && used_steps == 0 {
-                break;
-            }
-            layer_work = layer_work.saturating_add(used_work);
-            counters.generation_work = counters.generation_work.saturating_add(used_work);
-            counters.engine_steps = counters.engine_steps.saturating_add(used_steps);
+                ),
+                deadline,
+            },
+        );
+        let after = worker.generator.counters();
+        let used_work = after.generation_work.saturating_sub(before.generation_work);
+        let used_steps = after.engine_steps.saturating_sub(before.engine_steps);
+        if used_work == 0 && used_steps == 0 {
+            return false;
+        }
+        active.generation_work = active.generation_work.saturating_add(used_work);
+        self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
+        self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
 
-            let options = worker.generator.take_completed_options();
-            counters.completed_turn_options = counters
-                .completed_turn_options
-                .saturating_add(options.len());
-            for option in options {
-                let trail = Some(Arc::new(ActionTrailNode {
-                    parent: worker.parent.trail.clone(),
-                    turn_actions: Arc::from(option.actions().to_vec()),
-                }));
-                let atomic_depth = worker
-                    .parent
-                    .atomic_depth
-                    .saturating_add(option.actions().len());
-                let negative_log_policy =
-                    worker.parent.negative_log_policy + option.negative_log_policy();
-                match option.boundary() {
-                    CompleteTurnOptionBoundary::TerminalWin => {
-                        let actions = flatten_action_trail(trail.as_ref());
-                        match replay_witness(&original_root, &actions, negative_log_policy, stepper)
-                        {
-                            Ok(witness) => {
-                                return report(
-                                    LayeredCombatWitnessStatus::WitnessFound,
-                                    counters,
-                                    layers,
-                                    beam,
-                                    generation_gaps,
-                                    Some(witness),
-                                );
-                            }
-                            Err(error) => {
-                                return report(
-                                    LayeredCombatWitnessStatus::ReplayMismatch(error),
-                                    counters,
-                                    layers,
-                                    beam,
-                                    generation_gaps,
-                                    None,
-                                );
-                            }
+        let options = worker.generator.take_completed_options();
+        self.counters.completed_turn_options = self
+            .counters
+            .completed_turn_options
+            .saturating_add(options.len());
+        for option in options {
+            let trail = Some(Arc::new(ActionTrailNode {
+                parent: worker.parent.trail.clone(),
+                turn_actions: Arc::from(option.actions().to_vec()),
+            }));
+            let atomic_depth = worker
+                .parent
+                .atomic_depth
+                .saturating_add(option.actions().len());
+            let negative_log_policy =
+                worker.parent.negative_log_policy + option.negative_log_policy();
+            match option.boundary() {
+                CompleteTurnOptionBoundary::TerminalWin => {
+                    let actions = flatten_action_trail(trail.as_ref());
+                    match replay_witness(
+                        &self.original_root,
+                        &actions,
+                        negative_log_policy,
+                        stepper,
+                    ) {
+                        Ok(witness) => {
+                            self.witness = Some(witness);
+                            self.terminal_status = Some(LayeredCombatWitnessStatus::WitnessFound);
+                        }
+                        Err(error) => {
+                            self.terminal_status =
+                                Some(LayeredCombatWitnessStatus::ReplayMismatch(error));
                         }
                     }
-                    CompleteTurnOptionBoundary::NextPlayerTurn => {
-                        let candidate = BeamState {
-                            exact_state_hash: option.exact_successor_hash().to_owned(),
-                            position: option.exact_successor().clone(),
-                            trail,
-                            atomic_depth,
-                            negative_log_policy,
-                        };
-                        match next_by_hash.entry(candidate.exact_state_hash.clone()) {
-                            std::collections::hash_map::Entry::Vacant(entry) => {
+                    break;
+                }
+                CompleteTurnOptionBoundary::NextPlayerTurn => {
+                    let candidate = BeamState {
+                        exact_state_hash: option.exact_successor_hash().to_owned(),
+                        position: option.exact_successor().clone(),
+                        trail,
+                        atomic_depth,
+                        negative_log_policy,
+                    };
+                    match active
+                        .next_by_hash
+                        .entry(candidate.exact_state_hash.clone())
+                    {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(candidate);
+                        }
+                        std::collections::hash_map::Entry::Occupied(mut entry) => {
+                            self.counters.duplicate_next_turn_states =
+                                self.counters.duplicate_next_turn_states.saturating_add(1);
+                            if path_is_better(&candidate, entry.get()) {
                                 entry.insert(candidate);
                             }
-                            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                                counters.duplicate_next_turn_states =
-                                    counters.duplicate_next_turn_states.saturating_add(1);
-                                if path_is_better(&candidate, entry.get()) {
-                                    entry.insert(candidate);
-                                }
-                            }
                         }
                     }
-                    CompleteTurnOptionBoundary::TerminalLoss
-                    | CompleteTurnOptionBoundary::Escape => {}
                 }
+                CompleteTurnOptionBoundary::TerminalLoss | CompleteTurnOptionBoundary::Escape => {}
             }
         }
+        true
+    }
 
-        let expanded_parents = workers
+    fn finish_active_layer(&mut self) {
+        let Some(active) = self.active_layer.take() else {
+            return;
+        };
+        let expanded_parents = active
+            .workers
             .iter()
             .filter(|worker| worker.generator.counters().generation_work > 0)
             .count();
-        let truncated_parents = workers
+        let truncated_parents = active
+            .workers
             .iter()
             .filter(|worker| !worker.generator.is_finished())
             .count();
-        counters.expanded_parents = counters.expanded_parents.saturating_add(expanded_parents);
-        counters.truncated_parents = counters.truncated_parents.saturating_add(truncated_parents);
-        for worker in &workers {
-            layer_gap_count = layer_gap_count.saturating_add(worker.generator.gaps().len());
-            generation_gaps.extend_from_slice(worker.generator.gaps());
+        self.counters.expanded_parents = self
+            .counters
+            .expanded_parents
+            .saturating_add(expanded_parents);
+        self.counters.truncated_parents = self
+            .counters
+            .truncated_parents
+            .saturating_add(truncated_parents);
+        for worker in &active.workers {
+            self.generation_gaps
+                .extend_from_slice(worker.generator.gaps());
         }
-        let parent_work = workers
+        let parent_work = active
+            .workers
             .iter()
             .map(|worker| LayeredCombatParentWorkReport {
                 exact_state_hash: worker.parent.exact_state_hash.clone(),
@@ -493,46 +614,17 @@ pub fn search_layered_combat_witness(
                 finished: worker.generator.is_finished(),
             })
             .collect::<Vec<_>>();
-
-        let unique_next = next_by_hash.len();
-        counters.unique_next_turn_states =
-            counters.unique_next_turn_states.saturating_add(unique_next);
-        let next_candidates = next_by_hash.into_values().collect::<Vec<_>>();
-        if next_candidates.is_empty() {
-            layers.push(LayeredCombatLayerReport {
-                relative_turn_depth: cohort.relative_turn_depth,
-                window_discrepancy: cohort.window_discrepancy,
-                source_window_index: cohort.source_window_index,
-                player_turn,
-                parent_states,
-                parent_exact_state_hashes,
-                parent_work,
-                expanded_parents: counters
-                    .expanded_parents
-                    .saturating_sub(layer_before.expanded_parents),
-                generation_work: counters
-                    .generation_work
-                    .saturating_sub(layer_before.generation_work),
-                completed_turn_options: counters
-                    .completed_turn_options
-                    .saturating_sub(layer_before.completed_turn_options),
-                unique_next_turn_states: 0,
-                duplicate_next_turn_states: counters
-                    .duplicate_next_turn_states
-                    .saturating_sub(layer_before.duplicate_next_turn_states),
-                retained_next_turn_states: 0,
-                retained_exact_state_hashes: Vec::new(),
-                truncated_parents: counters
-                    .truncated_parents
-                    .saturating_sub(layer_before.truncated_parents),
-                emitted_windows: 0,
-            });
-            counters.completed_layers = counters.completed_layers.saturating_add(1);
-            continue;
-        }
-
-        let ranked_candidates = rank_multi_view(next_candidates, config, policy.as_ref());
-        let window_width = config.beam_width.max(1);
+        let unique_next = active.next_by_hash.len();
+        self.counters.unique_next_turn_states = self
+            .counters
+            .unique_next_turn_states
+            .saturating_add(unique_next);
+        let ranked_candidates = rank_multi_view(
+            active.next_by_hash.into_values().collect(),
+            self.config,
+            self.policy.as_ref(),
+        );
+        let window_width = self.config.beam_width.max(1);
         let emitted_windows = ranked_candidates.len().div_ceil(window_width);
         let retained_exact_state_hashes = ranked_candidates
             .iter()
@@ -545,52 +637,81 @@ pub fn search_layered_combat_witness(
             .map(<[BeamState]>::to_vec)
             .enumerate()
         {
-            let window_discrepancy = cohort.window_discrepancy.saturating_add(window_index);
-            counters.maximum_window_discrepancy =
-                counters.maximum_window_discrepancy.max(window_discrepancy);
+            let window_discrepancy = active.window_discrepancy.saturating_add(window_index);
+            self.counters.maximum_window_discrepancy = self
+                .counters
+                .maximum_window_discrepancy
+                .max(window_discrepancy);
             if window_index > 0 {
-                counters.deferred_windows = counters.deferred_windows.saturating_add(1);
+                self.counters.deferred_windows = self.counters.deferred_windows.saturating_add(1);
             }
             enqueue_cohort(
-                &mut agenda,
+                &mut self.agenda,
                 BeamCohort {
                     states,
-                    relative_turn_depth: cohort.relative_turn_depth.saturating_add(1),
+                    relative_turn_depth: active.relative_turn_depth.saturating_add(1),
                     window_discrepancy,
                     source_window_index: window_index,
                 },
-                &mut next_cohort_id,
+                &mut self.next_cohort_id,
             );
         }
-        layers.push(LayeredCombatLayerReport {
-            relative_turn_depth: cohort.relative_turn_depth,
-            window_discrepancy: cohort.window_discrepancy,
-            source_window_index: cohort.source_window_index,
-            player_turn,
-            parent_states,
-            parent_exact_state_hashes,
+        self.layers.push(LayeredCombatLayerReport {
+            relative_turn_depth: active.relative_turn_depth,
+            window_discrepancy: active.window_discrepancy,
+            source_window_index: active.source_window_index,
+            player_turn: active.player_turn,
+            parent_states: active.parent_states,
+            parent_exact_state_hashes: active.parent_exact_state_hashes,
             parent_work,
-            expanded_parents: counters
+            expanded_parents: self
+                .counters
                 .expanded_parents
-                .saturating_sub(layer_before.expanded_parents),
-            generation_work: counters
+                .saturating_sub(active.layer_before.expanded_parents),
+            generation_work: self
+                .counters
                 .generation_work
-                .saturating_sub(layer_before.generation_work),
-            completed_turn_options: counters
+                .saturating_sub(active.layer_before.generation_work),
+            completed_turn_options: self
+                .counters
                 .completed_turn_options
-                .saturating_sub(layer_before.completed_turn_options),
+                .saturating_sub(active.layer_before.completed_turn_options),
             unique_next_turn_states: unique_next,
-            duplicate_next_turn_states: counters
+            duplicate_next_turn_states: self
+                .counters
                 .duplicate_next_turn_states
-                .saturating_sub(layer_before.duplicate_next_turn_states),
+                .saturating_sub(active.layer_before.duplicate_next_turn_states),
             retained_next_turn_states,
             retained_exact_state_hashes,
-            truncated_parents: counters
+            truncated_parents: self
+                .counters
                 .truncated_parents
-                .saturating_sub(layer_before.truncated_parents),
+                .saturating_sub(active.layer_before.truncated_parents),
             emitted_windows,
         });
-        counters.completed_layers = counters.completed_layers.saturating_add(1);
+        self.counters.completed_layers = self.counters.completed_layers.saturating_add(1);
+    }
+
+    fn snapshot(&self, status: LayeredCombatWitnessStatus) -> LayeredCombatWitnessReport {
+        let frontier = self
+            .active_layer
+            .as_ref()
+            .map(|active| {
+                active
+                    .workers
+                    .iter()
+                    .map(|worker| worker.parent.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| best_frontier(&self.agenda, &self.depth_limited));
+        report(
+            status,
+            self.counters.clone(),
+            self.layers.clone(),
+            frontier,
+            self.generation_gaps.clone(),
+            self.witness.clone(),
+        )
     }
 }
 

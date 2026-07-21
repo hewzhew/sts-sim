@@ -422,6 +422,67 @@ fn layered_search_recovers_a_winning_sibling_from_the_next_beam_window() {
 }
 
 #[test]
+fn layered_session_resumes_mid_layer_without_repaying_generation_work() {
+    let layered_config = LayeredCombatWitnessConfig {
+        generator: config(),
+        beam_width: 1,
+        retained_per_view: 1,
+        minimum_generation_work_per_layer: 16,
+        maximum_generation_work_per_layer: 64,
+        candidate_pool_multiplier: 2,
+        generation_quantum_work: 4,
+        max_turn_layers: 4,
+    };
+    let one_shot = search_layered_combat_witness(
+        root(),
+        layered_config,
+        LayeredCombatWitnessBudget {
+            max_generation_work: 256,
+            max_engine_steps: 1_024,
+            deadline: None,
+        },
+        Arc::new(PreferPlayPolicy),
+        &TinyTurnStepper::lethal_after_current_turn(),
+    );
+
+    let mut session = LayeredCombatWitnessSession::with_policy(
+        root(),
+        layered_config,
+        Arc::new(PreferPlayPolicy),
+    );
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let first = session.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 4,
+            additional_engine_steps: 16,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(
+        first.status,
+        LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::GenerationWorkBudget)
+    );
+    assert_eq!(first.counters.generation_work, 4);
+    assert_eq!(first.counters.completed_layers, 0);
+
+    let resumed = session.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 252,
+            additional_engine_steps: 1_008,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(resumed.status, LayeredCombatWitnessStatus::WitnessFound);
+    assert_eq!(resumed.counters, one_shot.counters);
+    assert_eq!(
+        resumed.witness.as_ref().map(|witness| &witness.actions),
+        one_shot.witness.as_ref().map(|witness| &witness.actions)
+    );
+}
+
+#[test]
 fn policy_guided_generator_emits_preferred_and_complete_sibling_options() {
     let stepper = TinyTurnStepper::lethal();
     let mut session =
