@@ -10,19 +10,19 @@ use sts_combat_planner::{
     generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
     search_depth_beam_agenda_witness, AtomicLevinRerooting, AtomicLevinWitnessConfig,
     AtomicLevinWitnessQuantum, AtomicLevinWitnessSession, AtomicTurnPortfolioConfig,
-    AtomicTurnPortfolioSession, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
-    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
-    LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
-    UniformCombatActionPolicy,
+    AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioSession, CombatActionPolicy,
+    CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum, CombatPolicyChoice,
+    CombatStateGuide, CombatStateGuideRank, DepthBeamAgendaBudget, DepthBeamAgendaConfig,
+    DepthBeamTurnBudget, DepthBeamTurnConfig, LayeredCombatCandidateRaceConfig,
+    LayeredCombatCandidateRaceSession, LayeredCombatLineagePortfolioConfig,
+    LayeredCombatLineagePortfolioEntryReport, LayeredCombatLineagePortfolioSession,
+    LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessSession, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    LocalTurnGraphWitnessSession, OracleCombatOneTurnLossEvidence,
+    OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
+    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession, UniformCombatActionPolicy,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
@@ -256,7 +256,7 @@ enum Command {
         #[arg(long, default_value_t = 10_000)]
         uniform_exploration_ppm: u32,
         #[arg(long, default_value_t = 64)]
-        boundary_service_transitions: usize,
+        boundary_service_work: usize,
         #[arg(long, default_value_t = 512)]
         suffix_service_transitions: usize,
         #[arg(long, default_value_t = 1)]
@@ -265,10 +265,17 @@ enum Command {
         boundary_service_period: usize,
         #[arg(long)]
         suffix_reroot_player_turn_boundaries: bool,
-        /// Include full opaque guide vectors for every live task. Off by
-        /// default because these diagnostics can dominate the JSON output.
+        /// Include every live task in the JSON report. Off by default because
+        /// the task table grows with each exposed turn layer.
+        #[arg(long)]
+        include_task_entries: bool,
+        /// Include full opaque guide vectors in the live task table.
         #[arg(long)]
         include_task_guides: bool,
+        /// Report exact service and scheduler ranks only for these state
+        /// hashes, without materializing the complete task table.
+        #[arg(long)]
+        watch_state_hash: Vec<String>,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -2772,12 +2779,14 @@ fn main() -> Result<(), String> {
             wall_ms,
             max_engine_steps_per_transition,
             uniform_exploration_ppm,
-            boundary_service_transitions,
+            boundary_service_work,
             suffix_service_transitions,
             boundary_layers,
             boundary_service_period,
             suffix_reroot_player_turn_boundaries,
+            include_task_entries,
             include_task_guides,
+            watch_state_hash,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -2794,7 +2803,11 @@ fn main() -> Result<(), String> {
                 })
                 .transpose()?
                 .unwrap_or_else(existing_combat_knowledge_policy_v1);
-            let base_config = AtomicLevinWitnessConfig {
+            let boundary_config = TurnOptionGeneratorConfig {
+                max_engine_steps_per_transition,
+                uniform_exploration_ppm,
+            };
+            let suffix_config = AtomicLevinWitnessConfig {
                 max_engine_steps_per_transition,
                 uniform_exploration_ppm,
                 ..AtomicLevinWitnessConfig::default()
@@ -2802,16 +2815,16 @@ fn main() -> Result<(), String> {
             let mut portfolio = AtomicTurnPortfolioSession::with_policies(
                 root,
                 AtomicTurnPortfolioConfig {
-                    boundary_search: base_config,
+                    boundary_search: boundary_config,
                     suffix_search: AtomicLevinWitnessConfig {
                         rerooting: if suffix_reroot_player_turn_boundaries {
                             AtomicLevinRerooting::PlayerTurnBoundaries
                         } else {
                             AtomicLevinRerooting::Disabled
                         },
-                        ..base_config
+                        ..suffix_config
                     },
-                    boundary_service_transitions,
+                    boundary_service_work,
                     suffix_service_transitions,
                     boundary_layers,
                     boundary_service_period,
@@ -2847,18 +2860,118 @@ fn main() -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
             }
-            let task_entries = report
+            let task_anchor_key = |entry: &AtomicTurnPortfolioEntryReport| {
+                let next_quantum = if entry.remaining_boundary_layers > 0 {
+                    boundary_service_work.min(entry.boundary_guides.len().saturating_add(1))
+                } else {
+                    suffix_service_transitions
+                }
+                .max(1);
+                entry.prefix_negative_log_policy
+                    + (entry.scheduler_work.saturating_add(next_quantum).max(1) as f64).ln()
+            };
+            let task_entries = include_task_entries.then(|| {
+                report
+                    .suffix_entries
+                    .iter()
+                    .map(|entry| {
+                        let mut value = json!({
+                            "boundary_id": entry.boundary_id,
+                            "exact_state_hash": entry.exact_state_hash,
+                            "prefix_action_count": entry.prefix_action_count,
+                            "prefix_negative_log_policy": entry.prefix_negative_log_policy,
+                            "scheduler_work": entry.scheduler_work,
+                            "services": entry.services,
+                            "boundary_generation_work": entry.boundary_generation_work,
+                            "applied_action_transitions": entry.applied_action_transitions,
+                            "engine_steps": entry.engine_steps,
+                            "remaining_boundary_layers": entry.remaining_boundary_layers,
+                        });
+                        if include_task_guides {
+                            value
+                                .as_object_mut()
+                                .expect("task entry is an object")
+                                .insert(
+                                    "boundary_guides".to_string(),
+                                    json!(entry
+                                        .boundary_guides
+                                        .iter()
+                                        .map(|guide| json!({
+                                            "lane": guide.lane,
+                                            "components": guide.components,
+                                        }))
+                                        .collect::<Vec<_>>()),
+                                );
+                        }
+                        value
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let watched_tasks = report
                 .suffix_entries
                 .iter()
+                .filter(|entry| watch_state_hash.contains(&entry.exact_state_hash))
                 .map(|entry| {
+                    let boundary_class = entry.remaining_boundary_layers > 0;
+                    let anchor_key = task_anchor_key(entry);
+                    let anchor_rank = 1 + report
+                        .suffix_entries
+                        .iter()
+                        .filter(|other| {
+                            (other.remaining_boundary_layers > 0) == boundary_class
+                                && (task_anchor_key(other).total_cmp(&anchor_key).is_lt()
+                                    || (task_anchor_key(other).total_cmp(&anchor_key).is_eq()
+                                        && other.boundary_id < entry.boundary_id))
+                        })
+                        .count();
+                    let guide_ranks = entry
+                        .boundary_guides
+                        .iter()
+                        .map(|guide| {
+                            let rank = 1 + report
+                                .suffix_entries
+                                .iter()
+                                .filter(|other| {
+                                    if (other.remaining_boundary_layers > 0) != boundary_class {
+                                        return false;
+                                    }
+                                    let Some(other_guide) = other
+                                        .boundary_guides
+                                        .iter()
+                                        .find(|other_guide| other_guide.lane == guide.lane)
+                                    else {
+                                        return false;
+                                    };
+                                    other_guide.components > guide.components
+                                        || (other_guide.components == guide.components
+                                            && (task_anchor_key(other)
+                                                .total_cmp(&anchor_key)
+                                                .is_lt()
+                                                || (task_anchor_key(other)
+                                                    .total_cmp(&anchor_key)
+                                                    .is_eq()
+                                                    && other.boundary_id < entry.boundary_id)))
+                                })
+                                .count();
+                            json!({
+                                "lane": guide.lane,
+                                "rank": rank,
+                            })
+                        })
+                        .collect::<Vec<_>>();
                     let mut value = json!({
                         "boundary_id": entry.boundary_id,
                         "exact_state_hash": entry.exact_state_hash,
                         "prefix_action_count": entry.prefix_action_count,
                         "prefix_negative_log_policy": entry.prefix_negative_log_policy,
+                        "scheduler_work": entry.scheduler_work,
+                        "services": entry.services,
+                        "boundary_generation_work": entry.boundary_generation_work,
                         "applied_action_transitions": entry.applied_action_transitions,
                         "engine_steps": entry.engine_steps,
                         "remaining_boundary_layers": entry.remaining_boundary_layers,
+                        "anchor_rank": anchor_rank,
+                        "guide_ranks": guide_ranks,
                     });
                     if include_task_guides {
                         value
@@ -2880,15 +2993,17 @@ fn main() -> Result<(), String> {
                 })
                 .collect::<Vec<_>>();
             print_json(&json!({
-                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV1",
-                "schema_version": 1,
+                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV2",
+                "schema_version": 2,
                 "case": case_path,
                 "runtime": oracle_lab_runtime_identity(),
                 "mode": {
-                    "search": "atomic_next_turn_boundary_portfolio",
+                    "search": "turn_boundary_atomic_suffix_portfolio",
+                    "boundary_worker": "exact_multi_guide_turn_generator",
                     "boundary_policy": "existing_combat_knowledge_v1",
                     "suffix_action_imitation_artifact": action_imitation_artifact,
                     "suffix_rerooting": suffix_reroot_player_turn_boundaries,
+                    "task_entries_included": include_task_entries,
                     "task_guides_included": include_task_guides,
                     "v2_donor": false,
                 },
@@ -2901,7 +3016,7 @@ fn main() -> Result<(), String> {
                 "budget": {
                     "max_transitions": max_transitions,
                     "wall_ms": wall_ms,
-                    "boundary_service_transitions": boundary_service_transitions,
+                    "boundary_service_work": boundary_service_work,
                     "suffix_service_transitions": suffix_service_transitions,
                     "boundary_layers": boundary_layers,
                     "boundary_service_period": boundary_service_period,
@@ -2910,6 +3025,7 @@ fn main() -> Result<(), String> {
                     "services": report.after.services,
                     "boundary_services": report.after.boundary_services,
                     "suffix_services": report.after.suffix_services,
+                    "boundary_generation_work": report.after.boundary_generation_work,
                     "applied_action_transitions": report.after.applied_action_transitions,
                     "engine_steps": report.after.engine_steps,
                     "turn_boundaries_found": report.after.turn_boundaries_found,
@@ -2926,6 +3042,7 @@ fn main() -> Result<(), String> {
                     "winning_boundary_id": report.winning_boundary_id,
                     "winning_boundary_exact_state_hash": report.winning_boundary_exact_state_hash,
                     "suffix_entries": task_entries,
+                    "watched_tasks": watched_tasks,
                 },
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())

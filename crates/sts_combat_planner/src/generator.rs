@@ -675,6 +675,29 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
+        self.advance_internal(stepper, quantum, false)
+    }
+
+    /// Service exactly one frozen anchor/guide scheduling round.
+    ///
+    /// This is the resumable boundary-worker primitive used by an outer
+    /// portfolio. Work published by the round is retained for the next call;
+    /// it cannot recursively turn one coarse service into an unbounded batch
+    /// of completed turn options.
+    pub(crate) fn advance_one_scheduling_round(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        quantum: CombatPlanningQuantum,
+    ) -> TurnOptionGenerationReport {
+        self.advance_internal(stepper, quantum, true)
+    }
+
+    fn advance_internal(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        quantum: CombatPlanningQuantum,
+        stop_after_one_round: bool,
+    ) -> TurnOptionGenerationReport {
         let before = self.used;
         let before_diagnostics = self.diagnostics();
         let completed_before = self.total_completed_options;
@@ -688,6 +711,7 @@ impl TurnOptionGeneratorSession {
         // item which was already first there. A finite pending transaction can
         // consequently remain live forever despite round-robin lane service.
         let mut scheduled_round = VecDeque::new();
+        let mut scheduling_rounds_started = 0_usize;
 
         let interruption = loop {
             if self.is_finished() {
@@ -706,11 +730,15 @@ impl TurnOptionGeneratorSession {
                 scheduled_round.pop_front();
             }
             if scheduled_round.is_empty() {
+                if stop_after_one_round && scheduling_rounds_started > 0 {
+                    break Some(GenerationInterruption::SchedulingRoundBoundary);
+                }
                 scheduled_round = self.snapshot_scheduling_round();
                 if scheduled_round.is_empty() {
                     debug_assert!(self.is_finished());
                     break None;
                 }
+                scheduling_rounds_started = scheduling_rounds_started.saturating_add(1);
             }
             let (lane, work_id) = *scheduled_round
                 .front()
@@ -1209,6 +1237,7 @@ fn deadline_reached(deadline: Option<Instant>) -> bool {
 #[cfg(test)]
 mod priority_tests {
     use super::*;
+    use sts_core::sim::combat::EngineCombatStepper;
 
     fn test_root() -> CombatDecisionRoot {
         let mut combat = sts_core::test_support::blank_test_combat();
@@ -1243,6 +1272,25 @@ mod priority_tests {
         let locally_greedy = guided_entry(9, 0.01, 1, 1);
 
         assert!(improved_after_setup > locally_greedy);
+    }
+
+    #[test]
+    fn one_scheduling_round_releases_work_published_by_that_round() {
+        let mut session =
+            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
+        let report = session.advance_one_scheduling_round(
+            &EngineCombatStepper,
+            CombatPlanningQuantum::deterministic(1_000, 250_000),
+        );
+
+        assert_eq!(
+            report.status,
+            TurnOptionGenerationStatus::Partial(GenerationInterruption::SchedulingRoundBoundary)
+        );
+        assert_eq!(report.after.generation_work, 1);
+        let released = session.release_unused_grant();
+        assert_eq!(released.generation_work, 999);
+        assert!(session.retained_work_items() > 0);
     }
 
     #[test]

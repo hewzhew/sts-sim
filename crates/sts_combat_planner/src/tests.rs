@@ -2068,15 +2068,15 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
     let mut portfolio = AtomicTurnPortfolioSession::with_policies(
         root(),
         AtomicTurnPortfolioConfig {
-            boundary_search: AtomicLevinWitnessConfig {
+            boundary_search: TurnOptionGeneratorConfig {
                 max_engine_steps_per_transition: 4,
-                ..AtomicLevinWitnessConfig::default()
+                ..TurnOptionGeneratorConfig::default()
             },
             suffix_search: AtomicLevinWitnessConfig {
                 max_engine_steps_per_transition: 4,
                 ..AtomicLevinWitnessConfig::default()
             },
-            boundary_service_transitions: 8,
+            boundary_service_work: 8,
             suffix_service_transitions: 8,
             boundary_layers: 1,
             boundary_service_period: 8,
@@ -2111,15 +2111,15 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
     let mut portfolio = AtomicTurnPortfolioSession::with_policies(
         root(),
         AtomicTurnPortfolioConfig {
-            boundary_search: AtomicLevinWitnessConfig {
+            boundary_search: TurnOptionGeneratorConfig {
                 max_engine_steps_per_transition: 4,
-                ..AtomicLevinWitnessConfig::default()
+                ..TurnOptionGeneratorConfig::default()
             },
             suffix_search: AtomicLevinWitnessConfig {
                 max_engine_steps_per_transition: 4,
                 ..AtomicLevinWitnessConfig::default()
             },
-            boundary_service_transitions: 8,
+            boundary_service_work: 8,
             suffix_service_transitions: 8,
             boundary_layers: 2,
             boundary_service_period: 8,

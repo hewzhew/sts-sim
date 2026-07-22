@@ -180,6 +180,10 @@ pub enum GenerationInterruption {
     GenerationWorkBudget,
     EngineStepBudget,
     Deadline,
+    /// The caller requested one frozen multi-view scheduling round. Unused
+    /// grant remains releasable and no newly published head may overtake the
+    /// round that was selected at entry.
+    SchedulingRoundBoundary,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
