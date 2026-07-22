@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -307,8 +307,10 @@ enum Command {
     BuildActionImitation {
         #[arg(long)]
         case: PathBuf,
-        #[arg(long)]
-        actions: PathBuf,
+        /// One or more consecutive exact action segments. Repeat the flag to
+        /// compose a witness without rewriting JSON by hand.
+        #[arg(long, required = true)]
+        actions: Vec<PathBuf>,
         #[arg(long)]
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
@@ -319,8 +321,10 @@ enum Command {
     BuildValuePrototype {
         #[arg(long)]
         case: PathBuf,
-        #[arg(long)]
-        actions: PathBuf,
+        /// One or more consecutive exact action segments. Repeat the flag to
+        /// compose a witness without rewriting JSON by hand.
+        #[arg(long, required = true)]
+        actions: Vec<PathBuf>,
         #[arg(long)]
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
@@ -421,6 +425,10 @@ enum Command {
         case: PathBuf,
         #[arg(long)]
         action_imitation_artifact: Option<PathBuf>,
+        /// Lab control: apply the state-conditioned learned action order at
+        /// every simulated player turn instead of only the search root turn.
+        #[arg(long, requires = "action_imitation_artifact")]
+        action_imitation_all_turns: bool,
         #[arg(long)]
         value_prototype_artifact: Option<PathBuf>,
         #[arg(long, default_value_t = 500_000)]
@@ -441,6 +449,10 @@ enum Command {
         max_engine_steps_per_transition: usize,
         #[arg(long)]
         watch_exact_state_hash: Vec<String>,
+        /// Exact terminal witness segments used only to label known boundary
+        /// membership in the report. They never affect generation or ranking.
+        #[arg(long)]
+        diagnostic_corridor_actions: Vec<PathBuf>,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -1222,14 +1234,11 @@ fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
 
 fn load_exact_turn_corridor(
     case_path: &PathBuf,
-    actions_path: &PathBuf,
+    action_paths: &[PathBuf],
     max_engine_steps_per_transition: usize,
 ) -> Result<ExactTurnCorridor, String> {
     let case = load_combat_case(case_path)?;
-    let actions = serde_json::from_slice::<Vec<ClientInput>>(
-        &std::fs::read(actions_path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("invalid shadow corridor action list: {error}"))?;
+    let actions = load_combat_action_segments(action_paths)?;
     let stepper = EngineCombatStepper;
     let mut position = case.position;
     let mut rank_by_exact_hash = HashMap::new();
@@ -1322,6 +1331,18 @@ fn load_exact_turn_corridor(
     })
 }
 
+fn load_combat_action_segments(action_paths: &[PathBuf]) -> Result<Vec<ClientInput>, String> {
+    let mut actions = Vec::new();
+    for path in action_paths {
+        let mut segment = serde_json::from_slice::<Vec<ClientInput>>(
+            &std::fs::read(path).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| format!("invalid combat action segment {}: {error}", path.display()))?;
+        actions.append(&mut segment);
+    }
+    Ok(actions)
+}
+
 fn load_layered_solved_suffix_index(
     case_path: Option<&PathBuf>,
     actions_path: Option<&PathBuf>,
@@ -1336,8 +1357,11 @@ fn load_layered_solved_suffix_index(
         }
         return Ok(Arc::new(LayeredCombatSolvedSuffixIndex::default()));
     };
-    let corridor =
-        load_exact_turn_corridor(case_path, actions_path, max_engine_steps_per_transition)?;
+    let corridor = load_exact_turn_corridor(
+        case_path,
+        std::slice::from_ref(actions_path),
+        max_engine_steps_per_transition,
+    )?;
     let mut suffixes = LayeredCombatSolvedSuffixIndex::default();
     for (turn_index, position) in corridor.positions_by_rank.iter().enumerate() {
         let inputs = corridor.transition_actions[turn_index..]
@@ -1483,10 +1507,7 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
         } => {
             let loaded = load_combat_case(&case)?;
-            let actions = serde_json::from_slice::<Vec<ClientInput>>(
-                &std::fs::read(&actions).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| format!("invalid combat action demonstration: {error}"))?;
+            let actions = load_combat_action_segments(&actions)?;
             let artifact = train_combat_action_imitation_v1(
                 &loaded.position,
                 &actions,
@@ -2101,7 +2122,11 @@ fn main() -> Result<(), String> {
             let watched_corridor = watch_corridor_actions
                 .as_ref()
                 .map(|actions| {
-                    load_exact_turn_corridor(&case, actions, max_engine_steps_per_transition)
+                    load_exact_turn_corridor(
+                        &case,
+                        std::slice::from_ref(actions),
+                        max_engine_steps_per_transition,
+                    )
                 })
                 .transpose()?;
             let case = load_combat_case(&case)?;
@@ -2234,7 +2259,7 @@ fn main() -> Result<(), String> {
                         (Some(case_path), Some(actions_path)) => {
                             let corridor = load_exact_turn_corridor(
                                 case_path,
-                                actions_path,
+                                std::slice::from_ref(actions_path),
                                 max_engine_steps_per_transition,
                             )?;
                             let policy = exact_corridor_shadow_policy(
@@ -2998,6 +3023,7 @@ fn main() -> Result<(), String> {
         Command::DepthBeamAgendaAudit {
             case,
             action_imitation_artifact,
+            action_imitation_all_turns,
             value_prototype_artifact,
             max_applied_transitions,
             wall_ms,
@@ -3008,9 +3034,19 @@ fn main() -> Result<(), String> {
             max_structured_members_per_family,
             max_engine_steps_per_transition,
             watch_exact_state_hash,
+            diagnostic_corridor_actions,
             export_witness_actions,
         } => {
             let loaded = load_combat_case(&case)?;
+            let diagnostic_corridor = if diagnostic_corridor_actions.is_empty() {
+                None
+            } else {
+                Some(load_exact_turn_corridor(
+                    &case,
+                    &diagnostic_corridor_actions,
+                    max_engine_steps_per_transition,
+                )?)
+            };
             let initial_hp = loaded.position.combat.entities.player.current_hp;
             let root_player_turn = loaded.position.combat.turn.turn_count;
             let root = CombatDecisionRoot::new(loaded.position)
@@ -3018,7 +3054,11 @@ fn main() -> Result<(), String> {
             let base_policy = existing_combat_knowledge_policy_v1();
             let policy = if let Some(path) = action_imitation_artifact.as_deref() {
                 let learned = load_action_imitation_policy(path, base_policy.clone())?;
-                root_player_turn_action_policy_v1(root_player_turn, learned, base_policy)
+                if action_imitation_all_turns {
+                    learned
+                } else {
+                    root_player_turn_action_policy_v1(root_player_turn, learned, base_policy)
+                }
             } else {
                 base_policy
             };
@@ -3083,6 +3123,41 @@ fn main() -> Result<(), String> {
                 .filter(|hash| watch_exact_state_hash.contains(hash))
                 .cloned()
                 .collect::<Vec<_>>();
+            let expanded_hashes = report
+                .expanded_parent_exact_state_hashes
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            let frontier_hashes = report
+                .frontier_exact_state_hashes
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            let diagnostic_corridor_membership = diagnostic_corridor.as_ref().map(|corridor| {
+                corridor
+                    .positions_by_rank
+                    .iter()
+                    .enumerate()
+                    .map(|(rank, position)| {
+                        let hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                            &position.engine,
+                            &position.combat,
+                        );
+                        json!({
+                            "rank": rank,
+                            "player_turn": position.combat.turn.turn_count,
+                            "exact_state_hash": hash,
+                            "membership": if expanded_hashes.contains(hash.as_str()) {
+                                "expanded"
+                            } else if frontier_hashes.contains(hash.as_str()) {
+                                "frontier"
+                            } else {
+                                "missing"
+                            },
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
             print_json(&json!({
                 "schema_name": "OracleDepthBeamAgendaAuditV1",
                 "schema_version": 1,
@@ -3093,7 +3168,13 @@ fn main() -> Result<(), String> {
                 "status": format!("{:?}", report.status),
                 "config": {
                     "action_imitation_artifact": action_imitation_artifact,
-                    "action_imitation_scope": action_imitation_artifact.as_ref().map(|_| "root_player_turn_only"),
+                    "action_imitation_scope": action_imitation_artifact.as_ref().map(|_| {
+                        if action_imitation_all_turns {
+                            "all_simulated_player_turns"
+                        } else {
+                            "root_player_turn_only"
+                        }
+                    }),
                     "value_prototype_artifact": value_prototype_artifact,
                     "value_prototype": value_report,
                     "boundary_guide_lane": boundary_guide_lane.map(CombatGuideLaneId::value),
@@ -3102,6 +3183,7 @@ fn main() -> Result<(), String> {
                     "max_atomic_depth": max_atomic_depth,
                     "max_applied_transitions_per_parent": max_applied_transitions_per_parent,
                     "max_structured_members_per_family": max_structured_members_per_family,
+                    "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 },
                 "budget": {
                     "max_applied_transitions": max_applied_transitions,
@@ -3119,7 +3201,9 @@ fn main() -> Result<(), String> {
                     "peak_agenda_states": report.counters.peak_agenda_states,
                 },
                 "frontier_states": report.frontier_exact_state_hashes.len(),
+                "expanded_parent_states": report.expanded_parent_exact_state_hashes.len(),
                 "watched_frontier": watched_frontier,
+                "diagnostic_corridor_membership": diagnostic_corridor_membership,
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
@@ -3157,7 +3241,7 @@ fn main() -> Result<(), String> {
                     (None, Some(corridor_actions), Some(rank)) => {
                         let corridor = load_exact_turn_corridor(
                             &case,
-                            corridor_actions,
+                            std::slice::from_ref(corridor_actions),
                             max_engine_steps_per_transition,
                         )?;
                         let root_position = corridor

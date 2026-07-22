@@ -161,6 +161,7 @@ pub struct DepthBeamAgendaCounters {
 pub struct DepthBeamAgendaReport {
     pub status: DepthBeamAgendaStatus,
     pub counters: DepthBeamAgendaCounters,
+    pub expanded_parent_exact_state_hashes: Vec<String>,
     pub frontier_exact_state_hashes: Vec<String>,
     pub witness: Option<DepthBeamAgendaWitness>,
 }
@@ -454,6 +455,7 @@ pub fn search_depth_beam_agenda_witness(
         peak_agenda_states: 1,
         ..DepthBeamAgendaCounters::default()
     };
+    let mut expanded_parent_exact_state_hashes = Vec::new();
 
     loop {
         if let Some(interruption) = agenda_budget_interruption(&counters, budget) {
@@ -461,6 +463,7 @@ pub fn search_depth_beam_agenda_witness(
                 DepthBeamAgendaStatus::Partial(interruption),
                 counters,
                 agenda,
+                expanded_parent_exact_state_hashes,
                 None,
             );
         }
@@ -470,7 +473,13 @@ pub fn search_depth_beam_agenda_witness(
             } else {
                 DepthBeamAgendaStatus::Partial(DepthBeamAgendaInterruption::ParentGenerationBudget)
             };
-            return depth_beam_agenda_report(status, counters, agenda, None);
+            return depth_beam_agenda_report(
+                status,
+                counters,
+                agenda,
+                expanded_parent_exact_state_hashes,
+                None,
+            );
         }
 
         let best = agenda
@@ -480,6 +489,7 @@ pub fn search_depth_beam_agenda_witness(
             .map(|(index, _)| index)
             .expect("non-empty agenda has a best state");
         let parent = agenda.swap_remove(best);
+        expanded_parent_exact_state_hashes.push(exact_hash(&parent.layered.position));
         let remaining_transitions = budget
             .max_applied_transitions
             .saturating_sub(counters.applied_transitions);
@@ -541,7 +551,13 @@ pub fn search_depth_beam_agenda_witness(
                 } else {
                     DepthBeamAgendaStatus::ReplayMismatch
                 };
-                return depth_beam_agenda_report(status, counters, agenda, Some(witness));
+                return depth_beam_agenda_report(
+                    status,
+                    counters,
+                    agenda,
+                    expanded_parent_exact_state_hashes,
+                    Some(witness),
+                );
             }
             if option.boundary() != super::types::CompleteTurnOptionBoundary::NextPlayerTurn {
                 continue;
@@ -614,11 +630,13 @@ fn depth_beam_agenda_report(
     status: DepthBeamAgendaStatus,
     counters: DepthBeamAgendaCounters,
     agenda: Vec<AgendaTurnState>,
+    expanded_parent_exact_state_hashes: Vec<String>,
     witness: Option<DepthBeamAgendaWitness>,
 ) -> DepthBeamAgendaReport {
     DepthBeamAgendaReport {
         status,
         counters,
+        expanded_parent_exact_state_hashes,
         frontier_exact_state_hashes: agenda
             .iter()
             .map(|state| exact_hash(&state.layered.position))

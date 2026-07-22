@@ -1022,6 +1022,14 @@ fn depth_beam_agenda_revisits_a_deferred_exact_boundary_sibling() {
     assert_eq!(report.status, DepthBeamAgendaStatus::WitnessFound);
     assert_eq!(report.counters.partially_generated_parents, 0);
     assert!(report.counters.expanded_parents >= 3);
+    assert_eq!(
+        report.expanded_parent_exact_state_hashes.len(),
+        report.counters.expanded_parents
+    );
+    assert_eq!(
+        report.expanded_parent_exact_state_hashes[0],
+        exact_hash(root().position())
+    );
     let witness = report
         .witness
         .expect("deferred sibling should lead to a win");
