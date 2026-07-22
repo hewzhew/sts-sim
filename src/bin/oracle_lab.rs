@@ -257,6 +257,12 @@ enum Command {
         /// exact witness. This is a teacher upper-bound control, not production.
         #[arg(long)]
         value_prototype_artifact: Option<PathBuf>,
+        /// Diagnostic-only perfect-information control. Repeat to compose an
+        /// exact verified corridor without hand-splicing witness segments.
+        /// It changes guide order only; every action and terminal result is
+        /// still generated, executed, and replayed by the independent search.
+        #[arg(long)]
+        diagnostic_corridor_actions: Vec<PathBuf>,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 1_000_000)]
@@ -373,10 +379,10 @@ enum Command {
             conflicts_with = "corridor_actions"
         )]
         actions: Option<PathBuf>,
-        /// Complete verified witness from which one turn transition is
-        /// selected without hand-slicing action JSON.
+        /// One or more consecutive exact action segments forming a complete
+        /// verified witness. Repeat the flag instead of hand-splicing JSON.
         #[arg(long, required_unless_present = "actions", requires = "corridor_rank")]
-        corridor_actions: Option<PathBuf>,
+        corridor_actions: Vec<PathBuf>,
         /// Zero-based player-turn boundary in --corridor-actions. The last
         /// boundary checks the terminal winning segment.
         #[arg(long, requires = "corridor_actions")]
@@ -1562,6 +1568,7 @@ fn main() -> Result<(), String> {
             case,
             action_imitation_artifact,
             value_prototype_artifact,
+            diagnostic_corridor_actions,
             max_nodes,
             max_selections,
             wall_ms,
@@ -1596,6 +1603,16 @@ fn main() -> Result<(), String> {
                 value_prototype_boundary_control_policy(policy, &artifact)
             } else {
                 policy
+            };
+            let policy = if diagnostic_corridor_actions.is_empty() {
+                policy
+            } else {
+                let corridor = load_exact_turn_corridor(
+                    &case,
+                    &diagnostic_corridor_actions,
+                    max_engine_steps_per_transition,
+                )?;
+                exact_corridor_shadow_policy(policy, &corridor, ShadowCorridorGuide::Exact, true)
             };
             let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
             let report = session.advance(
@@ -1640,6 +1657,7 @@ fn main() -> Result<(), String> {
                 "case": case,
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
+                "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": command_started.elapsed().as_millis(),
                 "initial_hp": initial_hp,
@@ -3377,8 +3395,8 @@ fn main() -> Result<(), String> {
             anchor_only,
         } => {
             let (root_position, target, selected_corridor_rank) =
-                match (actions.as_ref(), corridor_actions.as_ref(), corridor_rank) {
-                    (Some(actions), None, None) => {
+                match (actions.as_ref(), corridor_actions.as_slice(), corridor_rank) {
+                    (Some(actions), [], None) => {
                         let case = load_combat_case(&case)?;
                         let target = serde_json::from_slice::<Vec<ClientInput>>(
                             &std::fs::read(actions).map_err(|error| error.to_string())?,
@@ -3386,10 +3404,10 @@ fn main() -> Result<(), String> {
                         .map_err(|error| format!("invalid target action list: {error}"))?;
                         (case.position, target, None)
                     }
-                    (None, Some(corridor_actions), Some(rank)) => {
+                    (None, corridor_actions, Some(rank)) if !corridor_actions.is_empty() => {
                         let corridor = load_exact_turn_corridor(
                             &case,
-                            std::slice::from_ref(corridor_actions),
+                            corridor_actions,
                             max_engine_steps_per_transition,
                         )?;
                         let root_position = corridor
@@ -3438,6 +3456,7 @@ fn main() -> Result<(), String> {
             let mut scanned_options = 0usize;
             let mut matched = None;
             let mut prefix_insertions = vec![None; target_prefix_positions.len()];
+            let mut transition_insertions = vec![None; target_prefix_positions.len()];
             let mut last_status = TurnOptionGenerationStatus::Partial(
                 sts_combat_planner::GenerationInterruption::GenerationWorkBudget,
             );
@@ -3469,6 +3488,25 @@ fn main() -> Result<(), String> {
                             generator.anchor_work_pops(),
                             anchor_rank,
                         ));
+                    }
+                    if transition_insertions[index].is_none() {
+                        transition_insertions[index] = target
+                            .get(index + 1)
+                            .and_then(|next| {
+                                generator.live_action_transition_snapshot(position, next)
+                            })
+                            .map(|snapshot| {
+                                serde_json::json!({
+                                    "generation_work": report.after.generation_work,
+                                    "candidate_ordinal": snapshot.candidate_ordinal,
+                                    "remaining_candidate_count": snapshot.remaining_candidate_count,
+                                    "conditional_probability": snapshot.conditional_probability,
+                                    "candidate_negative_log_policy": snapshot.candidate_negative_log_policy,
+                                    "cursor_negative_log_policy": snapshot.cursor_negative_log_policy,
+                                    "anchor_queue_rank": snapshot.anchor_queue_rank,
+                                    "guide_queue_ranks": snapshot.guide_queue_ranks,
+                                })
+                            });
                     }
                 }
                 for option in &generator.completed_options()[scanned_options..] {
@@ -3525,6 +3563,9 @@ fn main() -> Result<(), String> {
                             "anchor": anchor,
                             "guides": guides,
                         }));
+                    let next_target_transition = target.get(index + 1).and_then(|next| {
+                        generator.live_action_transition_snapshot(position, next)
+                    });
                     serde_json::json!({
                         "through_action": index + 1,
                         "exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
@@ -3539,9 +3580,17 @@ fn main() -> Result<(), String> {
                             "structured_selection": live_structured_selection,
                         },
                         "live_expand_queue_ranks": queue_ranks,
-                        "next_target_transition_live": target.get(index + 1).map(|next| {
-                            generator.has_live_action_transition(position, next)
-                        }),
+                        "next_target_transition_live": next_target_transition.is_some(),
+                        "next_target_transition_first_observed": transition_insertions[index],
+                        "next_target_transition": next_target_transition.map(|snapshot| serde_json::json!({
+                            "candidate_ordinal": snapshot.candidate_ordinal,
+                            "remaining_candidate_count": snapshot.remaining_candidate_count,
+                            "conditional_probability": snapshot.conditional_probability,
+                            "candidate_negative_log_policy": snapshot.candidate_negative_log_policy,
+                            "cursor_negative_log_policy": snapshot.cursor_negative_log_policy,
+                            "anchor_queue_rank": snapshot.anchor_queue_rank,
+                            "guide_queue_ranks": snapshot.guide_queue_ranks,
+                        })),
                     })
                 })
                 .collect::<Vec<_>>();

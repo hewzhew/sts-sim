@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -95,12 +95,6 @@ impl AtomicActionCursorWork {
 
     fn remaining_candidate_count(&self) -> usize {
         self.candidates.len().saturating_sub(self.next_candidate)
-    }
-
-    fn contains_input(&self, input: &ClientInput) -> bool {
-        self.candidates[self.next_candidate..]
-            .iter()
-            .any(|candidate| candidate.input == *input)
     }
 
     fn priority(&self) -> Option<GeneratorWorkPriority> {
@@ -247,6 +241,20 @@ pub(crate) enum TurnOptionGeneratorPreferredLane {
     Guide(CombatGuideLaneId),
 }
 
+/// Read-only lifecycle information for one exact atomic transition which is
+/// still waiting inside a lazy turn generator.  This distinguishes a missing
+/// action from an action hidden behind a resumable sibling cursor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveActionTransitionSnapshot {
+    pub candidate_ordinal: usize,
+    pub remaining_candidate_count: usize,
+    pub conditional_probability: f64,
+    pub candidate_negative_log_policy: f64,
+    pub cursor_negative_log_policy: f64,
+    pub anchor_queue_rank: usize,
+    pub guide_queue_ranks: Vec<usize>,
+}
+
 impl Eq for GeneratorQueueEntry {}
 
 impl PartialEq for GeneratorQueueEntry {
@@ -387,33 +395,63 @@ impl TurnOptionGeneratorSession {
         counts
     }
 
-    /// Reports whether a particular exact atomic transition is already
-    /// waiting in the live work queue for this parent position.
-    pub fn has_live_action_transition(
+    /// Locates an exact pending action without changing queue order or work.
+    /// `candidate_ordinal` is one-based within the cursor's still-unapplied
+    /// members; queue ranks refer to the shared cursor work item.
+    pub fn live_action_transition_snapshot(
         &self,
         position: &CombatPosition,
         input: &ClientInput,
-    ) -> bool {
+    ) -> Option<LiveActionTransitionSnapshot> {
         let target = combat_exact_state_key(&position.engine, &position.combat);
         self.work
             .iter()
-            .filter_map(Option::as_ref)
-            .any(|work| match work {
-                GeneratorWork::AtomicActions(actions) => {
-                    combat_exact_state_key(
+            .enumerate()
+            .find_map(|(work_id, work)| match work.as_ref()? {
+                GeneratorWork::AtomicActions(actions)
+                    if combat_exact_state_key(
                         &actions.parent.position.engine,
                         &actions.parent.position.combat,
-                    ) == target
-                        && actions.contains_input(input)
+                    ) == target =>
+                {
+                    let remaining = &actions.candidates[actions.next_candidate..];
+                    let (offset, candidate) = remaining
+                        .iter()
+                        .enumerate()
+                        .find(|(_, candidate)| candidate.input == *input)?;
+                    let cursor_priority = actions.priority()?;
+                    let (anchor_queue_rank, guide_queue_ranks) =
+                        self.live_queue_ranks_for_work_id(work_id)?;
+                    Some(LiveActionTransitionSnapshot {
+                        candidate_ordinal: offset.saturating_add(1),
+                        remaining_candidate_count: remaining.len(),
+                        conditional_probability: candidate.conditional_probability,
+                        candidate_negative_log_policy: candidate.negative_log_policy,
+                        cursor_negative_log_policy: cursor_priority.negative_log_policy,
+                        anchor_queue_rank,
+                        guide_queue_ranks,
+                    })
                 }
-                GeneratorWork::ApplyAction(action) => {
-                    combat_exact_state_key(
+                GeneratorWork::ApplyAction(action)
+                    if combat_exact_state_key(
                         &action.parent.position.engine,
                         &action.parent.position.combat,
                     ) == target
-                        && action.input == *input
+                        && action.input == *input =>
+                {
+                    let (anchor_queue_rank, guide_queue_ranks) =
+                        self.live_queue_ranks_for_work_id(work_id)?;
+                    Some(LiveActionTransitionSnapshot {
+                        candidate_ordinal: 1,
+                        remaining_candidate_count: 1,
+                        conditional_probability: 1.0,
+                        candidate_negative_log_policy: action.negative_log_policy,
+                        cursor_negative_log_policy: action.negative_log_policy,
+                        anchor_queue_rank,
+                        guide_queue_ranks,
+                    })
                 }
-                _ => false,
+                _ => None,
             })
     }
 
@@ -440,6 +478,10 @@ impl TurnOptionGeneratorSession {
                 }
                 _ => None,
             })?;
+        self.live_queue_ranks_for_work_id(target_work_id)
+    }
+
+    fn live_queue_ranks_for_work_id(&self, target_work_id: usize) -> Option<(usize, Vec<usize>)> {
         let target_anchor = self
             .anchor_frontier
             .iter()
@@ -640,6 +682,12 @@ impl TurnOptionGeneratorSession {
             generation_work: quantum.additional_generation_work,
             engine_steps: quantum.additional_engine_steps,
         });
+        // Freeze one current head from every scheduling view before serving
+        // the round. Without this boundary, work expanded by an earlier lane
+        // can publish a new head into a later lane and repeatedly overtake the
+        // item which was already first there. A finite pending transaction can
+        // consequently remain live forever despite round-robin lane service.
+        let mut scheduled_round = VecDeque::new();
 
         let interruption = loop {
             if self.is_finished() {
@@ -651,20 +699,48 @@ impl TurnOptionGeneratorSession {
             if self.used.generation_work >= self.granted.generation_work {
                 break Some(GenerationInterruption::GenerationWorkBudget);
             }
+            while scheduled_round
+                .front()
+                .is_some_and(|(_, work_id)| !self.work.get(*work_id).is_some_and(Option::is_some))
+            {
+                scheduled_round.pop_front();
+            }
+            if scheduled_round.is_empty() {
+                scheduled_round = self.snapshot_scheduling_round();
+                if scheduled_round.is_empty() {
+                    debug_assert!(self.is_finished());
+                    break None;
+                }
+            }
+            let (lane, work_id) = *scheduled_round
+                .front()
+                .expect("a non-empty scheduling round has a head");
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-            if self.next_scheduled_work_applies_transition()
-                && self
-                    .granted
-                    .engine_steps
-                    .saturating_sub(self.used.engine_steps)
-                    < transition_reservation
+            if self.work[work_id].as_ref().is_some_and(|work| {
+                matches!(
+                    work,
+                    GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
+                )
+            }) && self
+                .granted
+                .engine_steps
+                .saturating_sub(self.used.engine_steps)
+                < transition_reservation
             {
                 break Some(GenerationInterruption::EngineStepBudget);
             }
 
-            let work = self
-                .pop_scheduled_work()
-                .expect("non-empty generator has scheduled work");
+            scheduled_round.pop_front();
+            let work = self.work[work_id]
+                .take()
+                .expect("a reserved generator work item must still be live");
+            self.live_work_items = self.live_work_items.saturating_sub(1);
+            if lane == 0 {
+                self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
+            } else {
+                self.guided_work_pops = self.guided_work_pops.saturating_add(1);
+            }
+            self.next_scheduler_lane = (lane + 1) % self.guided_frontiers.len().saturating_add(1);
             self.used.generation_work = self.used.generation_work.saturating_add(1);
             match work {
                 GeneratorWork::Expand(partial) => {
@@ -771,6 +847,27 @@ impl TurnOptionGeneratorSession {
             gaps: self.gaps.clone(),
             status,
         }
+    }
+
+    /// Captures the current head of every scheduling view as one finite
+    /// service round. Duplicate views of the same shared work item collapse
+    /// to one service; newly published work waits for the next round.
+    fn snapshot_scheduling_round(&mut self) -> VecDeque<(usize, usize)> {
+        let lane_count = self.guided_frontiers.len().saturating_add(1);
+        let mut work_ids = HashSet::new();
+        let mut round = VecDeque::new();
+        for offset in 0..lane_count {
+            let lane = (self.next_scheduler_lane + offset) % lane_count;
+            let work_id = if lane == 0 {
+                self.peek_anchor_work_id()
+            } else {
+                self.peek_guided_work_id(lane - 1)
+            };
+            if let Some(work_id) = work_id.filter(|work_id| work_ids.insert(*work_id)) {
+                round.push_back((lane, work_id));
+            }
+        }
+        round
     }
 
     fn apply_action_transition(
@@ -1023,38 +1120,7 @@ impl TurnOptionGeneratorSession {
         work_id
     }
 
-    fn next_scheduled_work_applies_transition(&mut self) -> bool {
-        self.peek_scheduled_work_id()
-            .and_then(|work_id| self.work.get(work_id))
-            .and_then(Option::as_ref)
-            .is_some_and(|work| {
-                matches!(
-                    work,
-                    GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
-                )
-            })
-    }
-
-    fn peek_scheduled_work(&mut self) -> Option<(usize, usize)> {
-        let lane_count = self.guided_frontiers.len().saturating_add(1);
-        for offset in 0..lane_count {
-            let lane = (self.next_scheduler_lane + offset) % lane_count;
-            let work_id = if lane == 0 {
-                self.peek_anchor_work_id()
-            } else {
-                self.peek_guided_work_id(lane - 1)
-            };
-            if let Some(work_id) = work_id {
-                return Some((lane, work_id));
-            }
-        }
-        None
-    }
-
-    fn peek_scheduled_work_id(&mut self) -> Option<usize> {
-        self.peek_scheduled_work().map(|(_, work_id)| work_id)
-    }
-
+    #[cfg(test)]
     fn pop_scheduled_work(&mut self) -> Option<GeneratorWork> {
         let lane_count = self.guided_frontiers.len().saturating_add(1);
         for offset in 0..lane_count {
@@ -1092,6 +1158,7 @@ impl TurnOptionGeneratorSession {
         None
     }
 
+    #[cfg(test)]
     fn pop_anchor_work_id(&mut self) -> Option<usize> {
         self.peek_anchor_work_id()?;
         self.anchor_frontier.pop().map(|entry| entry.work_id)
@@ -1108,6 +1175,7 @@ impl TurnOptionGeneratorSession {
         None
     }
 
+    #[cfg(test)]
     fn pop_guided_work_id(&mut self, guide_index: usize) -> Option<usize> {
         self.peek_guided_work_id(guide_index)?;
         self.guided_frontiers[guide_index]
@@ -1224,7 +1292,7 @@ mod priority_tests {
     }
 
     #[test]
-    fn action_transition_does_not_bypass_global_priority() {
+    fn action_transition_does_not_bypass_explicit_anchor_priority() {
         let mut session =
             TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
         let GeneratorWork::Expand(parent) =
@@ -1248,10 +1316,77 @@ mod priority_tests {
             }),
             GeneratorWorkPriority::for_path(1, 100.0),
         );
+        session.prefer_lane(TurnOptionGeneratorPreferredLane::Anchor);
 
         assert!(matches!(
             session.pop_scheduled_work(),
             Some(GeneratorWork::Expand(_))
         ));
+    }
+
+    #[test]
+    fn scheduling_round_heads_cannot_be_overtaken_by_new_arrivals() {
+        let mut session =
+            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
+        let GeneratorWork::Expand(parent) =
+            session.pop_scheduled_work().expect("root expansion work")
+        else {
+            panic!("root work must be an expansion");
+        };
+        let anchor_head = session.push_work(
+            GeneratorWork::Expand(parent.clone()),
+            GeneratorWorkPriority::for_path(1, 0.0),
+        );
+        let guide_head = session.push_work(
+            GeneratorWork::Expand(parent.clone()),
+            GeneratorWorkPriority::for_path(1, 10.0),
+        );
+        let lane = CombatGuideLaneId::new(99);
+        let guide_index = session.ensure_guide_frontier(lane);
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: anchor_head,
+                sequence_id: 10_000,
+                guide_rank: CombatStateGuideRank::new(vec![0]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
+            });
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: guide_head,
+                sequence_id: 10_001,
+                guide_rank: CombatStateGuideRank::new(vec![10]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 10.0),
+            });
+
+        session.next_scheduler_lane = 0;
+        let round = session.snapshot_scheduling_round();
+        assert_eq!(
+            round.iter().copied().collect::<Vec<_>>(),
+            vec![(0, anchor_head), (1, guide_head)]
+        );
+
+        let newcomer = session.push_work(
+            GeneratorWork::Expand(parent),
+            GeneratorWorkPriority::for_path(1, 0.0),
+        );
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: newcomer,
+                sequence_id: 10_002,
+                guide_rank: CombatStateGuideRank::new(vec![20]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
+            });
+
+        assert_eq!(
+            round.iter().copied().collect::<Vec<_>>(),
+            vec![(0, anchor_head), (1, guide_head)],
+            "a later arrival belongs to the next round even when it becomes the new guide head"
+        );
     }
 }
