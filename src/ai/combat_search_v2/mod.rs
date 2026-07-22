@@ -212,10 +212,9 @@ pub use turn_plan_probe::{
     enumerate_combat_search_v2_turn_plan_probe_candidates,
     enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices,
 };
-#[cfg(test)]
-pub(crate) use turn_plan_probe_report::CombatSearchV2TurnPlanProbeStepReport;
 pub use turn_plan_probe_report::{
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
+    CombatSearchV2TurnPlanProbeStepReport,
 };
 pub use turn_plan_rescue::{find_combat_turn_plan_rescue_win_v0, CombatTurnPlanRescueWin};
 pub use turn_pool_rescue::{
