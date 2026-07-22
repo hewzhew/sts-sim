@@ -1964,5 +1964,124 @@ fn atomic_levin_watch_reports_root_membership_without_changing_search() {
     assert_eq!(state.best_atomic_depth, Some(0));
 }
 
+#[test]
+fn atomic_levin_next_turn_horizon_streams_exact_boundaries_without_deepening_them() {
+    let decision_root = root();
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        decision_root.clone(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            horizon: AtomicLevinSearchHorizon::NextPlayerTurn,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    let quantum = AtomicLevinWitnessQuantum {
+        additional_applied_transitions: 32,
+        additional_engine_steps: 128,
+        deadline: None,
+    };
+    let stepper = TinyTurnStepper::plain();
+
+    let first = session.advance(&stepper, quantum);
+    assert_eq!(first.status, AtomicLevinWitnessStatus::TurnBoundaryFound);
+    let first = first.turn_boundary.expect("first exact next-turn state");
+    assert_eq!(first.position.combat.turn.turn_count, 2);
+    assert_eq!(
+        first
+            .actions
+            .iter()
+            .map(|action| &action.input)
+            .collect::<Vec<_>>(),
+        vec![&PLAY, &ClientInput::EndTurn]
+    );
+    assert_eq!(
+        first.actions.last().unwrap().expected_successor_hash,
+        exact_hash(&first.position)
+    );
+
+    let second = session.advance(&stepper, quantum);
+    assert_eq!(second.status, AtomicLevinWitnessStatus::TurnBoundaryFound);
+    let second = second.turn_boundary.expect("second exact next-turn state");
+    assert_eq!(second.position.combat.turn.turn_count, 2);
+    assert_eq!(
+        second
+            .actions
+            .iter()
+            .map(|action| &action.input)
+            .collect::<Vec<_>>(),
+        vec![&ClientInput::EndTurn]
+    );
+    assert_ne!(exact_hash(&first.position), exact_hash(&second.position));
+}
+
+#[test]
+fn atomic_levin_next_turn_horizon_keeps_terminal_win_as_the_stronger_result() {
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        root(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            horizon: AtomicLevinSearchHorizon::NextPlayerTurn,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session.advance(
+        &TinyTurnStepper::lethal(),
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 16,
+            additional_engine_steps: 64,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicLevinWitnessStatus::WitnessFound);
+    assert!(report.witness.is_some());
+    assert!(report.turn_boundary.is_none());
+}
+
+#[test]
+fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search() {
+    let mut portfolio = AtomicTurnPortfolioSession::with_policies(
+        root(),
+        AtomicTurnPortfolioConfig {
+            boundary_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            suffix_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            boundary_service_transitions: 8,
+            suffix_service_transitions: 8,
+            boundary_service_period: 8,
+        },
+        Arc::new(PreferPlayPolicy),
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = portfolio.advance(
+        &TinyTurnStepper::lethal_after_current_turn(),
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 2_048,
+            additional_engine_steps: 8_192,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicTurnPortfolioStatus::WitnessFound);
+    assert!(report.after.turn_boundaries_found >= 2);
+    assert!(report.after.suffix_sessions_started >= 2);
+    assert!(report.after.boundary_services > 0);
+    assert!(report.after.suffix_services > 0);
+    let witness = report
+        .witness
+        .expect("the second boundary retains energy and wins independently");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+    assert_eq!(witness.actions[1].input, PLAY);
+}
+
 mod agenda;
 mod decision;

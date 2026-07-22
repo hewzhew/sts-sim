@@ -9,6 +9,7 @@
 
 mod agenda;
 mod atomic_levin_search;
+mod atomic_turn_portfolio;
 mod decision;
 mod depth_beam_turn;
 mod evidence;
@@ -28,9 +29,14 @@ pub use agenda::{
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
 };
 pub use atomic_levin_search::{
-    AtomicLevinRerooting, AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
+    replay_atomic_actions, AtomicLevinRerooting, AtomicLevinSearchHorizon, AtomicLevinTurnBoundary,
+    AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
     AtomicLevinWitnessInterruption, AtomicLevinWitnessQuantum, AtomicLevinWitnessReplayError,
     AtomicLevinWitnessReport, AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
+};
+pub use atomic_turn_portfolio::{
+    AtomicTurnPortfolioConfig, AtomicTurnPortfolioCounters, AtomicTurnPortfolioEntryReport,
+    AtomicTurnPortfolioReport, AtomicTurnPortfolioSession, AtomicTurnPortfolioStatus,
 };
 pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,

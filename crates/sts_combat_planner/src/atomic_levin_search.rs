@@ -26,6 +26,7 @@ pub struct AtomicLevinWitnessConfig {
     pub max_engine_steps_per_transition: usize,
     pub uniform_exploration_ppm: u32,
     pub rerooting: AtomicLevinRerooting,
+    pub horizon: AtomicLevinSearchHorizon,
 }
 
 impl Default for AtomicLevinWitnessConfig {
@@ -34,8 +35,21 @@ impl Default for AtomicLevinWitnessConfig {
             max_engine_steps_per_transition: 250,
             uniform_exploration_ppm: 10_000,
             rerooting: AtomicLevinRerooting::Disabled,
+            horizon: AtomicLevinSearchHorizon::CombatTerminal,
         }
     }
+}
+
+/// The semantic boundary at which an atomic search invocation returns.
+///
+/// `NextPlayerTurn` still searches individual simulator inputs inside the
+/// current turn. It merely hands exact next-turn positions back to an outer
+/// scheduler instead of mixing their descendants into the same frontier.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AtomicLevinSearchHorizon {
+    #[default]
+    CombatTerminal,
+    NextPlayerTurn,
 }
 
 /// Lab-only rerooting choices for the atomic policy tree.
@@ -93,6 +107,7 @@ pub enum AtomicLevinWitnessReplayError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AtomicLevinWitnessStatus {
     WitnessFound,
+    TurnBoundaryFound,
     Partial(AtomicLevinWitnessInterruption),
     FrontierExhausted,
     ReplayMismatch(AtomicLevinWitnessReplayError),
@@ -102,6 +117,14 @@ pub enum AtomicLevinWitnessStatus {
 pub struct AtomicLevinWitness {
     pub actions: Vec<TurnOptionAction>,
     pub final_position: CombatPosition,
+    pub negative_log_policy: f64,
+    pub replay_engine_steps: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct AtomicLevinTurnBoundary {
+    pub actions: Vec<TurnOptionAction>,
+    pub position: CombatPosition,
     pub negative_log_policy: f64,
     pub replay_engine_steps: usize,
 }
@@ -117,6 +140,7 @@ pub struct AtomicLevinWitnessReport {
     pub transition_step_limit_gaps: usize,
     pub status: AtomicLevinWitnessStatus,
     pub witness: Option<AtomicLevinWitness>,
+    pub turn_boundary: Option<AtomicLevinTurnBoundary>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -349,6 +373,7 @@ pub struct AtomicLevinWitnessSession {
     unsupported_stable_boundaries: usize,
     transition_step_limit_gaps: usize,
     witness: Option<AtomicLevinWitness>,
+    turn_boundary: Option<AtomicLevinTurnBoundary>,
     replay_failure: Option<AtomicLevinWitnessReplayError>,
     watched_states: HashMap<String, AtomicLevinWatchedState>,
 }
@@ -401,6 +426,7 @@ impl AtomicLevinWitnessSession {
             unsupported_stable_boundaries: 0,
             transition_step_limit_gaps: 0,
             witness: None,
+            turn_boundary: None,
             replay_failure: None,
             watched_states: HashMap::new(),
         };
@@ -439,6 +465,7 @@ impl AtomicLevinWitnessSession {
         quantum: AtomicLevinWitnessQuantum,
     ) -> AtomicLevinWitnessReport {
         let before = self.used;
+        self.turn_boundary = None;
         self.granted_applied_transitions = self
             .granted_applied_transitions
             .saturating_add(quantum.additional_applied_transitions);
@@ -449,6 +476,9 @@ impl AtomicLevinWitnessSession {
         let status = loop {
             if self.witness.is_some() {
                 break AtomicLevinWitnessStatus::WitnessFound;
+            }
+            if self.turn_boundary.is_some() {
+                break AtomicLevinWitnessStatus::TurnBoundaryFound;
             }
             if let Some(error) = self.replay_failure.clone() {
                 break AtomicLevinWitnessStatus::ReplayMismatch(error);
@@ -507,6 +537,14 @@ impl AtomicLevinWitnessSession {
             }
         };
 
+        // A streamed turn boundary is a completed result for this service
+        // quantum. Do not carry its unused allowance into the next call: an
+        // outer scheduler must be able to bound each independent service.
+        if status == AtomicLevinWitnessStatus::TurnBoundaryFound {
+            self.granted_applied_transitions = self.used.applied_action_transitions;
+            self.granted_engine_steps = self.used.engine_steps;
+        }
+
         AtomicLevinWitnessReport {
             before,
             after: self.used,
@@ -517,6 +555,7 @@ impl AtomicLevinWitnessSession {
             transition_step_limit_gaps: self.transition_step_limit_gaps,
             status,
             witness: self.witness.clone(),
+            turn_boundary: self.turn_boundary.clone(),
         }
     }
 
@@ -729,12 +768,18 @@ impl AtomicLevinWitnessSession {
             return None;
         }
 
+        let reached_horizon = self.config.horizon == AtomicLevinSearchHorizon::NextPlayerTurn
+            && node.entered_new_player_turn;
+
         match self.best_state_ranks.get(&exact_key).copied() {
             None => {
                 self.best_state_ranks.insert(exact_key, work.rank);
                 self.used.exact_states = self.used.exact_states.saturating_add(1);
                 if let Some(watched) = self.watched_states.get_mut(&successor_hash) {
                     watched.accepted = true;
+                }
+                if reached_horizon {
+                    return Some(self.finish_turn_boundary(stepper, &node));
                 }
                 self.push_work(AtomicLevinWork::Expand(node));
             }
@@ -743,6 +788,9 @@ impl AtomicLevinWitnessSession {
                 self.used.reopened_exact_states = self.used.reopened_exact_states.saturating_add(1);
                 if let Some(watched) = self.watched_states.get_mut(&successor_hash) {
                     watched.accepted = true;
+                }
+                if reached_horizon {
+                    return Some(self.finish_turn_boundary(stepper, &node));
                 }
                 self.push_work(AtomicLevinWork::Expand(node));
             }
@@ -756,18 +804,50 @@ impl AtomicLevinWitnessSession {
         None
     }
 
+    fn finish_turn_boundary(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        node: &ExactSearchNode,
+    ) -> AtomicLevinWitnessStatus {
+        let actions = node.trace.actions();
+        match replay_atomic_actions(
+            stepper,
+            &self.root,
+            &actions,
+            self.config.max_engine_steps_per_transition,
+        ) {
+            Ok((position, replay_engine_steps)) => {
+                self.turn_boundary = Some(AtomicLevinTurnBoundary {
+                    actions,
+                    position,
+                    negative_log_policy: node.rank.negative_log_policy,
+                    replay_engine_steps,
+                });
+                AtomicLevinWitnessStatus::TurnBoundaryFound
+            }
+            Err(error) => {
+                self.replay_failure = Some(error.clone());
+                AtomicLevinWitnessStatus::ReplayMismatch(error)
+            }
+        }
+    }
+
     fn finish_witness(&mut self, stepper: &dyn CombatStepper, node: &ExactSearchNode) {
         if self.witness.is_some() || self.replay_failure.is_some() {
             return;
         }
         let actions = node.trace.actions();
-        match replay_exact_witness(
+        match replay_atomic_actions(
             stepper,
             &self.root,
             &actions,
             self.config.max_engine_steps_per_transition,
         ) {
             Ok((final_position, replay_engine_steps)) => {
+                if stepper.terminal(&final_position) != CombatTerminal::Win {
+                    self.replay_failure = Some(AtomicLevinWitnessReplayError::FinalStateIsNotWin);
+                    return;
+                }
                 self.witness = Some(AtomicLevinWitness {
                     actions,
                     final_position,
@@ -825,7 +905,7 @@ impl AtomicLevinWitnessSession {
     }
 }
 
-fn replay_exact_witness(
+pub fn replay_atomic_actions(
     stepper: &dyn CombatStepper,
     root: &CombatPosition,
     actions: &[TurnOptionAction],
@@ -853,9 +933,6 @@ fn replay_exact_witness(
             return Err(AtomicLevinWitnessReplayError::SuccessorMismatch { action_index });
         }
         position = result.position;
-    }
-    if stepper.terminal(&position) != CombatTerminal::Win {
-        return Err(AtomicLevinWitnessReplayError::FinalStateIsNotWin);
     }
     Ok((position, engine_steps))
 }
