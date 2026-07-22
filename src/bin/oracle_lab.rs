@@ -15,6 +15,7 @@ use sts_combat_planner::{
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
     OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
     OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
@@ -237,6 +238,38 @@ enum Command {
         max_turn_layers: usize,
         /// Report where these exact states reside in deferred beam windows
         /// without exporting the complete frontier.
+        #[arg(long)]
+        watch_exact_state_hash: Vec<String>,
+        /// If a replay-verified win is found, save its exact ClientInput list.
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
+    },
+    /// Lab-only exact graph search with node-local lazy widening. It
+    /// does not use the production global Widen/Deepen agenda or V2 donor.
+    CombatCaseLocalGraph {
+        #[arg(long)]
+        case: PathBuf,
+        /// Optional typed action-order policy distilled from exact witnesses.
+        /// It changes guidance only; legality and terminal truth stay exact.
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
+        /// Optional lab-only turn-boundary value prototypes distilled from an
+        /// exact witness. This is a teacher upper-bound control, not production.
+        #[arg(long)]
+        value_prototype_artifact: Option<PathBuf>,
+        #[arg(long, default_value_t = 250_000)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 1_000_000)]
+        max_selections: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long, default_value_t = 4)]
+        generation_quantum_work: usize,
+        #[arg(long, default_value_t = 32)]
+        max_turn_depth: usize,
+        /// Report exact graph membership and local service for selected states.
         #[arg(long)]
         watch_exact_state_hash: Vec<String>,
         /// If a replay-verified win is found, save its exact ClientInput list.
@@ -1523,6 +1556,121 @@ fn main() -> Result<(), String> {
                 "case": case,
                 "output": output,
                 "artifact": artifact,
+            }))
+        }
+        Command::CombatCaseLocalGraph {
+            case,
+            action_imitation_artifact,
+            value_prototype_artifact,
+            max_nodes,
+            max_selections,
+            wall_ms,
+            max_engine_steps_per_transition,
+            generation_quantum_work,
+            max_turn_depth,
+            watch_exact_state_hash,
+            export_witness_actions,
+        } => {
+            let command_started = Instant::now();
+            let loaded = load_combat_case(&case)?;
+            let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let root = CombatDecisionRoot::new(loaded.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let config = LocalTurnGraphWitnessConfig {
+                generator: TurnOptionGeneratorConfig {
+                    max_engine_steps_per_transition,
+                    ..TurnOptionGeneratorConfig::default()
+                },
+                generation_quantum_work,
+                max_turn_depth,
+            };
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let policy = if let Some(path) = value_prototype_artifact.as_deref() {
+                let artifact = load_value_prototype(path)?;
+                value_prototype_boundary_control_policy(policy, &artifact)
+            } else {
+                policy
+            };
+            let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
+            let report = session.advance(
+                LocalTurnGraphWitnessQuantum {
+                    additional_selections: max_selections,
+                    additional_generation_work: max_nodes,
+                    additional_engine_steps: max_nodes
+                        .saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(Instant::now() + Duration::from_millis(wall_ms)),
+                },
+                &EngineCombatStepper,
+            );
+            let watched_states = watch_exact_state_hash
+                .iter()
+                .map(|hash| {
+                    json!({
+                        "exact_state_hash": hash,
+                        "state": session.state_snapshot_by_exact_hash(hash),
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let (Some(path), Some(witness)) =
+                (export_witness_actions.as_ref(), report.witness.as_ref())
+            {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let inputs = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            print_json(&json!({
+                "schema_name": "LocalTurnGraphCombatSearchReportV1",
+                "schema_version": 1,
+                "case": case,
+                "action_imitation_artifact": action_imitation_artifact,
+                "value_prototype_artifact": value_prototype_artifact,
+                "status": format!("{:?}", report.status),
+                "elapsed_ms": command_started.elapsed().as_millis(),
+                "initial_hp": initial_hp,
+                "final_hp": report.witness.as_ref().map(|witness| {
+                    witness.final_position.combat.entities.player.current_hp
+                }),
+                "witness_actions": report.witness.as_ref().map(|witness| witness.actions.len()),
+                "root": {
+                    "visits": report.root_visits,
+                    "generated_options": report.root_generated_options,
+                    "children": report.root_children,
+                },
+                "counters": {
+                    "selections": report.counters.selections,
+                    "node_visits": report.counters.node_visits,
+                    "generation_work": report.counters.generation_work,
+                    "engine_steps": report.counters.engine_steps,
+                    "exact_nodes": report.counters.exact_nodes,
+                    "exact_edges": report.counters.exact_edges,
+                    "completed_turn_options": report.counters.completed_turn_options,
+                    "duplicate_successor_edges": report.counters.duplicate_successor_edges,
+                    "terminal_losses": report.counters.terminal_losses,
+                    "depth_limited_successors": report.counters.depth_limited_successors,
+                    "exhausted_nodes": report.counters.exhausted_nodes,
+                    "maximum_turn_depth": report.counters.maximum_turn_depth,
+                },
+                "generation_gap_count": report.generation_gaps.len(),
+                "watched_states": watched_states,
+                "exported_witness_actions": report.witness.is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
             }))
         }
         Command::CombatCaseLayered {

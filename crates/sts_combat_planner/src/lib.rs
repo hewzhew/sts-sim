@@ -13,6 +13,7 @@ mod depth_beam_turn;
 mod evidence;
 mod generator;
 mod layered_witness_search;
+mod local_turn_graph_search;
 mod policy;
 mod prospect;
 mod replay;
@@ -55,6 +56,11 @@ pub use layered_witness_search::{
     LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessBudget, LayeredCombatWitnessConfig,
     LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum,
     LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
+};
+pub use local_turn_graph_search::{
+    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters,
+    LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport,
+    LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
