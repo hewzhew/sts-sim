@@ -24,8 +24,9 @@ use sts_combat_planner::{
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
     audit_combat_action_imitation_misses_v1, combat_action_imitation_policy_v1,
-    root_player_turn_action_policy_v1, train_combat_action_imitation_v1,
-    CombatActionImitationArtifactV1, CombatActionImitationTrainingConfigV1,
+    root_player_turn_action_policy_v1, train_combat_action_imitation_from_demonstrations_v1,
+    train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
+    CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
 use sts_simulator::eval::run_control::{
@@ -350,6 +351,16 @@ enum Command {
         /// compose a witness without rewriting JSON by hand.
         #[arg(long, required = true)]
         actions: Vec<PathBuf>,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
+    /// Distill several exact terminal witnesses from one compact manifest.
+    /// Relative case and action paths are resolved beside the manifest.
+    BuildActionImitationCorpus {
+        #[arg(long)]
+        manifest: PathBuf,
         #[arg(long)]
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
@@ -685,6 +696,31 @@ enum ShadowCorridorGuide {
 const COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME: &str = "CombatValuePrototypeArtifactV1";
 const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 1;
 const COMBAT_TYPED_FEATURE_SCHEMA: &str = "existing-combat-guides/concatenated-v1";
+
+const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_NAME: &str = "CombatActionImitationCorpusManifestV1";
+const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatActionImitationCorpusManifestV1 {
+    schema_name: String,
+    schema_version: u32,
+    demonstrations: Vec<CombatActionImitationCorpusEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CombatActionImitationCorpusEntryV1 {
+    id: String,
+    case: PathBuf,
+    actions: Vec<PathBuf>,
+}
+
+struct LoadedCombatActionImitationDemonstrationV1 {
+    id: String,
+    position: sts_simulator::sim::combat::CombatPosition,
+    actions: Vec<ClientInput>,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1382,6 +1418,64 @@ fn load_combat_action_segments(action_paths: &[PathBuf]) -> Result<Vec<ClientInp
     Ok(actions)
 }
 
+fn load_combat_action_imitation_corpus(
+    manifest_path: &Path,
+) -> Result<Vec<LoadedCombatActionImitationDemonstrationV1>, String> {
+    let manifest = serde_json::from_slice::<CombatActionImitationCorpusManifestV1>(
+        &std::fs::read(manifest_path).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("invalid action imitation corpus manifest: {error}"))?;
+    if manifest.schema_name != COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_NAME
+        || manifest.schema_version != COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_VERSION
+    {
+        return Err("unsupported action imitation corpus manifest schema".to_string());
+    }
+    if manifest.demonstrations.is_empty() {
+        return Err("action imitation corpus manifest has no demonstrations".to_string());
+    }
+    let base = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let mut seen_ids = std::collections::HashSet::new();
+    manifest
+        .demonstrations
+        .into_iter()
+        .map(|entry| {
+            if entry.id.trim().is_empty() || !seen_ids.insert(entry.id.clone()) {
+                return Err(format!(
+                    "action imitation corpus demonstration id is empty or duplicated: {:?}",
+                    entry.id
+                ));
+            }
+            if entry.actions.is_empty() {
+                return Err(format!(
+                    "action imitation corpus demonstration {:?} has no action segments",
+                    entry.id
+                ));
+            }
+            let case_path = resolve_manifest_relative_path(base, &entry.case);
+            let action_paths = entry
+                .actions
+                .iter()
+                .map(|path| resolve_manifest_relative_path(base, path))
+                .collect::<Vec<_>>();
+            let case = load_combat_case(&case_path)?;
+            let actions = load_combat_action_segments(&action_paths)?;
+            Ok(LoadedCombatActionImitationDemonstrationV1 {
+                id: entry.id,
+                position: case.position,
+                actions,
+            })
+        })
+        .collect()
+}
+
+fn resolve_manifest_relative_path(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
 fn load_layered_solved_suffix_index(
     case_path: Option<&PathBuf>,
     actions_path: Option<&PathBuf>,
@@ -1568,6 +1662,55 @@ fn main() -> Result<(), String> {
                 "output": output,
                 "artifact": artifact,
                 "training_misses": training_misses,
+            }))
+        }
+        Command::BuildActionImitationCorpus {
+            manifest,
+            output,
+            max_engine_steps_per_transition,
+        } => {
+            let demonstrations = load_combat_action_imitation_corpus(&manifest)?;
+            let training_config = CombatActionImitationTrainingConfigV1 {
+                max_engine_steps_per_transition,
+                ..CombatActionImitationTrainingConfigV1::default()
+            };
+            let borrowed = demonstrations
+                .iter()
+                .map(|demonstration| CombatActionImitationDemonstrationV1 {
+                    root: &demonstration.position,
+                    actions: &demonstration.actions,
+                })
+                .collect::<Vec<_>>();
+            let artifact =
+                train_combat_action_imitation_from_demonstrations_v1(&borrowed, training_config)?;
+            let audits = demonstrations
+                .iter()
+                .map(|demonstration| {
+                    audit_combat_action_imitation_misses_v1(
+                        &demonstration.position,
+                        &demonstration.actions,
+                        &artifact,
+                        training_config.max_structured_alternatives,
+                        max_engine_steps_per_transition,
+                    )
+                    .map(|misses| {
+                        json!({
+                            "id": demonstration.id,
+                            "source_action_count": demonstration.actions.len(),
+                            "training_miss_count": misses.len(),
+                            "training_misses": misses,
+                        })
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            artifact.save(&output)?;
+            print_json(&json!({
+                "schema_name": "OracleCombatActionImitationCorpusBuildV1",
+                "schema_version": 1,
+                "manifest": manifest,
+                "output": output,
+                "artifact": artifact,
+                "demonstrations": audits,
             }))
         }
         Command::CombatCaseLocalGraph {
