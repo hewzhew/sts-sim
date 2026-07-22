@@ -14,6 +14,16 @@ must rediscover the line from every earlier prefix.
   exact replay facts; its `interpretation` fields are human diagnostic notes,
   not search rules or claims that every winning line must match the same cards.
 - Verified result: victory on turn 14 with 13/85 HP.
+- A second exact witness,
+  `seed20260713007_a0_awakened_one.layered-proof-cache.actions.json`, was
+  reconstructed by the new layered generator and exact solved-suffix cache:
+  T3 was solved by turn-rerooted policy-discrepancy search, then the proof was
+  folded through T2 and T1 until the root generator matched it naturally.
+  The resulting 90-action root replay wins on turn 18 with 16/85 HP. This is
+  proof-cache composition, not a claim that an unguided T0 search found the
+  whole line in one pass; no V2 donor participates in the reconstruction.
+- Layered proof-cache action SHA-256:
+  `3D4800407A41E700C53BA122559E3E619B7066B6B9C449F25B71D25B81F0BF29`.
 - Combat start case SHA-256:
   `155F29BFB291C7C87652DD27421F947A3AB43225776F4A0A17274D3ADE4C7BA1`.
 - Final exact combat-state hash:
