@@ -1,5 +1,9 @@
 use super::super::*;
-use super::{diagnostics::TurnPlanDiagnosticsCollector, enumerate::enumerate_turn_plans, types::*};
+use super::{
+    diagnostics::TurnPlanDiagnosticsCollector,
+    enumerate::{enumerate_turn_plans, enumerate_turn_plans_across_pending_choices},
+    types::*,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -13,6 +17,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 #[derive(Clone, Copy, Debug)]
 enum TestTurnMode {
     PlayThenEnd,
+    PendingChoiceThenEnd,
     WideDepthWin,
     DirectNextTurnOutcomes,
     EqualNextTurnOutcomes,
@@ -43,6 +48,17 @@ impl CombatStepper for TestTurnStepper {
                 actions.push(ClientInput::EndTurn);
                 actions
             }
+            TestTurnMode::PendingChoiceThenEnd => match &position.engine {
+                EngineState::CombatPlayerTurn if position.combat.zones.hand.is_empty() => {
+                    vec![ClientInput::EndTurn]
+                }
+                EngineState::CombatPlayerTurn => vec![ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                }],
+                EngineState::PendingChoice(_) => vec![ClientInput::SubmitDiscoverChoice(0)],
+                _ => Vec::new(),
+            },
             TestTurnMode::WideDepthWin => {
                 if !matches!(position.engine, EngineState::CombatPlayerTurn)
                     || position.combat.turn.turn_count > 0
@@ -122,6 +138,25 @@ impl CombatStepper for TestTurnStepper {
             (TestTurnMode::PlayThenEnd, ClientInput::EndTurn) => {
                 combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
             }
+            (TestTurnMode::PendingChoiceThenEnd, ClientInput::PlayCard { card_index, .. }) => {
+                move_hand_card_to_discard(card_index, &mut combat);
+                engine =
+                    EngineState::PendingChoice(crate::state::core::PendingChoice::DiscoverySelect(
+                        crate::state::core::DiscoveryChoiceState {
+                            cards: vec![CardId::Strike],
+                            colorless: false,
+                            card_type: None,
+                            amount: 1,
+                            can_skip: false,
+                        },
+                    ));
+            }
+            (TestTurnMode::PendingChoiceThenEnd, ClientInput::SubmitDiscoverChoice(0)) => {
+                engine = EngineState::CombatPlayerTurn;
+            }
+            (TestTurnMode::PendingChoiceThenEnd, ClientInput::EndTurn) => {
+                combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+            }
             (TestTurnMode::WideDepthWin, ClientInput::PlayCard { card_index, .. }) => {
                 let card_marker = combat
                     .zones
@@ -197,6 +232,58 @@ fn turn_planner_enumerates_same_turn_prefix_until_next_turn_boundary() {
         .any(|plan| plan.stop_reason == TurnPlanStopReason::NextTurn && plan.actions.len() == 2));
     assert!(plans.nodes_expanded >= 2);
     assert!(plans.nodes_generated >= 3);
+}
+
+#[test]
+fn diagnostic_turn_planner_can_cross_structured_choice_within_same_turn() {
+    let root = test_node(test_combat_with_hand(1));
+    let stepper = TestTurnStepper {
+        mode: TestTurnMode::PendingChoiceThenEnd,
+    };
+
+    let historical = enumerate_turn_plans(&root, &stepper, &TurnPlannerConfigV1::default(), None);
+    assert!(historical.plans.iter().any(|plan| {
+        plan.stop_reason == TurnPlanStopReason::PendingChoice && plan.actions.len() == 1
+    }));
+    assert!(!historical.plans.iter().any(|plan| {
+        plan.actions
+            .iter()
+            .any(|action| matches!(action.input, ClientInput::SubmitDiscoverChoice(_)))
+    }));
+
+    let diagnostic = enumerate_turn_plans_across_pending_choices(
+        &root,
+        &stepper,
+        &TurnPlannerConfigV1::default(),
+        None,
+    );
+    assert!(diagnostic.plans.iter().any(|plan| {
+        plan.stop_reason == TurnPlanStopReason::NextTurn
+            && plan.actions.len() == 3
+            && matches!(plan.actions[1].input, ClientInput::SubmitDiscoverChoice(0))
+    }));
+}
+
+#[test]
+fn diagnostic_turn_planner_materializes_engine_hand_selection() {
+    let mut combat = test_combat_with_cards(&[CardId::Warcry, CardId::Strike]);
+    combat.turn.energy = 2;
+    combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 30)];
+    let root = test_node(combat);
+    let config = TurnPlannerConfigV1 {
+        max_inner_nodes: 64,
+        max_end_states: 32,
+        per_bucket_limit: 32,
+        ..TurnPlannerConfigV1::default()
+    };
+
+    let diagnostic =
+        enumerate_turn_plans_across_pending_choices(&root, &EngineCombatStepper, &config, None);
+    assert!(diagnostic.plans.iter().any(|plan| {
+        plan.actions
+            .iter()
+            .any(|action| matches!(action.input, ClientInput::SubmitSelection(_)))
+    }));
 }
 
 #[test]

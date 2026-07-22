@@ -25,6 +25,25 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
     config: &TurnPlannerConfigV1,
     deadline: Option<Instant>,
 ) -> TurnPlanEnumeration {
+    enumerate_turn_plans_impl(root, stepper, config, deadline, false)
+}
+
+pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans_across_pending_choices(
+    root: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &TurnPlannerConfigV1,
+    deadline: Option<Instant>,
+) -> TurnPlanEnumeration {
+    enumerate_turn_plans_impl(root, stepper, config, deadline, true)
+}
+
+fn enumerate_turn_plans_impl(
+    root: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &TurnPlannerConfigV1,
+    deadline: Option<Instant>,
+    continue_pending_choices: bool,
+) -> TurnPlanEnumeration {
     let mut enumeration = TurnPlanEnumeration::default();
     if !matches!(root.engine, EngineState::CombatPlayerTurn) {
         return enumeration;
@@ -74,7 +93,12 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
 
             let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
             let legal = filtered_legal_actions(
-                stepper.atomic_action_choices(&position),
+                legal_action_choices(
+                    stepper,
+                    &position,
+                    continue_pending_choices,
+                    config.max_inner_nodes,
+                ),
                 config.potion_policy,
                 &node.combat,
             );
@@ -172,7 +196,14 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                         TurnPlanStopReason::EngineStepLimit,
                         root_eval,
                     ));
-                } else if transition.is_same_turn() {
+                } else if transition.is_same_turn()
+                    || (continue_pending_choices
+                        && child.combat.turn.turn_count == root.combat.turn.turn_count
+                        && matches!(
+                            child.engine,
+                            EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+                        ))
+                {
                     let key = combat_exact_state_key(&child.engine, &child.combat);
                     if seen.insert(key) {
                         next.push(TurnPlanWorkNode {
@@ -224,4 +255,36 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
     enumeration.plans = selected_plans;
     enumeration.selection_audit = selection_audit;
     enumeration
+}
+
+fn legal_action_choices(
+    stepper: &impl CombatStepper,
+    position: &CombatPosition,
+    continue_pending_choices: bool,
+    structured_choice_cap: usize,
+) -> Vec<crate::sim::combat_action::CombatActionChoice> {
+    let mut choices = stepper.atomic_action_choices(position);
+    if !continue_pending_choices || !stepper.supports_canonical_pending_choice_actions() {
+        return choices;
+    }
+    let EngineState::PendingChoice(choice) = &position.engine else {
+        return choices;
+    };
+    let Some(inputs) =
+        crate::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs(
+            choice,
+        )
+    else {
+        return choices;
+    };
+
+    for input in inputs.take(structured_choice_cap.max(1)) {
+        if choices.iter().any(|choice| choice.input == input) {
+            continue;
+        }
+        if let Some(choice) = stepper.choice_for_legal_input(position, &input) {
+            choices.push(choice);
+        }
+    }
+    choices
 }

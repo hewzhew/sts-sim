@@ -208,7 +208,10 @@ pub use search::{
 };
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;
-pub use turn_plan_probe::enumerate_combat_search_v2_turn_plan_probe_candidates;
+pub use turn_plan_probe::{
+    enumerate_combat_search_v2_turn_plan_probe_candidates,
+    enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices,
+};
 #[cfg(test)]
 pub(crate) use turn_plan_probe_report::CombatSearchV2TurnPlanProbeStepReport;
 pub use turn_plan_probe_report::{

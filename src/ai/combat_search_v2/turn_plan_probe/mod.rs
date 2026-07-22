@@ -9,7 +9,9 @@ use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 
 use super::frontier::SearchNode;
 use super::turn_plan_probe_report::*;
-use super::turn_planner::{enumerate_turn_plans, TurnPlannerConfigV1};
+use super::turn_planner::{
+    enumerate_turn_plans, enumerate_turn_plans_across_pending_choices, TurnPlannerConfigV1,
+};
 use super::*;
 
 const TURN_PLAN_PROBE_MAX_INNER_NODES: usize = 256;
@@ -21,10 +23,35 @@ pub fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     combat: &CombatState,
     config: &CombatSearchV2Config,
 ) -> CombatSearchV2TurnPlanProbeEnumeration {
+    enumerate_probe_candidates(engine, combat, config, false)
+}
+
+/// Diagnostic-only variant that treats structured pending choices as part of
+/// the same player turn. The production V2 turn planner retains its historical
+/// boundary behavior; this variant exists only to measure what its bounded
+/// partial beam can express once the missing selection transition is removed.
+pub fn enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: &CombatSearchV2Config,
+) -> CombatSearchV2TurnPlanProbeEnumeration {
+    enumerate_probe_candidates(engine, combat, config, true)
+}
+
+fn enumerate_probe_candidates(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: &CombatSearchV2Config,
+    continue_pending_choices: bool,
+) -> CombatSearchV2TurnPlanProbeEnumeration {
     let root = SearchNode::root(engine.clone(), combat.clone());
     let plugins = CombatSearchPluginStack::from_config(config);
     let turn_config = turn_planner_config(config, &plugins);
-    let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
+    let enumeration = if continue_pending_choices {
+        enumerate_turn_plans_across_pending_choices(&root, &EngineCombatStepper, &turn_config, None)
+    } else {
+        enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None)
+    };
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal_action_choices = if matches!(engine, EngineState::CombatPlayerTurn) {
         EngineCombatStepper.atomic_action_choices(&position)

@@ -349,6 +349,20 @@ enum Command {
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
     },
+    /// Audit the mature V2 bounded complete-turn proposer on one exact case.
+    /// This is read-only evidence: it does not seed either production search.
+    TurnPlanAudit {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long, default_value_t = 256)]
+        max_inner_nodes: usize,
+        #[arg(long, default_value_t = 24)]
+        max_end_states: usize,
+        #[arg(long, default_value_t = 24)]
+        per_bucket_limit: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
     /// View the current cursor or another exact analysis node.
     View {
         #[arg(long)]
@@ -2599,6 +2613,77 @@ fn main() -> Result<(), String> {
                     .collect::<Vec<_>>(),
                 "atomic_actions": atomic,
                 "structured_families": structured_families,
+            }))
+        }
+        Command::TurnPlanAudit {
+            case,
+            max_inner_nodes,
+            max_end_states,
+            per_bucket_limit,
+            max_engine_steps_per_transition,
+        } => {
+            let case = load_combat_case(&case)?;
+            let mut config = sts_simulator::ai::combat_search_v2::CombatSearchV2Config::default();
+            config.max_engine_steps_per_action = max_engine_steps_per_transition.max(1);
+            config.turn_plan_probe_max_inner_nodes = Some(max_inner_nodes.max(1));
+            config.turn_plan_probe_max_end_states = Some(max_end_states.max(1));
+            config.turn_plan_probe_per_bucket_limit = Some(per_bucket_limit.max(1));
+            config.input_label = Some("oracle_lab_turn_plan_audit".to_string());
+            let audit = sts_simulator::ai::combat_search_v2::
+                enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
+                    &case.position.engine,
+                    &case.position.combat,
+                    &config,
+                );
+            let selected = audit
+                .report
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    json!({
+                        "plan_index": candidate.plan_index,
+                        "bucket": candidate.bucket,
+                        "stop_reason": candidate.stop_reason,
+                        "action_count": candidate.action_count,
+                        "actions": candidate.actions.iter().map(|action| {
+                            json!({
+                                "key": action.action_key,
+                                "debug": action.action_debug,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "end_exact_state_hash": candidate.steps.last().map(|step| {
+                            step.state_after_exact_state_hash.as_str()
+                        }),
+                        "final_hp": candidate.eval_final_hp,
+                        "risk_margin": candidate.eval_risk_margin,
+                        "enemy_progress": candidate.eval_enemy_progress,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let preselection = audit
+                .report
+                .selection_audit
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    json!({
+                        "preselection_rank": candidate.preselection_rank,
+                        "selected_plan_index": candidate.selected_plan_index,
+                        "outcome": candidate.outcome,
+                        "drop_reason": candidate.drop_reason,
+                        "bucket": candidate.bucket,
+                        "action_keys": candidate.action_keys,
+                    })
+                })
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleTurnPlanAuditV1",
+                "schema_version": 1,
+                "behavioral_scope": "read_only_no_search_seeding",
+                "config": audit.report.config,
+                "enumeration": audit.report.enumeration,
+                "preselection": preselection,
+                "selected": selected,
             }))
         }
         Command::TurnMembership {
