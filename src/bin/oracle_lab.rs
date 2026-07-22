@@ -20,11 +20,13 @@ use sts_combat_planner::{
     OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessSession, SharedCombatActionPolicy, TurnOptionAction,
     TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    UniformCombatActionPolicy,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
-    root_player_turn_action_policy_v1, train_combat_action_imitation_from_demonstrations_v1,
+    root_player_turn_action_policy_v1,
+    train_combat_action_imitation_from_demonstrations_with_base_v1,
     train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
@@ -363,6 +365,11 @@ enum Command {
         manifest: PathBuf,
         #[arg(long)]
         output: PathBuf,
+        /// Learn corrections to the mature combat action policy instead of
+        /// replacing its action distribution. This mode is explicit because
+        /// the resulting artifact must be paired with that same base policy.
+        #[arg(long)]
+        residual_over_existing_policy: bool,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
     },
@@ -1663,6 +1670,7 @@ fn main() -> Result<(), String> {
                 &loaded.position,
                 &actions,
                 &artifact,
+                &UniformCombatActionPolicy,
                 training_config.max_structured_alternatives,
                 max_engine_steps_per_transition,
             )?;
@@ -1679,12 +1687,23 @@ fn main() -> Result<(), String> {
         Command::BuildActionImitationCorpus {
             manifest,
             output,
+            residual_over_existing_policy,
             max_engine_steps_per_transition,
         } => {
             let demonstrations = load_combat_action_imitation_corpus(&manifest)?;
             let training_config = CombatActionImitationTrainingConfigV1 {
                 max_engine_steps_per_transition,
+                base_weight_exponent: if residual_over_existing_policy {
+                    1.0
+                } else {
+                    0.0
+                },
                 ..CombatActionImitationTrainingConfigV1::default()
+            };
+            let base_policy: SharedCombatActionPolicy = if residual_over_existing_policy {
+                existing_combat_knowledge_policy_v1()
+            } else {
+                Arc::new(UniformCombatActionPolicy)
             };
             let borrowed = demonstrations
                 .iter()
@@ -1693,8 +1712,11 @@ fn main() -> Result<(), String> {
                     actions: &demonstration.actions,
                 })
                 .collect::<Vec<_>>();
-            let artifact =
-                train_combat_action_imitation_from_demonstrations_v1(&borrowed, training_config)?;
+            let artifact = train_combat_action_imitation_from_demonstrations_with_base_v1(
+                &borrowed,
+                training_config,
+                base_policy.clone(),
+            )?;
             let audits = demonstrations
                 .iter()
                 .map(|demonstration| {
@@ -1702,6 +1724,7 @@ fn main() -> Result<(), String> {
                         &demonstration.position,
                         &demonstration.actions,
                         &artifact,
+                        base_policy.as_ref(),
                         training_config.max_structured_alternatives,
                         max_engine_steps_per_transition,
                     )
@@ -1719,6 +1742,11 @@ fn main() -> Result<(), String> {
                 "schema_version": 1,
                 "manifest": manifest,
                 "output": output,
+                "training_base": if residual_over_existing_policy {
+                    "existing_combat_knowledge_v1"
+                } else {
+                    "uniform"
+                },
                 "artifact": artifact,
                 "demonstrations": audits,
             }))
@@ -1732,10 +1760,12 @@ fn main() -> Result<(), String> {
             let loaded = load_combat_case(&case)?;
             let actions = load_combat_action_segments(&actions)?;
             let artifact_value = CombatActionImitationArtifactV1::load(&artifact)?;
+            let base_policy = existing_combat_knowledge_policy_v1();
             let audit = audit_combat_action_imitation_v1(
                 &loaded.position,
                 &actions,
                 &artifact_value,
+                base_policy.as_ref(),
                 CombatActionImitationTrainingConfigV1::default().max_structured_alternatives,
                 max_engine_steps_per_transition,
             )?;

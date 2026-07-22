@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
     CombatActionPolicy, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    SharedCombatActionPolicy,
+    SharedCombatActionPolicy, UniformCombatActionPolicy,
 };
 
 use crate::content::cards::{get_card_definition, java_id, CardId};
@@ -31,9 +31,9 @@ pub struct CombatActionImitationTrainingConfigV1 {
     pub max_engine_steps_per_transition: usize,
     pub logit_scale: f64,
     pub max_abs_log_factor: f64,
-    /// Zero lets the learned distribution own action ordering while the base
-    /// policy continues to supply independent state-guide lanes. Positive
-    /// values are reserved for explicit interpolation experiments.
+    /// Zero lets the learned distribution own action ordering. A positive
+    /// value trains and applies the learned logits as residual corrections to
+    /// the same base action policy used at runtime.
     pub base_weight_exponent: f64,
 }
 
@@ -157,6 +157,7 @@ type SparseFeatures = BTreeMap<String, f64>;
 struct RankingExample {
     demonstrated_index: usize,
     candidates: Vec<SparseFeatures>,
+    base_logits: Vec<f64>,
 }
 
 #[derive(Clone, Copy)]
@@ -209,6 +210,18 @@ pub fn train_combat_action_imitation_from_demonstrations_v1(
     demonstrations: &[CombatActionImitationDemonstrationV1<'_>],
     config: CombatActionImitationTrainingConfigV1,
 ) -> Result<CombatActionImitationArtifactV1, String> {
+    train_combat_action_imitation_from_demonstrations_with_base_v1(
+        demonstrations,
+        config,
+        Arc::new(UniformCombatActionPolicy),
+    )
+}
+
+pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
+    demonstrations: &[CombatActionImitationDemonstrationV1<'_>],
+    config: CombatActionImitationTrainingConfigV1,
+    base_policy: SharedCombatActionPolicy,
+) -> Result<CombatActionImitationArtifactV1, String> {
     validate_training_config(config)?;
     if demonstrations.is_empty() {
         return Err("combat action imitation requires at least one demonstration".to_string());
@@ -248,6 +261,12 @@ pub fn train_combat_action_imitation_from_demonstrations_v1(
                 let state = typed_combat_feature_components_v1(&position);
                 examples.push(RankingExample {
                     demonstrated_index,
+                    base_logits: concrete_base_logits(
+                        &position,
+                        &candidates,
+                        base_policy.as_ref(),
+                        config.base_weight_exponent,
+                    ),
                     candidates: candidates
                         .iter()
                         .map(|candidate| {
@@ -292,7 +311,14 @@ pub fn train_combat_action_imitation_from_demonstrations_v1(
     let weights = train_sparse_softmax(&examples, config);
     let training_top1_correct = examples
         .iter()
-        .filter(|example| best_candidate_index(&weights, example) == example.demonstrated_index)
+        .filter(|example| {
+            runtime_candidate_index(
+                &weights,
+                example,
+                config.logit_scale,
+                config.max_abs_log_factor,
+            ) == example.demonstrated_index
+        })
         .count();
     let coefficients = weights
         .into_iter()
@@ -328,6 +354,7 @@ pub fn audit_combat_action_imitation_v1(
     root: &CombatPosition,
     demonstrated_actions: &[ClientInput],
     artifact: &CombatActionImitationArtifactV1,
+    base_policy: &dyn CombatActionPolicy,
     max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
 ) -> Result<CombatActionImitationAuditV1, String> {
@@ -370,6 +397,14 @@ pub fn audit_combat_action_imitation_v1(
                     ) * artifact.logit_scale
                 })
                 .collect::<Vec<_>>();
+            let base_logits = concrete_base_logits(
+                &position,
+                &candidates,
+                base_policy,
+                artifact.base_weight_exponent,
+            );
+            let logits =
+                runtime_combined_logits(&logits, &base_logits, artifact.max_abs_log_factor);
             let demonstrated_logit = logits[demonstrated_index];
             let demonstrated_rank = 1 + logits
                 .iter()
@@ -669,6 +704,29 @@ fn concrete_training_inputs(
     unique
 }
 
+fn concrete_base_logits(
+    position: &CombatPosition,
+    candidates: &[ClientInput],
+    base_policy: &dyn CombatActionPolicy,
+    exponent: f64,
+) -> Vec<f64> {
+    if exponent <= 0.0 {
+        return vec![0.0; candidates.len()];
+    }
+    let choices = candidates
+        .iter()
+        .map(CombatPolicyChoice::Atomic)
+        .collect::<Vec<_>>();
+    let weights = base_policy.weights(position, &choices);
+    if weights.len() != candidates.len() {
+        return vec![0.0; candidates.len()];
+    }
+    weights
+        .into_iter()
+        .map(|weight| positive_or_neutral(weight).ln() * exponent)
+        .collect()
+}
+
 fn train_sparse_softmax(
     examples: &[RankingExample],
     config: CombatActionImitationTrainingConfigV1,
@@ -684,7 +742,10 @@ fn train_sparse_softmax(
             let scores = example
                 .candidates
                 .iter()
-                .map(|candidate| sparse_score(&weights, candidate))
+                .zip(&example.base_logits)
+                .map(|(candidate, base)| {
+                    sparse_score(&weights, candidate) * config.logit_scale + base
+                })
                 .collect::<Vec<_>>();
             let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             let exponentials = scores
@@ -694,7 +755,8 @@ fn train_sparse_softmax(
             let total = exponentials.iter().sum::<f64>().max(f64::MIN_POSITIVE);
             for (candidate_index, candidate) in example.candidates.iter().enumerate() {
                 let target = f64::from(candidate_index == example.demonstrated_index);
-                let gradient = target - exponentials[candidate_index] / total;
+                let gradient =
+                    (target - exponentials[candidate_index] / total) * config.logit_scale;
                 if gradient.abs() < f64::EPSILON {
                     continue;
                 }
@@ -708,18 +770,50 @@ fn train_sparse_softmax(
     weights
 }
 
-fn best_candidate_index(weights: &BTreeMap<String, f64>, example: &RankingExample) -> usize {
-    example
+fn runtime_candidate_index(
+    weights: &BTreeMap<String, f64>,
+    example: &RankingExample,
+    logit_scale: f64,
+    max_abs_log_factor: f64,
+) -> usize {
+    let learned = example
         .candidates
+        .iter()
+        .map(|candidate| sparse_score(weights, candidate) * logit_scale)
+        .collect::<Vec<_>>();
+    runtime_combined_logits(&learned, &example.base_logits, max_abs_log_factor)
         .iter()
         .enumerate()
         .max_by(|(left_index, left), (right_index, right)| {
-            sparse_score(weights, left)
-                .total_cmp(&sparse_score(weights, right))
+            left.total_cmp(right)
                 .then_with(|| right_index.cmp(left_index))
         })
         .map(|(index, _)| index)
         .unwrap_or_default()
+}
+
+fn runtime_combined_logits(
+    learned_logits: &[f64],
+    base_logits: &[f64],
+    max_abs_log_factor: f64,
+) -> Vec<f64> {
+    debug_assert_eq!(learned_logits.len(), base_logits.len());
+    let max_learned = learned_logits
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    learned_logits
+        .iter()
+        .zip(base_logits)
+        .map(|(learned, base)| {
+            let residual = if max_learned.is_finite() {
+                (learned - max_learned).clamp(-max_abs_log_factor, 0.0)
+            } else {
+                0.0
+            };
+            base + residual
+        })
+        .collect()
 }
 
 fn sparse_score<W>(weights: &W, features: &SparseFeatures) -> f64
@@ -1098,6 +1192,7 @@ mod tests {
     fn synthetic_example(positive: f64, negative: f64) -> RankingExample {
         RankingExample {
             demonstrated_index: 0,
+            base_logits: vec![0.0; 2],
             candidates: vec![
                 BTreeMap::from([("signal".to_string(), positive)]),
                 BTreeMap::from([("signal".to_string(), negative)]),
@@ -1108,10 +1203,27 @@ mod tests {
     #[test]
     fn sparse_softmax_learns_demonstrated_ranking() {
         let examples = vec![synthetic_example(1.0, -1.0)];
-        let weights =
-            train_sparse_softmax(&examples, CombatActionImitationTrainingConfigV1::default());
-        assert_eq!(best_candidate_index(&weights, &examples[0]), 0);
+        let config = CombatActionImitationTrainingConfigV1::default();
+        let weights = train_sparse_softmax(&examples, config);
+        assert_eq!(
+            runtime_candidate_index(
+                &weights,
+                &examples[0],
+                config.logit_scale,
+                config.max_abs_log_factor,
+            ),
+            0
+        );
         assert!(weights["signal"] > 0.0);
+    }
+
+    #[test]
+    fn runtime_ranking_applies_base_and_bounded_residual_together() {
+        let learned = vec![10.0, 0.0];
+        let base = vec![0.0, 4.0];
+        let combined = runtime_combined_logits(&learned, &base, 3.0);
+
+        assert_eq!(combined, vec![0.0, 1.0]);
     }
 
     #[test]
