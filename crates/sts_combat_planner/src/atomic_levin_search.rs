@@ -119,6 +119,20 @@ pub struct AtomicLevinWitnessReport {
     pub witness: Option<AtomicLevinWitness>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct AtomicLevinWatchedState {
+    pub discovered: bool,
+    pub accepted: bool,
+    pub expanded: bool,
+    pub first_discovery_after_transitions: Option<usize>,
+    pub first_expansion_after_work_pops: Option<usize>,
+    pub best_atomic_depth: Option<usize>,
+    pub best_negative_log_policy: Option<f64>,
+    pub best_levin_log_priority: Option<f64>,
+    pub reroot_ordinal: Option<usize>,
+    pub reroot_weight: Option<f64>,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct PathRank {
     atomic_depth: usize,
@@ -336,6 +350,7 @@ pub struct AtomicLevinWitnessSession {
     transition_step_limit_gaps: usize,
     witness: Option<AtomicLevinWitness>,
     replay_failure: Option<AtomicLevinWitnessReplayError>,
+    watched_states: HashMap<String, AtomicLevinWatchedState>,
 }
 
 impl AtomicLevinWitnessSession {
@@ -387,6 +402,7 @@ impl AtomicLevinWitnessSession {
             transition_step_limit_gaps: 0,
             witness: None,
             replay_failure: None,
+            watched_states: HashMap::new(),
         };
         session.push_work(AtomicLevinWork::Expand(node));
         session
@@ -394,6 +410,27 @@ impl AtomicLevinWitnessSession {
 
     pub fn counters(&self) -> AtomicLevinWitnessCounters {
         self.used
+    }
+
+    pub fn watch_exact_state_hash(&mut self, exact_state_hash: impl Into<String>) {
+        let exact_state_hash = exact_state_hash.into();
+        let is_root = exact_hash(&self.root) == exact_state_hash;
+        self.watched_states
+            .entry(exact_state_hash)
+            .or_insert_with(|| AtomicLevinWatchedState {
+                discovered: is_root,
+                accepted: is_root,
+                expanded: false,
+                first_discovery_after_transitions: is_root.then_some(0),
+                best_atomic_depth: is_root.then_some(0),
+                best_negative_log_policy: is_root.then_some(0.0),
+                best_levin_log_priority: is_root.then_some(0.0),
+                ..AtomicLevinWatchedState::default()
+            });
+    }
+
+    pub fn watched_state(&self, exact_state_hash: &str) -> Option<AtomicLevinWatchedState> {
+        self.watched_states.get(exact_state_hash).copied()
     }
 
     pub fn advance(
@@ -485,6 +522,16 @@ impl AtomicLevinWitnessSession {
 
     fn expand_node(&mut self, stepper: &dyn CombatStepper, node: Arc<ExactSearchNode>) {
         self.used.expanded_exact_states = self.used.expanded_exact_states.saturating_add(1);
+        let node_hash = (!self.watched_states.is_empty()).then(|| exact_hash(&node.position));
+        if let Some(watched) = node_hash
+            .as_deref()
+            .and_then(|hash| self.watched_states.get_mut(hash))
+        {
+            watched.expanded = true;
+            watched
+                .first_expansion_after_work_pops
+                .get_or_insert(self.used.work_pops);
+        }
         match stepper.terminal(&node.position) {
             CombatTerminal::Win => {
                 self.finish_witness(stepper, &node);
@@ -634,9 +681,24 @@ impl AtomicLevinWitnessSession {
             return None;
         }
 
+        let successor_hash = exact_hash(&result.position);
+        if let Some(watched) = self.watched_states.get_mut(&successor_hash) {
+            watched.discovered = true;
+            watched
+                .first_discovery_after_transitions
+                .get_or_insert(self.used.applied_action_transitions);
+            if watched
+                .best_levin_log_priority
+                .is_none_or(|priority| work.rank.levin_log_priority < priority)
+            {
+                watched.best_atomic_depth = Some(work.rank.atomic_depth);
+                watched.best_negative_log_policy = Some(work.rank.negative_log_policy);
+                watched.best_levin_log_priority = Some(work.rank.levin_log_priority);
+            }
+        }
         let action = TurnOptionAction {
             input: work.input,
-            expected_successor_hash: exact_hash(&result.position),
+            expected_successor_hash: successor_hash.clone(),
             engine_steps: result.engine_steps,
         };
         let trace = PathTrace::extend(work.parent.trace.clone(), action);
@@ -671,11 +733,17 @@ impl AtomicLevinWitnessSession {
             None => {
                 self.best_state_ranks.insert(exact_key, work.rank);
                 self.used.exact_states = self.used.exact_states.saturating_add(1);
+                if let Some(watched) = self.watched_states.get_mut(&successor_hash) {
+                    watched.accepted = true;
+                }
                 self.push_work(AtomicLevinWork::Expand(node));
             }
             Some(previous) if work.rank.is_better_than(previous) => {
                 self.best_state_ranks.insert(exact_key, work.rank);
                 self.used.reopened_exact_states = self.used.reopened_exact_states.saturating_add(1);
+                if let Some(watched) = self.watched_states.get_mut(&successor_hash) {
+                    watched.accepted = true;
+                }
                 self.push_work(AtomicLevinWork::Expand(node));
             }
             Some(_) => {
@@ -732,6 +800,15 @@ impl AtomicLevinWitnessSession {
         }
         self.used.reroot_points_assigned = self.used.reroot_points_assigned.saturating_add(1);
         let weight = 1.0 / self.used.reroot_points_assigned as f64;
+        if !self.watched_states.is_empty() {
+            let node_hash = exact_hash(&node.position);
+            if let Some(watched) = self.watched_states.get_mut(&node_hash) {
+                watched
+                    .reroot_ordinal
+                    .get_or_insert(self.used.reroot_points_assigned);
+                watched.reroot_weight.get_or_insert(weight);
+            }
+        }
         Arc::new(RerootPoint {
             parent: Some(node.reroot_points.clone()),
             atomic_depth: node.rank.atomic_depth,

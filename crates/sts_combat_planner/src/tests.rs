@@ -1927,5 +1927,42 @@ fn atomic_levin_search_robust_reroot_weights_do_not_starve_an_unlikely_root_acti
     assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
 }
 
+#[test]
+fn atomic_levin_watch_reports_root_membership_without_changing_search() {
+    let decision_root = root();
+    let root_hash = decision_root.exact_state_hash().to_owned();
+    let config = AtomicLevinWitnessConfig {
+        max_engine_steps_per_transition: 4,
+        ..AtomicLevinWitnessConfig::default()
+    };
+    let quantum = AtomicLevinWitnessQuantum {
+        additional_applied_transitions: 32,
+        additional_engine_steps: 128,
+        deadline: None,
+    };
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+
+    let mut watched = AtomicLevinWitnessSession::with_policy(
+        decision_root.clone(),
+        config,
+        Arc::new(PreferPlayPolicy),
+    );
+    watched.watch_exact_state_hash(root_hash.clone());
+    let watched_report = watched.advance(&stepper, quantum);
+
+    let mut control =
+        AtomicLevinWitnessSession::with_policy(decision_root, config, Arc::new(PreferPlayPolicy));
+    let control_report = control.advance(&stepper, quantum);
+
+    assert_eq!(watched_report.status, control_report.status);
+    assert_eq!(watched_report.after, control_report.after);
+    let state = watched
+        .watched_state(&root_hash)
+        .expect("registered root watch");
+    assert!(state.discovered && state.accepted && state.expanded);
+    assert_eq!(state.first_discovery_after_transitions, Some(0));
+    assert_eq!(state.best_atomic_depth, Some(0));
+}
+
 mod agenda;
 mod decision;

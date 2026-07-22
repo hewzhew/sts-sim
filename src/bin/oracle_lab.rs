@@ -233,6 +233,9 @@ enum Command {
         /// structural clue. The q-th observed boundary receives weight 1/q.
         #[arg(long)]
         reroot_player_turn_boundaries: bool,
+        /// Diagnostic-only exact states to observe without changing search.
+        #[arg(long)]
+        watch_state_hash: Vec<String>,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -2590,6 +2593,7 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
             uniform_exploration_ppm,
             reroot_player_turn_boundaries,
+            watch_state_hash,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -2618,6 +2622,9 @@ fn main() -> Result<(), String> {
                 },
                 policy,
             );
+            for exact_state_hash in &watch_state_hash {
+                search.watch_exact_state_hash(exact_state_hash.clone());
+            }
             let started = Instant::now();
             let report = search.advance(
                 &EngineCombatStepper,
@@ -2692,6 +2699,24 @@ fn main() -> Result<(), String> {
                     "unsupported_stable_boundaries": report.unsupported_stable_boundaries,
                     "transition_step_limit_gaps": report.transition_step_limit_gaps,
                 },
+                "watched_states": watch_state_hash.iter().map(|exact_state_hash| {
+                    let state = search.watched_state(exact_state_hash);
+                    json!({
+                        "exact_state_hash": exact_state_hash,
+                        "state": state.map(|state| json!({
+                            "discovered": state.discovered,
+                            "accepted": state.accepted,
+                            "expanded": state.expanded,
+                            "first_discovery_after_transitions": state.first_discovery_after_transitions,
+                            "first_expansion_after_work_pops": state.first_expansion_after_work_pops,
+                            "best_atomic_depth": state.best_atomic_depth,
+                            "best_negative_log_policy": state.best_negative_log_policy,
+                            "best_levin_log_priority": state.best_levin_log_priority,
+                            "reroot_ordinal": state.reroot_ordinal,
+                            "reroot_weight": state.reroot_weight,
+                        })),
+                    })
+                }).collect::<Vec<_>>(),
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
