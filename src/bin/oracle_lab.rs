@@ -23,9 +23,9 @@ use sts_combat_planner::{
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
-    combat_action_imitation_policy_v1, root_player_turn_action_policy_v1,
-    train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
-    CombatActionImitationTrainingConfigV1,
+    audit_combat_action_imitation_misses_v1, combat_action_imitation_policy_v1,
+    root_player_turn_action_policy_v1, train_combat_action_imitation_v1,
+    CombatActionImitationArtifactV1, CombatActionImitationTrainingConfigV1,
 };
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
 use sts_simulator::eval::run_control::{
@@ -1547,13 +1547,18 @@ fn main() -> Result<(), String> {
         } => {
             let loaded = load_combat_case(&case)?;
             let actions = load_combat_action_segments(&actions)?;
-            let artifact = train_combat_action_imitation_v1(
+            let training_config = CombatActionImitationTrainingConfigV1 {
+                max_engine_steps_per_transition,
+                ..CombatActionImitationTrainingConfigV1::default()
+            };
+            let artifact =
+                train_combat_action_imitation_v1(&loaded.position, &actions, training_config)?;
+            let training_misses = audit_combat_action_imitation_misses_v1(
                 &loaded.position,
                 &actions,
-                CombatActionImitationTrainingConfigV1 {
-                    max_engine_steps_per_transition,
-                    ..CombatActionImitationTrainingConfigV1::default()
-                },
+                &artifact,
+                training_config.max_structured_alternatives,
+                max_engine_steps_per_transition,
             )?;
             artifact.save(&output)?;
             print_json(&json!({
@@ -1562,6 +1567,7 @@ fn main() -> Result<(), String> {
                 "case": case,
                 "output": output,
                 "artifact": artifact,
+                "training_misses": training_misses,
             }))
         }
         Command::CombatCaseLocalGraph {

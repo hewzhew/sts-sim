@@ -8,16 +8,19 @@ use sts_combat_planner::{
     SharedCombatActionPolicy,
 };
 
-use crate::content::cards::{get_card_definition, java_id};
+use crate::content::cards::{get_card_definition, java_id, CardId};
+use crate::content::monsters::EnemyId;
+use crate::content::powers::PowerId;
 use crate::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
+use crate::sim::combat_action::combat_action_key;
 use crate::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use crate::state::core::{ClientInput, EngineState};
 
 pub const COMBAT_ACTION_IMITATION_SCHEMA_NAME: &str = "CombatActionImitationArtifactV1";
 pub const COMBAT_ACTION_IMITATION_SCHEMA_VERSION: u32 = 1;
-const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v2";
+const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v3";
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatActionImitationTrainingConfigV1 {
@@ -162,6 +165,20 @@ pub struct CombatActionImitationDemonstrationV1<'a> {
     pub actions: &'a [ClientInput],
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatActionImitationDecisionAuditV1 {
+    pub action_index: usize,
+    pub player_turn: u32,
+    pub candidate_count: usize,
+    pub demonstrated_rank: usize,
+    pub demonstrated_input: ClientInput,
+    pub demonstrated_action_key: String,
+    pub best_input: ClientInput,
+    pub best_action_key: String,
+    pub demonstrated_logit: f64,
+    pub best_logit: f64,
+}
+
 /// Trains a cheap action policy from one exact, terminally verified combat
 /// witness. The artifact contains typed state/action features and learned
 /// coefficients only: no exact state hash, card UUID, hand index, or witness
@@ -294,6 +311,107 @@ pub fn train_combat_action_imitation_from_demonstrations_v1(
     };
     artifact.validate()?;
     Ok(artifact)
+}
+
+/// Replays one verified demonstration and exposes only decisions the learned
+/// policy does not rank first. This is a training-representation diagnostic;
+/// it neither changes policy weights nor grants the witness runtime authority.
+pub fn audit_combat_action_imitation_misses_v1(
+    root: &CombatPosition,
+    demonstrated_actions: &[ClientInput],
+    artifact: &CombatActionImitationArtifactV1,
+    max_structured_alternatives: usize,
+    max_engine_steps_per_transition: usize,
+) -> Result<Vec<CombatActionImitationDecisionAuditV1>, String> {
+    artifact.validate()?;
+    let coefficients = artifact
+        .coefficients
+        .iter()
+        .map(|coefficient| (coefficient.feature.clone(), coefficient.weight))
+        .collect::<HashMap<_, _>>();
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut misses = Vec::new();
+    for (action_index, demonstrated) in demonstrated_actions.iter().enumerate() {
+        if !stepper.is_legal_action(&position, demonstrated) {
+            return Err(format!(
+                "action imitation audit action {action_index} is not legal at its exact replay state"
+            ));
+        }
+        let candidates =
+            concrete_training_inputs(&position, demonstrated, max_structured_alternatives);
+        let demonstrated_index = candidates
+            .iter()
+            .position(|candidate| candidate == demonstrated)
+            .ok_or_else(|| {
+                format!(
+                    "action imitation audit action {action_index} is absent from its candidates"
+                )
+            })?;
+        if candidates.len() > 1 {
+            let state = typed_combat_feature_components_v1(&position);
+            let logits = candidates
+                .iter()
+                .map(|candidate| {
+                    sparse_score(
+                        &coefficients,
+                        &action_feature_vector_with_state(&position, candidate, &state),
+                    ) * artifact.logit_scale
+                })
+                .collect::<Vec<_>>();
+            let demonstrated_logit = logits[demonstrated_index];
+            let demonstrated_rank = 1 + logits
+                .iter()
+                .enumerate()
+                .filter(|(candidate_index, candidate)| {
+                    candidate.total_cmp(&demonstrated_logit).is_gt()
+                        || (candidate.total_cmp(&demonstrated_logit).is_eq()
+                            && *candidate_index < demonstrated_index)
+                })
+                .count();
+            let best_index = logits
+                .iter()
+                .enumerate()
+                .max_by(|(left_index, left), (right_index, right)| {
+                    left.total_cmp(right)
+                        .then_with(|| right_index.cmp(left_index))
+                })
+                .map(|(index, _)| index)
+                .unwrap_or_default();
+            if best_index != demonstrated_index {
+                misses.push(CombatActionImitationDecisionAuditV1 {
+                    action_index,
+                    player_turn: position.combat.turn.turn_count,
+                    candidate_count: candidates.len(),
+                    demonstrated_rank,
+                    demonstrated_input: demonstrated.clone(),
+                    demonstrated_action_key: combat_action_key(&position.combat, demonstrated),
+                    best_input: candidates[best_index].clone(),
+                    best_action_key: combat_action_key(&position.combat, &candidates[best_index]),
+                    demonstrated_logit,
+                    best_logit: logits[best_index],
+                });
+            }
+        }
+        let step = stepper.apply_to_stable(
+            &position,
+            demonstrated.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return Err(format!(
+                "action imitation audit action {action_index} did not reach a stable exact successor"
+            ));
+        }
+        position = step.position;
+    }
+    if stepper.terminal(&position) != CombatTerminal::Win || position.combat.runtime.combat_smoked {
+        return Err("action imitation audit source is not an exact terminal victory".to_string());
+    }
+    Ok(misses)
 }
 
 fn default_source_trajectory_count() -> usize {
@@ -653,12 +771,21 @@ fn action_semantic_tokens(position: &CombatPosition, input: &ClientInput) -> Vec
     match input {
         ClientInput::PlayCard { card_index, target } => {
             tokens.push("kind/play_card".to_string());
+            let mut card_tokens = Vec::new();
             if let Some(card) = position.combat.zones.hand.get(*card_index) {
                 let definition = get_card_definition(card.id);
-                tokens.push(format!("card/{}+{}", java_id(card.id), card.upgrades));
-                tokens.push(format!("card_type/{:?}", definition.card_type));
+                card_tokens.push(format!("card/{}+{}", java_id(card.id), card.upgrades));
+                card_tokens.push(format!("card_type/{:?}", definition.card_type));
+                tokens.extend(card_tokens.iter().cloned());
             }
+            let target_start = tokens.len();
             push_target_tokens(position, *target, &mut tokens);
+            let target_tokens = tokens[target_start..].to_vec();
+            for card_token in &card_tokens {
+                for target_token in &target_tokens {
+                    tokens.push(format!("interaction/{card_token}/{target_token}"));
+                }
+            }
         }
         ClientInput::UsePotion {
             potion_index,
@@ -698,7 +825,10 @@ fn action_semantic_tokens(position: &CombatPosition, input: &ClientInput) -> Vec
                 }
             }
         }
-        ClientInput::SubmitDiscoverChoice(_) => tokens.push("kind/discover_choice".to_string()),
+        ClientInput::SubmitDiscoverChoice(index) => {
+            tokens.push("kind/discover_choice".to_string());
+            push_discover_choice_tokens(position, *index, &mut tokens);
+        }
         ClientInput::Cancel => tokens.push("kind/cancel".to_string()),
         ClientInput::Proceed => tokens.push("kind/proceed".to_string()),
         _ => tokens.push("kind/non_combat_input".to_string()),
@@ -725,9 +855,62 @@ fn push_target_tokens(
                 .find(|monster| monster.id == entity)
             {
                 tokens.push(format!("target/slot/{}", monster.slot));
+                if let Some(enemy_id) = EnemyId::from_id(monster.monster_type) {
+                    tokens.push(format!("target/enemy/{enemy_id:?}"));
+                }
+                if monster.block > 0 {
+                    tokens.push("target/has_block".to_string());
+                }
+                for power in [
+                    PowerId::Artifact,
+                    PowerId::Vulnerable,
+                    PowerId::Weak,
+                    PowerId::Strength,
+                    PowerId::Flight,
+                    PowerId::SharpHide,
+                    PowerId::Malleable,
+                    PowerId::Minion,
+                ] {
+                    let amount = position.combat.get_power(monster.id, power);
+                    if amount != 0 {
+                        tokens.push(format!("target/power/{power:?}/{}", amount.signum()));
+                    }
+                }
             }
         }
     }
+}
+
+fn push_discover_choice_tokens(position: &CombatPosition, index: usize, tokens: &mut Vec<String>) {
+    use crate::state::core::PendingChoice;
+
+    let EngineState::PendingChoice(choice) = &position.engine else {
+        return;
+    };
+    let selected = match choice {
+        PendingChoice::DiscoverySelect(choice) => choice.cards.get(index).map(|card| (*card, 0)),
+        PendingChoice::CardRewardSelect { cards, .. } => cards.get(index).map(|card| (*card, 0)),
+        PendingChoice::ForeignInfluenceSelect { cards, upgraded } => cards
+            .get(index)
+            .map(|card| (*card, usize::from(*upgraded) as u8)),
+        PendingChoice::ChooseOneSelect { choices } => choices
+            .get(index)
+            .map(|choice| (choice.card_id, choice.upgrades)),
+        PendingChoice::StanceChoice => {
+            tokens.push(format!("choice/stance/{index}"));
+            None
+        }
+        _ => None,
+    };
+    if let Some((card, upgrades)) = selected {
+        push_choice_card_tokens(card, upgrades, tokens);
+    }
+}
+
+fn push_choice_card_tokens(card: CardId, upgrades: u8, tokens: &mut Vec<String>) {
+    let definition = get_card_definition(card);
+    tokens.push(format!("choice/card/{}+{upgrades}", java_id(card)));
+    tokens.push(format!("choice/card_type/{:?}", definition.card_type));
 }
 
 fn add_numeric_action_features(
@@ -736,7 +919,7 @@ fn add_numeric_action_features(
     features: &mut SparseFeatures,
 ) {
     match input {
-        ClientInput::PlayCard { card_index, .. } => {
+        ClientInput::PlayCard { card_index, target } => {
             if let Some(card) = position.combat.zones.hand.get(*card_index) {
                 let definition = get_card_definition(card.id);
                 add_feature(
@@ -768,6 +951,39 @@ fn add_numeric_action_features(
                     "numeric/card/exhaust".to_string(),
                     f64::from(card.exhaust_override.unwrap_or(definition.exhaust)),
                 );
+            }
+            if let Some(monster) = target.and_then(|entity| {
+                position
+                    .combat
+                    .entities
+                    .monsters
+                    .iter()
+                    .find(|monster| monster.id == entity)
+            }) {
+                for (name, value) in [
+                    ("current_hp", monster.current_hp),
+                    ("max_hp", monster.max_hp),
+                    ("block", monster.block),
+                    (
+                        "artifact",
+                        position.combat.get_power(monster.id, PowerId::Artifact),
+                    ),
+                    (
+                        "vulnerable",
+                        position.combat.get_power(monster.id, PowerId::Vulnerable),
+                    ),
+                    ("weak", position.combat.get_power(monster.id, PowerId::Weak)),
+                    (
+                        "strength",
+                        position.combat.get_power(monster.id, PowerId::Strength),
+                    ),
+                ] {
+                    add_feature(
+                        features,
+                        format!("numeric/target/{name}"),
+                        squash_component(value),
+                    );
+                }
             }
         }
         ClientInput::SubmitSelection(resolution) => add_feature(
@@ -842,8 +1058,11 @@ pub fn typed_combat_feature_components_v1(position: &CombatPosition) -> Vec<i32>
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::powers::store;
     use crate::runtime::combat::CombatCard;
-    use crate::testing::support::blank_test_combat;
+    use crate::runtime::combat::{Power, PowerPayload};
+    use crate::state::core::{DiscoveryChoiceState, PendingChoice};
+    use crate::testing::support::{blank_test_combat, test_monster};
     use sts_combat_planner::UniformCombatActionPolicy;
 
     struct ConstantPolicy(f64);
@@ -905,6 +1124,74 @@ mod tests {
         );
         assert_eq!(left_features, right_features);
         assert!(left_features.keys().all(|feature| !feature.contains("99")));
+    }
+
+    #[test]
+    fn discovery_choices_expose_selected_card_semantics() {
+        let combat = blank_test_combat();
+        let engine =
+            EngineState::PendingChoice(PendingChoice::DiscoverySelect(DiscoveryChoiceState {
+                cards: vec![CardId::Bash, CardId::Defend],
+                colorless: false,
+                card_type: None,
+                amount: 1,
+                can_skip: false,
+            }));
+        let position = CombatPosition::new(engine, combat);
+
+        let bash = action_feature_vector(&position, &ClientInput::SubmitDiscoverChoice(0));
+        let defend = action_feature_vector(&position, &ClientInput::SubmitDiscoverChoice(1));
+
+        assert_ne!(bash, defend);
+        assert!(bash.contains_key("action/choice/card/Bash+0"));
+        assert!(defend.contains_key("action/choice/card/Defend_R+0"));
+    }
+
+    #[test]
+    fn targeted_card_semantics_include_target_local_state() {
+        let mut combat = blank_test_combat();
+        let artifact = test_monster(EnemyId::Cultist);
+        let mut exposed = test_monster(EnemyId::Cultist);
+        exposed.id = 2;
+        exposed.slot = 1;
+        combat.entities.monsters = vec![artifact, exposed];
+        store::set_powers_for(
+            &mut combat,
+            1,
+            vec![Power {
+                power_type: PowerId::Artifact,
+                instance_id: None,
+                amount: 1,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat.zones.hand = vec![CombatCard::new(CardId::Bash, 11)];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        let into_artifact = action_feature_vector(
+            &position,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        );
+        let into_exposed = action_feature_vector(
+            &position,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(2),
+            },
+        );
+
+        assert_ne!(into_artifact, into_exposed);
+        assert!(
+            into_artifact.contains_key("action/interaction/card/Bash+0/target/power/Artifact/1")
+        );
+        assert!(
+            !into_exposed.contains_key("action/interaction/card/Bash+0/target/power/Artifact/1")
+        );
     }
 
     #[test]
