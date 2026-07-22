@@ -179,6 +179,14 @@ pub struct CombatActionImitationDecisionAuditV1 {
     pub best_logit: f64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatActionImitationAuditV1 {
+    pub source_action_count: usize,
+    pub ranked_decision_count: usize,
+    pub skipped_forced_decision_count: usize,
+    pub misses: Vec<CombatActionImitationDecisionAuditV1>,
+}
+
 /// Trains a cheap action policy from one exact, terminally verified combat
 /// witness. The artifact contains typed state/action features and learned
 /// coefficients only: no exact state hash, card UUID, hand index, or witness
@@ -316,13 +324,13 @@ pub fn train_combat_action_imitation_from_demonstrations_v1(
 /// Replays one verified demonstration and exposes only decisions the learned
 /// policy does not rank first. This is a training-representation diagnostic;
 /// it neither changes policy weights nor grants the witness runtime authority.
-pub fn audit_combat_action_imitation_misses_v1(
+pub fn audit_combat_action_imitation_v1(
     root: &CombatPosition,
     demonstrated_actions: &[ClientInput],
     artifact: &CombatActionImitationArtifactV1,
     max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
-) -> Result<Vec<CombatActionImitationDecisionAuditV1>, String> {
+) -> Result<CombatActionImitationAuditV1, String> {
     artifact.validate()?;
     let coefficients = artifact
         .coefficients
@@ -332,6 +340,8 @@ pub fn audit_combat_action_imitation_misses_v1(
     let stepper = EngineCombatStepper;
     let mut position = root.clone();
     let mut misses = Vec::new();
+    let mut ranked_decision_count = 0usize;
+    let mut skipped_forced_decision_count = 0usize;
     for (action_index, demonstrated) in demonstrated_actions.iter().enumerate() {
         if !stepper.is_legal_action(&position, demonstrated) {
             return Err(format!(
@@ -349,6 +359,7 @@ pub fn audit_combat_action_imitation_misses_v1(
                 )
             })?;
         if candidates.len() > 1 {
+            ranked_decision_count = ranked_decision_count.saturating_add(1);
             let state = typed_combat_feature_components_v1(&position);
             let logits = candidates
                 .iter()
@@ -392,6 +403,8 @@ pub fn audit_combat_action_imitation_misses_v1(
                     best_logit: logits[best_index],
                 });
             }
+        } else {
+            skipped_forced_decision_count = skipped_forced_decision_count.saturating_add(1);
         }
         let step = stepper.apply_to_stable(
             &position,
@@ -411,7 +424,12 @@ pub fn audit_combat_action_imitation_misses_v1(
     if stepper.terminal(&position) != CombatTerminal::Win || position.combat.runtime.combat_smoked {
         return Err("action imitation audit source is not an exact terminal victory".to_string());
     }
-    Ok(misses)
+    Ok(CombatActionImitationAuditV1 {
+        source_action_count: demonstrated_actions.len(),
+        ranked_decision_count,
+        skipped_forced_decision_count,
+        misses,
+    })
 }
 
 fn default_source_trajectory_count() -> usize {

@@ -23,7 +23,7 @@ use sts_combat_planner::{
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
-    audit_combat_action_imitation_misses_v1, combat_action_imitation_policy_v1,
+    audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
     root_player_turn_action_policy_v1, train_combat_action_imitation_from_demonstrations_v1,
     train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
@@ -363,6 +363,18 @@ enum Command {
         manifest: PathBuf,
         #[arg(long)]
         output: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
+    /// Evaluate an existing semantic action policy against a verified witness
+    /// without retraining it or changing the artifact.
+    AuditActionImitation {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long, required = true)]
+        actions: Vec<PathBuf>,
+        #[arg(long)]
+        artifact: PathBuf,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
     },
@@ -1647,7 +1659,7 @@ fn main() -> Result<(), String> {
             };
             let artifact =
                 train_combat_action_imitation_v1(&loaded.position, &actions, training_config)?;
-            let training_misses = audit_combat_action_imitation_misses_v1(
+            let training_audit = audit_combat_action_imitation_v1(
                 &loaded.position,
                 &actions,
                 &artifact,
@@ -1661,7 +1673,7 @@ fn main() -> Result<(), String> {
                 "case": case,
                 "output": output,
                 "artifact": artifact,
-                "training_misses": training_misses,
+                "training_audit": training_audit,
             }))
         }
         Command::BuildActionImitationCorpus {
@@ -1686,19 +1698,17 @@ fn main() -> Result<(), String> {
             let audits = demonstrations
                 .iter()
                 .map(|demonstration| {
-                    audit_combat_action_imitation_misses_v1(
+                    audit_combat_action_imitation_v1(
                         &demonstration.position,
                         &demonstration.actions,
                         &artifact,
                         training_config.max_structured_alternatives,
                         max_engine_steps_per_transition,
                     )
-                    .map(|misses| {
+                    .map(|audit| {
                         json!({
                             "id": demonstration.id,
-                            "source_action_count": demonstration.actions.len(),
-                            "training_miss_count": misses.len(),
-                            "training_misses": misses,
+                            "audit": audit,
                         })
                     })
                 })
@@ -1711,6 +1721,31 @@ fn main() -> Result<(), String> {
                 "output": output,
                 "artifact": artifact,
                 "demonstrations": audits,
+            }))
+        }
+        Command::AuditActionImitation {
+            case,
+            actions,
+            artifact,
+            max_engine_steps_per_transition,
+        } => {
+            let loaded = load_combat_case(&case)?;
+            let actions = load_combat_action_segments(&actions)?;
+            let artifact_value = CombatActionImitationArtifactV1::load(&artifact)?;
+            let audit = audit_combat_action_imitation_v1(
+                &loaded.position,
+                &actions,
+                &artifact_value,
+                CombatActionImitationTrainingConfigV1::default().max_structured_alternatives,
+                max_engine_steps_per_transition,
+            )?;
+            print_json(&json!({
+                "schema_name": "OracleCombatActionImitationAuditV1",
+                "schema_version": 1,
+                "case": case,
+                "artifact": artifact,
+                "artifact_source_trajectory_count": artifact_value.source_trajectory_count,
+                "audit": audit,
             }))
         }
         Command::CombatCaseLocalGraph {
