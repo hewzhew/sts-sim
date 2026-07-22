@@ -4,6 +4,7 @@ pub mod campfire_projection;
 pub mod campfire_survival_scenarios;
 pub mod campfire_threat_panel;
 pub mod card_reward_value_loop;
+pub mod combat_action_imitation;
 pub mod combat_capture;
 pub mod combat_case;
 pub mod combat_lab_v1;

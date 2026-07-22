@@ -9,6 +9,7 @@
 
 mod agenda;
 mod decision;
+mod depth_beam_turn;
 mod evidence;
 mod generator;
 mod layered_witness_search;
@@ -28,6 +29,13 @@ pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
     CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral, CombatPlannerDecisionGap,
     CombatPlannerDecisionResult, ProspectEvidenceGap,
+};
+pub use depth_beam_turn::{
+    generate_depth_beam_turn_options, search_depth_beam_agenda_witness, DepthBeamAgendaBudget,
+    DepthBeamAgendaConfig, DepthBeamAgendaCounters, DepthBeamAgendaInterruption,
+    DepthBeamAgendaReport, DepthBeamAgendaStatus, DepthBeamAgendaWitness, DepthBeamTurnBudget,
+    DepthBeamTurnConfig, DepthBeamTurnCounters, DepthBeamTurnInterruption,
+    DepthBeamTurnLayerReport, DepthBeamTurnReport, DepthBeamTurnStatus,
 };
 pub use evidence::{
     BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,

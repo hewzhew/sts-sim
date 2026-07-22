@@ -7,8 +7,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    rank_layered_combat_lineage_parents, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
+    generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
+    search_depth_beam_agenda_witness, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
+    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
@@ -19,6 +21,11 @@ use sts_combat_planner::{
     TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
+use sts_simulator::eval::combat_action_imitation::{
+    combat_action_imitation_policy_v1, root_player_turn_action_policy_v1,
+    train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
+    CombatActionImitationTrainingConfigV1,
+};
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
@@ -202,6 +209,8 @@ enum Command {
     CombatCaseLayered {
         #[arg(long)]
         case: PathBuf,
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 5_000)]
@@ -294,6 +303,17 @@ enum Command {
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
+    /// Distill one exact terminal witness into a semantic action-order artifact.
+    BuildActionImitation {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        actions: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
     /// Distill one exact terminal witness into a typed-feature prototype
     /// artifact for lab-only state-value inference.
     BuildValuePrototype {
@@ -340,6 +360,8 @@ enum Command {
     TurnActionAudit {
         #[arg(long)]
         case: PathBuf,
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
         /// Optional exact action list used only to reach the audited prefix.
         #[arg(long)]
         actions: Option<PathBuf>,
@@ -362,6 +384,65 @@ enum Command {
         per_bucket_limit: usize,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+    },
+    /// Generate complete-turn proposals with an independent action-depth beam.
+    /// Finished short turns never displace still-live longer prefixes.
+    DepthBeamTurnAudit {
+        #[arg(long)]
+        case: PathBuf,
+        /// Lab-only typed semantic action-order artifact. The artifact may
+        /// reorder legal actions but cannot remove them or claim an outcome.
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
+        #[arg(long, default_value_t = 20_000)]
+        max_applied_transitions: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 32)]
+        partial_beam_width: usize,
+        #[arg(long, default_value_t = 6)]
+        retained_per_view: usize,
+        #[arg(long, default_value_t = 32)]
+        max_atomic_depth: usize,
+        #[arg(long, default_value_t = 256)]
+        max_structured_members_per_family: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long)]
+        watch_exact_state_hash: Vec<String>,
+        #[arg(long, default_value_t = 64)]
+        limit: usize,
+    },
+    /// Lazily expand one exact player-turn boundary at a time using one
+    /// explicitly selected guide lane. This lab control retains deferred
+    /// exact variants instead of discarding them through a boundary beam.
+    DepthBeamAgendaAudit {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
+        #[arg(long)]
+        value_prototype_artifact: Option<PathBuf>,
+        #[arg(long, default_value_t = 500_000)]
+        max_applied_transitions: usize,
+        #[arg(long, default_value_t = 60_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 128)]
+        partial_beam_width: usize,
+        #[arg(long, default_value_t = 8)]
+        partial_retained_per_view: usize,
+        #[arg(long, default_value_t = 32)]
+        max_atomic_depth: usize,
+        #[arg(long, default_value_t = 4_096)]
+        max_applied_transitions_per_parent: usize,
+        #[arg(long, default_value_t = 256)]
+        max_structured_members_per_family: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long)]
+        watch_exact_state_hash: Vec<String>,
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
     },
     /// View the current cursor or another exact analysis node.
     View {
@@ -565,9 +646,9 @@ struct CombatValuePrototypeArtifactV1 {
     source_terminal_final_hp: i32,
     feature_count: usize,
     prototypes: Vec<CombatValuePrototypeV1>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     one_turn_viability_prototypes: Vec<CombatValueStatePrototypeV1>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     one_turn_loss_prototypes: Vec<CombatValueStatePrototypeV1>,
 }
 
@@ -812,6 +893,14 @@ struct AnchorOnlyPolicy {
     base: SharedCombatActionPolicy,
 }
 
+fn load_action_imitation_policy(
+    path: &Path,
+    base: SharedCombatActionPolicy,
+) -> Result<SharedCombatActionPolicy, String> {
+    let artifact = CombatActionImitationArtifactV1::load(path)?;
+    combat_action_imitation_policy_v1(base, artifact)
+}
+
 const GUIDE_EXACT_CORRIDOR: CombatGuideLaneId = CombatGuideLaneId::new(10_001);
 const GUIDE_TYPED_CORRIDOR: CombatGuideLaneId = CombatGuideLaneId::new(10_002);
 
@@ -1006,7 +1095,70 @@ fn value_prototype_shadow_policy(
     })
 }
 
-fn load_value_prototype(path: &PathBuf) -> Result<CombatValuePrototypeArtifactV1, String> {
+#[derive(Clone)]
+struct ValuePrototypeBoundaryControlPolicy {
+    base: SharedCombatActionPolicy,
+    typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
+}
+
+impl CombatActionPolicy for ValuePrototypeBoundaryControlPolicy {
+    fn weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
+    fn state_guides(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        let rank = self
+            .typed_target_by_turn
+            .get(&position.combat.turn.turn_count)
+            .map_or_else(
+                || vec![0, i32::MIN / 4, 0],
+                |(corridor_rank, target)| {
+                    let candidate = typed_combat_feature_components(position);
+                    let distance = normalized_feature_distance(target, &candidate);
+                    vec![i32::from(distance == 0), -distance, *corridor_rank]
+                },
+            );
+        vec![CombatStateGuide::new(GUIDE_TYPED_CORRIDOR, rank)]
+    }
+
+    fn turn_generation_guides(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        // This control isolates the cross-turn value question. The inner
+        // complete-turn generator keeps its existing guides and action prior.
+        self.base.turn_generation_guides(position)
+    }
+}
+
+fn value_prototype_boundary_control_policy(
+    base: SharedCombatActionPolicy,
+    artifact: &CombatValuePrototypeArtifactV1,
+) -> SharedCombatActionPolicy {
+    Arc::new(ValuePrototypeBoundaryControlPolicy {
+        base,
+        typed_target_by_turn: Arc::new(artifact.targets_by_turn()),
+    })
+}
+
+fn load_value_prototype(path: &Path) -> Result<CombatValuePrototypeArtifactV1, String> {
     let artifact = serde_json::from_slice::<CombatValuePrototypeArtifactV1>(
         &std::fs::read(path).map_err(|error| error.to_string())?,
     )
@@ -1324,8 +1476,37 @@ fn main() -> Result<(), String> {
                 "artifact": artifact.report(),
             }))
         }
+        Command::BuildActionImitation {
+            case,
+            actions,
+            output,
+            max_engine_steps_per_transition,
+        } => {
+            let loaded = load_combat_case(&case)?;
+            let actions = serde_json::from_slice::<Vec<ClientInput>>(
+                &std::fs::read(&actions).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| format!("invalid combat action demonstration: {error}"))?;
+            let artifact = train_combat_action_imitation_v1(
+                &loaded.position,
+                &actions,
+                CombatActionImitationTrainingConfigV1 {
+                    max_engine_steps_per_transition,
+                    ..CombatActionImitationTrainingConfigV1::default()
+                },
+            )?;
+            artifact.save(&output)?;
+            print_json(&json!({
+                "schema_name": "OracleCombatActionImitationBuildV1",
+                "schema_version": 1,
+                "case": case,
+                "output": output,
+                "artifact": artifact,
+            }))
+        }
         Command::CombatCaseLayered {
             case,
+            action_imitation_artifact,
             max_nodes,
             wall_ms,
             max_engine_steps_per_transition,
@@ -1358,11 +1539,14 @@ fn main() -> Result<(), String> {
                 generation_quantum_work,
                 max_turn_layers,
             };
-            let mut session = LayeredCombatWitnessSession::with_policy(
-                root,
-                config,
-                existing_combat_knowledge_policy_v1(),
-            );
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let mut session = LayeredCombatWitnessSession::with_policy(root, config, policy);
             let report = session.advance(
                 LayeredCombatWitnessQuantum {
                     additional_generation_work: max_nodes,
@@ -1469,6 +1653,7 @@ fn main() -> Result<(), String> {
                 "mode": {
                     "scheduler": "recoverable_turn_synchronous_multi_view_beam",
                     "v2_donor_enabled": false,
+                    "action_imitation_artifact": action_imitation_artifact,
                 },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": command_started.elapsed().as_millis(),
@@ -2445,6 +2630,7 @@ fn main() -> Result<(), String> {
         }
         Command::TurnActionAudit {
             case,
+            action_imitation_artifact,
             actions,
             through,
             max_engine_steps_per_transition,
@@ -2486,7 +2672,13 @@ fn main() -> Result<(), String> {
                 }
             }
 
-            let policy = existing_combat_knowledge_policy_v1();
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
             let surface = EngineCombatStepper.legal_action_surface(&position);
             let choices = surface
                 .atomic_actions
@@ -2684,6 +2876,261 @@ fn main() -> Result<(), String> {
                 "enumeration": audit.report.enumeration,
                 "preselection": preselection,
                 "selected": selected,
+            }))
+        }
+        Command::DepthBeamTurnAudit {
+            case,
+            action_imitation_artifact,
+            max_applied_transitions,
+            wall_ms,
+            partial_beam_width,
+            retained_per_view,
+            max_atomic_depth,
+            max_structured_members_per_family,
+            max_engine_steps_per_transition,
+            watch_exact_state_hash,
+            limit,
+        } => {
+            let case = load_combat_case(&case)?;
+            let root = CombatDecisionRoot::new(case.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let report = generate_depth_beam_turn_options(
+                root,
+                DepthBeamTurnConfig {
+                    generator: TurnOptionGeneratorConfig {
+                        max_engine_steps_per_transition,
+                        ..TurnOptionGeneratorConfig::default()
+                    },
+                    partial_beam_width,
+                    retained_per_view,
+                    max_atomic_depth,
+                    max_structured_members_per_family,
+                },
+                DepthBeamTurnBudget {
+                    max_applied_transitions,
+                    max_engine_steps: max_applied_transitions
+                        .saturating_mul(max_engine_steps_per_transition.max(1)),
+                    deadline: Some(Instant::now() + Duration::from_millis(wall_ms)),
+                },
+                policy.clone(),
+                &EngineCombatStepper,
+            );
+            let option_json = |option: &sts_combat_planner::CompleteTurnOption| {
+                json!({
+                    "exact_successor_hash": option.exact_successor_hash(),
+                    "boundary": format!("{:?}", option.boundary()),
+                    "action_count": option.actions().len(),
+                    "negative_log_policy": option.negative_log_policy(),
+                    "final_hp": option.exact_successor().combat.entities.player.current_hp,
+                    "state_guides": policy.state_guides(option.exact_successor()).into_iter().map(|guide| json!({
+                        "lane": guide.lane.value(),
+                        "components": guide.rank.components(),
+                    })).collect::<Vec<_>>(),
+                    "actions": option.actions().iter().map(|action| json!({
+                        "input": action.input,
+                        "expected_successor_hash": action.expected_successor_hash,
+                    })).collect::<Vec<_>>(),
+                })
+            };
+            let watched = report
+                .options
+                .iter()
+                .filter(|option| {
+                    watch_exact_state_hash
+                        .iter()
+                        .any(|hash| hash == option.exact_successor_hash())
+                })
+                .map(option_json)
+                .collect::<Vec<_>>();
+            let options = report
+                .options
+                .iter()
+                .take(limit)
+                .map(option_json)
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleDepthBeamTurnAuditV1",
+                "schema_version": 1,
+                "behavioral_scope": "read_only_no_search_seeding",
+                "status": format!("{:?}", report.status),
+                "config": {
+                    "max_applied_transitions": max_applied_transitions,
+                    "wall_ms": wall_ms,
+                    "partial_beam_width": partial_beam_width,
+                    "retained_per_view": retained_per_view,
+                    "max_atomic_depth": max_atomic_depth,
+                    "max_structured_members_per_family": max_structured_members_per_family,
+                    "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                    "action_imitation_artifact": action_imitation_artifact,
+                },
+                "counters": {
+                    "expanded_partial_states": report.counters.expanded_partial_states,
+                    "applied_transitions": report.counters.applied_transitions,
+                    "engine_steps": report.counters.engine_steps,
+                    "unique_partial_states": report.counters.unique_partial_states,
+                    "duplicate_exact_successors": report.counters.duplicate_exact_successors,
+                    "completed_turn_options": report.counters.completed_turn_options,
+                    "retained_partial_states": report.counters.retained_partial_states,
+                    "pruned_partial_states": report.counters.pruned_partial_states,
+                    "maximum_atomic_depth": report.counters.maximum_atomic_depth,
+                    "truncated_structured_families": report.counters.truncated_structured_families,
+                },
+                "gap_count": report.gaps.len(),
+                "watched": watched,
+                "layers": report.layers.iter().map(|layer| json!({
+                    "atomic_depth": layer.atomic_depth,
+                    "expanded_partial_states": layer.expanded_partial_states,
+                    "generated_unique_partial_states": layer.generated_unique_partial_states,
+                    "retained_partial_states": layer.retained_partial_states,
+                    "retained_exact_state_hashes": layer.retained_exact_state_hashes,
+                    "new_completed_turn_options": layer.new_completed_turn_options,
+                })).collect::<Vec<_>>(),
+                "options": options,
+            }))
+        }
+        Command::DepthBeamAgendaAudit {
+            case,
+            action_imitation_artifact,
+            value_prototype_artifact,
+            max_applied_transitions,
+            wall_ms,
+            partial_beam_width,
+            partial_retained_per_view,
+            max_atomic_depth,
+            max_applied_transitions_per_parent,
+            max_structured_members_per_family,
+            max_engine_steps_per_transition,
+            watch_exact_state_hash,
+            export_witness_actions,
+        } => {
+            let loaded = load_combat_case(&case)?;
+            let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let root_player_turn = loaded.position.combat.turn.turn_count;
+            let root = CombatDecisionRoot::new(loaded.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let base_policy = existing_combat_knowledge_policy_v1();
+            let policy = if let Some(path) = action_imitation_artifact.as_deref() {
+                let learned = load_action_imitation_policy(path, base_policy.clone())?;
+                root_player_turn_action_policy_v1(root_player_turn, learned, base_policy)
+            } else {
+                base_policy
+            };
+            let (policy, value_report, boundary_guide_lane) =
+                if let Some(path) = value_prototype_artifact.as_deref() {
+                    let artifact = load_value_prototype(path)?;
+                    let report = artifact.report();
+                    (
+                        value_prototype_boundary_control_policy(policy, &artifact),
+                        Some(report),
+                        Some(GUIDE_TYPED_CORRIDOR),
+                    )
+                } else {
+                    (policy, None, None)
+                };
+            let started = Instant::now();
+            let report = search_depth_beam_agenda_witness(
+                root,
+                DepthBeamAgendaConfig {
+                    turn: DepthBeamTurnConfig {
+                        generator: TurnOptionGeneratorConfig {
+                            max_engine_steps_per_transition,
+                            ..TurnOptionGeneratorConfig::default()
+                        },
+                        partial_beam_width,
+                        retained_per_view: partial_retained_per_view,
+                        max_atomic_depth,
+                        max_structured_members_per_family,
+                    },
+                    boundary_guide_lane,
+                    max_applied_transitions_per_parent,
+                },
+                DepthBeamAgendaBudget {
+                    max_applied_transitions,
+                    max_engine_steps: max_applied_transitions
+                        .saturating_mul(max_engine_steps_per_transition.max(1)),
+                    deadline: Some(Instant::now() + Duration::from_millis(wall_ms)),
+                },
+                policy,
+                &EngineCombatStepper,
+            );
+            if let (Some(path), Some(witness)) =
+                (export_witness_actions.as_ref(), report.witness.as_ref())
+            {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let inputs = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            let watched_frontier = report
+                .frontier_exact_state_hashes
+                .iter()
+                .filter(|hash| watch_exact_state_hash.contains(hash))
+                .cloned()
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleDepthBeamAgendaAuditV1",
+                "schema_version": 1,
+                "behavioral_scope": "lab_only_no_v2_donor",
+                "case": case,
+                "runtime": oracle_lab_runtime_identity(),
+                "elapsed_ms": started.elapsed().as_millis(),
+                "status": format!("{:?}", report.status),
+                "config": {
+                    "action_imitation_artifact": action_imitation_artifact,
+                    "action_imitation_scope": action_imitation_artifact.as_ref().map(|_| "root_player_turn_only"),
+                    "value_prototype_artifact": value_prototype_artifact,
+                    "value_prototype": value_report,
+                    "boundary_guide_lane": boundary_guide_lane.map(CombatGuideLaneId::value),
+                    "partial_beam_width": partial_beam_width,
+                    "partial_retained_per_view": partial_retained_per_view,
+                    "max_atomic_depth": max_atomic_depth,
+                    "max_applied_transitions_per_parent": max_applied_transitions_per_parent,
+                    "max_structured_members_per_family": max_structured_members_per_family,
+                },
+                "budget": {
+                    "max_applied_transitions": max_applied_transitions,
+                    "wall_ms": wall_ms,
+                    "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                },
+                "counters": {
+                    "applied_transitions": report.counters.applied_transitions,
+                    "engine_steps": report.counters.engine_steps,
+                    "expanded_parents": report.counters.expanded_parents,
+                    "partially_generated_parents": report.counters.partially_generated_parents,
+                    "generated_complete_turn_options": report.counters.generated_complete_turn_options,
+                    "unique_boundary_states": report.counters.unique_boundary_states,
+                    "duplicate_boundary_states": report.counters.duplicate_boundary_states,
+                    "peak_agenda_states": report.counters.peak_agenda_states,
+                },
+                "frontier_states": report.frontier_exact_state_hashes.len(),
+                "watched_frontier": watched_frontier,
+                "exported_witness_actions": report.witness.is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
+                "witness": report.witness.as_ref().map(|witness| json!({
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "hp_loss": initial_hp.saturating_sub(
+                        witness.final_position.combat.entities.player.current_hp,
+                    ),
+                    "action_count": witness.actions.len(),
+                    "negative_log_policy": witness.negative_log_policy,
+                })),
             }))
         }
         Command::TurnMembership {
