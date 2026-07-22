@@ -431,6 +431,11 @@ enum Command {
         continuation_turn_layers: usize,
         #[arg(long, default_value_t = 256)]
         continuation_service_quantum_work: usize,
+        /// Resume all parents in the selected source window as one shared
+        /// turn-synchronous cohort instead of multiplying a full continuation
+        /// beam by every parent.
+        #[arg(long)]
+        shared_window_continuation: bool,
         /// Locate exact states inside parent-local continuation windows.
         #[arg(long)]
         watch_exact_state_hash: Vec<String>,
@@ -2309,6 +2314,7 @@ fn main() -> Result<(), String> {
             generation_quantum_work,
             continuation_turn_layers,
             continuation_service_quantum_work,
+            shared_window_continuation,
             watch_exact_state_hash,
             lineage_window_summaries,
             continue_parent_portfolio,
@@ -2436,6 +2442,145 @@ fn main() -> Result<(), String> {
                 },
                 ..base_config
             };
+            if shared_window_continuation {
+                let mut continuation_session =
+                    LayeredCombatWitnessSession::from_deferred_window_with_solved_suffixes(
+                        original_root,
+                        window,
+                        continuation,
+                        policy,
+                        solved_suffixes.clone(),
+                    );
+                let remaining_work =
+                    max_nodes.saturating_sub(source_report.counters.generation_work);
+                let continuation_report = continuation_session.advance(
+                    LayeredCombatWitnessQuantum {
+                        additional_generation_work: remaining_work,
+                        additional_engine_steps: remaining_work
+                            .saturating_mul(max_engine_steps_per_transition.max(1)),
+                        deadline: Some(deadline),
+                    },
+                    &EngineCombatStepper,
+                );
+                if let (Some(path), Some(witness)) = (
+                    export_witness_actions.as_ref(),
+                    continuation_report.witness.as_ref(),
+                ) {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                    }
+                    let inputs = witness
+                        .actions
+                        .iter()
+                        .map(|action| action.input.clone())
+                        .collect::<Vec<_>>();
+                    std::fs::write(
+                        path,
+                        serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                let watched_states = watch_exact_state_hash
+                    .iter()
+                    .map(|hash| {
+                        let parent_work =
+                            continuation_report
+                                .layers
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(layer_index, layer)| {
+                                    layer
+                                    .parent_work
+                                    .iter()
+                                    .find(|parent| parent.exact_state_hash == *hash)
+                                    .map(|parent| json!({
+                                        "layer_index": layer_index,
+                                        "generation_work": parent.generation_work,
+                                        "completed_turn_options": parent.completed_turn_options,
+                                        "finished": parent.finished,
+                                    }))
+                                })
+                                .collect::<Vec<_>>();
+                        let retained_layers = continuation_report
+                            .layers
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(layer_index, layer)| {
+                                layer
+                                    .retained_exact_state_hashes
+                                    .iter()
+                                    .any(|candidate| candidate == hash)
+                                    .then_some(layer_index)
+                            })
+                            .collect::<Vec<_>>();
+                        let frontier = continuation_report
+                            .frontier
+                            .iter()
+                            .any(|candidate| candidate.exact_state_hash == *hash);
+                        json!({
+                            "exact_state_hash": hash,
+                            "parent_work": parent_work,
+                            "retained_layers": retained_layers,
+                            "frontier": frontier,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                return print_json(&json!({
+                    "schema_name": "OracleCombatCaseLayeredSharedWindowV1",
+                    "schema_version": 1,
+                    "case": case,
+                    "runtime": oracle_lab_runtime_identity(),
+                    "mode": {
+                        "scheduler": "shared_turn_synchronous_window",
+                        "v2_donor_enabled": false,
+                        "solved_suffix_count": solved_suffixes.len(),
+                    },
+                    "elapsed_ms": command_started.elapsed().as_millis(),
+                    "source": {
+                        "status": format!("{:?}", source_report.status),
+                        "generation_work": source_report.counters.generation_work,
+                        "candidate_count": candidate_count,
+                        "source_window_index": source_window_index,
+                        "window_discrepancy": selected_window_discrepancy,
+                    },
+                    "continuation": {
+                        "status": format!("{:?}", continuation_report.status),
+                        "counters": {
+                            "generation_work": continuation_report.counters.generation_work,
+                            "engine_steps": continuation_report.counters.engine_steps,
+                            "expanded_parents": continuation_report.counters.expanded_parents,
+                            "completed_turn_options": continuation_report.counters.completed_turn_options,
+                            "unique_next_turn_states": continuation_report.counters.unique_next_turn_states,
+                            "duplicate_next_turn_states": continuation_report.counters.duplicate_next_turn_states,
+                            "completed_layers": continuation_report.counters.completed_layers,
+                            "solved_suffix_matches": continuation_report.counters.solved_suffix_matches,
+                        },
+                        "layers": continuation_report.layers.iter().map(|layer| json!({
+                            "relative_turn_depth": layer.relative_turn_depth,
+                            "player_turn": layer.player_turn,
+                            "parent_states": layer.parent_states,
+                            "generation_work": layer.generation_work,
+                            "completed_turn_options": layer.completed_turn_options,
+                            "unique_next_turn_states": layer.unique_next_turn_states,
+                            "retained_next_turn_states": layer.retained_next_turn_states,
+                            "truncated_parents": layer.truncated_parents,
+                            "emitted_windows": layer.emitted_windows,
+                        })).collect::<Vec<_>>(),
+                        "watched_states": watched_states,
+                    },
+                    "exported_witness_actions": export_witness_actions,
+                    "witness": continuation_report.witness.as_ref().map(|witness| json!({
+                        "final_hp": witness.final_position.combat.entities.player.current_hp,
+                        "hp_loss": initial_hp.saturating_sub(
+                            witness.final_position.combat.entities.player.current_hp,
+                        ),
+                        "action_count": witness.actions.len(),
+                        "negative_log_policy": witness.negative_log_policy,
+                        "replay_engine_steps": witness.replay_engine_steps,
+                        "discovery_source": format!("{:?}", witness.discovery_source),
+                    })),
+                }));
+            }
             let mut race = LayeredCombatCandidateRaceSession::from_window_with_solved_suffixes(
                 original_root,
                 window,

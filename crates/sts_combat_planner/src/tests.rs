@@ -717,6 +717,76 @@ fn candidate_continuation_race_resumes_multiple_candidates_until_one_wins() {
 }
 
 #[test]
+fn deferred_window_continuation_shares_one_candidate_pool_across_parents() {
+    let source_config = LayeredCombatWitnessConfig {
+        generator: config(),
+        beam_width: 1,
+        retained_per_view: 1,
+        minimum_generation_work_per_layer: 16,
+        maximum_generation_work_per_layer: 64,
+        candidate_pool_multiplier: 2,
+        generation_quantum_work: 4,
+        max_turn_layers: 1,
+    };
+    let policy: SharedCombatActionPolicy = Arc::new(PreferPlayPolicy);
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut source =
+        LayeredCombatWitnessSession::with_policy(root(), source_config, policy.clone());
+    let source_report = source.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 64,
+            additional_engine_steps: 256,
+            deadline: None,
+        },
+        &stepper,
+    );
+    assert_eq!(
+        source_report.status,
+        LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::TurnLayerBudget)
+    );
+    let combined_window = LayeredCombatDeferredWindow {
+        relative_turn_depth: 1,
+        window_discrepancy: 0,
+        source_window_index: 0,
+        candidates: source
+            .deferred_windows()
+            .into_iter()
+            .flat_map(|window| window.candidates)
+            .collect(),
+    };
+    let parent_count = combined_window.candidates.len();
+    let mut continuation = LayeredCombatWitnessSession::from_deferred_window_with_solved_suffixes(
+        root(),
+        combined_window,
+        LayeredCombatWitnessConfig {
+            max_turn_layers: 3,
+            ..source_config
+        },
+        policy,
+        Arc::new(LayeredCombatSolvedSuffixIndex::default()),
+    );
+    let report = continuation.advance(
+        LayeredCombatWitnessQuantum {
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &stepper,
+    );
+
+    assert_eq!(report.status, LayeredCombatWitnessStatus::WitnessFound);
+    assert!(parent_count > 1);
+    assert_eq!(
+        report
+            .witness
+            .expect("the shared cohort should preserve the winning prefix")
+            .actions[0]
+            .input,
+        ClientInput::EndTurn
+    );
+}
+
+#[test]
 fn candidate_race_preserves_parent_local_deferred_windows_and_prefixes() {
     let config = LayeredCombatWitnessConfig {
         generator: config(),

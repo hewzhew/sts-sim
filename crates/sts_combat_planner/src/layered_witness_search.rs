@@ -566,6 +566,75 @@ impl LayeredCombatWitnessSession {
         }
     }
 
+    /// Resume one deferred exact window as a single turn-synchronous cohort.
+    /// Parent action trails remain distinct, while their generated next-turn
+    /// states share one deduplicated candidate pool and one layer allowance.
+    /// This avoids multiplying a full beam and pool target by every parent in
+    /// the window.
+    pub fn from_deferred_window_with_solved_suffixes(
+        original_root: CombatDecisionRoot,
+        window: LayeredCombatDeferredWindow,
+        config: LayeredCombatWitnessConfig,
+        policy: SharedCombatActionPolicy,
+        solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
+    ) -> Self {
+        let states = window
+            .candidates
+            .into_iter()
+            .map(|candidate| {
+                let atomic_depth = candidate.actions.len();
+                let trail = (!candidate.actions.is_empty()).then(|| {
+                    Arc::new(ActionTrailNode {
+                        parent: None,
+                        turn_actions: Arc::from(candidate.actions),
+                    })
+                });
+                BeamState {
+                    exact_state_hash: candidate.exact_state_hash,
+                    position: candidate.position,
+                    trail,
+                    atomic_depth,
+                    negative_log_policy: candidate.negative_log_policy,
+                }
+            })
+            .collect::<Vec<_>>();
+        let terminal_status = states
+            .is_empty()
+            .then_some(LayeredCombatWitnessStatus::FrontierExhausted);
+        let mut agenda = BTreeMap::new();
+        let mut next_cohort_id = 0usize;
+        if !states.is_empty() {
+            enqueue_cohort(
+                &mut agenda,
+                BeamCohort {
+                    states,
+                    // The continuation owns a fresh local layer budget; the
+                    // full prefix is retained in every action trail.
+                    relative_turn_depth: 0,
+                    window_discrepancy: window.window_discrepancy,
+                    source_window_index: window.source_window_index,
+                },
+                &mut next_cohort_id,
+            );
+        }
+        Self {
+            original_root: original_root.position().clone(),
+            config,
+            policy,
+            solved_suffixes,
+            checked_root_suffix: true,
+            agenda,
+            next_cohort_id,
+            depth_limited: Vec::new(),
+            active_layer: None,
+            counters: LayeredCombatWitnessCounters::default(),
+            layers: Vec::new(),
+            generation_gaps: Vec::new(),
+            terminal_status,
+            witness: None,
+        }
+    }
+
     pub fn counters(&self) -> &LayeredCombatWitnessCounters {
         &self.counters
     }
