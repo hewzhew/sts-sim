@@ -252,6 +252,14 @@ enum Command {
     CombatCaseLocalGraph {
         #[arg(long)]
         case: PathBuf,
+        /// Diagnostic control: preserve action-policy weights while removing
+        /// every boundary and mid-turn state guide.
+        #[arg(long, conflicts_with = "root_turn_anchor_only")]
+        anchor_only: bool,
+        /// Diagnostic control: use only action-policy anchor service during
+        /// the root player turn, then restore all guides at later turns.
+        #[arg(long, conflicts_with = "anchor_only")]
+        root_turn_anchor_only: bool,
         /// Optional typed action-order policy distilled from exact witnesses.
         /// It changes guidance only; legality and terminal truth stay exact.
         #[arg(long)]
@@ -999,6 +1007,11 @@ struct AnchorOnlyPolicy {
     base: SharedCombatActionPolicy,
 }
 
+struct RootTurnAnchorOnlyPolicy {
+    root_player_turn: u32,
+    base: SharedCombatActionPolicy,
+}
+
 fn load_action_imitation_policy(
     path: &Path,
     base: SharedCombatActionPolicy,
@@ -1046,6 +1059,58 @@ impl CombatActionPolicy for AnchorOnlyPolicy {
 
 fn anchor_only_policy(base: SharedCombatActionPolicy) -> SharedCombatActionPolicy {
     Arc::new(AnchorOnlyPolicy { base })
+}
+
+impl CombatActionPolicy for RootTurnAnchorOnlyPolicy {
+    fn weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        choices: &[CombatPolicyChoice<'_>],
+    ) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
+    fn state_guides(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        if position.combat.turn.turn_count == self.root_player_turn {
+            Vec::new()
+        } else {
+            self.base.state_guides(position)
+        }
+    }
+
+    fn turn_generation_guides(
+        &self,
+        position: &sts_simulator::sim::combat::CombatPosition,
+    ) -> Vec<CombatStateGuide> {
+        if position.combat.turn.turn_count == self.root_player_turn {
+            Vec::new()
+        } else {
+            self.base.turn_generation_guides(position)
+        }
+    }
+}
+
+fn root_turn_anchor_only_policy(
+    root_player_turn: u32,
+    base: SharedCombatActionPolicy,
+) -> SharedCombatActionPolicy {
+    Arc::new(RootTurnAnchorOnlyPolicy {
+        root_player_turn,
+        base,
+    })
 }
 
 impl CombatActionPolicy for ExactCorridorShadowPolicy {
@@ -1780,6 +1845,8 @@ fn main() -> Result<(), String> {
         }
         Command::CombatCaseLocalGraph {
             case,
+            anchor_only,
+            root_turn_anchor_only,
             action_imitation_artifact,
             value_prototype_artifact,
             diagnostic_corridor_actions,
@@ -1795,6 +1862,7 @@ fn main() -> Result<(), String> {
             let command_started = Instant::now();
             let loaded = load_combat_case(&case)?;
             let initial_hp = loaded.position.combat.entities.player.current_hp;
+            let root_player_turn = loaded.position.combat.turn.turn_count;
             let root = CombatDecisionRoot::new(loaded.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let config = LocalTurnGraphWitnessConfig {
@@ -1827,6 +1895,13 @@ fn main() -> Result<(), String> {
                     max_engine_steps_per_transition,
                 )?;
                 exact_corridor_shadow_policy(policy, &corridor, ShadowCorridorGuide::Exact, true)
+            };
+            let policy = if anchor_only {
+                anchor_only_policy(policy)
+            } else if root_turn_anchor_only {
+                root_turn_anchor_only_policy(root_player_turn, policy)
+            } else {
+                policy
             };
             let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
             let report = session.advance(
@@ -1872,6 +1947,13 @@ fn main() -> Result<(), String> {
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
+                "scheduler": if anchor_only {
+                    "anchor_only"
+                } else if root_turn_anchor_only {
+                    "root_turn_anchor_then_guides"
+                } else {
+                    "anchor_and_guides"
+                },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": command_started.elapsed().as_millis(),
                 "initial_hp": initial_hp,
