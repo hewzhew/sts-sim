@@ -174,6 +174,7 @@ struct ApplyDeviation {
     trace: Arc<TraceNode>,
     input: ClientInput,
     discrepancy: f64,
+    greedy_actions_since_deviation_after_apply: usize,
 }
 
 struct StructuredDeviation {
@@ -358,6 +359,7 @@ impl PolicyDiscrepancySession {
                         trace: work.trace.clone(),
                         input,
                         discrepancy: work.discrepancy,
+                        greedy_actions_since_deviation_after_apply: 0,
                     };
                     if !work.cursor.is_exhausted() {
                         self.push_work(work.discrepancy, DiscrepancyWork::Structured(work));
@@ -445,6 +447,7 @@ impl PolicyDiscrepancySession {
                         trace: seed.trace.clone(),
                         input: candidate.input,
                         discrepancy,
+                        greedy_actions_since_deviation_after_apply: 0,
                     }),
                 );
                 self.used.queued_discrepancies = self.used.queued_discrepancies.saturating_add(1);
@@ -465,19 +468,19 @@ impl PolicyDiscrepancySession {
             }
             let greedy_actions_since_deviation =
                 seed.greedy_actions_since_deviation.saturating_add(1);
-            let mut next = match self.apply_input(
+            let next = match self.apply_input(
                 stepper,
                 seed.position,
                 seed.trace,
                 greedy.input,
                 seed.discrepancy,
+                greedy_actions_since_deviation,
                 deadline,
             ) {
                 Ok(Some(next)) => next,
                 Ok(None) => return None,
                 Err(interruption) => return Some(interruption),
             };
-            next.greedy_actions_since_deviation = greedy_actions_since_deviation;
             seed = next;
         }
         self.used.greedy_depth_limit_hits = self.used.greedy_depth_limit_hits.saturating_add(1);
@@ -503,6 +506,7 @@ impl PolicyDiscrepancySession {
             work.trace,
             work.input,
             work.discrepancy,
+            work.greedy_actions_since_deviation_after_apply,
             deadline,
         ) {
             Ok(Some(seed)) => seed,
@@ -519,21 +523,27 @@ impl PolicyDiscrepancySession {
         trace: Arc<TraceNode>,
         input: ClientInput,
         discrepancy: f64,
+        greedy_actions_since_deviation_after_apply: usize,
         deadline: Option<Instant>,
     ) -> Result<Option<DiveSeed>, PolicyDiscrepancyInterruption> {
         if deadline_reached(deadline) {
+            self.requeue_apply(ApplyDeviation {
+                parent,
+                trace,
+                input,
+                discrepancy,
+                greedy_actions_since_deviation_after_apply,
+            });
             return Err(PolicyDiscrepancyInterruption::Deadline);
         }
         if self.used.applied_action_transitions >= self.granted_applied_transitions {
-            self.push_work(
+            self.requeue_apply(ApplyDeviation {
+                parent,
+                trace,
+                input,
                 discrepancy,
-                DiscrepancyWork::Apply(ApplyDeviation {
-                    parent,
-                    trace,
-                    input,
-                    discrepancy,
-                }),
-            );
+                greedy_actions_since_deviation_after_apply,
+            });
             return Err(PolicyDiscrepancyInterruption::AppliedTransitionBudget);
         }
         let reservation = self.config.max_engine_steps_per_transition.max(1);
@@ -542,15 +552,13 @@ impl PolicyDiscrepancySession {
             .saturating_sub(self.used.engine_steps)
             < reservation
         {
-            self.push_work(
+            self.requeue_apply(ApplyDeviation {
+                parent,
+                trace,
+                input,
                 discrepancy,
-                DiscrepancyWork::Apply(ApplyDeviation {
-                    parent,
-                    trace,
-                    input,
-                    discrepancy,
-                }),
-            );
+                greedy_actions_since_deviation_after_apply,
+            });
             return Err(PolicyDiscrepancyInterruption::EngineStepBudget);
         }
         if !stepper.is_legal_action(&parent, &input) {
@@ -569,15 +577,13 @@ impl PolicyDiscrepancySession {
         );
         self.used.engine_steps = self.used.engine_steps.saturating_add(result.engine_steps);
         if result.timed_out {
-            self.push_work(
+            self.requeue_apply(ApplyDeviation {
+                parent,
+                trace,
+                input,
                 discrepancy,
-                DiscrepancyWork::Apply(ApplyDeviation {
-                    parent,
-                    trace,
-                    input,
-                    discrepancy,
-                }),
-            );
+                greedy_actions_since_deviation_after_apply,
+            });
             return Err(PolicyDiscrepancyInterruption::Deadline);
         }
         self.used.applied_action_transitions =
@@ -613,7 +619,7 @@ impl PolicyDiscrepancySession {
                     position: Arc::new(result.position),
                     trace,
                     discrepancy,
-                    greedy_actions_since_deviation: 0,
+                    greedy_actions_since_deviation: greedy_actions_since_deviation_after_apply,
                     at_player_turn_boundary,
                 }))
             }
@@ -769,7 +775,8 @@ impl PolicyDiscrepancySession {
         let remaining_transitions = self
             .granted_applied_transitions
             .saturating_sub(self.used.applied_action_transitions);
-        if remaining_transitions == 0 {
+        let reserved_transitions = config.max_applied_transitions.max(1);
+        if remaining_transitions < reserved_transitions {
             self.push_work(
                 work.seed.discrepancy + std::f64::consts::LN_2,
                 DiscrepancyWork::TurnMacro(work),
@@ -779,7 +786,9 @@ impl PolicyDiscrepancySession {
         let remaining_engine_steps = self
             .granted_engine_steps
             .saturating_sub(self.used.engine_steps);
-        if remaining_engine_steps < self.config.max_engine_steps_per_transition.max(1) {
+        let reserved_engine_steps =
+            reserved_transitions.saturating_mul(self.config.max_engine_steps_per_transition.max(1));
+        if remaining_engine_steps < reserved_engine_steps {
             self.push_work(
                 work.seed.discrepancy + std::f64::consts::LN_2,
                 DiscrepancyWork::TurnMacro(work),
@@ -791,10 +800,6 @@ impl PolicyDiscrepancySession {
                 self.used.unsupported_stable_boundaries.saturating_add(1);
             return None;
         };
-        let max_applied_transitions = config
-            .max_applied_transitions
-            .min(remaining_transitions)
-            .min(remaining_engine_steps / self.config.max_engine_steps_per_transition.max(1));
         let report = generate_depth_beam_turn_options(
             root,
             DepthBeamTurnConfig {
@@ -808,8 +813,8 @@ impl PolicyDiscrepancySession {
                 max_structured_members_per_family: config.max_structured_members_per_family,
             },
             DepthBeamTurnBudget {
-                max_applied_transitions,
-                max_engine_steps: remaining_engine_steps,
+                max_applied_transitions: reserved_transitions,
+                max_engine_steps: reserved_engine_steps,
                 deadline,
             },
             self.policy.clone(),
@@ -897,6 +902,15 @@ impl PolicyDiscrepancySession {
 
     fn push_work(&mut self, discrepancy: f64, work: DiscrepancyWork) {
         self.push_work_with_priority(discrepancy, discrepancy, work);
+    }
+
+    fn requeue_apply(&mut self, work: ApplyDeviation) {
+        let priority = work.discrepancy
+            + (work
+                .greedy_actions_since_deviation_after_apply
+                .saturating_add(1) as f64)
+                .ln();
+        self.push_work_with_priority(priority, work.discrepancy, DiscrepancyWork::Apply(work));
     }
 
     fn push_work_with_priority(&mut self, priority: f64, discrepancy: f64, work: DiscrepancyWork) {

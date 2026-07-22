@@ -2160,6 +2160,65 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
 }
 
 #[test]
+fn atomic_turn_portfolio_guide_service_advances_in_geometric_work_rounds() {
+    assert_eq!(
+        crate::atomic_turn_portfolio::scheduler_work_round(512),
+        crate::atomic_turn_portfolio::scheduler_work_round(1_023)
+    );
+    assert!(
+        crate::atomic_turn_portfolio::scheduler_work_round(512)
+            < crate::atomic_turn_portfolio::scheduler_work_round(1_024)
+    );
+}
+
+#[test]
+fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut portfolio = AtomicTurnPortfolioSession::with_policy_discrepancy_suffix(
+        root(),
+        AtomicTurnPortfolioConfig {
+            boundary_search: TurnOptionGeneratorConfig {
+                max_engine_steps_per_transition: 4,
+                ..TurnOptionGeneratorConfig::default()
+            },
+            suffix_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            boundary_service_work: 8,
+            suffix_service_transitions: 8,
+            boundary_layers: 1,
+            boundary_service_period: 8,
+        },
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            max_greedy_actions_per_dive: 4,
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let report = portfolio.advance(
+        &stepper,
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 2_048,
+            additional_engine_steps: 8_192,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicTurnPortfolioStatus::WitnessFound);
+    assert!(report.after.turn_boundaries_found > 0);
+    assert!(report.after.suffix_services > 0);
+    let witness = report
+        .witness
+        .expect("a child-local discrepancy should repair the suffix policy");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+    assert_eq!(witness.actions[1].input, PLAY);
+}
+
+#[test]
 fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     let mut search = PolicyDiscrepancySession::with_policy(
         root(),
@@ -2215,6 +2274,50 @@ fn policy_discrepancy_search_repairs_one_wrong_policy_action() {
         exact_actions(&TinyTurnStepper::lethal(), &root(), [PLAY])
     );
     assert!(report.after.queued_discrepancies > 0);
+}
+
+#[test]
+fn policy_discrepancy_search_split_quanta_match_one_shot_after_reroot() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let boundary = stepper.apply_to_stable(
+        root().position(),
+        ClientInput::EndTurn,
+        CombatStepLimits {
+            max_engine_steps: 4,
+            deadline: None,
+        },
+    );
+    let mut search = PolicyDiscrepancySession::with_policy(
+        CombatDecisionRoot::new(boundary.position).expect("exact player-turn boundary"),
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            max_greedy_actions_per_dive: 4,
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let mut last = None;
+    for _ in 0..256 {
+        let report = search.advance(
+            &stepper,
+            PolicyDiscrepancyQuantum {
+                additional_applied_transitions: 8,
+                additional_engine_steps: 32,
+                deadline: None,
+            },
+        );
+        if report.status == PolicyDiscrepancyStatus::WitnessFound {
+            return;
+        }
+        last = Some(report);
+    }
+
+    let report = last.expect("at least one quantum");
+    panic!(
+        "split search failed: status={:?}, counters={:?}, frontier={}",
+        report.status, report.after, report.frontier_entries
+    );
 }
 
 #[test]
@@ -2364,6 +2467,47 @@ fn policy_discrepancy_search_can_use_a_complete_turn_macro_as_one_deviation() {
     assert_eq!(report.after.turn_macro_generations, 1);
     assert!(report.after.turn_macro_options_enqueued > 0);
     assert_eq!(report.witness.unwrap().actions.len(), 1);
+}
+
+#[test]
+fn policy_discrepancy_turn_macro_waits_for_its_full_budget_across_quanta() {
+    let mut search = PolicyDiscrepancySession::with_policy(
+        root(),
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            max_greedy_actions_per_dive: 4,
+            turn_macro: Some(PolicyDiscrepancyTurnMacroConfig {
+                max_applied_transitions: 8,
+                proposals_per_view: 1,
+                ..PolicyDiscrepancyTurnMacroConfig::default()
+            }),
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let mut last = None;
+    for _ in 0..128 {
+        let report = search.advance(
+            &TinyTurnStepper::lethal(),
+            PolicyDiscrepancyQuantum {
+                additional_applied_transitions: 1,
+                additional_engine_steps: 4,
+                deadline: None,
+            },
+        );
+        if report.status == PolicyDiscrepancyStatus::WitnessFound {
+            assert!(report.after.turn_macro_generations > 0);
+            return;
+        }
+        last = Some(report);
+    }
+
+    let report = last.expect("at least one quantum");
+    panic!(
+        "a split budget never completed the exact turn macro: status={:?}, counters={:?}, frontier={}",
+        report.status, report.after, report.frontier_entries
+    );
 }
 
 mod agenda;
