@@ -17,6 +17,7 @@ mod generator;
 mod layered_witness_search;
 mod local_turn_graph_search;
 mod policy;
+mod policy_discrepancy_search;
 mod prospect;
 mod replay;
 mod selection_transaction;
@@ -78,6 +79,11 @@ pub use local_turn_graph_search::{
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
     CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy, UniformCombatActionPolicy,
+};
+pub use policy_discrepancy_search::{
+    PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,
+    PolicyDiscrepancyQuantum, PolicyDiscrepancyReport, PolicyDiscrepancySession,
+    PolicyDiscrepancyStateDiagnostic, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
 };
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
