@@ -1897,5 +1897,35 @@ fn atomic_levin_search_materializes_single_card_selection_lazily() {
     }));
 }
 
+#[test]
+fn atomic_levin_search_robust_reroot_weights_do_not_starve_an_unlikely_root_action() {
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        root(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            rerooting: AtomicLevinRerooting::PlayerTurnBoundaries,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session.advance(
+        &TinyTurnStepper::lethal_after_current_turn(),
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 512,
+            additional_engine_steps: 2_048,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicLevinWitnessStatus::WitnessFound);
+    assert!(report.after.reroot_points_assigned >= 1);
+    assert!(report.after.rerooted_action_transitions >= 1);
+    let witness = report
+        .witness
+        .expect("the unlikely root action must survive");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+}
+
 mod agenda;
 mod decision;

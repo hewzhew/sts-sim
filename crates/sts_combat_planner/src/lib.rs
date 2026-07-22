@@ -28,7 +28,7 @@ pub use agenda::{
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
 };
 pub use atomic_levin_search::{
-    AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
+    AtomicLevinRerooting, AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
     AtomicLevinWitnessInterruption, AtomicLevinWitnessQuantum, AtomicLevinWitnessReplayError,
     AtomicLevinWitnessReport, AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
 };

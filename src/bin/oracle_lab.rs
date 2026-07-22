@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
     generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
-    search_depth_beam_agenda_witness, AtomicLevinWitnessConfig, AtomicLevinWitnessQuantum,
-    AtomicLevinWitnessSession, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
-    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
+    search_depth_beam_agenda_witness, AtomicLevinRerooting, AtomicLevinWitnessConfig,
+    AtomicLevinWitnessQuantum, AtomicLevinWitnessSession, CombatActionPolicy, CombatDecisionRoot,
+    CombatGuideLaneId, CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide,
+    CombatStateGuideRank, DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget,
+    DepthBeamTurnConfig, LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
@@ -229,6 +229,10 @@ enum Command {
         max_engine_steps_per_transition: usize,
         #[arg(long, default_value_t = 10_000)]
         uniform_exploration_ppm: u32,
+        /// Use robust root-LTS with entry into each new player turn as a
+        /// structural clue. The q-th observed boundary receives weight 1/q.
+        #[arg(long)]
+        reroot_player_turn_boundaries: bool,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -2585,6 +2589,7 @@ fn main() -> Result<(), String> {
             wall_ms,
             max_engine_steps_per_transition,
             uniform_exploration_ppm,
+            reroot_player_turn_boundaries,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -2605,6 +2610,11 @@ fn main() -> Result<(), String> {
                 AtomicLevinWitnessConfig {
                     max_engine_steps_per_transition,
                     uniform_exploration_ppm,
+                    rerooting: if reroot_player_turn_boundaries {
+                        AtomicLevinRerooting::PlayerTurnBoundaries
+                    } else {
+                        AtomicLevinRerooting::Disabled
+                    },
                 },
                 policy,
             );
@@ -2646,6 +2656,11 @@ fn main() -> Result<(), String> {
                     "v2_donor": false,
                     "action_imitation_artifact": action_imitation_artifact,
                     "uniform_exploration_ppm": uniform_exploration_ppm,
+                    "rerooting": if reroot_player_turn_boundaries {
+                        "player_turn_boundaries"
+                    } else {
+                        "disabled"
+                    },
                 },
                 "status": format!("{:?}", report.status),
                 "timing_ms": {
@@ -2667,6 +2682,8 @@ fn main() -> Result<(), String> {
                     "reopened_exact_states": report.after.reopened_exact_states,
                     "duplicate_or_dominated_successors": report.after.duplicate_or_dominated_successors,
                     "structured_inputs_materialized": report.after.structured_inputs_materialized,
+                    "reroot_points_assigned": report.after.reroot_points_assigned,
+                    "rerooted_action_transitions": report.after.rerooted_action_transitions,
                 },
                 "frontier": {
                     "entries": report.frontier_entries,
