@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
     generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
-    search_depth_beam_agenda_witness, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
+    search_depth_beam_agenda_witness, AtomicLevinWitnessConfig, AtomicLevinWitnessQuantum,
+    AtomicLevinWitnessSession, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
     DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
@@ -211,6 +212,25 @@ enum Command {
         /// reaches the next player turn or wins immediately.
         #[arg(long, default_value_t = 0)]
         one_turn_viability_evidence_limit: usize,
+    },
+    /// Run one pure atomic Levin policy-tree search on an exact combat case.
+    /// This deliberately bypasses complete-turn generation, state guides,
+    /// legacy donors, and every lane scheduler.
+    CombatCaseAtomicLevin {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
+        #[arg(long, default_value_t = 250_000)]
+        max_transitions: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long, default_value_t = 10_000)]
+        uniform_exploration_ppm: u32,
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
     },
     /// Lab-only turn-synchronous beam control. It never invokes the legacy
     /// suffix donor or the production Widen/Deepen agenda.
@@ -2555,6 +2575,117 @@ fn main() -> Result<(), String> {
                     "negative_log_policy": witness.negative_log_policy,
                     "replay_engine_steps": witness.replay_engine_steps,
                     "discovery_source": format!("{:?}", witness.discovery_source),
+                })),
+            }))
+        }
+        Command::CombatCaseAtomicLevin {
+            case,
+            action_imitation_artifact,
+            max_transitions,
+            wall_ms,
+            max_engine_steps_per_transition,
+            uniform_exploration_ppm,
+            export_witness_actions,
+        } => {
+            let command_started = Instant::now();
+            let case_path = case.clone();
+            let case = load_combat_case(&case)?;
+            let root = CombatDecisionRoot::new(case.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let initial_hp = root.position().combat.entities.player.current_hp;
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let mut search = AtomicLevinWitnessSession::with_policy(
+                root,
+                AtomicLevinWitnessConfig {
+                    max_engine_steps_per_transition,
+                    uniform_exploration_ppm,
+                },
+                policy,
+            );
+            let started = Instant::now();
+            let report = search.advance(
+                &EngineCombatStepper,
+                AtomicLevinWitnessQuantum {
+                    additional_applied_transitions: max_transitions,
+                    additional_engine_steps: max_transitions
+                        .saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(started + Duration::from_millis(wall_ms)),
+                },
+            );
+            let elapsed = started.elapsed();
+            if let (Some(path), Some(witness)) =
+                (export_witness_actions.as_ref(), report.witness.as_ref())
+            {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let actions = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                let bytes =
+                    serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?;
+                std::fs::write(path, bytes).map_err(|error| error.to_string())?;
+            }
+            print_json(&serde_json::json!({
+                "schema_name": "OracleCombatCaseAtomicLevinV1",
+                "schema_version": 1,
+                "case": case_path,
+                "runtime": oracle_lab_runtime_identity(),
+                "mode": {
+                    "search": "atomic_levin_policy_tree",
+                    "state_guides": false,
+                    "complete_turn_generator": false,
+                    "v2_donor": false,
+                    "action_imitation_artifact": action_imitation_artifact,
+                    "uniform_exploration_ppm": uniform_exploration_ppm,
+                },
+                "status": format!("{:?}", report.status),
+                "timing_ms": {
+                    "setup": started.duration_since(command_started).as_millis(),
+                    "search": elapsed.as_millis(),
+                    "total_before_print": command_started.elapsed().as_millis(),
+                },
+                "budget": {
+                    "max_transitions": max_transitions,
+                    "wall_ms": wall_ms,
+                    "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                },
+                "work": {
+                    "work_pops": report.after.work_pops,
+                    "expanded_exact_states": report.after.expanded_exact_states,
+                    "applied_action_transitions": report.after.applied_action_transitions,
+                    "engine_steps": report.after.engine_steps,
+                    "exact_states": report.after.exact_states,
+                    "reopened_exact_states": report.after.reopened_exact_states,
+                    "duplicate_or_dominated_successors": report.after.duplicate_or_dominated_successors,
+                    "structured_inputs_materialized": report.after.structured_inputs_materialized,
+                },
+                "frontier": {
+                    "entries": report.frontier_entries,
+                    "max_atomic_depth": report.max_atomic_depth,
+                    "max_player_turn": report.max_player_turn,
+                    "unsupported_stable_boundaries": report.unsupported_stable_boundaries,
+                    "transition_step_limit_gaps": report.transition_step_limit_gaps,
+                },
+                "exported_witness_actions": report.witness.is_some()
+                    .then_some(export_witness_actions.as_ref())
+                    .flatten(),
+                "witness": report.witness.as_ref().map(|witness| serde_json::json!({
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "hp_loss": initial_hp.saturating_sub(
+                        witness.final_position.combat.entities.player.current_hp,
+                    ),
+                    "action_count": witness.actions.len(),
+                    "negative_log_policy": witness.negative_log_policy,
+                    "replay_engine_steps": witness.replay_engine_steps,
                 })),
             }))
         }

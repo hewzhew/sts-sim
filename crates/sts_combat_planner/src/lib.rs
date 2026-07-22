@@ -8,6 +8,7 @@
 //! harness; production integration belongs to the control layer.
 
 mod agenda;
+mod atomic_levin_search;
 mod decision;
 mod depth_beam_turn;
 mod evidence;
@@ -25,6 +26,11 @@ pub use agenda::{
     CombatPlannerAgendaBudget, CombatPlannerAgendaConfig, CombatPlannerAgendaCounters,
     CombatPlannerAgendaInterruption, CombatPlannerAgendaQuantum, CombatPlannerAgendaReport,
     CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
+};
+pub use atomic_levin_search::{
+    AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
+    AtomicLevinWitnessInterruption, AtomicLevinWitnessQuantum, AtomicLevinWitnessReplayError,
+    AtomicLevinWitnessReport, AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
 };
 pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,

@@ -178,6 +178,7 @@ fn witness_search_keeps_boundary_and_turn_generation_guides_separate() {
 #[derive(Clone)]
 struct TinyTurnStepper {
     selection_size: Option<u8>,
+    winning_selection_22: bool,
     duplicate_play_surface: bool,
     lethal_from_turn: Option<u32>,
     terminal_loss: bool,
@@ -189,6 +190,7 @@ impl TinyTurnStepper {
     fn plain() -> Self {
         Self {
             selection_size: None,
+            winning_selection_22: false,
             duplicate_play_surface: false,
             lethal_from_turn: None,
             terminal_loss: false,
@@ -207,6 +209,14 @@ impl TinyTurnStepper {
     fn with_single_selection() -> Self {
         Self {
             selection_size: Some(1),
+            ..Self::plain()
+        }
+    }
+
+    fn with_winning_single_selection() -> Self {
+        Self {
+            selection_size: Some(1),
+            winning_selection_22: true,
             ..Self::plain()
         }
     }
@@ -330,7 +340,11 @@ impl CombatStepper for TinyTurnStepper {
                 ClientInput::SubmitSelection(resolution) => {
                     let selected = resolution.selected_card_uuids();
                     next.combat.turn.turn_start_draw_modifier = i32::try_from(selected[0]).unwrap();
-                    next.engine = EngineState::CombatPlayerTurn;
+                    next.engine = if self.winning_selection_22 && selected == [22] {
+                        EngineState::GameOver(sts_core::state::core::RunResult::Victory)
+                    } else {
+                        EngineState::CombatPlayerTurn
+                    };
                 }
                 ClientInput::EndTurn => {
                     next.combat.turn.turn_count += 1;
@@ -1787,6 +1801,100 @@ fn witness_search_records_exact_one_turn_viability_witness() {
         CompleteTurnOptionBoundary::NextPlayerTurn
     );
     assert!(!evidence[0].witness_turn_actions.is_empty());
+}
+
+#[test]
+fn atomic_levin_search_finds_and_replays_policy_guided_win() {
+    let stepper = TinyTurnStepper::lethal();
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        root(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session.advance(
+        &stepper,
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 16,
+            additional_engine_steps: 64,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicLevinWitnessStatus::WitnessFound);
+    let witness = report.witness.expect("the preferred play is an exact win");
+    assert_eq!(witness.actions.len(), 1);
+    assert_eq!(witness.actions[0].input, PLAY);
+    assert_eq!(
+        stepper.terminal(&witness.final_position),
+        CombatTerminal::Win
+    );
+}
+
+#[test]
+fn atomic_levin_search_never_reads_state_guides() {
+    let boundary_calls = Arc::new(AtomicI32::new(0));
+    let generation_calls = Arc::new(AtomicI32::new(0));
+    let policy = Arc::new(SplitGuidePolicy {
+        boundary_calls: boundary_calls.clone(),
+        generation_calls: generation_calls.clone(),
+    });
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        root(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        policy,
+    );
+
+    let _ = session.advance(
+        &TinyTurnStepper::lethal(),
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 16,
+            additional_engine_steps: 64,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(boundary_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(generation_calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn atomic_levin_search_materializes_single_card_selection_lazily() {
+    let stepper = TinyTurnStepper::with_winning_single_selection();
+    let mut session = AtomicLevinWitnessSession::with_policy(
+        root(),
+        AtomicLevinWitnessConfig {
+            max_engine_steps_per_transition: 4,
+            ..AtomicLevinWitnessConfig::default()
+        },
+        Arc::new(PreferSelection22Policy),
+    );
+
+    let report = session.advance(
+        &stepper,
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 32,
+            additional_engine_steps: 128,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicLevinWitnessStatus::WitnessFound);
+    assert!(report.after.structured_inputs_materialized >= 2);
+    let witness = report.witness.expect("selection 22 is an exact win");
+    assert!(witness.actions.iter().any(|action| {
+        matches!(
+            &action.input,
+            ClientInput::SubmitSelection(resolution)
+                if resolution.selected_card_uuids() == [22]
+        )
+    }));
 }
 
 mod agenda;
