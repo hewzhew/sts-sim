@@ -70,6 +70,7 @@ pub fn oracle_combat_state_guide_components(position: &CombatPosition) -> Vec<i3
     let value = combat_search_state_value(&node);
     vec![
         value.fewer_living_enemies,
+        encounter_priority_owner_progress(&position.combat),
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -108,6 +109,7 @@ pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec
         value.survival_margin,
         value.player_hp,
         value.fewer_living_enemies,
+        encounter_priority_owner_progress(&position.combat),
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -134,6 +136,7 @@ pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<
     vec![
         i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
         value.fewer_living_enemies,
+        encounter_priority_owner_progress(&position.combat),
         value.phase_adjusted_enemy_effort_progress,
         value.enemy_effort_progress,
         value.enemy_hp_progress,
@@ -185,6 +188,7 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
         setup.exhaust_engine_fuel,
+        encounter_priority_owner_progress(&position.combat),
         value.player_hp,
         value.survival_margin,
         setup.active_power_count,
@@ -193,6 +197,36 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
         value.hand_damage,
         i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
     ]
+}
+
+/// Progress against an encounter member whose death removes a persistent
+/// team-wide growth source. Total enemy HP alone treats symmetric-looking
+/// targets as interchangeable, even when their future combat semantics are
+/// not. Donu is the concrete owner in the Donu/Deca encounter: its alternating
+/// buff grants Strength to every living monster, while Deca's death does not
+/// stop that clock.
+///
+/// This is deliberately a guide coordinate rather than a forced target rule.
+/// Exact search may still prefer Deca when Dazed pressure or a lethal window
+/// makes that line better.
+fn encounter_priority_owner_progress(combat: &CombatState) -> i32 {
+    use crate::content::monsters::EnemyId;
+
+    let has_deca = combat
+        .entities
+        .monsters
+        .iter()
+        .any(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::Deca));
+    if !has_deca {
+        return 0;
+    }
+    combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::Donu))
+        .map(|donu| donu.max_hp.saturating_sub(donu.current_hp.max(0)).max(0))
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -328,10 +362,10 @@ mod tests {
         let mut exposed = crate::test_support::test_monster(EnemyId::Cultist);
         exposed.id = 2;
         combat.entities.monsters = vec![blocked, exposed];
-        combat.entities.power_db.insert(
-            1,
-            vec![test_power_amount(PowerId::Artifact, 1)],
-        );
+        combat
+            .entities
+            .power_db
+            .insert(1, vec![test_power_amount(PowerId::Artifact, 1)]);
         combat.zones.hand = vec![CombatCard::new(CardId::Disarm, 11)];
         combat.turn.energy = 1;
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
@@ -349,6 +383,36 @@ mod tests {
         let weights = oracle_atomic_action_policy_weights(&position, &inputs);
 
         assert!(weights[1] > weights[0]);
+    }
+
+    #[test]
+    fn donu_damage_outranks_equal_deca_damage_without_forcing_a_target() {
+        let mut base = crate::test_support::blank_test_combat();
+        let mut deca = crate::test_support::test_monster(EnemyId::Deca);
+        deca.id = 1;
+        deca.current_hp = 250;
+        deca.max_hp = 250;
+        let mut donu = crate::test_support::test_monster(EnemyId::Donu);
+        donu.id = 2;
+        donu.current_hp = 250;
+        donu.max_hp = 250;
+        base.entities.monsters = vec![deca, donu];
+
+        let mut damaged_deca = base.clone();
+        damaged_deca.entities.monsters[0].current_hp = 230;
+        let mut damaged_donu = base;
+        damaged_donu.entities.monsters[1].current_hp = 230;
+
+        let deca_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            damaged_deca,
+        ));
+        let donu_rank = oracle_combat_state_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            damaged_donu,
+        ));
+
+        assert!(donu_rank > deca_rank);
     }
 
     #[test]
