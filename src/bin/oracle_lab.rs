@@ -116,6 +116,10 @@ enum Command {
     CombatCase {
         #[arg(long)]
         case: PathBuf,
+        /// Optional typed action residual. It changes proposal order only;
+        /// the production agenda still owns search and exact replay.
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 5_000)]
@@ -2556,6 +2560,7 @@ fn main() -> Result<(), String> {
         }
         Command::CombatCase {
             case,
+            action_imitation_artifact,
             max_nodes,
             wall_ms,
             max_engine_steps_per_transition,
@@ -2707,7 +2712,13 @@ fn main() -> Result<(), String> {
             let root = CombatDecisionRoot::new(position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
-            let base_policy = existing_combat_knowledge_policy_v1();
+            let base_policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
             let (policy, shadow_corridor, mut shadow_value_artifact) =
                 if let Some(model_path) = shadow_value_prototype.as_ref() {
                     let artifact = load_value_prototype(model_path)?;
@@ -2880,6 +2891,7 @@ fn main() -> Result<(), String> {
                     "mode": {
                         "v2_donor_enabled": !without_v2_donor,
                         "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
+                        "action_imitation_artifact": action_imitation_artifact,
                     },
                     "status": format!("{:?}", report.status),
                     "timing_ms": {
@@ -2980,6 +2992,7 @@ fn main() -> Result<(), String> {
                     "schema_name": "OracleCombatCaseReadableV1",
                     "schema_version": 1,
                     "v2_donor_enabled": !without_v2_donor,
+                    "action_imitation_artifact": action_imitation_artifact,
                     "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
                     "status": format!("{:?}", report.status),
                     "elapsed_ms": started.elapsed().as_millis(),
