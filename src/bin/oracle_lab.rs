@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use blake2::{Blake2b512, Digest};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -20,9 +21,10 @@ use sts_combat_planner::{
     LayeredCombatWitnessSession, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
     LocalTurnGraphWitnessSession, OracleCombatOneTurnLossEvidence,
     OracleCombatOneTurnViabilityEvidence, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, SharedCombatActionPolicy,
-    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
-    TurnOptionGeneratorSession, UniformCombatActionPolicy,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
+    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
+    SharedCombatActionPolicy, TurnOptionAction, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig, TurnOptionGeneratorSession, UniformCombatActionPolicy,
 };
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
@@ -240,6 +242,35 @@ enum Command {
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
+    /// Follow the action policy to terminal states and search complete
+    /// trajectories by increasing weighted policy discrepancy.
+    CombatCasePolicyDiscrepancy {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long)]
+        action_imitation_artifact: Option<PathBuf>,
+        #[arg(long, default_value_t = 250_000)]
+        max_transitions: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+        #[arg(long, default_value_t = 10_000)]
+        uniform_exploration_ppm: u32,
+        #[arg(long, default_value_t = 128)]
+        max_greedy_actions_per_dive: usize,
+        /// Lazily generate bounded complete-turn alternatives at player-turn
+        /// boundaries. Zero keeps the pure atomic discrepancy control.
+        #[arg(long, default_value_t = 0)]
+        turn_macro_transitions: usize,
+        #[arg(long, default_value_t = 8)]
+        turn_macro_proposals_per_view: usize,
+        /// Read-only exact combat states to inspect after the search.
+        #[arg(long)]
+        watch_case: Vec<PathBuf>,
+        #[arg(long)]
+        export_witness_actions: Option<PathBuf>,
+    },
     /// Enumerate exact next-turn states under the base policy, while giving
     /// every state an independent resumable atomic suffix search.
     CombatCaseAtomicTurnPortfolio {
@@ -259,6 +290,13 @@ enum Command {
         boundary_service_work: usize,
         #[arg(long, default_value_t = 512)]
         suffix_service_transitions: usize,
+        /// Reroot an independent policy-discrepancy search at every terminal
+        /// portfolio boundary instead of using the atomic Levin suffix.
+        #[arg(long)]
+        policy_discrepancy_suffix: bool,
+        /// Complete-turn work reserved by each independent discrepancy suffix.
+        #[arg(long, default_value_t = 4_096)]
+        suffix_turn_macro_transitions: usize,
         #[arg(long, default_value_t = 1)]
         boundary_layers: usize,
         #[arg(long, default_value_t = 8)]
@@ -2693,22 +2731,186 @@ fn main() -> Result<(), String> {
                 std::fs::write(path, bytes).map_err(|error| error.to_string())?;
             }
             print_json(&serde_json::json!({
-                "schema_name": "OracleCombatCaseAtomicLevinV1",
+                    "schema_name": "OracleCombatCaseAtomicLevinV1",
+                    "schema_version": 1,
+                    "case": case_path,
+                    "runtime": oracle_lab_runtime_identity(),
+                    "mode": {
+                        "search": "atomic_levin_policy_tree",
+                        "state_guides": false,
+                        "complete_turn_generator": false,
+                        "v2_donor": false,
+                        "action_imitation_artifact": action_imitation_artifact,
+                        "uniform_exploration_ppm": uniform_exploration_ppm,
+                        "rerooting": if reroot_player_turn_boundaries {
+                            "player_turn_boundaries"
+                        } else {
+                            "disabled"
+                        },
+                    },
+                    "status": format!("{:?}", report.status),
+                    "timing_ms": {
+                        "setup": started.duration_since(command_started).as_millis(),
+                        "search": elapsed.as_millis(),
+                        "total_before_print": command_started.elapsed().as_millis(),
+                    },
+                    "budget": {
+                        "max_transitions": max_transitions,
+                        "wall_ms": wall_ms,
+                        "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                    },
+                    "work": {
+                        "work_pops": report.after.work_pops,
+                        "expanded_exact_states": report.after.expanded_exact_states,
+                        "applied_action_transitions": report.after.applied_action_transitions,
+                        "engine_steps": report.after.engine_steps,
+                        "exact_states": report.after.exact_states,
+                        "reopened_exact_states": report.after.reopened_exact_states,
+                        "duplicate_or_dominated_successors": report.after.duplicate_or_dominated_successors,
+                        "structured_inputs_materialized": report.after.structured_inputs_materialized,
+                        "reroot_points_assigned": report.after.reroot_points_assigned,
+                        "rerooted_action_transitions": report.after.rerooted_action_transitions,
+                    },
+                    "frontier": {
+                        "entries": report.frontier_entries,
+                        "max_atomic_depth": report.max_atomic_depth,
+                        "max_player_turn": report.max_player_turn,
+                        "unsupported_stable_boundaries": report.unsupported_stable_boundaries,
+                        "transition_step_limit_gaps": report.transition_step_limit_gaps,
+                    },
+                    "watched_states": watch_state_hash.iter().map(|exact_state_hash| {
+                        let state = search.watched_state(exact_state_hash);
+                        json!({
+                            "exact_state_hash": exact_state_hash,
+                            "state": state.map(|state| json!({
+                                "discovered": state.discovered,
+                                "accepted": state.accepted,
+                                "expanded": state.expanded,
+                                "first_discovery_after_transitions": state.first_discovery_after_transitions,
+                                "first_expansion_after_work_pops": state.first_expansion_after_work_pops,
+                                "best_atomic_depth": state.best_atomic_depth,
+                                "best_negative_log_policy": state.best_negative_log_policy,
+                                "best_levin_log_priority": state.best_levin_log_priority,
+                                "reroot_ordinal": state.reroot_ordinal,
+                                "reroot_weight": state.reroot_weight,
+                            })),
+                        })
+                    }).collect::<Vec<_>>(),
+                    "exported_witness_actions": report.witness.is_some()
+                        .then_some(export_witness_actions.as_ref())
+                        .flatten(),
+                    "witness": report.witness.as_ref().map(|witness| serde_json::json!({
+                        "final_hp": witness.final_position.combat.entities.player.current_hp,
+                        "hp_loss": initial_hp.saturating_sub(
+                            witness.final_position.combat.entities.player.current_hp,
+                        ),
+                        "action_count": witness.actions.len(),
+                        "negative_log_policy": witness.negative_log_policy,
+                        "replay_engine_steps": witness.replay_engine_steps,
+                })),
+            }))
+        }
+        Command::CombatCasePolicyDiscrepancy {
+            case,
+            action_imitation_artifact,
+            max_transitions,
+            wall_ms,
+            max_engine_steps_per_transition,
+            uniform_exploration_ppm,
+            max_greedy_actions_per_dive,
+            turn_macro_transitions,
+            turn_macro_proposals_per_view,
+            watch_case,
+            export_witness_actions,
+        } => {
+            let command_started = Instant::now();
+            let case_path = case.clone();
+            let case = load_combat_case(&case)?;
+            let root = CombatDecisionRoot::new(case.position)
+                .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let initial_hp = root.position().combat.entities.player.current_hp;
+            let watched_positions = watch_case
+                .iter()
+                .map(|path| load_combat_case(path).map(|case| (path.clone(), case.position)))
+                .collect::<Result<Vec<_>, _>>()?;
+            let policy = action_imitation_artifact
+                .as_deref()
+                .map(|path| {
+                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                })
+                .transpose()?
+                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let mut search = PolicyDiscrepancySession::with_policy(
+                root,
+                PolicyDiscrepancyConfig {
+                    max_engine_steps_per_transition,
+                    uniform_exploration_ppm,
+                    max_greedy_actions_per_dive,
+                    turn_macro: (turn_macro_transitions > 0).then_some(
+                        PolicyDiscrepancyTurnMacroConfig {
+                            max_applied_transitions: turn_macro_transitions,
+                            proposals_per_view: turn_macro_proposals_per_view,
+                            ..PolicyDiscrepancyTurnMacroConfig::default()
+                        },
+                    ),
+                },
+                policy,
+            );
+            let started = Instant::now();
+            let report = search.advance(
+                &EngineCombatStepper,
+                PolicyDiscrepancyQuantum {
+                    additional_applied_transitions: max_transitions,
+                    additional_engine_steps: max_transitions
+                        .saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(started + Duration::from_millis(wall_ms)),
+                },
+            );
+            let elapsed = started.elapsed();
+            let watched = watched_positions
+                .iter()
+                .map(|(path, position)| {
+                    let diagnostic = search.state_diagnostic(position);
+                    json!({
+                        "case": path,
+                        "exact_state_hash": diagnostic.exact_state_hash,
+                        "discovered": diagnostic.discovered,
+                        "best_discrepancy": diagnostic.best_discrepancy,
+                        "policy_dive_services": diagnostic.policy_dive_services,
+                        "selected_by_turn_macro": diagnostic.selected_by_turn_macro,
+                        "turn_macro_scheduled": diagnostic.turn_macro_scheduled,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let (Some(path), Some(witness)) =
+                (export_witness_actions.as_ref(), report.witness.as_ref())
+            {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let actions = witness
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone())
+                    .collect::<Vec<_>>();
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            print_json(&json!({
+                "schema_name": "OracleCombatCasePolicyDiscrepancyV1",
                 "schema_version": 1,
                 "case": case_path,
                 "runtime": oracle_lab_runtime_identity(),
                 "mode": {
-                    "search": "atomic_levin_policy_tree",
-                    "state_guides": false,
-                    "complete_turn_generator": false,
+                    "search": "policy_discrepancy_complete_trajectories",
+                    "state_guides": turn_macro_transitions > 0,
+                    "complete_turn_generator": turn_macro_transitions > 0,
+                    "lazy_turn_macro_proposals": turn_macro_transitions > 0,
                     "v2_donor": false,
                     "action_imitation_artifact": action_imitation_artifact,
-                    "uniform_exploration_ppm": uniform_exploration_ppm,
-                    "rerooting": if reroot_player_turn_boundaries {
-                        "player_turn_boundaries"
-                    } else {
-                        "disabled"
-                    },
                 },
                 "status": format!("{:?}", report.status),
                 "timing_ms": {
@@ -2720,56 +2922,45 @@ fn main() -> Result<(), String> {
                     "max_transitions": max_transitions,
                     "wall_ms": wall_ms,
                     "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                    "max_greedy_actions_per_dive": max_greedy_actions_per_dive,
+                    "turn_macro_transitions": turn_macro_transitions,
+                    "turn_macro_proposals_per_view": turn_macro_proposals_per_view,
                 },
                 "work": {
-                    "work_pops": report.after.work_pops,
-                    "expanded_exact_states": report.after.expanded_exact_states,
+                    "policy_dives": report.after.policy_dives,
                     "applied_action_transitions": report.after.applied_action_transitions,
                     "engine_steps": report.after.engine_steps,
                     "exact_states": report.after.exact_states,
-                    "reopened_exact_states": report.after.reopened_exact_states,
-                    "duplicate_or_dominated_successors": report.after.duplicate_or_dominated_successors,
+                    "queued_discrepancies": report.after.queued_discrepancies,
                     "structured_inputs_materialized": report.after.structured_inputs_materialized,
-                    "reroot_points_assigned": report.after.reroot_points_assigned,
-                    "rerooted_action_transitions": report.after.rerooted_action_transitions,
+                    "duplicate_or_dominated_states": report.after.duplicate_or_dominated_states,
+                    "unsupported_stable_boundaries": report.after.unsupported_stable_boundaries,
+                    "transition_step_limit_gaps": report.after.transition_step_limit_gaps,
+                    "greedy_depth_limit_hits": report.after.greedy_depth_limit_hits,
+                    "turn_macro_generations": report.after.turn_macro_generations,
+                    "turn_macro_partial_generations": report.after.turn_macro_partial_generations,
+                    "turn_macro_applied_transitions": report.after.turn_macro_applied_transitions,
+                    "turn_macro_options_generated": report.after.turn_macro_options_generated,
+                    "turn_macro_options_enqueued": report.after.turn_macro_options_enqueued,
                 },
                 "frontier": {
                     "entries": report.frontier_entries,
-                    "max_atomic_depth": report.max_atomic_depth,
-                    "max_player_turn": report.max_player_turn,
-                    "unsupported_stable_boundaries": report.unsupported_stable_boundaries,
-                    "transition_step_limit_gaps": report.transition_step_limit_gaps,
+                    "best_queued_priority": report.best_queued_priority,
+                    "best_queued_discrepancy": report.best_queued_discrepancy,
                 },
-                "watched_states": watch_state_hash.iter().map(|exact_state_hash| {
-                    let state = search.watched_state(exact_state_hash);
-                    json!({
-                        "exact_state_hash": exact_state_hash,
-                        "state": state.map(|state| json!({
-                            "discovered": state.discovered,
-                            "accepted": state.accepted,
-                            "expanded": state.expanded,
-                            "first_discovery_after_transitions": state.first_discovery_after_transitions,
-                            "first_expansion_after_work_pops": state.first_expansion_after_work_pops,
-                            "best_atomic_depth": state.best_atomic_depth,
-                            "best_negative_log_policy": state.best_negative_log_policy,
-                            "best_levin_log_priority": state.best_levin_log_priority,
-                            "reroot_ordinal": state.reroot_ordinal,
-                            "reroot_weight": state.reroot_weight,
-                        })),
-                    })
-                }).collect::<Vec<_>>(),
+                "watched": watched,
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
-                "witness": report.witness.as_ref().map(|witness| serde_json::json!({
+                "witness": report.witness.as_ref().map(|witness| json!({
                     "final_hp": witness.final_position.combat.entities.player.current_hp,
                     "hp_loss": initial_hp.saturating_sub(
                         witness.final_position.combat.entities.player.current_hp,
                     ),
                     "action_count": witness.actions.len(),
-                    "negative_log_policy": witness.negative_log_policy,
+                    "weighted_discrepancy": witness.negative_log_policy,
                     "replay_engine_steps": witness.replay_engine_steps,
-                })),
+            })),
             }))
         }
         Command::CombatCaseAtomicTurnPortfolio {
@@ -2781,6 +2972,8 @@ fn main() -> Result<(), String> {
             uniform_exploration_ppm,
             boundary_service_work,
             suffix_service_transitions,
+            policy_discrepancy_suffix,
+            suffix_turn_macro_transitions,
             boundary_layers,
             boundary_service_period,
             suffix_reroot_player_turn_boundaries,
@@ -2812,26 +3005,47 @@ fn main() -> Result<(), String> {
                 uniform_exploration_ppm,
                 ..AtomicLevinWitnessConfig::default()
             };
-            let mut portfolio = AtomicTurnPortfolioSession::with_policies(
-                root,
-                AtomicTurnPortfolioConfig {
-                    boundary_search: boundary_config,
-                    suffix_search: AtomicLevinWitnessConfig {
-                        rerooting: if suffix_reroot_player_turn_boundaries {
-                            AtomicLevinRerooting::PlayerTurnBoundaries
-                        } else {
-                            AtomicLevinRerooting::Disabled
-                        },
-                        ..suffix_config
+            let portfolio_config = AtomicTurnPortfolioConfig {
+                boundary_search: boundary_config,
+                suffix_search: AtomicLevinWitnessConfig {
+                    rerooting: if suffix_reroot_player_turn_boundaries {
+                        AtomicLevinRerooting::PlayerTurnBoundaries
+                    } else {
+                        AtomicLevinRerooting::Disabled
                     },
-                    boundary_service_work,
-                    suffix_service_transitions,
-                    boundary_layers,
-                    boundary_service_period,
+                    ..suffix_config
                 },
-                boundary_policy,
-                suffix_policy,
-            );
+                boundary_service_work,
+                suffix_service_transitions,
+                boundary_layers,
+                boundary_service_period,
+            };
+            let mut portfolio = if policy_discrepancy_suffix {
+                AtomicTurnPortfolioSession::with_policy_discrepancy_suffix(
+                    root,
+                    portfolio_config,
+                    PolicyDiscrepancyConfig {
+                        max_engine_steps_per_transition,
+                        uniform_exploration_ppm,
+                        turn_macro: (suffix_turn_macro_transitions > 0).then_some(
+                            PolicyDiscrepancyTurnMacroConfig {
+                                max_applied_transitions: suffix_turn_macro_transitions,
+                                ..PolicyDiscrepancyTurnMacroConfig::default()
+                            },
+                        ),
+                        ..PolicyDiscrepancyConfig::default()
+                    },
+                    boundary_policy,
+                    suffix_policy,
+                )
+            } else {
+                AtomicTurnPortfolioSession::with_policies(
+                    root,
+                    portfolio_config,
+                    boundary_policy,
+                    suffix_policy,
+                )
+            };
             let started = Instant::now();
             let report = portfolio.advance(
                 &EngineCombatStepper,
@@ -2888,20 +3102,18 @@ fn main() -> Result<(), String> {
                             "remaining_boundary_layers": entry.remaining_boundary_layers,
                         });
                         if include_task_guides {
-                            value
-                                .as_object_mut()
-                                .expect("task entry is an object")
-                                .insert(
-                                    "boundary_guides".to_string(),
-                                    json!(entry
-                                        .boundary_guides
-                                        .iter()
-                                        .map(|guide| json!({
-                                            "lane": guide.lane,
-                                            "components": guide.components,
-                                        }))
-                                        .collect::<Vec<_>>()),
-                                );
+                            let object = value.as_object_mut().expect("task entry is an object");
+                            object.insert(
+                                "boundary_guides".to_string(),
+                                json!(entry
+                                    .boundary_guides
+                                    .iter()
+                                    .map(|guide| json!({
+                                        "lane": guide.lane,
+                                        "components": guide.components,
+                                    }))
+                                    .collect::<Vec<_>>()),
+                            );
                         }
                         value
                     })
@@ -2974,20 +3186,18 @@ fn main() -> Result<(), String> {
                         "guide_ranks": guide_ranks,
                     });
                     if include_task_guides {
-                        value
-                            .as_object_mut()
-                            .expect("task entry is an object")
-                            .insert(
-                                "boundary_guides".to_string(),
-                                json!(entry
-                                    .boundary_guides
-                                    .iter()
-                                    .map(|guide| json!({
-                                        "lane": guide.lane,
-                                        "components": guide.components,
-                                    }))
-                                    .collect::<Vec<_>>()),
-                            );
+                        let object = value.as_object_mut().expect("task entry is an object");
+                        object.insert(
+                            "boundary_guides".to_string(),
+                            json!(entry
+                                .boundary_guides
+                                .iter()
+                                .map(|guide| json!({
+                                    "lane": guide.lane,
+                                    "components": guide.components,
+                                }))
+                                .collect::<Vec<_>>()),
+                        );
                     }
                     value
                 })
@@ -3002,6 +3212,11 @@ fn main() -> Result<(), String> {
                     "boundary_worker": "exact_multi_guide_turn_generator",
                     "boundary_policy": "existing_combat_knowledge_v1",
                     "suffix_action_imitation_artifact": action_imitation_artifact,
+                    "suffix_search": if policy_discrepancy_suffix {
+                        "policy_discrepancy"
+                    } else {
+                        "atomic_levin"
+                    },
                     "suffix_rerooting": suffix_reroot_player_turn_boundaries,
                     "task_entries_included": include_task_entries,
                     "task_guides_included": include_task_guides,
@@ -3018,6 +3233,8 @@ fn main() -> Result<(), String> {
                     "wall_ms": wall_ms,
                     "boundary_service_work": boundary_service_work,
                     "suffix_service_transitions": suffix_service_transitions,
+                    "suffix_turn_macro_transitions": policy_discrepancy_suffix
+                        .then_some(suffix_turn_macro_transitions),
                     "boundary_layers": boundary_layers,
                     "boundary_service_period": boundary_service_period,
                 },
@@ -4873,18 +5090,97 @@ fn validate_source_freshness(executable: &Path) -> Result<(), String> {
         repository.join("crates/sts_combat_planner/Cargo.toml"),
         repository.join("crates/sts_simulator_control/Cargo.toml"),
     ]);
-    if let Some(stale) = dependencies.into_iter().find(|dependency| {
+    let stale = dependencies.iter().find(|dependency| {
         std::fs::metadata(dependency)
             .and_then(|metadata| metadata.modified())
             .is_ok_and(|modified| modified > executable_modified)
-    }) {
-        return Err(format!(
-            "canonical oracle laboratory is stale: '{}' is newer than '{}'; rebuild once with `cargo oracle-lab --help`",
-            stale.display(),
-            executable.display()
-        ));
+    });
+    let fingerprint_path = executable.with_extension("source-fingerprint");
+    let executable_stamp = executable_stamp(executable)?;
+    let recorded = std::fs::read_to_string(&fingerprint_path)
+        .ok()
+        .and_then(|text| {
+            text.split_once('\n')
+                .map(|(stamp, digest)| (stamp.to_owned(), digest.trim().to_owned()))
+        });
+    if let Some(stale) = stale {
+        let digest = source_content_fingerprint(&repository, &dependencies)?;
+        if !matches!(
+            recorded.as_ref(),
+            Some((stamp, recorded_digest))
+                if stamp == &executable_stamp && recorded_digest == &digest
+        ) {
+            return Err(format!(
+                "canonical oracle laboratory is stale: '{}' changed after '{}'; rebuild once with `cargo oracle-lab --help`",
+                stale.display(),
+                executable.display()
+            ));
+        }
+    } else if recorded.is_none_or(|(stamp, _)| stamp != executable_stamp) {
+        let digest = source_content_fingerprint(&repository, &dependencies)?;
+        std::fs::write(&fingerprint_path, format!("{executable_stamp}\n{digest}\n")).map_err(
+            |error| {
+                format!(
+                    "failed to persist canonical source identity '{}': {error}",
+                    fingerprint_path.display()
+                )
+            },
+        )?;
     }
     Ok(())
+}
+
+fn executable_stamp(executable: &Path) -> Result<String, String> {
+    let metadata = std::fs::metadata(executable).map_err(|error| {
+        format!(
+            "failed to inspect canonical oracle laboratory '{}': {error}",
+            executable.display()
+        )
+    })?;
+    let modified = metadata
+        .modified()
+        .and_then(|time| {
+            time.duration_since(std::time::UNIX_EPOCH)
+                .map_err(std::io::Error::other)
+        })
+        .map_err(|error| format!("failed to timestamp canonical artifact: {error}"))?;
+    Ok(format!("{}:{}", metadata.len(), modified.as_nanos()))
+}
+
+fn source_content_fingerprint(
+    repository: &Path,
+    dependencies: &[PathBuf],
+) -> Result<String, String> {
+    let mut dependencies = dependencies
+        .iter()
+        .map(|dependency| {
+            if dependency.is_absolute() {
+                dependency.clone()
+            } else {
+                repository.join(dependency)
+            }
+        })
+        .collect::<Vec<_>>();
+    dependencies.sort();
+    dependencies.dedup();
+    let mut digest = Blake2b512::new();
+    for dependency in dependencies {
+        let bytes = std::fs::read(&dependency).map_err(|error| {
+            format!(
+                "failed to fingerprint canonical dependency '{}': {error}",
+                dependency.display()
+            )
+        })?;
+        digest.update(dependency.to_string_lossy().as_bytes());
+        digest.update([0]);
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
