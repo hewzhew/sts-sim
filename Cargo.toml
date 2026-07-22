@@ -50,6 +50,15 @@ incremental = true
 codegen-units = 64
 panic = "abort"
 
+# The control package is mostly orchestration and diagnostics. Its optimized
+# code generation dominated every planner edit (about 60s in a measured 71s
+# rebuild), while the hot simulator and planner remain separately compiled O3
+# dependencies. Keep the lab shell cheap to rebuild without weakening those
+# hot crates.
+[profile.fast-run.package.sts_simulator_control]
+opt-level = 1
+codegen-units = 256
+
 [profile.release-final]
 inherits = "release"
 opt-level = 3
