@@ -1,3 +1,4 @@
+use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
 
 use sts_core::sim::combat::{CombatPosition, CombatStepper, CombatTerminal};
@@ -10,19 +11,22 @@ use crate::atomic_levin_search::{
 use crate::policy::{uniform_policy, SharedCombatActionPolicy};
 use crate::types::{exact_hash, CombatDecisionRoot, TurnOptionAction};
 
-/// A one-layer structural control for independent next-turn service.
+/// A bounded turn-decomposition control for independent tactical service.
 ///
-/// One atomic Levin session enumerates exact successors at the next player
-/// turn. Every emitted successor owns a separate, resumable terminal-search
-/// session. The generator is serviced periodically; suffix sessions receive
-/// the remaining bounded quanta by independent Levin task cost. Descendant
-/// work is never inserted back into the generator heap.
+/// Boundary tasks enumerate exact successors at the next player turn. After
+/// the configured number of boundary layers, every emitted successor owns a
+/// separate, resumable terminal-search session. Widening and terminal search
+/// have explicit service classes; independent policy and state-guide views
+/// choose work only within one class.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AtomicTurnPortfolioConfig {
     pub boundary_search: AtomicLevinWitnessConfig,
     pub suffix_search: AtomicLevinWitnessConfig,
     pub boundary_service_transitions: usize,
     pub suffix_service_transitions: usize,
+    /// Number of exact player-turn boundaries to expose before a task switches
+    /// to terminal search. `1` reproduces the original one-layer control.
+    pub boundary_layers: usize,
     /// One boundary-generator service per this many coarse services. Suffix
     /// tasks receive the remaining services by their independent Levin cost.
     pub boundary_service_period: usize,
@@ -35,6 +39,7 @@ impl Default for AtomicTurnPortfolioConfig {
             suffix_search: AtomicLevinWitnessConfig::default(),
             boundary_service_transitions: 64,
             suffix_service_transitions: 512,
+            boundary_layers: 1,
             boundary_service_period: 8,
         }
     }
@@ -51,6 +56,9 @@ pub struct AtomicTurnPortfolioCounters {
     pub suffix_sessions_started: usize,
     pub suffix_sessions_exhausted: usize,
     pub invalid_boundary_roots: usize,
+    pub duplicate_boundary_successors: usize,
+    pub anchor_view_services: usize,
+    pub guide_view_services: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,6 +74,8 @@ pub struct AtomicTurnPortfolioReport {
     pub before: AtomicTurnPortfolioCounters,
     pub after: AtomicTurnPortfolioCounters,
     pub active_suffix_sessions: usize,
+    pub active_boundary_tasks: usize,
+    pub active_terminal_tasks: usize,
     pub boundary_generator_active: bool,
     pub suffix_entries: Vec<AtomicTurnPortfolioEntryReport>,
     pub winning_boundary_id: Option<u64>,
@@ -82,6 +92,14 @@ pub struct AtomicTurnPortfolioEntryReport {
     pub prefix_negative_log_policy: f64,
     pub applied_action_transitions: usize,
     pub engine_steps: usize,
+    pub remaining_boundary_layers: usize,
+    pub boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AtomicTurnPortfolioGuideRank {
+    pub lane: u32,
+    pub components: Vec<i32>,
 }
 
 struct SuffixWork {
@@ -89,17 +107,22 @@ struct SuffixWork {
     exact_state_hash: String,
     prefix_actions: Vec<TurnOptionAction>,
     prefix_negative_log_policy: f64,
+    remaining_boundary_layers: usize,
+    boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
     session: AtomicLevinWitnessSession,
 }
 
 pub struct AtomicTurnPortfolioSession {
     root: CombatPosition,
     config: AtomicTurnPortfolioConfig,
+    boundary_policy: SharedCombatActionPolicy,
     suffix_policy: SharedCombatActionPolicy,
-    boundary_generator: Option<AtomicLevinWitnessSession>,
     suffixes: Vec<SuffixWork>,
     suffix_services_since_boundary: usize,
     next_boundary_id: u64,
+    seen_boundary_states: HashSet<(String, usize)>,
+    boundary_view_cursor: usize,
+    terminal_view_cursor: usize,
     used: AtomicTurnPortfolioCounters,
     granted_applied_transitions: usize,
     granted_engine_steps: usize,
@@ -120,21 +143,47 @@ impl AtomicTurnPortfolioSession {
         boundary_policy: SharedCombatActionPolicy,
         suffix_policy: SharedCombatActionPolicy,
     ) -> Self {
+        config.boundary_layers = config.boundary_layers.max(1);
         config.boundary_search.horizon = AtomicLevinSearchHorizon::NextPlayerTurn;
         config.suffix_search.horizon = AtomicLevinSearchHorizon::CombatTerminal;
         let position = root.position().clone();
-        let boundary_generator =
-            AtomicLevinWitnessSession::with_policy(root, config.boundary_search, boundary_policy);
+        let root_hash = exact_hash(&position);
+        let root_task = SuffixWork {
+            boundary_id: 0,
+            exact_state_hash: root_hash.clone(),
+            prefix_actions: Vec::new(),
+            prefix_negative_log_policy: 0.0,
+            remaining_boundary_layers: config.boundary_layers,
+            boundary_guides: boundary_policy
+                .state_guides(&position)
+                .into_iter()
+                .map(|guide| AtomicTurnPortfolioGuideRank {
+                    lane: guide.lane.value(),
+                    components: guide.rank.components().to_vec(),
+                })
+                .collect(),
+            session: AtomicLevinWitnessSession::with_policy(
+                root,
+                config.boundary_search,
+                boundary_policy.clone(),
+            ),
+        };
         let boundary_service_period = config.boundary_service_period.max(1);
+        let boundary_layers = config.boundary_layers;
+        let mut used = AtomicTurnPortfolioCounters::default();
+        used.suffix_sessions_started = 1;
         Self {
             root: position,
             config,
+            boundary_policy,
             suffix_policy,
-            boundary_generator: Some(boundary_generator),
-            suffixes: Vec::new(),
+            suffixes: vec![root_task],
             suffix_services_since_boundary: boundary_service_period,
-            next_boundary_id: 0,
-            used: AtomicTurnPortfolioCounters::default(),
+            next_boundary_id: 1,
+            seen_boundary_states: HashSet::from([(root_hash, boundary_layers)]),
+            boundary_view_cursor: 0,
+            terminal_view_cursor: 0,
+            used,
             granted_applied_transitions: 0,
             granted_engine_steps: 0,
             witness: None,
@@ -190,27 +239,39 @@ impl AtomicTurnPortfolioSession {
                     AtomicLevinWitnessInterruption::EngineStepBudget,
                 );
             }
-            if self.boundary_generator.is_none() && self.suffixes.is_empty() {
+            if self.suffixes.is_empty() {
                 break AtomicTurnPortfolioStatus::FrontierExhausted;
             }
 
-            let service_boundary = self.boundary_generator.is_some()
-                && (self.suffixes.is_empty()
+            let has_boundary_task = self
+                .suffixes
+                .iter()
+                .any(|task| task.remaining_boundary_layers > 0);
+            let has_terminal_task = self
+                .suffixes
+                .iter()
+                .any(|task| task.remaining_boundary_layers == 0);
+            let service_boundary = has_boundary_task
+                && (!has_terminal_task
                     || self.suffix_services_since_boundary
                         >= self.config.boundary_service_period.max(1).saturating_sub(1));
             if service_boundary {
                 self.suffix_services_since_boundary = 0;
-                self.service_boundary_generator(
+                self.service_one_task(
                     stepper,
+                    true,
                     remaining_transitions,
                     remaining_engine_steps,
                     quantum.deadline,
                 );
             } else {
-                self.suffix_services_since_boundary =
-                    self.suffix_services_since_boundary.saturating_add(1);
-                self.service_one_suffix(
+                if has_terminal_task {
+                    self.suffix_services_since_boundary =
+                        self.suffix_services_since_boundary.saturating_add(1);
+                }
+                self.service_one_task(
                     stepper,
+                    false,
                     remaining_transitions,
                     remaining_engine_steps,
                     quantum.deadline,
@@ -222,7 +283,20 @@ impl AtomicTurnPortfolioSession {
             before,
             after: self.used,
             active_suffix_sessions: self.suffixes.len(),
-            boundary_generator_active: self.boundary_generator.is_some(),
+            active_boundary_tasks: self
+                .suffixes
+                .iter()
+                .filter(|task| task.remaining_boundary_layers > 0)
+                .count(),
+            active_terminal_tasks: self
+                .suffixes
+                .iter()
+                .filter(|task| task.remaining_boundary_layers == 0)
+                .count(),
+            boundary_generator_active: self
+                .suffixes
+                .iter()
+                .any(|task| task.remaining_boundary_layers > 0),
             suffix_entries: self
                 .suffixes
                 .iter()
@@ -235,6 +309,8 @@ impl AtomicTurnPortfolioSession {
                         prefix_negative_log_policy: suffix.prefix_negative_log_policy,
                         applied_action_transitions: counters.applied_action_transitions,
                         engine_steps: counters.engine_steps,
+                        remaining_boundary_layers: suffix.remaining_boundary_layers,
+                        boundary_guides: suffix.boundary_guides.clone(),
                     }
                 })
                 .collect(),
@@ -245,111 +321,33 @@ impl AtomicTurnPortfolioSession {
         }
     }
 
-    fn service_boundary_generator(
+    fn service_one_task(
         &mut self,
         stepper: &dyn CombatStepper,
+        boundary_task: bool,
         remaining_transitions: usize,
         remaining_engine_steps: usize,
         deadline: Option<Instant>,
     ) {
-        let transition_quantum = self
-            .config
-            .boundary_service_transitions
-            .max(1)
-            .min(remaining_transitions);
-        let engine_quantum = transition_quantum
-            .saturating_mul(
-                self.config
-                    .boundary_search
-                    .max_engine_steps_per_transition
-                    .max(1),
-            )
-            .min(remaining_engine_steps);
-        let report = self
-            .boundary_generator
-            .as_mut()
-            .expect("checked boundary generator")
-            .advance(
-                stepper,
-                AtomicLevinWitnessQuantum {
-                    additional_applied_transitions: transition_quantum,
-                    additional_engine_steps: engine_quantum,
-                    deadline,
-                },
-            );
-        self.used.services = self.used.services.saturating_add(1);
-        self.used.boundary_services = self.used.boundary_services.saturating_add(1);
-        self.absorb_atomic_work(report.before, report.after);
-
-        match report.status {
-            AtomicLevinWitnessStatus::WitnessFound => {
-                self.witness = report.witness;
-                self.boundary_generator = None;
-            }
-            AtomicLevinWitnessStatus::TurnBoundaryFound => {
-                let boundary = report
-                    .turn_boundary
-                    .expect("boundary status carries an exact boundary");
-                self.used.turn_boundaries_found = self.used.turn_boundaries_found.saturating_add(1);
-                let exact_state_hash = exact_hash(&boundary.position);
-                match CombatDecisionRoot::new(boundary.position) {
-                    Ok(root) => {
-                        let boundary_id = self.next_boundary_id;
-                        self.next_boundary_id = self.next_boundary_id.saturating_add(1);
-                        self.suffixes.push(SuffixWork {
-                            boundary_id,
-                            exact_state_hash,
-                            prefix_actions: boundary.actions,
-                            prefix_negative_log_policy: boundary.negative_log_policy,
-                            session: AtomicLevinWitnessSession::with_policy(
-                                root,
-                                self.config.suffix_search,
-                                self.suffix_policy.clone(),
-                            ),
-                        });
-                        self.used.suffix_sessions_started =
-                            self.used.suffix_sessions_started.saturating_add(1);
-                    }
-                    Err(_) => {
-                        self.used.invalid_boundary_roots =
-                            self.used.invalid_boundary_roots.saturating_add(1);
-                    }
-                }
-            }
-            AtomicLevinWitnessStatus::FrontierExhausted => {
-                self.boundary_generator = None;
-            }
-            AtomicLevinWitnessStatus::ReplayMismatch(error) => {
-                self.replay_failure = Some(error);
-                self.boundary_generator = None;
-            }
-            AtomicLevinWitnessStatus::Partial(_) => {}
-        }
-    }
-
-    fn service_one_suffix(
-        &mut self,
-        stepper: &dyn CombatStepper,
-        remaining_transitions: usize,
-        remaining_engine_steps: usize,
-        deadline: Option<Instant>,
-    ) {
-        let Some(suffix_index) = self.next_suffix_index() else {
+        let Some(suffix_index) = self.next_suffix_index(boundary_task) else {
             return;
         };
         let mut suffix = self.suffixes.remove(suffix_index);
-        let transition_quantum = self
-            .config
-            .suffix_service_transitions
+        let configured_transition_quantum = if boundary_task {
+            self.config.boundary_service_transitions
+        } else {
+            self.config.suffix_service_transitions
+        };
+        let transition_quantum = configured_transition_quantum
             .max(1)
             .min(remaining_transitions);
+        let max_engine_steps_per_transition = if boundary_task {
+            self.config.boundary_search.max_engine_steps_per_transition
+        } else {
+            self.config.suffix_search.max_engine_steps_per_transition
+        };
         let engine_quantum = transition_quantum
-            .saturating_mul(
-                self.config
-                    .suffix_search
-                    .max_engine_steps_per_transition
-                    .max(1),
-            )
+            .saturating_mul(max_engine_steps_per_transition.max(1))
             .min(remaining_engine_steps);
         let report = suffix.session.advance(
             stepper,
@@ -360,7 +358,11 @@ impl AtomicTurnPortfolioSession {
             },
         );
         self.used.services = self.used.services.saturating_add(1);
-        self.used.suffix_services = self.used.suffix_services.saturating_add(1);
+        if boundary_task {
+            self.used.boundary_services = self.used.boundary_services.saturating_add(1);
+        } else {
+            self.used.suffix_services = self.used.suffix_services.saturating_add(1);
+        }
         self.absorb_atomic_work(report.before, report.after);
 
         match report.status {
@@ -378,16 +380,116 @@ impl AtomicTurnPortfolioSession {
             }
             AtomicLevinWitnessStatus::Partial(_) => self.suffixes.push(suffix),
             AtomicLevinWitnessStatus::TurnBoundaryFound => {
-                unreachable!("suffix sessions always target a combat terminal")
+                let boundary = report
+                    .turn_boundary
+                    .expect("boundary status carries an exact boundary");
+                self.used.turn_boundaries_found = self.used.turn_boundaries_found.saturating_add(1);
+                let mut prefix_actions = suffix.prefix_actions.clone();
+                prefix_actions.extend(boundary.actions);
+                let prefix_negative_log_policy =
+                    suffix.prefix_negative_log_policy + boundary.negative_log_policy;
+                let remaining_boundary_layers = suffix.remaining_boundary_layers.saturating_sub(1);
+                self.enqueue_boundary_successor(
+                    boundary.position,
+                    prefix_actions,
+                    prefix_negative_log_policy,
+                    remaining_boundary_layers,
+                );
+                self.suffixes.push(suffix);
             }
         }
     }
 
-    fn next_suffix_index(&self) -> Option<usize> {
-        let next_quantum = self.config.suffix_service_transitions.max(1);
+    fn enqueue_boundary_successor(
+        &mut self,
+        position: CombatPosition,
+        prefix_actions: Vec<TurnOptionAction>,
+        prefix_negative_log_policy: f64,
+        remaining_boundary_layers: usize,
+    ) {
+        let exact_state_hash = exact_hash(&position);
+        if !self
+            .seen_boundary_states
+            .insert((exact_state_hash.clone(), remaining_boundary_layers))
+        {
+            self.used.duplicate_boundary_successors =
+                self.used.duplicate_boundary_successors.saturating_add(1);
+            return;
+        }
+        let boundary_guides = self
+            .boundary_policy
+            .state_guides(&position)
+            .into_iter()
+            .map(|guide| AtomicTurnPortfolioGuideRank {
+                lane: guide.lane.value(),
+                components: guide.rank.components().to_vec(),
+            })
+            .collect();
+        let Ok(root) = CombatDecisionRoot::new(position) else {
+            self.used.invalid_boundary_roots = self.used.invalid_boundary_roots.saturating_add(1);
+            return;
+        };
+        let boundary_id = self.next_boundary_id;
+        self.next_boundary_id = self.next_boundary_id.saturating_add(1);
+        let (mut search_config, policy) = if remaining_boundary_layers > 0 {
+            (self.config.boundary_search, self.boundary_policy.clone())
+        } else {
+            (self.config.suffix_search, self.suffix_policy.clone())
+        };
+        search_config.horizon = if remaining_boundary_layers > 0 {
+            AtomicLevinSearchHorizon::NextPlayerTurn
+        } else {
+            AtomicLevinSearchHorizon::CombatTerminal
+        };
+        self.suffixes.push(SuffixWork {
+            boundary_id,
+            exact_state_hash,
+            prefix_actions,
+            prefix_negative_log_policy,
+            remaining_boundary_layers,
+            boundary_guides,
+            session: AtomicLevinWitnessSession::with_policy(root, search_config, policy),
+        });
+        self.used.suffix_sessions_started = self.used.suffix_sessions_started.saturating_add(1);
+    }
+
+    fn next_suffix_index(&mut self, boundary_task: bool) -> Option<usize> {
+        let next_quantum = if boundary_task {
+            self.config.boundary_service_transitions
+        } else {
+            self.config.suffix_service_transitions
+        }
+        .max(1);
+        let guide_lanes = self
+            .suffixes
+            .iter()
+            .filter(|task| (task.remaining_boundary_layers > 0) == boundary_task)
+            .flat_map(|task| task.boundary_guides.iter().map(|guide| guide.lane))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let view_count = guide_lanes.len().saturating_add(1);
+        let cursor = if boundary_task {
+            let cursor = self.boundary_view_cursor;
+            self.boundary_view_cursor = self.boundary_view_cursor.saturating_add(1);
+            cursor
+        } else {
+            let cursor = self.terminal_view_cursor;
+            self.terminal_view_cursor = self.terminal_view_cursor.saturating_add(1);
+            cursor
+        };
+        let selected_guide_lane = (cursor % view_count != 0)
+            .then(|| guide_lanes[(cursor % view_count).saturating_sub(1)]);
+        if selected_guide_lane.is_some() {
+            self.used.guide_view_services = self.used.guide_view_services.saturating_add(1);
+        } else {
+            self.used.anchor_view_services = self.used.anchor_view_services.saturating_add(1);
+        }
+
         self.suffixes
             .iter()
             .enumerate()
+            .filter(|(_, task)| (task.remaining_boundary_layers > 0) == boundary_task)
             .min_by(|(_, left), (_, right)| {
                 let left_work = left
                     .session
@@ -403,8 +505,11 @@ impl AtomicTurnPortfolioSession {
                     .max(1);
                 let left_key = left.prefix_negative_log_policy + (left_work as f64).ln();
                 let right_key = right.prefix_negative_log_policy + (right_work as f64).ln();
-                left_key
-                    .total_cmp(&right_key)
+                let guide_order = selected_guide_lane
+                    .map(|lane| compare_guide_lane(left, right, lane))
+                    .unwrap_or(std::cmp::Ordering::Equal);
+                guide_order
+                    .then_with(|| left_key.total_cmp(&right_key))
                     .then_with(|| left.boundary_id.cmp(&right.boundary_id))
             })
             .map(|(index, _)| index)
@@ -461,5 +566,24 @@ impl AtomicTurnPortfolioSession {
             }
             Err(error) => self.replay_failure = Some(error),
         }
+    }
+}
+
+fn compare_guide_lane(left: &SuffixWork, right: &SuffixWork, lane: u32) -> std::cmp::Ordering {
+    let left_rank = left
+        .boundary_guides
+        .iter()
+        .find(|guide| guide.lane == lane)
+        .map(|guide| guide.components.as_slice());
+    let right_rank = right
+        .boundary_guides
+        .iter()
+        .find(|guide| guide.lane == lane)
+        .map(|guide| guide.components.as_slice());
+    match (left_rank, right_rank) {
+        (Some(left_rank), Some(right_rank)) => right_rank.cmp(left_rank),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     }
 }

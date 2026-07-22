@@ -27,6 +27,9 @@ const PLAY: ClientInput = ClientInput::PlayCard {
 #[derive(Clone, Copy)]
 struct PreferPlayPolicy;
 
+#[derive(Clone, Copy)]
+struct PreferEndTurnPolicy;
+
 impl CombatActionPolicy for PreferPlayPolicy {
     fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
         choices
@@ -53,6 +56,18 @@ impl CombatActionPolicy for PreferPlayPolicy {
                 .map(|monster| monster.current_hp.max(0))
                 .sum::<i32>(),
         ]))
+    }
+}
+
+impl CombatActionPolicy for PreferEndTurnPolicy {
+    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        choices
+            .iter()
+            .map(|choice| match choice {
+                CombatPolicyChoice::Atomic(ClientInput::EndTurn) => 100.0,
+                _ => 1.0,
+            })
+            .collect()
     }
 }
 
@@ -238,6 +253,13 @@ impl TinyTurnStepper {
     fn lethal_after_current_turn() -> Self {
         Self {
             lethal_from_turn: Some(2),
+            ..Self::plain()
+        }
+    }
+
+    fn lethal_after_two_turns() -> Self {
+        Self {
+            lethal_from_turn: Some(3),
             ..Self::plain()
         }
     }
@@ -2056,6 +2078,7 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
             },
             boundary_service_transitions: 8,
             suffix_service_transitions: 8,
+            boundary_layers: 1,
             boundary_service_period: 8,
         },
         Arc::new(PreferPlayPolicy),
@@ -2081,6 +2104,52 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
         .expect("the second boundary retains energy and wins independently");
     assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
     assert_eq!(witness.actions[1].input, PLAY);
+}
+
+#[test]
+fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
+    let mut portfolio = AtomicTurnPortfolioSession::with_policies(
+        root(),
+        AtomicTurnPortfolioConfig {
+            boundary_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            suffix_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            boundary_service_transitions: 8,
+            suffix_service_transitions: 8,
+            boundary_layers: 2,
+            boundary_service_period: 8,
+        },
+        Arc::new(PreferEndTurnPolicy),
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = portfolio.advance(
+        &TinyTurnStepper::lethal_after_two_turns(),
+        AtomicLevinWitnessQuantum {
+            additional_applied_transitions: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicTurnPortfolioStatus::WitnessFound);
+    assert!(report.after.turn_boundaries_found >= 2);
+    let witness = report
+        .witness
+        .expect("two exact boundary handoffs then win");
+    assert_eq!(
+        witness
+            .actions
+            .iter()
+            .map(|action| &action.input)
+            .collect::<Vec<_>>(),
+        vec![&ClientInput::EndTurn, &ClientInput::EndTurn, &PLAY]
+    );
 }
 
 mod agenda;

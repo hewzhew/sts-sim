@@ -259,10 +259,16 @@ enum Command {
         boundary_service_transitions: usize,
         #[arg(long, default_value_t = 512)]
         suffix_service_transitions: usize,
+        #[arg(long, default_value_t = 1)]
+        boundary_layers: usize,
         #[arg(long, default_value_t = 8)]
         boundary_service_period: usize,
         #[arg(long)]
         suffix_reroot_player_turn_boundaries: bool,
+        /// Include full opaque guide vectors for every live task. Off by
+        /// default because these diagnostics can dominate the JSON output.
+        #[arg(long)]
+        include_task_guides: bool,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -2768,8 +2774,10 @@ fn main() -> Result<(), String> {
             uniform_exploration_ppm,
             boundary_service_transitions,
             suffix_service_transitions,
+            boundary_layers,
             boundary_service_period,
             suffix_reroot_player_turn_boundaries,
+            include_task_guides,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
@@ -2805,6 +2813,7 @@ fn main() -> Result<(), String> {
                     },
                     boundary_service_transitions,
                     suffix_service_transitions,
+                    boundary_layers,
                     boundary_service_period,
                 },
                 boundary_policy,
@@ -2838,6 +2847,38 @@ fn main() -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
             }
+            let task_entries = report
+                .suffix_entries
+                .iter()
+                .map(|entry| {
+                    let mut value = json!({
+                        "boundary_id": entry.boundary_id,
+                        "exact_state_hash": entry.exact_state_hash,
+                        "prefix_action_count": entry.prefix_action_count,
+                        "prefix_negative_log_policy": entry.prefix_negative_log_policy,
+                        "applied_action_transitions": entry.applied_action_transitions,
+                        "engine_steps": entry.engine_steps,
+                        "remaining_boundary_layers": entry.remaining_boundary_layers,
+                    });
+                    if include_task_guides {
+                        value
+                            .as_object_mut()
+                            .expect("task entry is an object")
+                            .insert(
+                                "boundary_guides".to_string(),
+                                json!(entry
+                                    .boundary_guides
+                                    .iter()
+                                    .map(|guide| json!({
+                                        "lane": guide.lane,
+                                        "components": guide.components,
+                                    }))
+                                    .collect::<Vec<_>>()),
+                            );
+                    }
+                    value
+                })
+                .collect::<Vec<_>>();
             print_json(&json!({
                 "schema_name": "OracleCombatCaseAtomicTurnPortfolioV1",
                 "schema_version": 1,
@@ -2848,6 +2889,7 @@ fn main() -> Result<(), String> {
                     "boundary_policy": "existing_combat_knowledge_v1",
                     "suffix_action_imitation_artifact": action_imitation_artifact,
                     "suffix_rerooting": suffix_reroot_player_turn_boundaries,
+                    "task_guides_included": include_task_guides,
                     "v2_donor": false,
                 },
                 "status": format!("{:?}", report.status),
@@ -2861,6 +2903,7 @@ fn main() -> Result<(), String> {
                     "wall_ms": wall_ms,
                     "boundary_service_transitions": boundary_service_transitions,
                     "suffix_service_transitions": suffix_service_transitions,
+                    "boundary_layers": boundary_layers,
                     "boundary_service_period": boundary_service_period,
                 },
                 "work": {
@@ -2873,18 +2916,16 @@ fn main() -> Result<(), String> {
                     "suffix_sessions_started": report.after.suffix_sessions_started,
                     "suffix_sessions_exhausted": report.after.suffix_sessions_exhausted,
                     "invalid_boundary_roots": report.after.invalid_boundary_roots,
+                    "duplicate_boundary_successors": report.after.duplicate_boundary_successors,
+                    "anchor_view_services": report.after.anchor_view_services,
+                    "guide_view_services": report.after.guide_view_services,
                     "active_suffix_sessions": report.active_suffix_sessions,
+                    "active_boundary_tasks": report.active_boundary_tasks,
+                    "active_terminal_tasks": report.active_terminal_tasks,
                     "boundary_generator_active": report.boundary_generator_active,
                     "winning_boundary_id": report.winning_boundary_id,
                     "winning_boundary_exact_state_hash": report.winning_boundary_exact_state_hash,
-                    "suffix_entries": report.suffix_entries.iter().map(|entry| json!({
-                        "boundary_id": entry.boundary_id,
-                        "exact_state_hash": entry.exact_state_hash,
-                        "prefix_action_count": entry.prefix_action_count,
-                        "prefix_negative_log_policy": entry.prefix_negative_log_policy,
-                        "applied_action_transitions": entry.applied_action_transitions,
-                        "engine_steps": entry.engine_steps,
-                    })).collect::<Vec<_>>(),
+                    "suffix_entries": task_entries,
                 },
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())

@@ -36,7 +36,8 @@ pub use atomic_levin_search::{
 };
 pub use atomic_turn_portfolio::{
     AtomicTurnPortfolioConfig, AtomicTurnPortfolioCounters, AtomicTurnPortfolioEntryReport,
-    AtomicTurnPortfolioReport, AtomicTurnPortfolioSession, AtomicTurnPortfolioStatus,
+    AtomicTurnPortfolioGuideRank, AtomicTurnPortfolioReport, AtomicTurnPortfolioSession,
+    AtomicTurnPortfolioStatus,
 };
 pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
