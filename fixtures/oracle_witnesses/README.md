@@ -55,7 +55,7 @@ silently mistaken for the verified one.
 
 ### Exact-corridor shadow control
 
-`oracle_lab combat-case` accepts the paired diagnostic arguments
+`oracle_lab combat-case-legacy-global` accepts the paired diagnostic arguments
 `--shadow-corridor-case` and `--shadow-corridor-actions`. The lab replays and
 validates the complete action fixture, then adds the exact player-turn states
 as one extra, guide-only search ordering. It does not change legal actions,
@@ -71,15 +71,16 @@ toward a winning region" from "the exact future state was memorized".
 Training and inference can also be separated. `oracle_lab
 build-value-prototype` validates the source witness once and writes a small,
 versioned artifact containing only typed feature prototypes. A later
-`combat-case --shadow-value-prototype <artifact>` run loads neither the source
-actions nor their combat case and never compares candidate exact hashes. The
-artifact is still a one-demonstration lab model; it is not a general combat
-value model or production fallback.
+`combat-case-legacy-global --shadow-value-prototype <artifact>` run loads
+neither the source actions nor their combat case and never compares candidate
+exact hashes. The artifact is still a one-demonstration lab model; it is not a
+general combat value model or production fallback.
 
-`combat-case --export-witness-actions <path>` writes an action list only when
-the planner has produced a replay-verified terminal win. This permits a
-model-guided search result to become the next generation's training witness
-without copying diagnostic traces or accepting an unverified rollout.
+`combat-case-legacy-global --export-witness-actions <path>` writes an action
+list only when the legacy planner has produced a replay-verified terminal win.
+This permits a model-guided search result to become the next generation's
+training witness without copying diagnostic traces or accepting an unverified
+rollout.
 
 Optional one-turn loss evidence is stricter than an observed losing action.
 The planner records a state only after its complete-turn generator finishes

@@ -118,8 +118,9 @@ enum Command {
         node: usize,
     },
     /// Inspect the retired global-agenda search on one exact case. Production
-    /// run combat now uses `combat-case-local-graph`; this command remains for
-    /// controlled historical comparisons and explicit V2-donor diagnostics.
+    /// run combat uses `combat-case`; this command remains only for controlled
+    /// historical comparisons and explicit V2-donor diagnostics.
+    #[command(name = "combat-case-legacy-global")]
     CombatCase {
         #[arg(long)]
         case: PathBuf,
@@ -362,6 +363,7 @@ enum Command {
     /// Exact graph search with node-local lazy widening. This is the same
     /// independent search owned by production combat work and never invokes
     /// the retired global Widen/Deepen agenda or V2 donor.
+    #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph {
         #[arg(long)]
         case: PathBuf,
