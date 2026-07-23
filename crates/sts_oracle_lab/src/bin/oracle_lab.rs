@@ -1,6 +1,7 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
 mod boundary_successor_corpus;
+mod boundary_successor_lookahead;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -564,6 +565,14 @@ enum Command {
     BuildBoundarySuccessorCorpus {
         #[command(flatten)]
         args: boundary_successor_corpus::BoundarySuccessorCorpusArgs,
+    },
+    /// Compare bounded rollout guidance across exact complete-turn successors.
+    ///
+    /// This is a read-only teacher audit. It never changes the production
+    /// action policy, successor scheduler, or exact witness contract.
+    AuditBoundarySuccessorLookahead {
+        #[command(flatten)]
+        args: boundary_successor_lookahead::BoundarySuccessorLookaheadArgs,
     },
     /// Distill several exact terminal witnesses from one compact manifest.
     /// Relative case and action paths are resolved beside the manifest.
@@ -2069,6 +2078,10 @@ fn main() -> Result<(), String> {
         Command::BuildBoundarySuccessorCorpus { args } => {
             let summary = boundary_successor_corpus::build(args)?;
             print_json(&summary)
+        }
+        Command::AuditBoundarySuccessorLookahead { args } => {
+            let report = boundary_successor_lookahead::audit(args)?;
+            print_json(&report)
         }
         Command::CombatCaseLocalGraph {
             case,
