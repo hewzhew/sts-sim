@@ -24,6 +24,11 @@ pub struct CombatRootProposalProbeV1Report {
     pub proposals: Vec<CombatRootProposalObservationV1>,
     pub summary: CombatRootProposalProbeSummaryV1,
     pub notes: Vec<&'static str>,
+    /// Exact best trajectory retained for in-process diagnostic tools. The
+    /// compact report deliberately omits it unless the caller explicitly
+    /// exports the actions to a separate artifact.
+    #[serde(skip)]
+    pub final_best_actions: Option<Vec<ClientInput>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -283,6 +288,13 @@ fn run_combat_root_proposal_probe_with_priority_ablation_v1(
             "identical exact successor states reached by different action orderings are counted once",
             "all V2 work is charged to the reported node and wall budgets",
         ],
+        final_best_actions: final_best.as_ref().map(|(trajectory, _)| {
+            trajectory
+                .actions
+                .iter()
+                .map(|action| action.input.clone())
+                .collect()
+        }),
     })
 }
 

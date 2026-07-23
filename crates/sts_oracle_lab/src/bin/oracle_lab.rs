@@ -672,6 +672,10 @@ enum Command {
         quantum_nodes: usize,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+        /// Save the exact replayable winner found by the no-rollout control.
+        /// The compact audit never embeds action arrays in its JSON report.
+        #[arg(long)]
+        export_without_rollout_witness_actions: Option<PathBuf>,
     },
     /// Audit action-policy order and exact one-step successor guides at one turn prefix.
     TurnActionAudit {
@@ -5299,6 +5303,7 @@ fn main() -> Result<(), String> {
             wall_ms,
             quantum_nodes,
             max_engine_steps_per_transition,
+            export_without_rollout_witness_actions,
         } => {
             let loaded_case = load_combat_case(&case)?;
             let expected_first_turn_successor = corridor_actions
@@ -5341,6 +5346,19 @@ fn main() -> Result<(), String> {
             };
             let baseline = run(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)?;
             let without_rollout = run(CombatSearchV2RolloutPolicy::Disabled)?;
+            if let (Some(path), Some(actions)) = (
+                export_without_rollout_witness_actions.as_ref(),
+                without_rollout.final_best_actions.as_ref(),
+            ) {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                std::fs::write(
+                    path,
+                    serde_json::to_vec_pretty(actions).map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| error.to_string())?;
+            }
             let root_rollout_started = Instant::now();
             let root_rollout =
                 sts_simulator::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
@@ -5405,6 +5423,10 @@ fn main() -> Result<(), String> {
                 "root_rollout": root_rollout_report,
                 "baseline": compact(&baseline),
                 "without_rollout": compact(&without_rollout),
+                "exported_without_rollout_witness_actions":
+                    without_rollout.final_best_actions.is_some()
+                        .then_some(export_without_rollout_witness_actions.as_ref())
+                        .flatten(),
             }))
         }
         Command::View { workspace, node } => {
