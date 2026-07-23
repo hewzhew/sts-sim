@@ -50,7 +50,10 @@ pub(super) fn generate_combat_rewards_from_existing_with_escape_gate(
 
     RewardState {
         items,
-        skippable: !is_boss,
+        // Combat rewards are individually optional, including after a boss.
+        // The player may leave an unclaimed potion behind when every slot is
+        // full and continue to the boss relic screen.
+        skippable: true,
         screen_context: crate::state::rewards::RewardScreenContext::Standard,
         pending_card_choice: None,
         pending_card_reward_index: None,

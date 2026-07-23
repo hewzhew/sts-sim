@@ -87,6 +87,12 @@ fn reward_exit_state(
     reward_state: &RewardState,
     overlay_return_state: Option<EngineState>,
 ) -> EngineState {
+    if overlay_return_state.is_none() && run_state.pending_boss_reward {
+        // Leaving the post-boss combat reward screen discards any unclaimed
+        // rewards and opens the boss chest. It must not create a map overlay:
+        // there is no map decision between the boss and its relic reward.
+        return post_reward_state(run_state);
+    }
     overlay_return_state
         .map(|return_state| return_state_with_pending_reward_overlay(return_state, reward_state))
         .unwrap_or_else(|| reward_map_overlay_or_post_reward_state(run_state, reward_state))
@@ -380,6 +386,27 @@ mod tests {
     use crate::state::run::RunState;
     use crate::state::selection::{DomainEvent, DomainEventSource};
     use crate::state::shop::ShopState;
+
+    #[test]
+    fn leaving_unclaimed_boss_rewards_opens_boss_relic_selection() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.pending_boss_reward = true;
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Potion {
+            potion_id: PotionId::RegenPotion,
+        }];
+
+        let next = handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Proceed),
+        )
+        .expect("leaving a boss reward screen should open the boss chest");
+
+        assert!(matches!(next, EngineState::BossRelicSelect(_)));
+        assert!(!run_state.pending_boss_reward);
+        assert!(run_state.potions.iter().all(Option::is_none));
+    }
 
     #[test]
     fn interrupting_relic_claim_preserves_remaining_reward_screen_items() {
