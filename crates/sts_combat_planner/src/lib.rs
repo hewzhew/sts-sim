@@ -73,6 +73,7 @@ pub use layered_witness_search::{
     LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
 };
 pub use local_turn_graph_search::{
+    LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceSnapshot,
     LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphStateSnapshot,
     LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessInterruption,
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession,

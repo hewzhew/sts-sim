@@ -2138,28 +2138,35 @@ fn main() -> Result<(), String> {
                 })
                 .collect::<Vec<_>>();
             let watched_corridor = watched_corridor.as_ref().map(|corridor| {
-                let mut states = corridor
+                let mut ranked_hashes = corridor
                     .rank_by_exact_hash
                     .iter()
-                    .map(|(hash, rank)| {
-                        (
-                            *rank,
-                            json!({
-                                "corridor_rank": rank,
-                                "exact_state_hash": hash,
-                                "state": session.state_snapshot_by_exact_hash(hash),
-                            }),
-                        )
+                    .map(|(hash, rank)| (*rank, hash))
+                    .collect::<Vec<_>>();
+                ranked_hashes.sort_by_key(|(rank, _)| *rank);
+                let states = ranked_hashes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (rank, hash))| {
+                        let outgoing_to_next =
+                            ranked_hashes.get(index + 1).and_then(|(_, next_hash)| {
+                                session.edge_snapshot_by_exact_hashes(hash, next_hash)
+                            });
+                        json!({
+                            "corridor_rank": rank,
+                            "exact_state_hash": hash,
+                            "state": session.state_snapshot_by_exact_hash(hash),
+                            "outgoing_to_next": outgoing_to_next,
+                        })
                     })
                     .collect::<Vec<_>>();
-                states.sort_by_key(|(rank, _)| *rank);
                 json!({
                     "authority": "diagnostic_only",
                     "changes_search_order": false,
                     "action_count": corridor.action_count,
                     "exact_turn_states": states.len(),
                     "terminal_final_hp": corridor.terminal_final_hp,
-                    "states": states.into_iter().map(|(_, state)| state).collect::<Vec<_>>(),
+                    "states": states,
                 })
             });
             if let (Some(path), Some(witness)) =

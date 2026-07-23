@@ -135,6 +135,34 @@ pub struct LocalTurnGraphRootActionFamilySnapshot {
     pub lowest_enemy_hp_at_max_turn: Option<i32>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LocalTurnGraphGuideServiceSnapshot {
+    pub lane: u32,
+    pub edge_visits: usize,
+    pub ordinal_rank: usize,
+    pub candidate_count: usize,
+    pub successor_rank: Vec<i32>,
+    pub best_rank: Vec<i32>,
+}
+
+/// One already-materialized exact edge in the local turn graph.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LocalTurnGraphEdgeSnapshot {
+    pub parent_visits: usize,
+    pub parent_generated_options: usize,
+    pub parent_children: usize,
+    pub parent_widen_anchor_visits: usize,
+    pub actions: Vec<TurnOptionAction>,
+    pub negative_log_policy: f64,
+    pub visits: usize,
+    pub anchor_visits: usize,
+    pub guide_service: Vec<LocalTurnGraphGuideServiceSnapshot>,
+    pub successor_visits: usize,
+    pub successor_generated_options: usize,
+    pub successor_children: usize,
+    pub successor_exhausted: bool,
+}
+
 #[derive(Clone)]
 struct LocalRootActionFamilyAccumulator {
     first_action: ClientInput,
@@ -511,6 +539,79 @@ impl LocalTurnGraphWitnessSession {
                 .total_cmp(&right.best_root_negative_log_policy.unwrap_or(f64::INFINITY))
         });
         snapshots
+    }
+
+    pub fn edge_snapshot_by_exact_hashes(
+        &self,
+        parent_exact_state_hash: &str,
+        successor_exact_state_hash: &str,
+    ) -> Option<LocalTurnGraphEdgeSnapshot> {
+        let parent_id = *self.nodes_by_hash.get(parent_exact_state_hash)?;
+        let successor_id = *self.nodes_by_hash.get(successor_exact_state_hash)?;
+        let parent = &self.nodes[parent_id];
+        let edge = parent
+            .children
+            .iter()
+            .find(|edge| edge.successor == successor_id)?;
+        let successor = &self.nodes[successor_id];
+        let guide_service = successor
+            .guides
+            .iter()
+            .map(|guide| {
+                let mut candidates = parent
+                    .children
+                    .iter()
+                    .filter(|candidate| !self.nodes[candidate.successor].exhausted)
+                    .filter_map(|candidate| {
+                        guide_rank(&self.nodes[candidate.successor], guide.lane)
+                            .map(|rank| (candidate, rank))
+                    })
+                    .collect::<Vec<_>>();
+                candidates.sort_by(|(left_edge, left_rank), (right_edge, right_rank)| {
+                    guide_choice_order(
+                        left_rank,
+                        local_path_base(left_edge.actions.len(), left_edge.negative_log_policy),
+                        left_edge.visits,
+                        left_edge.successor,
+                        right_rank,
+                        local_path_base(right_edge.actions.len(), right_edge.negative_log_policy),
+                        right_edge.visits,
+                        right_edge.successor,
+                    )
+                });
+                let ordinal_rank = candidates
+                    .iter()
+                    .position(|(candidate, _)| candidate.successor == successor_id)
+                    .map(|index| index.saturating_add(1))
+                    .unwrap_or(0);
+                LocalTurnGraphGuideServiceSnapshot {
+                    lane: guide.lane.value(),
+                    edge_visits: edge.guide_visits.get(&guide.lane).copied().unwrap_or(0),
+                    ordinal_rank,
+                    candidate_count: candidates.len(),
+                    successor_rank: guide.rank.components().to_vec(),
+                    best_rank: candidates
+                        .first()
+                        .map(|(_, rank)| rank.components().to_vec())
+                        .unwrap_or_default(),
+                }
+            })
+            .collect();
+        Some(LocalTurnGraphEdgeSnapshot {
+            parent_visits: parent.visits,
+            parent_generated_options: parent.generated_options,
+            parent_children: parent.children.len(),
+            parent_widen_anchor_visits: parent.widen_anchor_visits,
+            actions: edge.actions.clone(),
+            negative_log_policy: edge.negative_log_policy,
+            visits: edge.visits,
+            anchor_visits: edge.anchor_visits,
+            guide_service,
+            successor_visits: successor.visits,
+            successor_generated_options: successor.generated_options,
+            successor_children: successor.children.len(),
+            successor_exhausted: successor.exhausted,
+        })
     }
 
     fn root_action_family_snapshot(
