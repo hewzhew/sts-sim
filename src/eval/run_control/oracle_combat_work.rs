@@ -17,7 +17,9 @@ use sts_combat_planner::{
 use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
-use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
+use super::oracle_combat_policy::{
+    existing_combat_rollout_lookahead_v1, ExistingCombatKnowledgePolicy,
+};
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
@@ -103,6 +105,8 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub current_search_generation_work: u64,
     /// Historical plus current work. This is accounting, not resumable depth.
     pub generation_work: u64,
+    pub lookahead_evaluations: usize,
+    pub lookahead_work: usize,
     pub engine_steps: usize,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
@@ -173,7 +177,7 @@ impl OracleRunCombatWorkV1 {
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
         let policy = Arc::new(ExistingCombatKnowledgePolicy::default());
-        let local_search = LocalTurnGraphWitnessSession::with_policy(
+        let local_search = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
             root.clone(),
             LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
@@ -190,6 +194,7 @@ impl OracleRunCombatWorkV1 {
                 satisfaction,
             },
             policy.clone(),
+            existing_combat_rollout_lookahead_v1(),
         );
         let global_search = OracleCombatWitnessSession::with_policy(
             root,
@@ -349,6 +354,8 @@ impl OracleRunCombatWorkV1 {
                     &crate::sim::combat::EngineCombatStepper,
                 );
                 let after = report.counters;
+                let before_work = before.generation_work.saturating_add(before.lookahead_work);
+                let after_work = after.generation_work.saturating_add(after.lookahead_work);
                 let member_complete = !matches!(
                     report.status,
                     LocalTurnGraphWitnessStatus::Partial(_)
@@ -357,7 +364,7 @@ impl OracleRunCombatWorkV1 {
                 let witness_found =
                     matches!(report.status, LocalTurnGraphWitnessStatus::WitnessFound);
                 (
-                    after.generation_work.saturating_sub(before.generation_work),
+                    after_work.saturating_sub(before_work),
                     after.engine_steps.saturating_sub(before.engine_steps),
                     member_complete,
                     witness_found,
@@ -541,7 +548,8 @@ impl OracleRunCombatWorkV1 {
     }
 
     fn current_generation_work(&self) -> u64 {
-        (self.local_search.counters().generation_work as u64)
+        let local = self.local_search.counters();
+        (local.generation_work.saturating_add(local.lookahead_work) as u64)
             .saturating_add(self.global_search.counters().generation_work as u64)
     }
 
@@ -596,6 +604,8 @@ impl OracleRunCombatWorkV1 {
             generation_work: self
                 .prior_generation_work
                 .saturating_add(current_generation_work),
+            lookahead_evaluations: local_counters.lookahead_evaluations,
+            lookahead_work: local_counters.lookahead_work,
             engine_steps: local_counters
                 .engine_steps
                 .saturating_add(global_counters.engine_steps),
@@ -766,9 +776,20 @@ mod tests {
 
     fn hallway_combat_session() -> RunControlSession {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.entities.monsters = vec![crate::test_support::test_monster(
-            crate::content::monsters::EnemyId::JawWorm,
-        )];
+        let mut jaw_worm =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &jaw_worm,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&jaw_worm),
+            &[],
+        );
+        jaw_worm.set_planned_move_id(plan.move_id);
+        jaw_worm.set_planned_steps(plan.steps);
+        jaw_worm.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters = vec![jaw_worm];
         let mut session =
             RunControlSession::new(crate::eval::run_control::RunControlConfig::default());
         session.active_combat = Some(crate::state::core::ActiveCombat::new(
@@ -852,6 +873,42 @@ mod tests {
         assert_eq!(work.local_search.counters().generation_work, 1);
         assert_eq!(work.global_search.counters().generation_work, 1);
         assert_eq!(work.remaining_work, 14);
+    }
+
+    #[test]
+    fn production_lookahead_work_is_charged_to_the_shared_allowance() {
+        let session = hallway_combat_session();
+        let mut work = OracleRunCombatWorkV1::new(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(4_096),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+        )
+        .expect("portfolio should accept an active combat");
+        let quantum = RunControlCombatSearchQuantum {
+            label: "lookahead_accounting_contract",
+            additional_nodes: 4_096,
+            soft_wall_ms: None,
+        };
+
+        let before_remaining = work.remaining_work;
+        let _ = work.advance(&quantum, None);
+        let counters = work.local_search.counters();
+        assert!(
+            counters.lookahead_work > 0,
+            "the production local search should evaluate its rollout lookahead"
+        );
+        assert_eq!(work.global_search.counters().generation_work, 0);
+        assert_eq!(
+            before_remaining.saturating_sub(work.remaining_work),
+            counters
+                .generation_work
+                .saturating_add(counters.lookahead_work)
+        );
     }
 
     #[test]
