@@ -210,18 +210,27 @@ only the core package; it is not the complete workspace check. Use
 search/evaluation/run-control tests. Use both aliases plus `cargo architecture`
 before handoff.
 
-On the migration baseline, the old 2,808-test / 54.76 MiB harness became a
-1,889-test / 17.86 MiB core harness and a 919-test / 46.80 MiB control harness.
-A real `combat_search_v2` source edit rebuilt the control harness in 8.23
-seconds while the core package stayed fresh; two unchanged filtered commands
-then completed in 0.40 and 0.37 seconds. These numbers are evidence from one
-Windows machine, not performance assertions for CI.
+Oracle work uses one canonical `release` artifact. Build-owning commands use
+`cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
+resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
+profile and target directory are not valid operational entrypoints.
 
-Use `fast-run` for iterative optimized runs, build a binary once for repeated
-panel cells, and reserve `release` or `release-final` for final confirmation.
-Further package splits should be justified by a new measured invalidation
-boundary; do not replace this boundary with test features or many integration
-test executables.
+The command hosts in `sts_oracle_lab` are physically separate from the shared
+`sts_oracle_runtime` library. On one Windows machine, touching only
+`oracle_lab.rs` rebuilt in 1.62 seconds, touching only
+`oracle_lab_service.rs` rebuilt in 1.11 seconds, and rebuilding the lightweight
+client took 1.31 seconds. These numbers verify the invalidation boundary; they
+are not performance assertions for CI. Use `release-final` only when the
+fully-optimized deployment artifact is specifically required. Further package
+splits require a new measured source-invalidation boundary.
+
+Do not configure a project-wide `sccache` wrapper for the canonical iterative
+build. A bounded Windows experiment restored the same empty target path in
+10.96 seconds after a 74.97-second cache fill (51 hits, 3 misses), but two
+different target paths produced zero hits even with normalized base
+directories. More importantly, the canonical `release` profile deliberately
+uses incremental compilation, which `sccache` cannot cache. Reconsider it for
+non-incremental CI or same-path disaster recovery, not routine local edits.
 
 For documentation-only changes:
 
