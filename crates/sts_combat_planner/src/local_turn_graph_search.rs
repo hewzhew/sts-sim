@@ -107,9 +107,23 @@ pub struct LocalTurnGraphStateSnapshot {
     pub exact_state_hash: String,
     pub relative_turn_depth: usize,
     pub visits: usize,
+    pub generation_work: usize,
+    pub generator_engine_steps: usize,
+    pub retained_generator_work_items: usize,
+    pub generator_anchor_work_pops: usize,
+    pub generator_guided_work_pops: usize,
+    pub best_retained_anchor_atomic_depth: Option<usize>,
+    pub retained_guide_promises: Vec<LocalTurnGraphRetainedGuidePromiseSnapshot>,
     pub generated_options: usize,
     pub children: usize,
     pub exhausted: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct LocalTurnGraphRetainedGuidePromiseSnapshot {
+    pub lane: u32,
+    pub rank: Vec<i32>,
+    pub atomic_depth: usize,
 }
 
 /// Read-only root-action attribution using the local graph's own semantics.
@@ -517,10 +531,37 @@ impl LocalTurnGraphWitnessSession {
     ) -> Option<LocalTurnGraphStateSnapshot> {
         let node_id = *self.nodes_by_hash.get(exact_state_hash)?;
         let node = &self.nodes[node_id];
+        let counters = node.generator.counters();
+        let retained_guide_promises = node
+            .generation_service_views
+            .iter()
+            .filter_map(|view| {
+                let LocalServiceView::Guide(lane) = view else {
+                    return None;
+                };
+                node.generator
+                    .best_retained_guide_promise_snapshot(*lane)
+                    .map(|promise| LocalTurnGraphRetainedGuidePromiseSnapshot {
+                        lane: lane.value(),
+                        rank: promise.rank.components().to_vec(),
+                        atomic_depth: promise.atomic_depth,
+                    })
+            })
+            .collect();
         Some(LocalTurnGraphStateSnapshot {
             exact_state_hash: exact_state_hash.to_owned(),
             relative_turn_depth: node.relative_turn_depth,
             visits: node.visits,
+            generation_work: counters.generation_work,
+            generator_engine_steps: counters.engine_steps,
+            retained_generator_work_items: node.generator.retained_work_items(),
+            generator_anchor_work_pops: node.generator.anchor_work_pops(),
+            generator_guided_work_pops: node.generator.guided_work_pops(),
+            best_retained_anchor_atomic_depth: node
+                .generator
+                .best_retained_path_bound_snapshot()
+                .map(|(atomic_depth, _)| atomic_depth),
+            retained_guide_promises,
             generated_options: node.generated_options,
             children: node.children.len(),
             exhausted: node.exhausted,
