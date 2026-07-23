@@ -12,6 +12,8 @@ repository = "https://github.com/hewzhew/sts-sim"
 members = [
     ".",
     "crates/oracle_lab_client",
+    "crates/sts_oracle_lab",
+    "crates/sts_oracle_runtime",
     "crates/oracle_lab_protocol",
     "crates/sts_combat_legacy",
     "crates/sts_combat_planner",
@@ -58,6 +60,14 @@ panic = "abort"
 opt-level = 0
 codegen-units = 256
 
+[profile.release.package.sts_oracle_lab]
+opt-level = 0
+codegen-units = 256
+
+[profile.release.package.sts_oracle_runtime]
+opt-level = 0
+codegen-units = 256
+
 [profile.release-final]
 inherits = "release"
 opt-level = 3
@@ -70,6 +80,14 @@ codegen-units = 1
 panic = "abort"
 
 [profile.release-final.package.sts_simulator_control]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_lab]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_runtime]
 opt-level = 3
 codegen-units = 1
 

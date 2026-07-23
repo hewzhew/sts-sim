@@ -7,12 +7,18 @@ build = "build.rs"
 autobins = false
 autotests = false
 
+[features]
+default = ["control-full"]
+control-full = []
+oracle-lab = []
+
 [lib]
 name = "sts_simulator"
 path = "src/lib.rs"
 
 [dependencies]
 oracle_lab_protocol = { path = "../oracle_lab_protocol" }
+sts_oracle_runtime = { path = "../sts_oracle_runtime", default-features = false, features = ["control-full"] }
 sts_core = { package = "sts_simulator", path = "../.." }
 sts_combat_legacy = { path = "../sts_combat_legacy" }
 sts_combat_planner = { path = "../sts_combat_planner" }
@@ -49,14 +55,6 @@ path = "../../src/bin/rl_dataset_export.rs"
 [[bin]]
 name = "oracle_run"
 path = "../../src/bin/oracle_run.rs"
-
-[[bin]]
-name = "oracle_lab"
-path = "../../src/bin/oracle_lab.rs"
-
-[[bin]]
-name = "oracle_lab_service"
-path = "../../src/bin/oracle_lab_service.rs"
 
 [[test]]
 name = "noncombat_strategy_contract"

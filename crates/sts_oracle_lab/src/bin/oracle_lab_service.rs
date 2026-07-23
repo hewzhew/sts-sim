@@ -1,3 +1,5 @@
+//! Thin resident compute host for one exact oracle workspace.
+
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 

@@ -20,8 +20,8 @@ param(
     [string] $Right = "tactical_enemy_turn_boundary_frontier_seed",
     [int] $MaxNodes = 5000,
     [switch] $Build,
-    [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
-    [string] $BuildProfile = "fast-run"
+    [ValidateSet("release-final", "release", "dev-opt", "debug")]
+    [string] $BuildProfile = "release"
 )
 
 $ErrorActionPreference = "Stop"

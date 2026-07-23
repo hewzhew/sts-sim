@@ -1,3 +1,5 @@
+//! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

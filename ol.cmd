@@ -1,4 +1,4 @@
 @echo off
 setlocal
-"%~dp0target\fast-run\oracle_lab.exe" --canonical-fast-run %*
+"%~dp0target\release\oracle_lab.exe" --canonical-oracle %*
 exit /b %ERRORLEVEL%

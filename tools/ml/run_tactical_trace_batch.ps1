@@ -26,8 +26,8 @@ param(
     [Nullable[int]] $TurnPlanProbeMaxEndStates = $null,
     [Nullable[int]] $TurnPlanProbePerBucketLimit = $null,
     [switch] $Build,
-    [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
-    [string] $BuildProfile = "fast-run",
+    [ValidateSet("release-final", "release", "dev-opt", "debug")]
+    [string] $BuildProfile = "release",
     [switch] $RunBaseline,
     [ValidateSet("source", "group", "source-cv")]
     [string] $SplitMode = "source-cv",

@@ -1,0 +1,24 @@
+[package]
+name = "sts_oracle_lab"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+autobins = false
+autotests = false
+
+[dependencies]
+sts_simulator = { package = "sts_oracle_runtime", path = "../sts_oracle_runtime" }
+sts_combat_planner = { path = "../sts_combat_planner" }
+blake2 = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[[bin]]
+name = "oracle_lab"
+path = "src/bin/oracle_lab.rs"
+
+[[bin]]
+name = "oracle_lab_service"
+path = "src/bin/oracle_lab_service.rs"
