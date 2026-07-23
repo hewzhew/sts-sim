@@ -212,12 +212,21 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
 
     let request = OracleAnalysisAdvanceRequestV1 {
         max_quanta: 1,
-        quantum_nodes: 1,
+        quantum_nodes: 2,
         quantum_ms: Some(100),
         wall_ms: Some(100),
     };
     let (first, _) = workspace.advance(request.clone()).expect("first advance");
     let first_progress = first.combat.expect("first progress");
+    assert!(
+        first_progress
+            .generation_work
+            .saturating_add(
+                u64::try_from(first_progress.remaining_nodes).expect("remaining nodes fit u64"),
+            )
+            >= u64::try_from(request.quantum_nodes).expect("requested nodes fit u64"),
+        "the first advance request must enlarge the default combat allowance just like a resumed request"
+    );
     assert_eq!(first_progress.restart_count, 0);
     assert_eq!(
         first_progress.resume_kind,
@@ -238,8 +247,16 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
     assert_eq!(first.status, OracleAnalysisAdvanceStatusV1::BudgetUnknown);
 
     let (second, _) = workspace.advance(request).expect("resumed advance");
-    assert_eq!(second.status, OracleAnalysisAdvanceStatusV1::BudgetUnknown);
     let second_progress = second.combat.expect("second progress");
+    if let OracleAnalysisAdvanceStatusV1::BoundaryReached { child_node_id } = second.status {
+        assert_eq!(
+            workspace.view().expect("materialized child").node_id,
+            child_node_id
+        );
+        assert!(second_progress.incumbent_action_count.is_some());
+        return;
+    }
+    assert_eq!(second.status, OracleAnalysisAdvanceStatusV1::BudgetUnknown);
     assert!(
         second_progress.generation_work > first_progress.generation_work,
         "the second advance must continue the resident tactical frontier"

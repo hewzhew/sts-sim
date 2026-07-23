@@ -938,29 +938,31 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
-        if !self.combat_jobs.contains_key(&source_node_id) {
+        let requested_nodes = request.quantum_nodes.saturating_mul(request.max_quanta);
+        let requested_wall_ms = request.wall_ms.or_else(|| {
+            request.quantum_ms.map(|quantum_ms| {
+                quantum_ms.saturating_mul(u64::try_from(request.max_quanta).unwrap_or(u64::MAX))
+            })
+        });
+        let resumes_existing_search = self.combat_jobs.contains_key(&source_node_id);
+        if !resumes_existing_search {
             let work = OracleRunCombatWorkV1::new(
                 &branch.session,
                 self.combat_budgets.for_session(&branch.session),
             )?;
             self.combat_jobs.insert(source_node_id, work);
-        } else {
-            let work = self
-                .combat_jobs
-                .get_mut(&source_node_id)
-                .expect("analysis combat job exists");
-            work.mark_search_resume_exact();
-            let requested_nodes = request.quantum_nodes.saturating_mul(request.max_quanta);
-            let requested_wall_ms = request.wall_ms.or_else(|| {
-                request.quantum_ms.map(|quantum_ms| {
-                    quantum_ms.saturating_mul(u64::try_from(request.max_quanta).unwrap_or(u64::MAX))
-                })
-            });
-            work.ensure_requested_allowance(
-                requested_nodes,
-                requested_wall_ms.map(Duration::from_millis),
-            );
         }
+        let work = self
+            .combat_jobs
+            .get_mut(&source_node_id)
+            .expect("analysis combat job exists");
+        if resumes_existing_search {
+            work.mark_search_resume_exact();
+        }
+        work.ensure_requested_allowance(
+            requested_nodes,
+            requested_wall_ms.map(Duration::from_millis),
+        );
         let started = Instant::now();
         let deadline = request
             .wall_ms

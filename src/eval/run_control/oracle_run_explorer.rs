@@ -751,8 +751,10 @@ impl OracleRunExplorerV1 {
             };
             transaction.trace_annotations.push(annotation);
         }
+        let forced_steps = settle_oracle_forced_transitions(&mut session)?;
         let mut journal = parent.journal;
         journal.append_committed_steps(outcome.progress_steps)?;
+        journal.append_committed_steps(forced_steps)?;
         let mut replay = parent.replay;
         replay.push(OracleRunReplayStepV1 {
             candidate_id: work.candidate_id,
@@ -917,6 +919,20 @@ impl OracleRunExplorerV1 {
             None => FinishedOracleCombatV1::ExactDuplicate,
         })
     }
+}
+
+fn settle_oracle_forced_transitions(
+    session: &mut RunControlSession,
+) -> Result<Vec<RunProgressStepV1>, String> {
+    let mut steps = Vec::new();
+    if matches!(session.engine_state, EngineState::Campfire)
+        && crate::engine::campfire_handler::get_available_options(&session.run_state).is_empty()
+    {
+        let transition = session
+            .execute_forced_transition(super::RunForcedTransitionKindV1::EmptyCampfireExit)?;
+        steps.push(RunProgressStepV1::ForcedTransition(transition));
+    }
+    Ok(steps)
 }
 
 pub fn seed_oracle_run_explorer_v1(
@@ -1735,6 +1751,35 @@ mod tests {
                 tie_break_applied: false,
             },
         })
+    }
+
+    #[test]
+    fn oracle_settles_empty_campfire_as_typed_forced_progress() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Campfire;
+        session
+            .run_state
+            .relics
+            .push(crate::content::relics::RelicState::new(
+                crate::content::relics::RelicId::CoffeeDripper,
+            ));
+        session
+            .run_state
+            .relics
+            .push(crate::content::relics::RelicState::new(
+                crate::content::relics::RelicId::FusionHammer,
+            ));
+
+        let steps = settle_oracle_forced_transitions(&mut session)
+            .expect("an optionless campfire should settle without owner input");
+
+        assert!(matches!(session.engine_state, EngineState::MapNavigation));
+        assert!(matches!(
+            steps.as_slice(),
+            [RunProgressStepV1::ForcedTransition(transition)]
+                if transition.kind
+                    == crate::eval::run_control::RunForcedTransitionKindV1::EmptyCampfireExit
+        ));
     }
 
     #[test]
