@@ -134,3 +134,25 @@ fixture or its future state hashes.
   `F6DD35F49AE31DCC723F07CF575F73F9F0C9CCFBE5E4565944641A4B0E63427D`;
   full-run continuation
   `72BDFD54DB3C83260E388703C70E6ED7452BE3A0C95E89976F44077D92BDD1E3`.
+
+## seed 20260713009, A0, Slime Boss cutover case
+
+This is an in-progress run checkpoint, not yet a full-run victory fixture.
+It preserves the first clean production-search cutover comparison:
+
+- At Act 1 floor 16 the player enters Slime Boss at 60/72 HP with Whirlwind,
+  Cleave, Shrug It Off+, Rupture, Bloodletting, and one Gamblers Brew.
+- The production global agenda, with V2 disabled, spent 30 seconds, 190,977
+  generation work, 113,916 atomic transitions, and retained roughly 30,000
+  exact states without a witness.
+- The independent base local-turn graph, with no donor, imitation artifact,
+  value artifact, or corridor, found a replay-verified 38-action victory in
+  0.787 seconds and ended at 23/72 HP.
+- `seed20260713009_a0_slime_boss.combat-case.json` and
+  `seed20260713009_a0_slime_boss.local-turn-graph.actions.json` preserve the
+  exact comparison. They are the production-cutover regression case; they do
+  not justify further tuning of the superseded global agenda.
+- SHA-256: combat case
+  `AD99F8321C4F055568713A85DF5F2F14C90D7E26DFB1D4B83921C733AAE69E29`;
+  local-turn graph witness
+  `22B3C7E931CCB35CDD14F1F959F847A73B4D852C703CAAEE26DC3F6460E573BB`.
