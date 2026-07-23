@@ -135,10 +135,10 @@ fixture or its future state hashes.
   full-run continuation
   `72BDFD54DB3C83260E388703C70E6ED7452BE3A0C95E89976F44077D92BDD1E3`.
 
-## seed 20260713009, A0, Slime Boss cutover case
+## seed 20260713009, A0, Time Eater
 
-This is an in-progress run checkpoint, not yet a full-run victory fixture.
-It preserves the first clean production-search cutover comparison:
+This run preserves both the clean production-search cutover comparison and a
+complete F0-to-F48 exact victory:
 
 - At Act 1 floor 16 the player enters Slime Boss at 60/72 HP with Whirlwind,
   Cleave, Shrug It Off+, Rupture, Bloodletting, and one Gamblers Brew.
@@ -156,3 +156,26 @@ It preserves the first clean production-search cutover comparison:
   `AD99F8321C4F055568713A85DF5F2F14C90D7E26DFB1D4B83921C733AAE69E29`;
   local-turn graph witness
   `22B3C7E931CCB35CDD14F1F959F847A73B4D852C703CAAEE26DC3F6460E573BB`.
+- After the cutover, the production run used only the local-turn graph for
+  Act 2 and Act 3 combat search. It reached Time Eater at 45/72 HP, where a
+  30-second exact search found no witness. A full-health diagnostic found a
+  32-action, 13 HP witness; the original history showed that the final
+  campfire had chosen `Smith Armaments` instead of `Rest`.
+- Changing only that legal F47 decision produced a 66/72 HP boss entry. The
+  same 32 exact actions replayed legally from this state and defeated Time
+  Eater with 7/72 HP. The combat root and accepted witness are preserved as
+  `seed20260713009_a0_time_eater.combat-case.json` and
+  `seed20260713009_a0_time_eater.local-turn-graph.actions.json`.
+- `seed20260713009_a0_full_run.continuation.json` is the complete promoted
+  journal. Fresh replay verifies seed 20260713009, A0, 200 journal entries,
+  178 decisions, 22 combat resolutions, 496 combat actions, F48 terminal
+  victory, and final fingerprint
+  `666c4a870cddd938e06dc9711a87b16db8207a825f94c8ed7b2cef254273447c`.
+- SHA-256: Time Eater combat case
+  `9AAE5E6888034ABF53C34D25F61A3EFAEC5378794AABE215C29DE49E5578DC46`;
+  Time Eater witness
+  `0F5F5A20834D5BC8F8C86F2F1BC88F95A483E1DB008D263B9364BC6774356840`;
+  full-run continuation
+  `92539B043C505AB3926CA8085776D901CB946DB19D732B8BD956B95925564326`;
+  replay report
+  `C0701893B755B58D64454E1E58B34E7A3FEE0874E871143CDBB8E1F2748E2EC0`.
