@@ -117,7 +117,9 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         node: usize,
     },
-    /// Run the production oracle combat planner directly on one exact case.
+    /// Inspect the retired global-agenda search on one exact case. Production
+    /// run combat now uses `combat-case-local-graph`; this command remains for
+    /// controlled historical comparisons and explicit V2-donor diagnostics.
     CombatCase {
         #[arg(long)]
         case: PathBuf,
@@ -357,8 +359,9 @@ enum Command {
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
-    /// Lab-only exact graph search with node-local lazy widening. It
-    /// does not use the production global Widen/Deepen agenda or V2 donor.
+    /// Exact graph search with node-local lazy widening. This is the same
+    /// independent search owned by production combat work and never invokes
+    /// the retired global Widen/Deepen agenda or V2 donor.
     CombatCaseLocalGraph {
         #[arg(long)]
         case: PathBuf,
@@ -2014,6 +2017,7 @@ fn main() -> Result<(), String> {
                 },
                 generation_quantum_work,
                 max_turn_depth,
+                satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
             };
             let policy = action_imitation_artifact
                 .as_deref()

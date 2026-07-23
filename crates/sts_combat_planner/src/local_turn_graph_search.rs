@@ -13,11 +13,13 @@ use super::types::{
     TurnOptionGeneratorConfig,
 };
 use super::witness_search::{
-    OracleCombatWitness, OracleCombatWitnessDiscoverySource, OracleCombatWitnessReplayError,
+    OracleCombatWitness, OracleCombatWitnessDiscoverySource, OracleCombatWitnessProgressSnapshot,
+    OracleCombatWitnessReplayError, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessStateProgressSnapshot,
 };
 use super::TurnOptionGeneratorSession;
 
-/// Lab-only search over a shared graph of exact player-turn boundaries.
+/// Resumable search over a shared graph of exact player-turn boundaries.
 ///
 /// Complete-turn generation remains lazy, but Widen and Deepen are decided at
 /// the node that owns the alternatives. A deep path therefore does not have
@@ -29,6 +31,7 @@ pub struct LocalTurnGraphWitnessConfig {
     /// generator. This controls preemption granularity, not search quality.
     pub generation_quantum_work: usize,
     pub max_turn_depth: usize,
+    pub satisfaction: OracleCombatWitnessSatisfaction,
 }
 
 impl Default for LocalTurnGraphWitnessConfig {
@@ -37,6 +40,7 @@ impl Default for LocalTurnGraphWitnessConfig {
             generator: TurnOptionGeneratorConfig::default(),
             generation_quantum_work: 4,
             max_turn_depth: 32,
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
         }
     }
 }
@@ -75,6 +79,9 @@ pub struct LocalTurnGraphWitnessCounters {
     pub exact_nodes: usize,
     pub exact_edges: usize,
     pub completed_turn_options: usize,
+    pub applied_action_transitions: usize,
+    pub unique_successor_states: usize,
+    pub duplicate_exact_successors: usize,
     pub duplicate_successor_edges: usize,
     pub terminal_losses: usize,
     pub depth_limited_successors: usize,
@@ -144,8 +151,8 @@ enum SelectedWork {
     Exhausted,
 }
 
-/// A resumable experimental session. Exact successor nodes and their service
-/// statistics are shared across all incoming edges.
+/// A resumable session. Exact successor nodes and their service statistics are
+/// shared across all incoming edges.
 pub struct LocalTurnGraphWitnessSession {
     original_root: CombatPosition,
     config: LocalTurnGraphWitnessConfig,
@@ -208,6 +215,86 @@ impl LocalTurnGraphWitnessSession {
         }
     }
 
+    pub fn witness(&self) -> Option<&OracleCombatWitness> {
+        self.witness.as_ref()
+    }
+
+    pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
+        if witness.final_position.combat.runtime.combat_smoked {
+            return Err(
+                "restored local-turn-graph witness is a Smoke Bomb escape, not a terminal victory"
+                    .to_string(),
+            );
+        }
+        if sts_core::sim::combat::combat_terminal(
+            &witness.final_position.engine,
+            &witness.final_position.combat,
+        ) != CombatTerminal::Win
+        {
+            return Err("restored local-turn-graph witness is not terminal victory".to_string());
+        }
+        if self
+            .witness
+            .as_ref()
+            .is_none_or(|current| witness_better(&witness, current))
+        {
+            self.witness = Some(witness);
+        }
+        Ok(())
+    }
+
+    pub fn counters(&self) -> LocalTurnGraphWitnessCounters {
+        self.used.clone()
+    }
+
+    pub fn retained_state_work(&self) -> usize {
+        self.nodes
+            .iter()
+            .map(|node| node.generator.retained_work_items())
+            .sum::<usize>()
+            .saturating_add(self.nodes.iter().filter(|node| !node.exhausted).count())
+    }
+
+    pub fn progress_snapshot(&self) -> OracleCombatWitnessProgressSnapshot {
+        let root = &self.nodes[0];
+        let root_counters = root.generator.counters();
+        OracleCombatWitnessProgressSnapshot {
+            retained_states: self.nodes.iter().filter(|node| !node.exhausted).count(),
+            queued_anchor_entries: self.nodes.iter().filter(|node| !node.exhausted).count(),
+            queued_guided_entries: Vec::new(),
+            guide_queues: Vec::new(),
+            generation_gap_count: self.generation_gaps.len(),
+            pending_witness_replay: false,
+            root_state: Some(OracleCombatWitnessStateProgressSnapshot {
+                exact_state_hash: exact_hash(root.generator.root().position()),
+                path_atomic_depth: 0,
+                path_negative_log_policy: 0.0,
+                generator_work: root_counters.generation_work,
+                generator_engine_steps: root_counters.engine_steps,
+                completed_turn_options: root.generator.total_completed_options(),
+                retained_generator_work_items: root.generator.retained_work_items(),
+                synced_options: root.generated_options,
+                anchor_states_ahead: None,
+                guided_states_ahead: None,
+                guided_lane_ranks: None,
+            }),
+            max_player_turn: self
+                .nodes
+                .iter()
+                .map(|node| node.generator.root().position().combat.turn.turn_count)
+                .max()
+                .unwrap_or_default(),
+            max_path_atomic_depth: 0,
+            max_completed_turn_options_at_state: self
+                .nodes
+                .iter()
+                .map(|node| node.generator.total_completed_options())
+                .max()
+                .unwrap_or_default(),
+            ..OracleCombatWitnessProgressSnapshot::default()
+        }
+    }
+
     pub fn advance(
         &mut self,
         quantum: LocalTurnGraphWitnessQuantum,
@@ -224,7 +311,7 @@ impl LocalTurnGraphWitnessSession {
             .saturating_add(quantum.additional_engine_steps);
 
         let status = loop {
-            if self.witness.is_some() {
+            if self.witness_satisfies() {
                 break LocalTurnGraphWitnessStatus::WitnessFound;
             }
             if let Some(error) = self.replay_failure.clone() {
@@ -397,13 +484,14 @@ impl LocalTurnGraphWitnessSession {
             return false;
         }
 
-        let (before, after, options, new_gaps) = {
+        let (before, after, before_diagnostics, after_diagnostics, options, new_gaps) = {
             let node = &mut self.nodes[node_id];
             node.generator.prefer_lane(match view {
                 LocalServiceView::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
                 LocalServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
             });
             let before = node.generator.counters();
+            let before_diagnostics = node.generator.diagnostics();
             node.generator.advance(
                 stepper,
                 CombatPlanningQuantum {
@@ -415,10 +503,18 @@ impl LocalTurnGraphWitnessSession {
                 },
             );
             let after = node.generator.counters();
+            let after_diagnostics = node.generator.diagnostics();
             let options = node.generator.take_completed_options();
             let gaps = node.generator.gaps()[node.synced_gaps..].to_vec();
             node.synced_gaps = node.generator.gaps().len();
-            (before, after, options, gaps)
+            (
+                before,
+                after,
+                before_diagnostics,
+                after_diagnostics,
+                options,
+                gaps,
+            )
         };
 
         let used_work = after.generation_work.saturating_sub(before.generation_work);
@@ -428,6 +524,21 @@ impl LocalTurnGraphWitnessSession {
         }
         self.used.generation_work = self.used.generation_work.saturating_add(used_work);
         self.used.engine_steps = self.used.engine_steps.saturating_add(used_steps);
+        self.used.applied_action_transitions = self.used.applied_action_transitions.saturating_add(
+            after_diagnostics
+                .applied_action_transitions
+                .saturating_sub(before_diagnostics.applied_action_transitions),
+        );
+        self.used.unique_successor_states = self.used.unique_successor_states.saturating_add(
+            after_diagnostics
+                .unique_successor_states
+                .saturating_sub(before_diagnostics.unique_successor_states),
+        );
+        self.used.duplicate_exact_successors = self.used.duplicate_exact_successors.saturating_add(
+            after_diagnostics
+                .duplicate_exact_successors
+                .saturating_sub(before_diagnostics.duplicate_exact_successors),
+        );
         self.generation_gaps.extend(new_gaps);
 
         for option in options {
@@ -444,10 +555,20 @@ impl LocalTurnGraphWitnessSession {
                         prefix_negative_log_policy + option.negative_log_policy(),
                         stepper,
                     ) {
-                        Ok(witness) => self.witness = Some(witness),
+                        Ok(witness) => {
+                            if self
+                                .witness
+                                .as_ref()
+                                .is_none_or(|current| witness_better(&witness, current))
+                            {
+                                self.witness = Some(witness);
+                            }
+                        }
                         Err(error) => self.replay_failure = Some(error),
                     }
-                    return true;
+                    if self.witness_satisfies() {
+                        return true;
+                    }
                 }
                 CompleteTurnOptionBoundary::TerminalLoss => {
                     self.used.terminal_losses = self.used.terminal_losses.saturating_add(1);
@@ -460,6 +581,21 @@ impl LocalTurnGraphWitnessSession {
         }
         self.refresh_exhaustion(node_id);
         true
+    }
+
+    fn witness_satisfies(&self) -> bool {
+        let Some(witness) = self.witness.as_ref() else {
+            return false;
+        };
+        match self.config.satisfaction {
+            OracleCombatWitnessSatisfaction::FirstWitness => true,
+            OracleCombatWitnessSatisfaction::HpLossAtMost(limit) => {
+                let initial_hp = self.original_root.combat.entities.player.current_hp;
+                let final_hp = witness.final_position.combat.entities.player.current_hp;
+                initial_hp.saturating_sub(final_hp).max(0) as u32 <= limit
+            }
+            OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
+        }
     }
 
     fn accept_successor(&mut self, parent_id: usize, option: CompleteTurnOption) {
@@ -823,6 +959,22 @@ fn replay_witness(
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+fn witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {
+    left.final_position
+        .combat
+        .entities
+        .player
+        .current_hp
+        .cmp(&right.final_position.combat.entities.player.current_hp)
+        .then_with(|| right.actions.len().cmp(&left.actions.len()))
+        .then_with(|| {
+            right
+                .negative_log_policy
+                .total_cmp(&left.negative_log_policy)
+        })
+        == std::cmp::Ordering::Greater
 }
 
 #[cfg(test)]

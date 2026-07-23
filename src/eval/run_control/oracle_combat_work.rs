@@ -5,20 +5,17 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatDecisionRoot, OracleCombatDeepStateSnapshot, OracleCombatRootActionFamilySnapshot,
-    OracleCombatWitness, OracleCombatWitnessConfig, OracleCombatWitnessDiscoverySource,
-    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus, TurnOptionAction,
+    CombatDecisionRoot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot,
+    OracleCombatRootActionFamilySnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot, TurnOptionAction,
     TurnOptionGeneratorConfig,
 };
 
 use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
-use super::oracle_combat_policy::{
-    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
-    ExistingCombatKnowledgePolicy,
-};
+use super::oracle_combat_policy::ExistingCombatKnowledgePolicy;
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
@@ -26,12 +23,7 @@ use crate::state::core::ClientInput;
 
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
-    search: OracleCombatWitnessSession,
-    advisor: Option<ExistingCombatKnowledgeAdvisorV1>,
-    advisor_nodes: u64,
-    advisor_elapsed: Duration,
-    advisor_complete: bool,
-    advisor_failure: Option<String>,
+    search: LocalTurnGraphWitnessSession,
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
@@ -39,7 +31,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     quantum_count: usize,
     prior_generation_work: u64,
     restart_count: usize,
-    last_status: Option<OracleCombatWitnessStatus>,
+    last_status: Option<LocalTurnGraphWitnessStatus>,
     incumbent_revision: u64,
     quanta_since_incumbent_improvement: usize,
     last_quantum_generation_work: usize,
@@ -120,7 +112,9 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
 
 impl OracleRunCombatWorkV1 {
     pub(super) fn root_action_families(&self) -> Vec<OracleCombatRootActionFamilySnapshot> {
-        self.search.root_action_families()
+        // Root-family attribution belonged to the retired global agenda. The
+        // local graph does not manufacture a misleading partial equivalent.
+        Vec::new()
     }
 
     pub(super) fn new(
@@ -151,35 +145,22 @@ impl OracleRunCombatWorkV1 {
         };
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
-        let search = OracleCombatWitnessSession::with_policy(
+        let search = LocalTurnGraphWitnessSession::with_policy(
             root,
-            OracleCombatWitnessConfig {
+            LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: max_transition_steps,
                     ..TurnOptionGeneratorConfig::default()
                 },
-                // Keep a selected exact state long enough to make a small,
-                // coherent amount of turn-generation progress before the
-                // outer state scheduler preempts it. A one-work slice made
-                // early turn choices compete with every newly discovered
-                // turn-boundary state after each atomic prefix.
-                generation_work_per_agenda_pop: 4,
+                generation_quantum_work: 4,
+                max_turn_depth: 32,
                 satisfaction,
             },
             Arc::new(ExistingCombatKnowledgePolicy::default()),
         );
-        let advisor = Some(ExistingCombatKnowledgeAdvisorV1::new(
-            &prepared.start,
-            max_transition_steps,
-        ));
         Ok(Self {
             start: prepared.start,
             search,
-            advisor,
-            advisor_nodes: 0,
-            advisor_elapsed: Duration::ZERO,
-            advisor_complete: false,
-            advisor_failure: None,
             remaining_work: max_work,
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
@@ -219,19 +200,8 @@ impl OracleRunCombatWorkV1 {
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
-        work.advisor_nodes = checkpoint.advisor_nodes;
-        work.advisor_elapsed = Duration::from_millis(checkpoint.advisor_elapsed_ms);
-        work.advisor_complete = checkpoint.advisor_complete;
-        work.advisor_failure = checkpoint.advisor_failure;
-        if work.advisor_complete {
-            work.advisor = None;
-        } else if let Some(advisor) = &mut work.advisor {
-            advisor.restore_charged_usage(work.advisor_nodes, work.advisor_elapsed);
-        }
         if let Some(incumbent) = checkpoint.incumbent {
             work.search.restore_verified_witness(incumbent)?;
-            work.advisor = None;
-            work.advisor_complete = true;
         }
         Ok(work)
     }
@@ -259,10 +229,12 @@ impl OracleRunCombatWorkV1 {
             incumbent_revision: self.incumbent_revision,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             incumbent: self.search.witness().cloned(),
-            advisor_nodes: self.advisor_nodes,
-            advisor_elapsed_ms: self.advisor_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
-            advisor_complete: self.advisor_complete,
-            advisor_failure: self.advisor_failure.clone(),
+            // Kept in checkpoint schema so old files still deserialize. New
+            // local-graph searches never start the retired V2 advisor.
+            advisor_nodes: 0,
+            advisor_elapsed_ms: 0,
+            advisor_complete: true,
+            advisor_failure: None,
         }
     }
 
@@ -296,44 +268,6 @@ impl OracleRunCombatWorkV1 {
         let deadline = soft_wall.and_then(|duration| now.checked_add(duration));
         self.last_quantum_generation_work = 0;
         self.last_quantum_engine_steps = 0;
-        if let Some(advisor) = &mut self.advisor {
-            let hard_wall = [self.remaining_wall_time, global_remaining]
-                .into_iter()
-                .flatten()
-                .min();
-            let advisor_status = advisor.advance(soft_wall, hard_wall);
-            self.advisor_nodes = advisor.total_nodes();
-            self.advisor_elapsed = advisor.total_elapsed();
-            match advisor_status {
-                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Pending) => {
-                    if let Some(remaining) = &mut self.remaining_wall_time {
-                        *remaining = remaining.saturating_sub(now.elapsed());
-                    }
-                    self.quantum_count = self.quantum_count.saturating_add(1);
-                    self.quanta_since_incumbent_improvement =
-                        self.quanta_since_incumbent_improvement.saturating_add(1);
-                    return if wall_allowance_exhausted(self.remaining_wall_time) {
-                        RunControlCombatWorkAdvanceV1::AllowanceExhausted
-                    } else {
-                        RunControlCombatWorkAdvanceV1::Pending
-                    };
-                }
-                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Proposal(proposal)) => {
-                    self.search.offer_witness_proposal(proposal);
-                    self.advisor = None;
-                    self.advisor_complete = true;
-                }
-                Ok(ExistingCombatKnowledgeAdvisorAdvanceV1::Exhausted) => {
-                    self.advisor = None;
-                    self.advisor_complete = true;
-                }
-                Err(error) => {
-                    self.advisor = None;
-                    self.advisor_complete = true;
-                    self.advisor_failure = Some(error);
-                }
-            }
-        }
         let before = self.search.counters();
         let before_incumbent_hp = self
             .search
@@ -343,15 +277,15 @@ impl OracleRunCombatWorkV1 {
             .remaining_engine_steps
             .min(work.saturating_mul(self.max_transition_steps));
         let report = self.search.advance(
-            &crate::sim::combat::EngineCombatStepper,
-            OracleCombatWitnessQuantum {
-                additional_agenda_pops: work,
+            LocalTurnGraphWitnessQuantum {
+                additional_selections: work,
                 additional_generation_work: work,
                 additional_engine_steps: engine_grant,
                 deadline,
             },
+            &crate::sim::combat::EngineCombatStepper,
         );
-        let after = report.after;
+        let after = report.counters;
         let consumed_work = after.generation_work.saturating_sub(before.generation_work);
         let consumed_engine = after.engine_steps.saturating_sub(before.engine_steps);
         self.last_quantum_generation_work = consumed_work;
@@ -377,13 +311,13 @@ impl OracleRunCombatWorkV1 {
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(report.status.clone());
         match report.status {
-            OracleCombatWitnessStatus::WitnessFound
-            | OracleCombatWitnessStatus::FrontierExhausted
-            | OracleCombatWitnessStatus::MechanicsGap
-            | OracleCombatWitnessStatus::ReplayMismatch(_) => {
+            LocalTurnGraphWitnessStatus::WitnessFound
+            | LocalTurnGraphWitnessStatus::FrontierExhausted
+            | LocalTurnGraphWitnessStatus::MechanicsGap
+            | LocalTurnGraphWitnessStatus::ReplayMismatch(_) => {
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
             }
-            OracleCombatWitnessStatus::Partial(_) => {
+            LocalTurnGraphWitnessStatus::Partial(_) => {
                 if self.remaining_work == 0
                     || self.remaining_engine_steps == 0
                     || wall_allowance_exhausted(self.remaining_wall_time)
@@ -530,7 +464,7 @@ impl OracleRunCombatWorkV1 {
                 .prior_generation_work
                 .saturating_add(counters.generation_work as u64),
             engine_steps: counters.engine_steps,
-            exact_states: counters.exact_states,
+            exact_states: counters.exact_nodes,
             applied_action_transitions: counters.applied_action_transitions,
             unique_successor_states: counters.unique_successor_states,
             duplicate_exact_successors: counters.duplicate_exact_successors,
@@ -550,11 +484,11 @@ impl OracleRunCombatWorkV1 {
                 .max_completed_turn_options_at_state,
             generation_gap_count: search_progress.generation_gap_count,
             pending_witness_replay: search_progress.pending_witness_replay,
-            policy_witness_proposals: counters.policy_witness_proposals,
-            advisor_nodes: self.advisor_nodes,
-            advisor_elapsed_ms: self.advisor_elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
-            advisor_active: self.advisor.is_some(),
-            advisor_failure: self.advisor_failure.clone(),
+            policy_witness_proposals: 0,
+            advisor_nodes: 0,
+            advisor_elapsed_ms: 0,
+            advisor_active: false,
+            advisor_failure: None,
             incumbent_discovery_source: incumbent.map(|witness| witness.discovery_source),
             incumbent_final_hp,
             incumbent_hp_loss: incumbent_final_hp
@@ -595,14 +529,14 @@ impl OracleRunCombatWorkV1 {
         }
         let status = self
             .last_status
-            .unwrap_or(OracleCombatWitnessStatus::Partial(
-                sts_combat_planner::OracleCombatWitnessInterruption::AgendaBudget,
+            .unwrap_or(LocalTurnGraphWitnessStatus::Partial(
+                sts_combat_planner::LocalTurnGraphWitnessInterruption::SelectionBudget,
             ));
         Ok(RunProgressOutcome::message(format!(
-            "Oracle combat search did not modify state. status={status:?} generation_work={} exact_states={} retained_work={}",
+            "Local-turn-graph combat search did not modify state. status={status:?} generation_work={} exact_states={} retained_work={}",
             self.prior_generation_work
                 .saturating_add(self.search.counters().generation_work as u64),
-            self.search.counters().exact_states,
+            self.search.counters().exact_nodes,
             self.search.retained_state_work(),
         ))
         .with_combat_search_rejection(
@@ -627,12 +561,12 @@ mod tests {
     }
 }
 
-fn oracle_witness_status_label(status: &OracleCombatWitnessStatus) -> &'static str {
+fn oracle_witness_status_label(status: &LocalTurnGraphWitnessStatus) -> &'static str {
     match status {
-        OracleCombatWitnessStatus::WitnessFound => "witness_found",
-        OracleCombatWitnessStatus::Partial(_) => "partial",
-        OracleCombatWitnessStatus::FrontierExhausted => "frontier_exhausted",
-        OracleCombatWitnessStatus::MechanicsGap => "mechanics_gap",
-        OracleCombatWitnessStatus::ReplayMismatch(_) => "replay_mismatch",
+        LocalTurnGraphWitnessStatus::WitnessFound => "witness_found",
+        LocalTurnGraphWitnessStatus::Partial(_) => "partial",
+        LocalTurnGraphWitnessStatus::FrontierExhausted => "frontier_exhausted",
+        LocalTurnGraphWitnessStatus::MechanicsGap => "mechanics_gap",
+        LocalTurnGraphWitnessStatus::ReplayMismatch(_) => "replay_mismatch",
     }
 }
