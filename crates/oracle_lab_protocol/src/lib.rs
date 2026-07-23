@@ -49,6 +49,10 @@ pub struct OracleAnalysisServiceEndpointV1 {
     pub auth_token: String,
     pub workspace: PathBuf,
     pub process_id: u32,
+    /// Immutable runtime image used by this resident process. Older endpoint
+    /// files omit it and remain readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -263,6 +267,7 @@ mod tests {
             auth_token: "secret-token".to_string(),
             workspace: PathBuf::from("workspace.json"),
             process_id: std::process::id(),
+            executable: None,
         };
         fs::write(
             &endpoint_path,
@@ -313,8 +318,23 @@ mod tests {
             auth_token: "unused".to_string(),
             workspace: PathBuf::new(),
             process_id: 0,
+            executable: None,
         };
         assert!(validate_endpoint(&endpoint).is_err());
+    }
+
+    #[test]
+    fn legacy_endpoint_without_runtime_image_remains_readable() {
+        let endpoint = serde_json::from_value::<OracleAnalysisServiceEndpointV1>(json!({
+            "schema_name": ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA,
+            "schema_version": ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA_VERSION,
+            "address": "127.0.0.1:1234",
+            "auth_token": "legacy",
+            "workspace": "workspace.json",
+            "process_id": 7
+        }))
+        .expect("deserialize legacy endpoint");
+        assert_eq!(endpoint.executable, None);
     }
 
     #[test]

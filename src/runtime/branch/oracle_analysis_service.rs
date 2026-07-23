@@ -96,6 +96,9 @@ pub fn serve_oracle_analysis_tcp_v1(
         auth_token: auth_token.clone(),
         workspace: workspace_path.to_path_buf(),
         process_id: std::process::id(),
+        executable: std::env::current_exe()
+            .ok()
+            .and_then(|path| path.canonicalize().ok()),
     };
     atomic_write_json(endpoint_path, &endpoint)?;
     let _endpoint_guard = EndpointFileGuard(endpoint_path.to_path_buf());

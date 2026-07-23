@@ -60,7 +60,7 @@ struct Cli {
     /// process. Direct execution is intentionally rejected so that a stale or
     /// wrongly-profiled oracle laboratory cannot silently produce evidence.
     #[arg(long, hide = true, global = true)]
-    canonical_fast_run: bool,
+    canonical_oracle: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -1766,7 +1766,7 @@ fn load_layered_solved_suffix_index(
 
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
-    validate_canonical_launch(cli.canonical_fast_run)?;
+    validate_canonical_launch(cli.canonical_oracle)?;
     match cli.command {
         Command::New {
             seed,
@@ -5444,12 +5444,12 @@ fn analysis_combat_case(
     )
 }
 
-fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
-    const REQUIRED_PROFILE: &str = "fast-run";
+fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
+    const REQUIRED_PROFILE: &str = "release";
     const BUILT_PROFILE: &str = env!("STS_CARGO_PROFILE");
     const REPOSITORY_ROOT: &str = env!("STS_REPOSITORY_ROOT");
 
-    if !canonical_fast_run {
+    if !canonical_oracle {
         return Err(
             "oracle_lab refuses direct execution; run `cargo oracle-lab <command> ...`".to_string(),
         );

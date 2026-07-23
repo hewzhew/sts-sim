@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 )]
 struct Cli {
     #[arg(long, hide = true, global = true)]
-    canonical_fast_run: bool,
+    canonical_oracle: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -158,7 +158,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
-    validate_canonical_launch(cli.canonical_fast_run)?;
+    validate_canonical_launch(cli.canonical_oracle)?;
     match cli.command {
         Command::Start { session, workspace } => start_session(&session, &workspace),
         Command::Call { endpoint, request } => {
@@ -707,6 +707,7 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
             "status": "already_running",
             "process_id": endpoint.process_id,
             "workspace": endpoint.workspace,
+            "executable": endpoint.executable,
             "endpoint": endpoint_path,
         }));
     }
@@ -715,7 +716,7 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
     let mut command = ProcessCommand::new(&executable);
     command
         .current_dir(repository_root())
-        .arg("--canonical-fast-run")
+        .arg("--canonical-oracle")
         .arg("--workspace")
         .arg(&workspace)
         .arg("--endpoint")
@@ -741,6 +742,7 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
                 "status": "started",
                 "process_id": endpoint.process_id,
                 "workspace": endpoint.workspace,
+                "executable": endpoint.executable,
                 "endpoint": endpoint_path,
             }));
         }
@@ -793,7 +795,7 @@ fn ensure_endpoint_workspace(
 fn delegate_heavy(arguments: Vec<OsString>) -> Result<(), String> {
     let executable = heavy_executable()?;
     let status = ProcessCommand::new(&executable)
-        .arg("--canonical-fast-run")
+        .arg("--canonical-oracle")
         .args(arguments)
         .status()
         .map_err(|error| {
@@ -812,44 +814,161 @@ fn delegate_heavy(arguments: Vec<OsString>) -> Result<(), String> {
 fn heavy_executable() -> Result<PathBuf, String> {
     let executable = repository_root()
         .join("target")
-        .join("fast-run")
+        .join("release")
         .join(if cfg!(windows) {
             "oracle_lab.exe"
         } else {
             "oracle_lab"
         });
-    if !executable.is_file() {
-        return Err(format!(
-            "heavy oracle laboratory is missing at {}; build it once with `cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab`",
+    let freshness_error = if executable.is_file() {
+        ensure_heavy_artifact_fresh(&executable).err()
+    } else {
+        Some(format!(
+            "heavy oracle laboratory is missing at {}",
             executable.display()
-        ));
+        ))
+    };
+    if let Some(reason) = freshness_error {
+        rebuild_heavy_artifact(&reason)?;
     }
     ensure_heavy_artifact_fresh(&executable)?;
     Ok(executable)
 }
 
 fn service_executable() -> Result<PathBuf, String> {
-    let executable = repository_root()
+    let canonical = repository_root()
         .join("target")
-        .join("fast-run")
+        .join("release")
         .join(if cfg!(windows) {
             "oracle_lab_service.exe"
         } else {
             "oracle_lab_service"
         });
-    let freshness_error = if executable.is_file() {
-        ensure_service_artifact_fresh(&executable).err()
+    let freshness_error = if canonical.is_file() {
+        ensure_service_artifact_fresh(&canonical).err()
     } else {
         Some(format!(
             "resident oracle host is missing at {}",
-            executable.display()
+            canonical.display()
         ))
     };
     if let Some(reason) = freshness_error {
         rebuild_service_artifact(&reason)?;
     }
-    ensure_service_artifact_fresh(&executable)?;
-    Ok(executable)
+    ensure_service_artifact_fresh(&canonical)?;
+    materialize_service_runtime(&canonical)
+}
+
+fn materialize_service_runtime(canonical: &Path) -> Result<PathBuf, String> {
+    let root = repository_root();
+    materialize_service_runtime_in(
+        canonical,
+        &root.join("target").join("oracle-lab").join("hosts"),
+        &root.join("target").join("oracle-lab").join("sessions"),
+    )
+}
+
+fn materialize_service_runtime_in(
+    canonical: &Path,
+    image_directory: &Path,
+    session_directory: &Path,
+) -> Result<PathBuf, String> {
+    let metadata = fs::metadata(canonical).map_err(|error| {
+        format!(
+            "failed to inspect canonical resident host '{}': {error}",
+            canonical.display()
+        )
+    })?;
+    let modified = metadata
+        .modified()
+        .and_then(|time| {
+            time.duration_since(std::time::UNIX_EPOCH)
+                .map_err(std::io::Error::other)
+        })
+        .map_err(|error| format!("failed to timestamp canonical resident host: {error}"))?;
+    fs::create_dir_all(image_directory).map_err(|error| {
+        format!(
+            "failed to create resident-host image directory '{}': {error}",
+            image_directory.display()
+        )
+    })?;
+    let extension = canonical
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    let file_name = format!(
+        "oracle_lab_service-{}-{}{}",
+        metadata.len(),
+        modified.as_nanos(),
+        if extension.is_empty() {
+            String::new()
+        } else {
+            format!(".{extension}")
+        }
+    );
+    let runtime = image_directory.join(file_name);
+    if !runtime.is_file() {
+        let temporary = image_directory.join(format!(
+            ".oracle_lab_service-{}-{}.tmp",
+            std::process::id(),
+            modified.as_nanos()
+        ));
+        fs::copy(canonical, &temporary).map_err(|error| {
+            format!(
+                "failed to materialize resident-host image '{}' from '{}': {error}",
+                temporary.display(),
+                canonical.display()
+            )
+        })?;
+        if let Err(error) = fs::rename(&temporary, &runtime) {
+            if !runtime.is_file() {
+                let _ = fs::remove_file(&temporary);
+                return Err(format!(
+                    "failed to publish resident-host image '{}': {error}",
+                    runtime.display()
+                ));
+            }
+            let _ = fs::remove_file(&temporary);
+        }
+    }
+    prune_unreferenced_service_images(image_directory, session_directory, &runtime);
+    Ok(runtime)
+}
+
+fn prune_unreferenced_service_images(directory: &Path, session_directory: &Path, current: &Path) {
+    let mut referenced = Vec::new();
+    if let Ok(entries) = fs::read_dir(session_directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(endpoint) = active_endpoint(&path) {
+                if let Some(executable) = endpoint.executable {
+                    referenced.push(executable);
+                }
+            }
+        }
+    }
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if paths_refer_to_same_file(&path, current)
+            || referenced
+                .iter()
+                .any(|executable| paths_refer_to_same_file(&path, executable))
+        {
+            continue;
+        }
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn paths_refer_to_same_file(left: &Path, right: &Path) -> bool {
+    left == right
+        || match (left.canonicalize(), right.canonicalize()) {
+            (Ok(left), Ok(right)) => left == right,
+            _ => false,
+        }
 }
 
 fn rebuild_service_artifact(reason: &str) -> Result<(), String> {
@@ -860,7 +979,7 @@ fn rebuild_service_artifact(reason: &str) -> Result<(), String> {
             "build",
             "--locked",
             "--profile",
-            "fast-run",
+            "release",
             "-p",
             "sts_simulator_control",
             "--bin",
@@ -877,11 +996,35 @@ fn rebuild_service_artifact(reason: &str) -> Result<(), String> {
     }
 }
 
+fn rebuild_heavy_artifact(reason: &str) -> Result<(), String> {
+    eprintln!("{reason}; rebuilding the canonical oracle laboratory once");
+    let status = ProcessCommand::new("cargo")
+        .current_dir(repository_root())
+        .args([
+            "build",
+            "--locked",
+            "--release",
+            "-p",
+            "sts_simulator_control",
+            "--bin",
+            "oracle_lab",
+        ])
+        .status()
+        .map_err(|error| format!("failed to start canonical oracle build: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "canonical oracle build failed with {status}; command was not executed"
+        ))
+    }
+}
+
 fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
         "heavy oracle laboratory",
-        "cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab",
+        "cargo build --release -p sts_simulator_control --bin oracle_lab",
     )
 }
 
@@ -889,7 +1032,7 @@ fn ensure_service_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
         "resident oracle host",
-        "cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab_service",
+        "cargo build --release -p sts_simulator_control --bin oracle_lab_service",
     )
 }
 
@@ -985,15 +1128,15 @@ fn validate_session_name(session: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
-    if !canonical_fast_run {
+fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
+    if !canonical_oracle {
         return Err(
             "oracle_lab client refuses direct execution; run `cargo ol <command> ...`".to_string(),
         );
     }
     let expected = repository_root()
         .join("target")
-        .join("fast-run")
+        .join("release")
         .join(if cfg!(windows) {
             "oracle_lab_client.exe"
         } else {
@@ -1018,7 +1161,7 @@ fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
     ensure_artifact_fresh(
         &current,
         "lightweight oracle client",
-        "cargo build --profile fast-run -p oracle_lab_client --bin oracle_lab_client",
+        "cargo build --release -p oracle_lab_client --bin oracle_lab_client",
     )?;
     Ok(())
 }
@@ -1044,7 +1187,7 @@ mod tests {
     fn typed_live_status_parses_without_loading_heavy_commands() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "live",
             "--session",
             "seed008",
@@ -1053,7 +1196,7 @@ mod tests {
             "3",
         ])
         .expect("parse typed live status");
-        assert!(cli.canonical_fast_run);
+        assert!(cli.canonical_oracle);
         assert!(matches!(
             cli.command,
             Command::Live {
@@ -1067,7 +1210,7 @@ mod tests {
     fn typed_live_combat_stays_on_the_resident_service_path() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "live",
             "--session",
             "seed008",
@@ -1092,7 +1235,7 @@ mod tests {
     fn typed_live_trace_stays_on_the_resident_service_path() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "live",
             "--session",
             "seed008",
@@ -1117,7 +1260,7 @@ mod tests {
     fn typed_live_root_actions_stays_on_the_resident_service_path() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "live",
             "--session",
             "seed008",
@@ -1140,7 +1283,7 @@ mod tests {
     fn typed_start_owns_named_session_launch() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "start",
             "--session",
             "seed008",
@@ -1158,12 +1301,12 @@ mod tests {
     #[test]
     fn unknown_commands_do_not_silently_launch_the_heavy_tool() {
         assert!(
-            Cli::try_parse_from(["oracle_lab_client", "--canonical-fast-run", "combat-csae",])
+            Cli::try_parse_from(["oracle_lab_client", "--canonical-oracle", "combat-csae",])
                 .is_err()
         );
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
-            "--canonical-fast-run",
+            "--canonical-oracle",
             "offline",
             "combat-case",
             "--case",
@@ -1219,6 +1362,42 @@ D:\rust\src\bin\oracle_lab.rs:
         let error = ensure_heavy_artifact_fresh(&executable)
             .expect_err("newer source must reject stale artifact");
         assert!(error.contains("refusing to run stale search code"));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn resident_host_images_are_reused_per_build_and_pruned_when_unreferenced() {
+        let directory = std::env::temp_dir().join(format!(
+            "oracle-lab-client-host-image-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let canonical = directory.join("oracle_lab_service.exe");
+        let images = directory.join("images");
+        let sessions = directory.join("sessions");
+        fs::create_dir_all(&sessions).expect("create session fixture");
+        fs::write(&canonical, b"first build").expect("write canonical host");
+
+        let first = materialize_service_runtime_in(&canonical, &images, &sessions)
+            .expect("materialize first host image");
+        let reused = materialize_service_runtime_in(&canonical, &images, &sessions)
+            .expect("reuse first host image");
+        assert_eq!(reused, first);
+        assert_eq!(fs::read(&first).expect("read first image"), b"first build");
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&canonical, b"second build").expect("replace canonical host");
+        let second = materialize_service_runtime_in(&canonical, &images, &sessions)
+            .expect("materialize second host image");
+        assert_ne!(second, first);
+        assert_eq!(
+            fs::read(&second).expect("read second image"),
+            b"second build"
+        );
+        assert!(!first.exists(), "unreferenced old image should be pruned");
         let _ = fs::remove_dir_all(directory);
     }
 

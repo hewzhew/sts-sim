@@ -27,4 +27,12 @@ fn main() {
         "cargo:rustc-env=STS_REPOSITORY_ROOT={}",
         repository_root.display()
     );
+    // Unoptimized orchestration code uses larger stack frames than the hot
+    // simulator/planner crates. The Windows default executable stack is too
+    // small for deep but finite exact-search replays in the oracle tools.
+    #[cfg(windows)]
+    {
+        println!("cargo:rustc-link-arg-bin=oracle_lab=/STACK:8388608");
+        println!("cargo:rustc-link-arg-bin=oracle_lab_service=/STACK:8388608");
+    }
 }

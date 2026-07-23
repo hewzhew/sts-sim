@@ -13,14 +13,13 @@ test-core = ["test", "-p", "sts_simulator", "--lib"]
 test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 test-control = ["test", "-p", "sts_simulator_control", "--lib"]
 check-workspace = ["check", "--workspace", "--all-targets"]
-# The oracle laboratory is deliberately runnable through one Cargo-owned
-# entrypoint.  The hidden token and the binary's embedded profile/path checks
-# reject stale binaries and accidental `--release --target-dir ...` builds.
-oracle-lab = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
+# The standard release directory is the one canonical optimized oracle
+# artifact. `release-final` remains available for slow deployment builds.
+oracle-lab = ["run", "--quiet", "--release", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-oracle"]
 # Build-owning convenience alias. For repeated diagnostics, `./ol` invokes the
 # same canonical binary directly and lets its depfile guard reject stale code.
-ol = ["run", "--quiet", "--profile", "fast-run", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-fast-run"]
+ol = ["run", "--quiet", "--release", "-p", "sts_simulator_control", "--bin", "oracle_lab", "--", "--canonical-oracle"]
 # Resident mode is explicit: this lightweight client controls a dedicated
 # service binary whose process lifetime preserves the in-memory combat search.
 # The one-shot oracle_lab executable remains independently rebuildable.
-ol-live = ["run", "--quiet", "--profile", "fast-run", "-p", "oracle_lab_client", "--bin", "oracle_lab_client", "--", "--canonical-fast-run"]
+ol-live = ["run", "--quiet", "--release", "-p", "oracle_lab_client", "--bin", "oracle_lab_client", "--", "--canonical-oracle"]

@@ -13,7 +13,7 @@ use sts_simulator::runtime::branch::{
 )]
 struct Cli {
     #[arg(long, hide = true)]
-    canonical_fast_run: bool,
+    canonical_oracle: bool,
     #[arg(long)]
     workspace: PathBuf,
     #[arg(long)]
@@ -31,7 +31,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
-    validate_canonical_launch(cli.canonical_fast_run)?;
+    validate_canonical_launch(cli.canonical_oracle)?;
     let workspace_path = cli.workspace.canonicalize().map_err(|error| {
         format!(
             "failed to resolve oracle workspace '{}': {error}",
@@ -56,42 +56,38 @@ fn absolute_from_repository(path: &Path) -> PathBuf {
     }
 }
 
-fn validate_canonical_launch(canonical_fast_run: bool) -> Result<(), String> {
-    if !canonical_fast_run {
+fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
+    if !canonical_oracle {
         return Err(
             "oracle_lab_service is an internal resident host; start it with `cargo ol-live start`"
                 .to_string(),
         );
     }
-    const REQUIRED_PROFILE: &str = "fast-run";
+    const REQUIRED_PROFILE: &str = "release";
     const BUILT_PROFILE: &str = env!("STS_CARGO_PROFILE");
     if BUILT_PROFILE != REQUIRED_PROFILE {
         return Err(format!(
             "oracle_lab_service was built with profile `{BUILT_PROFILE}`; expected `{REQUIRED_PROFILE}`"
         ));
     }
-    let expected = repository_root()
+    let image_directory = repository_root()
         .join("target")
-        .join(REQUIRED_PROFILE)
-        .join(if cfg!(windows) {
-            "oracle_lab_service.exe"
-        } else {
-            "oracle_lab_service"
-        });
+        .join("oracle-lab")
+        .join("hosts")
+        .canonicalize()
+        .map_err(|error| format!("resident-host image directory is missing: {error}"))?;
     let current = std::env::current_exe()
         .and_then(|path| path.canonicalize())
         .map_err(|error| format!("failed to identify resident oracle host: {error}"))?;
-    let expected = expected.canonicalize().map_err(|error| {
-        format!(
-            "canonical resident oracle host is missing at {}: {error}",
-            expected.display()
-        )
-    })?;
-    if current != expected {
+    let valid_name = current
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("oracle_lab_service-"));
+    if current.parent() != Some(image_directory.as_path()) || !valid_name {
         return Err(format!(
-            "resident oracle host refuses non-canonical artifact {}; expected {}",
+            "resident oracle host refuses mutable or foreign artifact {}; expected an immutable image below {}",
             current.display(),
-            expected.display()
+            image_directory.display()
         ));
     }
     Ok(())
