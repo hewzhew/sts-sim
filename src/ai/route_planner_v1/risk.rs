@@ -37,7 +37,7 @@ pub(super) fn safety_flag(
     if projected_survival_reserve_is_thin(viability, max_hp) {
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
-    if envelope.threat_exposure != PathThreatExposureV1::Covered {
+    if envelope.threat_exposure == PathThreatExposureV1::ExposedWithoutBuffer {
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {
