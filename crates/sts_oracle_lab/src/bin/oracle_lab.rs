@@ -15,10 +15,10 @@ use sts_combat_planner::{
     fold_verified_suffix_through_turn_predecessors, generate_depth_beam_turn_options,
     rank_layered_combat_lineage_parents, search_depth_beam_agenda_witness, AtomicLevinRerooting,
     AtomicLevinWitnessConfig, AtomicLevinWitnessQuantum, AtomicLevinWitnessSession,
-    AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioSession,
-    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
-    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, DepthBeamAgendaBudget,
-    DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
+    AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioQuantum,
+    AtomicTurnPortfolioSession, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
+    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
+    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
@@ -293,29 +293,39 @@ enum Command {
         case: PathBuf,
         #[arg(long)]
         action_imitation_artifact: Option<PathBuf>,
-        #[arg(long, default_value_t = 250_000)]
-        max_transitions: usize,
+        #[arg(long, alias = "max-transitions", default_value_t = 250_000)]
+        max_search_work: usize,
         #[arg(long, default_value_t = 5_000)]
         wall_ms: u64,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
         #[arg(long, default_value_t = 10_000)]
         uniform_exploration_ppm: u32,
+        #[arg(long, default_value_t = 512)]
+        initial_boundary_work: usize,
         #[arg(long, default_value_t = 64)]
         boundary_service_work: usize,
-        #[arg(long, default_value_t = 512)]
-        suffix_service_transitions: usize,
+        #[arg(long, alias = "suffix-service-transitions", default_value_t = 8_192)]
+        suffix_service_work: usize,
         /// Reroot an independent policy-discrepancy search at every terminal
         /// portfolio boundary instead of using the atomic Levin suffix.
         #[arg(long)]
         policy_discrepancy_suffix: bool,
+        /// Give every exact next-turn successor an independent resumable
+        /// local-turn graph. This is mutually exclusive with discrepancy
+        /// suffixes and is the coherent root-successor service control.
+        #[arg(long, conflicts_with = "policy_discrepancy_suffix")]
+        local_turn_graph_suffix: bool,
+        /// Add the existing bounded rollout evaluator to local-turn suffixes.
+        #[arg(long, requires = "local_turn_graph_suffix")]
+        suffix_rollout_lookahead: bool,
         /// Complete-turn work reserved by each independent discrepancy suffix.
         #[arg(long, default_value_t = 4_096)]
         suffix_turn_macro_transitions: usize,
         #[arg(long, default_value_t = 1)]
         boundary_layers: usize,
-        #[arg(long, default_value_t = 8)]
-        boundary_service_period: usize,
+        #[arg(long, default_value_t = 65_536)]
+        terminal_work_per_boundary_batch: usize,
         #[arg(long)]
         suffix_reroot_player_turn_boundaries: bool,
         /// Include every live task in the JSON report. Off by default because
@@ -3486,16 +3496,19 @@ fn main() -> Result<(), String> {
         Command::CombatCaseAtomicTurnPortfolio {
             case,
             action_imitation_artifact,
-            max_transitions,
+            max_search_work,
             wall_ms,
             max_engine_steps_per_transition,
             uniform_exploration_ppm,
+            initial_boundary_work,
             boundary_service_work,
-            suffix_service_transitions,
+            suffix_service_work,
             policy_discrepancy_suffix,
+            local_turn_graph_suffix,
+            suffix_rollout_lookahead,
             suffix_turn_macro_transitions,
             boundary_layers,
-            boundary_service_period,
+            terminal_work_per_boundary_batch,
             suffix_reroot_player_turn_boundaries,
             include_task_entries,
             include_task_guides,
@@ -3535,10 +3548,11 @@ fn main() -> Result<(), String> {
                     },
                     ..suffix_config
                 },
+                initial_boundary_work,
                 boundary_service_work,
-                suffix_service_transitions,
+                suffix_service_work,
                 boundary_layers,
-                boundary_service_period,
+                terminal_work_per_boundary_batch,
             };
             let mut portfolio = if policy_discrepancy_suffix {
                 AtomicTurnPortfolioSession::with_policy_discrepancy_suffix(
@@ -3558,6 +3572,19 @@ fn main() -> Result<(), String> {
                     boundary_policy,
                     suffix_policy,
                 )
+            } else if local_turn_graph_suffix {
+                AtomicTurnPortfolioSession::with_local_turn_graph_suffix(
+                    root,
+                    portfolio_config,
+                    LocalTurnGraphWitnessConfig {
+                        generator: boundary_config,
+                        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+                        ..LocalTurnGraphWitnessConfig::default()
+                    },
+                    boundary_policy,
+                    suffix_policy,
+                    suffix_rollout_lookahead.then(existing_combat_rollout_lookahead_v1),
+                )
             } else {
                 AtomicTurnPortfolioSession::with_policies(
                     root,
@@ -3569,9 +3596,9 @@ fn main() -> Result<(), String> {
             let started = Instant::now();
             let report = portfolio.advance(
                 &EngineCombatStepper,
-                AtomicLevinWitnessQuantum {
-                    additional_applied_transitions: max_transitions,
-                    additional_engine_steps: max_transitions
+                AtomicTurnPortfolioQuantum {
+                    additional_search_work: max_search_work,
+                    additional_engine_steps: max_search_work
                         .saturating_mul(max_engine_steps_per_transition),
                     deadline: Some(started + Duration::from_millis(wall_ms)),
                 },
@@ -3598,7 +3625,7 @@ fn main() -> Result<(), String> {
                 let next_quantum = if entry.remaining_boundary_layers > 0 {
                     boundary_service_work.min(entry.boundary_guides.len().saturating_add(1))
                 } else {
-                    suffix_service_transitions
+                    suffix_service_work
                 }
                 .max(1);
                 entry.prefix_negative_log_policy
@@ -3617,6 +3644,7 @@ fn main() -> Result<(), String> {
                             "scheduler_work": entry.scheduler_work,
                             "services": entry.services,
                             "boundary_generation_work": entry.boundary_generation_work,
+                            "terminal_search_work": entry.terminal_search_work,
                             "applied_action_transitions": entry.applied_action_transitions,
                             "engine_steps": entry.engine_steps,
                             "remaining_boundary_layers": entry.remaining_boundary_layers,
@@ -3699,6 +3727,7 @@ fn main() -> Result<(), String> {
                         "scheduler_work": entry.scheduler_work,
                         "services": entry.services,
                         "boundary_generation_work": entry.boundary_generation_work,
+                        "terminal_search_work": entry.terminal_search_work,
                         "applied_action_transitions": entry.applied_action_transitions,
                         "engine_steps": entry.engine_steps,
                         "remaining_boundary_layers": entry.remaining_boundary_layers,
@@ -3723,8 +3752,8 @@ fn main() -> Result<(), String> {
                 })
                 .collect::<Vec<_>>();
             print_json(&json!({
-                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV2",
-                "schema_version": 2,
+                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV3",
+                "schema_version": 3,
                 "case": case_path,
                 "runtime": oracle_lab_runtime_identity(),
                 "mode": {
@@ -3734,10 +3763,15 @@ fn main() -> Result<(), String> {
                     "suffix_action_imitation_artifact": action_imitation_artifact,
                     "suffix_search": if policy_discrepancy_suffix {
                         "policy_discrepancy"
+                    } else if local_turn_graph_suffix && suffix_rollout_lookahead {
+                        "local_turn_graph_with_rollout_lookahead"
+                    } else if local_turn_graph_suffix {
+                        "local_turn_graph"
                     } else {
                         "atomic_levin"
                     },
                     "suffix_rerooting": suffix_reroot_player_turn_boundaries,
+                    "v2_rollout_lookahead": suffix_rollout_lookahead,
                     "task_entries_included": include_task_entries,
                     "task_guides_included": include_task_guides,
                     "v2_donor": false,
@@ -3749,25 +3783,29 @@ fn main() -> Result<(), String> {
                     "total_before_print": command_started.elapsed().as_millis(),
                 },
                 "budget": {
-                    "max_transitions": max_transitions,
+                    "max_search_work": max_search_work,
                     "wall_ms": wall_ms,
                     "boundary_service_work": boundary_service_work,
-                    "suffix_service_transitions": suffix_service_transitions,
+                    "initial_boundary_work": initial_boundary_work,
+                    "suffix_service_work": suffix_service_work,
                     "suffix_turn_macro_transitions": policy_discrepancy_suffix
                         .then_some(suffix_turn_macro_transitions),
                     "boundary_layers": boundary_layers,
-                    "boundary_service_period": boundary_service_period,
+                    "terminal_work_per_boundary_batch": terminal_work_per_boundary_batch,
                 },
                 "work": {
                     "services": report.after.services,
                     "boundary_services": report.after.boundary_services,
                     "suffix_services": report.after.suffix_services,
                     "boundary_generation_work": report.after.boundary_generation_work,
+                    "terminal_search_work": report.after.terminal_search_work,
+                    "charged_search_work": report.after.charged_search_work,
                     "applied_action_transitions": report.after.applied_action_transitions,
                     "engine_steps": report.after.engine_steps,
                     "turn_boundaries_found": report.after.turn_boundaries_found,
                     "suffix_sessions_started": report.after.suffix_sessions_started,
                     "suffix_sessions_exhausted": report.after.suffix_sessions_exhausted,
+                    "suffix_sessions_mechanics_gap": report.after.suffix_sessions_mechanics_gap,
                     "invalid_boundary_roots": report.after.invalid_boundary_roots,
                     "duplicate_boundary_successors": report.after.duplicate_boundary_successors,
                     "anchor_view_services": report.after.anchor_view_services,

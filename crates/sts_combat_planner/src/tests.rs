@@ -2153,10 +2153,11 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
                 max_engine_steps_per_transition: 4,
                 ..AtomicLevinWitnessConfig::default()
             },
+            initial_boundary_work: 64,
             boundary_service_work: 8,
-            suffix_service_transitions: 8,
+            suffix_service_work: 8,
             boundary_layers: 1,
-            boundary_service_period: 8,
+            terminal_work_per_boundary_batch: 64,
         },
         Arc::new(PreferPlayPolicy),
         Arc::new(PreferPlayPolicy),
@@ -2164,8 +2165,8 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
 
     let report = portfolio.advance(
         &TinyTurnStepper::lethal_after_current_turn(),
-        AtomicLevinWitnessQuantum {
-            additional_applied_transitions: 2_048,
+        AtomicTurnPortfolioQuantum {
+            additional_search_work: 2_048,
             additional_engine_steps: 8_192,
             deadline: None,
         },
@@ -2196,10 +2197,11 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
                 max_engine_steps_per_transition: 4,
                 ..AtomicLevinWitnessConfig::default()
             },
+            initial_boundary_work: 64,
             boundary_service_work: 8,
-            suffix_service_transitions: 8,
+            suffix_service_work: 8,
             boundary_layers: 2,
-            boundary_service_period: 8,
+            terminal_work_per_boundary_batch: 64,
         },
         Arc::new(PreferEndTurnPolicy),
         Arc::new(PreferPlayPolicy),
@@ -2207,8 +2209,8 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
 
     let report = portfolio.advance(
         &TinyTurnStepper::lethal_after_two_turns(),
-        AtomicLevinWitnessQuantum {
-            additional_applied_transitions: 256,
+        AtomicTurnPortfolioQuantum {
+            additional_search_work: 256,
             additional_engine_steps: 1_024,
             deadline: None,
         },
@@ -2242,6 +2244,29 @@ fn atomic_turn_portfolio_guide_service_advances_in_geometric_work_rounds() {
 }
 
 #[test]
+fn atomic_turn_portfolio_widens_only_after_a_coherent_terminal_batch() {
+    use crate::atomic_turn_portfolio::progressive_boundary_work_allowance;
+
+    assert_eq!(progressive_boundary_work_allowance(512, 65_536, 0), 512);
+    assert_eq!(
+        progressive_boundary_work_allowance(512, 65_536, 65_535),
+        512
+    );
+    assert_eq!(
+        progressive_boundary_work_allowance(512, 65_536, 65_536),
+        1_024
+    );
+}
+
+#[test]
+fn atomic_turn_portfolio_charges_selection_only_local_graph_progress() {
+    use crate::atomic_turn_portfolio::local_graph_charged_work;
+
+    assert_eq!(local_graph_charged_work(7, 0), 7);
+    assert_eq!(local_graph_charged_work(2, 11), 11);
+}
+
+#[test]
 fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let mut portfolio = AtomicTurnPortfolioSession::with_policy_discrepancy_suffix(
@@ -2255,10 +2280,11 @@ fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
                 max_engine_steps_per_transition: 4,
                 ..AtomicLevinWitnessConfig::default()
             },
+            initial_boundary_work: 64,
             boundary_service_work: 8,
-            suffix_service_transitions: 8,
+            suffix_service_work: 8,
             boundary_layers: 1,
-            boundary_service_period: 8,
+            terminal_work_per_boundary_batch: 64,
         },
         PolicyDiscrepancyConfig {
             max_engine_steps_per_transition: 4,
@@ -2271,8 +2297,8 @@ fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
 
     let report = portfolio.advance(
         &stepper,
-        AtomicLevinWitnessQuantum {
-            additional_applied_transitions: 2_048,
+        AtomicTurnPortfolioQuantum {
+            additional_search_work: 2_048,
             additional_engine_steps: 8_192,
             deadline: None,
         },
@@ -2284,6 +2310,69 @@ fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
     let witness = report
         .witness
         .expect("a child-local discrepancy should repair the suffix policy");
+    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
+    assert_eq!(witness.actions[1].input, PLAY);
+}
+
+#[test]
+fn atomic_turn_portfolio_can_give_each_boundary_a_local_graph_suffix() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut portfolio = AtomicTurnPortfolioSession::with_local_turn_graph_suffix(
+        root(),
+        AtomicTurnPortfolioConfig {
+            boundary_search: TurnOptionGeneratorConfig {
+                max_engine_steps_per_transition: 4,
+                ..TurnOptionGeneratorConfig::default()
+            },
+            suffix_search: AtomicLevinWitnessConfig {
+                max_engine_steps_per_transition: 4,
+                ..AtomicLevinWitnessConfig::default()
+            },
+            initial_boundary_work: 64,
+            boundary_service_work: 8,
+            suffix_service_work: 32,
+            boundary_layers: 1,
+            terminal_work_per_boundary_batch: 64,
+        },
+        LocalTurnGraphWitnessConfig {
+            generator: TurnOptionGeneratorConfig {
+                max_engine_steps_per_transition: 4,
+                ..TurnOptionGeneratorConfig::default()
+            },
+            generation_quantum_work: 1,
+            backed_generation_quantum_work: 1,
+            initial_expansion_work: 1,
+            root_initial_expansion_work: 1,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+        Arc::new(PreferPlayPolicy),
+        None,
+    );
+
+    let report = portfolio.advance(
+        &stepper,
+        AtomicTurnPortfolioQuantum {
+            additional_search_work: 2_048,
+            additional_engine_steps: 8_192,
+            deadline: None,
+        },
+    );
+
+    assert_eq!(report.status, AtomicTurnPortfolioStatus::WitnessFound);
+    assert!(report.after.boundary_generation_work > 0);
+    assert!(report.after.terminal_search_work > 0);
+    assert_eq!(
+        report.after.charged_search_work,
+        report
+            .after
+            .boundary_generation_work
+            .saturating_add(report.after.terminal_search_work)
+    );
+    assert!(report.after.charged_search_work <= 2_048);
+    let witness = report
+        .witness
+        .expect("an independent local graph should solve the suffix");
     assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
     assert_eq!(witness.actions[1].input, PLAY);
 }

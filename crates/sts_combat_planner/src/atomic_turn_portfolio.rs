@@ -5,11 +5,15 @@ use sts_core::sim::combat::{CombatPosition, CombatStepper, CombatTerminal};
 
 use crate::atomic_levin_search::{
     replay_atomic_actions, AtomicLevinSearchHorizon, AtomicLevinWitness, AtomicLevinWitnessConfig,
-    AtomicLevinWitnessCounters, AtomicLevinWitnessInterruption, AtomicLevinWitnessQuantum,
-    AtomicLevinWitnessReplayError, AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
+    AtomicLevinWitnessCounters, AtomicLevinWitnessQuantum, AtomicLevinWitnessReplayError,
+    AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
 };
 use crate::generator::TurnOptionGeneratorSession;
-use crate::policy::{uniform_policy, SharedCombatActionPolicy};
+use crate::local_turn_graph_search::{
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
+    LocalTurnGraphWitnessStatus,
+};
+use crate::policy::{uniform_policy, SharedCombatActionPolicy, SharedCombatLookaheadEvaluator};
 use crate::policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
     PolicyDiscrepancyStatus,
@@ -18,6 +22,7 @@ use crate::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
     CompleteTurnOptionBoundary, TurnOptionAction, TurnOptionGeneratorConfig,
 };
+use crate::witness_search::OracleCombatWitnessReplayError;
 
 /// A bounded turn-decomposition control for independent tactical service.
 ///
@@ -30,14 +35,21 @@ use crate::types::{
 pub struct AtomicTurnPortfolioConfig {
     pub boundary_search: TurnOptionGeneratorConfig,
     pub suffix_search: AtomicLevinWitnessConfig,
+    /// Deterministic boundary-generation work in one progressive-widening
+    /// batch. Exhaustion may end the first batch earlier.
+    pub initial_boundary_work: usize,
     pub boundary_service_work: usize,
-    pub suffix_service_transitions: usize,
+    /// Charged search work granted to one terminal task. Atomic backends
+    /// charge exact transitions; the local-turn graph charges generation plus
+    /// lookahead work. This shared unit is deliberately not wall time.
+    pub suffix_service_work: usize,
     /// Number of exact player-turn boundaries to expose before a task switches
     /// to terminal search. `1` reproduces the original one-layer control.
     pub boundary_layers: usize,
-    /// One boundary-generator service per this many coarse services. Suffix
-    /// tasks receive the remaining services by their independent Levin cost.
-    pub boundary_service_period: usize,
+    /// Terminal search work required before another boundary batch opens.
+    /// This makes widening pay for itself with coherent child evaluation
+    /// instead of flooding the portfolio merely because generation is cheap.
+    pub terminal_work_per_boundary_batch: usize,
 }
 
 impl Default for AtomicTurnPortfolioConfig {
@@ -45,10 +57,11 @@ impl Default for AtomicTurnPortfolioConfig {
         Self {
             boundary_search: TurnOptionGeneratorConfig::default(),
             suffix_search: AtomicLevinWitnessConfig::default(),
+            initial_boundary_work: 512,
             boundary_service_work: 64,
-            suffix_service_transitions: 512,
+            suffix_service_work: 8_192,
             boundary_layers: 1,
-            boundary_service_period: 8,
+            terminal_work_per_boundary_batch: 65_536,
         }
     }
 }
@@ -60,10 +73,15 @@ pub struct AtomicTurnPortfolioCounters {
     pub suffix_services: usize,
     pub applied_action_transitions: usize,
     pub boundary_generation_work: usize,
+    /// Backend-independent work used to enforce the portfolio allowance.
+    pub charged_search_work: usize,
+    /// Search work consumed after a task reaches its terminal-search phase.
+    pub terminal_search_work: usize,
     pub engine_steps: usize,
     pub turn_boundaries_found: usize,
     pub suffix_sessions_started: usize,
     pub suffix_sessions_exhausted: usize,
+    pub suffix_sessions_mechanics_gap: usize,
     pub invalid_boundary_roots: usize,
     pub duplicate_boundary_successors: usize,
     pub anchor_view_services: usize,
@@ -71,9 +89,16 @@ pub struct AtomicTurnPortfolioCounters {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AtomicTurnPortfolioInterruption {
+    SearchWorkBudget,
+    EngineStepBudget,
+    Deadline,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AtomicTurnPortfolioStatus {
     WitnessFound,
-    Partial(AtomicLevinWitnessInterruption),
+    Partial(AtomicTurnPortfolioInterruption),
     FrontierExhausted,
     ReplayMismatch(AtomicLevinWitnessReplayError),
     PolicyReplayMismatch,
@@ -102,6 +127,7 @@ pub struct AtomicTurnPortfolioEntryReport {
     pub prefix_negative_log_policy: f64,
     pub applied_action_transitions: usize,
     pub boundary_generation_work: usize,
+    pub terminal_search_work: usize,
     pub scheduler_work: usize,
     pub services: usize,
     pub engine_steps: usize,
@@ -124,21 +150,26 @@ struct SuffixWork {
     boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
     session: PortfolioTaskSession,
     boundary_generation_work: usize,
+    terminal_search_work: usize,
     applied_action_transitions: usize,
     engine_steps: usize,
     services: usize,
 }
 
 enum PortfolioTaskSession {
-    Boundary(TurnOptionGeneratorSession),
-    AtomicTerminal(AtomicLevinWitnessSession),
-    PolicyDiscrepancyTerminal(PolicyDiscrepancySession),
+    Boundary(Box<TurnOptionGeneratorSession>),
+    AtomicTerminal(Box<AtomicLevinWitnessSession>),
+    PolicyDiscrepancyTerminal(Box<PolicyDiscrepancySession>),
+    LocalTurnGraphTerminal(Box<LocalTurnGraphWitnessSession>),
 }
 
-#[derive(Clone, Copy)]
 enum PortfolioTerminalSearch {
     AtomicLevin,
     PolicyDiscrepancy(PolicyDiscrepancyConfig),
+    LocalTurnGraph {
+        config: LocalTurnGraphWitnessConfig,
+        lookahead: Option<SharedCombatLookaheadEvaluator>,
+    },
 }
 
 impl SuffixWork {
@@ -146,7 +177,7 @@ impl SuffixWork {
         if self.remaining_boundary_layers > 0 {
             self.boundary_generation_work
         } else {
-            self.applied_action_transitions
+            self.terminal_search_work
         }
     }
 
@@ -157,9 +188,16 @@ impl SuffixWork {
                 .min(self.boundary_guides.len().saturating_add(1))
                 .max(1)
         } else {
-            config.suffix_service_transitions.max(1)
+            config.suffix_service_work.max(1)
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AtomicTurnPortfolioQuantum {
+    pub additional_search_work: usize,
+    pub additional_engine_steps: usize,
+    pub deadline: Option<Instant>,
 }
 
 pub struct AtomicTurnPortfolioSession {
@@ -169,13 +207,12 @@ pub struct AtomicTurnPortfolioSession {
     suffix_policy: SharedCombatActionPolicy,
     terminal_search: PortfolioTerminalSearch,
     suffixes: Vec<SuffixWork>,
-    suffix_services_since_boundary: usize,
     next_boundary_id: u64,
     seen_boundary_states: HashSet<(String, usize)>,
     boundary_view_cursor: usize,
     terminal_view_cursor: usize,
     used: AtomicTurnPortfolioCounters,
-    granted_applied_transitions: usize,
+    granted_search_work: usize,
     granted_engine_steps: usize,
     witness: Option<AtomicLevinWitness>,
     replay_failure: Option<AtomicLevinWitnessReplayError>,
@@ -229,6 +266,33 @@ impl AtomicTurnPortfolioSession {
         )
     }
 
+    /// Enumerate exact next-turn successors once, then give every successor an
+    /// independent resumable local-turn graph. The graph keeps a coherent
+    /// multi-turn search within one root action while this portfolio supplies
+    /// policy-weighted fair service across root actions.
+    pub fn with_local_turn_graph_suffix(
+        root: CombatDecisionRoot,
+        mut config: AtomicTurnPortfolioConfig,
+        mut suffix_search: LocalTurnGraphWitnessConfig,
+        boundary_policy: SharedCombatActionPolicy,
+        suffix_policy: SharedCombatActionPolicy,
+        lookahead: Option<SharedCombatLookaheadEvaluator>,
+    ) -> Self {
+        config.boundary_layers = config.boundary_layers.max(1);
+        suffix_search.generator.max_engine_steps_per_transition =
+            config.boundary_search.max_engine_steps_per_transition;
+        Self::with_terminal_search(
+            root,
+            config,
+            boundary_policy,
+            suffix_policy,
+            PortfolioTerminalSearch::LocalTurnGraph {
+                config: suffix_search,
+                lookahead,
+            },
+        )
+    }
+
     fn with_terminal_search(
         root: CombatDecisionRoot,
         config: AtomicTurnPortfolioConfig,
@@ -252,20 +316,24 @@ impl AtomicTurnPortfolioSession {
                     components: guide.rank.components().to_vec(),
                 })
                 .collect(),
-            session: PortfolioTaskSession::Boundary(TurnOptionGeneratorSession::with_policy(
-                root,
-                config.boundary_search,
-                boundary_policy.clone(),
+            session: PortfolioTaskSession::Boundary(Box::new(
+                TurnOptionGeneratorSession::with_policy(
+                    root,
+                    config.boundary_search,
+                    boundary_policy.clone(),
+                ),
             )),
             boundary_generation_work: 0,
+            terminal_search_work: 0,
             applied_action_transitions: 0,
             engine_steps: 0,
             services: 0,
         };
-        let boundary_service_period = config.boundary_service_period.max(1);
         let boundary_layers = config.boundary_layers;
-        let mut used = AtomicTurnPortfolioCounters::default();
-        used.suffix_sessions_started = 1;
+        let used = AtomicTurnPortfolioCounters {
+            suffix_sessions_started: 1,
+            ..AtomicTurnPortfolioCounters::default()
+        };
         Self {
             root: position,
             config,
@@ -273,13 +341,12 @@ impl AtomicTurnPortfolioSession {
             suffix_policy,
             terminal_search,
             suffixes: vec![root_task],
-            suffix_services_since_boundary: boundary_service_period,
             next_boundary_id: 1,
             seen_boundary_states: HashSet::from([(root_hash, boundary_layers)]),
             boundary_view_cursor: 0,
             terminal_view_cursor: 0,
             used,
-            granted_applied_transitions: 0,
+            granted_search_work: 0,
             granted_engine_steps: 0,
             witness: None,
             replay_failure: None,
@@ -296,12 +363,12 @@ impl AtomicTurnPortfolioSession {
     pub fn advance(
         &mut self,
         stepper: &dyn CombatStepper,
-        quantum: AtomicLevinWitnessQuantum,
+        quantum: AtomicTurnPortfolioQuantum,
     ) -> AtomicTurnPortfolioReport {
         let before = self.used;
-        self.granted_applied_transitions = self
-            .granted_applied_transitions
-            .saturating_add(quantum.additional_applied_transitions);
+        self.granted_search_work = self
+            .granted_search_work
+            .saturating_add(quantum.additional_search_work);
         self.granted_engine_steps = self
             .granted_engine_steps
             .saturating_add(quantum.additional_engine_steps);
@@ -320,14 +387,16 @@ impl AtomicTurnPortfolioSession {
                 .deadline
                 .is_some_and(|deadline| Instant::now() >= deadline)
             {
-                break AtomicTurnPortfolioStatus::Partial(AtomicLevinWitnessInterruption::Deadline);
+                break AtomicTurnPortfolioStatus::Partial(
+                    AtomicTurnPortfolioInterruption::Deadline,
+                );
             }
             let remaining_transitions = self
-                .granted_applied_transitions
-                .saturating_sub(self.used.applied_action_transitions);
+                .granted_search_work
+                .saturating_sub(self.used.charged_search_work);
             if remaining_transitions == 0 {
                 break AtomicTurnPortfolioStatus::Partial(
-                    AtomicLevinWitnessInterruption::AppliedTransitionBudget,
+                    AtomicTurnPortfolioInterruption::SearchWorkBudget,
                 );
             }
             let remaining_engine_steps = self
@@ -335,7 +404,7 @@ impl AtomicTurnPortfolioSession {
                 .saturating_sub(self.used.engine_steps);
             if remaining_engine_steps == 0 {
                 break AtomicTurnPortfolioStatus::Partial(
-                    AtomicLevinWitnessInterruption::EngineStepBudget,
+                    AtomicTurnPortfolioInterruption::EngineStepBudget,
                 );
             }
             if self.suffixes.is_empty() {
@@ -350,12 +419,15 @@ impl AtomicTurnPortfolioSession {
                 .suffixes
                 .iter()
                 .any(|task| task.remaining_boundary_layers == 0);
+            let boundary_work_allowance = progressive_boundary_work_allowance(
+                self.config.initial_boundary_work,
+                self.config.terminal_work_per_boundary_batch,
+                self.used.terminal_search_work,
+            );
             let service_boundary = has_boundary_task
                 && (!has_terminal_task
-                    || self.suffix_services_since_boundary
-                        >= self.config.boundary_service_period.max(1).saturating_sub(1));
+                    || self.used.boundary_generation_work < boundary_work_allowance);
             if service_boundary {
-                self.suffix_services_since_boundary = 0;
                 self.service_one_task(
                     stepper,
                     true,
@@ -364,10 +436,6 @@ impl AtomicTurnPortfolioSession {
                     quantum.deadline,
                 );
             } else {
-                if has_terminal_task {
-                    self.suffix_services_since_boundary =
-                        self.suffix_services_since_boundary.saturating_add(1);
-                }
                 self.service_one_task(
                     stepper,
                     false,
@@ -406,6 +474,7 @@ impl AtomicTurnPortfolioSession {
                     prefix_negative_log_policy: suffix.prefix_negative_log_policy,
                     applied_action_transitions: suffix.applied_action_transitions,
                     boundary_generation_work: suffix.boundary_generation_work,
+                    terminal_search_work: suffix.terminal_search_work,
                     scheduler_work: suffix.scheduler_work(),
                     services: suffix.services,
                     engine_steps: suffix.engine_steps,
@@ -513,6 +582,10 @@ impl AtomicTurnPortfolioSession {
             .used
             .boundary_generation_work
             .saturating_add(generation_delta);
+        self.used.charged_search_work = self
+            .used
+            .charged_search_work
+            .saturating_add(generation_delta);
         self.used.applied_action_transitions = self
             .used
             .applied_action_transitions
@@ -543,15 +616,18 @@ impl AtomicTurnPortfolioSession {
     ) {
         let transition_quantum = self
             .config
-            .suffix_service_transitions
+            .suffix_service_work
             .max(1)
             .min(remaining_transitions);
-        let max_engine_steps_per_transition = match self.terminal_search {
+        let max_engine_steps_per_transition = match &self.terminal_search {
             PortfolioTerminalSearch::AtomicLevin => {
                 self.config.suffix_search.max_engine_steps_per_transition
             }
             PortfolioTerminalSearch::PolicyDiscrepancy(config) => {
                 config.max_engine_steps_per_transition
+            }
+            PortfolioTerminalSearch::LocalTurnGraph { config, .. } => {
+                config.generator.max_engine_steps_per_transition
             }
         };
         let engine_quantum = transition_quantum
@@ -578,8 +654,11 @@ impl AtomicTurnPortfolioSession {
                 suffix.applied_action_transitions = suffix
                     .applied_action_transitions
                     .saturating_add(transition_delta);
+                suffix.terminal_search_work =
+                    suffix.terminal_search_work.saturating_add(transition_delta);
                 suffix.engine_steps = suffix.engine_steps.saturating_add(engine_delta);
                 self.absorb_atomic_work(report.before, report.after);
+                self.charge_terminal_work(transition_delta);
 
                 match report.status {
                     AtomicLevinWitnessStatus::WitnessFound => {
@@ -620,12 +699,15 @@ impl AtomicTurnPortfolioSession {
                 suffix.applied_action_transitions = suffix
                     .applied_action_transitions
                     .saturating_add(transition_delta);
+                suffix.terminal_search_work =
+                    suffix.terminal_search_work.saturating_add(transition_delta);
                 suffix.engine_steps = suffix.engine_steps.saturating_add(engine_delta);
                 self.used.applied_action_transitions = self
                     .used
                     .applied_action_transitions
                     .saturating_add(transition_delta);
                 self.used.engine_steps = self.used.engine_steps.saturating_add(engine_delta);
+                self.charge_terminal_work(transition_delta);
 
                 match report.status {
                     PolicyDiscrepancyStatus::WitnessFound => {
@@ -641,6 +723,76 @@ impl AtomicTurnPortfolioSession {
                         self.policy_replay_mismatch = true;
                     }
                     PolicyDiscrepancyStatus::Partial(_) => self.suffixes.push(suffix),
+                }
+            }
+            PortfolioTaskSession::LocalTurnGraphTerminal(session) => {
+                let before = session.counters();
+                let report = session.advance(
+                    LocalTurnGraphWitnessQuantum {
+                        additional_selections: transition_quantum,
+                        additional_generation_work: transition_quantum,
+                        additional_engine_steps: engine_quantum,
+                        deadline,
+                    },
+                    stepper,
+                );
+                let after = report.counters.clone();
+                let transition_delta = after
+                    .applied_action_transitions
+                    .saturating_sub(before.applied_action_transitions);
+                let generation_and_lookahead_delta = after
+                    .generation_work
+                    .saturating_add(after.lookahead_work)
+                    .saturating_sub(before.generation_work.saturating_add(before.lookahead_work));
+                let selection_delta = after.selections.saturating_sub(before.selections);
+                // Local graph scheduling and generation have independent
+                // allowances. Charge whichever dimension advanced farther so
+                // a selection-only path cannot consume unbounded portfolio
+                // service without reducing the shared allowance.
+                let search_work_delta =
+                    local_graph_charged_work(selection_delta, generation_and_lookahead_delta);
+                let engine_delta = after.engine_steps.saturating_sub(before.engine_steps);
+                suffix.applied_action_transitions = suffix
+                    .applied_action_transitions
+                    .saturating_add(transition_delta);
+                suffix.terminal_search_work = suffix
+                    .terminal_search_work
+                    .saturating_add(search_work_delta);
+                suffix.engine_steps = suffix.engine_steps.saturating_add(engine_delta);
+                self.used.applied_action_transitions = self
+                    .used
+                    .applied_action_transitions
+                    .saturating_add(transition_delta);
+                self.used.engine_steps = self.used.engine_steps.saturating_add(engine_delta);
+                self.charge_terminal_work(search_work_delta);
+
+                match report.status {
+                    LocalTurnGraphWitnessStatus::WitnessFound => {
+                        if let Some(witness) = report.witness {
+                            self.finish_combined_witness(
+                                stepper,
+                                &suffix,
+                                AtomicLevinWitness {
+                                    actions: witness.actions,
+                                    final_position: witness.final_position,
+                                    negative_log_policy: witness.negative_log_policy,
+                                    replay_engine_steps: witness.replay_engine_steps,
+                                },
+                            );
+                        }
+                    }
+                    LocalTurnGraphWitnessStatus::FrontierExhausted => {
+                        self.used.suffix_sessions_exhausted =
+                            self.used.suffix_sessions_exhausted.saturating_add(1);
+                    }
+                    LocalTurnGraphWitnessStatus::MechanicsGap => {
+                        self.used.suffix_sessions_mechanics_gap =
+                            self.used.suffix_sessions_mechanics_gap.saturating_add(1);
+                    }
+                    LocalTurnGraphWitnessStatus::ReplayMismatch(error) => {
+                        self.replay_failure = Some(atomic_replay_error(error));
+                    }
+                    LocalTurnGraphWitnessStatus::Partial(_) => self.suffixes.push(suffix),
                 }
             }
             PortfolioTaskSession::Boundary(_) => {
@@ -715,28 +867,43 @@ impl AtomicTurnPortfolioSession {
         let boundary_id = self.next_boundary_id;
         self.next_boundary_id = self.next_boundary_id.saturating_add(1);
         let session = if remaining_boundary_layers > 0 {
-            PortfolioTaskSession::Boundary(TurnOptionGeneratorSession::with_policy(
+            PortfolioTaskSession::Boundary(Box::new(TurnOptionGeneratorSession::with_policy(
                 root,
                 self.config.boundary_search,
                 self.boundary_policy.clone(),
-            ))
+            )))
         } else {
-            match self.terminal_search {
-                PortfolioTerminalSearch::AtomicLevin => {
-                    PortfolioTaskSession::AtomicTerminal(AtomicLevinWitnessSession::with_policy(
+            match &self.terminal_search {
+                PortfolioTerminalSearch::AtomicLevin => PortfolioTaskSession::AtomicTerminal(
+                    Box::new(AtomicLevinWitnessSession::with_policy(
                         root,
                         self.config.suffix_search,
                         self.suffix_policy.clone(),
-                    ))
-                }
+                    )),
+                ),
                 PortfolioTerminalSearch::PolicyDiscrepancy(config) => {
-                    PortfolioTaskSession::PolicyDiscrepancyTerminal(
+                    PortfolioTaskSession::PolicyDiscrepancyTerminal(Box::new(
                         PolicyDiscrepancySession::with_policy(
                             root,
-                            config,
+                            *config,
                             self.suffix_policy.clone(),
                         ),
-                    )
+                    ))
+                }
+                PortfolioTerminalSearch::LocalTurnGraph { config, lookahead } => {
+                    PortfolioTaskSession::LocalTurnGraphTerminal(Box::new(match lookahead {
+                        Some(lookahead) => LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+                            root,
+                            *config,
+                            self.suffix_policy.clone(),
+                            lookahead.clone(),
+                        ),
+                        None => LocalTurnGraphWitnessSession::with_policy(
+                            root,
+                            *config,
+                            self.suffix_policy.clone(),
+                        ),
+                    }))
                 }
             }
         };
@@ -749,6 +916,7 @@ impl AtomicTurnPortfolioSession {
             boundary_guides,
             session,
             boundary_generation_work: 0,
+            terminal_search_work: 0,
             applied_action_transitions: 0,
             engine_steps: 0,
             services: 0,
@@ -833,6 +1001,11 @@ impl AtomicTurnPortfolioSession {
             .saturating_add(after.engine_steps.saturating_sub(before.engine_steps));
     }
 
+    fn charge_terminal_work(&mut self, work: usize) {
+        self.used.terminal_search_work = self.used.terminal_search_work.saturating_add(work);
+        self.used.charged_search_work = self.used.charged_search_work.saturating_add(work);
+    }
+
     fn finish_combined_witness(
         &mut self,
         stepper: &dyn CombatStepper,
@@ -848,12 +1021,15 @@ impl AtomicTurnPortfolioSession {
             self.config
                 .boundary_search
                 .max_engine_steps_per_transition
-                .max(match self.terminal_search {
+                .max(match &self.terminal_search {
                     PortfolioTerminalSearch::AtomicLevin => {
                         self.config.suffix_search.max_engine_steps_per_transition
                     }
                     PortfolioTerminalSearch::PolicyDiscrepancy(config) => {
                         config.max_engine_steps_per_transition
+                    }
+                    PortfolioTerminalSearch::LocalTurnGraph { config, .. } => {
+                        config.generator.max_engine_steps_per_transition
                     }
                 }),
         ) {
@@ -880,6 +1056,41 @@ impl AtomicTurnPortfolioSession {
 
 pub(crate) fn scheduler_work_round(work: usize) -> u32 {
     work.max(1).ilog2()
+}
+
+pub(crate) fn progressive_boundary_work_allowance(
+    batch_work: usize,
+    terminal_work_per_batch: usize,
+    terminal_work: usize,
+) -> usize {
+    let completed_terminal_batches = terminal_work / terminal_work_per_batch.max(1);
+    batch_work
+        .max(1)
+        .saturating_mul(completed_terminal_batches.saturating_add(1))
+}
+
+pub(crate) fn local_graph_charged_work(
+    selection_work: usize,
+    generation_and_lookahead_work: usize,
+) -> usize {
+    selection_work.max(generation_and_lookahead_work)
+}
+
+fn atomic_replay_error(error: OracleCombatWitnessReplayError) -> AtomicLevinWitnessReplayError {
+    match error {
+        OracleCombatWitnessReplayError::IllegalInput { action_index } => {
+            AtomicLevinWitnessReplayError::IllegalInput { action_index }
+        }
+        OracleCombatWitnessReplayError::TransitionStepLimit { action_index } => {
+            AtomicLevinWitnessReplayError::TransitionStepLimit { action_index }
+        }
+        OracleCombatWitnessReplayError::SuccessorMismatch { action_index } => {
+            AtomicLevinWitnessReplayError::SuccessorMismatch { action_index }
+        }
+        OracleCombatWitnessReplayError::FinalStateIsNotWin => {
+            AtomicLevinWitnessReplayError::FinalStateIsNotWin
+        }
+    }
 }
 
 fn compare_guide_lane(left: &SuffixWork, right: &SuffixWork, lane: u32) -> std::cmp::Ordering {

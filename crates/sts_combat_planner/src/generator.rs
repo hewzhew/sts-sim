@@ -764,10 +764,10 @@ impl TurnOptionGeneratorSession {
 
     /// Service exactly one frozen anchor/guide scheduling round.
     ///
-    /// This is the resumable boundary-worker primitive used by an outer
-    /// portfolio. Work published by the round is retained for the next call;
-    /// it cannot recursively turn one coarse service into an unbounded batch
-    /// of completed turn options.
+    /// An outer portfolio uses this to release complete-turn successors
+    /// progressively. Work published by this round remains queued for the next
+    /// call and cannot recursively turn one coarse service into an eager dump
+    /// of every available turn option.
     pub(crate) fn advance_one_scheduling_round(
         &mut self,
         stepper: &dyn CombatStepper,
