@@ -837,14 +837,44 @@ fn service_executable() -> Result<PathBuf, String> {
         } else {
             "oracle_lab_service"
         });
-    if !executable.is_file() {
-        return Err(format!(
-            "resident oracle host is missing at {}; build it once with `cargo build --profile fast-run -p sts_simulator_control --bin oracle_lab_service`",
+    let freshness_error = if executable.is_file() {
+        ensure_service_artifact_fresh(&executable).err()
+    } else {
+        Some(format!(
+            "resident oracle host is missing at {}",
             executable.display()
-        ));
+        ))
+    };
+    if let Some(reason) = freshness_error {
+        rebuild_service_artifact(&reason)?;
     }
     ensure_service_artifact_fresh(&executable)?;
     Ok(executable)
+}
+
+fn rebuild_service_artifact(reason: &str) -> Result<(), String> {
+    eprintln!("{reason}; rebuilding the canonical resident host once");
+    let status = ProcessCommand::new("cargo")
+        .current_dir(repository_root())
+        .args([
+            "build",
+            "--locked",
+            "--profile",
+            "fast-run",
+            "-p",
+            "sts_simulator_control",
+            "--bin",
+            "oracle_lab_service",
+        ])
+        .status()
+        .map_err(|error| format!("failed to start canonical resident-host build: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "canonical resident-host build failed with {status}; no service was started"
+        ))
+    }
 }
 
 fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
