@@ -77,6 +77,7 @@ pub enum AcquisitionConstructionRole {
     HardStrategicGap,
     PackageReliability,
     SupportedPackagePayoff,
+    CombatSustain,
     SoftStrategicGap,
     EngineOrScaling,
     UpgradeAccess,
@@ -523,6 +524,9 @@ fn construction_role(
     if strategic_delta.repairs_package_reliability {
         return Some(AcquisitionConstructionRole::PackageReliability);
     }
+    if has_combat_sustain(admission) {
+        return Some(AcquisitionConstructionRole::CombatSustain);
+    }
     if admission.class
         == crate::ai::strategy::reward_admission::RewardAdmissionClass::BuildsSupportedPackage
         && admission_is_strength_payoff(admission)
@@ -575,6 +579,12 @@ fn has_run_reward(admission: &RewardAdmission) -> bool {
         .any(|reason| matches!(reason, RewardAdmissionReason::RunReward(_)))
 }
 
+fn has_combat_sustain(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::RecoverCurrentHp)
+}
+
 fn low_margin_filler_card(card: CardId) -> bool {
     matches!(
         card,
@@ -592,6 +602,9 @@ fn low_margin_filler_card(card: CardId) -> bool {
 }
 
 fn fragile_supported_payoff(deck_plan: DeckPlanSnapshot, admission: &RewardAdmission) -> bool {
+    if has_combat_sustain(admission) {
+        return false;
+    }
     if !admission
         .reasons
         .iter()

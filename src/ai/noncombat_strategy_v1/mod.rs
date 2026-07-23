@@ -12,7 +12,7 @@ mod types;
 pub use candidate::candidate_plan_delta_v2;
 pub use coverage::{
     threat_coverage_after_card_v1, threat_coverage_from_deck_facts_v1,
-    threat_coverage_from_run_state_v1,
+    threat_coverage_from_run_state_v1, threat_relevant_capability_improvements_v1,
 };
 pub use run_snapshot::{
     build_run_strategy_snapshot_from_run_state_v2,

@@ -540,7 +540,12 @@ fn thin_support_filter(
             .iter()
             .any(|reason| matches!(reason, RewardAdmissionReason::ThinSupport(_)))
     });
-    if thin {
+    let has_independent_recovery = admission.is_some_and(|admission| {
+        admission
+            .reasons
+            .contains(&RewardAdmissionReason::RecoverCurrentHp)
+    });
+    if thin && !has_independent_recovery {
         FilterDecision::InspectOnly("payoff support is too thin")
     } else {
         FilterDecision::Pass
@@ -1421,6 +1426,12 @@ fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
 }
 
 fn fragile_supported_payoff(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::RecoverCurrentHp)
+    {
+        return false;
+    }
     if !admission
         .reasons
         .iter()

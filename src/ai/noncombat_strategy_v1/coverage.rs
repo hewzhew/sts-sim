@@ -129,6 +129,30 @@ pub fn threat_coverage_after_card_v1(
     threat_coverage_from_run_state_v1(&trial, threats)
 }
 
+pub fn threat_relevant_capability_improvements_v1(
+    threats: &StrategyThreatProfileV1,
+    before: &StrategyThreatCoverageLedgerV1,
+    after: &StrategyThreatCoverageLedgerV1,
+) -> Vec<Kind> {
+    let mut improvements = Vec::new();
+    for source in &threats.sources {
+        for kind in required_capabilities(source.tag) {
+            let before_coverage = before
+                .capability(kind)
+                .map(|capability| capability.coverage)
+                .unwrap_or(Coverage::Unknown);
+            let after_coverage = after
+                .capability(kind)
+                .map(|capability| capability.coverage)
+                .unwrap_or(Coverage::Unknown);
+            if after_coverage > before_coverage && !improvements.contains(&kind) {
+                improvements.push(kind);
+            }
+        }
+    }
+    improvements
+}
+
 fn ledger_from_capability_facts(
     facts: CapabilityFacts,
     threats: &StrategyThreatProfileV1,

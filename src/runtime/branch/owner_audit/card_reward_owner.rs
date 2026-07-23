@@ -2,13 +2,16 @@ use sts_simulator::ai::boss_mechanics_v1::boss_mechanic_pressure_profile_v1;
 use sts_simulator::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, CardComponentSignalContextV1, CardComponentSignalKindV1,
 };
-use sts_simulator::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use sts_simulator::ai::card_reward_policy_v1::{
+    card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
+};
 use sts_simulator::ai::deck_startup_profile_v1::{
     deck_startup_profile_v1, startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
 };
 use sts_simulator::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, threat_coverage_after_card_v1,
-    StrategyCapabilityCoverageV1, StrategyThreatCoverageLedgerV1, StrategyThreatSourceV1,
+    threat_relevant_capability_improvements_v1, StrategyCapabilityCoverageV1,
+    StrategyCapabilityKindV1, StrategyThreatCoverageLedgerV1, StrategyThreatSourceV1,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
     candidate_lane_rank, CandidateLane, DecisionCandidateKind, DecisionPipelineContext,
@@ -61,7 +64,9 @@ impl CardRewardFunctionalEvidenceV1 {
     fn has_unburdened_independent_value(&self) -> bool {
         self.hard_liability.is_none()
             && !self.access_saturated
-            && (self.has(CardRewardFunctionV1::Access) || self.has(CardRewardFunctionV1::Amplifier))
+            && (self.has(CardRewardFunctionV1::Access)
+                || self.has(CardRewardFunctionV1::Amplifier)
+                || self.has(CardRewardFunctionV1::Recovery))
     }
 }
 
@@ -87,9 +92,16 @@ pub(super) fn card_reward_owner_choices(
     session: &RunControlSession,
     surface: &DecisionSurface,
 ) -> Vec<OwnerChoice> {
-    let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
+    let post_boss_reward = is_post_boss_card_reward(&session.run_state);
+    let deck_plan =
+        DeckPlanSnapshot::from_run_state(&session.run_state).with_boss_key(if post_boss_reward {
+            None
+        } else {
+            session.run_state.boss_key
+        });
     let context = DecisionPipelineContext::reward(deck_plan);
-    let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+    let strategy_run_state = card_reward_strategy_run_state(&session.run_state);
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(&strategy_run_state);
     let mut choices = executable_choices(surface)
         .into_iter()
         .filter(|choice| is_card_reward_key(&choice.key))
@@ -267,7 +279,10 @@ fn card_reward_effective_lane(
     strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     choice: &OwnerChoice,
 ) -> CandidateLane {
-    if card_reward_repairs_unavoidable_obligation(session, strategy, choice) {
+    if card_reward_repairs_or_strengthens_active_obligation(session, strategy, choice) {
+        return CandidateLane::Mainline;
+    }
+    if card_reward_has_supported_recovery(session, strategy, choice) {
         return CandidateLane::Mainline;
     }
     choice
@@ -276,7 +291,23 @@ fn card_reward_effective_lane(
         .map_or(CandidateLane::Reject, |evaluation| evaluation.lane)
 }
 
-fn card_reward_repairs_unavoidable_obligation(
+fn card_reward_has_supported_recovery(
+    session: &RunControlSession,
+    strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    choice: &OwnerChoice,
+) -> bool {
+    let Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) = &choice.key else {
+        return false;
+    };
+    let functional =
+        card_reward_functional_evidence(&session.run_state, strategy, *card, *upgrades, false);
+    functional.has(CardRewardFunctionV1::Recovery)
+        && functional.has(CardRewardFunctionV1::Amplifier)
+        && functional.hard_liability.is_none()
+        && functional.component_debt_count == 0
+}
+
+fn card_reward_repairs_or_strengthens_active_obligation(
     session: &RunControlSession,
     strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     choice: &OwnerChoice,
@@ -290,7 +321,22 @@ fn card_reward_repairs_unavoidable_obligation(
     let after_coverage =
         threat_coverage_after_card_v1(&session.run_state, &strategy.threats, *card, *upgrades);
     let after = strategic_obligation_order_key(session, &trial, &after_coverage);
-    after.unavoidable_gaps_by_deadline < before.unavoidable_gaps_by_deadline
+    if after.unavoidable_gaps_by_deadline < before.unavoidable_gaps_by_deadline {
+        return true;
+    }
+    let strengthened = threat_relevant_capability_improvements_v1(
+        &strategy.threats,
+        &strategy.threat_coverage,
+        &after_coverage,
+    );
+    if !strengthened.contains(&StrategyCapabilityKindV1::SustainedDefense) {
+        return false;
+    }
+    let functional =
+        card_reward_functional_evidence(&session.run_state, strategy, *card, *upgrades, false);
+    functional.has(CardRewardFunctionV1::Answer)
+        && functional.hard_liability.is_none()
+        && functional.component_debt_count == 0
 }
 
 fn attach_card_reward_provenance(
@@ -350,6 +396,11 @@ fn attach_card_reward_provenance(
             &trial,
             &after,
         ),
+        strengthened_capabilities: threat_relevant_capability_improvements_v1(
+            &strategy.threats,
+            &strategy.threat_coverage,
+            &after,
+        ),
         hard_startup_liability: functional.hard_liability.is_some(),
         component_debt_count: functional.component_debt_count,
         access_saturated: functional.access_saturated,
@@ -370,7 +421,7 @@ fn card_reward_obligation_deltas(
     after: &StrategyThreatCoverageLedgerV1,
 ) -> Vec<CardRewardObligationDeltaV1> {
     let mut obligations = Vec::new();
-    if let Some(boss) = before_run.boss_key {
+    if let Some(boss) = live_act_boss_obligation(before_run) {
         obligations.push(CardRewardObligationDeltaV1 {
             source: CardRewardObligationSourceV1::KnownBoss,
             subject: format!("{boss:?}"),
@@ -478,7 +529,7 @@ fn strategic_obligation_order_key(
 ) -> StrategicObligationOrderKeyV1 {
     let mut key = StrategicObligationOrderKeyV1::default();
 
-    if let Some(boss) = run_state.boss_key {
+    if let Some(boss) = live_act_boss_obligation(run_state) {
         let mechanic_gaps = boss_mechanic_pressure_profile_v1(run_state, boss)
             .missing_answers
             .len();
@@ -633,6 +684,12 @@ fn card_reward_functional_evidence(
     {
         push(CardRewardFunctionV1::Amplifier);
     }
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::CombatSustain)
+    {
+        push(CardRewardFunctionV1::Recovery);
+    }
     if hard_liability.is_some() || !components.debt_signals.is_empty() {
         push(CardRewardFunctionV1::Liability);
     }
@@ -656,6 +713,28 @@ fn floors_to_act_boss(run_state: &RunState) -> i32 {
         _ => run_state.floor_num,
     };
     boss_floor.saturating_sub(run_state.floor_num)
+}
+
+fn live_act_boss_obligation(
+    run_state: &RunState,
+) -> Option<sts_simulator::content::monsters::factory::EncounterId> {
+    run_state
+        .boss_key
+        .filter(|_| floors_to_act_boss(run_state) > 0)
+}
+
+fn is_post_boss_card_reward(run_state: &RunState) -> bool {
+    run_state.act_num < 3 && run_state.boss_key.is_some() && floors_to_act_boss(run_state) <= 0
+}
+
+fn card_reward_strategy_run_state(run_state: &RunState) -> RunState {
+    if !is_post_boss_card_reward(run_state) {
+        return run_state.clone();
+    }
+    let mut projected = run_state.clone();
+    projected.act_num = projected.act_num.saturating_add(1);
+    projected.boss_key = None;
+    projected
 }
 
 fn capability_residual_order_key(
@@ -828,6 +907,96 @@ mod tests {
                 .iter()
                 .position(|card| *card == Some(CardId::Disarm))
                 < ordered.iter().position(Option::is_none)
+        );
+    }
+
+    #[test]
+    fn seed20260713009_first_act2_reward_strengthens_sustained_defense_with_disarm() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 17;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Armaments, 0),
+            (CardId::Cleave, 0),
+            (CardId::ShrugItOff, 1),
+            (CardId::Bloodletting, 0),
+            (CardId::Rupture, 0),
+            (CardId::Headbutt, 0),
+            (CardId::Whirlwind, 0),
+            (CardId::Impervious, 0),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::Disarm, 0),
+                (CardId::HeavyBlade, 1),
+                (CardId::Warcry, 0),
+            ],
+        );
+
+        assert!(
+            ordered
+                .iter()
+                .position(|card| *card == Some(CardId::Disarm))
+                < ordered.iter().position(Option::is_none),
+            "a clean improvement from supported to strong sustained defense against active Act 2 threats must remain visible above skip: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_disarm_does_not_claim_a_second_sustained_defense_improvement() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 17;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::ShrugItOff, 1),
+            (CardId::Impervious, 0),
+            (CardId::Disarm, 0),
+        ]);
+        let reward_cards = vec![RewardCard::new(CardId::Disarm, 0)];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: reward_cards.clone(),
+        }];
+        reward.pending_card_choice = Some(reward_cards);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+        let surface = build_decision_surface(&session);
+        let choices = card_reward_owner_choices(&session, &surface);
+        let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+        let disarm = choices
+            .iter()
+            .find(|choice| {
+                matches!(
+                    card_reward_kind(&choice.key),
+                    Some(DecisionCandidateKind::CardRewardPick {
+                        card: CardId::Disarm,
+                        ..
+                    })
+                )
+            })
+            .expect("Disarm candidate");
+
+        assert!(
+            !card_reward_repairs_or_strengthens_active_obligation(
+                &session, &strategy, disarm
+            ),
+            "a capability already rated strong must not manufacture another categorical improvement"
         );
     }
 
@@ -1334,6 +1503,139 @@ mod tests {
                 .position(|card| *card == Some(CardId::Inflame))
                 < ordered.iter().position(Option::is_none),
             "Inflame+ should remain a live known-Champ candidate: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn post_boss_card_reward_does_not_keep_the_defeated_boss_as_an_obligation() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 32;
+        session.run_state.current_hp = 14;
+        session.run_state.max_hp = 72;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Bloodletting, 1),
+            (CardId::Rupture, 0),
+            (CardId::Whirlwind, 1),
+            (CardId::Disarm, 0),
+            (CardId::SecondWind, 0),
+            (CardId::PowerThrough, 1),
+            (CardId::SwordBoomerang, 0),
+        ]);
+
+        let reward_cards = vec![
+            RewardCard::new(CardId::Reaper, 0),
+            RewardCard::new(CardId::LimitBreak, 0),
+            RewardCard::new(CardId::DemonForm, 0),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: reward_cards.clone(),
+        }];
+        reward.pending_card_choice = Some(reward_cards);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let surface = build_decision_surface(&session);
+        let choices = card_reward_owner_choices(&session, &surface);
+        assert_eq!(
+            card_reward_kind(&choices[0].key),
+            Some(DecisionCandidateKind::CardRewardPick {
+                card: CardId::Reaper,
+                upgrades: 0,
+            }),
+            "supported combat sustain should outrank the stale scaling answer and skip"
+        );
+        let strategy_state = card_reward_strategy_run_state(&session.run_state);
+        let strategy = build_run_strategy_snapshot_from_run_state_v2(&strategy_state);
+        let has_mainline_take = choices
+            .iter()
+            .any(|choice| is_mainline_card_reward_take(&session, &strategy, choice));
+        for choice in &choices {
+            eprintln!(
+                "{}: rank={:?}, evaluation={:?}, admission={:?}",
+                choice.label,
+                card_reward_choice_rank(&session, &strategy, choice, has_mainline_take),
+                choice.annotation.evaluation(),
+                choice.annotation.admission(),
+            );
+            let ChoiceAnnotation::Candidate(decision) = &choice.annotation else {
+                continue;
+            };
+            let provenance = decision
+                .card_reward_provenance
+                .as_ref()
+                .expect("card reward provenance");
+            if matches!(
+                card_reward_kind(&choice.key),
+                Some(DecisionCandidateKind::CardRewardPick {
+                    card: CardId::Reaper,
+                    ..
+                })
+            ) {
+                assert!(
+                    provenance
+                        .functions
+                        .contains(&CardRewardFunctionV1::Recovery),
+                    "Reaper must retain its independent combat recovery function"
+                );
+            }
+            assert!(
+                provenance
+                    .obligations
+                    .iter()
+                    .all(|obligation| obligation.source != CardRewardObligationSourceV1::KnownBoss),
+                "the defeated Collector must not remain a live deadline-zero obligation for {}",
+                choice.label
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_recovery_conversion_does_not_become_an_owner_guarantee() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 20;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+        ]);
+        let reward_cards = vec![RewardCard::new(CardId::Reaper, 0)];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: reward_cards.clone(),
+        }];
+        reward.pending_card_choice = Some(reward_cards);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let surface = build_decision_surface(&session);
+        let choices = card_reward_owner_choices(&session, &surface);
+        let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+        let reaper = choices
+            .iter()
+            .find(|choice| {
+                matches!(
+                    card_reward_kind(&choice.key),
+                    Some(DecisionCandidateKind::CardRewardPick {
+                        card: CardId::Reaper,
+                        ..
+                    })
+                )
+            })
+            .expect("Reaper candidate");
+
+        assert!(
+            !card_reward_has_supported_recovery(&session, &strategy, reaper),
+            "combat recovery without a supported conversion axis may remain a candidate, but must not receive the supported-recovery guarantee"
         );
     }
 }

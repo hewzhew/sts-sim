@@ -86,6 +86,7 @@ pub fn assess_role_saturation(
     }
 
     if admission_is_strength_payoff(admission)
+        && !admission_recovers_current_hp(admission)
         && deck.roles.strength_payoff_units >= strength_payoff_capacity(deck)
     {
         assessment.add(
@@ -206,4 +207,10 @@ fn has_duplicate_access_copy(admission: &RewardAdmission) -> bool {
             RewardAdmissionReason::DuplicateConcern(RewardDuplicateConcern::DiminishingAccessCopy)
         )
     })
+}
+
+fn admission_recovers_current_hp(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::RecoverCurrentHp)
 }

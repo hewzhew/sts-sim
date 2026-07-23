@@ -1743,6 +1743,7 @@ mod tests {
                     gaps_before: 1,
                     gaps_after: 1,
                 }],
+                strengthened_capabilities: Vec::new(),
                 hard_startup_liability: false,
                 component_debt_count: 0,
                 access_saturated: false,

@@ -129,7 +129,9 @@ fn repeated_role_admission(
     if admission_damage_uses(admission, Mechanic::Block) && inventory.block_payoff_units >= 1 {
         return Some(level);
     }
-    if admission_damage_uses(admission, Mechanic::Strength) && inventory.strength_payoff_units >= 2
+    if admission_damage_uses(admission, Mechanic::Strength)
+        && !admission_recovers_current_hp(admission)
+        && inventory.strength_payoff_units >= 2
     {
         return Some(level);
     }
@@ -205,4 +207,10 @@ fn admission_has_combat_upgrade(admission: &RewardAdmission) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::CombatUpgrade)
+}
+
+fn admission_recovers_current_hp(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::RecoverCurrentHp)
 }

@@ -8,6 +8,7 @@ use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
 };
+use crate::ai::noncombat_strategy_v1::StrategyCapabilityKindV1;
 use crate::ai::planner_core::{
     stable_planner_id, PlannerBehaviorEvent, PLANNER_BEHAVIOR_EVENT_SCHEMA_NAME,
     PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
@@ -405,6 +406,7 @@ pub enum CardRewardFunctionV1 {
     Answer,
     Access,
     Amplifier,
+    Recovery,
     Liability,
 }
 
@@ -431,6 +433,8 @@ pub struct CardRewardObligationDeltaV1 {
 pub struct CardRewardOwnerProvenanceV1 {
     pub functions: Vec<CardRewardFunctionV1>,
     pub obligations: Vec<CardRewardObligationDeltaV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strengthened_capabilities: Vec<StrategyCapabilityKindV1>,
     pub hard_startup_liability: bool,
     pub component_debt_count: usize,
     pub access_saturated: bool,
@@ -523,6 +527,29 @@ pub enum RunControlTraceAnnotationV1 {
     AcceptedCombatLine {
         evidence: AcceptedCombatLineEvidenceV1,
     },
+}
+
+#[cfg(test)]
+mod card_reward_provenance_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_card_reward_provenance_defaults_strengthened_capabilities() {
+        let legacy = r#"{
+            "functions":["access"],
+            "obligations":[],
+            "hard_startup_liability":false,
+            "component_debt_count":0,
+            "access_saturated":false,
+            "stable_surface_index":0,
+            "owner_rank":1,
+            "tie_break_applied":false
+        }"#;
+
+        let provenance: CardRewardOwnerProvenanceV1 =
+            serde_json::from_str(legacy).expect("legacy card reward provenance");
+        assert!(provenance.strengthened_capabilities.is_empty());
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
