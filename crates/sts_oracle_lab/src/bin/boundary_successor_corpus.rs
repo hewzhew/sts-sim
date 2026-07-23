@@ -30,14 +30,15 @@ use super::{
     load_exact_turn_corridor, source_content_fingerprint,
 };
 
-const MANIFEST_SCHEMA: &str = "BoundarySuccessorCorpusManifestV1";
+const MANIFEST_SCHEMA_V1: &str = "BoundarySuccessorCorpusManifestV1";
+const MANIFEST_SCHEMA_V2: &str = "BoundarySuccessorCorpusManifestV2";
 const CORPUS_SCHEMA: &str = "BoundarySuccessorCorpusV2";
 const GUIDE_FEATURE_SCHEMA: &str = "combat_action_imitation/typed_combat_feature_components_v1";
 
 #[derive(Debug, Args)]
 pub struct BoundarySuccessorCorpusArgs {
-    /// Compact manifest naming exact cases, verified action lists, and the
-    /// selected player-turn boundary in each witness.
+    /// Compact manifest naming exact cases, verified action lists, and either
+    /// selected player-turn boundaries or whole verified trajectories.
     #[arg(long)]
     manifest: PathBuf,
     /// Destination for the typed evidence corpus.
@@ -82,7 +83,13 @@ struct CorpusManifestEntry {
     split: CorpusSplit,
     case: PathBuf,
     actions: Vec<PathBuf>,
-    boundary_rank: usize,
+    /// One selected outgoing player-turn boundary. Required by manifest V1;
+    /// mutually exclusive with `all_boundaries` in V2.
+    boundary_rank: Option<usize>,
+    /// Expands one verified trajectory into every outgoing player-turn
+    /// boundary. Supported by manifest V2 only.
+    #[serde(default)]
+    all_boundaries: bool,
     /// Optional deterministic exact-search work override for this boundary.
     /// This lets a held-out evaluation boundary receive more evidence work
     /// without over-spending on every training boundary.
@@ -226,9 +233,14 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
         &std::fs::read(&manifest_path).map_err(|error| error.to_string())?,
     )
     .map_err(|error| format!("invalid boundary-successor manifest: {error}"))?;
-    if manifest.schema_name != MANIFEST_SCHEMA || manifest.schema_version != 1 {
-        return Err("unsupported boundary-successor manifest schema".to_string());
-    }
+    let manifest_supports_all_boundaries =
+        match (manifest.schema_name.as_str(), manifest.schema_version) {
+            (MANIFEST_SCHEMA_V1, 1) => false,
+            (MANIFEST_SCHEMA_V2, 2) => true,
+            _ => {
+                return Err("unsupported boundary-successor manifest schema".to_string());
+            }
+        };
     if manifest.entries.is_empty() {
         return Err("boundary-successor manifest has no entries".to_string());
     }
@@ -253,6 +265,12 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
                 .map(|path| resolve_relative(base, path)),
         );
     }
+    let entries = expand_manifest_entries(
+        manifest.entries,
+        base,
+        manifest_supports_all_boundaries,
+        args.max_engine_steps_per_transition,
+    )?;
     let source_identity = current_source_identity()?;
     let input_fingerprint = source_content_fingerprint(base, &input_paths)?;
     if !args.force_rebuild && args.output.is_file() {
@@ -273,9 +291,9 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
             }
         }
     }
-    let mut groups = Vec::with_capacity(manifest.entries.len());
+    let mut groups = Vec::with_capacity(entries.len());
     let mut seen_ids = BTreeSet::new();
-    for entry in manifest.entries {
+    for entry in entries {
         if !seen_ids.insert(entry.id.clone()) {
             return Err(format!(
                 "duplicate boundary-successor manifest entry id: {}",
@@ -305,6 +323,76 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
     )
     .map_err(|error| error.to_string())?;
     corpus_report(&corpus, &args.output, false)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BoundarySelection {
+    One(usize),
+    All,
+}
+
+fn boundary_selection(
+    entry: &CorpusManifestEntry,
+    supports_all_boundaries: bool,
+) -> Result<BoundarySelection, String> {
+    match (entry.boundary_rank, entry.all_boundaries) {
+        (Some(rank), false) => Ok(BoundarySelection::One(rank)),
+        (None, true) if supports_all_boundaries => Ok(BoundarySelection::All),
+        (None, true) => Err(format!(
+            "entry {} uses all_boundaries but the manifest is not V2",
+            entry.id
+        )),
+        (Some(_), true) => Err(format!(
+            "entry {} must choose boundary_rank or all_boundaries, not both",
+            entry.id
+        )),
+        (None, false) => Err(format!(
+            "entry {} must choose boundary_rank or all_boundaries",
+            entry.id
+        )),
+    }
+}
+
+fn expand_manifest_entries(
+    entries: Vec<CorpusManifestEntry>,
+    base: &Path,
+    supports_all_boundaries: bool,
+    max_engine_steps_per_transition: usize,
+) -> Result<Vec<CorpusManifestEntry>, String> {
+    let mut expanded = Vec::new();
+    for mut entry in entries {
+        match boundary_selection(&entry, supports_all_boundaries)? {
+            BoundarySelection::One(rank) => {
+                entry.boundary_rank = Some(rank);
+                expanded.push(entry);
+            }
+            BoundarySelection::All => {
+                let case_path = resolve_relative(base, &entry.case);
+                let action_paths = entry
+                    .actions
+                    .iter()
+                    .map(|path| resolve_relative(base, path))
+                    .collect::<Vec<_>>();
+                if action_paths.is_empty() {
+                    return Err(format!("entry {} has no verified action list", entry.id));
+                }
+                let corridor = load_exact_turn_corridor(
+                    &case_path,
+                    &action_paths,
+                    max_engine_steps_per_transition,
+                )?;
+                for rank in 0..corridor.transition_actions.len() {
+                    let player_turn = corridor.positions_by_rank[rank].combat.turn.turn_count;
+                    let mut boundary = entry.clone();
+                    boundary.id = format!("{}_t{player_turn}", entry.id);
+                    boundary.boundary_rank = Some(rank);
+                    boundary.all_boundaries = false;
+                    expanded.push(boundary);
+                }
+            }
+        }
+    }
+    Ok(expanded)
 }
 
 fn current_source_identity() -> Result<String, String> {
@@ -422,21 +510,24 @@ fn build_group(
         &action_paths,
         config.max_engine_steps_per_transition,
     )?;
+    let boundary_rank = entry
+        .boundary_rank
+        .ok_or_else(|| format!("entry {} did not resolve to one boundary rank", entry.id))?;
     let root_position = corridor
         .positions_by_rank
-        .get(entry.boundary_rank)
+        .get(boundary_rank)
         .cloned()
         .ok_or_else(|| {
             format!(
                 "entry {} boundary rank {} exceeds {} exact turn roots",
                 entry.id,
-                entry.boundary_rank,
+                boundary_rank,
                 corridor.positions_by_rank.len()
             )
         })?;
     let verified_turn_actions = corridor
         .transition_actions
-        .get(entry.boundary_rank)
+        .get(boundary_rank)
         .ok_or_else(|| format!("entry {} has no outgoing verified turn", entry.id))?;
     let verified_successor = replay_inputs(
         root_position.clone(),
@@ -447,7 +538,7 @@ fn build_group(
         &verified_successor.engine,
         &verified_successor.combat,
     );
-    let verified_suffix_action_count = corridor.transition_actions[entry.boundary_rank..]
+    let verified_suffix_action_count = corridor.transition_actions[boundary_rank..]
         .iter()
         .map(Vec::len)
         .sum();
@@ -507,7 +598,7 @@ fn build_group(
         split: entry.split,
         source_case: case_path,
         source_actions: action_paths,
-        boundary_rank: entry.boundary_rank,
+        boundary_rank,
         player_turn: root_position.combat.turn.turn_count,
         root_exact_state_hash: sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
             &root_position.engine,
@@ -829,7 +920,24 @@ fn resolve_relative(base: &Path, path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{selected_candidate_indices, CandidateSelection};
+    use std::path::PathBuf;
+
+    use super::{
+        boundary_selection, selected_candidate_indices, BoundarySelection, CandidateSelection,
+        CorpusManifestEntry, CorpusSplit,
+    };
+
+    fn manifest_entry(boundary_rank: Option<usize>, all_boundaries: bool) -> CorpusManifestEntry {
+        CorpusManifestEntry {
+            id: "fight".to_string(),
+            split: CorpusSplit::Train,
+            case: PathBuf::from("fight.json"),
+            actions: vec![PathBuf::from("win.actions.json")],
+            boundary_rank,
+            all_boundaries,
+            solve_work_per_candidate: None,
+        }
+    }
 
     #[test]
     fn policy_head_replaces_last_slot_with_deep_verified_successor() {
@@ -847,5 +955,24 @@ mod tests {
         assert!(selected.starts_with(&[0, 1, 2, 3]));
         assert!(selected.contains(&432));
         assert!(selected.contains(&11_999));
+    }
+
+    #[test]
+    fn manifest_v2_accepts_one_boundary_or_all_but_not_both() {
+        assert_eq!(
+            boundary_selection(&manifest_entry(Some(3), false), true),
+            Ok(BoundarySelection::One(3))
+        );
+        assert_eq!(
+            boundary_selection(&manifest_entry(None, true), true),
+            Ok(BoundarySelection::All)
+        );
+        assert!(boundary_selection(&manifest_entry(Some(3), true), true).is_err());
+        assert!(boundary_selection(&manifest_entry(None, false), true).is_err());
+    }
+
+    #[test]
+    fn manifest_v1_rejects_all_boundaries_extension() {
+        assert!(boundary_selection(&manifest_entry(None, true), false).is_err());
     }
 }
