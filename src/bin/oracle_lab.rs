@@ -399,6 +399,16 @@ enum Command {
         generation_quantum_work: usize,
         #[arg(long, default_value_t = 32)]
         max_turn_depth: usize,
+        /// Diagnostic counterfactual: keep the exact combat state, RNG,
+        /// deck, relics and potions, but restore current HP to max HP before
+        /// search. This classifies arrival debt; it is never a legal witness
+        /// for the original run.
+        #[arg(long)]
+        full_health: bool,
+        /// Include readable, exact replay traces for the deepest survival,
+        /// deepest progress, and terminal witness paths.
+        #[arg(long)]
+        readable: bool,
         /// Report exact graph membership and local service for selected states.
         #[arg(long)]
         watch_exact_state_hash: Vec<String>,
@@ -2001,13 +2011,21 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
             generation_quantum_work,
             max_turn_depth,
+            full_health,
+            readable,
             watch_exact_state_hash,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
-            let loaded = load_combat_case(&case)?;
+            let mut loaded = load_combat_case(&case)?;
+            let original_hp = loaded.position.combat.entities.player.current_hp;
+            if full_health {
+                loaded.position.combat.entities.player.current_hp =
+                    loaded.position.combat.entities.player.max_hp;
+            }
             let initial_hp = loaded.position.combat.entities.player.current_hp;
             let root_player_turn = loaded.position.combat.turn.turn_count;
+            let search_root_position = loaded.position.clone();
             let root = CombatDecisionRoot::new(loaded.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let config = LocalTurnGraphWitnessConfig {
@@ -2060,6 +2078,40 @@ fn main() -> Result<(), String> {
                 },
                 &EngineCombatStepper,
             );
+            let progress = session.progress_snapshot();
+            let deepest_survival_trace = readable
+                .then(|| {
+                    replay_combat_path(
+                        search_root_position.clone(),
+                        &progress.deepest_survival_actions,
+                        max_engine_steps_per_transition,
+                    )
+                })
+                .transpose()?;
+            let deepest_progress_trace = readable
+                .then(|| {
+                    replay_combat_path(
+                        search_root_position.clone(),
+                        &progress.deepest_progress_actions,
+                        max_engine_steps_per_transition,
+                    )
+                })
+                .transpose()?;
+            let witness_trace = if readable {
+                report
+                    .witness
+                    .as_ref()
+                    .map(|witness| {
+                        replay_combat_path(
+                            search_root_position.clone(),
+                            &witness.actions,
+                            max_engine_steps_per_transition,
+                        )
+                    })
+                    .transpose()?
+            } else {
+                None
+            };
             let watched_states = watch_exact_state_hash
                 .iter()
                 .map(|hash| {
@@ -2090,6 +2142,11 @@ fn main() -> Result<(), String> {
                 "schema_name": "LocalTurnGraphCombatSearchReportV1",
                 "schema_version": 1,
                 "case": case,
+                "counterfactual": {
+                    "full_health": full_health,
+                    "original_hp": original_hp,
+                    "search_hp": initial_hp,
+                },
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
@@ -2120,12 +2177,29 @@ fn main() -> Result<(), String> {
                     "exact_nodes": report.counters.exact_nodes,
                     "exact_edges": report.counters.exact_edges,
                     "completed_turn_options": report.counters.completed_turn_options,
+                    "applied_action_transitions": report.counters.applied_action_transitions,
+                    "unique_successor_states": report.counters.unique_successor_states,
+                    "duplicate_exact_successors": report.counters.duplicate_exact_successors,
                     "duplicate_successor_edges": report.counters.duplicate_successor_edges,
                     "terminal_losses": report.counters.terminal_losses,
                     "depth_limited_successors": report.counters.depth_limited_successors,
                     "exhausted_nodes": report.counters.exhausted_nodes,
                     "maximum_turn_depth": report.counters.maximum_turn_depth,
                 },
+                "progress": {
+                    "retained_states": progress.retained_states,
+                    "retained_state_work": session.retained_state_work(),
+                    "max_player_turn": progress.max_player_turn,
+                    "max_path_atomic_depth": progress.max_path_atomic_depth,
+                    "deepest_survival_state": progress.deepest_survival_state,
+                    "deepest_survival_actions": progress.deepest_survival_actions,
+                    "deepest_survival_trace": deepest_survival_trace,
+                    "deepest_progress_state": progress.deepest_progress_state,
+                    "deepest_progress_actions": progress.deepest_progress_actions,
+                    "deepest_progress_trace": deepest_progress_trace,
+                    "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
+                },
+                "witness_trace": witness_trace,
                 "generation_gap_count": report.generation_gaps.len(),
                 "watched_states": watched_states,
                 "exported_witness_actions": report.witness.is_some()

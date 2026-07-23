@@ -13,9 +13,9 @@ use super::types::{
     TurnOptionGeneratorConfig,
 };
 use super::witness_search::{
-    OracleCombatWitness, OracleCombatWitnessDiscoverySource, OracleCombatWitnessProgressSnapshot,
-    OracleCombatWitnessReplayError, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessStateProgressSnapshot,
+    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessProgressSnapshot, OracleCombatWitnessReplayError,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
 };
 use super::TurnOptionGeneratorSession;
 
@@ -112,6 +112,9 @@ pub struct LocalTurnGraphStateSnapshot {
 
 struct GraphNode {
     generator: TurnOptionGeneratorSession,
+    /// One exact incoming path retained for diagnostics only. Search ownership
+    /// and scheduling continue to use the shared exact node.
+    diagnostic_parent: Option<(usize, usize)>,
     relative_turn_depth: usize,
     visits: usize,
     generated_options: usize,
@@ -188,6 +191,7 @@ impl LocalTurnGraphWitnessSession {
             policy,
             nodes: vec![GraphNode {
                 generator,
+                diagnostic_parent: None,
                 relative_turn_depth: 0,
                 visits: 0,
                 generated_options: 0,
@@ -258,6 +262,71 @@ impl LocalTurnGraphWitnessSession {
     pub fn progress_snapshot(&self) -> OracleCombatWitnessProgressSnapshot {
         let root = &self.nodes[0];
         let root_counters = root.generator.counters();
+        let mut survival_by_turn =
+            BTreeMap::<u32, (OracleCombatDeepStateSnapshot, Vec<TurnOptionAction>)>::new();
+        let mut deepest_survival = None::<(OracleCombatDeepStateSnapshot, Vec<TurnOptionAction>)>;
+        let mut deepest_progress = None::<(OracleCombatDeepStateSnapshot, Vec<TurnOptionAction>)>;
+        let mut max_path_atomic_depth = 0usize;
+        for node_id in 0..self.nodes.len() {
+            let actions = self.diagnostic_actions_to_node(node_id);
+            max_path_atomic_depth = max_path_atomic_depth.max(actions.len());
+            let state = local_deep_state_snapshot(&self.nodes[node_id], actions.len());
+            let replace_turn =
+                survival_by_turn
+                    .get(&state.player_turn)
+                    .is_none_or(|(current, _)| {
+                        (state.player_hp, -state.enemy_total_hp, state.player_block)
+                            > (
+                                current.player_hp,
+                                -current.enemy_total_hp,
+                                current.player_block,
+                            )
+                    });
+            if replace_turn {
+                survival_by_turn.insert(state.player_turn, (state.clone(), actions.clone()));
+            }
+            let replace_survival = deepest_survival.as_ref().is_none_or(|(current, _)| {
+                (
+                    state.player_turn,
+                    state.player_hp,
+                    -state.enemy_total_hp,
+                    state.player_block,
+                ) > (
+                    current.player_turn,
+                    current.player_hp,
+                    -current.enemy_total_hp,
+                    current.player_block,
+                )
+            });
+            if replace_survival {
+                deepest_survival = Some((state.clone(), actions.clone()));
+            }
+            let replace_progress = deepest_progress.as_ref().is_none_or(|(current, _)| {
+                (
+                    state.player_turn,
+                    -state.enemy_total_hp,
+                    state.player_hp,
+                    state.player_block,
+                ) > (
+                    current.player_turn,
+                    -current.enemy_total_hp,
+                    current.player_hp,
+                    current.player_block,
+                )
+            });
+            if replace_progress {
+                deepest_progress = Some((state, actions));
+            }
+        }
+        let recent_turn_survival_envelope = survival_by_turn
+            .into_values()
+            .rev()
+            .take(32)
+            .map(|(state, _)| state)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         OracleCombatWitnessProgressSnapshot {
             retained_states: self.nodes.iter().filter(|node| !node.exhausted).count(),
             queued_anchor_entries: self.nodes.iter().filter(|node| !node.exhausted).count(),
@@ -284,7 +353,16 @@ impl LocalTurnGraphWitnessSession {
                 .map(|node| node.generator.root().position().combat.turn.turn_count)
                 .max()
                 .unwrap_or_default(),
-            max_path_atomic_depth: 0,
+            deepest_survival_state: deepest_survival.as_ref().map(|(state, _)| state.clone()),
+            deepest_progress_state: deepest_progress.as_ref().map(|(state, _)| state.clone()),
+            deepest_survival_actions: deepest_survival
+                .map(|(_, actions)| actions)
+                .unwrap_or_default(),
+            deepest_progress_actions: deepest_progress
+                .map(|(_, actions)| actions)
+                .unwrap_or_default(),
+            recent_turn_survival_envelope,
+            max_path_atomic_depth,
             max_completed_turn_options_at_state: self
                 .nodes
                 .iter()
@@ -626,6 +704,7 @@ impl LocalTurnGraphWitnessSession {
             );
             self.nodes.push(GraphNode {
                 generator,
+                diagnostic_parent: Some((parent_id, self.nodes[parent_id].children.len())),
                 relative_turn_depth,
                 visits: 0,
                 generated_options: 0,
@@ -699,6 +778,16 @@ impl LocalTurnGraphWitnessSession {
             negative_log_policy += edge.negative_log_policy;
         }
         (actions, negative_log_policy)
+    }
+
+    fn diagnostic_actions_to_node(&self, mut node_id: usize) -> Vec<TurnOptionAction> {
+        let mut path = Vec::new();
+        while let Some(parent) = self.nodes[node_id].diagnostic_parent {
+            path.push(parent);
+            node_id = parent.0;
+        }
+        path.reverse();
+        self.path_actions(&path).0
     }
 
     fn refresh_exhaustion(&mut self, node_id: usize) {
@@ -975,6 +1064,34 @@ fn witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bo
                 .total_cmp(&left.negative_log_policy)
         })
         == std::cmp::Ordering::Greater
+}
+
+fn local_deep_state_snapshot(
+    node: &GraphNode,
+    path_atomic_depth: usize,
+) -> OracleCombatDeepStateSnapshot {
+    let combat = &node.generator.root().position().combat;
+    let alive_monsters = combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .collect::<Vec<_>>();
+    OracleCombatDeepStateSnapshot {
+        player_turn: combat.turn.turn_count,
+        player_hp: combat.entities.player.current_hp,
+        player_block: combat.entities.player.block,
+        alive_enemy_count: alive_monsters.len(),
+        enemy_total_hp: alive_monsters
+            .into_iter()
+            .map(|monster| monster.current_hp.max(0))
+            .sum(),
+        hand_size: combat.zones.hand.len(),
+        draw_pile_size: combat.zones.draw_pile.len(),
+        discard_pile_size: combat.zones.discard_pile.len(),
+        exhaust_pile_size: combat.zones.exhaust_pile.len(),
+        path_atomic_depth,
+    }
 }
 
 #[cfg(test)]
