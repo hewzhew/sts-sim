@@ -287,6 +287,13 @@ pub struct TurnOptionGeneratorSession {
     anchor_frontier: BinaryHeap<GeneratorQueueEntry>,
     guided_frontiers: Vec<GuidedGeneratorFrontier>,
     next_scheduler_lane: usize,
+    /// Frozen heads which still belong to the current scheduling round.
+    ///
+    /// This must survive `advance` boundaries. Re-snapshotting after every
+    /// wall-clock or work interruption lets newly published heads repeatedly
+    /// overtake the unserved tail of the prior round, making split quanta
+    /// semantically different from one continuous grant.
+    scheduled_round: VecDeque<(usize, usize)>,
     live_work_items: usize,
     next_sequence_id: u64,
     seen: HashSet<CombatExactStateKey>,
@@ -354,6 +361,7 @@ impl TurnOptionGeneratorSession {
             anchor_frontier: BinaryHeap::new(),
             guided_frontiers: Vec::new(),
             next_scheduler_lane: 0,
+            scheduled_round: VecDeque::new(),
             live_work_items: 0,
             next_sequence_id: 0,
             seen,
@@ -797,7 +805,6 @@ impl TurnOptionGeneratorSession {
         // can publish a new head into a later lane and repeatedly overtake the
         // item which was already first there. A finite pending transaction can
         // consequently remain live forever despite round-robin lane service.
-        let mut scheduled_round = VecDeque::new();
         let mut scheduling_rounds_started = 0_usize;
 
         let interruption = loop {
@@ -810,24 +817,26 @@ impl TurnOptionGeneratorSession {
             if self.used.generation_work >= self.granted.generation_work {
                 break Some(GenerationInterruption::GenerationWorkBudget);
             }
-            while scheduled_round
+            while self
+                .scheduled_round
                 .front()
                 .is_some_and(|(_, work_id)| !self.work.get(*work_id).is_some_and(Option::is_some))
             {
-                scheduled_round.pop_front();
+                self.scheduled_round.pop_front();
             }
-            if scheduled_round.is_empty() {
+            if self.scheduled_round.is_empty() {
                 if stop_after_one_round && scheduling_rounds_started > 0 {
                     break Some(GenerationInterruption::SchedulingRoundBoundary);
                 }
-                scheduled_round = self.snapshot_scheduling_round();
-                if scheduled_round.is_empty() {
+                self.scheduled_round = self.snapshot_scheduling_round();
+                if self.scheduled_round.is_empty() {
                     debug_assert!(self.is_finished());
                     break None;
                 }
                 scheduling_rounds_started = scheduling_rounds_started.saturating_add(1);
             }
-            let (lane, work_id) = *scheduled_round
+            let (lane, work_id) = *self
+                .scheduled_round
                 .front()
                 .expect("a non-empty scheduling round has a head");
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
@@ -845,7 +854,7 @@ impl TurnOptionGeneratorSession {
                 break Some(GenerationInterruption::EngineStepBudget);
             }
 
-            scheduled_round.pop_front();
+            self.scheduled_round.pop_front();
             let work = self.work[work_id]
                 .take()
                 .expect("a reserved generator work item must still be live");
@@ -1635,5 +1644,80 @@ mod priority_tests {
             vec![(0, anchor_head), (1, guide_head)],
             "a later arrival belongs to the next round even when it becomes the new guide head"
         );
+    }
+
+    #[test]
+    fn interrupted_scheduling_round_resumes_before_new_arrivals() {
+        let mut session =
+            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
+        let GeneratorWork::Expand(parent) =
+            session.pop_scheduled_work().expect("root expansion work")
+        else {
+            panic!("root work must be an expansion");
+        };
+        let anchor_head = session.push_work(
+            GeneratorWork::Expand(parent.clone()),
+            GeneratorWorkPriority::for_path(1, 0.0),
+        );
+        let guide_head = session.push_work(
+            GeneratorWork::Expand(parent.clone()),
+            GeneratorWorkPriority::for_path(1, 10.0),
+        );
+        let lane = CombatGuideLaneId::new(99);
+        let guide_index = session.ensure_guide_frontier(lane);
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: anchor_head,
+                sequence_id: 10_000,
+                guide_rank: CombatStateGuideRank::new(vec![0]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
+            });
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: guide_head,
+                sequence_id: 10_001,
+                guide_rank: CombatStateGuideRank::new(vec![10]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 10.0),
+            });
+
+        session.next_scheduler_lane = 0;
+        let first = session.advance(
+            &EngineCombatStepper,
+            CombatPlanningQuantum::deterministic(1, 250),
+        );
+        assert_eq!(
+            first.status,
+            TurnOptionGenerationStatus::Partial(GenerationInterruption::GenerationWorkBudget)
+        );
+        assert_eq!(
+            session.scheduled_round.front().copied(),
+            Some((1, guide_head)),
+            "the unserved guide head remains frozen across the quantum boundary"
+        );
+
+        let newcomer = session.push_work(
+            GeneratorWork::Expand(parent),
+            GeneratorWorkPriority::for_path(1, 0.0),
+        );
+        session.guided_frontiers[guide_index]
+            .entries
+            .push(GuidedGeneratorQueueEntry {
+                guide_lane: lane,
+                work_id: newcomer,
+                sequence_id: 10_002,
+                guide_rank: CombatStateGuideRank::new(vec![20]),
+                anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
+            });
+
+        session.advance(
+            &EngineCombatStepper,
+            CombatPlanningQuantum::deterministic(1, 250),
+        );
+        assert!(session.work[guide_head].is_none());
+        assert!(session.work[newcomer].is_some());
     }
 }
