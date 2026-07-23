@@ -214,6 +214,11 @@ Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
 profile and target directory are not valid operational entrypoints.
+The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
+`canonical-oracle-artifacts` feature. This is intentional: an ad-hoc
+`cargo build -p sts_oracle_lab --bin oracle_lab` is rejected during Cargo
+target selection, before it can spend tens of seconds linking an artifact that
+the runtime profile guard would later refuse to execute.
 
 For a production-owner run, create and start one exact F0 workspace, then let
 the lightweight resident client own every remaining owner/search/accept

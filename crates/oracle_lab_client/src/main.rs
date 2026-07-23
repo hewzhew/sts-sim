@@ -1362,6 +1362,8 @@ fn rebuild_service_artifact(reason: &str) -> Result<(), String> {
             "release",
             "-p",
             "sts_oracle_lab",
+            "--features",
+            "canonical-oracle-artifacts",
             "--bin",
             "oracle_lab_service",
         ])
@@ -1386,6 +1388,8 @@ fn rebuild_heavy_artifact(reason: &str) -> Result<(), String> {
             "--release",
             "-p",
             "sts_oracle_lab",
+            "--features",
+            "canonical-oracle-artifacts",
             "--bin",
             "oracle_lab",
         ])
@@ -1404,7 +1408,7 @@ fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
         "heavy oracle laboratory",
-        "cargo build --release -p sts_oracle_lab --bin oracle_lab",
+        "cargo build --release -p sts_oracle_lab --features canonical-oracle-artifacts --bin oracle_lab",
     )
 }
 
@@ -1412,7 +1416,7 @@ fn ensure_service_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
         "resident oracle host",
-        "cargo build --release -p sts_oracle_lab --bin oracle_lab_service",
+        "cargo build --release -p sts_oracle_lab --features canonical-oracle-artifacts --bin oracle_lab_service",
     )
 }
 

@@ -12,13 +12,13 @@ architecture = ["run", "--quiet", "-p", "sts_architecture_checks", "--"]
 test-core = ["test", "-p", "sts_simulator", "--lib"]
 test-planner = ["test", "-p", "sts_combat_planner", "--lib"]
 test-control = ["test", "-p", "sts_simulator_control", "--lib"]
-check-workspace = ["check", "--workspace", "--all-targets"]
+check-workspace = ["check", "--workspace", "--all-targets", "--all-features"]
 # The standard release directory is the one canonical optimized oracle
 # artifact. `release-final` remains available for slow deployment builds.
-oracle-lab = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--bin", "oracle_lab", "--", "--canonical-oracle"]
+oracle-lab = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]
 # Build-owning convenience alias. For repeated diagnostics, `./ol` invokes the
 # same canonical binary directly and lets its depfile guard reject stale code.
-ol = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--bin", "oracle_lab", "--", "--canonical-oracle"]
+ol = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]
 # Resident mode is explicit: this lightweight client controls a dedicated
 # service binary whose process lifetime preserves the in-memory combat search.
 # The one-shot oracle_lab executable remains independently rebuildable.

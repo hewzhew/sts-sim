@@ -7,6 +7,12 @@ build = "build.rs"
 autobins = false
 autotests = false
 
+[features]
+# The two heavy command hosts are build products, not ordinary workspace
+# binaries. Requiring an explicit feature makes unsupported ad-hoc builds fail
+# during Cargo target selection, before compiling and linking the runtime.
+canonical-oracle-artifacts = []
+
 [dependencies]
 sts_simulator = { package = "sts_oracle_runtime", path = "../sts_oracle_runtime" }
 sts_combat_planner = { path = "../sts_combat_planner" }
@@ -18,7 +24,9 @@ clap = { version = "4.0", features = ["derive"] }
 [[bin]]
 name = "oracle_lab"
 path = "src/bin/oracle_lab.rs"
+required-features = ["canonical-oracle-artifacts"]
 
 [[bin]]
 name = "oracle_lab_service"
 path = "src/bin/oracle_lab_service.rs"
+required-features = ["canonical-oracle-artifacts"]
