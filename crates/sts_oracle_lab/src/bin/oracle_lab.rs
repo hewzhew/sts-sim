@@ -2208,6 +2208,13 @@ fn main() -> Result<(), String> {
                     json!({
                         "exact_state_hash": hash,
                         "state": session.state_snapshot_by_exact_hash(hash),
+                        "incoming_from_root": session.edge_snapshot_by_exact_hashes(
+                            &sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                                &search_root_position.engine,
+                                &search_root_position.combat,
+                            ),
+                            hash,
+                        ),
                     })
                 })
                 .collect::<Vec<_>>();
