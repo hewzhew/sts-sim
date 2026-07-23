@@ -1084,21 +1084,25 @@ impl OracleAnalysisSessionV1 {
         actions: &[ClientInput],
     ) -> Result<usize, String> {
         let source_node_id = self.cursor_node_id;
-        let branch = self.require_branch(source_node_id)?;
-        if branch.boundary != OracleRunBoundaryV1::Combat {
-            return Err(format!(
-                "oracle analysis node {source_node_id} is at {:?}, not combat",
-                branch.boundary
-            ));
+        let mut work = if let Some(work) = self.combat_jobs.remove(&source_node_id) {
+            work
+        } else {
+            let branch = self.require_branch(source_node_id)?;
+            if branch.boundary != OracleRunBoundaryV1::Combat {
+                return Err(format!(
+                    "oracle analysis node {source_node_id} is at {:?}, not combat",
+                    branch.boundary
+                ));
+            }
+            OracleRunCombatWorkV1::restart_from_exact_state(
+                &branch.session,
+                self.combat_budgets.for_session(&branch.session),
+            )?
+        };
+        if let Err(error) = work.verify_and_restore_action_witness(actions) {
+            self.combat_jobs.insert(source_node_id, work);
+            return Err(error);
         }
-        let work = self.combat_jobs.get_mut(&source_node_id).ok_or_else(|| {
-            format!("oracle analysis node {source_node_id} has no resident combat search")
-        })?;
-        work.verify_and_restore_action_witness(actions)?;
-        let work = self
-            .combat_jobs
-            .remove(&source_node_id)
-            .expect("verified analysis combat job remains resident");
         self.materialize_combat_work(source_node_id, work)?
             .ok_or_else(|| "verified combat action witness did not materialize a child".to_string())
     }

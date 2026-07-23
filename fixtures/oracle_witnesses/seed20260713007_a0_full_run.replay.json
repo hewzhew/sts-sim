@@ -1,14 +1,14 @@
 {
-  "node_id": 142,
+  "node_id": 144,
   "report": {
     "act": 3,
     "ascension": 0,
-    "combat_actions": 536,
+    "combat_actions": 558,
     "combat_resolutions": 22,
-    "current_hp": 13,
+    "current_hp": 16,
     "decisions": 170,
     "engine_state": "GameOver(Victory)",
-    "final_fingerprint": "01e627c6e8bfdc52cccd3117b8864e56ec836c3ca496690a9cfd7920f9352fd8",
+    "final_fingerprint": "e6a2779fbe26725e99e057b1c2889fd11e08e0238222334d7043b118d4b2a066",
     "floor": 48,
     "forced_transitions": 0,
     "journal_entries": 192,

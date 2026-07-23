@@ -1,6 +1,11 @@
+use std::path::PathBuf;
+
+use sts_simulator::eval::run_control::OracleRunBoundaryV1;
 use sts_simulator::runtime::branch::{
-    OracleAnalysisWorkspaceArtifactV1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    load_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceArtifactV1,
+    OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
+use sts_simulator::state::core::ClientInput;
 
 const SEED: u64 = 20_260_713_006;
 
@@ -75,4 +80,35 @@ fn engine_owned_checkpoint_roundtrips_navigation_and_rejects_tampered_choices() 
         restored.session.back().expect("restored back"),
         root.node_id
     );
+}
+
+#[test]
+fn restored_combat_node_accepts_exact_actions_without_resident_search() {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let workspace_path =
+        repository.join("fixtures/oracle_witnesses/seed20260713007_a0_full_run.workspace.json");
+    let actions_path = repository.join(
+        "fixtures/oracle_witnesses/seed20260713007_a0_awakened_one.layered-proof-cache.actions.json",
+    );
+    let actions = serde_json::from_slice::<Vec<ClientInput>>(
+        &std::fs::read(actions_path).expect("read exact action fixture"),
+    )
+    .expect("parse exact action fixture");
+    let mut workspace =
+        load_oracle_analysis_workspace_v1(&workspace_path).expect("restore completed run");
+
+    workspace
+        .session
+        .focus_node(141)
+        .expect("focus exact boss combat parent");
+    assert!(
+        workspace.view().expect("combat parent").combat.is_none(),
+        "restored workspaces intentionally do not serialize tactical search"
+    );
+    let child = workspace
+        .accept_combat_actions(&actions)
+        .expect("exact actions do not require a pre-existing search session");
+
+    assert_eq!(child.boundary, OracleRunBoundaryV1::TerminalVictory);
+    assert_eq!(child.current_hp, 16);
 }

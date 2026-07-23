@@ -43,6 +43,11 @@ must rediscover the line from every earlier prefix.
   therefore labels the source `search_combat`; the checked-in action fixture
   is the externally supplied exact witness. New acceptances are recorded as
   `oracle_exact_actions` after exact replay validation.
+- The same F0 journal now also retains node 144, whose Act 3 boss edge uses the
+  90-action layered proof-cache witness. Full replay from seed initialization
+  verifies 192 journal entries, 22 combat resolutions, 558 combat actions,
+  terminal victory at F48, and 16/85 HP. The previous 13 HP child remains in
+  the workspace as separate historical evidence.
 
 The full workspace is intentionally kept outside Git because it is roughly
 50 MiB. The hashes above prevent a different local artifact from being
