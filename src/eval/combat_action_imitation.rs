@@ -19,8 +19,9 @@ use crate::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use crate::state::core::{ClientInput, EngineState};
 
 pub const COMBAT_ACTION_IMITATION_SCHEMA_NAME: &str = "CombatActionImitationArtifactV1";
-pub const COMBAT_ACTION_IMITATION_SCHEMA_VERSION: u32 = 1;
-const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v3";
+pub const COMBAT_ACTION_IMITATION_SCHEMA_VERSION: u32 = 2;
+const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v4";
+const COMBAT_ACTION_IMITATION_RUNTIME_ID: &str = env!("STS_COMBAT_ACTION_IMITATION_RUNTIME_ID");
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatActionImitationTrainingConfigV1 {
@@ -65,6 +66,11 @@ pub struct CombatActionImitationArtifactV1 {
     pub schema_name: String,
     pub schema_version: u32,
     pub feature_schema: String,
+    /// Fingerprint of the exact feature and action-surface implementation
+    /// used to train this artifact. Unlike the human-authored feature schema,
+    /// this changes automatically when its defining source files change.
+    #[serde(default)]
+    pub runtime_compatibility_id: String,
     pub training_authority: String,
     #[serde(default = "default_source_trajectory_count")]
     pub source_trajectory_count: usize,
@@ -88,7 +94,21 @@ impl CombatActionImitationArtifactV1 {
             || self.schema_version != COMBAT_ACTION_IMITATION_SCHEMA_VERSION
             || self.feature_schema != COMBAT_ACTION_FEATURE_SCHEMA
         {
-            return Err("unsupported combat action imitation schema".to_string());
+            return Err(format!(
+                "unsupported combat action imitation schema: found {}/{}/{}, expected {}/{}/{}; rebuild the artifact",
+                self.schema_name,
+                self.schema_version,
+                self.feature_schema,
+                COMBAT_ACTION_IMITATION_SCHEMA_NAME,
+                COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
+                COMBAT_ACTION_FEATURE_SCHEMA,
+            ));
+        }
+        if self.runtime_compatibility_id != COMBAT_ACTION_IMITATION_RUNTIME_ID {
+            return Err(format!(
+                "combat action imitation runtime mismatch: found {:?}, expected {:?}; rebuild the artifact with the current binary",
+                self.runtime_compatibility_id, COMBAT_ACTION_IMITATION_RUNTIME_ID,
+            ));
         }
         if self.source_trajectory_count == 0
             || self.ranked_decision_count == 0
@@ -329,6 +349,7 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
         schema_name: COMBAT_ACTION_IMITATION_SCHEMA_NAME.to_string(),
         schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
         feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
+        runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
         training_authority: "exact_terminal_win_action_demonstrations".to_string(),
         source_trajectory_count: demonstrations.len(),
         source_action_count,
@@ -1330,6 +1351,7 @@ mod tests {
             schema_name: COMBAT_ACTION_IMITATION_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
             feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
+            runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
             training_authority: "test".to_string(),
             source_trajectory_count: 1,
             source_action_count: 1,
@@ -1380,6 +1402,7 @@ mod tests {
             schema_name: COMBAT_ACTION_IMITATION_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
             feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
+            runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
             training_authority: "test".to_string(),
             source_trajectory_count: 1,
             source_action_count: 1,
@@ -1398,5 +1421,34 @@ mod tests {
             }],
         };
         assert!(artifact.validate().is_err());
+    }
+
+    #[test]
+    fn artifact_rejects_changed_runtime_contract() {
+        let artifact = CombatActionImitationArtifactV1 {
+            schema_name: COMBAT_ACTION_IMITATION_SCHEMA_NAME.to_string(),
+            schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
+            feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
+            runtime_compatibility_id: "stale-runtime".to_string(),
+            training_authority: "test".to_string(),
+            source_trajectory_count: 1,
+            source_action_count: 1,
+            source_terminal_final_hp: 1,
+            ranked_decision_count: 1,
+            pairwise_comparison_count: 1,
+            skipped_forced_decision_count: 0,
+            training_top1_correct: 1,
+            training_top1_total: 1,
+            logit_scale: 1.0,
+            max_abs_log_factor: 3.0,
+            base_weight_exponent: 0.0,
+            coefficients: vec![CombatActionImitationCoefficientV1 {
+                feature: "action/kind/end_turn".to_string(),
+                weight: 1.0,
+            }],
+        };
+        let error = artifact.validate().expect_err("stale contract must fail");
+        assert!(error.contains("runtime mismatch"));
+        assert!(error.contains("rebuild"));
     }
 }

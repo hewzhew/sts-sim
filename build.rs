@@ -4,6 +4,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+#[path = "tools/combat_action_imitation_build_contract.rs"]
+mod combat_action_imitation_build_contract;
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let profile = env::var("PROFILE").expect("Cargo should provide PROFILE to build.rs");
@@ -16,6 +19,7 @@ fn main() {
         "cargo:rustc-env=STS_REPOSITORY_ROOT={}",
         repository_root.display()
     );
+    combat_action_imitation_build_contract::emit(&repository_root);
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("generated_schema.rs");
