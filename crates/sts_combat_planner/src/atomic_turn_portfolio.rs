@@ -113,6 +113,8 @@ pub struct AtomicTurnPortfolioReport {
     pub active_boundary_tasks: usize,
     pub active_terminal_tasks: usize,
     pub recursive_active_tasks: usize,
+    pub recursive_unique_exact_states: usize,
+    pub recursive_duplicate_exact_states: usize,
     pub recursive_boundary_tasks: usize,
     pub recursive_terminal_tasks: usize,
     pub maximum_portfolio_depth: usize,
@@ -139,6 +141,8 @@ pub struct AtomicTurnPortfolioEntryReport {
     pub remaining_boundary_layers: usize,
     pub task_kind: AtomicTurnPortfolioTaskKind,
     pub recursive_active_tasks: usize,
+    pub recursive_unique_exact_states: usize,
+    pub recursive_duplicate_exact_states: usize,
     pub maximum_portfolio_depth: usize,
     pub boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
 }
@@ -208,15 +212,22 @@ impl SuffixWork {
         }
     }
 
-    /// Number of schedulable leaf tasks represented by this entry.
-    ///
-    /// A nested portfolio is a container, not an additional task beside its
-    /// children, so it contributes the number of leaves it currently owns.
-    fn recursive_active_tasks(&self) -> usize {
+    fn collect_recursive_leaf_state_hashes(&self, unique: &mut HashSet<String>) -> usize {
         match &self.session {
-            PortfolioTaskSession::NestedPortfolio(session) => session.recursive_active_tasks(),
-            _ => 1,
+            PortfolioTaskSession::NestedPortfolio(session) => {
+                session.collect_recursive_leaf_state_hashes(unique)
+            }
+            _ => {
+                unique.insert(self.exact_state_hash.clone());
+                1
+            }
         }
+    }
+
+    fn recursive_state_counts(&self) -> (usize, usize) {
+        let mut unique = HashSet::new();
+        let active = self.collect_recursive_leaf_state_hashes(&mut unique);
+        (active, unique.len())
     }
 
     /// Number of portfolio levels from this entry through its deepest leaf.
@@ -502,6 +513,7 @@ impl AtomicTurnPortfolioSession {
             }
         };
 
+        let (recursive_active_tasks, recursive_unique_exact_states) = self.recursive_state_counts();
         AtomicTurnPortfolioReport {
             before,
             after: self.used,
@@ -517,7 +529,10 @@ impl AtomicTurnPortfolioSession {
                 .iter()
                 .filter(|task| task.remaining_boundary_layers == 0)
                 .count(),
-            recursive_active_tasks: self.recursive_active_tasks(),
+            recursive_active_tasks,
+            recursive_unique_exact_states,
+            recursive_duplicate_exact_states: recursive_active_tasks
+                .saturating_sub(recursive_unique_exact_states),
             recursive_boundary_tasks: self.recursive_boundary_tasks(),
             recursive_terminal_tasks: self.recursive_terminal_tasks(),
             maximum_portfolio_depth: self.maximum_portfolio_depth(),
@@ -528,22 +543,29 @@ impl AtomicTurnPortfolioSession {
             suffix_entries: self
                 .suffixes
                 .iter()
-                .map(|suffix| AtomicTurnPortfolioEntryReport {
-                    boundary_id: suffix.boundary_id,
-                    exact_state_hash: suffix.exact_state_hash.clone(),
-                    prefix_action_count: suffix.prefix_actions.len(),
-                    prefix_negative_log_policy: suffix.prefix_negative_log_policy,
-                    applied_action_transitions: suffix.applied_action_transitions,
-                    boundary_generation_work: suffix.boundary_generation_work,
-                    terminal_search_work: suffix.terminal_search_work,
-                    scheduler_work: suffix.scheduler_work(),
-                    services: suffix.services,
-                    engine_steps: suffix.engine_steps,
-                    remaining_boundary_layers: suffix.remaining_boundary_layers,
-                    task_kind: suffix.task_kind(),
-                    recursive_active_tasks: suffix.recursive_active_tasks(),
-                    maximum_portfolio_depth: suffix.maximum_portfolio_depth(),
-                    boundary_guides: suffix.boundary_guides.clone(),
+                .map(|suffix| {
+                    let (recursive_active_tasks, recursive_unique_exact_states) =
+                        suffix.recursive_state_counts();
+                    AtomicTurnPortfolioEntryReport {
+                        boundary_id: suffix.boundary_id,
+                        exact_state_hash: suffix.exact_state_hash.clone(),
+                        prefix_action_count: suffix.prefix_actions.len(),
+                        prefix_negative_log_policy: suffix.prefix_negative_log_policy,
+                        applied_action_transitions: suffix.applied_action_transitions,
+                        boundary_generation_work: suffix.boundary_generation_work,
+                        terminal_search_work: suffix.terminal_search_work,
+                        scheduler_work: suffix.scheduler_work(),
+                        services: suffix.services,
+                        engine_steps: suffix.engine_steps,
+                        remaining_boundary_layers: suffix.remaining_boundary_layers,
+                        task_kind: suffix.task_kind(),
+                        recursive_active_tasks,
+                        recursive_unique_exact_states,
+                        recursive_duplicate_exact_states: recursive_active_tasks
+                            .saturating_sub(recursive_unique_exact_states),
+                        maximum_portfolio_depth: suffix.maximum_portfolio_depth(),
+                        boundary_guides: suffix.boundary_guides.clone(),
+                    }
                 })
                 .collect(),
             winning_boundary_id: self.winning_boundary_id,
@@ -1132,11 +1154,17 @@ impl AtomicTurnPortfolioSession {
         self.used.charged_search_work = self.used.charged_search_work.saturating_add(work);
     }
 
-    fn recursive_active_tasks(&self) -> usize {
+    fn collect_recursive_leaf_state_hashes(&self, unique: &mut HashSet<String>) -> usize {
         self.suffixes
             .iter()
-            .map(SuffixWork::recursive_active_tasks)
+            .map(|suffix| suffix.collect_recursive_leaf_state_hashes(unique))
             .sum()
+    }
+
+    fn recursive_state_counts(&self) -> (usize, usize) {
+        let mut unique = HashSet::new();
+        let active = self.collect_recursive_leaf_state_hashes(&mut unique);
+        (active, unique.len())
     }
 
     fn recursive_boundary_tasks(&self) -> usize {

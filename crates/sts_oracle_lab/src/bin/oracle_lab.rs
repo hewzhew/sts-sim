@@ -3650,6 +3650,8 @@ fn main() -> Result<(), String> {
                             "remaining_boundary_layers": entry.remaining_boundary_layers,
                             "task_kind": format!("{:?}", entry.task_kind),
                             "recursive_active_tasks": entry.recursive_active_tasks,
+                            "recursive_unique_exact_states": entry.recursive_unique_exact_states,
+                            "recursive_duplicate_exact_states": entry.recursive_duplicate_exact_states,
                             "maximum_portfolio_depth": entry.maximum_portfolio_depth,
                         });
                         if include_task_guides {
@@ -3736,6 +3738,8 @@ fn main() -> Result<(), String> {
                         "remaining_boundary_layers": entry.remaining_boundary_layers,
                         "task_kind": format!("{:?}", entry.task_kind),
                         "recursive_active_tasks": entry.recursive_active_tasks,
+                        "recursive_unique_exact_states": entry.recursive_unique_exact_states,
+                        "recursive_duplicate_exact_states": entry.recursive_duplicate_exact_states,
                         "maximum_portfolio_depth": entry.maximum_portfolio_depth,
                         "anchor_rank": anchor_rank,
                         "guide_ranks": guide_ranks,
@@ -3758,8 +3762,8 @@ fn main() -> Result<(), String> {
                 })
                 .collect::<Vec<_>>();
             print_json(&json!({
-                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV4",
-                "schema_version": 4,
+                "schema_name": "OracleCombatCaseAtomicTurnPortfolioV5",
+                "schema_version": 5,
                 "case": case_path,
                 "runtime": oracle_lab_runtime_identity(),
                 "mode": {
@@ -3820,6 +3824,8 @@ fn main() -> Result<(), String> {
                     "active_boundary_tasks": report.active_boundary_tasks,
                     "active_terminal_tasks": report.active_terminal_tasks,
                     "recursive_active_tasks": report.recursive_active_tasks,
+                    "recursive_unique_exact_states": report.recursive_unique_exact_states,
+                    "recursive_duplicate_exact_states": report.recursive_duplicate_exact_states,
                     "recursive_boundary_tasks": report.recursive_boundary_tasks,
                     "recursive_terminal_tasks": report.recursive_terminal_tasks,
                     "maximum_portfolio_depth": report.maximum_portfolio_depth,
