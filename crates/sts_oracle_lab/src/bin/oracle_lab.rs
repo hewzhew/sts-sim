@@ -284,6 +284,10 @@ enum Command {
         /// Read-only exact combat states to inspect after the search.
         #[arg(long)]
         watch_case: Vec<PathBuf>,
+        /// Replay one or more exact action segments and report their weighted
+        /// discrepancy under the same runtime policy surface as the search.
+        #[arg(long)]
+        audit_actions: Vec<PathBuf>,
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
@@ -3364,12 +3368,14 @@ fn main() -> Result<(), String> {
             turn_macro_transitions,
             turn_macro_proposals_per_view,
             watch_case,
+            audit_actions,
             export_witness_actions,
         } => {
             let command_started = Instant::now();
             let case_path = case.clone();
             let case = load_combat_case(&case)?;
-            let root = CombatDecisionRoot::new(case.position)
+            let root_position = case.position;
+            let root = CombatDecisionRoot::new(root_position.clone())
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let initial_hp = root.position().combat.entities.player.current_hp;
             let watched_positions = watch_case
@@ -3383,22 +3389,32 @@ fn main() -> Result<(), String> {
                 })
                 .transpose()?
                 .unwrap_or_else(existing_combat_knowledge_policy_v1);
-            let mut search = PolicyDiscrepancySession::with_policy(
-                root,
-                PolicyDiscrepancyConfig {
-                    max_engine_steps_per_transition,
-                    uniform_exploration_ppm,
-                    max_greedy_actions_per_dive,
-                    turn_macro: (turn_macro_transitions > 0).then_some(
-                        PolicyDiscrepancyTurnMacroConfig {
-                            max_applied_transitions: turn_macro_transitions,
-                            proposals_per_view: turn_macro_proposals_per_view,
-                            ..PolicyDiscrepancyTurnMacroConfig::default()
-                        },
-                    ),
-                },
-                policy,
-            );
+            let search_config = PolicyDiscrepancyConfig {
+                max_engine_steps_per_transition,
+                uniform_exploration_ppm,
+                max_greedy_actions_per_dive,
+                turn_macro: (turn_macro_transitions > 0).then_some(
+                    PolicyDiscrepancyTurnMacroConfig {
+                        max_applied_transitions: turn_macro_transitions,
+                        proposals_per_view: turn_macro_proposals_per_view,
+                        ..PolicyDiscrepancyTurnMacroConfig::default()
+                    },
+                ),
+            };
+            let trajectory_audit = if audit_actions.is_empty() {
+                None
+            } else {
+                let inputs = load_combat_action_segments(&audit_actions)?;
+                let audit_root = CombatDecisionRoot::new(root_position.clone())
+                    .map_err(|error| format!("invalid trajectory audit root: {error:?}"))?;
+                let mut audit = PolicyDiscrepancySession::with_policy(
+                    audit_root,
+                    search_config,
+                    policy.clone(),
+                );
+                Some(audit.audit_trajectory(&EngineCombatStepper, &inputs)?)
+            };
+            let mut search = PolicyDiscrepancySession::with_policy(root, search_config, policy);
             let started = Instant::now();
             let report = search.advance(
                 &EngineCombatStepper,
@@ -3492,6 +3508,23 @@ fn main() -> Result<(), String> {
                     "best_queued_discrepancy": report.best_queued_discrepancy,
                 },
                 "watched": watched,
+                "trajectory_audit": trajectory_audit.as_ref().map(|audit| json!({
+                    "source_action_count": audit.source_action_count,
+                    "non_greedy_action_count": audit.non_greedy_action_count,
+                    "total_weighted_discrepancy": audit.total_weighted_discrepancy,
+                    "terminal": format!("{:?}", audit.terminal),
+                    "deviations": audit.deviations.iter().map(|deviation| json!({
+                        "action_index": deviation.action_index,
+                        "player_turn": deviation.player_turn,
+                        "demonstrated_input": deviation.demonstrated_input,
+                        "greedy_input": deviation.greedy_input,
+                        "demonstrated_probability": deviation.demonstrated_probability,
+                        "greedy_probability": deviation.greedy_probability,
+                        "discrepancy_increment": deviation.discrepancy_increment,
+                        "cumulative_discrepancy": deviation.cumulative_discrepancy,
+                        "demonstrated_was_lazy": deviation.demonstrated_was_lazy,
+                    })).collect::<Vec<_>>(),
+                })),
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),

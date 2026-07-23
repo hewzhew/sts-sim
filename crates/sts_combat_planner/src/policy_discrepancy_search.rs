@@ -125,6 +125,28 @@ pub struct PolicyDiscrepancyStateDiagnostic {
     pub turn_macro_scheduled: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyDiscrepancyTrajectoryDeviation {
+    pub action_index: usize,
+    pub player_turn: u32,
+    pub demonstrated_input: ClientInput,
+    pub greedy_input: ClientInput,
+    pub demonstrated_probability: f64,
+    pub greedy_probability: f64,
+    pub discrepancy_increment: f64,
+    pub cumulative_discrepancy: f64,
+    pub demonstrated_was_lazy: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyDiscrepancyTrajectoryAudit {
+    pub source_action_count: usize,
+    pub non_greedy_action_count: usize,
+    pub total_weighted_discrepancy: f64,
+    pub terminal: CombatTerminal,
+    pub deviations: Vec<PolicyDiscrepancyTrajectoryDeviation>,
+}
+
 #[derive(Clone)]
 struct TraceNode {
     parent: Option<Arc<TraceNode>>,
@@ -404,6 +426,92 @@ impl PolicyDiscrepancySession {
             selected_by_turn_macro: self.turn_macro_selected_states.contains(&key),
             turn_macro_scheduled: self.turn_macro_scheduled_states.contains(&key),
         }
+    }
+
+    /// Replays an exact trajectory through the same hierarchical
+    /// atomic/structured action surface used by discrepancy search. This is
+    /// diagnostic only: it does not enqueue work or assert optimality.
+    pub fn audit_trajectory(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        inputs: &[ClientInput],
+    ) -> Result<PolicyDiscrepancyTrajectoryAudit, String> {
+        let mut position = self.root.clone();
+        let mut total_weighted_discrepancy = 0.0;
+        let mut deviations = Vec::new();
+        for (action_index, demonstrated_input) in inputs.iter().enumerate() {
+            if !stepper.is_legal_action(&position, demonstrated_input) {
+                return Err(format!(
+                    "policy-discrepancy audit action {action_index} is not legal"
+                ));
+            }
+            let (mut candidates, mut lazy_families) = self.policy_candidates(stepper, &position);
+            if candidates.is_empty() {
+                return Err(format!(
+                    "policy-discrepancy audit action {action_index} has no concrete policy candidate"
+                ));
+            }
+            candidates.sort_by(|left, right| right.probability.total_cmp(&left.probability));
+            let greedy = &candidates[0];
+            let mut demonstrated_probability = candidates
+                .iter()
+                .find(|candidate| candidate.input == *demonstrated_input)
+                .map(|candidate| (candidate.probability, false));
+            if demonstrated_probability.is_none() {
+                'families: for family in &mut lazy_families {
+                    while let Some(input) = family.cursor.next_input() {
+                        if input == *demonstrated_input {
+                            demonstrated_probability = Some((family.member_probability, true));
+                            break 'families;
+                        }
+                    }
+                }
+            }
+            let Some((demonstrated_probability, demonstrated_was_lazy)) = demonstrated_probability
+            else {
+                return Err(format!(
+                    "policy-discrepancy audit action {action_index} is absent from the runtime policy surface"
+                ));
+            };
+            if greedy.input != *demonstrated_input {
+                let discrepancy_increment = (greedy.probability.max(f64::MIN_POSITIVE)
+                    / demonstrated_probability.max(f64::MIN_POSITIVE))
+                .ln();
+                total_weighted_discrepancy += discrepancy_increment;
+                deviations.push(PolicyDiscrepancyTrajectoryDeviation {
+                    action_index,
+                    player_turn: position.combat.turn.turn_count,
+                    demonstrated_input: demonstrated_input.clone(),
+                    greedy_input: greedy.input.clone(),
+                    demonstrated_probability,
+                    greedy_probability: greedy.probability,
+                    discrepancy_increment,
+                    cumulative_discrepancy: total_weighted_discrepancy,
+                    demonstrated_was_lazy,
+                });
+            }
+            let result = stepper.apply_to_stable(
+                &position,
+                demonstrated_input.clone(),
+                CombatStepLimits {
+                    max_engine_steps: self.config.max_engine_steps_per_transition.max(1),
+                    deadline: None,
+                },
+            );
+            if result.truncated || result.timed_out {
+                return Err(format!(
+                    "policy-discrepancy audit action {action_index} did not reach a stable successor"
+                ));
+            }
+            position = result.position;
+        }
+        Ok(PolicyDiscrepancyTrajectoryAudit {
+            source_action_count: inputs.len(),
+            non_greedy_action_count: deviations.len(),
+            total_weighted_discrepancy,
+            terminal: stepper.terminal(&position),
+            deviations,
+        })
     }
 
     fn run_policy_dive(

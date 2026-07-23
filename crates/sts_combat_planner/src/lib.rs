@@ -88,7 +88,8 @@ pub use policy::{
 pub use policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,
     PolicyDiscrepancyQuantum, PolicyDiscrepancyReport, PolicyDiscrepancySession,
-    PolicyDiscrepancyStateDiagnostic, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
+    PolicyDiscrepancyStateDiagnostic, PolicyDiscrepancyStatus, PolicyDiscrepancyTrajectoryAudit,
+    PolicyDiscrepancyTrajectoryDeviation, PolicyDiscrepancyTurnMacroConfig,
 };
 pub use prospect::{
     ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,

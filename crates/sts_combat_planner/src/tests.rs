@@ -2525,6 +2525,29 @@ fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
 }
 
 #[test]
+fn policy_discrepancy_trajectory_audit_uses_runtime_policy_probabilities() {
+    let mut search = PolicyDiscrepancySession::with_policy(
+        root(),
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let audit = search
+        .audit_trajectory(&TinyTurnStepper::lethal(), &[PLAY])
+        .expect("known legal winning trajectory should be auditable");
+
+    assert_eq!(audit.source_action_count, 1);
+    assert_eq!(audit.non_greedy_action_count, 1);
+    assert_eq!(audit.terminal, CombatTerminal::Win);
+    assert!(audit.total_weighted_discrepancy > 0.0);
+    assert_eq!(audit.deviations[0].demonstrated_input, PLAY);
+    assert_eq!(audit.deviations[0].greedy_input, ClientInput::EndTurn);
+}
+
+#[test]
 fn policy_discrepancy_search_repairs_one_wrong_policy_action() {
     let mut search = PolicyDiscrepancySession::with_policy(
         root(),
