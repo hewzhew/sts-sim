@@ -8,7 +8,7 @@ use clap::Args;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption, TurnOptionGeneratorConfig,
+    CombatDecisionRoot, CombatPlanningQuantum, TurnOptionGeneratorConfig,
     TurnOptionGeneratorSession,
 };
 use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
@@ -20,9 +20,7 @@ use sts_simulator::eval::combat_state_features::{
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
 };
-use sts_simulator::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
-};
+use sts_simulator::sim::combat::EngineCombatStepper;
 
 #[derive(Clone, Debug, Args)]
 pub struct BoundarySuccessorLookaheadArgs {
@@ -190,9 +188,9 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
                     .any(|watched| watched == option.exact_successor_hash()),
                 boundary: format!("{:?}", option.boundary()),
                 action_count: option.actions().len(),
-                action_labels: readable_action_labels(
+                action_labels: super::readable_turn_option_action_labels(
                     &root_position,
-                    option,
+                    option.actions(),
                     args.max_engine_steps_per_transition,
                 )?,
                 negative_log_policy: option.negative_log_policy(),
@@ -372,35 +370,6 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
         "watched": watched,
         "top_candidates": reported_candidates,
     }))
-}
-
-fn readable_action_labels(
-    root: &CombatPosition,
-    option: &CompleteTurnOption,
-    max_engine_steps_per_transition: usize,
-) -> Result<Vec<String>, String> {
-    let stepper = EngineCombatStepper;
-    let mut position = root.clone();
-    let mut labels = Vec::with_capacity(option.actions().len());
-    for action in option.actions() {
-        labels.push(super::combat_action_label(&position, &action.input));
-        let step = stepper.apply_to_stable(
-            &position,
-            action.input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if step.truncated || step.timed_out {
-            return Err(format!(
-                "generated option action could not be replayed while formatting {}",
-                option.exact_successor_hash()
-            ));
-        }
-        position = step.position;
-    }
-    Ok(labels)
 }
 
 #[cfg(test)]

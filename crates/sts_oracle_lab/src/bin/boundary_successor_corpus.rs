@@ -171,6 +171,7 @@ struct BoundarySuccessorCandidate {
     boundary: String,
     action_count: usize,
     actions: Vec<ClientInput>,
+    action_labels: Vec<String>,
     negative_log_policy: f64,
     /// Exact Oracle state for offline representation research. Runtime search
     /// never reads this corpus.
@@ -586,6 +587,7 @@ fn build_group(
     .collect::<Vec<_>>();
     let candidates = build_candidates(
         &selected,
+        &root_position,
         &verified_successor_hash,
         corridor.terminal_final_hp,
         verified_suffix_action_count,
@@ -626,6 +628,7 @@ fn build_group(
 
 fn build_candidates(
     selected: &[(usize, CompleteTurnOption)],
+    root_position: &CombatPosition,
     verified_successor_hash: &str,
     verified_final_hp: i32,
     verified_suffix_action_count: usize,
@@ -648,6 +651,7 @@ fn build_candidates(
                             build_candidate(
                                 *policy_rank,
                                 option,
+                                root_position,
                                 verified_successor_hash,
                                 verified_final_hp,
                                 verified_suffix_action_count,
@@ -674,6 +678,7 @@ fn build_candidates(
 fn build_candidate(
     policy_rank: usize,
     option: &CompleteTurnOption,
+    root_position: &CombatPosition,
     verified_successor_hash: &str,
     verified_final_hp: i32,
     verified_suffix_action_count: usize,
@@ -690,6 +695,11 @@ fn build_candidate(
     } else {
         evaluate_successor(option, config, solve_work_per_candidate)?
     };
+    let action_labels = super::readable_turn_option_action_labels(
+        root_position,
+        option.actions(),
+        config.max_engine_steps_per_transition,
+    )?;
     Ok(BoundarySuccessorCandidate {
         policy_rank,
         exact_successor_hash: option.exact_successor_hash().to_string(),
@@ -700,6 +710,7 @@ fn build_candidate(
             .iter()
             .map(|action| action.input.clone())
             .collect(),
+        action_labels,
         negative_log_policy: option.negative_log_policy(),
         successor_position: option.exact_successor().clone(),
         successor_features: typed_combat_feature_components_v1(option.exact_successor()),

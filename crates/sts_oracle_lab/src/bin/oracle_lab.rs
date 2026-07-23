@@ -6125,6 +6125,34 @@ fn combat_action_label(
     }
 }
 
+fn readable_turn_option_action_labels(
+    root: &sts_simulator::sim::combat::CombatPosition,
+    actions: &[TurnOptionAction],
+    max_engine_steps_per_transition: usize,
+) -> Result<Vec<String>, String> {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut labels = Vec::with_capacity(actions.len());
+    for action in actions {
+        labels.push(combat_action_label(&position, &action.input));
+        let step = stepper.apply_to_stable(
+            &position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return Err(
+                "generated option action could not be replayed while formatting".to_string(),
+            );
+        }
+        position = step.position;
+    }
+    Ok(labels)
+}
+
 fn target_atomic_policy_trace(
     initial: &sts_simulator::sim::combat::CombatPosition,
     target: &[ClientInput],
