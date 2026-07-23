@@ -7,8 +7,8 @@ use sts_core::state::core::ClientInput;
 
 use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
-    CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
-    SharedCombatLookaheadEvaluator,
+    CombatGuideLaneId, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
+    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator,
 };
 use super::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
@@ -116,6 +116,11 @@ pub struct LocalTurnGraphWitnessCounters {
     pub depth_limited_successors: usize,
     pub exhausted_nodes: usize,
     pub maximum_turn_depth: usize,
+    /// Complete tactical lines proposed by an external policy and then
+    /// replayed from this session's unchanged root.
+    pub policy_witness_proposals: usize,
+    /// Exact simulator steps spent authoritatively replaying policy proposals.
+    pub policy_witness_replay_engine_steps: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -392,6 +397,44 @@ impl LocalTurnGraphWitnessSession {
 
     pub fn witness(&self) -> Option<&OracleCombatWitness> {
         self.witness.as_ref()
+    }
+
+    /// Offers one complete tactical line as an untrusted candidate.
+    ///
+    /// Policy code may discover a useful line cheaply, but it owns neither
+    /// legality nor terminal truth. This session replays every action and
+    /// expected exact successor from its unchanged root before installing a
+    /// witness. Independent local-graph search remains available to improve
+    /// or replace the candidate.
+    pub fn offer_witness_proposal(
+        &mut self,
+        proposal: CombatPolicyWitnessProposal,
+        stepper: &dyn CombatStepper,
+    ) -> Result<bool, OracleCombatWitnessReplayError> {
+        self.used.policy_witness_proposals = self.used.policy_witness_proposals.saturating_add(1);
+        let witness = replay_witness(
+            &self.original_root,
+            &proposal.actions,
+            proposal.actions.len() as f64,
+            OracleCombatWitnessDiscoverySource::PolicyProposal,
+            stepper,
+        )?;
+        self.used.policy_witness_replay_engine_steps = self
+            .used
+            .policy_witness_replay_engine_steps
+            .saturating_add(witness.replay_engine_steps);
+        self.used.engine_steps = self
+            .used
+            .engine_steps
+            .saturating_add(witness.replay_engine_steps);
+        let replace = self
+            .witness
+            .as_ref()
+            .is_none_or(|current| witness_better(&witness, current));
+        if replace {
+            self.witness = Some(witness);
+        }
+        Ok(replace)
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
@@ -1427,6 +1470,7 @@ impl LocalTurnGraphWitnessSession {
                         &self.original_root,
                         &actions,
                         prefix_negative_log_policy + option.negative_log_policy(),
+                        OracleCombatWitnessDiscoverySource::PlannerSearch,
                         stepper,
                     ) {
                         Ok(witness) => {
@@ -2256,6 +2300,7 @@ fn replay_witness(
     root: &CombatPosition,
     actions: &[TurnOptionAction],
     negative_log_policy: f64,
+    discovery_source: OracleCombatWitnessDiscoverySource,
     stepper: &dyn CombatStepper,
 ) -> Result<OracleCombatWitness, OracleCombatWitnessReplayError> {
     let mut position = root.clone();
@@ -2292,7 +2337,7 @@ fn replay_witness(
         final_position: position,
         negative_log_policy,
         replay_engine_steps: engine_steps,
-        discovery_source: OracleCombatWitnessDiscoverySource::PlannerSearch,
+        discovery_source,
     })
 }
 

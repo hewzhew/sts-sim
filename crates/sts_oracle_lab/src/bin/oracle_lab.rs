@@ -386,9 +386,11 @@ enum Command {
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
-    /// Exact graph search with node-local lazy widening. This is the same
-    /// independent search owned by production combat work and never invokes
-    /// the retired global Widen/Deepen agenda or V2 donor.
+    /// Isolated local-graph component with node-local lazy widening.
+    ///
+    /// Production also validates a cheap complete policy proposal and runs an
+    /// independent global-agenda member; this command intentionally excludes
+    /// both so local-graph behavior can be measured without portfolio effects.
     #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph {
         #[arg(long)]

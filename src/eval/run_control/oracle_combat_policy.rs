@@ -235,33 +235,75 @@ fn materialize_advisor_proposal(
     root: &CombatPosition,
     trajectory: crate::ai::combat_search_v2::CombatSearchV2TrajectoryReport,
 ) -> Result<CombatPolicyWitnessProposal, String> {
+    materialize_policy_inputs(
+        root,
+        trajectory.actions.into_iter().map(|action| action.input),
+        trajectory.final_hp,
+        512,
+        "V2 advisor",
+    )
+}
+
+/// Runs only the mature deterministic tactical policy and materializes its
+/// complete line as an untrusted planner proposal.
+///
+/// This deliberately does not start the legacy V2 frontier. The caller must
+/// still pass the proposal through a planner-owned exact root replay before it
+/// can become a witness.
+pub(super) fn existing_combat_rollout_witness_proposal_v1(
+    root: &CombatPosition,
+    max_actions: usize,
+    max_engine_steps_per_action: usize,
+    deadline: Option<Instant>,
+) -> Result<Option<CombatPolicyWitnessProposal>, String> {
+    let Some(proposal) = crate::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
+        root,
+        max_actions,
+        deadline,
+    ) else {
+        return Ok(None);
+    };
+    materialize_policy_inputs(
+        root,
+        proposal.actions,
+        proposal.final_hp_hint,
+        max_engine_steps_per_action,
+        "mature rollout policy",
+    )
+    .map(Some)
+}
+
+fn materialize_policy_inputs(
+    root: &CombatPosition,
+    inputs: impl IntoIterator<Item = crate::state::core::ClientInput>,
+    final_hp_hint: i32,
+    max_engine_steps_per_action: usize,
+    source_label: &str,
+) -> Result<CombatPolicyWitnessProposal, String> {
     let stepper = EngineCombatStepper;
     let mut position = root.clone();
-    let mut actions = Vec::with_capacity(trajectory.actions.len());
-    for (index, action) in trajectory.actions.into_iter().enumerate() {
-        if stepper
-            .choice_for_legal_input(&position, &action.input)
-            .is_none()
-        {
+    let mut actions = Vec::new();
+    for (index, input) in inputs.into_iter().enumerate() {
+        if stepper.choice_for_legal_input(&position, &input).is_none() {
             return Err(format!(
-                "V2 advisor action {index} is not legal at its exact replay state"
+                "{source_label} action {index} is not legal at its exact replay state"
             ));
         }
         let step = stepper.apply_to_stable(
             &position,
-            action.input.clone(),
+            input.clone(),
             CombatStepLimits {
-                max_engine_steps: 512,
+                max_engine_steps: max_engine_steps_per_action.max(1),
                 deadline: None,
             },
         );
         if step.truncated || step.timed_out {
             return Err(format!(
-                "V2 advisor action {index} could not reach a stable exact successor"
+                "{source_label} action {index} could not reach a stable exact successor"
             ));
         }
         actions.push(TurnOptionAction {
-            input: action.input,
+            input,
             expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
                 &step.position.engine,
                 &step.position.combat,
@@ -271,11 +313,15 @@ fn materialize_advisor_proposal(
         position = step.position;
     }
     if stepper.terminal(&position) != CombatTerminal::Win || position.combat.runtime.combat_smoked {
-        return Err("V2 advisor proposal did not replay to a true combat victory".to_string());
+        return Err(format!(
+            "{source_label} proposal did not replay to a true combat victory"
+        ));
     }
     Ok(CombatPolicyWitnessProposal {
         actions,
-        final_hp_hint: position.combat.entities.player.current_hp,
+        // Retain the donor's non-authoritative estimate. Planner-owned replay
+        // derives final HP again and never trusts this hint.
+        final_hp_hint,
     })
 }
 

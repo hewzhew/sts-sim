@@ -80,6 +80,7 @@ impl RunCombatResolutionV1 {
                     trajectory.source,
                     CombatAutomationTrajectorySource::SearchCombat
                         | CombatAutomationTrajectorySource::V2Donor
+                        | CombatAutomationTrajectorySource::MaturePolicyProposal
                         | CombatAutomationTrajectorySource::OracleExactActions
                         | CombatAutomationTrajectorySource::CompleteLineSolver
                         | CombatAutomationTrajectorySource::TurnPlanRescue

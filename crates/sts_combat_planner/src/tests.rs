@@ -1352,6 +1352,92 @@ fn policy_witness_proposal_with_a_false_successor_is_rejected() {
 }
 
 #[test]
+fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let decision_root = root();
+    let actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        decision_root,
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    assert_eq!(
+        session.offer_witness_proposal(
+            CombatPolicyWitnessProposal {
+                actions: actions.clone(),
+                final_hp_hint: i32::MAX,
+            },
+            &stepper,
+        ),
+        Ok(true)
+    );
+    let counters = session.counters();
+    assert_eq!(counters.policy_witness_proposals, 1);
+    assert!(counters.policy_witness_replay_engine_steps >= 2);
+    let witness = session.witness().expect("exactly replayed proposal");
+    assert_eq!(
+        witness.discovery_source,
+        OracleCombatWitnessDiscoverySource::PolicyProposal
+    );
+    assert_eq!(
+        stepper.terminal(&witness.final_position),
+        CombatTerminal::Win
+    );
+    assert_ne!(
+        witness.final_position.combat.entities.player.current_hp,
+        i32::MAX,
+        "the untrusted final-HP hint cannot create witness truth"
+    );
+
+    assert_eq!(
+        session.offer_witness_proposal(
+            CombatPolicyWitnessProposal {
+                actions,
+                final_hp_hint: i32::MAX,
+            },
+            &stepper,
+        ),
+        Ok(false),
+        "an equal replay must not replace the incumbent"
+    );
+}
+
+#[test]
+fn local_turn_graph_rejects_a_policy_proposal_with_a_forged_successor() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let decision_root = root();
+    let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
+    actions[0].expected_successor_hash = "forged-successor".to_owned();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        decision_root,
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    assert_eq!(
+        session.offer_witness_proposal(
+            CombatPolicyWitnessProposal {
+                actions,
+                final_hp_hint: i32::MAX,
+            },
+            &stepper,
+        ),
+        Err(OracleCombatWitnessReplayError::SuccessorMismatch { action_index: 0 })
+    );
+    assert!(session.witness().is_none());
+    assert_eq!(session.counters().policy_witness_proposals, 1);
+}
+
+#[test]
 fn witness_generation_batch_reserves_engine_allowance_for_the_whole_batch() {
     let stepper = TinyTurnStepper::plain();
     let mut session = OracleCombatWitnessSession::with_policy(

@@ -30,6 +30,10 @@ pub enum CombatAutomationTrajectorySource {
     /// A complete suffix proposed by the legacy CombatSearchV2 teacher and
     /// accepted only after authoritative exact replay by the new planner.
     V2Donor,
+    /// A complete suffix proposed by the deterministic tactical policy and
+    /// accepted only after authoritative exact replay by the planner. This
+    /// source does not imply that the legacy V2 frontier ran.
+    MaturePolicyProposal,
     /// An explicit action sequence supplied at an oracle-analysis boundary and
     /// accepted only after exact legal replay reaches terminal victory.
     OracleExactActions,
@@ -46,6 +50,7 @@ impl CombatAutomationTrajectorySource {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
             CombatAutomationTrajectorySource::V2Donor => "v2_donor",
+            CombatAutomationTrajectorySource::MaturePolicyProposal => "mature_policy_proposal",
             CombatAutomationTrajectorySource::OracleExactActions => "oracle_exact_actions",
             CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
             CombatAutomationTrajectorySource::TurnPlanRescue => "turn_plan_rescue",
