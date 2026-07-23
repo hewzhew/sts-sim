@@ -71,6 +71,9 @@ def main() -> int:
         "schema_version": 1,
         "authority": "offline_diagnostic_only",
         "input": str(args.input),
+        "source_identity": corpus.get("source_identity"),
+        "input_fingerprint": corpus.get("input_fingerprint"),
+        "corpus_config": corpus.get("config"),
         "feature_schema": corpus.get("feature_schema"),
         "training_contract": (
             "pairwise exact-win versus exact-refutation-or-terminal-non-win; "

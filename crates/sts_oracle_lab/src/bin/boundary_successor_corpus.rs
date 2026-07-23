@@ -24,7 +24,7 @@ use sts_simulator::state::core::ClientInput;
 
 use super::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-    load_exact_turn_corridor,
+    load_exact_turn_corridor, source_content_fingerprint,
 };
 
 const MANIFEST_SCHEMA: &str = "BoundarySuccessorCorpusManifestV1";
@@ -57,6 +57,9 @@ pub struct BoundarySuccessorCorpusArgs {
     /// Maximum independent successor searches evaluated concurrently.
     #[arg(long, default_value_t = 4)]
     candidate_jobs: usize,
+    /// Ignore a matching content-addressed output and recompute all evidence.
+    #[arg(long)]
+    force_rebuild: bool,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
 }
@@ -101,6 +104,8 @@ enum CandidateSelection {
 struct BoundarySuccessorCorpus {
     schema_name: String,
     schema_version: u32,
+    source_identity: String,
+    input_fingerprint: String,
     feature_schema: String,
     manifest: PathBuf,
     config: CorpusConfig,
@@ -232,6 +237,36 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
         candidate_jobs: args.candidate_jobs,
         max_engine_steps_per_transition: args.max_engine_steps_per_transition,
     };
+    let mut input_paths = vec![manifest_path.clone()];
+    for entry in &manifest.entries {
+        input_paths.push(resolve_relative(base, &entry.case));
+        input_paths.extend(
+            entry
+                .actions
+                .iter()
+                .map(|path| resolve_relative(base, path)),
+        );
+    }
+    let source_identity = current_source_identity()?;
+    let input_fingerprint = source_content_fingerprint(base, &input_paths)?;
+    if !args.force_rebuild && args.output.is_file() {
+        let cached = std::fs::read(&args.output)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        if let Some(cached) = cached {
+            let config_value = serde_json::to_value(config).map_err(|error| error.to_string())?;
+            if cached.get("schema_name").and_then(Value::as_str) == Some(CORPUS_SCHEMA)
+                && cached.get("schema_version").and_then(Value::as_u64) == Some(1)
+                && cached.get("source_identity").and_then(Value::as_str)
+                    == Some(source_identity.as_str())
+                && cached.get("input_fingerprint").and_then(Value::as_str)
+                    == Some(input_fingerprint.as_str())
+                && cached.get("config") == Some(&config_value)
+            {
+                return corpus_report(&cached, &args.output, true);
+            }
+        }
+    }
     let mut groups = Vec::with_capacity(manifest.entries.len());
     let mut seen_ids = BTreeSet::new();
     for entry in manifest.entries {
@@ -246,6 +281,8 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
     let corpus = BoundarySuccessorCorpus {
         schema_name: CORPUS_SCHEMA.to_string(),
         schema_version: 1,
+        source_identity,
+        input_fingerprint,
         feature_schema: FEATURE_SCHEMA.to_string(),
         manifest: manifest_path,
         config,
@@ -254,46 +291,96 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
     if let Some(parent) = args.output.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
+    let corpus = serde_json::to_value(corpus).map_err(|error| error.to_string())?;
     std::fs::write(
         &args.output,
         serde_json::to_vec_pretty(&corpus).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
+    corpus_report(&corpus, &args.output, false)
+}
 
-    let train_groups = corpus
-        .groups
+fn current_source_identity() -> Result<String, String> {
+    let executable =
+        std::env::current_exe().map_err(|error| format!("cannot locate oracle_lab: {error}"))?;
+    let fingerprint_path = executable.with_extension("source-fingerprint");
+    let fingerprint = std::fs::read_to_string(&fingerprint_path).map_err(|error| {
+        format!(
+            "cannot read canonical source identity '{}': {error}",
+            fingerprint_path.display()
+        )
+    })?;
+    fingerprint
+        .lines()
+        .nth(1)
+        .filter(|digest| !digest.trim().is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            format!(
+                "canonical source identity '{}' is malformed",
+                fingerprint_path.display()
+            )
+        })
+}
+
+fn corpus_report(corpus: &Value, output: &Path, cache_hit: bool) -> Result<Value, String> {
+    let groups = corpus
+        .get("groups")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "boundary-successor corpus has no groups array".to_string())?;
+    let train_groups = groups
         .iter()
-        .filter(|group| matches!(group.split, CorpusSplit::Train))
+        .filter(|group| group.get("split").and_then(Value::as_str) == Some("train"))
         .count();
-    let eval_groups = corpus.groups.len().saturating_sub(train_groups);
-    let evidence_counts = corpus
-        .groups
-        .iter()
-        .flat_map(|group| &group.candidates)
-        .fold([0usize; 4], |mut counts, candidate| {
-            match candidate.evidence {
-                SuccessorEvidence::ExactWin { .. } => counts[0] += 1,
-                SuccessorEvidence::ExactRefutation { .. } => counts[1] += 1,
-                SuccessorEvidence::ExactTerminalNonWin { .. } => counts[2] += 1,
-                SuccessorEvidence::BudgetUnknown { .. } => counts[3] += 1,
+    let mut candidates = 0usize;
+    let mut evidence_counts = [0usize; 4];
+    let mut verified_successors_generated = 0usize;
+    for group in groups {
+        if group
+            .get("verified_successor_generated")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            verified_successors_generated = verified_successors_generated.saturating_add(1);
+        }
+        let group_candidates = group
+            .get("candidates")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "boundary-successor group has no candidates array".to_string())?;
+        candidates = candidates.saturating_add(group_candidates.len());
+        for candidate in group_candidates {
+            match candidate
+                .get("evidence")
+                .and_then(|evidence| evidence.get("kind"))
+                .and_then(Value::as_str)
+            {
+                Some("exact_win") => evidence_counts[0] += 1,
+                Some("exact_refutation") => evidence_counts[1] += 1,
+                Some("exact_terminal_non_win") => evidence_counts[2] += 1,
+                Some("budget_unknown") => evidence_counts[3] += 1,
+                Some(kind) => return Err(format!("unknown successor evidence kind: {kind}")),
+                None => return Err("candidate has no successor evidence kind".to_string()),
             }
-            counts
-        });
+        }
+    }
     Ok(json!({
         "schema_name": "BoundarySuccessorCorpusBuildReportV1",
         "schema_version": 1,
-        "output": args.output,
-        "groups": corpus.groups.len(),
+        "cache_hit": cache_hit,
+        "output": output,
+        "source_identity": corpus.get("source_identity"),
+        "input_fingerprint": corpus.get("input_fingerprint"),
+        "groups": groups.len(),
         "train_groups": train_groups,
-        "eval_groups": eval_groups,
-        "candidates": corpus.groups.iter().map(|group| group.candidates.len()).sum::<usize>(),
+        "eval_groups": groups.len().saturating_sub(train_groups),
+        "candidates": candidates,
         "evidence": {
             "exact_win": evidence_counts[0],
             "exact_refutation": evidence_counts[1],
             "exact_terminal_non_win": evidence_counts[2],
             "budget_unknown": evidence_counts[3],
         },
-        "verified_successors_generated": corpus.groups.iter().filter(|group| group.verified_successor_generated).count(),
+        "verified_successors_generated": verified_successors_generated,
     }))
 }
 
