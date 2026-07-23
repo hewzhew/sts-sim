@@ -40,6 +40,7 @@ pub use atomic_turn_portfolio::{
     AtomicTurnPortfolioConfig, AtomicTurnPortfolioCounters, AtomicTurnPortfolioEntryReport,
     AtomicTurnPortfolioGuideRank, AtomicTurnPortfolioInterruption, AtomicTurnPortfolioQuantum,
     AtomicTurnPortfolioReport, AtomicTurnPortfolioSession, AtomicTurnPortfolioStatus,
+    AtomicTurnPortfolioTaskKind,
 };
 pub use decision::{
     decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,

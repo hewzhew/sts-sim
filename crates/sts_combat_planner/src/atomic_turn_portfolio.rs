@@ -108,9 +108,14 @@ pub enum AtomicTurnPortfolioStatus {
 pub struct AtomicTurnPortfolioReport {
     pub before: AtomicTurnPortfolioCounters,
     pub after: AtomicTurnPortfolioCounters,
+    pub root_exact_state_hash: String,
     pub active_suffix_sessions: usize,
     pub active_boundary_tasks: usize,
     pub active_terminal_tasks: usize,
+    pub recursive_active_tasks: usize,
+    pub recursive_boundary_tasks: usize,
+    pub recursive_terminal_tasks: usize,
+    pub maximum_portfolio_depth: usize,
     pub boundary_generator_active: bool,
     pub suffix_entries: Vec<AtomicTurnPortfolioEntryReport>,
     pub winning_boundary_id: Option<u64>,
@@ -132,7 +137,19 @@ pub struct AtomicTurnPortfolioEntryReport {
     pub services: usize,
     pub engine_steps: usize,
     pub remaining_boundary_layers: usize,
+    pub task_kind: AtomicTurnPortfolioTaskKind,
+    pub recursive_active_tasks: usize,
+    pub maximum_portfolio_depth: usize,
     pub boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AtomicTurnPortfolioTaskKind {
+    Boundary,
+    AtomicTerminal,
+    PolicyDiscrepancyTerminal,
+    LocalTurnGraphTerminal,
+    NestedPortfolio,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -175,6 +192,43 @@ enum PortfolioTerminalSearch {
 }
 
 impl SuffixWork {
+    fn task_kind(&self) -> AtomicTurnPortfolioTaskKind {
+        match &self.session {
+            PortfolioTaskSession::Boundary(_) => AtomicTurnPortfolioTaskKind::Boundary,
+            PortfolioTaskSession::AtomicTerminal(_) => AtomicTurnPortfolioTaskKind::AtomicTerminal,
+            PortfolioTaskSession::PolicyDiscrepancyTerminal(_) => {
+                AtomicTurnPortfolioTaskKind::PolicyDiscrepancyTerminal
+            }
+            PortfolioTaskSession::LocalTurnGraphTerminal(_) => {
+                AtomicTurnPortfolioTaskKind::LocalTurnGraphTerminal
+            }
+            PortfolioTaskSession::NestedPortfolio(_) => {
+                AtomicTurnPortfolioTaskKind::NestedPortfolio
+            }
+        }
+    }
+
+    /// Number of schedulable leaf tasks represented by this entry.
+    ///
+    /// A nested portfolio is a container, not an additional task beside its
+    /// children, so it contributes the number of leaves it currently owns.
+    fn recursive_active_tasks(&self) -> usize {
+        match &self.session {
+            PortfolioTaskSession::NestedPortfolio(session) => session.recursive_active_tasks(),
+            _ => 1,
+        }
+    }
+
+    /// Number of portfolio levels from this entry through its deepest leaf.
+    fn maximum_portfolio_depth(&self) -> usize {
+        match &self.session {
+            PortfolioTaskSession::NestedPortfolio(session) => {
+                1usize.saturating_add(session.maximum_portfolio_depth())
+            }
+            _ => 1,
+        }
+    }
+
     fn scheduler_work(&self) -> usize {
         if self.remaining_boundary_layers > 0 {
             self.boundary_generation_work
@@ -451,6 +505,7 @@ impl AtomicTurnPortfolioSession {
         AtomicTurnPortfolioReport {
             before,
             after: self.used,
+            root_exact_state_hash: exact_hash(&self.root),
             active_suffix_sessions: self.suffixes.len(),
             active_boundary_tasks: self
                 .suffixes
@@ -462,6 +517,10 @@ impl AtomicTurnPortfolioSession {
                 .iter()
                 .filter(|task| task.remaining_boundary_layers == 0)
                 .count(),
+            recursive_active_tasks: self.recursive_active_tasks(),
+            recursive_boundary_tasks: self.recursive_boundary_tasks(),
+            recursive_terminal_tasks: self.recursive_terminal_tasks(),
+            maximum_portfolio_depth: self.maximum_portfolio_depth(),
             boundary_generator_active: self
                 .suffixes
                 .iter()
@@ -481,6 +540,9 @@ impl AtomicTurnPortfolioSession {
                     services: suffix.services,
                     engine_steps: suffix.engine_steps,
                     remaining_boundary_layers: suffix.remaining_boundary_layers,
+                    task_kind: suffix.task_kind(),
+                    recursive_active_tasks: suffix.recursive_active_tasks(),
+                    maximum_portfolio_depth: suffix.maximum_portfolio_depth(),
                     boundary_guides: suffix.boundary_guides.clone(),
                 })
                 .collect(),
@@ -1068,6 +1130,47 @@ impl AtomicTurnPortfolioSession {
     fn charge_terminal_work(&mut self, work: usize) {
         self.used.terminal_search_work = self.used.terminal_search_work.saturating_add(work);
         self.used.charged_search_work = self.used.charged_search_work.saturating_add(work);
+    }
+
+    fn recursive_active_tasks(&self) -> usize {
+        self.suffixes
+            .iter()
+            .map(SuffixWork::recursive_active_tasks)
+            .sum()
+    }
+
+    fn recursive_boundary_tasks(&self) -> usize {
+        self.suffixes
+            .iter()
+            .map(|suffix| match &suffix.session {
+                PortfolioTaskSession::Boundary(_) => 1,
+                PortfolioTaskSession::NestedPortfolio(session) => {
+                    session.recursive_boundary_tasks()
+                }
+                _ => 0,
+            })
+            .sum()
+    }
+
+    fn recursive_terminal_tasks(&self) -> usize {
+        self.suffixes
+            .iter()
+            .map(|suffix| match &suffix.session {
+                PortfolioTaskSession::NestedPortfolio(session) => {
+                    session.recursive_terminal_tasks()
+                }
+                PortfolioTaskSession::Boundary(_) => 0,
+                _ => 1,
+            })
+            .sum()
+    }
+
+    fn maximum_portfolio_depth(&self) -> usize {
+        self.suffixes
+            .iter()
+            .map(SuffixWork::maximum_portfolio_depth)
+            .max()
+            .unwrap_or(1)
     }
 
     /// Best exact state-guide evidence materialized below this portfolio root.

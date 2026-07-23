@@ -2218,6 +2218,13 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
 
     assert_eq!(report.status, AtomicTurnPortfolioStatus::WitnessFound);
     assert!(report.after.turn_boundaries_found >= 2);
+    assert!(report.recursive_active_tasks >= report.active_suffix_sessions);
+    assert!(report.recursive_boundary_tasks + report.recursive_terminal_tasks > 0);
+    assert!(report.maximum_portfolio_depth >= 2);
+    assert!(report
+        .suffix_entries
+        .iter()
+        .any(|entry| entry.maximum_portfolio_depth >= 2));
     let witness = report
         .witness
         .expect("two exact boundary handoffs then win");
