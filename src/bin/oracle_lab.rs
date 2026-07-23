@@ -389,6 +389,10 @@ enum Command {
         /// still generated, executed, and replayed by the independent search.
         #[arg(long)]
         diagnostic_corridor_actions: Vec<PathBuf>,
+        /// Replay one verified witness and observe each exact player-turn
+        /// boundary without changing policy, guides, or search order.
+        #[arg(long)]
+        watch_corridor_actions: Vec<PathBuf>,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 1_000_000)]
@@ -2007,6 +2011,7 @@ fn main() -> Result<(), String> {
             action_imitation_artifact,
             value_prototype_artifact,
             diagnostic_corridor_actions,
+            watch_corridor_actions,
             max_nodes,
             max_selections,
             wall_ms,
@@ -2028,6 +2033,15 @@ fn main() -> Result<(), String> {
             let initial_hp = loaded.position.combat.entities.player.current_hp;
             let root_player_turn = loaded.position.combat.turn.turn_count;
             let search_root_position = loaded.position.clone();
+            let watched_corridor = if watch_corridor_actions.is_empty() {
+                None
+            } else {
+                Some(load_exact_turn_corridor(
+                    &case,
+                    &watch_corridor_actions,
+                    max_engine_steps_per_transition,
+                )?)
+            };
             let root = CombatDecisionRoot::new(loaded.position)
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
             let config = LocalTurnGraphWitnessConfig {
@@ -2123,6 +2137,31 @@ fn main() -> Result<(), String> {
                     })
                 })
                 .collect::<Vec<_>>();
+            let watched_corridor = watched_corridor.as_ref().map(|corridor| {
+                let mut states = corridor
+                    .rank_by_exact_hash
+                    .iter()
+                    .map(|(hash, rank)| {
+                        (
+                            *rank,
+                            json!({
+                                "corridor_rank": rank,
+                                "exact_state_hash": hash,
+                                "state": session.state_snapshot_by_exact_hash(hash),
+                            }),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                states.sort_by_key(|(rank, _)| *rank);
+                json!({
+                    "authority": "diagnostic_only",
+                    "changes_search_order": false,
+                    "action_count": corridor.action_count,
+                    "exact_turn_states": states.len(),
+                    "terminal_final_hp": corridor.terminal_final_hp,
+                    "states": states.into_iter().map(|(_, state)| state).collect::<Vec<_>>(),
+                })
+            });
             if let (Some(path), Some(witness)) =
                 (export_witness_actions.as_ref(), report.witness.as_ref())
             {
@@ -2152,6 +2191,7 @@ fn main() -> Result<(), String> {
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
+                "watch_corridor_actions": watch_corridor_actions,
                 "scheduler": if anchor_only {
                     "anchor_only"
                 } else if root_turn_anchor_only {
@@ -2204,6 +2244,7 @@ fn main() -> Result<(), String> {
                 "witness_trace": witness_trace,
                 "generation_gap_count": report.generation_gaps.len(),
                 "watched_states": watched_states,
+                "watched_corridor": watched_corridor,
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
