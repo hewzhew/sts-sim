@@ -105,3 +105,32 @@ This is a perfect-information upper-bound experiment, not a production
 policy. It answers whether better state evaluation can expose a known victory
 corridor through the current planner; a normal run must never read this
 fixture or its future state hashes.
+
+## seed 20260713008, A0, Donu and Deca
+
+- Run target: no keys; stop after the Act 3 boss.
+- Combat start: Act 3 floor 48, 56/93 HP, Skill Potion, Liquid Memories, and
+  Block Potion.
+- `seed20260713008_a0_donu_deca.t3-local-graph.actions.json` is the 43-action,
+  12 HP terminal suffix independently found from the exact T3 state by the
+  base local-turn graph search.
+- `seed20260713008_a0_donu_deca.layered-proof-cache.actions.json` is the
+  68-action root witness compiled backwards from that suffix. T2, T1, and T0
+  required 368, 3,504, and 7,880 generation work respectively; the one-process
+  fold completed in 1.642 seconds. No V2 donor or trained action/value artifact
+  participated. The exact corridor reconstructed predecessor roots only.
+- `seed20260713008_a0_donu_deca.combat-case.json` preserves the exact combat
+  root. The layered root witness ends with 12/93 HP.
+- `seed20260713008_a0_full_run.continuation.json` contains the complete
+  seed-initialized journal. Importing it into a fresh workspace and replaying
+  node 0 verifies 212 journal entries, 25 combat resolutions, 660 combat
+  actions, terminal victory at F48, and final fingerprint
+  `ae461b09a80cd602f2e039afa38c373c8a54e6dde002bb99d43a033d74758a43`.
+- SHA-256: combat case
+  `47F6BA08C540150BABD186F9959AD7EC27D8CC87FBD69A52BC037ECAFDF3C58C`;
+  T3 suffix
+  `D5C7EFE43EC79D315F8F743FB3886C229671755C31C9501002974E6774F869CF`;
+  layered root witness
+  `F6DD35F49AE31DCC723F07CF575F73F9F0C9CCFBE5E4565944641A4B0E63427D`;
+  full-run continuation
+  `72BDFD54DB3C83260E388703C70E6ED7452BE3A0C95E89976F44077D92BDD1E3`.
