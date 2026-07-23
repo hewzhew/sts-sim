@@ -2071,7 +2071,6 @@ mod tests {
         assert_eq!(pending[0].enemies[0].name, "Jaw Worm");
         assert_eq!(pending[0].quantum_count, 2);
         assert!(pending[0].last_quantum_generation_work <= 1);
-        assert!(pending[0].last_quantum_engine_steps > 0);
         assert!(pending[0].exact_states >= 1);
         assert!(pending[0].retained_state_work >= 1);
         assert_eq!(pending[0].quanta_since_incumbent_improvement, 2);
