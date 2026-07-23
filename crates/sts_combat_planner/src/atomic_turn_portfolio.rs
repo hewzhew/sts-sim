@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::Instant;
 
 use sts_core::sim::combat::{CombatPosition, CombatStepper, CombatTerminal};
@@ -135,7 +135,7 @@ pub struct AtomicTurnPortfolioEntryReport {
     pub boundary_guides: Vec<AtomicTurnPortfolioGuideRank>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AtomicTurnPortfolioGuideRank {
     pub lane: u32,
     pub components: Vec<i32>,
@@ -161,8 +161,10 @@ enum PortfolioTaskSession {
     AtomicTerminal(Box<AtomicLevinWitnessSession>),
     PolicyDiscrepancyTerminal(Box<PolicyDiscrepancySession>),
     LocalTurnGraphTerminal(Box<LocalTurnGraphWitnessSession>),
+    NestedPortfolio(Box<AtomicTurnPortfolioSession>),
 }
 
+#[derive(Clone)]
 enum PortfolioTerminalSearch {
     AtomicLevin,
     PolicyDiscrepancy(PolicyDiscrepancyConfig),
@@ -795,6 +797,65 @@ impl AtomicTurnPortfolioSession {
                     LocalTurnGraphWitnessStatus::Partial(_) => self.suffixes.push(suffix),
                 }
             }
+            PortfolioTaskSession::NestedPortfolio(session) => {
+                let before = session.counters();
+                let report = session.advance(
+                    stepper,
+                    AtomicTurnPortfolioQuantum {
+                        additional_search_work: transition_quantum,
+                        additional_engine_steps: engine_quantum,
+                        deadline,
+                    },
+                );
+                let after = report.after;
+                let search_work_delta = after
+                    .charged_search_work
+                    .saturating_sub(before.charged_search_work);
+                let transition_delta = after
+                    .applied_action_transitions
+                    .saturating_sub(before.applied_action_transitions);
+                let engine_delta = after.engine_steps.saturating_sub(before.engine_steps);
+                suffix.applied_action_transitions = suffix
+                    .applied_action_transitions
+                    .saturating_add(transition_delta);
+                suffix.terminal_search_work = suffix
+                    .terminal_search_work
+                    .saturating_add(search_work_delta);
+                suffix.engine_steps = suffix.engine_steps.saturating_add(engine_delta);
+                self.used.applied_action_transitions = self
+                    .used
+                    .applied_action_transitions
+                    .saturating_add(transition_delta);
+                self.used.engine_steps = self.used.engine_steps.saturating_add(engine_delta);
+                self.used.suffix_sessions_mechanics_gap =
+                    self.used.suffix_sessions_mechanics_gap.saturating_add(
+                        after
+                            .suffix_sessions_mechanics_gap
+                            .saturating_sub(before.suffix_sessions_mechanics_gap),
+                    );
+                self.charge_terminal_work(search_work_delta);
+                suffix.boundary_guides =
+                    merge_backed_guides(&suffix.boundary_guides, &session.best_backed_guides());
+
+                match report.status {
+                    AtomicTurnPortfolioStatus::WitnessFound => {
+                        if let Some(witness) = report.witness {
+                            self.finish_combined_witness(stepper, &suffix, witness);
+                        }
+                    }
+                    AtomicTurnPortfolioStatus::FrontierExhausted => {
+                        self.used.suffix_sessions_exhausted =
+                            self.used.suffix_sessions_exhausted.saturating_add(1);
+                    }
+                    AtomicTurnPortfolioStatus::ReplayMismatch(error) => {
+                        self.replay_failure = Some(error);
+                    }
+                    AtomicTurnPortfolioStatus::PolicyReplayMismatch => {
+                        self.policy_replay_mismatch = true;
+                    }
+                    AtomicTurnPortfolioStatus::Partial(_) => self.suffixes.push(suffix),
+                }
+            }
             PortfolioTaskSession::Boundary(_) => {
                 unreachable!("a terminal task owns a terminal search session")
             }
@@ -867,10 +928,14 @@ impl AtomicTurnPortfolioSession {
         let boundary_id = self.next_boundary_id;
         self.next_boundary_id = self.next_boundary_id.saturating_add(1);
         let session = if remaining_boundary_layers > 0 {
-            PortfolioTaskSession::Boundary(Box::new(TurnOptionGeneratorSession::with_policy(
+            let mut nested_config = self.config;
+            nested_config.boundary_layers = remaining_boundary_layers;
+            PortfolioTaskSession::NestedPortfolio(Box::new(Self::with_terminal_search(
                 root,
-                self.config.boundary_search,
+                nested_config,
                 self.boundary_policy.clone(),
+                self.suffix_policy.clone(),
+                self.terminal_search.clone(),
             )))
         } else {
             match &self.terminal_search {
@@ -912,7 +977,10 @@ impl AtomicTurnPortfolioSession {
             exact_state_hash,
             prefix_actions,
             prefix_negative_log_policy,
-            remaining_boundary_layers,
+            // Recursive boundary layers are a coherent terminal task from the
+            // parent portfolio's perspective. Their own session owns the
+            // remaining boundary depth and its widening schedule.
+            remaining_boundary_layers: 0,
             boundary_guides,
             session,
             boundary_generation_work: 0,
@@ -950,7 +1018,6 @@ impl AtomicTurnPortfolioSession {
         } else {
             self.used.anchor_view_services = self.used.anchor_view_services.saturating_add(1);
         }
-
         self.suffixes
             .iter()
             .enumerate()
@@ -969,16 +1036,13 @@ impl AtomicTurnPortfolioSession {
                 let guide_order = selected_guide_lane
                     .map(|lane| compare_guide_lane(left, right, lane))
                     .unwrap_or(std::cmp::Ordering::Equal);
-                // A guide orders tasks only within the same geometric service
-                // round.  Putting its static rank first lets one resumable
-                // task monopolize that lane forever; ordinary best-first
-                // queues avoid this because a popped node is consumed, while
-                // these tasks are reinserted after every quantum.
-                let service_round_order = selected_guide_lane
-                    .map(|_| scheduler_work_round(left_work).cmp(&scheduler_work_round(right_work)))
+                // Guide views exploit their strongest materialized evidence;
+                // the independent anchor view owns starvation freedom. Work
+                // rounds break ties between equal guide evidence.
+                let guide_service_order = selected_guide_lane
+                    .map(|_| guide_then_service_round(guide_order, left_work, right_work))
                     .unwrap_or(std::cmp::Ordering::Equal);
-                service_round_order
-                    .then(guide_order)
+                guide_service_order
                     .then_with(|| left_key.total_cmp(&right_key))
                     .then_with(|| left.boundary_id.cmp(&right.boundary_id))
             })
@@ -1004,6 +1068,27 @@ impl AtomicTurnPortfolioSession {
     fn charge_terminal_work(&mut self, work: usize) {
         self.used.terminal_search_work = self.used.terminal_search_work.saturating_add(work);
         self.used.charged_search_work = self.used.charged_search_work.saturating_add(work);
+    }
+
+    /// Best exact state-guide evidence materialized below this portfolio root.
+    /// This is an optimistic backup, but never a prediction: every component
+    /// comes from a successor that was actually generated.
+    fn best_backed_guides(&self) -> Vec<AtomicTurnPortfolioGuideRank> {
+        let mut best = BTreeMap::<u32, Vec<i32>>::new();
+        for suffix in &self.suffixes {
+            for guide in &suffix.boundary_guides {
+                best.entry(guide.lane)
+                    .and_modify(|current| {
+                        if guide.components > *current {
+                            *current = guide.components.clone();
+                        }
+                    })
+                    .or_insert_with(|| guide.components.clone());
+            }
+        }
+        best.into_iter()
+            .map(|(lane, components)| AtomicTurnPortfolioGuideRank { lane, components })
+            .collect()
     }
 
     fn finish_combined_witness(
@@ -1054,8 +1139,12 @@ impl AtomicTurnPortfolioSession {
     }
 }
 
-pub(crate) fn scheduler_work_round(work: usize) -> u32 {
-    work.max(1).ilog2()
+pub(crate) fn guide_then_service_round(
+    guide_order: std::cmp::Ordering,
+    left_work: usize,
+    right_work: usize,
+) -> std::cmp::Ordering {
+    guide_order.then_with(|| left_work.max(1).ilog2().cmp(&right_work.max(1).ilog2()))
 }
 
 pub(crate) fn progressive_boundary_work_allowance(
@@ -1074,6 +1163,30 @@ pub(crate) fn local_graph_charged_work(
     generation_and_lookahead_work: usize,
 ) -> usize {
     selection_work.max(generation_and_lookahead_work)
+}
+
+pub(crate) fn merge_backed_guides(
+    current: &[AtomicTurnPortfolioGuideRank],
+    backed: &[AtomicTurnPortfolioGuideRank],
+) -> Vec<AtomicTurnPortfolioGuideRank> {
+    let mut merged = current
+        .iter()
+        .map(|guide| (guide.lane, guide.components.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for guide in backed {
+        merged
+            .entry(guide.lane)
+            .and_modify(|components| {
+                if guide.components > *components {
+                    *components = guide.components.clone();
+                }
+            })
+            .or_insert_with(|| guide.components.clone());
+    }
+    merged
+        .into_iter()
+        .map(|(lane, components)| AtomicTurnPortfolioGuideRank { lane, components })
+        .collect()
 }
 
 fn atomic_replay_error(error: OracleCombatWitnessReplayError) -> AtomicLevinWitnessReplayError {

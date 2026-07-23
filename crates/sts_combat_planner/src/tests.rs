@@ -2232,14 +2232,18 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
 }
 
 #[test]
-fn atomic_turn_portfolio_guide_service_advances_in_geometric_work_rounds() {
+fn atomic_turn_portfolio_guide_exploits_evidence_while_anchor_owns_fairness() {
+    use std::cmp::Ordering;
+
+    use crate::atomic_turn_portfolio::guide_then_service_round;
+
     assert_eq!(
-        crate::atomic_turn_portfolio::scheduler_work_round(512),
-        crate::atomic_turn_portfolio::scheduler_work_round(1_023)
+        guide_then_service_round(Ordering::Less, 8_192, 0),
+        Ordering::Less
     );
-    assert!(
-        crate::atomic_turn_portfolio::scheduler_work_round(512)
-            < crate::atomic_turn_portfolio::scheduler_work_round(1_024)
+    assert_eq!(
+        guide_then_service_round(Ordering::Equal, 8_192, 0),
+        Ordering::Greater
     );
 }
 
@@ -2264,6 +2268,56 @@ fn atomic_turn_portfolio_charges_selection_only_local_graph_progress() {
 
     assert_eq!(local_graph_charged_work(7, 0), 7);
     assert_eq!(local_graph_charged_work(2, 11), 11);
+}
+
+#[test]
+fn atomic_turn_portfolio_backs_up_only_materialized_better_guides() {
+    use crate::atomic_turn_portfolio::{merge_backed_guides, AtomicTurnPortfolioGuideRank};
+
+    let merged = merge_backed_guides(
+        &[
+            AtomicTurnPortfolioGuideRank {
+                lane: 1,
+                components: vec![5, 1],
+            },
+            AtomicTurnPortfolioGuideRank {
+                lane: 2,
+                components: vec![3],
+            },
+        ],
+        &[
+            AtomicTurnPortfolioGuideRank {
+                lane: 1,
+                components: vec![4, 9],
+            },
+            AtomicTurnPortfolioGuideRank {
+                lane: 2,
+                components: vec![7],
+            },
+            AtomicTurnPortfolioGuideRank {
+                lane: 3,
+                components: vec![2],
+            },
+        ],
+    );
+
+    assert_eq!(
+        merged,
+        vec![
+            AtomicTurnPortfolioGuideRank {
+                lane: 1,
+                components: vec![5, 1],
+            },
+            AtomicTurnPortfolioGuideRank {
+                lane: 2,
+                components: vec![7],
+            },
+            AtomicTurnPortfolioGuideRank {
+                lane: 3,
+                components: vec![2],
+            },
+        ]
+    );
 }
 
 #[test]
