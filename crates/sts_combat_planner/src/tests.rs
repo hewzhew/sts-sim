@@ -2289,6 +2289,59 @@ fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
 }
 
 #[test]
+fn solved_suffix_fold_proves_each_predecessor_without_corridor_action_guidance() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let earliest = root();
+    let next_turn = stepper
+        .apply_to_stable(
+            earliest.position(),
+            ClientInput::EndTurn,
+            CombatStepLimits {
+                max_engine_steps: 4,
+                deadline: None,
+            },
+        )
+        .position;
+
+    let report = fold_verified_suffix_through_turn_predecessors(
+        &[earliest.position().clone(), next_turn],
+        vec![PLAY],
+        SolvedSuffixFoldConfig {
+            search: LayeredCombatWitnessConfig {
+                generator: config(),
+                beam_width: 8,
+                retained_per_view: 4,
+                minimum_generation_work_per_layer: 0,
+                maximum_generation_work_per_layer: 64,
+                candidate_pool_multiplier: usize::MAX,
+                generation_quantum_work: 4,
+                max_turn_layers: 1,
+            },
+            max_generation_work_per_fold: 64,
+            max_engine_steps_per_transition: 4,
+            wall_time_per_fold: None,
+        },
+        Arc::new(PreferEndTurnPolicy),
+        &stepper,
+    )
+    .expect("verified suffix should fold through the exact predecessor");
+
+    assert_eq!(report.status, SolvedSuffixFoldStatus::WitnessFound);
+    assert_eq!(report.solved_suffix_count, 2);
+    assert_eq!(report.steps.len(), 1);
+    assert!(report.steps[0].counters.solved_suffix_matches > 0);
+    let witness = report.witness.expect("folded root witness");
+    assert_eq!(
+        witness
+            .actions
+            .iter()
+            .map(|action| &action.input)
+            .collect::<Vec<_>>(),
+        vec![&ClientInput::EndTurn, &PLAY]
+    );
+}
+
+#[test]
 fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     let mut search = PolicyDiscrepancySession::with_policy(
         root(),

@@ -21,6 +21,7 @@ mod policy_discrepancy_search;
 mod prospect;
 mod replay;
 mod selection_transaction;
+mod solved_suffix_fold;
 mod types;
 mod witness_search;
 
@@ -91,6 +92,10 @@ pub use prospect::{
 };
 pub use replay::{
     replay_turn_option, ReplayError, ReplayFailure, ReplayLimits, VerifiedTurnOptionReplay,
+};
+pub use solved_suffix_fold::{
+    fold_verified_suffix_through_turn_predecessors, SolvedSuffixFoldConfig, SolvedSuffixFoldError,
+    SolvedSuffixFoldReport, SolvedSuffixFoldStatus, SolvedSuffixFoldStepReport,
 };
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,
