@@ -94,7 +94,7 @@ fn deck_facts_from_run_state_v1(run_state: &RunState) -> StrategyDeckFactsV1 {
             facts.important_cards_unupgraded = facts.important_cards_unupgraded.saturating_add(1);
         }
 
-        add_card_package_facts(card.id, &mut facts);
+        add_card_package_facts(card.id, card.upgrades, &mut facts);
     }
 
     facts
@@ -203,7 +203,7 @@ fn relic_constraints(run_state: &RunState) -> Vec<String> {
     constraints
 }
 
-fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
+fn add_card_package_facts(card_id: CardId, upgrades: u8, facts: &mut StrategyDeckFactsV1) {
     if matches!(
         card_id,
         CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
@@ -251,13 +251,15 @@ fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
             | CardId::BurningPact
             | CardId::BattleTrance
             | CardId::Offering
-            | CardId::Warcry
             | CardId::MasterOfStrategy
             | CardId::Acrobatics
             | CardId::Backflip
             | CardId::Skim
             | CardId::WheelKick
     ) {
+        facts.draw_sources = facts.draw_sources.saturating_add(1);
+    }
+    if card_id == CardId::Warcry && upgrades > 0 {
         facts.draw_sources = facts.draw_sources.saturating_add(1);
     }
     if matches!(

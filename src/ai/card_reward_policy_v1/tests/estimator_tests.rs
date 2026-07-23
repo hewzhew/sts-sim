@@ -115,7 +115,7 @@ fn strategy_package_estimator_recognizes_block_engine_payoff() {
 }
 
 #[test]
-fn block_engine_completion_aligns_with_long_fight_boss_threats() {
+fn block_engine_completion_aligns_only_with_uncovered_boss_threats() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 3;
     run_state.boss_key = Some(EncounterId::TimeEater);
@@ -141,9 +141,8 @@ fn block_engine_completion_aligns_with_long_fight_boss_threats() {
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_package_completion_block_engine" && component.value > 0.0
     }));
-    assert!(estimate.components.iter().any(|component| {
+    assert!(!estimate.components.iter().any(|component| {
         component.name == "strategy_threat_alignment_block_engine_boss_high_incoming"
-            && component.value > 0.0
     }));
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_threat_alignment_block_engine_boss_long_fight"
@@ -153,7 +152,7 @@ fn block_engine_completion_aligns_with_long_fight_boss_threats() {
 }
 
 #[test]
-fn block_engine_completion_aligns_with_act2_elites_only_when_route_allows_elites() {
+fn block_engine_completion_aligns_only_with_uncovered_act2_elite_threats() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.add_card_to_deck(CardId::Barricade);
@@ -192,12 +191,15 @@ fn block_engine_completion_aligns_with_act2_elites_only_when_route_allows_elites
         })
         .expect("Body Slam strategy package estimate without elites");
 
-    assert!(with_elites_estimate.components.iter().any(|component| {
-        component.name == "strategy_threat_alignment_block_engine_elite_high_incoming"
-            && component.value > 0.0
+    assert!(!with_elites_estimate.components.iter().any(|component| {
+        matches!(
+            component.name.as_str(),
+            "strategy_threat_alignment_block_engine_elite_high_incoming"
+                | "strategy_threat_alignment_block_engine_elite_multihit"
+        )
     }));
     assert!(with_elites_estimate.components.iter().any(|component| {
-        component.name == "strategy_threat_alignment_block_engine_elite_multihit"
+        component.name == "strategy_threat_alignment_block_engine_elite_setup_window"
             && component.value > 0.0
     }));
     assert!(!no_elites_estimate.components.iter().any(|component| {

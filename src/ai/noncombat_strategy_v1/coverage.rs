@@ -55,7 +55,9 @@ pub fn threat_coverage_from_run_state_v1(
         facts.scaling_payoffs += usize::from(observed.pick_dependencies.contains(
             &crate::ai::card_reward_policy_v1::CardRewardPickDependencyV1::StrengthScaling,
         ));
-        facts.draw_sources += usize::from(observed.draw_cards > 0);
+        let mechanics = card_mechanics_profile_v1(observed.card);
+        facts.draw_sources +=
+            usize::from(observed.draw_cards > i32::from(mechanics.hand_topdeck_selection));
         facts.energy_sources += usize::from(observed.energy_gain > 0);
         facts.exhaust_generators += usize::from(observed.exhausts_other_cards);
         facts.exhaust_payoffs += usize::from(observed.pick_dependencies.contains(

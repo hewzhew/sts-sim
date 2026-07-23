@@ -113,6 +113,15 @@ fn semantic_profile_exports_roles_without_card_name_scoring() {
 }
 
 #[test]
+fn warcry_requires_net_positive_hand_access_to_export_card_draw() {
+    let base = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Warcry, 0));
+    let upgraded = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Warcry, 1));
+
+    assert!(!base.roles.contains(&CardRewardSemanticRoleV1::CardDraw));
+    assert!(upgraded.roles.contains(&CardRewardSemanticRoleV1::CardDraw));
+}
+
+#[test]
 fn decision_context_marks_missing_route_evidence_as_policy_gap_not_card_fact() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(
@@ -406,7 +415,7 @@ fn heavy_blade_exports_strength_plan_but_uncalibrated_gate_stops() {
 }
 
 #[test]
-fn strength_payoff_completion_aligns_with_long_fight_boss_and_elite_threats() {
+fn strength_payoff_completion_aligns_only_with_uncovered_boss_and_elite_threats() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     run_state.act_num = 3;
     run_state.boss_key = Some(EncounterId::TimeEater);
@@ -430,16 +439,18 @@ fn strength_payoff_completion_aligns_with_long_fight_boss_and_elite_threats() {
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_package_completion_strength_scaling" && component.value > 0.0
     }));
-    assert!(estimate.components.iter().any(|component| {
+    assert!(!estimate.components.iter().any(|component| {
         component.name == "strategy_threat_alignment_strength_scaling_boss_long_fight"
-            && component.value > 0.0
     }));
     assert!(estimate.components.iter().any(|component| {
         component.name == "strategy_threat_alignment_strength_scaling_boss_high_incoming"
             && component.value > 0.0
     }));
-    assert!(estimate.components.iter().any(|component| {
+    assert!(!estimate.components.iter().any(|component| {
         component.name == "strategy_threat_alignment_strength_scaling_elite_long_fight"
+    }));
+    assert!(estimate.components.iter().any(|component| {
+        component.name == "strategy_threat_alignment_strength_scaling_elite_high_incoming"
             && component.value > 0.0
     }));
     assert!(!estimate.eligibility.usable_for_autopilot_gate);

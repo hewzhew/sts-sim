@@ -26,7 +26,9 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
         CardId::Entrench => push_role(&mut roles, CardRewardSemanticRoleV1::BlockMultiplier),
         _ => {}
     }
-    if facts.draw_cards > 0 {
+    // Warcry also returns one card from hand to the draw pile.  Count only
+    // net-positive hand access as draw; the base card remains topdeck control.
+    if facts.draw_cards > i32::from(mechanics.hand_topdeck_selection) {
         push_role(&mut roles, CardRewardSemanticRoleV1::CardDraw);
     }
     if mechanics.reshuffle_discard_into_draw {

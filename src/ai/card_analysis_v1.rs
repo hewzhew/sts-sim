@@ -476,13 +476,7 @@ fn is_block_plan_controlled_exhaust_source_v1(card: CardId) -> bool {
 fn is_block_plan_broad_exhaust_source_v1(card: CardId) -> bool {
     matches!(
         card,
-        CardId::BurningPact
-            | CardId::TrueGrit
-            | CardId::SecondWind
-            | CardId::FiendFire
-            | CardId::SeverSoul
-            | CardId::Corruption
-            | CardId::Havoc
+        CardId::SecondWind | CardId::FiendFire | CardId::SeverSoul | CardId::Corruption
     )
 }
 

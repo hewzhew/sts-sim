@@ -85,17 +85,29 @@ pub fn assess_boss_scaling_evidence(
     if installs_corruption(admission) && deck.roles.exhaust_payoff_units > 0 {
         return BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75);
     }
-    if candidate_exhaust_payoff(card_semantics.as_ref())
-        && (deck.roles.exhaust_stream_units > 0 || deck.roles.corruption_units > 0)
-    {
-        return if deck.roles.exhaust_payoff_units == 0 {
-            BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75)
-        } else {
-            BossScalingEvidence::score_only("boss-duplicate-engine-payoff", -25)
-        };
+    if candidate_exhaust_payoff(card_semantics.as_ref()) {
+        if deck.roles.exhaust_payoff_units > 0 {
+            return BossScalingEvidence::score_only("boss-duplicate-engine-payoff", -25);
+        }
+        if deck.roles.broad_exhaust_units > 0
+            || deck.roles.corruption_units > 0
+            || deck.roles.exhaust_stream_units >= 2
+        {
+            return BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75);
+        }
+        if deck.roles.exhaust_stream_units == 1 {
+            return BossScalingEvidence::score_only("boss-limited-exhaust-synergy", 25);
+        }
     }
     if candidate_exhaust_source(admission) && deck.roles.exhaust_payoff_units > 0 {
-        return BossScalingEvidence::relevant("boss-exhaust-engine-piece", 45);
+        return if card.is_some_and(|(card, upgrades)| {
+            crate::ai::card_analysis_v1::card_analysis_profile_v1(card, upgrades)
+                .is_block_plan_broad_exhaust_source
+        }) {
+            BossScalingEvidence::relevant("boss-exhaust-engine-pair", 75)
+        } else {
+            BossScalingEvidence::relevant("boss-exhaust-engine-piece", 45)
+        };
     }
     if candidate_block_payoff(admission) {
         return if deck.roles.block_units >= 4 || deck.roles.cycle_block_units >= 2 {
@@ -280,11 +292,22 @@ mod tests {
     }
 
     #[test]
-    fn controlled_exhaust_stream_makes_first_payoff_boss_relevant() {
+    fn one_controlled_exhaust_card_is_limited_synergy_not_a_complete_boss_engine() {
         let (deck, plan) = deck_plan(&[CardId::TrueGrit]);
         let admission = assess_reward_admission_from_master_deck(&deck, CardId::DarkEmbrace, 1);
         let evidence =
             assess_boss_scaling_evidence(plan, Some((CardId::DarkEmbrace, 1)), &admission);
+
+        assert_eq!(evidence.label, "boss-limited-exhaust-synergy");
+        assert!(!evidence.relevant_to_boss_plan);
+    }
+
+    #[test]
+    fn mass_exhaust_throughput_makes_first_payoff_boss_relevant() {
+        let (deck, plan) = deck_plan(&[CardId::SecondWind, CardId::Defend, CardId::Defend]);
+        let admission = assess_reward_admission_from_master_deck(&deck, CardId::FeelNoPain, 1);
+        let evidence =
+            assess_boss_scaling_evidence(plan, Some((CardId::FeelNoPain, 1)), &admission);
 
         assert_eq!(evidence.label, "boss-exhaust-engine-pair");
         assert!(evidence.relevant_to_boss_plan);

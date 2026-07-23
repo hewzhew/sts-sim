@@ -11,7 +11,7 @@ use sts_simulator::ai::noncombat_strategy_v1::{
     StrategyCapabilityCoverageV1, StrategyThreatCoverageLedgerV1, StrategyThreatSourceV1,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
-    DecisionCandidateKind, DecisionPipelineContext,
+    candidate_lane_rank, CandidateLane, DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
@@ -27,6 +27,7 @@ use sts_simulator::state::rewards::RewardCard;
 use sts_simulator::state::run::RunState;
 
 use super::candidate_ir_adapter::{card_reward_kind, is_card_reward_key};
+use super::expansion_policy::expansion_from_evaluation;
 use super::owner_candidate_eval::candidate_annotation;
 use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion};
@@ -71,6 +72,17 @@ struct CapabilityResidualOrderKeyV1 {
     supported_capabilities: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct CardRewardProductionOrderKeyV1 {
+    surface_rank: u8,
+    lane_rank: u8,
+    unavoidable_gaps_by_deadline: [usize; MAX_OBLIGATION_DEADLINE_NODES + 1],
+    candidate_score_rank: i32,
+    possible_pool_gaps: usize,
+    residual: CapabilityResidualOrderKeyV1,
+    candidate_tiebreak_rank: u8,
+}
+
 pub(super) fn card_reward_owner_choices(
     session: &RunControlSession,
     surface: &DecisionSurface,
@@ -83,17 +95,25 @@ pub(super) fn card_reward_owner_choices(
         .filter(|choice| is_card_reward_key(&choice.key))
         .map(|mut choice| {
             choice.annotation = reward_annotation_for_choice(session, &choice, context);
-            choice.expansion = card_reward_choice_expansion(&choice);
             choice
         })
         .enumerate()
         .collect::<Vec<_>>();
+    let has_mainline_take = choices
+        .iter()
+        .any(|(_, choice)| is_mainline_card_reward_take(session, &strategy, choice));
+    for (_, choice) in &mut choices {
+        choice.expansion = card_reward_choice_expansion(session, &strategy, choice);
+    }
     choices.sort_by_key(|(index, choice)| {
-        (card_reward_choice_rank(session, &strategy, choice), *index)
+        (
+            card_reward_choice_rank(session, &strategy, choice, has_mainline_take),
+            *index,
+        )
     });
     let rank_keys = choices
         .iter()
-        .map(|(_, choice)| card_reward_choice_rank(session, &strategy, choice))
+        .map(|(_, choice)| card_reward_choice_rank(session, &strategy, choice, has_mainline_take))
         .collect::<Vec<_>>();
     for (sorted_index, ((surface_index, choice), rank_key)) in
         choices.iter_mut().zip(rank_keys.iter()).enumerate()
@@ -136,25 +156,23 @@ fn reward_annotation_for_choice(
     }
 }
 
-fn card_reward_choice_expansion(choice: &OwnerChoice) -> OwnerChoiceExpansion {
+fn card_reward_choice_expansion(
+    session: &RunControlSession,
+    strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    choice: &OwnerChoice,
+) -> OwnerChoiceExpansion {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. })
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
         | Some(DecisionCandidateKey::CardRewardSkip { .. }) => OwnerChoiceExpansion::AutoAllowed,
-        Some(DecisionCandidateKey::CardRewardPick { .. }) => match choice
-            .annotation
-            .admission()
-            .map(|admission| admission.class)
+        Some(DecisionCandidateKey::CardRewardPick { .. })
+            if card_reward_effective_lane(session, strategy, choice) == CandidateLane::Mainline =>
         {
-            Some(
-                RewardAdmissionClass::OpensUnsupportedPayoff
-                | RewardAdmissionClass::EmptyOrDeferred,
-            )
-            | None => OwnerChoiceExpansion::InspectOnly(
-                "card reward has no supported immediate or package role",
-            ),
-            _ => OwnerChoiceExpansion::AutoAllowed,
-        },
+            OwnerChoiceExpansion::AutoAllowed
+        }
+        Some(DecisionCandidateKey::CardRewardPick { .. }) => {
+            expansion_from_evaluation(choice.annotation.evaluation())
+        }
         _ => OwnerChoiceExpansion::InspectOnly("unsupported card reward candidate"),
     }
 }
@@ -163,22 +181,21 @@ fn card_reward_choice_rank(
     session: &RunControlSession,
     strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     choice: &OwnerChoice,
-) -> (
-    u8,
-    StrategicObligationOrderKeyV1,
-    RewardAdmissionOrderKeyV1,
-    CapabilityResidualOrderKeyV1,
-) {
+    has_mainline_take: bool,
+) -> CardRewardProductionOrderKeyV1 {
     let current_obligation_key =
         strategic_obligation_order_key(session, &session.run_state, &strategy.threat_coverage);
     let current_residual_key = capability_residual_order_key(&strategy.threat_coverage);
     match &choice.key {
-        Some(DecisionCandidateKey::CardRewardOpen { .. }) => (
-            0,
-            current_obligation_key,
-            RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            current_residual_key,
-        ),
+        Some(DecisionCandidateKey::CardRewardOpen { .. }) => CardRewardProductionOrderKeyV1 {
+            surface_rank: 0,
+            lane_rank: 0,
+            unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
+            candidate_score_rank: 0,
+            possible_pool_gaps: current_obligation_key.possible_pool_gaps,
+            residual: current_residual_key,
+            candidate_tiebreak_rank: 0,
+        },
         Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
             let trial = run_state_after_card(&session.run_state, *card, *upgrades);
             let after = threat_coverage_after_card_v1(
@@ -189,57 +206,91 @@ fn card_reward_choice_rank(
             );
             let after_obligation_key = strategic_obligation_order_key(session, &trial, &after);
             let after_residual_key = capability_residual_order_key(&after);
-            let obligation_improves = after_obligation_key < current_obligation_key;
-            let coverage_improves = obligation_improves
-                || (after_obligation_key == current_obligation_key
-                    && after_residual_key < current_residual_key);
-            let functional = card_reward_functional_evidence(
-                &session.run_state,
-                strategy,
-                *card,
-                *upgrades,
-                coverage_improves,
-            );
-            (
-                1,
-                after_obligation_key,
-                choice
-                    .annotation
-                    .admission()
-                    .map(|admission| {
-                        coverage_aware_admission_order_key(
-                            admission,
-                            coverage_improves,
-                            &functional,
-                        )
-                    })
-                    .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
-                after_residual_key,
-            )
-        }
-        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
-            1,
-            current_obligation_key,
-            RewardAdmissionOrderKeyV1::unscored_optional_reward(),
-            current_residual_key,
-        ),
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
-            1,
-            current_obligation_key,
-            choice
+            let evaluation_key = choice
                 .annotation
-                .admission()
-                .map(reward_admission_order_key_v1)
-                .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
-            current_residual_key,
-        ),
-        _ => (
-            2,
-            current_obligation_key,
-            RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            current_residual_key,
-        ),
+                .evaluation()
+                .map(|evaluation| evaluation.order_key(has_mainline_take));
+            CardRewardProductionOrderKeyV1 {
+                surface_rank: 1,
+                lane_rank: candidate_lane_rank(
+                    card_reward_effective_lane(session, strategy, choice),
+                    has_mainline_take,
+                ),
+                unavoidable_gaps_by_deadline: after_obligation_key.unavoidable_gaps_by_deadline,
+                candidate_score_rank: evaluation_key.map_or(0, |key| key.score_rank),
+                possible_pool_gaps: after_obligation_key.possible_pool_gaps,
+                residual: after_residual_key,
+                candidate_tiebreak_rank: evaluation_key.map_or(9, |key| key.tiebreak_rank),
+            }
+        }
+        Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
+        | Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
+            let evaluation_key = choice
+                .annotation
+                .evaluation()
+                .map(|evaluation| evaluation.order_key(has_mainline_take));
+            CardRewardProductionOrderKeyV1 {
+                surface_rank: 1,
+                lane_rank: candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
+                unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
+                candidate_score_rank: evaluation_key.map_or(0, |key| key.score_rank),
+                possible_pool_gaps: current_obligation_key.possible_pool_gaps,
+                residual: current_residual_key,
+                candidate_tiebreak_rank: evaluation_key.map_or(7, |key| key.tiebreak_rank),
+            }
+        }
+        _ => CardRewardProductionOrderKeyV1 {
+            surface_rank: 2,
+            lane_rank: candidate_lane_rank(CandidateLane::Reject, has_mainline_take),
+            unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
+            candidate_score_rank: 0,
+            possible_pool_gaps: current_obligation_key.possible_pool_gaps,
+            residual: current_residual_key,
+            candidate_tiebreak_rank: 9,
+        },
     }
+}
+
+fn is_mainline_card_reward_take(
+    session: &RunControlSession,
+    strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    choice: &OwnerChoice,
+) -> bool {
+    matches!(
+        choice.key,
+        Some(DecisionCandidateKey::CardRewardPick { .. })
+    ) && card_reward_effective_lane(session, strategy, choice) == CandidateLane::Mainline
+}
+
+fn card_reward_effective_lane(
+    session: &RunControlSession,
+    strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    choice: &OwnerChoice,
+) -> CandidateLane {
+    if card_reward_repairs_unavoidable_obligation(session, strategy, choice) {
+        return CandidateLane::Mainline;
+    }
+    choice
+        .annotation
+        .evaluation()
+        .map_or(CandidateLane::Reject, |evaluation| evaluation.lane)
+}
+
+fn card_reward_repairs_unavoidable_obligation(
+    session: &RunControlSession,
+    strategy: &sts_simulator::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+    choice: &OwnerChoice,
+) -> bool {
+    let Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) = &choice.key else {
+        return false;
+    };
+    let before =
+        strategic_obligation_order_key(session, &session.run_state, &strategy.threat_coverage);
+    let trial = run_state_after_card(&session.run_state, *card, *upgrades);
+    let after_coverage =
+        threat_coverage_after_card_v1(&session.run_state, &strategy.threats, *card, *upgrades);
+    let after = strategic_obligation_order_key(session, &trial, &after_coverage);
+    after.unavoidable_gaps_by_deadline < before.unavoidable_gaps_by_deadline
 }
 
 fn attach_card_reward_provenance(
@@ -668,11 +719,14 @@ mod tests {
         let surface = build_decision_surface(&session);
         let choices = card_reward_owner_choices(&session, &surface);
         let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+        let has_mainline_take = choices
+            .iter()
+            .any(|choice| is_mainline_card_reward_take(&session, &strategy, choice));
         for choice in &choices {
             eprintln!(
                 "exact reward candidate {:?}: rank={:?} admission={:?}",
                 card_reward_kind(&choice.key),
-                card_reward_choice_rank(&session, &strategy, choice),
+                card_reward_choice_rank(&session, &strategy, choice, has_mainline_take),
                 choice.annotation.admission(),
             );
         }
@@ -704,13 +758,17 @@ mod tests {
         let surface = build_decision_surface(&session);
         let choices = card_reward_owner_choices(&session, &surface);
         let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+        let has_mainline_take = choices
+            .iter()
+            .any(|choice| is_mainline_card_reward_take(&session, &strategy, choice));
         let diagnostics = choices
             .iter()
             .map(|choice| {
                 format!(
-                    "candidate={:?} rank={:?} admission={:?}",
+                    "candidate={:?} rank={:?} evaluation={:?} admission={:?}",
                     card_reward_kind(&choice.key),
-                    card_reward_choice_rank(&session, &strategy, choice),
+                    card_reward_choice_rank(&session, &strategy, choice, has_mainline_take),
+                    choice.annotation.evaluation(),
                     choice.annotation.admission(),
                 )
             })
@@ -804,6 +862,174 @@ mod tests {
         assert!(
             RewardAdmissionOrderKeyV1::static_skip_boundary()
                 < coverage_aware_admission_order_key(&admission, false, &no_independent_function,)
+        );
+    }
+
+    #[test]
+    fn owner_possible_pool_sort_cannot_promote_a_pipeline_probe_over_skip() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 5;
+        session.run_state.boss_key = None;
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::Immolate, 0),
+            (CardId::Cleave, 0),
+            (CardId::PommelStrike, 0),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(session, &[(CardId::IronWave, 0)]);
+
+        assert!(
+            ordered.iter().position(Option::is_none)
+                < ordered
+                    .iter()
+                    .position(|card| *card == Some(CardId::IronWave)),
+            "the owner must preserve the pipeline admission boundary; possible-pool coverage alone cannot turn a probe filler into a production take: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn seed20260713008_base_warcry_does_not_close_hexaghost_access_obligation() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 2;
+        session.run_state.boss_key = Some(EncounterId::Hexaghost);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 0),
+            (CardId::Clothesline, 0),
+        ]);
+
+        let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+        let before =
+            strategic_obligation_order_key(&session, &session.run_state, &strategy.threat_coverage);
+        let after =
+            threat_coverage_after_card_v1(&session.run_state, &strategy.threats, CardId::Warcry, 0);
+        let trial = run_state_after_card(&session.run_state, CardId::Warcry, 0);
+        let after = strategic_obligation_order_key(&session, &trial, &after);
+        assert_eq!(
+            after.unavoidable_gaps_by_deadline,
+            before.unavoidable_gaps_by_deadline,
+            "base Warcry is hand-neutral topdeck control, not a complete Hexaghost status-flood answer"
+        );
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::IronWave, 0),
+                (CardId::InfernalBlade, 0),
+                (CardId::Warcry, 0),
+            ],
+        );
+        assert!(
+            ordered.iter().position(Option::is_none)
+                < ordered
+                    .iter()
+                    .position(|card| *card == Some(CardId::Warcry)),
+            "the exact seed008 F2 owner should skip rather than auto-take base Warcry: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn seed20260713008_first_burst_block_plan_beats_skip_before_hexaghost() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 13;
+        session.run_state.current_hp = 55;
+        session.run_state.max_hp = 93;
+        session.run_state.boss_key = Some(EncounterId::Hexaghost);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 1),
+            (CardId::BurningPact, 0),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::PowerThrough, 0),
+                (CardId::Sentinel, 0),
+                (CardId::SwordBoomerang, 0),
+            ],
+        );
+
+        assert!(
+            ordered
+                .iter()
+                .position(|card| *card == Some(CardId::PowerThrough))
+                < ordered.iter().position(Option::is_none),
+            "the first high-quality block chunk is a concrete Hexaghost survival repair: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn seed20260713008_fuel_backed_second_wind_beats_fnp_and_skip_after_three_byrds() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 17;
+        session.run_state.current_hp = 85;
+        session.run_state.max_hp = 93;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 1),
+            (CardId::BurningPact, 1),
+            (CardId::PowerThrough, 0),
+            (CardId::Inflame, 1),
+            (CardId::Offering, 0),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::IronWave, 0),
+                (CardId::FeelNoPain, 1),
+                (CardId::SecondWind, 1),
+            ],
+        );
+        let second_wind = ordered
+            .iter()
+            .position(|card| *card == Some(CardId::SecondWind));
+
+        assert!(
+            second_wind < ordered.iter().position(|card| *card == Some(CardId::FeelNoPain)),
+            "an immediately executable mass-exhaust block plan should outrank its slower payoff: {ordered:?}; {diagnostics:#?}"
+        );
+        assert!(
+            second_wind < ordered.iter().position(Option::is_none),
+            "the exact fuel-backed Second Wind+ must remain above skip: {ordered:?}; {diagnostics:#?}"
         );
     }
 
@@ -1033,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn status_digest_and_urgent_frontload_keep_wild_strike_legal() {
+    fn status_digest_keeps_second_wild_strike_contextual_but_below_skip() {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.act_num = 1;
         session.run_state.floor_num = 3;
@@ -1049,11 +1275,11 @@ mod tests {
         let (ordered, diagnostics) = ordered_reward_for_state(session, &[(CardId::WildStrike, 0)]);
 
         assert!(
-            ordered
-                .iter()
-                .position(|card| *card == Some(CardId::WildStrike))
-                < ordered.iter().position(Option::is_none),
-            "status digest plus an unresolved early frontload obligation must keep a second Wild Strike available rather than globally banning it: {ordered:?}; {diagnostics:#?}"
+            ordered.iter().position(Option::is_none)
+                < ordered
+                    .iter()
+                    .position(|card| *card == Some(CardId::WildStrike)),
+            "status digest removes the unconditional clutter rejection, but must not make a second Wild Strike an automatic early take: {ordered:?}; {diagnostics:#?}"
         );
     }
 

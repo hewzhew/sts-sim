@@ -1,4 +1,6 @@
+use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::deck_role_inventory::card_is_strong_aoe;
 use crate::ai::strategy::deck_strategic_deficit::StrategicDeficitLevel;
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::CardId;
@@ -65,9 +67,57 @@ pub fn assess_boss_survival_evidence(
     };
     match deck.boss_key {
         Some(EncounterId::TheGuardian) => guardian_survival_evidence(deck, card),
+        Some(EncounterId::Hexaghost) => hexaghost_survival_evidence(deck, card, upgrades),
+        Some(EncounterId::TheChamp) => champ_survival_evidence(deck, card),
+        Some(EncounterId::DonuAndDeca) => {
+            donu_deca_survival_evidence(deck, card, upgrades, admission)
+        }
         Some(EncounterId::AwakenedOne) => awakened_one_survival_evidence(deck, card, upgrades),
         Some(EncounterId::Collector) => collector_minion_control_evidence(deck, admission),
         _ => BossSurvivalEvidence::none(),
+    }
+}
+
+fn hexaghost_survival_evidence(
+    deck: DeckPlanSnapshot,
+    card: CardId,
+    upgrades: u8,
+) -> BossSurvivalEvidence {
+    let candidate = card_analysis_profile_v1(card, upgrades);
+    if deck.roles.high_quality_block_units == 0 && candidate.is_block_plan_high_quality_chunk {
+        BossSurvivalEvidence::plan_repair("hexaghost-first-burst-block-plan", 85)
+    } else {
+        BossSurvivalEvidence::none()
+    }
+}
+
+fn champ_survival_evidence(deck: DeckPlanSnapshot, card: CardId) -> BossSurvivalEvidence {
+    match card {
+        CardId::Disarm if deck.roles.persistent_enemy_strength_down_units == 0 => {
+            BossSurvivalEvidence::plan_repair("champ-execute-strength-down", 100)
+        }
+        CardId::Shockwave if deck.roles.weak_units <= 1 => {
+            BossSurvivalEvidence::plan_repair("champ-execute-debuff-window", 85)
+        }
+        _ => BossSurvivalEvidence::none(),
+    }
+}
+
+fn donu_deca_survival_evidence(
+    deck: DeckPlanSnapshot,
+    card: CardId,
+    upgrades: u8,
+    admission: &RewardAdmission,
+) -> BossSurvivalEvidence {
+    if deck.roles.strong_aoe_units == 0
+        && admission
+            .reasons
+            .contains(&RewardAdmissionReason::AreaDamage)
+        && card_is_strong_aoe(card, upgrades)
+    {
+        BossSurvivalEvidence::plan_repair("donu-deca-first-strong-aoe", 100)
+    } else {
+        BossSurvivalEvidence::none()
     }
 }
 
@@ -334,6 +384,58 @@ mod tests {
     }
 
     #[test]
+    fn hexaghost_first_high_quality_block_chunk_repairs_the_survival_plan() {
+        let plan = deck_plan(
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::Clothesline,
+                CardId::BurningPact,
+            ],
+            Some(EncounterId::Hexaghost),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::PowerThrough),
+            class: RewardAdmissionClass::BurdenedImmediateWork,
+            reasons: vec![RewardAdmissionReason::Provides(Mechanic::Block)],
+        };
+
+        let evidence =
+            assess_boss_survival_evidence(plan, Some((CardId::PowerThrough, 0)), &admission);
+
+        assert_eq!(evidence.label, "hexaghost-first-burst-block-plan");
+        assert!(evidence.repairs_plan());
+    }
+
+    #[test]
+    fn hexaghost_does_not_promote_a_duplicate_high_quality_block_chunk() {
+        let plan = deck_plan(
+            &[
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::Impervious,
+            ],
+            Some(EncounterId::Hexaghost),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::PowerThrough),
+            class: RewardAdmissionClass::BurdenedImmediateWork,
+            reasons: vec![RewardAdmissionReason::Provides(Mechanic::Block)],
+        };
+
+        let evidence =
+            assess_boss_survival_evidence(plan, Some((CardId::PowerThrough, 0)), &admission);
+
+        assert!(!evidence.repairs_plan());
+    }
+
+    #[test]
     fn collector_area_damage_repairs_thin_minion_control() {
         let plan = deck_plan(
             &[
@@ -359,5 +461,42 @@ mod tests {
         assert_eq!(evidence.label, "collector-minion-control");
         assert!(evidence.repairs_plan());
         assert!(evidence.score_delta > 0);
+    }
+
+    #[test]
+    fn champ_first_persistent_strength_down_repairs_execute_survival() {
+        let plan = deck_plan(
+            &[CardId::Clothesline, CardId::ShrugItOff],
+            Some(EncounterId::TheChamp),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::Disarm),
+            class: RewardAdmissionClass::ImmediateWork,
+            reasons: vec![RewardAdmissionReason::Provides(Mechanic::EnemyStrengthDown)],
+        };
+
+        let evidence = assess_boss_survival_evidence(plan, Some((CardId::Disarm, 0)), &admission);
+
+        assert_eq!(evidence.label, "champ-execute-strength-down");
+        assert!(evidence.repairs_plan());
+    }
+
+    #[test]
+    fn donu_deca_first_strong_aoe_repairs_multi_target_survival() {
+        let plan = deck_plan(
+            &[CardId::Inflame, CardId::HeavyBlade, CardId::SwordBoomerang],
+            Some(EncounterId::DonuAndDeca),
+        );
+        let admission = RewardAdmission {
+            card: Some(CardId::Whirlwind),
+            class: RewardAdmissionClass::BuildsSupportedPackage,
+            reasons: vec![RewardAdmissionReason::AreaDamage],
+        };
+
+        let evidence =
+            assess_boss_survival_evidence(plan, Some((CardId::Whirlwind, 1)), &admission);
+
+        assert_eq!(evidence.label, "donu-deca-first-strong-aoe");
+        assert!(evidence.repairs_plan());
     }
 }

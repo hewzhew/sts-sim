@@ -14,6 +14,12 @@ pub enum BlockPlanReadinessV1 {
     Ready,
 }
 
+pub const SECOND_WIND_BLOCK_ENGINE_MIN_NON_ATTACK_CARDS: u8 = 4;
+
+pub const fn has_second_wind_block_engine_fuel_v1(non_attack_cards: u8) -> bool {
+    non_attack_cards >= SECOND_WIND_BLOCK_ENGINE_MIN_NON_ATTACK_CARDS
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BlockPlanProfileV1 {
     pub plain_block_cards: u8,
@@ -40,7 +46,7 @@ impl BlockPlanProfileV1 {
     }
 
     pub fn has_second_wind_block_engine(&self) -> bool {
-        self.second_wind_sources > 0 && self.non_attack_cards >= 4
+        self.second_wind_sources > 0 && has_second_wind_block_engine_fuel_v1(self.non_attack_cards)
     }
 
     pub fn has_supported_retention_plan(&self) -> bool {

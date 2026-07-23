@@ -1,3 +1,4 @@
+use crate::ai::block_plan_profile_v1::has_second_wind_block_engine_fuel_v1;
 use crate::ai::strategy::deck_admission::{
     assess_deck_admission_from_inventory, DeckAdmission, DeckAdmissionContext,
 };
@@ -97,6 +98,15 @@ impl DeckPlanSnapshot {
 
     pub fn has_open_stable_strength_payoff_slot(self) -> bool {
         self.roles.strength_source_units > 0 && self.roles.strength_payoff_units == 0
+    }
+
+    pub fn candidate_establishes_fuel_backed_second_wind_plan(
+        self,
+        candidate: Option<(CardId, u8)>,
+    ) -> bool {
+        self.roles.second_wind_units == 0
+            && has_second_wind_block_engine_fuel_v1(self.roles.non_attack_units)
+            && candidate.is_some_and(|(card, _)| card == CardId::SecondWind)
     }
 
     pub fn candidate_improves_aoe_gap(

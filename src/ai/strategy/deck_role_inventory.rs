@@ -3,6 +3,7 @@ use crate::ai::analysis::card_semantics::{
     DeckMechanicContext, InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
 use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisAoeSupportV1};
+use crate::ai::deck_shape_v1::is_status_digest_card;
 use crate::content::cards::{get_card_definition, CardId};
 use crate::runtime::combat::CombatCard;
 
@@ -12,6 +13,7 @@ pub struct DeckRoleInventory {
     pub aoe_units: u8,
     pub strong_aoe_units: u8,
     pub block_units: u8,
+    pub high_quality_block_units: u8,
     pub cycle_block_units: u8,
     pub mitigation_units: u8,
     pub weak_units: u8,
@@ -28,10 +30,14 @@ pub struct DeckRoleInventory {
     pub strength_multiplier_units: u8,
     pub corruption_units: u8,
     pub exhaust_stream_units: u8,
+    pub broad_exhaust_units: u8,
+    pub second_wind_units: u8,
+    pub non_attack_units: u8,
     pub exhaust_payoff_units: u8,
     pub block_payoff_units: u8,
     pub strength_payoff_units: u8,
     pub upgrade_access_units: u8,
+    pub status_digest_units: u8,
 }
 
 impl DeckRoleInventory {
@@ -47,7 +53,25 @@ impl DeckRoleInventory {
             .contains(&CombatEvent::CardSelfDamage);
 
         for (card, definition) in deck.iter().zip(&definitions) {
-            if card_is_strong_aoe(card.id, card.upgrades) {
+            let analysis = card_analysis_profile_v1(card.id, card.upgrades);
+            if is_status_digest_card(card.id) {
+                inventory.status_digest_units += 1;
+            }
+            if analysis.is_block_plan_high_quality_chunk {
+                inventory.high_quality_block_units += 1;
+            }
+            if analysis.is_second_wind_source {
+                inventory.second_wind_units += 1;
+            }
+            if analysis.is_block_plan_broad_exhaust_source {
+                inventory.broad_exhaust_units += 1;
+            }
+            if analysis.is_non_attack {
+                inventory.non_attack_units += 1;
+            }
+            if analysis.aoe_support == CardAnalysisAoeSupportV1::Strong
+                || card.id == CardId::Combust
+            {
                 inventory.strong_aoe_units += 1;
             }
             if get_card_definition(card.id).cost == -1 {
@@ -284,5 +308,45 @@ mod tests {
 
         assert_eq!(inventory.aoe_units, 3);
         assert_eq!(inventory.strong_aoe_units, 1);
+    }
+
+    #[test]
+    fn role_inventory_separates_plain_from_high_quality_block_chunks() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::Defend, 1),
+            card(CardId::ShrugItOff, 2),
+            card(CardId::PowerThrough, 3),
+            card(CardId::Impervious, 4),
+        ]);
+
+        assert_eq!(inventory.block_units, 3);
+        assert_eq!(inventory.high_quality_block_units, 2);
+    }
+
+    #[test]
+    fn role_inventory_records_second_wind_and_its_non_attack_fuel() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::Strike, 1),
+            card(CardId::Defend, 2),
+            card(CardId::PowerThrough, 3),
+            card(CardId::Inflame, 4),
+            card(CardId::SecondWind, 5),
+        ]);
+
+        assert_eq!(inventory.second_wind_units, 1);
+        assert_eq!(inventory.broad_exhaust_units, 1);
+        assert_eq!(inventory.non_attack_units, 4);
+    }
+
+    #[test]
+    fn one_card_exhaust_access_is_not_mass_exhaust_throughput() {
+        let inventory = DeckRoleInventory::from_deck(&[
+            card(CardId::BurningPact, 1),
+            card(CardId::TrueGrit, 2),
+            card(CardId::Havoc, 3),
+        ]);
+
+        assert!(inventory.exhaust_stream_units >= 3);
+        assert_eq!(inventory.broad_exhaust_units, 0);
     }
 }

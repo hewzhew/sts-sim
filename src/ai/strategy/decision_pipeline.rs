@@ -295,7 +295,22 @@ pub fn evaluate_decision_candidate(
     let adjudication = adjudicate_candidate_lane(
         candidate.kind,
         scores.iter().map(|score| score.value).sum(),
-        saturation.lane_cap,
+        if context
+            .deck_plan
+            .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(candidate.kind))
+            || admission.is_some_and(|admission| {
+                assess_boss_survival_evidence(
+                    context.deck_plan,
+                    candidate_card(candidate.kind),
+                    admission,
+                )
+                .repairs_plan()
+            })
+        {
+            None
+        } else {
+            saturation.lane_cap
+        },
         strategic_lane_cap(context, candidate.kind, admission),
         acquisition_lane_cap(context, candidate.kind, admission),
     );
@@ -754,6 +769,13 @@ fn strategic_deficit_score(
         improves = true;
         scores.push(score("strategic-aoe-gap", 50));
     }
+    if context
+        .deck_plan
+        .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(candidate.kind))
+    {
+        improves = true;
+        scores.push(score("fuel-backed-second-wind-block-plan", 90));
+    }
     if needs(deficit.block_or_mitigation) && admission_survival_tool(admission) {
         improves = true;
         scores.push(score("strategic-survival-gap", 40));
@@ -870,7 +892,7 @@ fn latent_quality_score(
 }
 
 fn reward_reason_score(
-    _context: DecisionPipelineContext,
+    context: DecisionPipelineContext,
     _candidate: DecisionCandidateIr,
     admission: Option<&RewardAdmission>,
     scores: &mut Vec<ScoreComponent>,
@@ -899,6 +921,11 @@ fn reward_reason_score(
             RewardAdmissionReason::CombatUpgrade => scores.push(score("combat-upgrade", 45)),
             RewardAdmissionReason::RunReward(_) => scores.push(score("run-reward", 40)),
             RewardAdmissionReason::Installs(_) => scores.push(score("installed-rule", 50)),
+            RewardAdmissionReason::Burden(CardBurden::AddsCombatDeckClutter)
+                if context.deck_plan.roles.status_digest_units > 0 =>
+            {
+                scores.push(score("status-liability-digested", 0))
+            }
             RewardAdmissionReason::Burden(burden) => {
                 scores.push(score("burden", burden_score(burden)))
             }
@@ -1114,6 +1141,12 @@ fn acquisition_lane_cap(
     if is_boss_answer_shop_card(context, kind, admission) {
         return None;
     }
+    if context
+        .deck_plan
+        .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(kind))
+    {
+        return None;
+    }
     let admission = admission?;
     let (card, upgrades, source) = match kind {
         DecisionCandidateKind::CardRewardPick { card, upgrades } => (
@@ -1230,6 +1263,9 @@ fn heavy_burden_exception(
     admission: &RewardAdmission,
 ) -> bool {
     survival_pressure_exception(context, admission)
+        || context
+            .deck_plan
+            .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(kind))
         || assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
             .relevant_to_boss_plan
         || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
@@ -1255,6 +1291,9 @@ fn improves_strategic_gap(
                 .contains(&RewardAdmissionReason::CombatUpgrade)))
         || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
         || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
+        || context
+            .deck_plan
+            .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(kind))
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
         || (needs(deficit.boss_scaling_plan)
             && assess_boss_scaling_evidence(context.deck_plan, candidate_card(kind), admission)
@@ -1284,6 +1323,9 @@ fn acute_survival_setup_only(
         || context
             .deck_plan
             .repairs_strength_package_reliability(candidate_card(kind))
+        || context
+            .deck_plan
+            .candidate_establishes_fuel_backed_second_wind_plan(candidate_card(kind))
         || assess_boss_survival_evidence(context.deck_plan, candidate_card(kind), admission)
             .repairs_plan()
     {
@@ -2004,6 +2046,34 @@ mod tests {
     }
 
     #[test]
+    fn status_digest_removes_hard_rejection_without_auto_taking_second_wild_strike() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::WildStrike,
+            CardId::Evolve,
+        ];
+
+        let wild_strike = reward_card_with_act(&deck, CardId::WildStrike, 0, 1);
+        let skip = evaluate_decision_candidate(
+            reward_context_with_act(&deck, 1),
+            DecisionCandidateKind::CardRewardSkip,
+            Some(&crate::ai::strategy::reward_admission::skip_reward_admission()),
+        );
+
+        assert_eq!(wild_strike.adjudication.raw_lane, CandidateLane::Probe);
+        assert_eq!(wild_strike.lane, CandidateLane::Probe);
+        assert!(wild_strike
+            .scores
+            .iter()
+            .any(|score| score.by == "status-liability-digested"));
+        assert!(skip.order_key(false) < wild_strike.order_key(false));
+    }
+
+    #[test]
     fn shop_boss_scaling_repair_remains_mainline() {
         let cards = vec![
             CardId::Strike,
@@ -2206,7 +2276,7 @@ mod tests {
     }
 
     #[test]
-    fn acute_survival_prefers_deterministic_burst_block_over_dynamic_low_block() {
+    fn acute_survival_distinguishes_deterministic_burst_from_a_fuel_backed_block_engine() {
         let deck = seed_20260713003_act3_floor42_card_ids();
 
         let impervious = reward_card_with_act_and_hp(&deck, CardId::Impervious, 1, 3, 22, 82);
@@ -2228,11 +2298,19 @@ mod tests {
         assert_eq!(acute_survival_block_density(CardId::GhostlyArmor, 0), 0);
         assert_eq!(acute_survival_block_density(CardId::PowerThrough, 0), 0);
         assert!(acute_survival_block_density(CardId::PowerThrough, 1) > 0);
-        assert_ne!(
+        assert_eq!(
             second_wind.lane,
             CandidateLane::Mainline,
-            "dynamic mass exhaust must not inherit deterministic burst-block credit: {second_wind:#?}"
+            "the fixture has enough non-attack fuel for a real Second Wind engine: {second_wind:#?}"
         );
+        assert!(second_wind
+            .scores
+            .iter()
+            .any(|component| component.by == "fuel-backed-second-wind-block-plan"));
+        assert!(!second_wind
+            .scores
+            .iter()
+            .any(|component| component.by == "acute-survival-block-density"));
         assert_ne!(
             ghostly_armor.lane,
             CandidateLane::Mainline,
@@ -2309,7 +2387,7 @@ mod tests {
     }
 
     #[test]
-    fn seed006_exhaust_payoff_closure_outranks_a_second_exhaust_source() {
+    fn seed006_single_controlled_exhaust_supports_but_does_not_complete_a_payoff_engine() {
         let cards = vec![
             CardId::Strike,
             CardId::Strike,
@@ -2333,10 +2411,14 @@ mod tests {
         let burning_pact =
             reward_card_with_act_boss(&cards, CardId::BurningPact, 1, 2, EncounterId::TheChamp);
 
-        assert_eq!(dark_embrace.lane, CandidateLane::Mainline);
+        assert_eq!(dark_embrace.lane, CandidateLane::Probe);
+        assert!(dark_embrace.scores.iter().any(|component| {
+            component.by == "boss-limited-exhaust-synergy" && component.value > 0
+        }));
+        assert_eq!(burning_pact.lane, CandidateLane::Mainline);
         assert!(
-            dark_embrace.order_key(true) < burning_pact.order_key(true),
-            "the first payoff closes a live long-fight engine: dark_embrace={dark_embrace:#?} burning_pact={burning_pact:#?}"
+            burning_pact.order_key(true) < dark_embrace.order_key(true),
+            "one True Grit is limited exhaust access; another draw-and-exhaust source remains executable while the first payoff stays speculative: dark_embrace={dark_embrace:#?} burning_pact={burning_pact:#?}"
         );
     }
 
@@ -2867,6 +2949,60 @@ mod tests {
                 .iter()
                 .any(|score| score.by == "strategic-burden-no-gap"),
             "starter Defends must not suppress a survival repair: {:?}",
+            second_wind.scores
+        );
+        assert!(
+            second_wind
+                .scores
+                .iter()
+                .any(|score| score.by == "fuel-backed-second-wind-block-plan"),
+            "four or more real non-attacks should expose the executable Second Wind block plan: {:?}",
+            second_wind.scores
+        );
+    }
+
+    #[test]
+    fn second_wind_without_non_attack_fuel_does_not_claim_a_block_plan() {
+        let master_deck = test_deck(&[
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Bash,
+            CardId::Defend,
+        ]);
+        let context = DecisionPipelineContext::reward(DeckPlanSnapshot::from_deck(
+            &master_deck,
+            DeckAdmissionContext {
+                act: 1,
+                current_hp: 70,
+                max_hp: 80,
+            },
+            RunStrategicFacts {
+                entering_act: 2,
+                starter_basic_count: 6,
+                curse_count: 0,
+                has_energy_relic: false,
+                has_runic_pyramid: false,
+            },
+        ));
+        let admission =
+            assess_reward_admission_from_master_deck(&master_deck, CardId::SecondWind, 0);
+        let second_wind = evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::CardRewardPick {
+                card: CardId::SecondWind,
+                upgrades: 0,
+            },
+            Some(&admission),
+        );
+
+        assert!(
+            !second_wind
+                .scores
+                .iter()
+                .any(|score| score.by == "fuel-backed-second-wind-block-plan"),
+            "conditional mass exhaust must not be presented as a complete block plan without fuel: {:?}",
             second_wind.scores
         );
     }
