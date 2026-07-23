@@ -304,7 +304,7 @@ fn execute_command(
                     "ping", "capabilities", "status", "explain", "view", "tree", "try",
                     "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
-                    "export_combat_case", "export_continuation", "save", "shutdown"
+                    "export_combat_case", "export_continuation", "verify_run_witness", "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
                 "autosave": "after every successful mutation",
@@ -663,6 +663,28 @@ fn execute_command(
                     "node_id": node,
                     "path": path,
                     "journal_entries": continuation.journal.entries().len(),
+                }),
+                false,
+                false,
+                false,
+            )
+        }
+        OracleAnalysisServiceCommandV1::VerifyRunWitness { node } => {
+            let node = node.unwrap_or_else(|| workspace.session.cursor_node_id());
+            let continuation = workspace.continuation(node)?;
+            let expected_final = continuation.session.into_session()?;
+            let report = crate::eval::run_control::exact_replay_run_progress_journal_v1(
+                workspace.seed,
+                workspace.ascension,
+                &continuation.journal,
+                &expected_final,
+            )?;
+            (
+                json!({
+                    "schema_name": "ExactOracleRunWitnessReplayV1",
+                    "schema_version": 1,
+                    "node_id": node,
+                    "report": report,
                 }),
                 false,
                 false,

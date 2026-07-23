@@ -103,6 +103,26 @@ enum LiveCommand {
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=64))]
         steps: u8,
     },
+    /// Drive owner decisions and bounded combat search until victory or the first real stop.
+    Run {
+        #[arg(long, default_value_t = 5_000)]
+        hallway_wall_ms: u64,
+        #[arg(long, default_value_t = 15_000)]
+        elite_wall_ms: u64,
+        #[arg(long, default_value_t = 30_000)]
+        boss_wall_ms: u64,
+        #[arg(long, default_value_t = 100_000)]
+        max_quanta: usize,
+        #[arg(long, default_value_t = 4_096)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 100)]
+        quantum_ms: u64,
+        #[arg(long, default_value_t = 256)]
+        max_boundaries: usize,
+        /// Export the exact continuation after a verified terminal victory.
+        #[arg(long)]
+        export_continuation: Option<PathBuf>,
+    },
     /// Accept the current verified combat incumbent.
     Accept,
     /// Restart tactical search at the unchanged exact combat state.
@@ -118,6 +138,18 @@ enum LiveCommand {
     ExportCase {
         #[arg(long)]
         path: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Export the current or selected exact run continuation.
+    ExportContinuation {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Replay the committed run journal from the canonical seed state.
+    Verify {
         #[arg(long)]
         node: Option<usize>,
     },
@@ -224,6 +256,28 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             print_json(&compact_live_inventory(&view))
         }
         LiveCommand::Owner { steps } => print_json(&run_live_owner(endpoint, steps)?),
+        LiveCommand::Run {
+            hallway_wall_ms,
+            elite_wall_ms,
+            boss_wall_ms,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            max_boundaries,
+            export_continuation,
+        } => print_json(&run_live_to_stop(
+            endpoint,
+            LiveRunConfig {
+                hallway_wall_ms,
+                elite_wall_ms,
+                boss_wall_ms,
+                max_quanta,
+                quantum_nodes,
+                quantum_ms,
+                max_boundaries,
+                export_continuation,
+            },
+        )?),
         LiveCommand::Accept => print_json(&compact_live_node(
             &live_call(endpoint, OracleAnalysisServiceCommandV1::AcceptCombat)?,
             8,
@@ -246,6 +300,17 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 OracleAnalysisServiceCommandV1::ExportCombatCase { node, path },
             )?)
         }
+        LiveCommand::ExportContinuation { path, node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::ExportContinuation { node, path },
+            )?)
+        }
+        LiveCommand::Verify { node } => print_json(&live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::VerifyRunWitness { node },
+        )?),
         LiveCommand::Save => {
             print_json(&live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?)
         }
@@ -378,6 +443,297 @@ fn run_live_owner(endpoint: &Path, steps: u8) -> Result<Value, String> {
     }))
 }
 
+struct LiveRunConfig {
+    hallway_wall_ms: u64,
+    elite_wall_ms: u64,
+    boss_wall_ms: u64,
+    max_quanta: usize,
+    quantum_nodes: usize,
+    quantum_ms: u64,
+    max_boundaries: usize,
+    export_continuation: Option<PathBuf>,
+}
+
+fn run_live_to_stop(endpoint: &Path, config: LiveRunConfig) -> Result<Value, String> {
+    if config.max_boundaries == 0
+        || config.max_quanta == 0
+        || config.quantum_nodes == 0
+        || config.quantum_ms == 0
+        || config.hallway_wall_ms == 0
+        || config.elite_wall_ms == 0
+        || config.boss_wall_ms == 0
+    {
+        return Err("live run budgets and max-boundaries must be positive".to_string());
+    }
+
+    let initial = live_call(
+        endpoint,
+        OracleAnalysisServiceCommandV1::Status { node: None },
+    )?;
+    let start_node = node_id(&initial)?;
+    let mut owner_decisions = 0_u64;
+    let mut combats = Vec::new();
+    let mut total_combat_elapsed_ms = 0_u64;
+
+    for _ in 0..config.max_boundaries {
+        let node = live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::Status { node: None },
+        )?;
+        let boundary = node
+            .get("boundary")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "live run status omitted boundary".to_string())?;
+
+        if matches!(boundary, "terminal_victory" | "terminal_defeat") {
+            let final_node = node_id(&node)?;
+            let verification = if boundary == "terminal_victory" {
+                Some(live_call(
+                    endpoint,
+                    OracleAnalysisServiceCommandV1::VerifyRunWitness {
+                        node: Some(final_node),
+                    },
+                )?)
+            } else {
+                None
+            };
+            let export = if boundary == "terminal_victory" {
+                if let Some(path) = config.export_continuation.as_ref() {
+                    Some(live_call(
+                        endpoint,
+                        OracleAnalysisServiceCommandV1::ExportContinuation {
+                            node: final_node,
+                            path: path.clone(),
+                        },
+                    )?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+            return Ok(json!({
+                "schema_name": "OracleAutonomousRunReportV1",
+                "schema_version": 1,
+                "status": if boundary == "terminal_victory" { "victory_verified" } else { "terminal_defeat" },
+                "start_node": start_node,
+                "final": compact_live_node(&node, 8),
+                "owner_decisions": owner_decisions,
+                "combat_count": combats.len(),
+                "total_combat_elapsed_ms": total_combat_elapsed_ms,
+                "combats": combats,
+                "verification": verification,
+                "continuation_export": export,
+            }));
+        }
+
+        let choice_count = node
+            .get("choice_count")
+            .and_then(Value::as_u64)
+            .unwrap_or_else(|| {
+                node.get("choices")
+                    .and_then(Value::as_array)
+                    .map_or(0, |choices| choices.len() as u64)
+            });
+        if choice_count > 0 {
+            let owner = run_live_owner(endpoint, 64)?;
+            let applied = owner
+                .get("applied_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            if applied == 0 {
+                live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+                return Ok(stopped_live_run_report(
+                    start_node,
+                    &node,
+                    owner_decisions,
+                    &combats,
+                    total_combat_elapsed_ms,
+                    "owner_choice_missing_or_ambiguous",
+                ));
+            }
+            owner_decisions = owner_decisions.saturating_add(applied);
+            continue;
+        }
+
+        if boundary != "combat" {
+            live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+            return Ok(stopped_live_run_report(
+                start_node,
+                &node,
+                owner_decisions,
+                &combats,
+                total_combat_elapsed_ms,
+                "noncombat_boundary_without_owner_choice",
+            ));
+        }
+
+        let encounter = node
+            .get("encounter")
+            .filter(|encounter| !encounter.is_null())
+            .ok_or_else(|| "combat boundary omitted encounter metadata".to_string())?;
+        let is_boss = encounter
+            .get("is_boss")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let is_elite = encounter
+            .get("is_elite")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let wall_ms = if is_boss {
+            config.boss_wall_ms
+        } else if is_elite {
+            config.elite_wall_ms
+        } else {
+            config.hallway_wall_ms
+        };
+        let combat_node = node_id(&node)?;
+        let incumbent_before = node
+            .get("combat")
+            .and_then(|combat| combat.get("incumbent_final_hp"))
+            .and_then(Value::as_i64);
+
+        if incumbent_before.is_some() {
+            let after = live_call(endpoint, OracleAnalysisServiceCommandV1::AcceptCombat)?;
+            combats.push(json!({
+                "node": combat_node,
+                "act": node.get("act"),
+                "floor": node.get("floor"),
+                "kind": encounter_kind(is_elite, is_boss),
+                "monsters": encounter_monster_labels(encounter),
+                "budget_ms": 0,
+                "elapsed_ms": 0,
+                "accepted_existing_incumbent": true,
+                "search": compact_run_combat_progress(node.get("combat")),
+                "after": compact_live_node(&after, 0),
+            }));
+            continue;
+        }
+
+        let result = live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::Advance {
+                max_quanta: config.max_quanta,
+                quantum_nodes: config.quantum_nodes,
+                quantum_ms: config.quantum_ms,
+                wall_ms: Some(wall_ms),
+            },
+        )?;
+        let report = result
+            .get("report")
+            .ok_or_else(|| "live run advance omitted report".to_string())?;
+        let elapsed_ms = report
+            .get("elapsed_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        total_combat_elapsed_ms = total_combat_elapsed_ms.saturating_add(elapsed_ms);
+        let progress = report.get("combat");
+        let incumbent = progress
+            .and_then(|combat| combat.get("incumbent_final_hp"))
+            .and_then(Value::as_i64);
+        let mut after = live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::Status { node: None },
+        )?;
+        let materialized = after.get("boundary").and_then(Value::as_str) != Some("combat");
+        let accepted = if !materialized && incumbent.is_some() {
+            after = live_call(endpoint, OracleAnalysisServiceCommandV1::AcceptCombat)?;
+            true
+        } else {
+            false
+        };
+        combats.push(json!({
+            "node": combat_node,
+            "act": node.get("act"),
+            "floor": node.get("floor"),
+            "start_hp": node.get("current_hp"),
+            "kind": encounter_kind(is_elite, is_boss),
+            "monsters": encounter_monster_labels(encounter),
+            "budget_ms": wall_ms,
+            "elapsed_ms": elapsed_ms,
+            "accepted_incumbent": accepted,
+            "search": compact_run_combat_progress(progress),
+            "after": compact_live_node(&after, 0),
+        }));
+
+        if !materialized && !accepted {
+            live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+            return Ok(stopped_live_run_report(
+                start_node,
+                &after,
+                owner_decisions,
+                &combats,
+                total_combat_elapsed_ms,
+                "combat_budget_unknown_without_witness",
+            ));
+        }
+    }
+
+    let node = live_call(
+        endpoint,
+        OracleAnalysisServiceCommandV1::Status { node: None },
+    )?;
+    live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+    Ok(stopped_live_run_report(
+        start_node,
+        &node,
+        owner_decisions,
+        &combats,
+        total_combat_elapsed_ms,
+        "boundary_limit",
+    ))
+}
+
+fn node_id(node: &Value) -> Result<usize, String> {
+    node.get("node_id")
+        .and_then(Value::as_u64)
+        .and_then(|node| usize::try_from(node).ok())
+        .ok_or_else(|| "live run status omitted a valid node_id".to_string())
+}
+
+fn encounter_kind(is_elite: bool, is_boss: bool) -> &'static str {
+    if is_boss {
+        "boss"
+    } else if is_elite {
+        "elite"
+    } else {
+        "hallway_or_event"
+    }
+}
+
+fn encounter_monster_labels(encounter: &Value) -> Vec<Value> {
+    encounter
+        .get("monsters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|monster| monster.get("label").cloned())
+        .collect()
+}
+
+fn stopped_live_run_report(
+    start_node: usize,
+    node: &Value,
+    owner_decisions: u64,
+    combats: &[Value],
+    total_combat_elapsed_ms: u64,
+    reason: &str,
+) -> Value {
+    json!({
+        "schema_name": "OracleAutonomousRunReportV1",
+        "schema_version": 1,
+        "status": "stopped",
+        "reason": reason,
+        "start_node": start_node,
+        "final": compact_live_node(node, 8),
+        "owner_decisions": owner_decisions,
+        "combat_count": combats.len(),
+        "total_combat_elapsed_ms": total_combat_elapsed_ms,
+        "combats": combats,
+    })
+}
+
 fn compact_live_node(node: &Value, limit: usize) -> Value {
     let choices = limited_values(node.get("choices"), limit);
     let children = limited_values(node.get("children"), limit);
@@ -483,6 +839,8 @@ fn compact_encounter(encounter: Option<&Value>) -> Value {
         "draw": encounter.get("draw_pile_count"),
         "discard": encounter.get("discard_pile_count"),
         "exhaust": encounter.get("exhaust_pile_count"),
+        "is_elite": encounter.get("is_elite"),
+        "is_boss": encounter.get("is_boss"),
         "monsters": encounter.get("monsters"),
     })
 }
@@ -507,6 +865,24 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         "quantum_count": combat.get("quantum_count"),
         "remaining_nodes": combat.get("remaining_nodes"),
         "remaining_wall_ms": combat.get("remaining_wall_ms"),
+        "resume_kind": combat.get("resume_kind"),
+        "restart_count": combat.get("restart_count"),
+    })
+}
+
+fn compact_run_combat_progress(combat: Option<&Value>) -> Value {
+    let Some(combat) = combat.filter(|value| !value.is_null()) else {
+        return Value::Null;
+    };
+    json!({
+        "generation_work": combat.get("generation_work"),
+        "exact_states": combat.get("exact_states"),
+        "completed_turn_options": combat.get("completed_turn_options"),
+        "max_player_turn": combat.get("max_player_turn"),
+        "incumbent_final_hp": combat.get("incumbent_final_hp"),
+        "incumbent_hp_loss": combat.get("incumbent_hp_loss"),
+        "incumbent_actions": combat.get("incumbent_action_count"),
+        "last_status": combat.get("last_status"),
         "resume_kind": combat.get("resume_kind"),
         "restart_count": combat.get("restart_count"),
     })
@@ -1207,6 +1583,58 @@ mod tests {
     }
 
     #[test]
+    fn typed_live_run_owns_the_existing_production_loop() {
+        let cli = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed009",
+            "run",
+            "--hallway-wall-ms",
+            "5000",
+            "--export-continuation",
+            "victory.json",
+        ])
+        .expect("parse autonomous live run");
+        assert!(matches!(
+            cli.command,
+            Command::Live {
+                command: LiveCommand::Run {
+                    hallway_wall_ms: 5000,
+                    elite_wall_ms: 15000,
+                    boss_wall_ms: 30000,
+                    export_continuation: Some(path),
+                    ..
+                },
+                ..
+            } if path == PathBuf::from("victory.json")
+        ));
+    }
+
+    #[test]
+    fn typed_live_verify_stays_on_the_resident_service_path() {
+        let cli = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed009",
+            "verify",
+            "--node",
+            "204",
+        ])
+        .expect("parse resident witness verification");
+        assert!(matches!(
+            cli.command,
+            Command::Live {
+                command: LiveCommand::Verify { node: Some(204) },
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn typed_live_combat_stays_on_the_resident_service_path() {
         let cli = Cli::try_parse_from([
             "oracle_lab_client",
@@ -1412,6 +1840,19 @@ D:\rust\src\bin\oracle_lab.rs:
             ],
             "children": [],
             "event": {"title": "test"},
+            "encounter": {
+                "turn": 0,
+                "phase": "PlayerTurn",
+                "energy": 3,
+                "player_block": 0,
+                "hand": [],
+                "draw_pile_count": 5,
+                "discard_pile_count": 0,
+                "exhaust_pile_count": 0,
+                "is_elite": true,
+                "is_boss": false,
+                "monsters": []
+            },
             "combat": {
                 "generation_work": 125,
                 "historical_generation_work": 100,
@@ -1426,6 +1867,8 @@ D:\rust\src\bin\oracle_lab.rs:
         assert_eq!(compact["combat"]["generation_work"], 125);
         assert_eq!(compact["combat"]["historical_generation_work"], 100);
         assert_eq!(compact["combat"]["current_search_generation_work"], 25);
+        assert_eq!(compact["encounter"]["is_elite"], true);
+        assert_eq!(compact["encounter"]["is_boss"], false);
     }
 
     #[test]

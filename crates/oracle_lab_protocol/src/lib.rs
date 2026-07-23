@@ -141,6 +141,10 @@ pub enum OracleAnalysisServiceCommandV1 {
         node: usize,
         path: PathBuf,
     },
+    VerifyRunWitness {
+        #[serde(default)]
+        node: Option<usize>,
+    },
     Save,
     Shutdown,
 }
@@ -350,6 +354,18 @@ mod tests {
                 node: 17,
                 max_engine_steps_per_transition: 512,
             }
+        ));
+    }
+
+    #[test]
+    fn witness_verification_defaults_to_the_current_node() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "verify_run_witness",
+        }))
+        .expect("parse witness verification command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::VerifyRunWitness { node: None }
         ));
     }
 }

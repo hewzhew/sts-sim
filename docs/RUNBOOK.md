@@ -215,6 +215,25 @@ Oracle work uses one canonical `release` artifact. Build-owning commands use
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
 profile and target directory are not valid operational entrypoints.
 
+For a production-owner run, create and start one exact F0 workspace, then let
+the lightweight resident client own every remaining owner/search/accept
+boundary:
+
+```powershell
+cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace target/oracle-cases/seed009.workspace.json
+.\target\release\oracle_lab_client.exe --canonical-oracle start --session seed009 --workspace target/oracle-cases/seed009.workspace.json
+.\target\release\oracle_lab_client.exe --canonical-oracle live --session seed009 run --export-continuation target/oracle-cases/seed009.victory.continuation.json
+```
+
+`live run` uses the maintained 5/15/30-second hallway/elite/boss budgets. It
+accepts only replay-verified combat incumbents. If a combat has no witness
+within its budget, the command saves the resident workspace and stops at that
+exact combat with `combat_budget_unknown_without_witness`; it does not restart,
+switch algorithms, or select a historical donor. At terminal victory it
+replays the complete committed journal from the canonical seed state inside
+the resident service, exports the exact continuation when requested, and
+returns `victory_verified`.
+
 The command hosts in `sts_oracle_lab` are physically separate from the shared
 `sts_oracle_runtime` library. On one Windows machine, touching only
 `oracle_lab.rs` rebuilt in 1.62 seconds, touching only

@@ -54,6 +54,11 @@ fn service_keeps_one_session_alive_autosaves_and_survives_bad_commands() {
             "node": root_id,
             "path": continuation_path,
         }),
+        json!({
+            "id": "verify_run_witness",
+            "command": "verify_run_witness",
+            "node": root_id,
+        }),
         json!({"id": "save", "command": "save"}),
         json!({"id": "shutdown", "command": "shutdown"}),
     ];
@@ -93,6 +98,12 @@ fn service_keeps_one_session_alive_autosaves_and_survives_bad_commands() {
     assert_eq!(response(&responses, "back").revision, 2);
     assert_eq!(response(&responses, "back").saved_revision, 2);
     assert!(response(&responses, "export_continuation").ok);
+    let verification = response(&responses, "verify_run_witness")
+        .result
+        .as_ref()
+        .expect("verification result");
+    assert_eq!(verification["schema_name"], "ExactOracleRunWitnessReplayV1");
+    assert_eq!(verification["report"]["seed"], SEED);
     assert_eq!(response(&responses, "shutdown").event, "shutdown");
     assert_eq!(exit.revision, 2);
     assert_eq!(exit.saved_revision, 2);

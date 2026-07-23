@@ -141,6 +141,30 @@ fixture or its future state hashes.
 This run preserves both the clean production-search cutover comparison and a
 complete F0-to-F48 exact victory:
 
+- `seed20260713009_a0_autonomous_full_run.continuation.json` is a later,
+  stronger production witness. It began in a new F0 workspace and used the
+  current owner and production local-turn graph for every decision and all 21
+  combats. It did not import a prior continuation, combat action witness,
+  proof cache, corridor, imitation/value artifact, or V2 donor.
+- Every stored combat trajectory in that journal has source `search_combat`.
+  After workspace creation, one `oracle_lab_client live run` invocation owned
+  all remaining owner/search/accept boundaries. The final Time Eater search
+  independently found its 56-action witness in 13.398 seconds and ended at
+  9/72 HP.
+- Importing the checked-in autonomous continuation into a fresh workspace and
+  replaying node 0 verifies 195 journal entries, 174 decisions, 21 combat
+  resolutions, 426 combat actions, terminal victory at F48, and final
+  fingerprint
+  `034e327088f9e701ecd9e3b37396f25a3a255a62c310246973b517a9f4fd4a9c`.
+- SHA-256: autonomous full-run continuation
+  `43F78E31236EA7DCC81C1412BF439FBA7110C027FB9B280B78DD408BF07B790E`;
+  compact replay report
+  `3932B8DCB908CC49347ABEE37FF74A04580D60F746CFCCB9547DE16D04B3589A`.
+- `seed20260713009_a0_autonomous_full_run.replay.json` preserves the compact
+  exact replay report. The 7.5 MiB resident analysis workspace remains outside
+  Git; the continuation contains the complete committed journal and exact
+  terminal session needed for independent verification.
+
 - At Act 1 floor 16 the player enters Slime Boss at 60/72 HP with Whirlwind,
   Cleave, Shrug It Off+, Rupture, Bloodletting, and one Gamblers Brew.
 - The production global agenda, with V2 disabled, spent 30 seconds, 190,977
