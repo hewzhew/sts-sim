@@ -1,11 +1,14 @@
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades as strategic_card_definition, CombatEvent, PlayEffect,
+};
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use crate::state::core::ClientInput;
 use crate::{
     content::{
-        cards::{get_card_definition, CardType},
+        cards::{exhausts_when_played, get_card_definition, CardType},
         powers::{store, PowerId},
     },
-    runtime::combat::CombatState,
+    runtime::combat::{CombatCard, CombatState},
 };
 
 use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
@@ -187,10 +190,16 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
     vec![
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
-        setup.exhaust_engine_fuel,
+        setup.exhaust_payoff_engine_count,
         setup.recurring_output_count,
         setup.recurring_output_mass,
+        value.fewer_living_enemies,
         encounter_priority_owner_progress(&position.combat),
+        value.phase_adjusted_enemy_effort_progress,
+        value.enemy_effort_progress,
+        value.enemy_hp_progress,
+        setup.exhaust_engine_fuel,
+        setup.exhaust_payoff_engine_fuel,
         value.player_hp,
         value.survival_margin,
         setup.active_power_count,
@@ -236,6 +245,8 @@ struct PlayerSetupSummary {
     exhaust_engine_connected: i32,
     status_access_engine_connected: i32,
     exhaust_engine_fuel: i32,
+    exhaust_payoff_engine_count: i32,
+    exhaust_payoff_engine_fuel: i32,
     recurring_output_count: i32,
     recurring_output_mass: i32,
     active_power_count: i32,
@@ -270,30 +281,70 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
         .hand
         .iter()
         .chain(&combat.zones.draw_pile)
-        .chain(&combat.zones.discard_pile);
-    let (remaining_skills, remaining_statuses) = unexhausted_cards.fold(
-        (0_i32, 0_i32),
-        |(skills, statuses), card| match get_card_definition(card.id).card_type {
-            CardType::Skill => (skills.saturating_add(1), statuses),
-            CardType::Status => (skills, statuses.saturating_add(1)),
-            _ => (skills, statuses),
-        },
-    );
+        .chain(&combat.zones.discard_pile)
+        .collect::<Vec<_>>();
+    let (remaining_skills, remaining_statuses) =
+        unexhausted_cards
+            .iter()
+            .fold(
+                (0_i32, 0_i32),
+                |(skills, statuses), card| match get_card_definition(card.id).card_type {
+                    CardType::Skill => (skills.saturating_add(1), statuses),
+                    CardType::Status => (skills, statuses.saturating_add(1)),
+                    _ => (skills, statuses),
+                },
+            );
     let exhaust_engine_connected = i32::from(
         store::has_power(combat, player, PowerId::Corruption)
             && store::has_power(combat, player, PowerId::DarkEmbrace),
     );
     let status_access_engine_connected =
         i32::from(remaining_statuses > 0 && store::has_power(combat, player, PowerId::Evolve));
+    let corruption_active = store::has_power(combat, player, PowerId::Corruption);
+    let remaining_exhaust_event_sources = unexhausted_cards
+        .iter()
+        .filter(|card| {
+            corruption_active && get_card_definition(card.id).card_type == CardType::Skill
+                || card_can_emit_exhaust_event(card)
+        })
+        .count()
+        .try_into()
+        .unwrap_or(i32::MAX);
+    let exhaust_payoff_engine_count = if remaining_exhaust_event_sources > 0 {
+        i32::from(store::has_power(combat, player, PowerId::FeelNoPain)).saturating_add(i32::from(
+            store::has_power(combat, player, PowerId::DarkEmbrace),
+        ))
+    } else {
+        0
+    };
     PlayerSetupSummary {
         exhaust_engine_connected,
         status_access_engine_connected,
         exhaust_engine_fuel: remaining_skills.saturating_mul(exhaust_engine_connected),
+        exhaust_payoff_engine_count,
+        exhaust_payoff_engine_fuel: remaining_exhaust_event_sources
+            .saturating_mul(exhaust_payoff_engine_count),
         recurring_output_count,
         recurring_output_mass,
         active_power_count,
         active_power_mass,
     }
+}
+
+fn card_can_emit_exhaust_event(card: &CombatCard) -> bool {
+    if exhausts_when_played(card) {
+        return true;
+    }
+    strategic_card_definition(card.id, card.upgrades)
+        .play_effects
+        .iter()
+        .any(|effect| {
+            matches!(
+                effect,
+                PlayEffect::EmitEvent(CombatEvent::CardExhausted)
+                    | PlayEffect::PlayTopCardAndExhaust
+            )
+        })
 }
 
 /// Powers in this set have already paid their setup cost and deterministically
@@ -535,6 +586,91 @@ mod tests {
         assert_eq!(summary.status_access_engine_connected, 0);
         assert_eq!(summary.exhaust_engine_connected, 0);
         assert_eq!(summary.exhaust_engine_fuel, 0);
+    }
+
+    #[test]
+    fn setup_recognizes_realized_exhaust_payoff_only_with_remaining_sources() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let player = combat.entities.player.id;
+        combat.entities.power_db.insert(
+            player,
+            vec![
+                test_power_amount(PowerId::FeelNoPain, 4),
+                test_power_amount(PowerId::DarkEmbrace, 1),
+            ],
+        );
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::BurningPact, 41),
+            CombatCard::new(CardId::Feed, 42),
+        ];
+
+        let connected = player_setup_summary(&combat);
+        assert_eq!(connected.exhaust_payoff_engine_count, 2);
+        assert_eq!(connected.exhaust_payoff_engine_fuel, 4);
+
+        combat.zones.hand = vec![CombatCard::new(CardId::Strike, 43)];
+        let disconnected = player_setup_summary(&combat);
+        assert_eq!(disconnected.exhaust_payoff_engine_count, 0);
+        assert_eq!(disconnected.exhaust_payoff_engine_fuel, 0);
+    }
+
+    #[test]
+    fn realized_exhaust_payoff_gets_an_independent_setup_view() {
+        let mut safer = crate::test_support::blank_test_combat();
+        safer.entities.monsters = vec![crate::test_support::test_monster(EnemyId::AwakenedOne)];
+        safer.entities.player.current_hp = 72;
+        safer.zones.hand = vec![CombatCard::new(CardId::BurningPact, 51)];
+
+        let mut connected = safer.clone();
+        connected.entities.player.current_hp = 54;
+        let player = connected.entities.player.id;
+        connected
+            .entities
+            .power_db
+            .insert(player, vec![test_power_amount(PowerId::FeelNoPain, 4)]);
+
+        let safer_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            safer,
+        ));
+        let connected_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            connected,
+        ));
+
+        assert!(connected_rank > safer_rank);
+    }
+
+    #[test]
+    fn abundant_exhaust_fuel_does_not_override_realized_combat_progress() {
+        let mut stockpiled = crate::test_support::blank_test_combat();
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 100;
+        monster.max_hp = 100;
+        stockpiled.entities.monsters = vec![monster];
+        let player = stockpiled.entities.player.id;
+        stockpiled
+            .entities
+            .power_db
+            .insert(player, vec![test_power_amount(PowerId::FeelNoPain, 4)]);
+        stockpiled.zones.draw_pile = (0..12)
+            .map(|index| CombatCard::new(CardId::Feed, 100 + index))
+            .collect();
+
+        let mut progressed = stockpiled.clone();
+        progressed.zones.draw_pile.pop();
+        progressed.entities.monsters[0].current_hp = 80;
+
+        let stockpiled_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            stockpiled,
+        ));
+        let progressed_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            progressed,
+        ));
+
+        assert!(progressed_rank > stockpiled_rank);
     }
 
     #[test]
