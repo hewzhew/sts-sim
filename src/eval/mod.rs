@@ -13,6 +13,7 @@ pub mod combat_capture;
 pub mod combat_case;
 pub mod combat_lab_v1;
 pub mod combat_search_v2;
+pub mod combat_state_features;
 pub(crate) mod event_boundary_classifier_v1;
 #[cfg(feature = "control-full")]
 pub mod event_boundary_packet_v1;

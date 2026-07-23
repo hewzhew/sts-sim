@@ -1,21 +1,28 @@
 //! Read-only audit of bounded rollout guidance over exact next-turn states.
 
 use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use clap::Args;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    CombatDecisionRoot, CombatPlanningQuantum, TurnOptionGeneratorConfig,
+    CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption, TurnOptionGeneratorConfig,
     TurnOptionGeneratorSession,
 };
 use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
 use sts_simulator::eval::combat_case::load_combat_case;
+use sts_simulator::eval::combat_state_features::{
+    semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
+};
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
 };
-use sts_simulator::sim::combat::EngineCombatStepper;
+use sts_simulator::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
+};
 
 #[derive(Clone, Debug, Args)]
 pub struct BoundarySuccessorLookaheadArgs {
@@ -39,6 +46,11 @@ pub struct BoundarySuccessorLookaheadArgs {
     /// Exact successor hashes to surface explicitly in the report.
     #[arg(long)]
     watch_state_hash: Vec<String>,
+    /// Include the full legacy and semantic feature vectors for watched
+    /// successors. Off by default because the semantic vector is intentionally
+    /// detailed.
+    #[arg(long)]
+    include_watched_features: bool,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
 }
@@ -51,9 +63,14 @@ struct CandidateAudit {
     watched: bool,
     boundary: String,
     action_count: usize,
+    action_labels: Vec<String>,
     negative_log_policy: f64,
     rollout_components: Vec<i32>,
     rollout_work: usize,
+    existing_feature_equivalence_class_size: usize,
+    same_existing_features_as_watched: bool,
+    semantic_feature_equivalence_class_size: usize,
+    same_semantic_features_as_watched: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -63,9 +80,12 @@ struct EvaluatedCandidate {
     watched: bool,
     boundary: String,
     action_count: usize,
+    action_labels: Vec<String>,
     negative_log_policy: f64,
     rollout_components: Vec<i32>,
     rollout_work: usize,
+    existing_features: Vec<i32>,
+    semantic_features: Vec<CombatStateFeatureV1>,
 }
 
 pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
@@ -77,9 +97,10 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
     }
 
     let loaded = load_combat_case(&args.case)?;
+    let root_position = loaded.position;
     let root_exact_state_hash =
-        combat_exact_state_hash_v1(&loaded.position.engine, &loaded.position.combat);
-    let root = CombatDecisionRoot::new(loaded.position)
+        combat_exact_state_hash_v1(&root_position.engine, &root_position.combat);
+    let root = CombatDecisionRoot::new(root_position.clone())
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let mut generator = TurnOptionGeneratorSession::with_policy(
         root,
@@ -169,9 +190,16 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
                     .any(|watched| watched == option.exact_successor_hash()),
                 boundary: format!("{:?}", option.boundary()),
                 action_count: option.actions().len(),
+                action_labels: readable_action_labels(
+                    &root_position,
+                    option,
+                    args.max_engine_steps_per_transition,
+                )?,
                 negative_log_policy: option.negative_log_policy(),
                 rollout_components: evaluation.guide.rank.components().to_vec(),
                 rollout_work: evaluation.work,
+                existing_features: typed_combat_feature_components_v1(option.exact_successor()),
+                semantic_features: semantic_combat_state_features_v1(option.exact_successor()),
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -183,6 +211,64 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
         )
     });
 
+    let existing_feature_counts = evaluated.iter().fold(
+        HashMap::<Vec<i32>, usize>::new(),
+        |mut counts, candidate| {
+            *counts
+                .entry(candidate.existing_features.clone())
+                .or_default() += 1;
+            counts
+        },
+    );
+    let distinct_existing_feature_vectors = existing_feature_counts.len();
+    let largest_existing_feature_equivalence_class = existing_feature_counts
+        .values()
+        .copied()
+        .max()
+        .unwrap_or_default();
+    let existing_features_by_hash = evaluated
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.exact_state_hash.clone(),
+                candidate.existing_features.clone(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let watched_existing_features = evaluated
+        .iter()
+        .filter(|candidate| candidate.watched)
+        .map(|candidate| candidate.existing_features.clone())
+        .collect::<HashSet<_>>();
+    let semantic_feature_counts = evaluated.iter().fold(
+        HashMap::<Vec<CombatStateFeatureV1>, usize>::new(),
+        |mut counts, candidate| {
+            *counts
+                .entry(candidate.semantic_features.clone())
+                .or_default() += 1;
+            counts
+        },
+    );
+    let distinct_semantic_feature_vectors = semantic_feature_counts.len();
+    let largest_semantic_feature_equivalence_class = semantic_feature_counts
+        .values()
+        .copied()
+        .max()
+        .unwrap_or_default();
+    let semantic_features_by_hash = evaluated
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.exact_state_hash.clone(),
+                candidate.semantic_features.clone(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let watched_semantic_features = evaluated
+        .iter()
+        .filter(|candidate| candidate.watched)
+        .map(|candidate| candidate.semantic_features.clone())
+        .collect::<HashSet<_>>();
     let candidates = evaluated
         .into_iter()
         .enumerate()
@@ -193,9 +279,22 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
             watched: candidate.watched,
             boundary: candidate.boundary,
             action_count: candidate.action_count,
+            action_labels: candidate.action_labels,
             negative_log_policy: candidate.negative_log_policy,
             rollout_components: candidate.rollout_components,
             rollout_work: candidate.rollout_work,
+            existing_feature_equivalence_class_size: existing_feature_counts
+                .get(&candidate.existing_features)
+                .copied()
+                .unwrap_or_default(),
+            same_existing_features_as_watched: watched_existing_features
+                .contains(&candidate.existing_features),
+            semantic_feature_equivalence_class_size: semantic_feature_counts
+                .get(&candidate.semantic_features)
+                .copied()
+                .unwrap_or_default(),
+            same_semantic_features_as_watched: watched_semantic_features
+                .contains(&candidate.semantic_features),
         })
         .collect::<Vec<_>>();
     let watched = args
@@ -217,6 +316,18 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
                     .map(|candidate| candidate.evaluated_rollout_rank),
                 "rollout_components": candidate
                     .map(|candidate| candidate.rollout_components.as_slice()),
+                "existing_feature_components": args
+                    .include_watched_features
+                    .then(|| existing_features_by_hash.get(hash))
+                    .flatten(),
+                "existing_feature_equivalence_class_size": candidate
+                    .map(|candidate| candidate.existing_feature_equivalence_class_size),
+                "semantic_feature_components": args
+                    .include_watched_features
+                    .then(|| semantic_features_by_hash.get(hash))
+                    .flatten(),
+                "semantic_feature_equivalence_class_size": candidate
+                    .map(|candidate| candidate.semantic_feature_equivalence_class_size),
             })
         })
         .collect::<Vec<_>>();
@@ -244,6 +355,16 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
         "candidate_limit": args.candidate_limit,
         "report_limit": args.report_limit,
         "evaluated_successors": candidates.len(),
+        "existing_feature_audit": {
+            "schema": "combat_action_imitation/typed_combat_feature_components_v1",
+            "distinct_vectors": distinct_existing_feature_vectors,
+            "largest_equivalence_class": largest_existing_feature_equivalence_class,
+        },
+        "semantic_feature_audit": {
+            "schema": COMBAT_STATE_FEATURE_SCHEMA_V1,
+            "distinct_vectors": distinct_semantic_feature_vectors,
+            "largest_equivalence_class": largest_semantic_feature_equivalence_class,
+        },
         "rank_scope": {
             "policy_rank": "among successors generated before the stated work/early-stop boundary",
             "rollout_rank": "among evaluated successors only",
@@ -251,6 +372,35 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
         "watched": watched,
         "top_candidates": reported_candidates,
     }))
+}
+
+fn readable_action_labels(
+    root: &CombatPosition,
+    option: &CompleteTurnOption,
+    max_engine_steps_per_transition: usize,
+) -> Result<Vec<String>, String> {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut labels = Vec::with_capacity(option.actions().len());
+    for action in option.actions() {
+        labels.push(super::combat_action_label(&position, &action.input));
+        let step = stepper.apply_to_stable(
+            &position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return Err(format!(
+                "generated option action could not be replayed while formatting {}",
+                option.exact_successor_hash()
+            ));
+        }
+        position = step.position;
+    }
+    Ok(labels)
 }
 
 #[cfg(test)]
@@ -266,9 +416,12 @@ mod tests {
                 watched: false,
                 boundary: "NextPlayerTurn".to_string(),
                 action_count: 1,
+                action_labels: vec!["policy-first".to_string()],
                 negative_log_policy: 0.0,
                 rollout_components: vec![1, 0],
                 rollout_work: 1,
+                existing_features: vec![0],
+                semantic_features: vec![],
             },
             EvaluatedCandidate {
                 policy_rank: 9,
@@ -276,9 +429,12 @@ mod tests {
                 watched: false,
                 boundary: "NextPlayerTurn".to_string(),
                 action_count: 1,
+                action_labels: vec!["rollout-first".to_string()],
                 negative_log_policy: 9.0,
                 rollout_components: vec![2, 0],
                 rollout_work: 1,
+                existing_features: vec![1],
+                semantic_features: vec![],
             },
         ];
         candidates.sort_by_key(|candidate| {

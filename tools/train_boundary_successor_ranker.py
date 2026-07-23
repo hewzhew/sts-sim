@@ -53,9 +53,19 @@ class Group:
 def main() -> int:
     args = parse_args()
     corpus = json.loads(args.input.read_text(encoding="utf-8"))
-    if corpus.get("schema_name") != "BoundarySuccessorCorpusV1":
+    if corpus.get("schema_name") not in {
+        "BoundarySuccessorCorpusV1",
+        "BoundarySuccessorCorpusV2",
+    }:
         raise SystemExit(f"unsupported corpus schema: {corpus.get('schema_name')}")
-    groups = load_groups(corpus)
+    feature_set = args.feature_set
+    if feature_set == "auto":
+        feature_set = (
+            "semantic"
+            if corpus.get("semantic_feature_schema")
+            else "guide"
+        )
+    groups = load_groups(corpus, feature_set)
     train_groups = [group for group in groups if group.split == "train"]
     eval_groups = [group for group in groups if group.split == "eval"]
     x, y, pair_count = pairwise_examples(train_groups)
@@ -74,7 +84,12 @@ def main() -> int:
         "source_identity": corpus.get("source_identity"),
         "input_fingerprint": corpus.get("input_fingerprint"),
         "corpus_config": corpus.get("config"),
-        "feature_schema": corpus.get("feature_schema"),
+        "feature_set": feature_set,
+        "feature_schema": (
+            corpus.get("semantic_feature_schema")
+            if feature_set == "semantic"
+            else corpus.get("guide_feature_schema", corpus.get("feature_schema"))
+        ),
         "training_contract": (
             "pairwise exact-win versus exact-refutation-or-terminal-non-win; "
             "BudgetUnknown excluded from labels"
@@ -93,13 +108,19 @@ def main() -> int:
         },
         "offline_gate": offline_gate(leave_one_out, evaluation_rankings),
         "limitations": [
-            "the feature vector is composed from existing handwritten guide components",
+            (
+                "semantic features retain ordered card zones and concrete combat facts but "
+                "exclude raw RNG identity"
+                if feature_set == "semantic"
+                else "guide features are composed from existing handwritten guide components"
+            ),
             "a few adjacent boundaries from one exact fight are a representation probe, not generalization evidence",
             "unresolved successors may also be winning and are never scored as incorrect labels",
             "the model is not loadable by production search",
         ],
     }
-    print(json.dumps(report, indent=2, sort_keys=True))
+    printed = summary_report(report) if args.summary_only else report
+    print(json.dumps(printed, indent=2, sort_keys=True))
     if args.report_out:
         args.report_out.parent.mkdir(parents=True, exist_ok=True)
         args.report_out.write_text(
@@ -116,6 +137,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--report-out", type=Path)
     parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print only gates and compact boundary ranks; --report-out remains complete.",
+    )
+    parser.add_argument(
+        "--feature-set",
+        choices=("auto", "guide", "semantic"),
+        default="auto",
+        help="State representation used by the offline diagnostic ranker.",
+    )
+    parser.add_argument(
         "--c",
         type=float,
         default=0.1,
@@ -124,17 +156,88 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_groups(corpus: dict[str, Any]) -> list[Group]:
+def summary_report(report: dict[str, Any]) -> dict[str, Any]:
+    def compact(ranking: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "group_id": ranking.get("group_id"),
+            "verified_policy_rank": ranking.get("verified_policy_rank"),
+            "verified_model_rank": ranking.get("verified_model_rank"),
+            "known_pair_count": ranking.get("known_pair_count"),
+            "model_pairwise_accuracy": ranking.get("model_pairwise_accuracy"),
+            "policy_pairwise_accuracy": ranking.get("policy_pairwise_accuracy"),
+            "known_ordering_pass": ranking.get("known_ordering_pass"),
+        }
+
+    leave_one_out = []
+    for item in report["training"]["leave_one_group_out"]:
+        compact_item: dict[str, Any] = {
+            "held_out_group": item["held_out_group"],
+            "status": item["status"],
+        }
+        if item.get("ranking"):
+            compact_item["ranking"] = compact(item["ranking"])
+        leave_one_out.append(compact_item)
+    return {
+        "schema_name": "BoundarySuccessorRankerSummaryV1",
+        "schema_version": 1,
+        "feature_set": report["feature_set"],
+        "feature_schema": report["feature_schema"],
+        "offline_gate": report["offline_gate"],
+        "training": {
+            "groups": report["training"]["groups"],
+            "pair_count": report["training"]["pair_count"],
+            "leave_one_group_out": leave_one_out,
+        },
+        "evaluation": {
+            "groups": report["evaluation"]["groups"],
+            "group_rankings": [
+                compact(ranking)
+                for ranking in report["evaluation"]["group_rankings"]
+            ],
+        },
+    }
+
+
+def load_groups(corpus: dict[str, Any], feature_set: str) -> list[Group]:
     groups: list[Group] = []
-    feature_width: int | None = None
+    semantic_names = (
+        sorted(
+            {
+                str(feature["name"])
+                for raw_group in corpus.get("groups", [])
+                for raw_candidate in raw_group.get("candidates", [])
+                for feature in raw_candidate.get(
+                    "successor_semantic_features", []
+                )
+            }
+        )
+        if feature_set == "semantic"
+        else []
+    )
+    if feature_set == "semantic" and not semantic_names:
+        raise SystemExit(
+            "semantic feature set requested but corpus has no successor_semantic_features"
+        )
+    semantic_index = {name: index for index, name in enumerate(semantic_names)}
+    feature_width: int | None = (
+        len(semantic_names) if feature_set == "semantic" else None
+    )
     for raw_group in corpus.get("groups", []):
         group_id = str(raw_group["id"])
         split = str(raw_group["split"])
         candidates: list[Candidate] = []
         for raw_candidate in raw_group.get("candidates", []):
-            features = squash(
-                np.asarray(raw_candidate["successor_features"], dtype=float)
-            )
+            if feature_set == "semantic":
+                features = np.zeros((len(semantic_names),), dtype=float)
+                for feature in raw_candidate["successor_semantic_features"]:
+                    features[semantic_index[str(feature["name"])]] = float(
+                        feature["value"]
+                    )
+                features = squash(features)
+            else:
+                features = squash(
+                    np.asarray(raw_candidate["successor_features"], dtype=float)
+                )
             if feature_width is None:
                 feature_width = int(features.shape[0])
             if features.shape != (feature_width,):

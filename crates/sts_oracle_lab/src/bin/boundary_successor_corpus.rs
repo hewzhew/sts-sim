@@ -17,6 +17,9 @@ use sts_combat_planner::{
     TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
+use sts_simulator::eval::combat_state_features::{
+    semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
+};
 use sts_simulator::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
 };
@@ -28,8 +31,8 @@ use super::{
 };
 
 const MANIFEST_SCHEMA: &str = "BoundarySuccessorCorpusManifestV1";
-const CORPUS_SCHEMA: &str = "BoundarySuccessorCorpusV1";
-const FEATURE_SCHEMA: &str = "combat_action_imitation/typed_combat_feature_components_v1";
+const CORPUS_SCHEMA: &str = "BoundarySuccessorCorpusV2";
+const GUIDE_FEATURE_SCHEMA: &str = "combat_action_imitation/typed_combat_feature_components_v1";
 
 #[derive(Debug, Args)]
 pub struct BoundarySuccessorCorpusArgs {
@@ -106,7 +109,8 @@ struct BoundarySuccessorCorpus {
     schema_version: u32,
     source_identity: String,
     input_fingerprint: String,
-    feature_schema: String,
+    guide_feature_schema: String,
+    semantic_feature_schema: String,
     manifest: PathBuf,
     config: CorpusConfig,
     groups: Vec<BoundarySuccessorGroup>,
@@ -132,6 +136,7 @@ struct BoundarySuccessorGroup {
     player_turn: u32,
     root_exact_state_hash: String,
     root_features: Vec<i32>,
+    root_semantic_features: Vec<CombatStateFeatureV1>,
     verified_successor_exact_state_hash: String,
     verified_successor_generated: bool,
     verified_successor_policy_rank: Option<usize>,
@@ -164,6 +169,7 @@ struct BoundarySuccessorCandidate {
     /// never reads this corpus.
     successor_position: CombatPosition,
     successor_features: Vec<i32>,
+    successor_semantic_features: Vec<CombatStateFeatureV1>,
     evidence: SuccessorEvidence,
 }
 
@@ -256,7 +262,7 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
         if let Some(cached) = cached {
             let config_value = serde_json::to_value(config).map_err(|error| error.to_string())?;
             if cached.get("schema_name").and_then(Value::as_str) == Some(CORPUS_SCHEMA)
-                && cached.get("schema_version").and_then(Value::as_u64) == Some(1)
+                && cached.get("schema_version").and_then(Value::as_u64) == Some(2)
                 && cached.get("source_identity").and_then(Value::as_str)
                     == Some(source_identity.as_str())
                 && cached.get("input_fingerprint").and_then(Value::as_str)
@@ -280,10 +286,11 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
     }
     let corpus = BoundarySuccessorCorpus {
         schema_name: CORPUS_SCHEMA.to_string(),
-        schema_version: 1,
+        schema_version: 2,
         source_identity,
         input_fingerprint,
-        feature_schema: FEATURE_SCHEMA.to_string(),
+        guide_feature_schema: GUIDE_FEATURE_SCHEMA.to_string(),
+        semantic_feature_schema: COMBAT_STATE_FEATURE_SCHEMA_V1.to_string(),
         manifest: manifest_path,
         config,
         groups,
@@ -507,6 +514,7 @@ fn build_group(
             &root_position.combat,
         ),
         root_features: typed_combat_feature_components_v1(&root_position),
+        root_semantic_features: semantic_combat_state_features_v1(&root_position),
         verified_successor_exact_state_hash: verified_successor_hash,
         verified_successor_generated: verified_policy_rank.is_some(),
         verified_successor_policy_rank: verified_policy_rank,
@@ -604,6 +612,7 @@ fn build_candidate(
         negative_log_policy: option.negative_log_policy(),
         successor_position: option.exact_successor().clone(),
         successor_features: typed_combat_feature_components_v1(option.exact_successor()),
+        successor_semantic_features: semantic_combat_state_features_v1(option.exact_successor()),
         evidence,
     })
 }
