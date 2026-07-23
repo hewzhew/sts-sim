@@ -1,5 +1,7 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
+mod boundary_successor_corpus;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -543,6 +545,15 @@ enum Command {
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+    },
+    /// Build offline complete-turn successor evidence from verified witnesses.
+    ///
+    /// This command never changes a production policy. Exact wins,
+    /// exhaustive refutations, and budget-unknown observations remain
+    /// distinct in the exported corpus.
+    BuildBoundarySuccessorCorpus {
+        #[command(flatten)]
+        args: boundary_successor_corpus::BoundarySuccessorCorpusArgs,
     },
     /// Distill several exact terminal witnesses from one compact manifest.
     /// Relative case and action paths are resolved beside the manifest.
@@ -2044,6 +2055,10 @@ fn main() -> Result<(), String> {
                 "artifact_source_trajectory_count": artifact_value.source_trajectory_count,
                 "audit": audit,
             }))
+        }
+        Command::BuildBoundarySuccessorCorpus { args } => {
+            let summary = boundary_successor_corpus::build(args)?;
+            print_json(&summary)
         }
         Command::CombatCaseLocalGraph {
             case,

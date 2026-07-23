@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""Fit a diagnostic complete-turn successor ranker.
+
+The corpus keeps exact wins, exact refutations, terminal non-wins, and bounded
+unknowns separate. Only exact wins versus exact non-wins form training pairs;
+BudgetUnknown candidates are scored for ranking but never become negatives.
+
+This is deliberately an offline representation test. It does not emit a Rust
+runtime policy and it does not authorize production search changes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+
+@dataclass(frozen=True)
+class Candidate:
+    group_id: str
+    split: str
+    policy_rank: int
+    exact_hash: str
+    evidence: str
+    features: np.ndarray
+
+    @property
+    def exact_label(self) -> int | None:
+        if self.evidence == "exact_win":
+            return 1
+        if self.evidence in {"exact_refutation", "exact_terminal_non_win"}:
+            return 0
+        return None
+
+
+@dataclass
+class Group:
+    group_id: str
+    split: str
+    verified_hash: str
+    verified_policy_rank: int | None
+    candidates: list[Candidate]
+
+
+def main() -> int:
+    args = parse_args()
+    corpus = json.loads(args.input.read_text(encoding="utf-8"))
+    if corpus.get("schema_name") != "BoundarySuccessorCorpusV1":
+        raise SystemExit(f"unsupported corpus schema: {corpus.get('schema_name')}")
+    groups = load_groups(corpus)
+    train_groups = [group for group in groups if group.split == "train"]
+    eval_groups = [group for group in groups if group.split == "eval"]
+    x, y, pair_count = pairwise_examples(train_groups)
+    if pair_count == 0:
+        raise SystemExit("training groups contain no exact win/non-win pairs")
+
+    model = fit_model(x, y, args.c)
+    training_rankings = [rank_group(model, group) for group in train_groups]
+    leave_one_out = leave_one_group_out(train_groups, args.c)
+    evaluation_rankings = [rank_group(model, group) for group in eval_groups]
+    report = {
+        "schema_name": "BoundarySuccessorRankerReportV1",
+        "schema_version": 1,
+        "authority": "offline_diagnostic_only",
+        "input": str(args.input),
+        "feature_schema": corpus.get("feature_schema"),
+        "training_contract": (
+            "pairwise exact-win versus exact-refutation-or-terminal-non-win; "
+            "BudgetUnknown excluded from labels"
+        ),
+        "training": {
+            "groups": len(train_groups),
+            "pair_count": pair_count,
+            "candidate_evidence": evidence_counts(train_groups),
+            "group_rankings": training_rankings,
+            "leave_one_group_out": leave_one_out,
+        },
+        "evaluation": {
+            "groups": len(eval_groups),
+            "candidate_evidence": evidence_counts(eval_groups),
+            "group_rankings": evaluation_rankings,
+        },
+        "offline_gate": offline_gate(leave_one_out, evaluation_rankings),
+        "limitations": [
+            "the feature vector is composed from existing handwritten guide components",
+            "a few adjacent boundaries from one exact fight are a representation probe, not generalization evidence",
+            "unresolved successors may also be winning and are never scored as incorrect labels",
+            "the model is not loadable by production search",
+        ],
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    if args.report_out:
+        args.report_out.parent.mkdir(parents=True, exist_ok=True)
+        args.report_out.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Train an offline pairwise complete-turn successor ranker."
+    )
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--report-out", type=Path)
+    parser.add_argument(
+        "--c",
+        type=float,
+        default=0.1,
+        help="Inverse L2 regularization strength for the diagnostic linear model.",
+    )
+    return parser.parse_args()
+
+
+def load_groups(corpus: dict[str, Any]) -> list[Group]:
+    groups: list[Group] = []
+    feature_width: int | None = None
+    for raw_group in corpus.get("groups", []):
+        group_id = str(raw_group["id"])
+        split = str(raw_group["split"])
+        candidates: list[Candidate] = []
+        for raw_candidate in raw_group.get("candidates", []):
+            features = squash(
+                np.asarray(raw_candidate["successor_features"], dtype=float)
+            )
+            if feature_width is None:
+                feature_width = int(features.shape[0])
+            if features.shape != (feature_width,):
+                raise SystemExit(
+                    f"candidate {group_id}/{raw_candidate['policy_rank']} has "
+                    f"feature width {features.shape}, expected {(feature_width,)}"
+                )
+            candidates.append(
+                Candidate(
+                    group_id=group_id,
+                    split=split,
+                    policy_rank=int(raw_candidate["policy_rank"]),
+                    exact_hash=str(raw_candidate["exact_successor_hash"]),
+                    evidence=str(raw_candidate["evidence"]["kind"]),
+                    features=features,
+                )
+            )
+        groups.append(
+            Group(
+                group_id=group_id,
+                split=split,
+                verified_hash=str(
+                    raw_group["verified_successor_exact_state_hash"]
+                ),
+                verified_policy_rank=raw_group.get(
+                    "verified_successor_policy_rank"
+                ),
+                candidates=candidates,
+            )
+        )
+    if not groups:
+        raise SystemExit("corpus has no groups")
+    return groups
+
+
+def squash(features: np.ndarray) -> np.ndarray:
+    return np.clip(np.arcsinh(features) / 8.0, -1.0, 1.0)
+
+
+def pairwise_examples(
+    groups: Iterable[Group],
+) -> tuple[np.ndarray, np.ndarray, int]:
+    rows: list[np.ndarray] = []
+    labels: list[int] = []
+    pairs = 0
+    for group in groups:
+        positives = [
+            candidate for candidate in group.candidates if candidate.exact_label == 1
+        ]
+        negatives = [
+            candidate for candidate in group.candidates if candidate.exact_label == 0
+        ]
+        for positive in positives:
+            for negative in negatives:
+                difference = positive.features - negative.features
+                rows.extend([difference, -difference])
+                labels.extend([1, 0])
+                pairs += 1
+    if not rows:
+        width = next(
+            (
+                candidate.features.shape[0]
+                for group in groups
+                for candidate in group.candidates
+            ),
+            0,
+        )
+        return np.empty((0, width), dtype=float), np.empty((0,), dtype=int), 0
+    return np.stack(rows), np.asarray(labels, dtype=int), pairs
+
+
+def fit_model(x: np.ndarray, y: np.ndarray, c: float) -> Pipeline:
+    if c <= 0.0:
+        raise SystemExit("--c must be positive")
+    model = Pipeline(
+        [
+            ("scale", StandardScaler()),
+            (
+                "ranker",
+                LogisticRegression(
+                    C=c,
+                    max_iter=1_000,
+                    solver="liblinear",
+                    random_state=0,
+                ),
+            ),
+        ]
+    )
+    model.fit(x, y)
+    return model
+
+
+def rank_group(model: Pipeline, group: Group) -> dict[str, Any]:
+    if not group.candidates:
+        return {
+            "group_id": group.group_id,
+            "verified_policy_rank": group.verified_policy_rank,
+            "verified_model_rank": None,
+            "candidates": [],
+        }
+    scores = model.decision_function(
+        np.stack([candidate.features for candidate in group.candidates])
+    )
+    ranked = sorted(
+        zip(group.candidates, scores, strict=True),
+        key=lambda pair: (-float(pair[1]), pair[0].policy_rank),
+    )
+    verified_model_rank = next(
+        (
+            index
+            for index, (candidate, _) in enumerate(ranked, start=1)
+            if candidate.exact_hash == group.verified_hash
+        ),
+        None,
+    )
+    score_by_hash = {
+        candidate.exact_hash: float(score)
+        for candidate, score in zip(group.candidates, scores, strict=True)
+    }
+    positives = [
+        candidate for candidate in group.candidates if candidate.exact_label == 1
+    ]
+    negatives = [
+        candidate for candidate in group.candidates if candidate.exact_label == 0
+    ]
+    known_pairs = [(positive, negative) for positive in positives for negative in negatives]
+    model_pairwise_accuracy = pairwise_accuracy(
+        known_pairs,
+        lambda candidate: score_by_hash[candidate.exact_hash],
+        higher_is_better=True,
+    )
+    policy_pairwise_accuracy = pairwise_accuracy(
+        known_pairs,
+        lambda candidate: float(candidate.policy_rank),
+        higher_is_better=False,
+    )
+    return {
+        "group_id": group.group_id,
+        "verified_policy_rank": group.verified_policy_rank,
+        "verified_model_rank": verified_model_rank,
+        "known_candidate_count": len(group.candidates),
+        "known_pair_count": len(known_pairs),
+        "model_pairwise_accuracy": model_pairwise_accuracy,
+        "policy_pairwise_accuracy": policy_pairwise_accuracy,
+        "known_ordering_pass": (
+            None
+            if not known_pairs
+            else all(
+                score_by_hash[positive.exact_hash]
+                > score_by_hash[negative.exact_hash]
+                for positive, negative in known_pairs
+            )
+        ),
+        "ranked_candidates": [
+            {
+                "model_rank": index,
+                "policy_rank": candidate.policy_rank,
+                "evidence": candidate.evidence,
+                "is_verified_successor": candidate.exact_hash == group.verified_hash,
+                "score": float(score),
+            }
+            for index, (candidate, score) in enumerate(ranked, start=1)
+        ],
+    }
+
+
+def pairwise_accuracy(
+    pairs: list[tuple[Candidate, Candidate]],
+    value: Any,
+    *,
+    higher_is_better: bool,
+) -> float | None:
+    if not pairs:
+        return None
+    credit = 0.0
+    for positive, negative in pairs:
+        positive_value = float(value(positive))
+        negative_value = float(value(negative))
+        if positive_value == negative_value:
+            credit += 0.5
+        elif (positive_value > negative_value) == higher_is_better:
+            credit += 1.0
+    return credit / len(pairs)
+
+
+def offline_gate(
+    leave_one_out: list[dict[str, Any]],
+    evaluation_rankings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    held_out_rankings = [
+        item["ranking"]
+        for item in leave_one_out
+        if item.get("status") == "scored" and item.get("ranking")
+    ]
+    held_out_complete = len(held_out_rankings) == len(leave_one_out)
+    held_out_pass = held_out_complete and all(
+        ranking.get("known_ordering_pass") is True
+        and ranking.get("model_pairwise_accuracy", 0.0)
+        >= ranking.get("policy_pairwise_accuracy", 1.0)
+        for ranking in held_out_rankings
+    )
+    evaluation_has_exact_pairs = bool(evaluation_rankings) and all(
+        ranking.get("known_pair_count", 0) > 0 for ranking in evaluation_rankings
+    )
+    evaluation_pass = evaluation_has_exact_pairs and all(
+        ranking.get("known_ordering_pass") is True
+        and ranking.get("model_pairwise_accuracy", 0.0)
+        >= ranking.get("policy_pairwise_accuracy", 1.0)
+        for ranking in evaluation_rankings
+    )
+    if not held_out_pass:
+        status = "fail_leave_one_boundary_out"
+    elif not evaluation_has_exact_pairs:
+        status = "blocked_missing_exact_eval_pairs"
+    elif not evaluation_pass:
+        status = "fail_held_out_evaluation"
+    else:
+        status = "pass"
+    return {
+        "status": status,
+        "eligible_for_shadow_search": status == "pass",
+        "requirements": {
+            "all_training_boundaries_scored_when_held_out": held_out_complete,
+            "all_held_out_known_win_non_win_pairs_ordered_correctly": held_out_pass,
+            "all_evaluation_boundaries_have_exact_win_non_win_pairs": (
+                evaluation_has_exact_pairs
+            ),
+            "all_evaluation_known_pairs_ordered_correctly": evaluation_pass,
+        },
+    }
+
+
+def leave_one_group_out(
+    groups: list[Group], c: float
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for held_out in groups:
+        remaining = [group for group in groups if group.group_id != held_out.group_id]
+        x, y, pair_count = pairwise_examples(remaining)
+        if pair_count == 0:
+            results.append(
+                {
+                    "held_out_group": held_out.group_id,
+                    "status": "insufficient_exact_pairs",
+                }
+            )
+            continue
+        model = fit_model(x, y, c)
+        results.append(
+            {
+                "held_out_group": held_out.group_id,
+                "status": "scored",
+                "training_pair_count": pair_count,
+                "ranking": rank_group(model, held_out),
+            }
+        )
+    return results
+
+
+def evidence_counts(groups: Iterable[Group]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for group in groups:
+        for candidate in group.candidates:
+            counts[candidate.evidence] = counts.get(candidate.evidence, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
