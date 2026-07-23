@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
@@ -83,6 +84,46 @@ pub struct CombatPolicyWitnessProposal {
     pub final_hp_hint: i32,
 }
 
+/// One non-authoritative, bounded lookahead observation for an exact combat
+/// state. The planner may use its guide rank to order future exact work, but
+/// the observation cannot create a successor or claim a terminal outcome.
+#[derive(Clone, Debug)]
+pub struct CombatLookaheadEvaluation {
+    pub guide: CombatStateGuide,
+    /// Deterministic evaluator work consumed by this observation. Implementors
+    /// normally count simulated player inputs.
+    pub work: usize,
+}
+
+/// Optional expensive state guidance, scheduled lazily by the planner.
+///
+/// This is deliberately separate from `CombatActionPolicy`: cheap static
+/// ranks are available when a node is admitted, while lookahead is paid for
+/// only after the exact node receives evaluator service.
+pub trait CombatLookaheadEvaluator: Send + Sync {
+    /// The guide rank used before this exact state has been evaluated. Returning
+    /// `None` means that the evaluator does not apply to this state.
+    fn pending_guide(&self, position: &CombatPosition) -> Option<CombatStateGuide>;
+
+    /// Whether one mid-turn exact state should pay for lookahead when it is
+    /// naturally selected for expansion. This admission hook prevents an
+    /// expensive evaluator from being run eagerly for every generated state.
+    fn admit_atomic_state(
+        &self,
+        position: &CombatPosition,
+        atomic_expansions_before: usize,
+    ) -> bool;
+
+    /// Evaluate one exact state within the caller-owned work and time bounds.
+    /// Returning `None` leaves the state pending so a later quantum may retry.
+    fn evaluate(
+        &self,
+        position: &CombatPosition,
+        max_work: usize,
+        deadline: Option<Instant>,
+    ) -> Option<CombatLookaheadEvaluation>;
+}
+
 /// Supplies search guidance only. Returning a small weight never changes
 /// legality, and invalid weights are treated as neutral rather than trusted.
 pub trait CombatActionPolicy: Send + Sync {
@@ -140,6 +181,7 @@ impl CombatActionPolicy for UniformCombatActionPolicy {
 }
 
 pub type SharedCombatActionPolicy = Arc<dyn CombatActionPolicy>;
+pub type SharedCombatLookaheadEvaluator = Arc<dyn CombatLookaheadEvaluator>;
 
 pub(crate) fn uniform_policy() -> SharedCombatActionPolicy {
     Arc::new(UniformCombatActionPolicy)

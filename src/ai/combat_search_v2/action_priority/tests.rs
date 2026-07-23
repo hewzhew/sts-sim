@@ -1034,6 +1034,35 @@ fn key_card_setup_bias_promotes_strength_scaling_power() {
 }
 
 #[test]
+fn second_wind_without_non_attack_fuel_is_not_ranked_as_block() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 80;
+    monster.max_hp = 80;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::SecondWind, 10),
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::PommelStrike, 12),
+    ];
+
+    let second_wind = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(second_wind.block, 0);
+    assert_eq!(second_wind.role, ActionOrderingRole::UtilityPlay);
+}
+
+#[test]
 fn premature_fiend_fire_waits_behind_access_when_it_would_burn_key_hand_resources() {
     let mut combat = blank_test_combat();
     let mut monster = test_monster(EnemyId::JawWorm);

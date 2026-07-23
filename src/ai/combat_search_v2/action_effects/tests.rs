@@ -29,11 +29,7 @@ fn artifact_blocks_disarm_in_action_effect_facts() {
     combat.entities.monsters = vec![guardian];
     insert_power(&mut combat, 1, PowerId::Artifact, 1);
 
-    let facts = card_play_effect_facts(
-        &combat,
-        &CombatCard::new(CardId::Disarm, 10),
-        Some(1),
-    );
+    let facts = card_play_effect_facts(&combat, &CombatCard::new(CardId::Disarm, 10), Some(1));
 
     assert_eq!(facts.direct.persistent_enemy_strength_down, 0);
     assert_eq!(facts.direct.temporary_enemy_strength_down, 0);
@@ -48,11 +44,7 @@ fn artifact_is_consumed_in_card_action_order_before_later_debuffs() {
     combat.entities.monsters = vec![guardian];
     insert_power(&mut combat, 1, PowerId::Artifact, 1);
 
-    let facts = card_play_effect_facts(
-        &combat,
-        &CombatCard::new(CardId::Shockwave, 10),
-        None,
-    );
+    let facts = card_play_effect_facts(&combat, &CombatCard::new(CardId::Shockwave, 10), None);
 
     assert_eq!(facts.direct.enemy_weak, 0, "the first debuff is absorbed");
     assert_eq!(
@@ -69,11 +61,7 @@ fn enough_artifact_blocks_every_direct_debuff_from_one_card() {
     combat.entities.monsters = vec![guardian];
     insert_power(&mut combat, 1, PowerId::Artifact, 2);
 
-    let facts = card_play_effect_facts(
-        &combat,
-        &CombatCard::new(CardId::Shockwave, 10),
-        None,
-    );
+    let facts = card_play_effect_facts(&combat, &CombatCard::new(CardId::Shockwave, 10), None);
 
     assert_eq!(facts.direct.enemy_weak, 0);
     assert_eq!(facts.direct.enemy_vulnerable, 0);

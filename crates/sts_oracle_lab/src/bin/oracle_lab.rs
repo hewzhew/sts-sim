@@ -29,6 +29,9 @@ use sts_combat_planner::{
     SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction, TurnOptionGenerationStatus,
     TurnOptionGeneratorConfig, TurnOptionGeneratorSession, UniformCombatActionPolicy,
 };
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+};
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
@@ -38,10 +41,14 @@ use sts_simulator::eval::combat_action_imitation::{
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
+use sts_simulator::eval::combat_search_v2::{
+    run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
+    CombatSearchV2RunOptions,
+};
 use sts_simulator::eval::run_control::{
-    existing_combat_knowledge_policy_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
-    ExistingCombatKnowledgeAdvisorV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
-    RunProgressStepV1,
+    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
+    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
+    OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1, RunProgressStepV1,
 };
 use sts_simulator::runtime::branch::{
     load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
@@ -377,6 +384,14 @@ enum Command {
         /// the root player turn, then restore all guides at later turns.
         #[arg(long, conflicts_with = "anchor_only")]
         root_turn_anchor_only: bool,
+        /// Opt-in capability migration: lazily evaluate selected exact states
+        /// with bounded rollout evidence. Rollout actions are never injected.
+        #[arg(
+            long,
+            conflicts_with = "anchor_only",
+            conflicts_with = "root_turn_anchor_only"
+        )]
+        rollout_lookahead: bool,
         /// Optional typed action-order policy distilled from exact witnesses.
         /// It changes guidance only; legality and terminal truth stay exact.
         #[arg(long)]
@@ -599,6 +614,30 @@ enum Command {
         /// Lab-only control: keep action weights but disable all state guides.
         #[arg(long)]
         anchor_only: bool,
+        /// Include every target-prefix queue snapshot. By default the report
+        /// stays compact and includes only the last reached and first missing
+        /// prefixes.
+        #[arg(long)]
+        full: bool,
+    },
+    /// Compare the mature V2 search with and without rollout guidance on the
+    /// same exact combat root. This is a compact capability ablation; it
+    /// cannot seed or alter production search.
+    V2CapabilityAudit {
+        #[arg(long)]
+        case: PathBuf,
+        /// Optional verified witness used only to identify the expected first
+        /// turn successor in both runs.
+        #[arg(long)]
+        corridor_actions: Option<PathBuf>,
+        #[arg(long, default_value_t = 250_000)]
+        max_nodes: usize,
+        #[arg(long, default_value_t = 5_000)]
+        wall_ms: u64,
+        #[arg(long, default_value_t = 1_024)]
+        quantum_nodes: usize,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
     },
     /// Audit action-policy order and exact one-step successor guides at one turn prefix.
     TurnActionAudit {
@@ -2010,6 +2049,7 @@ fn main() -> Result<(), String> {
             case,
             anchor_only,
             root_turn_anchor_only,
+            rollout_lookahead,
             action_imitation_artifact,
             value_prototype_artifact,
             diagnostic_corridor_actions,
@@ -2052,6 +2092,14 @@ fn main() -> Result<(), String> {
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work,
+                backed_generation_quantum_work: 256,
+                initial_expansion_work: 64,
+                root_initial_expansion_work: 2_048,
+                // Backed search charges every rollout to the same deterministic
+                // work allowance as exact generation. The count guard merely
+                // prevents more evaluations than that allowance can finance.
+                lookahead_max_evaluations: max_nodes.saturating_div(24).max(1),
+                lookahead_work_per_evaluation: 24,
                 max_turn_depth,
                 satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
             };
@@ -2085,7 +2133,16 @@ fn main() -> Result<(), String> {
             } else {
                 policy
             };
-            let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
+            let mut session = if rollout_lookahead {
+                LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+                    root,
+                    config,
+                    policy,
+                    existing_combat_rollout_lookahead_v1(),
+                )
+            } else {
+                LocalTurnGraphWitnessSession::with_policy(root, config, policy)
+            };
             let report = session.advance(
                 LocalTurnGraphWitnessQuantum {
                     additional_selections: max_selections,
@@ -2188,6 +2245,11 @@ fn main() -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
             }
+            let watched_corridor_output = if readable {
+                watched_corridor.clone().unwrap_or(Value::Null)
+            } else {
+                compact_local_corridor_report(watched_corridor.as_ref())
+            };
             print_json(&json!({
                 "schema_name": "LocalTurnGraphCombatSearchReportV1",
                 "schema_version": 1,
@@ -2205,6 +2267,8 @@ fn main() -> Result<(), String> {
                     "anchor_only"
                 } else if root_turn_anchor_only {
                     "root_turn_anchor_then_guides"
+                } else if rollout_lookahead {
+                    "anchor_guides_and_lazy_rollout_lookahead"
                 } else {
                     "anchor_and_guides"
                 },
@@ -2224,6 +2288,12 @@ fn main() -> Result<(), String> {
                     "selections": report.counters.selections,
                     "node_visits": report.counters.node_visits,
                     "generation_work": report.counters.generation_work,
+                    "lookahead_evaluations": report.counters.lookahead_evaluations,
+                    "lookahead_work": report.counters.lookahead_work,
+                    "atomic_lookahead_evaluations": report.counters.atomic_lookahead_evaluations,
+                    "atomic_lookahead_work": report.counters.atomic_lookahead_work,
+                    "boundary_lookahead_evaluations": report.counters.boundary_lookahead_evaluations,
+                    "boundary_lookahead_work": report.counters.boundary_lookahead_work,
                     "engine_steps": report.counters.engine_steps,
                     "exact_nodes": report.counters.exact_nodes,
                     "exact_edges": report.counters.exact_edges,
@@ -2243,17 +2313,17 @@ fn main() -> Result<(), String> {
                     "max_player_turn": progress.max_player_turn,
                     "max_path_atomic_depth": progress.max_path_atomic_depth,
                     "deepest_survival_state": progress.deepest_survival_state,
-                    "deepest_survival_actions": progress.deepest_survival_actions,
+                    "deepest_survival_actions": readable.then_some(&progress.deepest_survival_actions),
                     "deepest_survival_trace": deepest_survival_trace,
                     "deepest_progress_state": progress.deepest_progress_state,
-                    "deepest_progress_actions": progress.deepest_progress_actions,
+                    "deepest_progress_actions": readable.then_some(&progress.deepest_progress_actions),
                     "deepest_progress_trace": deepest_progress_trace,
                     "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
                 },
                 "witness_trace": witness_trace,
                 "generation_gap_count": report.generation_gaps.len(),
                 "watched_states": watched_states,
-                "watched_corridor": watched_corridor,
+                "watched_corridor": watched_corridor_output,
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
@@ -4847,6 +4917,7 @@ fn main() -> Result<(), String> {
             quantum_work,
             max_engine_steps_per_transition,
             anchor_only,
+            full,
         } => {
             let (root_position, target, selected_corridor_rank) =
                 match (actions.as_ref(), corridor_actions.as_slice(), corridor_rank) {
@@ -5048,7 +5119,20 @@ fn main() -> Result<(), String> {
                     })
                 })
                 .collect::<Vec<_>>();
-            print_json(&serde_json::json!({
+            let last_reached_prefix = target_prefix_membership
+                .iter()
+                .rev()
+                .find(|prefix| {
+                    prefix.get("seen").and_then(serde_json::Value::as_bool) == Some(true)
+                })
+                .cloned();
+            let first_missing_prefix = target_prefix_membership
+                .iter()
+                .find(|prefix| {
+                    prefix.get("seen").and_then(serde_json::Value::as_bool) == Some(false)
+                })
+                .cloned();
+            let mut output = serde_json::json!({
                 "schema_name": "OracleTurnMembershipProbeV1",
                 "schema_version": 1,
                 "scheduler": if anchor_only { "anchor_only" } else { "anchor_and_guides" },
@@ -5058,7 +5142,8 @@ fn main() -> Result<(), String> {
                 "corridor_rank": selected_corridor_rank,
                 "target_successor_exact_state_hash": target_successor_exact_state_hash,
                 "target_policy_trace": target_policy_trace,
-                "target_prefix_membership": target_prefix_membership,
+                "last_reached_prefix": last_reached_prefix,
+                "first_missing_prefix": first_missing_prefix,
                 "status": format!("{:?}", last_status),
                 "elapsed_ms": started.elapsed().as_millis(),
                 "generation_work": counters.generation_work,
@@ -5072,6 +5157,131 @@ fn main() -> Result<(), String> {
                 "completed_turn_options": generator.completed_options().len(),
                 "retained_work_items": generator.retained_work_items(),
                 "finished": generator.is_finished(),
+            });
+            if full {
+                output
+                    .as_object_mut()
+                    .expect("membership report must be an object")
+                    .insert(
+                        "target_prefix_membership".to_owned(),
+                        serde_json::Value::Array(target_prefix_membership),
+                    );
+            }
+            print_json(&output)
+        }
+        Command::V2CapabilityAudit {
+            case,
+            corridor_actions,
+            max_nodes,
+            wall_ms,
+            quantum_nodes,
+            max_engine_steps_per_transition,
+        } => {
+            let loaded_case = load_combat_case(&case)?;
+            let expected_first_turn_successor = corridor_actions
+                .as_ref()
+                .map(|actions| {
+                    load_exact_turn_corridor(
+                        &case,
+                        std::slice::from_ref(actions),
+                        max_engine_steps_per_transition,
+                    )
+                })
+                .transpose()?
+                .and_then(|corridor| corridor.positions_by_rank.get(1).cloned())
+                .map(|position| {
+                    sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                        &position.engine,
+                        &position.combat,
+                    )
+                });
+            let loaded = CombatSearchV2LoadedStart {
+                label: format!("oracle_lab:{}", case.display()),
+                position: loaded_case.position,
+                artifact_trust_level: None,
+                fingerprints: None,
+            };
+            let run = |rollout_policy| {
+                run_combat_root_proposal_probe_v1(
+                    &loaded,
+                    CombatSearchV2RunOptions {
+                        max_nodes: Some(max_nodes),
+                        max_engine_steps_per_action: Some(max_engine_steps_per_transition),
+                        wall_ms: Some(wall_ms),
+                        potion_policy: Some(CombatSearchV2PotionPolicy::Never),
+                        max_potions_used: Some(0),
+                        rollout_policy: Some(rollout_policy),
+                        ..CombatSearchV2RunOptions::default()
+                    },
+                    quantum_nodes,
+                )
+            };
+            let baseline = run(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)?;
+            let without_rollout = run(CombatSearchV2RolloutPolicy::Disabled)?;
+            let root_rollout_started = Instant::now();
+            let root_rollout =
+                sts_simulator::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
+                    &loaded.position,
+                    80,
+                    Instant::now().checked_add(Duration::from_millis(wall_ms)),
+                );
+            let root_rollout_report = root_rollout.map(|proposal| {
+                let stepper = EngineCombatStepper;
+                let mut position = loaded.position.clone();
+                let mut replay_valid = true;
+                for input in &proposal.actions {
+                    if stepper.choice_for_legal_input(&position, input).is_none() {
+                        replay_valid = false;
+                        break;
+                    }
+                    let step = stepper.apply_to_stable(
+                        &position,
+                        input.clone(),
+                        CombatStepLimits {
+                            max_engine_steps: max_engine_steps_per_transition,
+                            deadline: None,
+                        },
+                    );
+                    if step.truncated || step.timed_out {
+                        replay_valid = false;
+                        break;
+                    }
+                    position = step.position;
+                }
+                json!({
+                    "elapsed_ms": root_rollout_started.elapsed().as_millis(),
+                    "action_count": proposal.actions.len(),
+                    "final_hp_hint": proposal.final_hp_hint,
+                    "replay_valid": replay_valid,
+                    "replay_terminal": format!("{:?}", stepper.terminal(&position)),
+                    "replay_final_hp": position.combat.entities.player.current_hp,
+                })
+            });
+            let compact = |report: &CombatRootProposalProbeV1Report| {
+                let expected_observation =
+                    expected_first_turn_successor.as_ref().and_then(|expected| {
+                        report
+                            .proposals
+                            .iter()
+                            .find(|proposal| proposal.successor_exact_state_hash == *expected)
+                    });
+                json!({
+                    "rollout_policy": report.config.rollout_policy,
+                    "proposal_count": report.proposals.len(),
+                    "expected_first_turn_successor_seen": expected_observation.is_some(),
+                    "expected_first_turn_successor": expected_observation,
+                    "summary": report.summary,
+                })
+            };
+            print_json(&json!({
+                "schema_name": "OracleV2CapabilityAuditV1",
+                "schema_version": 1,
+                "authority": "diagnostic_only_no_production_seeding",
+                "case": case,
+                "expected_first_turn_successor_hash": expected_first_turn_successor,
+                "root_rollout": root_rollout_report,
+                "baseline": compact(&baseline),
+                "without_rollout": compact(&without_rollout),
             }))
         }
         Command::View { workspace, node } => {
@@ -6051,15 +6261,20 @@ fn compact_corridor_report(report: Option<&Value>) -> Value {
                 .unwrap_or(false)
         })
         .count();
-    let first_missing = states.iter().find_map(|state| {
+    let first_missing = states.iter().find(|state| {
         let accepted = state
             .get("membership")
             .and_then(|membership| membership.get("accepted"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        (!accepted)
-            .then(|| state.get("corridor_rank").cloned())
-            .flatten()
+        !accepted
+    });
+    let furthest_accepted = states.iter().rev().find(|state| {
+        state
+            .get("membership")
+            .and_then(|membership| membership.get("accepted"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
     });
     json!({
         "kind": report.get("kind"),
@@ -6067,8 +6282,51 @@ fn compact_corridor_report(report: Option<&Value>) -> Value {
         "authority": report.get("authority"),
         "exact_turn_states": report.get("exact_turn_states"),
         "accepted_turn_states": reached,
-        "first_missing_rank": first_missing,
+        "first_missing_rank": first_missing
+            .and_then(|state| state.get("corridor_rank")),
+        "first_missing": first_missing,
+        "furthest_accepted": furthest_accepted,
         "terminal": report.get("terminal"),
+        "terminal_final_hp": report.get("terminal_final_hp"),
+    })
+}
+
+fn compact_local_corridor_report(report: Option<&Value>) -> Value {
+    let Some(report) = report else {
+        return Value::Null;
+    };
+    let states = report
+        .get("states")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let reached = states
+        .iter()
+        .filter(|state| state.get("state").is_some_and(|value| !value.is_null()))
+        .count();
+    let first_missing = states
+        .iter()
+        .find(|state| state.get("state").is_none_or(Value::is_null));
+    let furthest_reached_index = states
+        .iter()
+        .rposition(|state| state.get("state").is_some_and(|value| !value.is_null()));
+    let furthest_reached = furthest_reached_index.and_then(|index| states.get(index));
+    let incoming_to_furthest = furthest_reached_index
+        .and_then(|index| index.checked_sub(1))
+        .and_then(|index| states.get(index))
+        .and_then(|state| state.get("outgoing_to_next"))
+        .filter(|value| !value.is_null());
+    json!({
+        "authority": report.get("authority"),
+        "changes_search_order": report.get("changes_search_order"),
+        "action_count": report.get("action_count"),
+        "exact_turn_states": report.get("exact_turn_states"),
+        "reached_turn_states": reached,
+        "first_missing_rank": first_missing
+            .and_then(|state| state.get("corridor_rank")),
+        "first_missing": first_missing,
+        "incoming_to_furthest": incoming_to_furthest,
+        "furthest_reached": furthest_reached,
         "terminal_final_hp": report.get("terminal_final_hp"),
     })
 }

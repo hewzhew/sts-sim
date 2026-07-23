@@ -39,15 +39,24 @@ pub(super) fn priority_for_play_card(
     let def = cards::get_card_definition(card.id);
     let target_kind = cards::effective_target(card);
     let resource_timing = resource_timing_facts_for_play(combat, card_index, target);
-    let declared_damage = evaluated
-        .base_damage_mut
-        .max(resource_timing.conversion_damage_hint)
-        .max(0);
+    let declared_damage = if card.id == cards::CardId::FiendFire {
+        resource_timing.conversion_damage_hint
+    } else {
+        evaluated
+            .base_damage_mut
+            .max(resource_timing.conversion_damage_hint)
+    }
+    .max(0);
     let effects = card_play_effect_facts(combat, card, target);
     let effect_diagnostics = effects.diagnostics();
-    let block = evaluated
-        .base_block_mut
-        .max(resource_timing.conversion_block_hint)
+    let declared_block = if card.id == cards::CardId::SecondWind {
+        resource_timing.conversion_block_hint
+    } else {
+        evaluated
+            .base_block_mut
+            .max(resource_timing.conversion_block_hint)
+    };
+    let block = declared_block
         .max(0)
         .saturating_add(effects.reactive.player_block);
     let phase_transition = enemy_phase_transition_hint_for_input_with_effects(

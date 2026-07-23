@@ -889,12 +889,16 @@ fn compact_run_combat_progress(combat: Option<&Value>) -> Value {
 }
 
 fn compact_live_combat_trace(diagnostic: &Value) -> Value {
+    let root_actions = compact_root_action_report(diagnostic);
     json!({
         "node": diagnostic.get("node"),
         "root": diagnostic.get("root"),
         "search": diagnostic.get("search"),
         "root_policy_top": compact_policy_top(diagnostic.get("root_policy"), 8),
-        "root_action_families": diagnostic.get("root_action_families"),
+        "root_action_summary": {
+            "totals": root_actions.get("totals"),
+            "families_by_reachable_work": root_actions.get("families_by_reachable_work"),
+        },
         "progress_trace": compact_replayed_trace(diagnostic.get("deepest_progress_trace")),
         "survival_trace": compact_replayed_trace(diagnostic.get("deepest_survival_trace")),
     })
@@ -1499,7 +1503,9 @@ fn validate_session_name(session: &str) -> Result<(), String> {
             .next()
             .is_some_and(|character| character.is_ascii_alphanumeric())
     {
-        return Err(format!("invalid oracle session name `{session}`; use 1-64 ASCII letters, digits, '.', '_' or '-', starting with a letter or digit"));
+        return Err(format!(
+            "invalid oracle session name `{session}`; use 1-64 ASCII letters, digits, '.', '_' or '-', starting with a letter or digit"
+        ));
     }
     Ok(())
 }
@@ -1907,6 +1913,10 @@ D:\rust\src\bin\oracle_lab.rs:
         });
         let compact = compact_live_combat_trace(&diagnostic);
         assert_eq!(compact["root_policy_top"][1]["action"], "play Offering");
+        assert_eq!(
+            compact["root_action_summary"]["families_by_reachable_work"],
+            json!([])
+        );
         assert_eq!(
             compact["progress_trace"]["turns"][0]["actions"],
             json!(["use BlockPotion", "end turn"])

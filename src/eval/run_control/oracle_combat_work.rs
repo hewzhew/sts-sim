@@ -181,6 +181,11 @@ impl OracleRunCombatWorkV1 {
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work: 4,
+                backed_generation_quantum_work: 256,
+                initial_expansion_work: 64,
+                root_initial_expansion_work: 2_048,
+                lookahead_max_evaluations: 384,
+                lookahead_work_per_evaluation: 24,
                 max_turn_depth: 32,
                 satisfaction,
             },

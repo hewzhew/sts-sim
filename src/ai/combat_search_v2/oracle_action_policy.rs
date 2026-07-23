@@ -15,6 +15,93 @@ use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
 use super::frontier::SearchNode;
 use super::value::combat_search_state_value;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleCombatRolloutGuideV1 {
+    pub components: Vec<i32>,
+    pub actions_simulated: usize,
+}
+
+/// Runs one bounded, non-authoritative tactical rollout and returns only its
+/// ordering evidence. The simulated actions are deliberately not exposed:
+/// callers must generate and replay their own exact witness.
+pub fn oracle_combat_rollout_guide_v1(
+    position: &CombatPosition,
+    max_actions: usize,
+    deadline: Option<Instant>,
+) -> OracleCombatRolloutGuideV1 {
+    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
+    let config = super::CombatSearchV2Config::default();
+    let mut performance = super::rollout_profile::RolloutPerformanceCounters::default();
+    let estimate = super::rollout::phase_aware_no_potion_rollout(
+        &node,
+        &EngineCombatStepper,
+        &config,
+        max_actions.max(1),
+        deadline,
+        &mut performance,
+    );
+    let (outcome, evidence) = if estimate.terminal == super::SearchTerminalLabel::Win {
+        // A simulated win is positive existence evidence. The caller still
+        // has to generate and replay its own exact witness.
+        (2, 2)
+    } else if estimate.evaluated {
+        // One bounded policy rollout that loses or runs out of horizon is not
+        // a refutation of the exact state. Keep it live and let the remaining
+        // typed coordinates order this heuristic sample.
+        (1, 1)
+    } else {
+        (1, 0)
+    };
+    let eval = super::value::combat_eval_from_rollout_estimate(&estimate);
+    let survival = match eval.survival_bucket() {
+        super::value::CombatEvalSurvivalBucket::DeadOrForcedLoss => 0,
+        super::value::CombatEvalSurvivalBucket::LethalVisible => 1,
+        super::value::CombatEvalSurvivalBucket::Critical => 2,
+        super::value::CombatEvalSurvivalBucket::Stabilizing => 3,
+        super::value::CombatEvalSurvivalBucket::Stable => 4,
+    };
+    let progress = match eval.progress_bucket() {
+        super::value::CombatEvalProgressBucket::Regression => 0,
+        super::value::CombatEvalProgressBucket::Stalled => 1,
+        super::value::CombatEvalProgressBucket::AttritionFavored => 2,
+        super::value::CombatEvalProgressBucket::RaceFavored => 3,
+        super::value::CombatEvalProgressBucket::LethalNextTurnLikely => 4,
+        super::value::CombatEvalProgressBucket::LethalNow => 5,
+    };
+    let phase_pressure = (estimate.special_enemy_phase_count
+        + estimate.guardian_mode_shift_pending_count
+        + estimate.lagavulin_waking_count
+        + estimate.sentry_dazed_pressure_count
+        + estimate.hexaghost_opening_pressure_count
+        + usize::from(estimate.high_fanout_pending_choice)) as i32
+        + estimate.gremlin_nob_anger_amount_total.max(0)
+        + estimate.pending_choice_estimated_action_fanout as i32;
+    OracleCombatRolloutGuideV1 {
+        // Positive existence evidence leads. Non-winning bounded rollouts
+        // remain live heuristic estimates rather than false refutations.
+        // Remaining coordinates are intentionally typed and lexicographic
+        // rather than collapsed into one score.
+        components: vec![
+            outcome,
+            evidence,
+            survival,
+            progress,
+            estimate.survival_margin,
+            estimate
+                .final_hp
+                .saturating_add(estimate.persistent_run_value),
+            estimate.final_hp,
+            estimate.persistent_run_value,
+            -estimate.phase_adjusted_enemy_effort,
+            -phase_pressure,
+            -((estimate.potions_used + estimate.potions_discarded) as i32),
+            -(estimate.turns as i32),
+            -(estimate.cards_played as i32),
+        ],
+        actions_simulated: estimate.actions_simulated,
+    }
+}
+
 /// Converts the existing typed action-ordering knowledge into positive,
 /// relative policy weights. The caller owns normalization and the uniform
 /// exploration floor.
@@ -796,3 +883,4 @@ mod tests {
         }
     }
 }
+use std::time::Instant;

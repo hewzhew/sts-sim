@@ -9,7 +9,8 @@ use sts_core::state::core::{ClientInput, EngineState};
 
 use super::policy::{
     normalized_probabilities, uniform_policy, CombatGuideLaneId, CombatPolicyChoice,
-    CombatStateGuideRank, SharedCombatActionPolicy,
+    CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
+    SharedCombatLookaheadEvaluator,
 };
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
@@ -25,6 +26,7 @@ struct PartialTurnOption {
     actions: Vec<TurnOptionAction>,
     atomic_depth: usize,
     negative_log_policy: f64,
+    lookahead_guide: Option<CombatStateGuide>,
 }
 
 #[derive(Clone, Debug)]
@@ -294,8 +296,12 @@ pub struct TurnOptionGeneratorSession {
     applied_action_transitions: usize,
     duplicate_exact_successors: usize,
     atomic_state_expansions: usize,
+    atomic_expand_services: usize,
     anchor_work_pops: usize,
     guided_work_pops: usize,
+    lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
+    lookahead_evaluations: usize,
+    lookahead_work: usize,
     used: CombatPlanningCounters,
     granted: CombatPlanningCounters,
 }
@@ -310,6 +316,24 @@ impl TurnOptionGeneratorSession {
         config: TurnOptionGeneratorConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
+        Self::with_optional_lookahead(root, config, policy, None)
+    }
+
+    pub fn with_policy_and_lookahead(
+        root: CombatDecisionRoot,
+        config: TurnOptionGeneratorConfig,
+        policy: SharedCombatActionPolicy,
+        lookahead_evaluator: SharedCombatLookaheadEvaluator,
+    ) -> Self {
+        Self::with_optional_lookahead(root, config, policy, Some(lookahead_evaluator))
+    }
+
+    fn with_optional_lookahead(
+        root: CombatDecisionRoot,
+        config: TurnOptionGeneratorConfig,
+        policy: SharedCombatActionPolicy,
+        lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
+    ) -> Self {
         let mut seen = HashSet::new();
         seen.insert(combat_exact_state_key(
             &root.position().engine,
@@ -320,6 +344,7 @@ impl TurnOptionGeneratorSession {
             actions: Vec::new(),
             atomic_depth: 0,
             negative_log_policy: 0.0,
+            lookahead_guide: None,
         });
         let mut session = Self {
             root,
@@ -338,8 +363,12 @@ impl TurnOptionGeneratorSession {
             applied_action_transitions: 0,
             duplicate_exact_successors: 0,
             atomic_state_expansions: 0,
+            atomic_expand_services: 0,
             anchor_work_pops: 0,
             guided_work_pops: 0,
+            lookahead_evaluator,
+            lookahead_evaluations: 0,
+            lookahead_work: 0,
             used: CombatPlanningCounters::default(),
             granted: CombatPlanningCounters::default(),
         };
@@ -534,6 +563,43 @@ impl TurnOptionGeneratorSession {
         self.guided_work_pops
     }
 
+    pub fn lookahead_evaluations(&self) -> usize {
+        self.lookahead_evaluations
+    }
+
+    pub fn lookahead_work(&self) -> usize {
+        self.lookahead_work
+    }
+
+    pub fn retained_lookahead_guides(&self) -> usize {
+        self.work
+            .iter()
+            .filter_map(Option::as_ref)
+            .filter(|work| {
+                matches!(
+                    work,
+                    GeneratorWork::Expand(PartialTurnOption {
+                        lookahead_guide: Some(_),
+                        ..
+                    })
+                )
+            })
+            .count()
+    }
+
+    pub(crate) fn retained_guide_lanes(&self) -> Vec<CombatGuideLaneId> {
+        self.guided_frontiers
+            .iter()
+            .filter(|frontier| {
+                frontier
+                    .entries
+                    .iter()
+                    .any(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            })
+            .map(|frontier| frontier.lane)
+            .collect()
+    }
+
     pub fn granted_budget(&self) -> CombatPlanningCounters {
         self.granted
     }
@@ -675,7 +741,25 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum, false)
+        self.advance_internal(stepper, quantum, false, 0, 0, 0)
+    }
+
+    pub fn advance_with_lookahead(
+        &mut self,
+        stepper: &dyn CombatStepper,
+        quantum: CombatPlanningQuantum,
+        lookahead_evaluations: usize,
+        lookahead_work: usize,
+        lookahead_work_per_evaluation: usize,
+    ) -> TurnOptionGenerationReport {
+        self.advance_internal(
+            stepper,
+            quantum,
+            false,
+            lookahead_evaluations,
+            lookahead_work,
+            lookahead_work_per_evaluation,
+        )
     }
 
     /// Service exactly one frozen anchor/guide scheduling round.
@@ -689,7 +773,7 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum, true)
+        self.advance_internal(stepper, quantum, true, 0, 0, 0)
     }
 
     fn advance_internal(
@@ -697,6 +781,9 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
         stop_after_one_round: bool,
+        mut remaining_lookahead_evaluations: usize,
+        mut remaining_lookahead_work: usize,
+        lookahead_work_per_evaluation: usize,
     ) -> TurnOptionGenerationReport {
         let before = self.used;
         let before_diagnostics = self.diagnostics();
@@ -771,7 +858,47 @@ impl TurnOptionGeneratorSession {
             self.next_scheduler_lane = (lane + 1) % self.guided_frontiers.len().saturating_add(1);
             self.used.generation_work = self.used.generation_work.saturating_add(1);
             match work {
-                GeneratorWork::Expand(partial) => {
+                GeneratorWork::Expand(mut partial) => {
+                    let expand_service_ordinal = self.atomic_expand_services;
+                    self.atomic_expand_services = self.atomic_expand_services.saturating_add(1);
+                    let should_evaluate = partial.lookahead_guide.is_none()
+                        && self.lookahead_evaluator.as_ref().is_some_and(|evaluator| {
+                            evaluator.admit_atomic_state(&partial.position, expand_service_ordinal)
+                        });
+                    if should_evaluate
+                        && remaining_lookahead_evaluations > 0
+                        && remaining_lookahead_work > 0
+                    {
+                        let priority = GeneratorWorkPriority::for_path(
+                            partial.atomic_depth,
+                            partial.negative_log_policy,
+                        );
+                        let max_work = lookahead_work_per_evaluation
+                            .max(1)
+                            .min(remaining_lookahead_work);
+                        let evaluation = self.lookahead_evaluator.as_ref().and_then(|evaluator| {
+                            evaluator.evaluate(&partial.position, max_work, quantum.deadline)
+                        });
+                        let Some(evaluation) = evaluation else {
+                            self.push_work(GeneratorWork::Expand(partial), priority);
+                            break Some(if deadline_reached(quantum.deadline) {
+                                GenerationInterruption::Deadline
+                            } else {
+                                GenerationInterruption::GenerationWorkBudget
+                            });
+                        };
+                        debug_assert!(evaluation.work <= max_work);
+                        let charged_work = evaluation.work.max(1).min(max_work);
+                        partial.lookahead_guide = Some(evaluation.guide);
+                        self.lookahead_evaluations = self.lookahead_evaluations.saturating_add(1);
+                        self.lookahead_work = self.lookahead_work.saturating_add(charged_work);
+                        remaining_lookahead_evaluations =
+                            remaining_lookahead_evaluations.saturating_sub(1);
+                        remaining_lookahead_work =
+                            remaining_lookahead_work.saturating_sub(charged_work);
+                        self.push_work(GeneratorWork::Expand(partial), priority);
+                        continue;
+                    }
                     self.atomic_state_expansions = self.atomic_state_expansions.saturating_add(1);
                     self.expand(stepper, partial);
                 }
@@ -949,6 +1076,7 @@ impl TurnOptionGeneratorSession {
                 actions,
                 atomic_depth: action.atomic_depth,
                 negative_log_policy: action.negative_log_policy,
+                lookahead_guide: None,
             };
             let terminal = stepper.terminal(&partial.position);
             if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
@@ -1122,7 +1250,17 @@ impl TurnOptionGeneratorSession {
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
         debug_assert!(priority.levin_log_priority.is_finite());
-        let guides = self.policy.turn_generation_guides(work.position());
+        let mut guides = self.policy.turn_generation_guides(work.position());
+        if let GeneratorWork::Expand(partial) = &work {
+            if let Some(lookahead) = partial.lookahead_guide.as_ref() {
+                if let Some(existing) = guides.iter_mut().find(|guide| guide.lane == lookahead.lane)
+                {
+                    *existing = lookahead.clone();
+                } else {
+                    guides.push(lookahead.clone());
+                }
+            }
+        }
         let work_id = self.work.len();
         self.work.push(Some(work));
         let entry = GeneratorQueueEntry {
@@ -1237,7 +1375,39 @@ fn deadline_reached(deadline: Option<Instant>) -> bool {
 #[cfg(test)]
 mod priority_tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use sts_core::sim::combat::EngineCombatStepper;
+
+    struct CountingLookahead {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl super::super::policy::CombatLookaheadEvaluator for CountingLookahead {
+        fn pending_guide(&self, _position: &CombatPosition) -> Option<CombatStateGuide> {
+            Some(CombatStateGuide::new(CombatGuideLaneId::new(99), vec![0]))
+        }
+
+        fn admit_atomic_state(
+            &self,
+            _position: &CombatPosition,
+            _atomic_expansions_before: usize,
+        ) -> bool {
+            true
+        }
+
+        fn evaluate(
+            &self,
+            _position: &CombatPosition,
+            max_work: usize,
+            _deadline: Option<Instant>,
+        ) -> Option<super::super::policy::CombatLookaheadEvaluation> {
+            self.calls.fetch_add(1, AtomicOrdering::Relaxed);
+            Some(super::super::policy::CombatLookaheadEvaluation {
+                guide: CombatStateGuide::new(CombatGuideLaneId::new(99), vec![1]),
+                work: 3.min(max_work),
+            })
+        }
+    }
 
     fn test_root() -> CombatDecisionRoot {
         let mut combat = sts_core::test_support::blank_test_combat();
@@ -1290,6 +1460,35 @@ mod priority_tests {
         assert_eq!(report.after.generation_work, 1);
         let released = session.release_unused_grant();
         assert_eq!(released.generation_work, 999);
+        assert!(session.retained_work_items() > 0);
+    }
+
+    #[test]
+    fn expensive_lookahead_is_lazy_budgeted_and_does_not_expand_the_state() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let evaluator = Arc::new(CountingLookahead {
+            calls: calls.clone(),
+        });
+        let mut session = TurnOptionGeneratorSession::with_policy_and_lookahead(
+            test_root(),
+            TurnOptionGeneratorConfig::default(),
+            uniform_policy(),
+            evaluator,
+        );
+        let report = session.advance_with_lookahead(
+            &EngineCombatStepper,
+            CombatPlanningQuantum::deterministic(1, 250_000),
+            1,
+            3,
+            3,
+        );
+
+        assert_eq!(calls.load(AtomicOrdering::Relaxed), 1);
+        assert_eq!(session.lookahead_evaluations(), 1);
+        assert_eq!(session.lookahead_work(), 3);
+        assert_eq!(session.atomic_state_expansions(), 0);
+        assert_eq!(session.retained_lookahead_guides(), 1);
+        assert_eq!(report.after.generation_work, 1);
         assert!(session.retained_work_items() > 0);
     }
 

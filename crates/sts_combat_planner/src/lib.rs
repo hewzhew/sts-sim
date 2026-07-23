@@ -80,8 +80,9 @@ pub use local_turn_graph_search::{
     LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
 };
 pub use policy::{
-    CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
-    CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy, UniformCombatActionPolicy,
+    CombatActionPolicy, CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
+    CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
+    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator, UniformCombatActionPolicy,
 };
 pub use policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,

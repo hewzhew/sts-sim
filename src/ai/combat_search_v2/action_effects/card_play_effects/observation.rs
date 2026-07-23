@@ -124,12 +124,8 @@ fn observe_apply_power(
     amount: i32,
 ) {
     if crate::content::powers::is_debuff_application(power_id, amount) {
-        let available_artifact = crate::content::powers::store::power_amount(
-            combat,
-            target,
-            PowerId::Artifact,
-        )
-        .max(0);
+        let available_artifact =
+            crate::content::powers::store::power_amount(combat, target, PowerId::Artifact).max(0);
         let consumed = direct
             .artifact_consumed_by_target
             .entry(target)
