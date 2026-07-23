@@ -188,6 +188,8 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
         setup.exhaust_engine_fuel,
+        setup.recurring_output_count,
+        setup.recurring_output_mass,
         encounter_priority_owner_progress(&position.combat),
         value.player_hp,
         value.survival_margin,
@@ -234,19 +236,35 @@ struct PlayerSetupSummary {
     exhaust_engine_connected: i32,
     status_access_engine_connected: i32,
     exhaust_engine_fuel: i32,
+    recurring_output_count: i32,
+    recurring_output_mass: i32,
     active_power_count: i32,
     active_power_mass: i32,
 }
 
 fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
     let player = combat.entities.player.id;
-    let (active_power_count, active_power_mass) = store::powers_for(combat, player)
-        .into_iter()
-        .flatten()
-        .filter_map(|power| realized_player_setup_power_amount(combat, player, power))
-        .fold((0_i32, 0_i32), |(count, mass), amount| {
-            (count.saturating_add(1), mass.saturating_add(amount))
-        });
+    let (active_power_count, active_power_mass, recurring_output_count, recurring_output_mass) =
+        store::powers_for(combat, player)
+            .into_iter()
+            .flatten()
+            .filter_map(|power| {
+                realized_player_setup_power_amount(combat, player, power)
+                    .map(|amount| (power.power_type, amount))
+            })
+            .fold(
+                (0_i32, 0_i32, 0_i32, 0_i32),
+                |(active_count, active_mass, recurring_count, recurring_mass), (power, amount)| {
+                    let recurring =
+                        i32::from(player_power_has_deterministic_recurring_output(power));
+                    (
+                        active_count.saturating_add(1),
+                        active_mass.saturating_add(amount),
+                        recurring_count.saturating_add(recurring),
+                        recurring_mass.saturating_add(amount.saturating_mul(recurring)),
+                    )
+                },
+            );
     let unexhausted_cards = combat
         .zones
         .hand
@@ -271,9 +289,35 @@ fn player_setup_summary(combat: &CombatState) -> PlayerSetupSummary {
         exhaust_engine_connected,
         status_access_engine_connected,
         exhaust_engine_fuel: remaining_skills.saturating_mul(exhaust_engine_connected),
+        recurring_output_count,
+        recurring_output_mass,
         active_power_count,
         active_power_mass,
     }
+}
+
+/// Powers in this set have already paid their setup cost and deterministically
+/// produce a useful resource or combat effect on later turns.  Conditional
+/// engines (Rupture, Juggernaut, Fire Breathing), one-shot effects, and
+/// recurring effects with an HP cost (Combust, Brutality) deliberately stay
+/// out: merely having those icons in play does not prove future value.
+///
+/// This is a state semantic used by one independent setup guide, not a card
+/// play bonus.  Other lanes continue to own immediate survival and progress.
+fn player_power_has_deterministic_recurring_output(power: PowerId) -> bool {
+    matches!(
+        power,
+        PowerId::Ritual
+            | PowerId::DemonForm
+            | PowerId::Metallicize
+            | PowerId::BattleHymnPower
+            | PowerId::DevotionPower
+            | PowerId::DevaForm
+            | PowerId::OmegaPower
+            | PowerId::NoxiousFumes
+            | PowerId::InfiniteBladesPower
+            | PowerId::ToolsOfTheTrade
+    )
 }
 
 fn realized_player_setup_power_amount(
@@ -491,6 +535,63 @@ mod tests {
         assert_eq!(summary.status_access_engine_connected, 0);
         assert_eq!(summary.exhaust_engine_connected, 0);
         assert_eq!(summary.exhaust_engine_fuel, 0);
+    }
+
+    #[test]
+    fn setup_prefers_realized_recurring_output_over_an_unset_safer_state() {
+        let mut safer = crate::test_support::blank_test_combat();
+        safer.entities.monsters = vec![crate::test_support::test_monster(EnemyId::TimeEater)];
+        safer.entities.player.current_hp = 52;
+
+        let mut scaled = safer.clone();
+        scaled.entities.player.current_hp = 31;
+        let player = scaled.entities.player.id;
+        scaled
+            .entities
+            .power_db
+            .insert(player, vec![test_power_amount(PowerId::DemonForm, 3)]);
+
+        let safer_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            safer,
+        ));
+        let scaled_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            scaled,
+        ));
+
+        assert!(scaled_rank > safer_rank);
+    }
+
+    #[test]
+    fn conditional_or_static_power_does_not_override_setup_survival() {
+        let mut safer = crate::test_support::blank_test_combat();
+        safer.entities.monsters = vec![crate::test_support::test_monster(EnemyId::TimeEater)];
+        safer.entities.player.current_hp = 52;
+
+        for power in [PowerId::Strength, PowerId::Rupture, PowerId::Combust] {
+            let mut lower_hp = safer.clone();
+            lower_hp.entities.player.current_hp = 31;
+            let player = lower_hp.entities.player.id;
+            lower_hp
+                .entities
+                .power_db
+                .insert(player, vec![test_power_amount(power, 3)]);
+
+            let safer_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+                EngineState::CombatPlayerTurn,
+                safer.clone(),
+            ));
+            let lower_hp_rank = oracle_combat_setup_guide_components(&CombatPosition::new(
+                EngineState::CombatPlayerTurn,
+                lower_hp,
+            ));
+
+            assert!(
+                safer_rank > lower_hp_rank,
+                "{power:?} must not claim recurring output"
+            );
+        }
     }
 
     #[test]
