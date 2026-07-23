@@ -1,7 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
+use serde::Serialize;
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
+use sts_core::state::core::ClientInput;
 
 use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
@@ -110,6 +112,39 @@ pub struct LocalTurnGraphStateSnapshot {
     pub exhausted: bool,
 }
 
+/// Read-only root-action attribution using the local graph's own semantics.
+///
+/// Descendant counts are non-exclusive reachability counts: an exact node
+/// shared by two root-action families is truthfully reachable from both.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LocalTurnGraphRootActionFamilySnapshot {
+    pub first_action: ClientInput,
+    pub best_root_negative_log_policy: Option<f64>,
+    pub completed_root_turn_options: usize,
+    pub terminal_wins: usize,
+    pub terminal_losses: usize,
+    pub escapes: usize,
+    pub unique_next_turn_successors: usize,
+    pub retained_next_turn_successors: usize,
+    pub reachable_exact_states: usize,
+    pub reachable_retained_states: usize,
+    pub reachable_generation_work: usize,
+    pub reachable_completed_turn_options: usize,
+    pub max_player_turn: u32,
+    pub best_hp_at_max_turn: Option<i32>,
+    pub lowest_enemy_hp_at_max_turn: Option<i32>,
+}
+
+#[derive(Clone)]
+struct LocalRootActionFamilyAccumulator {
+    first_action: ClientInput,
+    best_root_negative_log_policy: Option<f64>,
+    completed_root_turn_options: usize,
+    terminal_wins: usize,
+    terminal_losses: usize,
+    escapes: usize,
+}
+
 struct GraphNode {
     generator: TurnOptionGeneratorSession,
     /// One exact incoming path retained for diagnostics only. Search ownership
@@ -167,6 +202,7 @@ pub struct LocalTurnGraphWitnessSession {
     granted_generation_work: usize,
     granted_engine_steps: usize,
     generation_gaps: Vec<TurnOptionGenerationGap>,
+    root_action_families: Vec<LocalRootActionFamilyAccumulator>,
     witness: Option<OracleCombatWitness>,
     replay_failure: Option<OracleCombatWitnessReplayError>,
 }
@@ -214,6 +250,7 @@ impl LocalTurnGraphWitnessSession {
             granted_generation_work: 0,
             granted_engine_steps: 0,
             generation_gaps: Vec::new(),
+            root_action_families: Vec::new(),
             witness: None,
             replay_failure: None,
         }
@@ -462,6 +499,154 @@ impl LocalTurnGraphWitnessSession {
         })
     }
 
+    pub fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
+        let mut snapshots = self
+            .root_action_families
+            .iter()
+            .map(|family| self.root_action_family_snapshot(family))
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| {
+            left.best_root_negative_log_policy
+                .unwrap_or(f64::INFINITY)
+                .total_cmp(&right.best_root_negative_log_policy.unwrap_or(f64::INFINITY))
+        });
+        snapshots
+    }
+
+    fn root_action_family_snapshot(
+        &self,
+        family: &LocalRootActionFamilyAccumulator,
+    ) -> LocalTurnGraphRootActionFamilySnapshot {
+        let root_successors = self.nodes[0]
+            .children
+            .iter()
+            .filter(|edge| {
+                edge.actions
+                    .first()
+                    .is_some_and(|action| action.input == family.first_action)
+            })
+            .map(|edge| edge.successor)
+            .collect::<BTreeSet<_>>();
+        let retained_next_turn_successors = root_successors
+            .iter()
+            .filter(|node_id| !self.nodes[**node_id].exhausted)
+            .count();
+        let mut pending = root_successors.iter().copied().collect::<VecDeque<_>>();
+        let mut reachable = BTreeSet::new();
+        while let Some(node_id) = pending.pop_front() {
+            if !reachable.insert(node_id) {
+                continue;
+            }
+            pending.extend(
+                self.nodes[node_id]
+                    .children
+                    .iter()
+                    .map(|edge| edge.successor),
+            );
+        }
+
+        let mut max_player_turn = 0;
+        let mut best_hp_at_max_turn = None;
+        let mut lowest_enemy_hp_at_max_turn = None;
+        let mut reachable_generation_work = 0usize;
+        let mut reachable_completed_turn_options = 0usize;
+        let mut reachable_retained_states = 0usize;
+        for node_id in &reachable {
+            let node = &self.nodes[*node_id];
+            let position = node.generator.root().position();
+            let turn = position.combat.turn.turn_count;
+            let hp = position.combat.entities.player.current_hp;
+            let enemy_hp = position
+                .combat
+                .entities
+                .monsters
+                .iter()
+                .filter(|monster| monster.is_alive_for_action())
+                .map(|monster| monster.current_hp.max(0))
+                .sum::<i32>();
+            if turn > max_player_turn {
+                max_player_turn = turn;
+                best_hp_at_max_turn = Some(hp);
+                lowest_enemy_hp_at_max_turn = Some(enemy_hp);
+            } else if turn == max_player_turn {
+                best_hp_at_max_turn =
+                    Some(best_hp_at_max_turn.map_or(hp, |current| current.max(hp)));
+                lowest_enemy_hp_at_max_turn = Some(
+                    lowest_enemy_hp_at_max_turn.map_or(enemy_hp, |current| current.min(enemy_hp)),
+                );
+            }
+            let counters = node.generator.counters();
+            reachable_generation_work =
+                reachable_generation_work.saturating_add(counters.generation_work);
+            reachable_completed_turn_options = reachable_completed_turn_options
+                .saturating_add(node.generator.total_completed_options());
+            if !node.exhausted {
+                reachable_retained_states = reachable_retained_states.saturating_add(1);
+            }
+        }
+
+        LocalTurnGraphRootActionFamilySnapshot {
+            first_action: family.first_action.clone(),
+            best_root_negative_log_policy: family.best_root_negative_log_policy,
+            completed_root_turn_options: family.completed_root_turn_options,
+            terminal_wins: family.terminal_wins,
+            terminal_losses: family.terminal_losses,
+            escapes: family.escapes,
+            unique_next_turn_successors: root_successors.len(),
+            retained_next_turn_successors,
+            reachable_exact_states: reachable.len(),
+            reachable_retained_states,
+            reachable_generation_work,
+            reachable_completed_turn_options,
+            max_player_turn,
+            best_hp_at_max_turn,
+            lowest_enemy_hp_at_max_turn,
+        }
+    }
+
+    fn record_root_option(&mut self, option: &CompleteTurnOption) {
+        let Some(first_action) = option.actions().first() else {
+            return;
+        };
+        let family_index = self
+            .root_action_families
+            .iter()
+            .position(|family| family.first_action == first_action.input)
+            .unwrap_or_else(|| {
+                self.root_action_families
+                    .push(LocalRootActionFamilyAccumulator {
+                        first_action: first_action.input.clone(),
+                        best_root_negative_log_policy: None,
+                        completed_root_turn_options: 0,
+                        terminal_wins: 0,
+                        terminal_losses: 0,
+                        escapes: 0,
+                    });
+                self.root_action_families.len() - 1
+            });
+        let family = &mut self.root_action_families[family_index];
+        family.best_root_negative_log_policy = Some(
+            family
+                .best_root_negative_log_policy
+                .map_or(option.negative_log_policy(), |current| {
+                    current.min(option.negative_log_policy())
+                }),
+        );
+        family.completed_root_turn_options = family.completed_root_turn_options.saturating_add(1);
+        match option.boundary() {
+            CompleteTurnOptionBoundary::TerminalWin => {
+                family.terminal_wins = family.terminal_wins.saturating_add(1);
+            }
+            CompleteTurnOptionBoundary::TerminalLoss => {
+                family.terminal_losses = family.terminal_losses.saturating_add(1);
+            }
+            CompleteTurnOptionBoundary::Escape => {
+                family.escapes = family.escapes.saturating_add(1);
+            }
+            CompleteTurnOptionBoundary::NextPlayerTurn => {}
+        }
+    }
+
     fn select_work(&mut self) -> SelectedWork {
         let mut node_id = 0usize;
         let mut path = Vec::new();
@@ -620,6 +805,9 @@ impl LocalTurnGraphWitnessSession {
         self.generation_gaps.extend(new_gaps);
 
         for option in options {
+            if node_id == 0 {
+                self.record_root_option(&option);
+            }
             self.nodes[node_id].generated_options =
                 self.nodes[node_id].generated_options.saturating_add(1);
             self.used.completed_turn_options = self.used.completed_turn_options.saturating_add(1);

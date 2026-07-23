@@ -5,9 +5,9 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatDecisionRoot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
-    LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot,
-    OracleCombatRootActionFamilySnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphWitnessConfig,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
+    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot, TurnOptionAction,
     TurnOptionGeneratorConfig,
 };
@@ -111,10 +111,8 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
 }
 
 impl OracleRunCombatWorkV1 {
-    pub(super) fn root_action_families(&self) -> Vec<OracleCombatRootActionFamilySnapshot> {
-        // Root-family attribution belonged to the retired global agenda. The
-        // local graph does not manufacture a misleading partial equivalent.
-        Vec::new()
+    pub(super) fn root_action_families(&self) -> Vec<LocalTurnGraphRootActionFamilySnapshot> {
+        self.search.root_action_families()
     }
 
     pub(super) fn new(

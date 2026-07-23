@@ -536,11 +536,11 @@ fn compact_root_action_report(diagnostic: &Value) -> Value {
         .unwrap_or_default();
     let total_work = families
         .iter()
-        .map(|family| value_u64(Some(family), "descendant_generation_work"))
+        .map(|family| value_u64(Some(family), "reachable_generation_work"))
         .sum::<u64>();
-    let total_downstream_options = families
+    let total_reachable_options = families
         .iter()
-        .map(|family| value_u64(Some(family), "descendant_completed_turn_options"))
+        .map(|family| value_u64(Some(family), "reachable_completed_turn_options"))
         .sum::<u64>();
     let mut compact_families = families
         .iter()
@@ -550,20 +550,22 @@ fn compact_root_action_report(diagnostic: &Value) -> Value {
                 .into_iter()
                 .flatten()
                 .find(|candidate| candidate.get("action").and_then(Value::as_str) == action);
-            let work = value_u64(Some(family), "descendant_generation_work");
+            let work = value_u64(Some(family), "reachable_generation_work");
             json!({
                 "action": family.get("action"),
                 "prior_rank": policy.and_then(|value| value.get("rank")),
                 "prior_probability": policy.and_then(|value| value.get("probability")),
                 "root_turn_options": family.get("completed_root_turn_options"),
-                "unique_root_successors": family.get("unique_root_successors"),
-                "accepted_root_successors": family.get("accepted_root_successors"),
-                "retained_root_successors": family.get("retained_root_successors"),
-                "accepted_descendants": family.get("accepted_descendants"),
-                "retained_descendants": family.get("retained_descendants"),
-                "downstream_work": work,
+                "terminal_wins": family.get("terminal_wins"),
+                "terminal_losses": family.get("terminal_losses"),
+                "escapes": family.get("escapes"),
+                "next_turn_successors": family.get("unique_next_turn_successors"),
+                "retained_next_turn_successors": family.get("retained_next_turn_successors"),
+                "reachable_exact_states": family.get("reachable_exact_states"),
+                "reachable_retained_states": family.get("reachable_retained_states"),
+                "reachable_work": work,
                 "work_share_percent": if total_work == 0 { 0.0 } else { work as f64 * 100.0 / total_work as f64 },
-                "downstream_turn_options": family.get("descendant_completed_turn_options"),
+                "reachable_turn_options": family.get("reachable_completed_turn_options"),
                 "max_player_turn": family.get("max_player_turn"),
                 "best_hp_at_max_turn": family.get("best_hp_at_max_turn"),
                 "lowest_enemy_hp_at_max_turn": family.get("lowest_enemy_hp_at_max_turn"),
@@ -573,7 +575,7 @@ fn compact_root_action_report(diagnostic: &Value) -> Value {
     compact_families.sort_by_key(|family| {
         std::cmp::Reverse(
             family
-                .get("downstream_work")
+                .get("reachable_work")
                 .and_then(Value::as_u64)
                 .unwrap_or(0),
         )
@@ -607,10 +609,11 @@ fn compact_root_action_report(diagnostic: &Value) -> Value {
         },
         "totals": {
             "root_action_families": compact_families.len(),
-            "attributed_downstream_work": total_work,
-            "attributed_downstream_turn_options": total_downstream_options,
+            "reachable_work": total_work,
+            "reachable_turn_options": total_reachable_options,
+            "reachability_is_nonexclusive": true,
         },
-        "families_by_downstream_work": compact_families,
+        "families_by_reachable_work": compact_families,
     })
 }
 
@@ -1279,21 +1282,26 @@ D:\rust\src\bin\oracle_lab.rs:
                 "deepest_progress": {"large": [1, 2, 3]}
             },
             "root_action_families": [
-                {"action": "play Offering", "completed_root_turn_options": 2, "unique_root_successors": 2, "accepted_root_successors": 2, "retained_root_successors": 2, "accepted_descendants": 3, "retained_descendants": 2, "descendant_generation_work": 1, "descendant_completed_turn_options": 1, "max_player_turn": 2, "best_hp_at_max_turn": 19, "lowest_enemy_hp_at_max_turn": 476},
-                {"action": "use BlockPotion", "completed_root_turn_options": 8, "unique_root_successors": 8, "accepted_root_successors": 8, "retained_root_successors": 7, "accepted_descendants": 9, "retained_descendants": 7, "descendant_generation_work": 9, "descendant_completed_turn_options": 6, "max_player_turn": 4, "best_hp_at_max_turn": 3, "lowest_enemy_hp_at_max_turn": 387}
+                {"action": "play Offering", "completed_root_turn_options": 2, "terminal_wins": 0, "terminal_losses": 0, "escapes": 0, "unique_next_turn_successors": 2, "retained_next_turn_successors": 2, "reachable_exact_states": 3, "reachable_retained_states": 2, "reachable_generation_work": 1, "reachable_completed_turn_options": 1, "max_player_turn": 2, "best_hp_at_max_turn": 19, "lowest_enemy_hp_at_max_turn": 476},
+                {"action": "use BlockPotion", "completed_root_turn_options": 8, "terminal_wins": 0, "terminal_losses": 1, "escapes": 0, "unique_next_turn_successors": 8, "retained_next_turn_successors": 7, "reachable_exact_states": 9, "reachable_retained_states": 7, "reachable_generation_work": 9, "reachable_completed_turn_options": 6, "max_player_turn": 4, "best_hp_at_max_turn": 3, "lowest_enemy_hp_at_max_turn": 387}
             ]
         });
 
         let report = compact_root_action_report(&diagnostic);
         assert_eq!(
-            report["families_by_downstream_work"][0]["action"],
+            report["families_by_reachable_work"][0]["action"],
             "use BlockPotion"
         );
-        assert_eq!(report["families_by_downstream_work"][1]["prior_rank"], 7);
+        assert_eq!(report["families_by_reachable_work"][1]["prior_rank"], 7);
         assert_eq!(
-            report["families_by_downstream_work"][1]["work_share_percent"],
+            report["families_by_reachable_work"][1]["work_share_percent"],
             10.0
         );
+        assert_eq!(
+            report["families_by_reachable_work"][0]["terminal_losses"],
+            1
+        );
+        assert_eq!(report["totals"]["reachability_is_nonexclusive"], true);
         assert!(report["search"].get("deepest_progress").is_none());
     }
 

@@ -73,9 +73,10 @@ pub use layered_witness_search::{
     LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
 };
 pub use local_turn_graph_search::{
-    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters,
-    LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport,
-    LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
+    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphStateSnapshot,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessInterruption,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession,
+    LocalTurnGraphWitnessStatus,
 };
 pub use policy::{
     CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,

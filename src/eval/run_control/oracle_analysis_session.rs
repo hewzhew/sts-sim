@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sts_combat_planner::OracleCombatRootActionFamilySnapshot;
+use sts_combat_planner::LocalTurnGraphRootActionFamilySnapshot;
 
 use crate::content::potions::Potion;
 use crate::content::relics::RelicState;
@@ -648,7 +648,7 @@ impl OracleAnalysisSessionV1 {
     pub(crate) fn combat_root_action_families(
         &self,
         node_id: usize,
-    ) -> Result<Vec<OracleCombatRootActionFamilySnapshot>, String> {
+    ) -> Result<Vec<LocalTurnGraphRootActionFamilySnapshot>, String> {
         self.combat_jobs
             .get(&node_id)
             .map(OracleRunCombatWorkV1::root_action_families)
