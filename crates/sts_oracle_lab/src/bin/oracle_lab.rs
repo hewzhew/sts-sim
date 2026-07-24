@@ -464,6 +464,10 @@ enum Command {
         max_selections: usize,
         #[arg(long, default_value_t = 5_000)]
         wall_ms: u64,
+        /// Diagnostic-only quality mode: retain the first verified witness
+        /// and keep searching until the explicit work/deadline allowance.
+        #[arg(long)]
+        improve_incumbent: bool,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
         #[arg(long, default_value_t = 4)]
@@ -2255,6 +2259,7 @@ fn main() -> Result<(), String> {
             max_nodes,
             max_selections,
             wall_ms,
+            improve_incumbent,
             max_engine_steps_per_transition,
             generation_quantum_work,
             max_turn_depth,
@@ -2299,7 +2304,11 @@ fn main() -> Result<(), String> {
                 lookahead_max_evaluations: max_nodes.saturating_div(24).max(1),
                 lookahead_work_per_evaluation: 24,
                 max_turn_depth,
-                satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+                satisfaction: if improve_incumbent {
+                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+                } else {
+                    OracleCombatWitnessSatisfaction::FirstWitness
+                },
             };
             let policy = action_imitation_artifact
                 .as_deref()
@@ -2468,6 +2477,11 @@ fn main() -> Result<(), String> {
                 "value_prototype_artifact": value_prototype_artifact,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 "watch_corridor_actions": watch_corridor_actions,
+                "satisfaction": if improve_incumbent {
+                    "budget_or_exhaustion"
+                } else {
+                    "first_witness"
+                },
                 "scheduler": if anchor_only {
                     "anchor_only"
                 } else if root_turn_anchor_only {
