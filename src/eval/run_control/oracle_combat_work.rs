@@ -37,6 +37,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
+    satisfaction: OracleCombatWitnessSatisfaction,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
     prior_generation_work: u64,
@@ -247,6 +248,7 @@ impl OracleRunCombatWorkV1 {
             remaining_work: max_work,
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
+            satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
             prior_generation_work: 0,
@@ -434,17 +436,15 @@ impl OracleRunCombatWorkV1 {
         self.advance_with_witness_policy(quantum, global_deadline, true)
     }
 
-    /// Continues serving the portfolio after the first verified witness so an
-    /// analyst can spend an explicit bounded budget improving the incumbent.
-    /// Production progression keeps using `advance`, which commits the first
-    /// exact witness and therefore preserves its latency contract.
+    /// Continues serving the portfolio past an insufficient first witness, but
+    /// honors the configured quality satisfaction instead of mechanically
+    /// consuming the whole allowance. `BudgetOrExhaustion` remains available
+    /// for an analyst who explicitly requests exhaustive bounded improvement.
     pub(super) fn advance_improving_incumbent(
         &mut self,
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
     ) -> RunControlCombatWorkAdvanceV1 {
-        self.local_search
-            .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
         self.advance_with_witness_policy(quantum, global_deadline, false)
     }
 
@@ -512,11 +512,8 @@ impl OracleRunCombatWorkV1 {
                 let after = report.counters;
                 let before_work = before.generation_work.saturating_add(before.lookahead_work);
                 let after_work = after.generation_work.saturating_add(after.lookahead_work);
-                let member_complete = match &report.status {
-                    LocalTurnGraphWitnessStatus::Partial(_) => false,
-                    LocalTurnGraphWitnessStatus::WitnessFound => stop_on_first_witness,
-                    _ => true,
-                };
+                let member_complete =
+                    !matches!(&report.status, LocalTurnGraphWitnessStatus::Partial(_));
                 (
                     after_work.saturating_sub(before_work),
                     after.engine_steps.saturating_sub(before.engine_steps),
@@ -607,8 +604,17 @@ impl OracleRunCombatWorkV1 {
         let fallback_challenge_complete = stop_on_first_witness
             && self.policy_witness.is_some()
             && self.current_local_search_work() >= quantum.additional_nodes;
+        let quality_satisfied = !stop_on_first_witness
+            && self.best_witness().is_some_and(|witness| {
+                combat_witness_satisfies(self.satisfaction, &self.start, witness)
+            });
+        let quality_challenge_complete = self.best_witness().is_none_or(|witness| {
+            witness.discovery_source != OracleCombatWitnessDiscoverySource::PolicyProposal
+        }) || self.current_local_search_work() > 0
+            || self.local_complete;
         if (stop_on_first_witness && acceptance_improved)
             || fallback_challenge_complete
+            || (quality_satisfied && quality_challenge_complete)
             || (self.local_complete && self.discrepancy_complete)
         {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
@@ -958,6 +964,22 @@ fn combat_witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness
     combat_witness_quality_better(combat_witness_quality(left), combat_witness_quality(right))
 }
 
+fn combat_witness_satisfies(
+    satisfaction: OracleCombatWitnessSatisfaction,
+    start: &crate::sim::combat::CombatPosition,
+    witness: &OracleCombatWitness,
+) -> bool {
+    match satisfaction {
+        OracleCombatWitnessSatisfaction::FirstWitness => true,
+        OracleCombatWitnessSatisfaction::HpLossAtMost(limit) => {
+            let initial_hp = start.combat.entities.player.current_hp;
+            let final_hp = witness.final_position.combat.entities.player.current_hp;
+            initial_hp.saturating_sub(final_hp).max(0) as u32 <= limit
+        }
+        OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
+    }
+}
+
 fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
     remaining.is_some_and(|duration| duration < MIN_USABLE_WALL_ALLOWANCE)
 }
@@ -1144,6 +1166,101 @@ mod tests {
             RunControlCombatWorkAdvanceV1::ReadyToFinish,
             "after one complete caller-sized challenge, the exact fallback may finish"
         );
+    }
+
+    #[test]
+    fn quality_mode_honors_satisfaction_after_an_independent_challenge() {
+        let session = one_strike_win_session();
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0),
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+
+        assert!(work.policy_witness.is_some());
+        let result = work.advance_improving_incumbent(
+            &RunControlCombatSearchQuantum {
+                label: "quality_satisfaction_contract",
+                additional_nodes: 1,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+
+        assert!(
+            work.local_search.counters().generation_work > 0,
+            "quality acceptance must not let a policy proposal bypass independent search"
+        );
+        assert_eq!(result, RunControlCombatWorkAdvanceV1::ReadyToFinish);
+    }
+
+    #[test]
+    fn explicit_budget_quality_mode_does_not_invent_an_early_threshold() {
+        let session = one_strike_win_session();
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+
+        let result = work.advance_improving_incumbent(
+            &RunControlCombatSearchQuantum {
+                label: "explicit_budget_contract",
+                additional_nodes: 1,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+
+        assert_eq!(result, RunControlCombatWorkAdvanceV1::Pending);
+    }
+
+    #[test]
+    fn quality_satisfaction_rejects_a_verified_but_over_budget_win() {
+        let session = one_strike_win_session();
+        let work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(8),
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+        let mut poor = work
+            .policy_witness
+            .clone()
+            .expect("policy should provide an exact winning line");
+        poor.final_position.combat.entities.player.current_hp = work
+            .start
+            .combat
+            .entities
+            .player
+            .current_hp
+            .saturating_sub(20);
+
+        assert!(!combat_witness_satisfies(
+            OracleCombatWitnessSatisfaction::HpLossAtMost(8),
+            &work.start,
+            &poor
+        ));
     }
 
     #[test]

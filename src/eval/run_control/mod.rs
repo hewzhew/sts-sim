@@ -22,6 +22,7 @@ mod combat_line_trace;
 mod combat_no_win_fallback;
 #[cfg(test)]
 mod combat_planner_cutover_harness;
+mod combat_quality_target;
 mod combat_resolution;
 mod combat_search;
 mod combat_search_rejection;
@@ -113,6 +114,9 @@ pub use combat_line_adjudication::{
     CombatLineAdjudicationV1, CombatLineCleanlinessV1, CombatLineObservedOutcomeV1,
     CombatLineRejectionReasonV1,
 };
+pub use combat_quality_target::{
+    strategic_combat_quality_hp_loss_limit_v1, strategic_combat_survival_hp_loss_limit_v1,
+};
 pub use combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,
     RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
@@ -158,11 +162,11 @@ pub use oracle_run_explorer::{
     ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1, OracleCombatSearchResumeKindV1,
     OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunActiveCombatCheckpointV1,
     OracleRunBoundaryV1, OracleRunBranchCheckpointV1, OracleRunBranchV1, OracleRunCombatBudgetsV1,
-    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunDecisionAnnotationFnV1,
-    OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
-    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
-    OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1,
-    OracleRunWorkKindV1,
+    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunCombatQualityPolicyV1,
+    OracleRunDecisionAnnotationFnV1, OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1,
+    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerCheckpointV1,
+    OracleRunExplorerV1, OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1,
+    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,

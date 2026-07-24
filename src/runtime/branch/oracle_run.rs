@@ -17,11 +17,11 @@ use crate::eval::run_control::{
     seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
     seed_oracle_run_explorer_v1, CombatAutomationActionV1, DecisionCandidateKey,
     NeowOracleExpansionV1, OraclePendingCombatSummaryV1, OracleRunBranchV1,
-    OracleRunCombatBudgetsV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
-    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, RewardAutomationConfig,
-    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
-    StrategicProbeOwnerAuthorityV1, StrategicProbeSchedulingAuthorityV1,
+    OracleRunCombatBudgetsV1, OracleRunCombatQualityPolicyV1, OracleRunExploreBudgetV1,
+    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerCheckpointV1,
+    RewardAutomationConfig, RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSession, RunControlSessionCheckpointV1, RunDecisionAction, RunProgressJournalV1,
+    RunProgressStepV1, StrategicProbeOwnerAuthorityV1, StrategicProbeSchedulingAuthorityV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
@@ -865,6 +865,7 @@ pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombat
             enable_legacy_no_win_rescue: false,
             ..RunControlSearchCombatOptions::default()
         },
+        quality_policy: OracleRunCombatQualityPolicyV1::StrategicNonBoss,
         initial_divisor: config.budget.combat_initial_divisor,
         guidance_bundle: None,
     }

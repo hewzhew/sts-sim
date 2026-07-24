@@ -12,10 +12,10 @@ use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombat
 use super::{
     build_decision_surface, positive_ranked_run_policy_prior_v1, DecisionCandidateKey,
     NeowOracleExpansionV1, RunControlCombatSearchQuantum, RunControlCombatSearchRejection,
-    RunControlCombatWorkAdvanceV1, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
-    RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
-    StrategicProbeShadowOrderKeyV1,
+    RunControlCombatWorkAdvanceV1, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSession, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
+    RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1,
+    RunProgressStepV1, StrategicProbeShadowOrderKeyV1,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -266,6 +266,10 @@ pub struct OracleRunCombatBudgetsV1 {
     pub hallway: RunControlSearchCombatOptions,
     pub elite: RunControlSearchCombatOptions,
     pub boss: RunControlSearchCombatOptions,
+    /// Determines whether each configured search satisfaction is used
+    /// literally or whether non-boss combat derives the shared strategic
+    /// quality target from the exact run state.
+    pub quality_policy: OracleRunCombatQualityPolicyV1,
     /// A value greater than one enables a two-fidelity schedule. The first
     /// exact attempt receives `1 / initial_divisor` of the configured
     /// allowance. A budget-unknown result remains a live exact edge and may
@@ -276,12 +280,24 @@ pub struct OracleRunCombatBudgetsV1 {
     pub guidance_bundle: Option<Arc<CombatGuidanceBundleV1>>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OracleRunCombatQualityPolicyV1 {
+    /// Preserve the satisfaction carried by each configured search option.
+    #[default]
+    Configured,
+    /// For non-boss combat, stop refinement once an exact witness satisfies
+    /// the run's shared survival-and-quality reserve. Boss configuration stays
+    /// literal because a boss win reaches an act heal or the requested end.
+    StrategicNonBoss,
+}
+
 impl OracleRunCombatBudgetsV1 {
     pub fn uniform(options: RunControlSearchCombatOptions) -> Self {
         Self {
             hallway: options.clone(),
             elite: options.clone(),
             boss: options,
+            quality_policy: OracleRunCombatQualityPolicyV1::Configured,
             initial_divisor: 1,
             guidance_bundle: None,
         }
@@ -304,13 +320,27 @@ impl OracleRunCombatBudgetsV1 {
         let Some(active) = session.active_combat.as_ref() else {
             return scale_combat_options(self.hallway.clone(), self.stage_divisor(stage));
         };
-        let options = if active.combat_state.meta.is_boss_fight {
+        let mut options = if active.combat_state.meta.is_boss_fight {
             self.boss.clone()
         } else if active.combat_state.meta.is_elite_fight {
             self.elite.clone()
         } else {
             self.hallway.clone()
         };
+        if self.quality_policy == OracleRunCombatQualityPolicyV1::StrategicNonBoss
+            && !active.combat_state.meta.is_boss_fight
+        {
+            options.satisfaction = Some(
+                match super::strategic_combat_quality_hp_loss_limit_v1(session) {
+                    RunControlHpLossLimit::Limit(limit) => {
+                        crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(limit)
+                    }
+                    RunControlHpLossLimit::Unlimited => {
+                        crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
+                    }
+                },
+            );
+        }
         scale_combat_options(options, self.stage_divisor(stage))
     }
 
@@ -2301,6 +2331,7 @@ mod tests {
             hallway: options.clone(),
             elite: options.clone(),
             boss: options,
+            quality_policy: OracleRunCombatQualityPolicyV1::Configured,
             initial_divisor: 4,
             guidance_bundle: None,
         };
@@ -2312,6 +2343,44 @@ mod tests {
         let retry = budgets.for_session_stage(&session, 1);
         assert_eq!(retry.max_nodes, Some(101));
         assert_eq!(retry.wall_ms, Some(101));
+    }
+
+    #[test]
+    fn strategic_quality_policy_derives_a_nonboss_target_from_exact_run_state() {
+        let options = RunControlSearchCombatOptions {
+            max_nodes: Some(101),
+            wall_ms: Some(101),
+            satisfaction: Some(
+                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::ZeroLossOrBudget,
+            ),
+            ..RunControlSearchCombatOptions::default()
+        };
+        let budgets = OracleRunCombatBudgetsV1 {
+            hallway: options.clone(),
+            elite: options.clone(),
+            boss: options,
+            quality_policy: OracleRunCombatQualityPolicyV1::StrategicNonBoss,
+            initial_divisor: 1,
+            guidance_bundle: None,
+        };
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 72;
+        combat.entities.player.max_hp = 80;
+        session.active_combat = Some(crate::state::core::ActiveCombat::new(
+            crate::state::core::EngineState::CombatPlayerTurn,
+            combat,
+            crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+                room_type: crate::state::map::node::RoomType::MonsterRoom,
+            }),
+        ));
+
+        let resolved = budgets.for_session(&session);
+
+        assert_eq!(
+            resolved.satisfaction,
+            Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(16))
+        );
     }
 
     #[test]
