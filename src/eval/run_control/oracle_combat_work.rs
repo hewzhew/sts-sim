@@ -18,8 +18,7 @@ use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::{
-    existing_combat_rollout_lookahead_v1, existing_combat_rollout_witness_v1,
-    ExistingCombatKnowledgePolicy,
+    existing_combat_rollout_witness_v1, ExistingCombatKnowledgePolicy,
 };
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
@@ -37,7 +36,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
-    satisfaction: OracleCombatWitnessSatisfaction,
+    satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
     prior_generation_work: u64,
@@ -63,6 +62,14 @@ pub(super) struct OracleRunCombatWorkV1 {
 enum PortfolioMemberV1 {
     LocalTurnGraph,
     PolicyDiscrepancy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PortfolioWitnessSatisfactionV1 {
+    FirstWitness,
+    HpLossAtMost(u32),
+    PersistentRunValueGain,
+    BudgetOrExhaustion,
 }
 
 impl PortfolioMemberV1 {
@@ -179,18 +186,36 @@ impl OracleRunCombatWorkV1 {
         let prepared = prepare_search_combat(session, options)?;
         let max_transition_steps = prepared.config.max_engine_steps_per_action.max(1);
         let max_work = prepared.config.max_nodes;
-        let satisfaction = match prepared.config.satisfaction {
+        let (satisfaction, planner_satisfaction) = match prepared.config.satisfaction {
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::BudgetOrExhaustion => {
-                OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+                (
+                    PortfolioWitnessSatisfactionV1::BudgetOrExhaustion,
+                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+                )
             }
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::ZeroLossOrBudget => {
-                OracleCombatWitnessSatisfaction::HpLossAtMost(0)
+                (
+                    PortfolioWitnessSatisfactionV1::HpLossAtMost(0),
+                    OracleCombatWitnessSatisfaction::HpLossAtMost(0),
+                )
             }
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin => {
-                OracleCombatWitnessSatisfaction::FirstWitness
+                (
+                    PortfolioWitnessSatisfactionV1::FirstWitness,
+                    OracleCombatWitnessSatisfaction::FirstWitness,
+                )
             }
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(limit) => {
-                OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
+                (
+                    PortfolioWitnessSatisfactionV1::HpLossAtMost(limit),
+                    OracleCombatWitnessSatisfaction::HpLossAtMost(limit),
+                )
+            }
+            crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain => {
+                (
+                    PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
+                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+                )
             }
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
             | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_) => {
@@ -206,7 +231,7 @@ impl OracleRunCombatWorkV1 {
         } else {
             policy
         };
-        let local_search = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
+        let local_search = LocalTurnGraphWitnessSession::with_policy(
             root.clone(),
             LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
@@ -220,10 +245,9 @@ impl OracleRunCombatWorkV1 {
                 lookahead_max_evaluations: 384,
                 lookahead_work_per_evaluation: 24,
                 max_turn_depth: 32,
-                satisfaction,
+                satisfaction: planner_satisfaction,
             },
             policy.clone(),
-            existing_combat_rollout_lookahead_v1(),
         );
         let discrepancy_search = PolicyDiscrepancySession::with_policy(
             root,
@@ -610,7 +634,8 @@ impl OracleRunCombatWorkV1 {
             });
         let quality_challenge_complete = self.best_witness().is_none_or(|witness| {
             witness.discovery_source != OracleCombatWitnessDiscoverySource::PolicyProposal
-        }) || self.current_local_search_work() > 0
+        }) || self.current_local_search_work()
+            >= quantum.additional_nodes
             || self.local_complete;
         if (stop_on_first_witness && acceptance_improved)
             || fallback_challenge_complete
@@ -921,14 +946,21 @@ impl OracleRunCombatWorkV1 {
 
 #[derive(Clone, Copy)]
 struct CombatWitnessQualityV1 {
+    persistent_adjusted_hp: i32,
     final_hp: i32,
+    persistent_run_value: i32,
     action_count: usize,
     negative_log_policy: f64,
 }
 
 fn combat_witness_quality(witness: &OracleCombatWitness) -> CombatWitnessQualityV1 {
+    let final_hp = witness.final_position.combat.entities.player.current_hp;
+    let persistent_run_value =
+        crate::ai::combat_search_v2::persistent_run_value(&witness.final_position.combat);
     CombatWitnessQualityV1 {
-        final_hp: witness.final_position.combat.entities.player.current_hp,
+        persistent_adjusted_hp: final_hp.saturating_add(persistent_run_value),
+        final_hp,
+        persistent_run_value,
         action_count: witness.actions.len(),
         negative_log_policy: witness.negative_log_policy,
     }
@@ -938,8 +970,10 @@ fn combat_witness_quality_better(
     left: CombatWitnessQualityV1,
     right: CombatWitnessQualityV1,
 ) -> bool {
-    left.final_hp
-        .cmp(&right.final_hp)
+    left.persistent_adjusted_hp
+        .cmp(&right.persistent_adjusted_hp)
+        .then_with(|| left.final_hp.cmp(&right.final_hp))
+        .then_with(|| left.persistent_run_value.cmp(&right.persistent_run_value))
         .then_with(|| right.action_count.cmp(&left.action_count))
         .then_with(|| {
             right
@@ -955,7 +989,11 @@ fn combat_witness_acceptance_improved(
 ) -> bool {
     match (before, after) {
         (None, Some(_)) => true,
-        (Some(before), Some(after)) => after.final_hp > before.final_hp,
+        (Some(before), Some(after)) => {
+            after.persistent_adjusted_hp > before.persistent_adjusted_hp
+                || (after.persistent_adjusted_hp == before.persistent_adjusted_hp
+                    && after.final_hp > before.final_hp)
+        }
         _ => false,
     }
 }
@@ -965,18 +1003,22 @@ fn combat_witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness
 }
 
 fn combat_witness_satisfies(
-    satisfaction: OracleCombatWitnessSatisfaction,
+    satisfaction: PortfolioWitnessSatisfactionV1,
     start: &crate::sim::combat::CombatPosition,
     witness: &OracleCombatWitness,
 ) -> bool {
     match satisfaction {
-        OracleCombatWitnessSatisfaction::FirstWitness => true,
-        OracleCombatWitnessSatisfaction::HpLossAtMost(limit) => {
+        PortfolioWitnessSatisfactionV1::FirstWitness => true,
+        PortfolioWitnessSatisfactionV1::HpLossAtMost(limit) => {
             let initial_hp = start.combat.entities.player.current_hp;
             let final_hp = witness.final_position.combat.entities.player.current_hp;
             initial_hp.saturating_sub(final_hp).max(0) as u32 <= limit
         }
-        OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
+        PortfolioWitnessSatisfactionV1::PersistentRunValueGain => {
+            crate::ai::combat_search_v2::persistent_run_value(&witness.final_position.combat)
+                > crate::ai::combat_search_v2::persistent_run_value(&start.combat)
+        }
+        PortfolioWitnessSatisfactionV1::BudgetOrExhaustion => false,
     }
 }
 
@@ -1230,6 +1272,45 @@ mod tests {
     }
 
     #[test]
+    fn persistent_payoff_satisfaction_requires_materialized_run_value() {
+        let session = one_strike_win_session();
+        let work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+        let plain = work
+            .policy_witness
+            .clone()
+            .expect("policy should provide an exact winning line");
+        let mut profitable = plain.clone();
+        profitable
+            .final_position
+            .combat
+            .entities
+            .player
+            .gold_delta_this_combat = 20;
+
+        assert!(!combat_witness_satisfies(
+            PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
+            &work.start,
+            &plain
+        ));
+        assert!(combat_witness_satisfies(
+            PortfolioWitnessSatisfactionV1::PersistentRunValueGain,
+            &work.start,
+            &profitable
+        ));
+    }
+
+    #[test]
     fn quality_satisfaction_rejects_a_verified_but_over_budget_win() {
         let session = one_strike_win_session();
         let work = OracleRunCombatWorkV1::new_with_guidance(
@@ -1257,7 +1338,7 @@ mod tests {
             .saturating_sub(20);
 
         assert!(!combat_witness_satisfies(
-            OracleCombatWitnessSatisfaction::HpLossAtMost(8),
+            PortfolioWitnessSatisfactionV1::HpLossAtMost(8),
             &work.start,
             &poor
         ));
@@ -1266,12 +1347,16 @@ mod tests {
     #[test]
     fn equal_hp_search_result_does_not_end_fallback_improvement() {
         let fallback = CombatWitnessQualityV1 {
+            persistent_adjusted_hp: 128,
             final_hp: 56,
+            persistent_run_value: 72,
             action_count: 33,
             negative_log_policy: 33.0,
         };
         let equal_hp_search_result = CombatWitnessQualityV1 {
+            persistent_adjusted_hp: 128,
             final_hp: 56,
+            persistent_run_value: 72,
             action_count: 30,
             negative_log_policy: 5.0,
         };
@@ -1287,7 +1372,45 @@ mod tests {
     }
 
     #[test]
-    fn production_lookahead_work_is_charged_to_the_shared_allowance() {
+    fn portfolio_compares_persistent_payoff_without_ignoring_combat_hp() {
+        let ordinary_lethal = CombatWitnessQualityV1 {
+            persistent_adjusted_hp: 85,
+            final_hp: 13,
+            persistent_run_value: 72,
+            action_count: 30,
+            negative_log_policy: 3.0,
+        };
+        let profitable_lethal = CombatWitnessQualityV1 {
+            persistent_adjusted_hp: 87,
+            final_hp: 11,
+            persistent_run_value: 76,
+            action_count: 31,
+            negative_log_policy: 4.0,
+        };
+        let reckless_profitable_lethal = CombatWitnessQualityV1 {
+            persistent_adjusted_hp: 81,
+            final_hp: 5,
+            persistent_run_value: 76,
+            action_count: 29,
+            negative_log_policy: 2.0,
+        };
+
+        assert!(combat_witness_quality_better(
+            profitable_lethal,
+            ordinary_lethal
+        ));
+        assert!(combat_witness_acceptance_improved(
+            Some(ordinary_lethal),
+            Some(profitable_lethal)
+        ));
+        assert!(
+            !combat_witness_quality_better(reckless_profitable_lethal, ordinary_lethal),
+            "persistent payoff is run value, not permission to discard more HP than it gains"
+        );
+    }
+
+    #[test]
+    fn production_local_graph_does_not_run_rollout_lookahead() {
         let session = hallway_combat_session();
         let mut work = OracleRunCombatWorkV1::new_with_guidance(
             &session,
@@ -1310,9 +1433,9 @@ mod tests {
         let before_remaining = work.remaining_work;
         let _ = work.advance(&quantum, None);
         let counters = work.local_search.counters();
-        assert!(
-            counters.lookahead_work > 0,
-            "the production local search should evaluate its rollout lookahead"
+        assert_eq!(
+            counters.lookahead_work, 0,
+            "rollout lookahead remains a laboratory control rather than hidden production work"
         );
         assert_eq!(
             work.discrepancy_search
@@ -1322,9 +1445,7 @@ mod tests {
         );
         assert_eq!(
             before_remaining.saturating_sub(work.remaining_work),
-            counters
-                .generation_work
-                .saturating_add(counters.lookahead_work)
+            counters.generation_work
         );
     }
 

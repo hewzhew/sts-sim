@@ -180,7 +180,10 @@ pub use deficit_evidence::{
     derive_combat_deficit_evidence, CombatDeficitEvidenceFlag, CombatDeficitEvidenceObservations,
     CombatDeficitEvidenceReport,
 };
-pub use external_payoff::has_external_payoff_opportunity;
+pub use external_payoff::{
+    has_external_payoff_opportunity, has_healing_payoff_opportunity,
+    has_persistent_or_reward_payoff_opportunity, persistent_run_value,
+};
 pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
 };

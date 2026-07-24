@@ -12,6 +12,7 @@ use super::super::timed_enemy_threat::timed_enemy_threat_for_target;
 use super::super::visible_incoming_damage;
 use super::constants::*;
 use super::*;
+use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::{self, CardType};
 use crate::content::powers::PowerId;
 use crate::runtime::combat::CombatState;
@@ -87,6 +88,13 @@ pub(super) fn priority_for_play_card(
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = phase_transition.projected_target_lethal
         || target_progress_kills(combat, target_kind, target, declared_damage);
+    let lethal_external_payoff = i32::from(
+        target_lethal
+            && matches!(
+                card_mechanics_profile_v1(card.id).combat_external_payoff,
+                Some(CombatExternalPayoffV1::PersistentOrReward)
+            ),
+    );
     let future_debuff = effects.has_future_debuff();
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);
@@ -214,6 +222,7 @@ pub(super) fn priority_for_play_card(
         role_rank: role_rank
             .saturating_add(phase_hint.role_rank_adjustment)
             .saturating_add(resource_timing.role_rank_adjustment),
+        lethal_external_payoff,
         mitigation,
         action_supply: immediate_action_supply,
         reactive_risk: -reactive_risk,

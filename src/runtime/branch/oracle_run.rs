@@ -865,7 +865,7 @@ pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombat
             enable_legacy_no_win_rescue: false,
             ..RunControlSearchCombatOptions::default()
         },
-        quality_policy: OracleRunCombatQualityPolicyV1::StrategicNonBoss,
+        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
         initial_divisor: config.budget.combat_initial_divisor,
         guidance_bundle: None,
     }

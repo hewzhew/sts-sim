@@ -115,7 +115,8 @@ pub use combat_line_adjudication::{
     CombatLineRejectionReasonV1,
 };
 pub use combat_quality_target::{
-    strategic_combat_quality_hp_loss_limit_v1, strategic_combat_survival_hp_loss_limit_v1,
+    strategic_combat_persistent_payoff_matters_v1, strategic_combat_quality_hp_loss_limit_v1,
+    strategic_combat_survival_hp_loss_limit_v1,
 };
 pub use combat_resolution::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionKindV1, RunCombatResolutionV1,

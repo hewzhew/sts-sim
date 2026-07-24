@@ -13,6 +13,9 @@ pub enum CombatSearchV2Satisfaction {
     FirstCompleteWin,
     /// Stop once an exact whole-combat win meets the owner's explicit loss target.
     HpLossAtMost(u32),
+    /// Stop once an exact whole-combat win has materialized persistent run
+    /// value such as gold, max HP, or card growth relative to the combat root.
+    PersistentRunValueGain,
     /// Stop on the first exact whole-combat win that did not create a
     /// combat-external burden such as Writhing Mass's curse.
     FirstCompleteWinWithoutNewExternalBurden,
@@ -28,6 +31,7 @@ impl CombatSearchV2Satisfaction {
             Self::ZeroLossOrBudget => "zero_loss_or_budget",
             Self::FirstCompleteWin => "first_complete_win",
             Self::HpLossAtMost(_) => "hp_loss_at_most",
+            Self::PersistentRunValueGain => "persistent_run_value_gain",
             Self::FirstCompleteWinWithoutNewExternalBurden => {
                 "first_complete_win_without_new_external_burden"
             }
@@ -45,6 +49,7 @@ impl CombatSearchV2Satisfaction {
             Self::BudgetOrExhaustion
             | Self::ZeroLossOrBudget
             | Self::FirstCompleteWin
+            | Self::PersistentRunValueGain
             | Self::FirstCompleteWinWithoutNewExternalBurden => None,
         }
     }

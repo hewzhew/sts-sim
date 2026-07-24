@@ -4,6 +4,17 @@ use crate::state::map::node::RoomType;
 
 use super::{RunControlHpLossLimit, RunControlSession};
 
+pub fn strategic_combat_persistent_payoff_matters_v1(session: &RunControlSession) -> bool {
+    let Some(active) = session.active_combat.as_ref() else {
+        return false;
+    };
+    room_boss_combat(session)
+        && !room_boss_win_ends_requested_run(session)
+        && crate::ai::combat_search_v2::has_persistent_or_reward_payoff_opportunity(
+            &active.combat_state,
+        )
+}
+
 /// Returns the largest HP loss that is already good enough for strategic run
 /// progression to stop refining an exact combat witness.
 ///
@@ -20,6 +31,11 @@ pub fn strategic_combat_quality_hp_loss_limit_v1(
     else {
         return RunControlHpLossLimit::Unlimited;
     };
+    if session.active_combat.as_ref().is_some_and(|active| {
+        crate::ai::combat_search_v2::has_healing_payoff_opportunity(&active.combat_state)
+    }) {
+        return RunControlHpLossLimit::Limit(0);
+    }
     let (_, max_hp) = session.visible_player_hp();
     let max_hp = max_hp.max(1);
     let quality_limit = (max_hp / 5).max(1) as u32;
@@ -31,7 +47,7 @@ pub fn strategic_combat_quality_hp_loss_limit_v1(
 pub fn strategic_combat_survival_hp_loss_limit_v1(
     session: &RunControlSession,
 ) -> RunControlHpLossLimit {
-    if room_boss_win_reaches_recovery_or_run_end(session) {
+    if room_boss_win_ends_requested_run(session) || room_boss_win_reaches_full_heal(session) {
         return RunControlHpLossLimit::Unlimited;
     }
     let (current_hp, max_hp) = session.visible_player_hp();
@@ -60,11 +76,23 @@ fn finite_survival_damage_mitigation_active(session: &RunControlSession) -> bool
     })
 }
 
-fn room_boss_win_reaches_recovery_or_run_end(session: &RunControlSession) -> bool {
+fn room_boss_combat(session: &RunControlSession) -> bool {
     session.active_combat.as_ref().is_some_and(|active| {
         matches!(
             active.context,
             CombatContext::Room(ref room) if room.room_type == RoomType::MonsterRoomBoss
         )
-    }) && !session.run_state.should_start_act3_double_boss()
+    })
+}
+
+fn room_boss_win_ends_requested_run(session: &RunControlSession) -> bool {
+    room_boss_combat(session)
+        && session.run_state.act_num >= 3
+        && !session.run_state.should_start_act3_double_boss()
+}
+
+fn room_boss_win_reaches_full_heal(session: &RunControlSession) -> bool {
+    room_boss_combat(session)
+        && session.run_state.act_num < 3
+        && session.run_state.ascension_level < 5
 }

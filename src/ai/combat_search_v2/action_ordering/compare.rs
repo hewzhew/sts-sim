@@ -9,6 +9,12 @@ pub(in crate::ai::combat_search_v2::action_ordering) fn compare_action_ordering_
         .role_rank
         .cmp(&left.priority.role_rank)
         .then_with(|| {
+            right
+                .priority
+                .lethal_external_payoff
+                .cmp(&left.priority.lethal_external_payoff)
+        })
+        .then_with(|| {
             compare_prior_scores(right.root_action_prior_score, left.root_action_prior_score)
         })
         .then_with(|| right.priority.cmp(&left.priority))

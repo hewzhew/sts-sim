@@ -19,6 +19,10 @@ pub(super) fn accepted_complete_win(
         }
         CombatSearchV2Satisfaction::FirstCompleteWin => true,
         CombatSearchV2Satisfaction::HpLossAtMost(limit) => hp_loss <= limit,
+        // The production portfolio owns the combat-root comparison needed by
+        // this cross-combat target. A standalone legacy session therefore
+        // keeps refining rather than inventing a root-independent answer.
+        CombatSearchV2Satisfaction::PersistentRunValueGain => false,
         CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden => {
             !has_new_external_burden
         }

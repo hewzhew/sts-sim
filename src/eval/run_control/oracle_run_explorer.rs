@@ -285,10 +285,11 @@ pub enum OracleRunCombatQualityPolicyV1 {
     /// Preserve the satisfaction carried by each configured search option.
     #[default]
     Configured,
-    /// For non-boss combat, stop refinement once an exact witness satisfies
-    /// the run's shared survival-and-quality reserve. Boss configuration stays
-    /// literal because a boss win reaches an act heal or the requested end.
-    StrategicNonBoss,
+    /// Stop refinement once an exact witness satisfies the run's shared
+    /// survival-and-quality reserve. A boss that reaches a full act heal or
+    /// the requested run end keeps first-witness semantics after one complete
+    /// independent local-search challenge.
+    StrategicRun,
 }
 
 impl OracleRunCombatBudgetsV1 {
@@ -327,16 +328,18 @@ impl OracleRunCombatBudgetsV1 {
         } else {
             self.hallway.clone()
         };
-        if self.quality_policy == OracleRunCombatQualityPolicyV1::StrategicNonBoss
-            && !active.combat_state.meta.is_boss_fight
-        {
+        if self.quality_policy == OracleRunCombatQualityPolicyV1::StrategicRun {
             options.satisfaction = Some(
-                match super::strategic_combat_quality_hp_loss_limit_v1(session) {
+                if super::strategic_combat_persistent_payoff_matters_v1(session) {
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain
+                } else {
+                    match super::strategic_combat_quality_hp_loss_limit_v1(session) {
                     RunControlHpLossLimit::Limit(limit) => {
                         crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(limit)
                     }
                     RunControlHpLossLimit::Unlimited => {
                         crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
+                    }
                     }
                 },
             );
@@ -2359,7 +2362,7 @@ mod tests {
             hallway: options.clone(),
             elite: options.clone(),
             boss: options,
-            quality_policy: OracleRunCombatQualityPolicyV1::StrategicNonBoss,
+            quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
             initial_divisor: 1,
             guidance_bundle: None,
         };
@@ -2380,6 +2383,65 @@ mod tests {
         assert_eq!(
             resolved.satisfaction,
             Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(16))
+        );
+
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.meta.master_deck_snapshot = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Reaper,
+            92,
+        )];
+        assert_eq!(
+            budgets.for_session(&session).satisfaction,
+            Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0)),
+            "an already-damaged run with combat healing should search for a net-zero line"
+        );
+    }
+
+    #[test]
+    fn strategic_quality_stops_when_an_a0_intermediate_boss_materializes_payoff() {
+        let options = RunControlSearchCombatOptions {
+            satisfaction: Some(
+                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+            ),
+            ..RunControlSearchCombatOptions::default()
+        };
+        let budgets = OracleRunCombatBudgetsV1 {
+            hallway: options.clone(),
+            elite: options.clone(),
+            boss: options,
+            quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+            initial_divisor: 1,
+            guidance_bundle: None,
+        };
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = true;
+        combat.meta.master_deck_snapshot = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::HandOfGreed,
+            91,
+        )];
+        session.active_combat = Some(ActiveCombat::new(
+            crate::state::core::EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoomBoss,
+            }),
+        ));
+
+        assert_eq!(
+            budgets.for_session(&session).satisfaction,
+            Some(
+                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PersistentRunValueGain
+            ),
+            "an A0 act heal removes combat HP pressure, but persistent payoff remains a finite exact target"
+        );
+
+        session.run_state.act_num = 3;
+        assert_eq!(
+            budgets.for_session(&session).satisfaction,
+            Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin),
+            "persistent payoff must not delay the requested terminal boss witness"
         );
     }
 

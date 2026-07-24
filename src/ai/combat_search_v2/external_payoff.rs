@@ -4,6 +4,29 @@ use crate::runtime::combat::{CombatCard, CombatState, MetaChange};
 use std::collections::HashMap;
 
 pub fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
+    combat_cards(combat).any(|card| card_has_external_payoff_opportunity(card, combat))
+}
+
+pub fn has_persistent_or_reward_payoff_opportunity(combat: &CombatState) -> bool {
+    combat_cards(combat).any(|card| {
+        matches!(
+            card_mechanics_profile_v1(card.id).combat_external_payoff,
+            Some(CombatExternalPayoffV1::PersistentOrReward)
+        )
+    })
+}
+
+pub fn has_healing_payoff_opportunity(combat: &CombatState) -> bool {
+    combat.entities.player.current_hp < combat.entities.player.max_hp
+        && combat_cards(combat).any(|card| {
+            matches!(
+                card_mechanics_profile_v1(card.id).combat_external_payoff,
+                Some(CombatExternalPayoffV1::HealingIfDamaged)
+            )
+        })
+}
+
+fn combat_cards(combat: &CombatState) -> impl Iterator<Item = &CombatCard> {
     combat
         .meta
         .master_deck_snapshot
@@ -14,7 +37,6 @@ pub fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
         .chain(combat.zones.exhaust_pile.iter())
         .chain(combat.zones.limbo.iter())
         .chain(combat.zones.queued_cards.iter().map(|queued| &queued.card))
-        .any(|card| card_has_external_payoff_opportunity(card, combat))
 }
 
 fn card_has_external_payoff_opportunity(card: &CombatCard, combat: &CombatState) -> bool {
@@ -27,7 +49,12 @@ fn card_has_external_payoff_opportunity(card: &CombatCard, combat: &CombatState)
     }
 }
 
-pub(super) fn persistent_run_value(combat: &CombatState) -> i32 {
+/// Returns the exact run value already materialized by this combat state.
+///
+/// This is shared by the legacy search and the production portfolio so that
+/// selecting between verified witnesses cannot silently discard gold, max HP,
+/// or persistent card growth while comparing only final combat HP.
+pub fn persistent_run_value(combat: &CombatState) -> i32 {
     combat.entities.player.max_hp
         + combat
             .entities

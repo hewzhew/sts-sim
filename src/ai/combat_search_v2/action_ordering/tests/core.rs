@@ -159,6 +159,99 @@ fn root_action_prior_can_reorder_within_the_same_semantic_role() {
 }
 
 #[test]
+fn lethal_persistent_payoff_precedes_ordinary_lethal_even_when_prior_favors_ordinary() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 5;
+    monster.max_hp = 40;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::HandOfGreed, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ),
+    ];
+    let favored_ordinary_action_key = choices[0].action_key.clone();
+    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
+        exact_state_hash,
+        HashMap::from([(favored_ordinary_action_key, 1.0)]),
+    )]));
+
+    let ordered = order_indexed_action_choices_with_prior(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(original_action_id, choice)| IndexedActionChoice {
+                original_action_id,
+                choice,
+            })
+            .collect(),
+        Some(&prior),
+        CombatSearchPhaseGuardPluginId::Default,
+        CombatSearchActionPriorPluginId::Default,
+    );
+
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+    assert_eq!(ordered.choices[1].original_action_id, 0);
+}
+
+#[test]
+fn nonlethal_persistent_payoff_does_not_precede_ordinary_lethal() {
+    let mut combat = blank_test_combat();
+    let mut low_hp = test_monster(EnemyId::LouseNormal);
+    low_hp.id = 1;
+    low_hp.current_hp = 5;
+    low_hp.max_hp = 5;
+    let mut high_hp = test_monster(EnemyId::JawWorm);
+    high_hp.id = 2;
+    high_hp.current_hp = 40;
+    high_hp.max_hp = 40;
+    combat.entities.monsters = vec![low_hp, high_hp];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::HandOfGreed, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(2),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+    ];
+
+    let ordered = order_action_choices(&EngineState::CombatPlayerTurn, &combat, choices);
+
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+}
+
+#[test]
 fn lethal_card_is_ordered_before_nonlethal_damage() {
     let mut combat = blank_test_combat();
     let mut low_hp = test_monster(EnemyId::LouseNormal);

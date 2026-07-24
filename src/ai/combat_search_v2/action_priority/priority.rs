@@ -9,6 +9,7 @@ use super::role::ActionOrderingRole;
 pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) role: ActionOrderingRole,
     pub(in crate::ai::combat_search_v2) role_rank: i32,
+    pub(in crate::ai::combat_search_v2) lethal_external_payoff: i32,
     pub(in crate::ai::combat_search_v2) potion_tactical_rank: i32,
     pub(in crate::ai::combat_search_v2) mitigation: i32,
     pub(in crate::ai::combat_search_v2) action_supply: i32,
@@ -36,6 +37,7 @@ impl ActionOrderingPriority {
         Self {
             role,
             role_rank: ROLE_END_TURN,
+            lethal_external_payoff: 0,
             potion_tactical_rank: 0,
             mitigation: 0,
             action_supply: 0,
@@ -64,6 +66,10 @@ impl Ord for ActionOrderingPriority {
     fn cmp(&self, other: &Self) -> Ordering {
         self.role_rank
             .cmp(&other.role_rank)
+            .then_with(|| {
+                self.lethal_external_payoff
+                    .cmp(&other.lethal_external_payoff)
+            })
             .then_with(|| self.potion_tactical_rank.cmp(&other.potion_tactical_rank))
             .then_with(|| self.mitigation.cmp(&other.mitigation))
             .then_with(|| self.action_supply.cmp(&other.action_supply))
