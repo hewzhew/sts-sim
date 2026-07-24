@@ -57,6 +57,7 @@ fn card_play_facts_from_accumulator(
         .saturating_add(accumulator.direct.player_hp_loss);
     let mut facts = CardPlayEffectFacts {
         direct: DirectCardPlayEffectFacts {
+            player_block: accumulator.direct.player_block,
             declared_draw_cards: accumulator.direct.declared_draw_cards,
             conditional_draw_cards: accumulator.direct.conditional_draw_cards,
             enemy_weak: accumulator.direct.enemy_weak,

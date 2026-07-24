@@ -13,6 +13,7 @@ pub(super) struct CardPlayEffectAccumulator {
 
 #[derive(Default)]
 pub(super) struct DirectCardPlayEffectAccumulator {
+    pub(super) player_block: i32,
     pub(super) artifact_consumed_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_down_by_target: BTreeMap<usize, i32>,
     pub(super) enemy_strength_gain_by_target: BTreeMap<usize, i32>,
@@ -53,6 +54,9 @@ pub(super) fn observe_direct_action(
     action: Action,
 ) {
     match action {
+        Action::GainBlock { target: 0, amount } => {
+            direct.player_block = direct.player_block.saturating_add(amount.max(0));
+        }
         Action::ApplyPower {
             target,
             power_id,

@@ -4791,6 +4791,12 @@ fn main() -> Result<(), String> {
                 .iter()
                 .map(|weight| 0.95 * (*weight / total) + 0.05 * uniform)
                 .collect::<Vec<_>>();
+            let atomic_priority_diagnostics =
+                sts_simulator::ai::combat_search_v2::oracle_action_policy::
+                    oracle_atomic_action_policy_priority_diagnostics_v1(
+                        &position,
+                        &surface.atomic_actions,
+                    );
             let atomic = surface
                 .atomic_actions
                 .iter()
@@ -4827,6 +4833,7 @@ fn main() -> Result<(), String> {
                         "raw_weight": raw_weight,
                         "probability": probabilities[index],
                         "ordinal_rank": rank,
+                        "priority": atomic_priority_diagnostics[index],
                         "transition": {
                             "truncated": result.truncated,
                             "timed_out": result.timed_out,
@@ -4868,7 +4875,7 @@ fn main() -> Result<(), String> {
                 .collect::<Vec<_>>();
             print_json(&json!({
                 "schema_name": "OracleTurnActionAuditV1",
-                "schema_version": 1,
+                "schema_version": 2,
                 "through": through,
                 "position_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
                     &position.engine,

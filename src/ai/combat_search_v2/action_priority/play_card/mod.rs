@@ -49,12 +49,15 @@ pub(super) fn priority_for_play_card(
     .max(0);
     let effects = card_play_effect_facts(combat, card, target);
     let effect_diagnostics = effects.diagnostics();
-    let declared_block = if card.id == cards::CardId::SecondWind {
-        resource_timing.conversion_block_hint
-    } else {
-        evaluated
-            .base_block_mut
-            .max(resource_timing.conversion_block_hint)
+    let declared_block = match card.id {
+        cards::CardId::SecondWind => resource_timing.conversion_block_hint,
+        // Reinforced Body emits a dedicated X-cost action rather than a
+        // GainBlock action. Its evaluated block remains the per-energy unit.
+        cards::CardId::ReinforcedBody => evaluated.base_block_mut,
+        _ => effects
+            .direct
+            .player_block
+            .max(resource_timing.conversion_block_hint),
     };
     let block = declared_block
         .max(0)

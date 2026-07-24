@@ -10,6 +10,7 @@ use crate::{
     },
     runtime::combat::{CombatCard, CombatState},
 };
+use serde::Serialize;
 
 use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
 use super::frontier::SearchNode;
@@ -19,6 +20,29 @@ use super::value::combat_search_state_value;
 pub struct OracleCombatRolloutGuideV1 {
     pub components: Vec<i32>,
     pub actions_simulated: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OracleAtomicActionPriorityDiagnosticV1 {
+    pub role: &'static str,
+    pub role_rank: i32,
+    pub mitigation: i32,
+    pub action_supply: i32,
+    pub reactive_risk: i32,
+    pub target_progress: i32,
+    pub block: i32,
+    pub damage: i32,
+    pub phase_setup: i32,
+    pub phase_survival: i32,
+    pub phase_transition_safety: i32,
+    pub resource_timing: i32,
+    pub direct_persistent_enemy_strength_down: i32,
+    pub direct_temporary_enemy_strength_down: i32,
+    pub direct_visible_attack_mitigation_hint: i32,
+    pub direct_player_block: i32,
+    pub reactive_player_block: i32,
+    pub reactive_enemy_damage: i32,
+    pub reactive_bad_draw_cards: i32,
 }
 
 /// Runs one bounded, non-authoritative tactical rollout and returns only its
@@ -148,6 +172,58 @@ pub fn oracle_atomic_action_policy_weights(
                 return 1.0e-6;
             }
             rank.map_or(1.0, oracle_ordinal_rank_weight)
+        })
+        .collect()
+}
+
+/// Exposes the typed ordering coordinates used by the oracle action policy.
+/// This is diagnostic provenance only: it neither changes the ordering nor
+/// turns a heuristic preference into outcome evidence.
+pub fn oracle_atomic_action_policy_priority_diagnostics_v1(
+    position: &CombatPosition,
+    inputs: &[ClientInput],
+) -> Vec<Option<OracleAtomicActionPriorityDiagnosticV1>> {
+    let stepper = EngineCombatStepper;
+    inputs
+        .iter()
+        .map(|input| {
+            stepper.choice_for_legal_input(position, input)?;
+            let priority = super::action_priority::priority_for_input_with_plugins(
+                &position.engine,
+                &position.combat,
+                input,
+                super::CombatSearchActionOrderingPlugins::default(),
+            );
+            Some(OracleAtomicActionPriorityDiagnosticV1 {
+                role: priority.role.label(),
+                role_rank: priority.role_rank,
+                mitigation: priority.mitigation,
+                action_supply: priority.action_supply,
+                reactive_risk: priority.reactive_risk,
+                target_progress: priority.target_progress,
+                block: priority.block,
+                damage: priority.damage,
+                phase_setup: priority.phase_setup,
+                phase_survival: priority.phase_survival,
+                phase_transition_safety: priority.phase_transition_safety,
+                resource_timing: priority.resource_timing,
+                direct_persistent_enemy_strength_down: priority
+                    .effects
+                    .direct
+                    .persistent_enemy_strength_down,
+                direct_temporary_enemy_strength_down: priority
+                    .effects
+                    .direct
+                    .temporary_enemy_strength_down,
+                direct_visible_attack_mitigation_hint: priority
+                    .effects
+                    .direct
+                    .visible_attack_mitigation_hint,
+                direct_player_block: priority.effects.direct.player_block,
+                reactive_player_block: priority.effects.reactive.player_block,
+                reactive_enemy_damage: priority.effects.reactive.enemy_damage,
+                reactive_bad_draw_cards: priority.effects.reactive.bad_draw_cards,
+            })
         })
         .collect()
 }
@@ -565,6 +641,61 @@ mod tests {
         let weights = oracle_atomic_action_policy_weights(&position, &inputs);
 
         assert!(weights[1] > weights[0]);
+    }
+
+    #[test]
+    fn dexterity_does_not_turn_artifact_blocked_disarm_into_a_block_card() {
+        use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
+
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut attacker = crate::test_support::test_monster(EnemyId::Deca);
+        attacker.id = 1;
+        let attack = MonsterMoveSpec::Attack(AttackSpec {
+            base_damage: 16,
+            hits: 2,
+            damage_kind: DamageKind::Normal,
+        });
+        attacker.set_planned_steps(attack.to_steps());
+        attacker.set_planned_visible_spec(Some(attack));
+        combat.entities.monsters = vec![attacker];
+        combat
+            .entities
+            .power_db
+            .insert(1, vec![test_power_amount(PowerId::Artifact, 1)]);
+        let player = combat.entities.player.id;
+        combat.entities.power_db.insert(
+            player,
+            vec![
+                test_power_amount(PowerId::FeelNoPain, 4),
+                test_power_amount(PowerId::Dexterity, 6),
+            ],
+        );
+        let mut bash = CombatCard::new(CardId::Bash, 10);
+        bash.upgrades = 1;
+        combat.zones.hand = vec![bash, CombatCard::new(CardId::Disarm, 11)];
+        combat.turn.energy = 3;
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ];
+
+        let exposed = CombatPosition::new(EngineState::CombatPlayerTurn, combat.clone());
+        let exposed_weights = oracle_atomic_action_policy_weights(&exposed, &inputs);
+        assert!(
+            exposed_weights[0] > exposed_weights[1],
+            "four incidental block must not outrank Bash while most damage remains"
+        );
+
+        assert!(
+            exposed_weights[1].is_finite() && exposed_weights[1] > 0.0,
+            "the blocked Disarm remains a legal searchable action"
+        );
     }
 
     #[test]

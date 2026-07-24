@@ -37,6 +37,18 @@ fn artifact_blocks_disarm_in_action_effect_facts() {
 }
 
 #[test]
+fn direct_block_facts_follow_card_actions_not_dexterity_mutation_fields() {
+    let mut combat = blank_test_combat();
+    insert_power(&mut combat, 0, PowerId::Dexterity, 6);
+
+    let disarm = card_play_effect_facts(&combat, &CombatCard::new(CardId::Disarm, 10), Some(1));
+    let defend = card_play_effect_facts(&combat, &CombatCard::new(CardId::Defend, 11), None);
+
+    assert_eq!(disarm.direct.player_block, 0);
+    assert_eq!(defend.direct.player_block, 11);
+}
+
+#[test]
 fn artifact_is_consumed_in_card_action_order_before_later_debuffs() {
     let mut combat = blank_test_combat();
     let mut guardian = test_monster(EnemyId::TheGuardian);

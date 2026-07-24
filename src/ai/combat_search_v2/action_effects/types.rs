@@ -6,6 +6,7 @@ pub(in crate::ai::combat_search_v2) struct CardPlayEffectFacts {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct DirectCardPlayEffectFacts {
+    pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) persistent_enemy_strength_down: i32,
     pub(in crate::ai::combat_search_v2) temporary_enemy_strength_down: i32,
     pub(in crate::ai::combat_search_v2) visible_attack_mitigation_hint: i32,
@@ -56,6 +57,7 @@ pub(in crate::ai::combat_search_v2) struct CardPlayEffectDiagnostics {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct CardPlayDirectEffectDiagnostics {
+    pub(in crate::ai::combat_search_v2) player_block: i32,
     pub(in crate::ai::combat_search_v2) persistent_enemy_strength_down: i32,
     pub(in crate::ai::combat_search_v2) temporary_enemy_strength_down: i32,
     pub(in crate::ai::combat_search_v2) visible_attack_mitigation_hint: i32,
@@ -151,6 +153,7 @@ impl CardPlayEffectFacts {
         CardPlayEffectDiagnostics {
             derived: self.derived_scores(),
             direct: CardPlayDirectEffectDiagnostics {
+                player_block: self.direct.player_block,
                 persistent_enemy_strength_down: self.direct.persistent_enemy_strength_down,
                 temporary_enemy_strength_down: self.direct.temporary_enemy_strength_down,
                 visible_attack_mitigation_hint: self.direct.visible_attack_mitigation_hint,
