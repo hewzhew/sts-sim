@@ -574,46 +574,15 @@ fn run_live_to_stop(endpoint: &Path, config: LiveRunConfig) -> Result<Value, Str
             .ok_or_else(|| "live run status omitted boundary".to_string())?;
 
         if matches!(boundary, "terminal_victory" | "terminal_defeat") {
-            let final_node = node_id(&node)?;
-            let verification = if boundary == "terminal_victory" {
-                Some(live_call(
-                    endpoint,
-                    OracleAnalysisServiceCommandV1::VerifyRunWitness {
-                        node: Some(final_node),
-                    },
-                )?)
-            } else {
-                None
-            };
-            let export = if boundary == "terminal_victory" {
-                if let Some(path) = config.export_continuation.as_ref() {
-                    Some(live_call(
-                        endpoint,
-                        OracleAnalysisServiceCommandV1::ExportContinuation {
-                            node: final_node,
-                            path: path.clone(),
-                        },
-                    )?)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
-            return Ok(json!({
-                "schema_name": "OracleAutonomousRunReportV1",
-                "schema_version": 1,
-                "status": if boundary == "terminal_victory" { "victory_verified" } else { "terminal_defeat" },
-                "start_node": start_node,
-                "final": compact_live_node(&node, 8),
-                "owner_decisions": owner_decisions,
-                "combat_count": combats.len(),
-                "total_combat_elapsed_ms": total_combat_elapsed_ms,
-                "combats": combats,
-                "verification": verification,
-                "continuation_export": export,
-            }));
+            return terminal_live_run_report(
+                endpoint,
+                &node,
+                start_node,
+                owner_decisions,
+                &combats,
+                total_combat_elapsed_ms,
+                config.export_continuation.as_deref(),
+            );
         }
 
         let choice_count = node
@@ -763,6 +732,21 @@ fn run_live_to_stop(endpoint: &Path, config: LiveRunConfig) -> Result<Value, Str
         endpoint,
         OracleAnalysisServiceCommandV1::Status { node: None },
     )?;
+    if node
+        .get("boundary")
+        .and_then(Value::as_str)
+        .is_some_and(|boundary| matches!(boundary, "terminal_victory" | "terminal_defeat"))
+    {
+        return terminal_live_run_report(
+            endpoint,
+            &node,
+            start_node,
+            owner_decisions,
+            &combats,
+            total_combat_elapsed_ms,
+            config.export_continuation.as_deref(),
+        );
+    }
     live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
     Ok(stopped_live_run_report(
         start_node,
@@ -772,6 +756,66 @@ fn run_live_to_stop(endpoint: &Path, config: LiveRunConfig) -> Result<Value, Str
         total_combat_elapsed_ms,
         "boundary_limit",
     ))
+}
+
+fn terminal_live_run_report(
+    endpoint: &Path,
+    node: &Value,
+    start_node: usize,
+    owner_decisions: u64,
+    combats: &[Value],
+    total_combat_elapsed_ms: u64,
+    export_continuation: Option<&Path>,
+) -> Result<Value, String> {
+    let boundary = node
+        .get("boundary")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "terminal live run status omitted boundary".to_string())?;
+    if !matches!(boundary, "terminal_victory" | "terminal_defeat") {
+        return Err(format!(
+            "terminal live run report received non-terminal boundary '{boundary}'"
+        ));
+    }
+    let final_node = node_id(node)?;
+    let verification = if boundary == "terminal_victory" {
+        Some(live_call(
+            endpoint,
+            OracleAnalysisServiceCommandV1::VerifyRunWitness {
+                node: Some(final_node),
+            },
+        )?)
+    } else {
+        None
+    };
+    let export = if boundary == "terminal_victory" {
+        if let Some(path) = export_continuation {
+            Some(live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::ExportContinuation {
+                    node: final_node,
+                    path: path.to_path_buf(),
+                },
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?;
+    Ok(json!({
+        "schema_name": "OracleAutonomousRunReportV1",
+        "schema_version": 1,
+        "status": if boundary == "terminal_victory" { "victory_verified" } else { "terminal_defeat" },
+        "start_node": start_node,
+        "final": compact_live_node(node, 8),
+        "owner_decisions": owner_decisions,
+        "combat_count": combats.len(),
+        "total_combat_elapsed_ms": total_combat_elapsed_ms,
+        "combats": combats,
+        "verification": verification,
+        "continuation_export": export,
+    }))
 }
 
 fn node_id(node: &Value) -> Result<usize, String> {
