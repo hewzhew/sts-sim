@@ -6,7 +6,7 @@ use crate::state::map::node::RoomType;
 use crate::state::rewards::RewardItem;
 use crate::state::run::RunState;
 
-use super::{CandidateAction, DecisionCandidate};
+use super::{CandidateAction, DecisionCandidate, DecisionCandidateKey};
 
 pub(crate) fn candidate(
     id: impl Into<String>,
@@ -18,6 +18,23 @@ pub(crate) fn candidate(
         id: id.into(),
         label: label.into(),
         key: None,
+        action: action.into(),
+        note: note.map(Into::into),
+        resolution: None,
+    }
+}
+
+pub(crate) fn keyed_candidate(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    key: DecisionCandidateKey,
+    action: impl Into<CandidateAction>,
+    note: Option<impl Into<String>>,
+) -> DecisionCandidate {
+    DecisionCandidate {
+        id: id.into(),
+        label: label.into(),
+        key: Some(key),
         action: action.into(),
         note: note.map(Into::into),
         resolution: None,

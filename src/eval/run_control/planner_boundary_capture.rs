@@ -568,6 +568,14 @@ fn planner_action_for_candidate(
             relic: *relic,
         }),
         Some(DecisionCandidateKey::BossRelicSkip) => Some(PlannerAction::SkipBossRelic),
+        Some(
+            DecisionCandidateKey::CampfireRest
+            | DecisionCandidateKey::CampfireSmith { .. }
+            | DecisionCandidateKey::CampfireDig
+            | DecisionCandidateKey::CampfireLift
+            | DecisionCandidateKey::CampfireToke { .. }
+            | DecisionCandidateKey::CampfireRecall,
+        ) => planner_action_from_execution(session, site, candidate)?,
         Some(DecisionCandidateKey::ShopPurgeCard {
             deck_index,
             card,

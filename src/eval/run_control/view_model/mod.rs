@@ -86,6 +86,22 @@ pub enum DecisionCandidateKey {
         relic: RelicId,
     },
     BossRelicSkip,
+    CampfireRest,
+    CampfireSmith {
+        deck_index: usize,
+        card_uuid: u32,
+        card: CardId,
+        upgrades: u8,
+    },
+    CampfireDig,
+    CampfireLift,
+    CampfireToke {
+        deck_index: usize,
+        card_uuid: u32,
+        card: CardId,
+        upgrades: u8,
+    },
+    CampfireRecall,
     ShopPurgeCard {
         deck_index: usize,
         card: CardId,

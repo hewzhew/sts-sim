@@ -64,6 +64,14 @@ pub struct DeckRepairProfileV1 {
 }
 
 pub fn deck_repair_profile_v1(run_state: &RunState) -> DeckRepairProfileV1 {
+    let upgrade_plan = crate::ai::upgrade_planner_v1::plan_upgrades_v1(run_state);
+    deck_repair_profile_from_upgrade_plan_v1(run_state, &upgrade_plan)
+}
+
+pub fn deck_repair_profile_from_upgrade_plan_v1(
+    run_state: &RunState,
+    upgrade_plan: &crate::ai::upgrade_planner_v1::UpgradePlanV1,
+) -> DeckRepairProfileV1 {
     let deficit = assess_deck_strategic_deficit(
         &run_state.master_deck,
         RunStrategicFacts::from_run_state(run_state),
@@ -94,7 +102,8 @@ pub fn deck_repair_profile_v1(run_state: &RunState) -> DeckRepairProfileV1 {
             })
         })
         .collect();
-    let reliability_upgrades = repair_upgrade_candidates(run_state, &thin_or_missing_functions);
+    let reliability_upgrades =
+        repair_upgrade_candidates(run_state, &thin_or_missing_functions, upgrade_plan);
     let source_tags = run_state
         .relics
         .iter()
@@ -113,12 +122,13 @@ pub fn deck_repair_profile_v1(run_state: &RunState) -> DeckRepairProfileV1 {
 fn repair_upgrade_candidates(
     run_state: &RunState,
     thin_or_missing_functions: &[DeckRepairFunctionV1],
+    upgrade_plan: &crate::ai::upgrade_planner_v1::UpgradePlanV1,
 ) -> Vec<DeckRepairUpgradeCandidateV1> {
-    use crate::ai::upgrade_planner_v1::{plan_upgrades_v1, UpgradeDebtSeverityV1, UpgradeRoleV1};
+    use crate::ai::upgrade_planner_v1::{UpgradeDebtSeverityV1, UpgradeRoleV1};
 
-    plan_upgrades_v1(run_state)
+    upgrade_plan
         .candidates
-        .into_iter()
+        .iter()
         .filter_map(|candidate| {
             let card = run_state.master_deck.get(candidate.deck_index)?;
             let retains_time_sensitive_defense = candidate.mechanical_delta.ethereal_removed_delta

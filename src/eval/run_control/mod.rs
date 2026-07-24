@@ -2,6 +2,7 @@ mod accepted_combat_line_evidence;
 mod auto_capture;
 mod auto_step;
 mod bounded_run_driver;
+mod campfire_policy_prior;
 mod card_reward_policy_prior;
 mod combat_auto_policy;
 mod combat_candidate_line;
@@ -80,6 +81,11 @@ pub use auto_capture::AutoCombatCaptureConfig;
 pub use bounded_run_driver::{
     BoundedRunDriveErrorV1, BoundedRunDriveResultV1, BoundedRunDriveStopV1, BoundedRunDriver,
     BoundedRunResultV1, BoundedRunStepContextV1, BoundedRunStepControlV1,
+};
+pub use campfire_policy_prior::{
+    exact_campfire_policy_decision_v1, exact_campfire_policy_prior_v1,
+    CampfirePolicyActionEvidenceV1, CampfirePolicyActionV1, CampfirePolicyBandV1,
+    ExactCampfirePolicyDecisionV1,
 };
 pub use card_reward_policy_prior::{
     exact_card_reward_policy_decision_v1, exact_card_reward_policy_prior_v1,

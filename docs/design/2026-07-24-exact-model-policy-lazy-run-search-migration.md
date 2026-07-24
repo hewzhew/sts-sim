@@ -451,9 +451,30 @@ Implemented on 2026-07-24:
   policy decision or teacher-like annotation;
 - Singing Bowl validation remains with the exact reward boundary.
 
-Then migrate campfire, boss relic, route, and event policy through the same
-interface. Each slice must delete its old production authority before the next
-site is started.
+### Slice 7: campfire cutover and retirement
+
+Implemented on 2026-07-24:
+
+- Rest, every legal Smith target, Dig, Lift, every legal Toke target, and
+  Recall now carry typed candidate keys on the exact public surface;
+- `exact_campfire_policy_decision_v1` executes every action from the same
+  immutable parent and orders the successors without changing legality;
+- Rest distinguishes an exact zero-heal action, immediate survival, and
+  non-urgent preservation instead of making any missing HP defeat every Smith;
+- Smith consumes the shared upgrade-debt and deck-repair evidence; Toke
+  consumes the shared exact target-loss evidence instead of a local
+  curse/status/starter fallback;
+- exact Dig, Lift, and Recall successors expose their real persistent state
+  changes;
+- the production owner returns the complete typed action surface with positive
+  support, while a mechanically empty campfire remains a typed forced
+  transition;
+- `campfire_policy_v1`, its single-answer `Stop` contract, local score
+  thresholds, and owner fallbacks were physically deleted.
+
+Then migrate boss relic, route, and event policy through the same interface.
+Each slice must delete its old production authority before the next site is
+started.
 
 ## Explicit non-goals
 
@@ -484,5 +505,7 @@ The architecture is accepted only when:
 7. the shop production path no longer imports `shop_policy_v1`;
 8. `shop_policy_v1` is physically deleted after the last supported consumer is
    migrated;
-9. seed006 through seed009 preserved witnesses replay exactly;
-10. a new run can still find an A0 Act 3 Boss witness under the oracle contract.
+9. every exact Campfire action is typed, positively supported, and
+   auto-expandable, with no `campfire_policy_v1` fallback;
+10. seed006 through seed009 preserved witnesses replay exactly;
+11. a new run can still find an A0 Act 3 Boss witness under the oracle contract.

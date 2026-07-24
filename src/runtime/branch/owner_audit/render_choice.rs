@@ -91,6 +91,22 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
             relic,
         } => format!("boss relic {option_index} {relic:?}"),
         DecisionCandidateKey::BossRelicSkip => "skip boss relic".to_string(),
+        DecisionCandidateKey::CampfireRest => "rest".to_string(),
+        DecisionCandidateKey::CampfireSmith {
+            deck_index,
+            card,
+            upgrades,
+            ..
+        } => format!("smith {deck_index} {card:?}+{upgrades}"),
+        DecisionCandidateKey::CampfireDig => "dig".to_string(),
+        DecisionCandidateKey::CampfireLift => "lift".to_string(),
+        DecisionCandidateKey::CampfireToke {
+            deck_index,
+            card,
+            upgrades,
+            ..
+        } => format!("toke {deck_index} {card:?}+{upgrades}"),
+        DecisionCandidateKey::CampfireRecall => "recall".to_string(),
         DecisionCandidateKey::ShopPurgeCard {
             deck_index,
             card,

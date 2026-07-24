@@ -11,8 +11,8 @@ use crate::state::selection::{SelectionResolution, SelectionScope};
 use std::collections::BTreeMap;
 
 use super::labels::{
-    candidate, clean_event_label, combat_card_label, monster_name, reward_card_label,
-    reward_item_label, room_type_label, shop_block_note, unavailable_candidate,
+    candidate, clean_event_label, combat_card_label, keyed_candidate, monster_name,
+    reward_card_label, reward_item_label, room_type_label, shop_block_note, unavailable_candidate,
 };
 use super::{CandidateResolution, DecisionCandidate, DecisionCandidateKey, RunControlSession};
 
@@ -398,9 +398,10 @@ fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     let mut candidates = Vec::new();
     for choice in crate::engine::campfire_handler::get_available_options(&session.run_state) {
         match choice {
-            CampfireChoice::Rest => candidates.push(candidate(
+            CampfireChoice::Rest => candidates.push(keyed_candidate(
                 "rest",
                 "Rest",
+                DecisionCandidateKey::CampfireRest,
                 ClientInput::CampfireOption(CampfireChoice::Rest),
                 None::<String>,
             )),
@@ -413,24 +414,32 @@ fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
                         .enumerate()
                         .filter(|(_, card)| crate::state::core::master_deck_card_can_upgrade(card))
                         .map(|(idx, card)| {
-                            candidate(
+                            keyed_candidate(
                                 format!("smith-{idx}"),
                                 format!("Smith {}", combat_card_label(card)),
+                                DecisionCandidateKey::CampfireSmith {
+                                    deck_index: idx,
+                                    card_uuid: card.uuid,
+                                    card: card.id,
+                                    upgrades: card.upgrades,
+                                },
                                 ClientInput::CampfireOption(CampfireChoice::Smith(idx)),
                                 None::<String>,
                             )
                         }),
                 );
             }
-            CampfireChoice::Dig => candidates.push(candidate(
+            CampfireChoice::Dig => candidates.push(keyed_candidate(
                 "dig",
                 "Dig",
+                DecisionCandidateKey::CampfireDig,
                 ClientInput::CampfireOption(CampfireChoice::Dig),
                 None::<String>,
             )),
-            CampfireChoice::Lift => candidates.push(candidate(
+            CampfireChoice::Lift => candidates.push(keyed_candidate(
                 "lift",
                 "Lift",
+                DecisionCandidateKey::CampfireLift,
                 ClientInput::CampfireOption(CampfireChoice::Lift),
                 None::<String>,
             )),
@@ -449,18 +458,25 @@ fn campfire_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
                                 )
                         })
                         .map(|(idx, card)| {
-                            candidate(
+                            keyed_candidate(
                                 format!("toke-{idx}"),
                                 format!("Toke {}", combat_card_label(card)),
+                                DecisionCandidateKey::CampfireToke {
+                                    deck_index: idx,
+                                    card_uuid: card.uuid,
+                                    card: card.id,
+                                    upgrades: card.upgrades,
+                                },
                                 ClientInput::CampfireOption(CampfireChoice::Toke(idx)),
                                 None::<String>,
                             )
                         }),
                 );
             }
-            CampfireChoice::Recall => candidates.push(candidate(
+            CampfireChoice::Recall => candidates.push(keyed_candidate(
                 "recall",
                 "Recall ruby key",
+                DecisionCandidateKey::CampfireRecall,
                 ClientInput::CampfireOption(CampfireChoice::Recall),
                 None::<String>,
             )),
