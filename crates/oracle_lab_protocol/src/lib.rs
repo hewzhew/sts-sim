@@ -106,6 +106,7 @@ pub enum OracleAnalysisServiceCommandV1 {
         wall_ms: Option<u64>,
     },
     AcceptCombat,
+    EscapeCombat,
     RestartCombat,
     History {
         #[serde(default)]

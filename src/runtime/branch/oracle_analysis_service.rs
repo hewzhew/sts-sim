@@ -304,7 +304,7 @@ fn execute_command(
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "view", "tree", "try",
                     "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
-                    "export_combat_case", "export_continuation", "verify_run_witness", "save", "shutdown"
+                    "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
                 ],
                 "transport": "newline-delimited JSON over stdin/stdout",
                 "autosave": "after every successful mutation",
@@ -484,6 +484,10 @@ fn execute_command(
         }
         OracleAnalysisServiceCommandV1::AcceptCombat => {
             let view = workspace.accept_combat_incumbent()?;
+            (node_summary(&view), true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::EscapeCombat => {
+            let view = workspace.accept_smoke_bomb_escape()?;
             (node_summary(&view), true, false, false)
         }
         OracleAnalysisServiceCommandV1::RestartCombat => {

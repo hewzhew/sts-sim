@@ -1148,6 +1148,38 @@ impl OracleAnalysisSessionV1 {
             .ok_or_else(|| "verified combat action witness did not materialize a child".to_string())
     }
 
+    /// Materializes the exact Smoke Bomb escape already exposed by the current
+    /// combat state. This is an explicit analyst choice, not a victory claim
+    /// and not a fallback hidden behind a failed search.
+    pub fn accept_cursor_smoke_bomb_escape(&mut self) -> Result<usize, String> {
+        let source_node_id = self.cursor_node_id;
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
+        }
+        let child_node_id = self
+            .explorer
+            .materialize_explicit_smoke_bomb_escape(source_node_id)?
+            .ok_or_else(|| "exact Smoke Bomb escape did not materialize a child".to_string())?;
+        self.combat_jobs.remove(&source_node_id);
+        let child = self.require_branch(child_node_id)?;
+        let edge_id = self.record_edge(
+            source_node_id,
+            child_node_id,
+            OracleAnalysisEdgeKindV1::CombatWitness,
+            format!(
+                "Smoke Bomb escape -> {} HP",
+                child.session.run_state.current_hp
+            ),
+            None,
+        );
+        self.move_cursor_after_edge(source_node_id, edge_id, child_node_id);
+        Ok(child_node_id)
+    }
+
     /// Discards only the cursor combat's retained search work and starts a
     /// fresh tactical job from the same exact simulator state. Historical run
     /// state, journal entries, siblings, and navigation remain unchanged.

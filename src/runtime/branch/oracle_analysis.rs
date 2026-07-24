@@ -293,6 +293,11 @@ impl OracleAnalysisWorkspaceV1 {
         self.session.accept_cursor_combat_actions(actions)?;
         self.view()
     }
+
+    pub fn accept_smoke_bomb_escape(&mut self) -> Result<OracleAnalysisNodeViewV1, String> {
+        self.session.accept_cursor_smoke_bomb_escape()?;
+        self.view()
+    }
 }
 
 fn validate_combat_guidance(guidance: &Option<CombatGuidanceBundleV1>) -> Result<(), String> {

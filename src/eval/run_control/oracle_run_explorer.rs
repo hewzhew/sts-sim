@@ -1161,6 +1161,44 @@ impl OracleRunExplorerV1 {
         }
     }
 
+    pub(super) fn materialize_explicit_smoke_bomb_escape(
+        &mut self,
+        branch_id: usize,
+    ) -> Result<Option<usize>, String> {
+        let parent = self
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == branch_id)
+            .cloned()
+            .ok_or_else(|| format!("missing oracle combat branch {branch_id}"))?;
+        let mut session = parent.session.clone();
+        let outcome =
+            super::combat_no_win_fallback::try_apply_smoke_bomb_survival_fallback_after_rejection(
+                &mut session,
+                "explicit oracle escape",
+            )?
+            .ok_or_else(|| {
+                format!(
+                    "oracle combat branch {branch_id} has no currently usable Smoke Bomb escape"
+                )
+            })?;
+        let finished =
+            self.accept_resolved_combat_branch(parent, session, outcome.progress_steps)?;
+        match finished {
+            FinishedOracleCombatV1::Resolved(branch_id) => Ok(Some(branch_id)),
+            FinishedOracleCombatV1::ExactDuplicate => self
+                .retired_exact_duplicates
+                .last()
+                .map(|duplicate| Some(duplicate.survivor_branch_id))
+                .ok_or_else(|| {
+                    "explicit Smoke Bomb escape duplicated without a survivor record".to_string()
+                }),
+            FinishedOracleCombatV1::Unresolved(_) => {
+                Err("explicit Smoke Bomb escape unexpectedly remained unresolved".to_string())
+            }
+        }
+    }
+
     fn finish_combat(
         &mut self,
         pending: PendingOracleCombatV1,
@@ -1220,15 +1258,24 @@ impl OracleRunExplorerV1 {
             };
             return Ok(FinishedOracleCombatV1::Unresolved(unresolved));
         }
-        if outcome.progress_steps.len() != 1 {
+        self.accept_resolved_combat_branch(parent, session, outcome.progress_steps)
+    }
+
+    fn accept_resolved_combat_branch(
+        &mut self,
+        parent: OracleRunBranchV1,
+        session: RunControlSession,
+        progress_steps: Vec<RunProgressStepV1>,
+    ) -> Result<FinishedOracleCombatV1, String> {
+        if progress_steps.len() != 1 {
             return Err(format!(
                 "oracle combat branch {} committed {} progress steps; expected one",
                 parent.branch_id,
-                outcome.progress_steps.len()
+                progress_steps.len()
             ));
         }
         let mut journal = parent.journal;
-        journal.append_committed_steps(outcome.progress_steps)?;
+        journal.append_committed_steps(progress_steps)?;
         let child = OracleRunBranchV1 {
             branch_id: self.next_branch_id,
             parent_branch_id: Some(parent.branch_id),
@@ -2098,9 +2145,11 @@ pub(super) fn classify_run_boundary(session: &RunControlSession) -> OracleRunBou
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{
         expand_oracle_neow_candidates_v1, CardRewardFunctionV1, CardRewardObligationDeltaV1,
-        CardRewardObligationSourceV1, CardRewardOwnerProvenanceV1, RunControlConfig,
+        CardRewardObligationSourceV1, CardRewardOwnerProvenanceV1, RunCombatResolutionKindV1,
+        RunControlConfig,
     };
     use crate::state::core::{ActiveCombat, CombatContext, RoomCombatContext};
     use crate::state::map::node::RoomType;
@@ -2139,6 +2188,74 @@ mod tests {
             parent_floor: 0,
             combat_edge_probe: None,
         }
+    }
+
+    #[test]
+    fn explicit_smoke_bomb_escape_materializes_a_typed_run_successor() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = false;
+        combat.entities.player.current_hp = 37;
+        combat.entities.player.max_hp = 80;
+        let mut jaw_worm =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+        let plan = crate::content::monsters::roll_monster_turn_plan(
+            &mut combat.rng.ai_rng,
+            &jaw_worm,
+            combat.meta.ascension_level,
+            99,
+            std::slice::from_ref(&jaw_worm),
+            &[],
+        );
+        jaw_worm.set_planned_move_id(plan.move_id);
+        jaw_worm.set_planned_steps(plan.steps);
+        jaw_worm.set_planned_visible_spec(plan.visible_spec);
+        combat.entities.monsters = vec![jaw_worm];
+        combat.entities.potions = vec![Some(Potion::new(PotionId::SmokeBomb, 41))];
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.next_branch_id = 1;
+        explorer
+            .accept_branch(OracleRunBranchV1 {
+                branch_id: 0,
+                parent_branch_id: None,
+                neow_root_candidate_id: "test_root".to_string(),
+                neow_root_label: "test root".to_string(),
+                state_fingerprint: run_session_fingerprint_v1(&session),
+                boundary: OracleRunBoundaryV1::Combat,
+                path_negative_log_policy: 0.0,
+                path_discrepancy: 0,
+                path_depth: 1,
+                replay: Vec::new(),
+                journal: RunProgressJournalV1::default(),
+                session,
+            })
+            .expect("unique combat branch");
+
+        let child_id = explorer
+            .materialize_explicit_smoke_bomb_escape(0)
+            .expect("exact escape")
+            .expect("escape child");
+        let child = explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == child_id)
+            .expect("materialized child");
+
+        assert_eq!(child.boundary, OracleRunBoundaryV1::Reward);
+        assert_eq!(child.session.run_state.current_hp, 37);
+        let [RunProgressStepV1::CombatResolution(resolution)] = child.journal.entries() else {
+            panic!("escape should append exactly one typed combat resolution");
+        };
+        assert_eq!(resolution.kind, RunCombatResolutionKindV1::SmokeBombEscape);
     }
 
     fn shadow_key(enemy_hp_delta: i32, survival_margin: i32) -> StrategicProbeShadowOrderKeyV1 {

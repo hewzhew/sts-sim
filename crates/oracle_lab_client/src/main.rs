@@ -132,6 +132,8 @@ enum LiveCommand {
     },
     /// Accept the current verified combat incumbent.
     Accept,
+    /// Explicitly take the current exact Smoke Bomb escape.
+    Escape,
     /// Restart tactical search at the unchanged exact combat state.
     Restart,
     /// Print a compact timeline for the current or selected node.
@@ -297,6 +299,10 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
         )?),
         LiveCommand::Accept => print_json(&compact_live_node(
             &live_call(endpoint, OracleAnalysisServiceCommandV1::AcceptCombat)?,
+            8,
+        )),
+        LiveCommand::Escape => print_json(&compact_live_node(
+            &live_call(endpoint, OracleAnalysisServiceCommandV1::EscapeCombat)?,
             8,
         )),
         LiveCommand::Restart => print_json(&compact_live_node(
