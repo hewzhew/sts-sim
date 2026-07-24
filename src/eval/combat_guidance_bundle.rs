@@ -16,7 +16,7 @@ use crate::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use crate::state::core::ClientInput;
 
 pub const COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME: &str = "CombatValuePrototypeArtifactV1";
-pub const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 2;
+pub const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 3;
 pub const COMBAT_VALUE_FEATURE_SCHEMA: &str = "existing-combat-guides/concatenated-v1";
 pub const COMBAT_GUIDANCE_BUNDLE_SCHEMA_NAME: &str = "CombatGuidanceBundleV1";
 pub const COMBAT_GUIDANCE_BUNDLE_SCHEMA_VERSION: u32 = 1;
@@ -37,6 +37,7 @@ pub struct CombatValuePrototypeArtifactV1 {
     #[serde(default)]
     pub runtime_compatibility_id: String,
     pub training_authority: String,
+    pub source_trajectory_count: usize,
     pub source_action_count: usize,
     pub source_terminal_final_hp: i32,
     pub feature_count: usize,
@@ -50,6 +51,7 @@ pub struct CombatValuePrototypeArtifactV1 {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatValuePrototypeV1 {
+    pub source_trajectory_index: usize,
     pub player_turn: u32,
     pub value_rank: i32,
     pub features: Vec<i32>,
@@ -81,23 +83,55 @@ impl CombatValuePrototypeArtifactV1 {
         source_terminal_final_hp: i32,
         prototypes: impl IntoIterator<Item = (u32, i32, Vec<i32>)>,
     ) -> Result<Self, String> {
-        let mut prototypes = prototypes
+        Self::from_ranked_feature_trajectories(
+            training_authority,
+            [(
+                source_action_count,
+                source_terminal_final_hp,
+                prototypes.into_iter().collect(),
+            )],
+        )
+    }
+
+    pub fn from_ranked_feature_trajectories(
+        training_authority: impl Into<String>,
+        trajectories: impl IntoIterator<Item = (usize, i32, Vec<(u32, i32, Vec<i32>)>)>,
+    ) -> Result<Self, String> {
+        let trajectories = trajectories.into_iter().collect::<Vec<_>>();
+        let source_trajectory_count = trajectories.len();
+        let source_action_count = trajectories.iter().fold(0usize, |total, trajectory| {
+            total.saturating_add(trajectory.0)
+        });
+        let source_terminal_final_hp = trajectories
+            .iter()
+            .map(|trajectory| trajectory.1)
+            .min()
+            .unwrap_or_default();
+        let mut prototypes = trajectories
             .into_iter()
-            .map(
-                |(player_turn, value_rank, features)| CombatValuePrototypeV1 {
-                    player_turn,
-                    value_rank,
-                    features,
-                },
-            )
+            .enumerate()
+            .flat_map(|(source_trajectory_index, (_, _, prototypes))| {
+                prototypes
+                    .into_iter()
+                    .map(
+                        move |(player_turn, value_rank, features)| CombatValuePrototypeV1 {
+                            source_trajectory_index,
+                            player_turn,
+                            value_rank,
+                            features,
+                        },
+                    )
+            })
             .collect::<Vec<_>>();
-        prototypes.sort_by_key(|prototype| prototype.player_turn);
+        prototypes
+            .sort_by_key(|prototype| (prototype.source_trajectory_index, prototype.player_turn));
         let artifact = Self {
             schema_name: COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME.to_string(),
             schema_version: COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION,
             feature_schema: COMBAT_VALUE_FEATURE_SCHEMA.to_string(),
             runtime_compatibility_id: COMBAT_GUIDANCE_RUNTIME_ID.to_string(),
             training_authority: training_authority.into(),
+            source_trajectory_count,
             source_action_count,
             source_terminal_final_hp,
             feature_count: prototypes
@@ -136,7 +170,10 @@ impl CombatValuePrototypeArtifactV1 {
         if self.training_authority.is_empty() {
             return Err("combat value prototype training authority is empty".to_string());
         }
-        if self.prototypes.is_empty() || self.feature_count == 0 {
+        if self.source_trajectory_count == 0
+            || self.prototypes.is_empty()
+            || self.feature_count == 0
+        {
             return Err("combat value prototype artifact is empty".to_string());
         }
         if self
@@ -154,12 +191,30 @@ impl CombatValuePrototypeArtifactV1 {
         {
             return Err("combat value prototype feature widths disagree".to_string());
         }
-        if self
+        let source_indices = self
             .prototypes
-            .windows(2)
-            .any(|pair| pair[0].player_turn >= pair[1].player_turn)
+            .iter()
+            .map(|prototype| prototype.source_trajectory_index)
+            .collect::<HashSet<_>>();
+        if source_indices.len() != self.source_trajectory_count
+            || source_indices
+                .iter()
+                .any(|index| *index >= self.source_trajectory_count)
         {
-            return Err("combat value prototypes must have unique ascending turns".to_string());
+            return Err(
+                "combat value prototype trajectory indices disagree with the source count"
+                    .to_string(),
+            );
+        }
+        if self.prototypes.windows(2).any(|pair| {
+            pair[0].source_trajectory_index > pair[1].source_trajectory_index
+                || (pair[0].source_trajectory_index == pair[1].source_trajectory_index
+                    && pair[0].player_turn >= pair[1].player_turn)
+        }) {
+            return Err(
+                "combat value prototypes must have unique ascending turns per trajectory"
+                    .to_string(),
+            );
         }
         Ok(())
     }
@@ -182,16 +237,15 @@ impl CombatValuePrototypeArtifactV1 {
         Ok(artifact)
     }
 
-    pub fn targets_by_turn(&self) -> HashMap<u32, (i32, Vec<i32>)> {
-        self.prototypes
-            .iter()
-            .map(|prototype| {
-                (
-                    prototype.player_turn,
-                    (prototype.value_rank, prototype.features.clone()),
-                )
-            })
-            .collect()
+    pub fn targets_by_turn(&self) -> HashMap<u32, Vec<(i32, Vec<i32>)>> {
+        let mut targets = HashMap::<u32, Vec<(i32, Vec<i32>)>>::new();
+        for prototype in &self.prototypes {
+            targets
+                .entry(prototype.player_turn)
+                .or_default()
+                .push((prototype.value_rank, prototype.features.clone()));
+        }
+        targets
     }
 
     pub fn report(&self) -> serde_json::Value {
@@ -201,6 +255,7 @@ impl CombatValuePrototypeArtifactV1 {
             "feature_schema": self.feature_schema,
             "runtime_compatibility_id": self.runtime_compatibility_id,
             "training_authority": self.training_authority,
+            "source_trajectory_count": self.source_trajectory_count,
             "feature_count": self.feature_count,
             "prototype_count": self.prototypes.len(),
             "one_turn_viability_prototype_count": self.one_turn_viability_prototypes.len(),
@@ -327,7 +382,7 @@ impl CombatGuidanceBundleV1 {
 #[derive(Clone)]
 struct CombatValuePrototypePolicyV1 {
     base: SharedCombatActionPolicy,
-    typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
+    typed_target_by_turn: Arc<HashMap<u32, Vec<(i32, Vec<i32>)>>>,
 }
 
 impl CombatActionPolicy for CombatValuePrototypePolicyV1 {
@@ -347,17 +402,11 @@ impl CombatActionPolicy for CombatValuePrototypePolicyV1 {
 
     fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
         let mut guides = self.base.state_guides(position);
-        let rank = self
-            .typed_target_by_turn
-            .get(&position.combat.turn.turn_count)
-            .map_or_else(
-                || vec![0, i32::MIN / 4, 0],
-                |(corridor_rank, target)| {
-                    let candidate = typed_combat_value_features_v1(position);
-                    let distance = normalized_feature_distance(target, &candidate);
-                    vec![i32::from(distance == 0), -distance, *corridor_rank]
-                },
-            );
+        let rank = combat_value_prototype_rank_v1(
+            &self.typed_target_by_turn,
+            position,
+            position.combat.turn.turn_count,
+        );
         guides.push(CombatStateGuide::new(GUIDE_LEARNED_BOUNDARY_VALUE, rank));
         guides
     }
@@ -402,6 +451,28 @@ pub fn typed_combat_value_features_v1(position: &CombatPosition) -> Vec<i32> {
     features
 }
 
+pub fn combat_value_prototype_rank_v1(
+    targets_by_turn: &HashMap<u32, Vec<(i32, Vec<i32>)>>,
+    position: &CombatPosition,
+    target_turn: u32,
+) -> Vec<i32> {
+    let Some(targets) = targets_by_turn.get(&target_turn) else {
+        return vec![0, i32::MIN / 4, 0];
+    };
+    let candidate = typed_combat_value_features_v1(position);
+    let best = targets
+        .iter()
+        .map(|(corridor_rank, target)| {
+            (
+                normalized_feature_distance(target, &candidate),
+                *corridor_rank,
+            )
+        })
+        .min_by_key(|(distance, corridor_rank)| (*distance, std::cmp::Reverse(*corridor_rank)))
+        .expect("a value prototype turn group is never empty");
+    vec![i32::from(best.0 == 0), -best.0, best.1]
+}
+
 fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
     let distance = target
         .iter()
@@ -430,10 +501,12 @@ mod tests {
             feature_schema: COMBAT_VALUE_FEATURE_SCHEMA.to_string(),
             runtime_compatibility_id: COMBAT_GUIDANCE_RUNTIME_ID.to_string(),
             training_authority: String::new(),
+            source_trajectory_count: 1,
             source_action_count: 1,
             source_terminal_final_hp: 1,
             feature_count: 1,
             prototypes: vec![CombatValuePrototypeV1 {
+                source_trajectory_index: 0,
                 player_turn: 1,
                 value_rank: 0,
                 features: vec![0],

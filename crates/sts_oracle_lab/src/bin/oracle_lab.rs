@@ -42,10 +42,14 @@ use sts_simulator::eval::combat_action_imitation::{
     train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
-use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
+use sts_simulator::eval::combat_case::{
+    load_combat_case, save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep,
+    CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+};
 use sts_simulator::eval::combat_guidance_bundle::{
-    combat_value_prototype_policy_v1, typed_combat_value_features_v1, CombatGuidanceBundleV1,
-    CombatValuePrototypeArtifactV1, GUIDE_LEARNED_BOUNDARY_VALUE,
+    combat_value_prototype_policy_v1, combat_value_prototype_rank_v1,
+    typed_combat_value_features_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
+    GUIDE_LEARNED_BOUNDARY_VALUE,
 };
 use sts_simulator::eval::combat_search_v2::{
     run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
@@ -168,6 +172,25 @@ enum Command {
         replacement_node: usize,
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Export an exact historical combat root and its verified action witness
+    /// from a complete run. The run journal is replayed to the requested
+    /// entry; no continuation JSON editing is involved.
+    ExportHistoricalCombatWitness {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        node: usize,
+        #[arg(long)]
+        journal_entry: usize,
+        #[arg(long)]
+        case_output: PathBuf,
+        #[arg(long)]
+        actions_output: PathBuf,
+        /// Optionally emit the exact run prefix as an importable continuation
+        /// at this combat root.
+        #[arg(long)]
+        continuation_output: Option<PathBuf>,
     },
     /// Inspect the retired global-agenda search on one exact case. Production
     /// run combat uses `combat-case`; this command remains only for controlled
@@ -673,6 +696,16 @@ enum Command {
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
     },
+    /// Distill several exact terminal witnesses into one typed-feature value
+    /// corpus. Uses the same compact manifest as action-imitation training.
+    BuildValuePrototypeCorpus {
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
     /// Package already-built action and value artifacts into one immutable,
     /// runtime-compatible guidance unit.
     BuildCombatGuidanceBundle {
@@ -1133,7 +1166,7 @@ struct ExactCorridorShadowPolicy {
     base: SharedCombatActionPolicy,
     rank_by_exact_hash: Arc<HashMap<String, i32>>,
     atomic_rank_by_exact_hash: Arc<HashMap<String, i32>>,
-    typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
+    typed_target_by_turn: Arc<HashMap<u32, Vec<(i32, Vec<i32>)>>>,
     guide: ShadowCorridorGuide,
     shadow_only: bool,
 }
@@ -1357,14 +1390,7 @@ impl ExactCorridorShadowPolicy {
                 ]
             }
             ShadowCorridorGuide::TypedFeature => {
-                self.typed_target_by_turn.get(&target_turn).map_or_else(
-                    || vec![0, i32::MIN / 4, 0],
-                    |(corridor_rank, target)| {
-                        let candidate = typed_combat_feature_components(position);
-                        let distance = normalized_feature_distance(target, &candidate);
-                        vec![i32::from(distance == 0), -distance, *corridor_rank]
-                    },
-                )
+                combat_value_prototype_rank_v1(&self.typed_target_by_turn, position, target_turn)
             }
         };
         CombatStateGuideRank::new(shadow_rank)
@@ -1381,7 +1407,13 @@ fn exact_corridor_shadow_policy(
         base,
         rank_by_exact_hash: Arc::new(corridor.rank_by_exact_hash.clone()),
         atomic_rank_by_exact_hash: Arc::new(corridor.atomic_rank_by_exact_hash.clone()),
-        typed_target_by_turn: Arc::new(corridor.typed_target_by_turn.clone()),
+        typed_target_by_turn: Arc::new(
+            corridor
+                .typed_target_by_turn
+                .iter()
+                .map(|(turn, target)| (*turn, vec![target.clone()]))
+                .collect(),
+        ),
         guide,
         shadow_only,
     })
@@ -1428,26 +1460,31 @@ fn value_prototype_from_corridor(
     )
 }
 
+fn value_prototype_from_corridors(
+    corridors: &[ExactTurnCorridor],
+) -> Result<CombatValuePrototypeArtifactV1, String> {
+    CombatValuePrototypeArtifactV1::from_ranked_feature_trajectories(
+        "exact_terminal_win_demonstration_corpus",
+        corridors.iter().map(|corridor| {
+            (
+                corridor.action_count,
+                corridor.terminal_final_hp,
+                corridor
+                    .typed_target_by_turn
+                    .iter()
+                    .map(|(player_turn, (value_rank, features))| {
+                        (*player_turn, *value_rank, features.clone())
+                    })
+                    .collect(),
+            )
+        }),
+    )
+}
+
 fn typed_combat_feature_components(
     position: &sts_simulator::sim::combat::CombatPosition,
 ) -> Vec<i32> {
     typed_combat_value_features_v1(position)
-}
-
-fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
-    let distance = target
-        .iter()
-        .zip(candidate)
-        .map(|(target, candidate)| {
-            let difference = i64::from(*target).abs_diff(i64::from(*candidate)) as i64;
-            let scale = i64::from(*target)
-                .abs()
-                .max(i64::from(*candidate).abs())
-                .max(1);
-            difference.saturating_mul(1_024) / scale
-        })
-        .fold(0_i64, i64::saturating_add);
-    i32::try_from(distance).unwrap_or(i32::MAX)
 }
 
 fn load_exact_turn_corridor(
@@ -1457,8 +1494,19 @@ fn load_exact_turn_corridor(
 ) -> Result<ExactTurnCorridor, String> {
     let case = load_combat_case(case_path)?;
     let actions = load_combat_action_segments(action_paths)?;
+    exact_turn_corridor_from_position_and_actions(
+        case.position,
+        actions,
+        max_engine_steps_per_transition,
+    )
+}
+
+fn exact_turn_corridor_from_position_and_actions(
+    mut position: sts_simulator::sim::combat::CombatPosition,
+    actions: Vec<ClientInput>,
+    max_engine_steps_per_transition: usize,
+) -> Result<ExactTurnCorridor, String> {
     let stepper = EngineCombatStepper;
-    let mut position = case.position;
     let mut rank_by_exact_hash = HashMap::new();
     let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
@@ -1892,6 +1940,144 @@ fn main() -> Result<(), String> {
                 "replay": replay,
             }))
         }
+        Command::ExportHistoricalCombatWitness {
+            workspace,
+            node,
+            journal_entry,
+            case_output,
+            actions_output,
+            continuation_output,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let continuation = analysis.continuation(node)?;
+            let resolution = continuation
+                .journal
+                .entries()
+                .get(journal_entry)
+                .and_then(RunProgressStepV1::as_combat_resolution)
+                .cloned()
+                .ok_or_else(|| {
+                    format!("journal entry {journal_entry} is not a combat resolution")
+                })?;
+            let expected_final = continuation.session.clone().into_session()?;
+            let historical =
+                sts_simulator::eval::run_control::exact_replay_run_progress_journal_prefix_v1(
+                    continuation.seed,
+                    continuation.ascension,
+                    &continuation.journal,
+                    &expected_final,
+                    journal_entry,
+                )?;
+            let active = historical.active_combat.as_ref().ok_or_else(|| {
+                format!("journal entry {journal_entry} does not begin at an active combat")
+            })?;
+            let position = sts_simulator::sim::combat::CombatPosition::new(
+                active.engine_state.clone(),
+                active.combat_state.clone(),
+            );
+            let path = continuation
+                .journal
+                .entries()
+                .iter()
+                .take(journal_entry)
+                .filter_map(RunProgressStepV1::as_decision)
+                .map(|record| CombatCasePathStep {
+                    key: Value::Null,
+                    label: record.result.chosen_label.clone(),
+                    state_before: Some(json!({
+                        "title": record.before.title,
+                        "location": record.before.location,
+                    })),
+                    decision_evidence: Some(json!({
+                        "candidate_id": record.selection.candidate_id,
+                        "source": record.selection.source,
+                        "candidates": record.before.candidates.iter()
+                            .map(|candidate| &candidate.label)
+                            .collect::<Vec<_>>(),
+                    })),
+                })
+                .collect::<Vec<_>>();
+            let case = CombatCase::new(
+                CombatCaseSource {
+                    seed: continuation.seed,
+                    ascension: continuation.ascension,
+                    generation: path.len(),
+                    branch_id: node,
+                    parent_id: None,
+                },
+                CombatCaseGap {
+                    boundary: format!(
+                        "Act {} Floor {} historical combat",
+                        historical.run_state.act_num, historical.run_state.floor_num
+                    ),
+                    reason: "verified_run_witness_extraction".to_string(),
+                    search_nodes: 0,
+                    search_ms: 0,
+                    rescue_search_nodes: 0,
+                    rescue_search_ms: 0,
+                },
+                CombatCaseRunSummary {
+                    act: historical.run_state.act_num,
+                    floor: historical.run_state.floor_num,
+                    hp: historical.run_state.current_hp,
+                    max_hp: historical.run_state.max_hp,
+                    gold: historical.run_state.gold,
+                    deck_size: historical.run_state.master_deck.len(),
+                    relic_count: historical.run_state.relics.len(),
+                    potion_slots: historical.run_state.potions.len(),
+                },
+                Vec::new(),
+                None,
+                path,
+                CombatCaseRngSummary::from_pool(&historical.run_state.rng_pool),
+                position,
+            );
+            save_combat_case(&case_output, &case)?;
+            if let Some(parent) = actions_output.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let actions = resolution
+                .trajectory
+                .actions
+                .iter()
+                .map(|action| action.input.clone())
+                .collect::<Vec<_>>();
+            std::fs::write(
+                &actions_output,
+                serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            if let Some(output) = &continuation_output {
+                let prefix_journal =
+                    sts_simulator::eval::run_control::RunProgressJournalV1::from_committed_steps(
+                        continuation.journal.entries()[..journal_entry].to_vec(),
+                    )?;
+                let prefix = OracleRunContinuationV1 {
+                    schema_name: continuation.schema_name,
+                    schema_version: continuation.schema_version,
+                    seed: continuation.seed,
+                    ascension: continuation.ascension,
+                    journal: prefix_journal,
+                    session: sts_simulator::eval::run_control::RunControlSessionCheckpointV1::
+                        from_session(&historical),
+                    explorer_frontier: None,
+                };
+                save_oracle_run_continuation_v1(output, &prefix)?;
+            }
+            print_json(&json!({
+                "schema_name": "HistoricalCombatWitnessExportV1",
+                "schema_version": 1,
+                "workspace": workspace,
+                "node_id": node,
+                "journal_entry": journal_entry,
+                "source": resolution.trajectory.source.label(),
+                "case_output": case_output,
+                "actions_output": actions_output,
+                "continuation_output": continuation_output,
+                "action_count": actions.len(),
+                "combat": case.combat,
+            }))
+        }
         Command::BuildValuePrototype {
             case,
             actions,
@@ -1904,6 +2090,36 @@ fn main() -> Result<(), String> {
             save_value_prototype(&output, &artifact)?;
             print_json(&json!({
                 "output": output,
+                "artifact": artifact.report(),
+            }))
+        }
+        Command::BuildValuePrototypeCorpus {
+            manifest,
+            output,
+            max_engine_steps_per_transition,
+        } => {
+            let demonstrations = load_combat_action_imitation_corpus(&manifest)?;
+            let ids = demonstrations
+                .iter()
+                .map(|demonstration| demonstration.id.clone())
+                .collect::<Vec<_>>();
+            let corridors = demonstrations
+                .into_iter()
+                .map(|demonstration| {
+                    exact_turn_corridor_from_position_and_actions(
+                        demonstration.position,
+                        demonstration.actions,
+                        max_engine_steps_per_transition,
+                    )
+                    .map_err(|error| format!("demonstration {:?}: {error}", demonstration.id))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let artifact = value_prototype_from_corridors(&corridors)?;
+            save_value_prototype(&output, &artifact)?;
+            print_json(&json!({
+                "output": output,
+                "manifest": manifest,
+                "demonstration_ids": ids,
                 "artifact": artifact.report(),
             }))
         }
@@ -1927,6 +2143,7 @@ fn main() -> Result<(), String> {
                 "training_authority": bundle.training_authority,
                 "action_source_trajectory_count": bundle.action_imitation.source_trajectory_count,
                 "action_source_action_count": bundle.action_imitation.source_action_count,
+                "value_source_trajectory_count": bundle.boundary_value.source_trajectory_count,
                 "value_source_action_count": bundle.boundary_value.source_action_count,
                 "runtime_reads_exact_hashes": false,
                 "runtime_reads_witness_actions": false,

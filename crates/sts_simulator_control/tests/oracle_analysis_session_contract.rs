@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use sts_simulator::eval::combat_guidance_bundle::CombatValuePrototypeArtifactV1;
 use sts_simulator::eval::run_control::OracleRunBoundaryV1;
 use sts_simulator::runtime::branch::{
     load_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceArtifactV1,
@@ -16,6 +17,23 @@ fn workspace() -> OracleAnalysisWorkspaceV1 {
         budget: OracleRunBudget::default(),
     })
     .expect("analysis workspace")
+}
+
+#[test]
+fn value_corpus_preserves_same_turn_evidence_from_distinct_witnesses() {
+    let artifact = CombatValuePrototypeArtifactV1::from_ranked_feature_trajectories(
+        "two verified wins",
+        [
+            (3, 11, vec![(1, 0, vec![10, 20]), (2, 1, vec![11, 21])]),
+            (4, 7, vec![(1, 0, vec![30, 40]), (2, 1, vec![31, 41])]),
+        ],
+    )
+    .expect("two exact trajectories form one value corpus");
+
+    assert_eq!(artifact.source_trajectory_count, 2);
+    assert_eq!(artifact.source_action_count, 7);
+    assert_eq!(artifact.source_terminal_final_hp, 7);
+    assert_eq!(artifact.targets_by_turn()[&1].len(), 2);
 }
 
 #[test]

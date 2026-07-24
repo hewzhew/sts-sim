@@ -80,6 +80,41 @@ pub fn exact_replay_run_progress_journal_v1(
     )
 }
 
+/// Replays a committed journal up to, but not including, one entry and
+/// returns the exact session at that historical boundary.
+///
+/// This is the supported extraction path for historical combat cases. It
+/// validates every preceding decision and combat instead of asking tooling to
+/// edit continuation JSON or reconstruct persistent journal nodes.
+pub fn exact_replay_run_progress_journal_prefix_v1(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    stop_before_entry: usize,
+) -> Result<RunControlSession, String> {
+    if stop_before_entry > journal.len() {
+        return Err(format!(
+            "journal prefix entry {stop_before_entry} exceeds journal length {}",
+            journal.len()
+        ));
+    }
+    let mut session = canonical_replay_session(seed, ascension, expected_final);
+    let mut counters = ExactReplayCountersV1::default();
+    let mut before_decision =
+        |_: usize, _: &RunControlSession, _: &RunDecisionTransactionV1| Ok(());
+    for (entry_index, entry) in journal.entries().iter().take(stop_before_entry).enumerate() {
+        apply_exact_progress_entry_v1(
+            entry_index,
+            entry,
+            &mut session,
+            &mut counters,
+            &mut before_decision,
+        )?;
+    }
+    Ok(session)
+}
+
 /// Replays an exact witness and compares every committed non-combat choice
 /// against the ordering produced by the current owner implementation.
 ///
@@ -250,125 +285,17 @@ fn exact_replay_run_progress_journal_observed_v1<F>(
 where
     F: FnMut(usize, &RunControlSession, &RunDecisionTransactionV1) -> Result<(), String>,
 {
-    let mut session = RunControlSession::new(RunControlConfig {
-        seed,
-        ascension_level: ascension,
-        final_act: false,
-        player_class: expected_final.run_state.player_class,
-        reward_automation: expected_final.reward_automation.clone(),
-        ..RunControlConfig::default()
-    });
-    let mut decisions = 0usize;
-    let mut forced_transitions = 0usize;
-    let mut combat_resolutions = 0usize;
-    let mut combat_actions = 0usize;
+    let mut session = canonical_replay_session(seed, ascension, expected_final);
+    let mut counters = ExactReplayCountersV1::default();
 
     for (entry_index, entry) in journal.entries().iter().enumerate() {
-        match entry {
-            RunProgressStepV1::Decision(record) => {
-                let actual_before = RunDecisionBoundaryV1::capture(&session);
-                if !decision_boundaries_match(&actual_before, &record.before) {
-                    return Err(format!(
-                        "journal entry {entry_index} decision before-boundary mismatch: expected {:?}, got {:?}",
-                        record.before,
-                        actual_before,
-                    ));
-                }
-                before_decision(entry_index, &session, record)?;
-                session
-                    .apply_decision_action(record.action.clone())
-                    .map_err(|error| {
-                        format!("journal entry {entry_index} decision replay failed: {error}")
-                    })?;
-                let actual_after = RunDecisionBoundaryV1::capture(&session);
-                if !decision_boundaries_match(&actual_after, &record.after) {
-                    return Err(format!(
-                        "journal entry {entry_index} decision after-boundary mismatch: expected {:?}, got {:?}",
-                        record.after,
-                        actual_after,
-                    ));
-                }
-                decisions = decisions.saturating_add(1);
-            }
-            RunProgressStepV1::ForcedTransition(record) => {
-                let actual_before = RunDecisionBoundaryV1::capture(&session);
-                if !decision_boundaries_match(&actual_before, &record.before) {
-                    return Err(format!(
-                        "journal entry {entry_index} forced-transition before-boundary mismatch"
-                    ));
-                }
-                session
-                    .apply_forced_transition(record.kind)
-                    .map_err(|error| {
-                        format!(
-                            "journal entry {entry_index} forced-transition replay failed: {error}"
-                        )
-                    })?;
-                let actual_after = RunDecisionBoundaryV1::capture(&session);
-                if !decision_boundaries_match(&actual_after, &record.after) {
-                    return Err(format!(
-                        "journal entry {entry_index} forced-transition after-boundary mismatch"
-                    ));
-                }
-                forced_transitions = forced_transitions.saturating_add(1);
-            }
-            RunProgressStepV1::CombatResolution(record) => {
-                let actual_before = RunCombatResolutionBoundaryV1::capture(&session);
-                if !combat_boundaries_match(&actual_before, &record.before) {
-                    return Err(format!(
-                        "journal entry {entry_index} combat before-boundary mismatch: expected '{} @ {}', got '{} @ {}'",
-                        record.before.title,
-                        record.before.location,
-                        actual_before.title,
-                        actual_before.location,
-                    ));
-                }
-                session.mark_current_combat_search_resolved();
-                for (action_index, action) in record.trajectory.actions.iter().enumerate() {
-                    let opportunity = combat_automation_opportunity_state_v1(&session);
-                    if opportunity != action.opportunity_before {
-                        return Err(format!(
-                            "journal entry {entry_index} combat action {action_index} opportunity mismatch"
-                        ));
-                    }
-                    let outcome = session
-                        .apply_combat_resolution_input(action.input.clone())
-                        .map_err(|error| {
-                            format!(
-                                "journal entry {entry_index} combat action {action_index} replay failed: {error}"
-                            )
-                        })?;
-                    let drawn_cards =
-                        drawn_cards_from_action_result(outcome.action_result.as_ref());
-                    if drawn_cards != action.drawn_cards {
-                        return Err(format!(
-                            "journal entry {entry_index} combat action {action_index} drawn-card mismatch"
-                        ));
-                    }
-                    let combat_after = combat_automation_step_state_v1(&session);
-                    if combat_after != action.combat_after {
-                        return Err(format!(
-                            "journal entry {entry_index} combat action {action_index} successor mismatch"
-                        ));
-                    }
-                    combat_actions = combat_actions.saturating_add(1);
-                }
-                let actual_after = RunCombatResolutionBoundaryV1::capture(&session);
-                if !combat_boundaries_match(&actual_after, &record.after) {
-                    return Err(format!(
-                        "journal entry {entry_index} combat after-boundary mismatch: expected {:?}, got {:?}",
-                        record.after,
-                        actual_after,
-                    ));
-                }
-                combat_resolutions = combat_resolutions.saturating_add(1);
-            }
-            RunProgressStepV1::Stop(_) => {
-                return Err(format!(
-                    "journal entry {entry_index} contains a non-committed Stop record"
-                ));
-            }
-        }
+        apply_exact_progress_entry_v1(
+            entry_index,
+            entry,
+            &mut session,
+            &mut counters,
+            &mut before_decision,
+        )?;
     }
 
     let final_fingerprint = run_session_fingerprint_v1(&session);
@@ -383,10 +310,10 @@ where
         seed,
         ascension,
         journal_entries: journal.len(),
-        decisions,
-        forced_transitions,
-        combat_resolutions,
-        combat_actions,
+        decisions: counters.decisions,
+        forced_transitions: counters.forced_transitions,
+        combat_resolutions: counters.combat_resolutions,
+        combat_actions: counters.combat_actions,
         final_fingerprint,
         act: session.run_state.act_num,
         floor: session.run_state.floor_num,
@@ -394,6 +321,144 @@ where
         max_hp: session.run_state.max_hp,
         engine_state: format!("{:?}", session.engine_state),
     })
+}
+
+#[derive(Default)]
+struct ExactReplayCountersV1 {
+    decisions: usize,
+    forced_transitions: usize,
+    combat_resolutions: usize,
+    combat_actions: usize,
+}
+
+fn canonical_replay_session(
+    seed: u64,
+    ascension: u8,
+    expected_final: &RunControlSession,
+) -> RunControlSession {
+    RunControlSession::new(RunControlConfig {
+        seed,
+        ascension_level: ascension,
+        final_act: false,
+        player_class: expected_final.run_state.player_class,
+        reward_automation: expected_final.reward_automation.clone(),
+        ..RunControlConfig::default()
+    })
+}
+
+fn apply_exact_progress_entry_v1<F>(
+    entry_index: usize,
+    entry: &RunProgressStepV1,
+    session: &mut RunControlSession,
+    counters: &mut ExactReplayCountersV1,
+    before_decision: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(usize, &RunControlSession, &RunDecisionTransactionV1) -> Result<(), String>,
+{
+    match entry {
+        RunProgressStepV1::Decision(record) => {
+            let actual_before = RunDecisionBoundaryV1::capture(session);
+            if !decision_boundaries_match(&actual_before, &record.before) {
+                return Err(format!(
+                    "journal entry {entry_index} decision before-boundary mismatch: expected {:?}, got {:?}",
+                    record.before,
+                    actual_before,
+                ));
+            }
+            before_decision(entry_index, session, record)?;
+            session
+                .apply_decision_action(record.action.clone())
+                .map_err(|error| {
+                    format!("journal entry {entry_index} decision replay failed: {error}")
+                })?;
+            let actual_after = RunDecisionBoundaryV1::capture(session);
+            if !decision_boundaries_match(&actual_after, &record.after) {
+                return Err(format!(
+                    "journal entry {entry_index} decision after-boundary mismatch: expected {:?}, got {:?}",
+                    record.after,
+                    actual_after,
+                ));
+            }
+            counters.decisions = counters.decisions.saturating_add(1);
+        }
+        RunProgressStepV1::ForcedTransition(record) => {
+            let actual_before = RunDecisionBoundaryV1::capture(session);
+            if !decision_boundaries_match(&actual_before, &record.before) {
+                return Err(format!(
+                    "journal entry {entry_index} forced-transition before-boundary mismatch"
+                ));
+            }
+            session
+                .apply_forced_transition(record.kind)
+                .map_err(|error| {
+                    format!("journal entry {entry_index} forced-transition replay failed: {error}")
+                })?;
+            let actual_after = RunDecisionBoundaryV1::capture(session);
+            if !decision_boundaries_match(&actual_after, &record.after) {
+                return Err(format!(
+                    "journal entry {entry_index} forced-transition after-boundary mismatch"
+                ));
+            }
+            counters.forced_transitions = counters.forced_transitions.saturating_add(1);
+        }
+        RunProgressStepV1::CombatResolution(record) => {
+            let actual_before = RunCombatResolutionBoundaryV1::capture(session);
+            if !combat_boundaries_match(&actual_before, &record.before) {
+                return Err(format!(
+                    "journal entry {entry_index} combat before-boundary mismatch: expected '{} @ {}', got '{} @ {}'",
+                    record.before.title,
+                    record.before.location,
+                    actual_before.title,
+                    actual_before.location,
+                ));
+            }
+            session.mark_current_combat_search_resolved();
+            for (action_index, action) in record.trajectory.actions.iter().enumerate() {
+                let opportunity = combat_automation_opportunity_state_v1(session);
+                if opportunity != action.opportunity_before {
+                    return Err(format!(
+                        "journal entry {entry_index} combat action {action_index} opportunity mismatch"
+                    ));
+                }
+                let outcome = session
+                    .apply_combat_resolution_input(action.input.clone())
+                    .map_err(|error| {
+                        format!(
+                            "journal entry {entry_index} combat action {action_index} replay failed: {error}"
+                        )
+                    })?;
+                let drawn_cards = drawn_cards_from_action_result(outcome.action_result.as_ref());
+                if drawn_cards != action.drawn_cards {
+                    return Err(format!(
+                        "journal entry {entry_index} combat action {action_index} drawn-card mismatch"
+                    ));
+                }
+                let combat_after = combat_automation_step_state_v1(session);
+                if combat_after != action.combat_after {
+                    return Err(format!(
+                        "journal entry {entry_index} combat action {action_index} successor mismatch"
+                    ));
+                }
+                counters.combat_actions = counters.combat_actions.saturating_add(1);
+            }
+            let actual_after = RunCombatResolutionBoundaryV1::capture(session);
+            if !combat_boundaries_match(&actual_after, &record.after) {
+                return Err(format!(
+                    "journal entry {entry_index} combat after-boundary mismatch: expected {:?}, got {:?}",
+                    record.after,
+                    actual_after,
+                ));
+            }
+            counters.combat_resolutions = counters.combat_resolutions.saturating_add(1);
+        }
+        RunProgressStepV1::Stop(_) => {
+            return Err(format!(
+                "journal entry {entry_index} contains a non-committed Stop record"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn combat_boundaries_match(
