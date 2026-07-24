@@ -470,10 +470,7 @@ impl OracleRunExplorerV1 {
             else {
                 continue;
             };
-            let discrepancy = branch
-                .path_discrepancy
-                .saturating_add(u64::from(deferred.stage));
-            *counts.entry(discrepancy).or_insert(0) += 1;
+            *counts.entry(branch.path_discrepancy).or_insert(0) += 1;
         }
         counts
     }
@@ -740,12 +737,7 @@ impl OracleRunExplorerV1 {
                     .expect("deferred combat branch must remain live");
                 left_branch
                     .path_discrepancy
-                    .saturating_add(u64::from(left.stage))
-                    .cmp(
-                        &right_branch
-                            .path_discrepancy
-                            .saturating_add(u64::from(right.stage)),
-                    )
+                    .cmp(&right_branch.path_discrepancy)
                     .then_with(|| {
                         right_branch
                             .session
@@ -785,11 +777,7 @@ impl OracleRunExplorerV1 {
                     .iter()
                     .find(|branch| branch.branch_id == deferred.branch_id)
                     .expect("deferred combat branch must remain live");
-                match branch
-                    .path_discrepancy
-                    .saturating_add(u64::from(deferred.stage))
-                    .cmp(&decision.path_discrepancy)
-                {
+                match branch.path_discrepancy.cmp(&decision.path_discrepancy) {
                     std::cmp::Ordering::Less => true,
                     std::cmp::Ordering::Greater => false,
                     std::cmp::Ordering::Equal => {
@@ -2115,7 +2103,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_retry_joins_the_existing_deep_first_discrepancy_contour() {
+    fn deferred_retry_stays_on_the_existing_deep_first_discrepancy_contour() {
         let mut explorer = OracleRunExplorerV1::empty();
         let mut branch = test_branch(0, None);
         branch.boundary = OracleRunBoundaryV1::Combat;
@@ -2127,7 +2115,7 @@ mod tests {
             prior_work: empty_combat_work_checkpoint(),
         });
         let mut shallow_same_contour = test_decision(0, "shallow-same-contour-decision");
-        shallow_same_contour.path_discrepancy = 1;
+        shallow_same_contour.path_discrepancy = 0;
         shallow_same_contour.path_depth = 2;
         shallow_same_contour.parent_act = explorer.branches[0].session.run_state.act_num;
         shallow_same_contour.parent_floor = explorer.branches[0].session.run_state.floor_num;
@@ -2144,7 +2132,7 @@ mod tests {
             prior_work: empty_combat_work_checkpoint(),
         });
         let mut deeper_same_contour = test_decision(0, "deeper-same-contour-decision");
-        deeper_same_contour.path_discrepancy = 1;
+        deeper_same_contour.path_discrepancy = 0;
         deeper_same_contour.path_depth = 20;
         deeper_same_contour.parent_act = explorer.branches[0].session.run_state.act_num;
         deeper_same_contour.parent_floor = explorer.branches[0].session.run_state.floor_num;
