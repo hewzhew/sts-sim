@@ -4,6 +4,24 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
+## seed 20260713006, A0, Awakened One
+
+- `seed20260713006_a0_autonomous_full_run.continuation.json` began in a new F0
+  workspace and used the current production owner and combat portfolio through
+  the Act 3 boss. It did not import a historical continuation, accept manual
+  combat actions, load a trained artifact, or use a V2 donor.
+- The run entered Awakened One at 49/80 HP. Production search found an
+  88-action witness in 23.919 seconds and won at 22/80 HP.
+- A current-policy audit reports 196 rank-zero agreements, zero nonzero-rank
+  choices, zero choices absent from the owner surface, and total discrepancy
+  zero. The remaining six decisions do not expose owner preferences.
+- Fresh import and replay verify seed 20260713006, A0, 226 journal entries,
+  202 decisions, 24 combat resolutions, 788 combat actions, terminal victory
+  at F48, and final fingerprint
+  `9a02a355a46559e48e2bedee1c925f127b0a238131dd349d3eaa4c01408d4fc5`.
+- SHA-256: autonomous full-run continuation
+  `1913A5DF4DAB93F7A9B070BE4B7D4AF113208C168331EE2E419E44B387A05224`.
+
 ## seed 20260713007, A0, Awakened One
 
 - Run target: no keys; stop after the Act 3 boss.

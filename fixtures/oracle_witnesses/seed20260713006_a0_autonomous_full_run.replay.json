@@ -1,0 +1,21 @@
+{
+  "node_id": 0,
+  "report": {
+    "act": 3,
+    "ascension": 0,
+    "combat_actions": 788,
+    "combat_resolutions": 24,
+    "current_hp": 22,
+    "decisions": 202,
+    "engine_state": "GameOver(Victory)",
+    "final_fingerprint": "9a02a355a46559e48e2bedee1c925f127b0a238131dd349d3eaa4c01408d4fc5",
+    "floor": 48,
+    "forced_transitions": 0,
+    "journal_entries": 226,
+    "max_hp": 80,
+    "seed": 20260713006
+  },
+  "schema_name": "ExactOracleRunWitnessReplayV1",
+  "schema_version": 1,
+  "workspace": "target\\oracle-cases\\seed006-autonomous-fixture.verify.workspace.json"
+}
