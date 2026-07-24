@@ -991,6 +991,10 @@ enum Command {
         /// afterwards to commit the best result.
         #[arg(long)]
         improve_incumbent: bool,
+        /// Print the full tactical progress report and node view. The default
+        /// output is intentionally compact; detailed traces remain opt-in.
+        #[arg(long)]
+        detailed: bool,
     },
     /// Accept the current combat's already verified incumbent.
     AcceptCombat {
@@ -5841,6 +5845,7 @@ fn main() -> Result<(), String> {
             quantum_ms,
             wall_ms,
             improve_incumbent,
+            detailed,
         } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let (report, view) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
@@ -5851,7 +5856,45 @@ fn main() -> Result<(), String> {
                 improve_incumbent,
             })?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&AdvanceOutput { report, view })
+            if detailed {
+                print_json(&AdvanceOutput { report, view })
+            } else {
+                let combat = report.combat.as_ref().map(|combat| {
+                    json!({
+                        "generation_work": combat.generation_work,
+                        "current_search_generation_work": combat.current_search_generation_work,
+                        "exact_states": combat.exact_states,
+                        "completed_turn_options": combat.completed_turn_options,
+                        "retained_state_work": combat.retained_state_work,
+                        "max_player_turn": combat.max_player_turn,
+                        "incumbent_discovery_source": combat.incumbent_discovery_source,
+                        "incumbent_final_hp": combat.incumbent_final_hp,
+                        "incumbent_hp_loss": combat.incumbent_hp_loss,
+                        "incumbent_action_count": combat.incumbent_action_count,
+                        "last_status": combat.last_status,
+                    })
+                });
+                print_json(&json!({
+                    "schema_name": "OracleAnalysisAdvanceSummaryV1",
+                    "schema_version": 1,
+                    "source_node_id": report.source_node_id,
+                    "status": report.status,
+                    "quanta_served": report.quanta_served,
+                    "elapsed_ms": report.elapsed_ms,
+                    "combat": combat,
+                    "result": {
+                        "node": view.node_id,
+                        "boundary": view.boundary,
+                        "act": view.act,
+                        "floor": view.floor,
+                        "hp": view.current_hp,
+                        "max_hp": view.max_hp,
+                        "gold": view.gold,
+                        "choice_count": view.choices.len(),
+                        "child_count": view.children.len(),
+                    },
+                }))
+            }
         }
         Command::AcceptCombat { workspace } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
