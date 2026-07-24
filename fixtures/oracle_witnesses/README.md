@@ -143,16 +143,19 @@ A second full-run witness records the typed reward-semantics repair:
   (`Body Slam+`) and a supported hand-exhaust conversion at A2F30
   (`Fiend Fire`). Production combat search independently solves the run
   through Champ and the Act 3 hallways.
-- At Donu and Deca, the production local graph remains `BudgetUnknown` after
-  30 seconds. The independent policy-discrepancy search finds the checked-in
-  75-action witness in 3.7 seconds without a V2 donor or trained artifact and
-  wins at 10/93 HP.
+- At Donu and Deca, the local graph remains `BudgetUnknown` after 30 seconds.
+  Policy-discrepancy search now replaces the former global agenda as the
+  portfolio's second production member. From a fresh pre-boss workspace,
+  ordinary production `advance` found and committed the checked-in 75-action
+  witness in 7.2 seconds without manual actions, a V2 donor, or a trained
+  artifact, and won at 10/93 HP. The journal records this combat as
+  `search_combat`.
 - Fresh import and replay verify seed 20260713008, A0, 217 journal entries,
   192 decisions, 25 combat resolutions, 673 combat actions, terminal victory
   at F48, and final fingerprint
   `30d6700e3482c04292f89118debfb6577c4dd06210d979c10c76b648c4e4f974`.
 - SHA-256: full-run continuation
-  `9AA2032E94CD3580CF294A98007B2FE0764D19B8DED4D7608B5ECEEB9CF40733`;
+  `C8A906BEC565C16FD4D98C2AD853F5535026DA32EC278E788F2F942941454D65`;
   Donu and Deca combat case
   `3255149E0D3157143A5BB589FFB5DDC7709D8A79A6F9B5B6ED42E6A440F645DA`;
   policy-discrepancy witness

@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
     CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphWitnessConfig,
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
-    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessConfig,
-    OracleCombatWitnessDiscoverySource, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    OracleCombatWitnessStateProgressSnapshot, OracleCombatWitnessStatus, TurnOptionAction,
+    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
+    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
+    PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig, TurnOptionAction,
     TurnOptionGeneratorConfig,
 };
 
@@ -30,10 +30,10 @@ use crate::state::core::ClientInput;
 pub(super) struct OracleRunCombatWorkV1 {
     start: crate::sim::combat::CombatPosition,
     local_search: LocalTurnGraphWitnessSession,
-    global_search: OracleCombatWitnessSession,
+    discrepancy_search: PolicyDiscrepancySession,
     next_portfolio_member: PortfolioMemberV1,
     local_complete: bool,
-    global_complete: bool,
+    discrepancy_complete: bool,
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
@@ -45,7 +45,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     restart_count: usize,
     last_status: Option<PortfolioStatusV1>,
     local_status: Option<LocalTurnGraphWitnessStatus>,
-    global_status: Option<OracleCombatWitnessStatus>,
+    discrepancy_status: Option<PolicyDiscrepancyStatus>,
     incumbent_revision: u64,
     quanta_since_incumbent_improvement: usize,
     last_quantum_generation_work: usize,
@@ -57,14 +57,14 @@ pub(super) struct OracleRunCombatWorkV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PortfolioMemberV1 {
     LocalTurnGraph,
-    GlobalAgenda,
+    PolicyDiscrepancy,
 }
 
 impl PortfolioMemberV1 {
     fn other(self) -> Self {
         match self {
-            Self::LocalTurnGraph => Self::GlobalAgenda,
-            Self::GlobalAgenda => Self::LocalTurnGraph,
+            Self::LocalTurnGraph => Self::PolicyDiscrepancy,
+            Self::PolicyDiscrepancy => Self::LocalTurnGraph,
         }
     }
 }
@@ -72,7 +72,7 @@ impl PortfolioMemberV1 {
 #[derive(Clone, Debug)]
 enum PortfolioStatusV1 {
     Local(LocalTurnGraphWitnessStatus),
-    Global(OracleCombatWitnessStatus),
+    PolicyDiscrepancy(PolicyDiscrepancyStatus),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -220,25 +220,26 @@ impl OracleRunCombatWorkV1 {
             policy.clone(),
             existing_combat_rollout_lookahead_v1(),
         );
-        let global_search = OracleCombatWitnessSession::with_policy(
+        let discrepancy_search = PolicyDiscrepancySession::with_policy(
             root,
-            OracleCombatWitnessConfig {
-                generator: TurnOptionGeneratorConfig {
-                    max_engine_steps_per_transition: max_transition_steps,
-                    ..TurnOptionGeneratorConfig::default()
-                },
-                generation_work_per_agenda_pop: 4,
-                satisfaction,
+            PolicyDiscrepancyConfig {
+                max_engine_steps_per_transition: max_transition_steps,
+                turn_macro: Some(PolicyDiscrepancyTurnMacroConfig {
+                    max_applied_transitions: 4_096,
+                    proposals_per_view: 8,
+                    ..PolicyDiscrepancyTurnMacroConfig::default()
+                }),
+                ..PolicyDiscrepancyConfig::default()
             },
             policy,
         );
         let mut work = Self {
             start: prepared.start,
             local_search,
-            global_search,
+            discrepancy_search,
             next_portfolio_member: PortfolioMemberV1::LocalTurnGraph,
             local_complete: false,
-            global_complete: false,
+            discrepancy_complete: false,
             remaining_work: max_work,
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
@@ -250,7 +251,7 @@ impl OracleRunCombatWorkV1 {
             restart_count: 0,
             last_status: None,
             local_status: None,
-            global_status: None,
+            discrepancy_status: None,
             incumbent_revision: 0,
             quanta_since_incumbent_improvement: 0,
             last_quantum_generation_work: 0,
@@ -293,9 +294,7 @@ impl OracleRunCombatWorkV1 {
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
         if let Some(incumbent) = checkpoint.incumbent {
-            work.local_search
-                .restore_verified_witness(incumbent.clone())?;
-            work.global_search.restore_verified_witness(incumbent)?;
+            work.local_search.restore_verified_witness(incumbent)?;
         }
         Ok(work)
     }
@@ -319,9 +318,7 @@ impl OracleRunCombatWorkV1 {
         work.incumbent_revision = prior.incumbent_revision;
         work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
         if let Some(incumbent) = prior.incumbent {
-            work.local_search
-                .restore_verified_witness(incumbent.clone())?;
-            work.global_search.restore_verified_witness(incumbent)?;
+            work.local_search.restore_verified_witness(incumbent)?;
         }
         Ok(work)
     }
@@ -402,8 +399,7 @@ impl OracleRunCombatWorkV1 {
             incumbent_revision: self.incumbent_revision,
             policy_witness_proposals: self
                 .prior_policy_witness_proposals
-                .saturating_add(self.local_search.counters().policy_witness_proposals)
-                .saturating_add(self.global_search.counters().policy_witness_proposals),
+                .saturating_add(self.local_search.counters().policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             incumbent: self.best_witness().cloned(),
@@ -434,8 +430,6 @@ impl OracleRunCombatWorkV1 {
         global_deadline: Option<Instant>,
     ) -> RunControlCombatWorkAdvanceV1 {
         self.local_search
-            .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
-        self.global_search
             .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
         self.advance_with_witness_policy(quantum, global_deadline, false)
     }
@@ -480,7 +474,7 @@ impl OracleRunCombatWorkV1 {
         let Some(member) = select_portfolio_member(
             self.next_portfolio_member,
             self.local_complete,
-            self.global_complete,
+            self.discrepancy_complete,
         ) else {
             return RunControlCombatWorkAdvanceV1::ReadyToFinish;
         };
@@ -516,30 +510,42 @@ impl OracleRunCombatWorkV1 {
                     PortfolioStatusV1::Local(report.status),
                 )
             }
-            PortfolioMemberV1::GlobalAgenda => {
-                let before = self.global_search.counters();
-                let report = self.global_search.advance(
+            PortfolioMemberV1::PolicyDiscrepancy => {
+                let before = self.discrepancy_search.counters();
+                let report = self.discrepancy_search.advance(
                     &crate::sim::combat::EngineCombatStepper,
-                    OracleCombatWitnessQuantum {
-                        additional_agenda_pops: work,
-                        additional_generation_work: work,
+                    PolicyDiscrepancyQuantum {
+                        additional_applied_transitions: work,
                         additional_engine_steps: engine_grant,
                         deadline,
                     },
                 );
                 let after = report.after;
-                let member_complete = !matches!(
-                    report.status,
-                    OracleCombatWitnessStatus::Partial(_) | OracleCombatWitnessStatus::WitnessFound
-                );
-                let witness_found =
-                    matches!(report.status, OracleCombatWitnessStatus::WitnessFound);
+                let mut status = report.status;
+                let mut witness_found = matches!(status, PolicyDiscrepancyStatus::WitnessFound);
+                if let Some(witness) = report.witness {
+                    let witness = OracleCombatWitness {
+                        actions: witness.actions,
+                        final_position: witness.final_position,
+                        negative_log_policy: witness.negative_log_policy,
+                        replay_engine_steps: witness.replay_engine_steps,
+                        discovery_source:
+                            OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch,
+                    };
+                    if self.local_search.restore_verified_witness(witness).is_err() {
+                        status = PolicyDiscrepancyStatus::ReplayMismatch;
+                        witness_found = false;
+                    }
+                }
+                let member_complete = !matches!(status, PolicyDiscrepancyStatus::Partial(_));
                 (
-                    after.generation_work.saturating_sub(before.generation_work),
+                    after
+                        .applied_action_transitions
+                        .saturating_sub(before.applied_action_transitions),
                     after.engine_steps.saturating_sub(before.engine_steps),
                     member_complete,
                     witness_found,
-                    PortfolioStatusV1::Global(report.status),
+                    PortfolioStatusV1::PolicyDiscrepancy(status),
                 )
             }
         };
@@ -548,9 +554,9 @@ impl OracleRunCombatWorkV1 {
                 self.local_complete = member_complete;
                 self.local_status = Some(status.clone());
             }
-            PortfolioStatusV1::Global(status) => {
-                self.global_complete = member_complete;
-                self.global_status = Some(status.clone());
+            PortfolioStatusV1::PolicyDiscrepancy(status) => {
+                self.discrepancy_complete = member_complete;
+                self.discrepancy_status = Some(status.clone());
             }
         }
         self.last_quantum_generation_work = consumed_work;
@@ -574,7 +580,8 @@ impl OracleRunCombatWorkV1 {
         }
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(status);
-        if (stop_on_first_witness && witness_found) || (self.local_complete && self.global_complete)
+        if (stop_on_first_witness && witness_found)
+            || (self.local_complete && self.discrepancy_complete)
         {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
         } else if self.remaining_work == 0
@@ -681,9 +688,7 @@ impl OracleRunCombatWorkV1 {
             replay_engine_steps,
             discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
         };
-        self.local_search
-            .restore_verified_witness(witness.clone())?;
-        self.global_search.restore_verified_witness(witness)?;
+        self.local_search.restore_verified_witness(witness)?;
         self.witness_source = CombatAutomationTrajectorySource::OracleExactActions;
         Ok(())
     }
@@ -695,21 +700,15 @@ impl OracleRunCombatWorkV1 {
 
     fn current_generation_work(&self) -> u64 {
         let local = self.local_search.counters();
-        (local.generation_work.saturating_add(local.lookahead_work) as u64)
-            .saturating_add(self.global_search.counters().generation_work as u64)
+        (local.generation_work.saturating_add(local.lookahead_work) as u64).saturating_add(
+            self.discrepancy_search
+                .counters()
+                .applied_action_transitions as u64,
+        )
     }
 
     fn best_witness(&self) -> Option<&OracleCombatWitness> {
-        match (self.local_search.witness(), self.global_search.witness()) {
-            (Some(local), Some(global)) => Some(if combat_witness_better(local, global) {
-                local
-            } else {
-                global
-            }),
-            (Some(local), None) => Some(local),
-            (None, Some(global)) => Some(global),
-            (None, None) => None,
-        }
+        self.local_search.witness()
     }
 
     pub(super) fn quantum_count(&self) -> usize {
@@ -731,14 +730,9 @@ impl OracleRunCombatWorkV1 {
 
     pub(super) fn progress(&self) -> OracleRunCombatWorkProgressV1 {
         let local_counters = self.local_search.counters();
-        let global_counters = self.global_search.counters();
+        let discrepancy_counters = self.discrepancy_search.counters();
         let local_progress = self.local_search.progress_snapshot();
-        let global_progress = self.global_search.progress_snapshot();
-        let search_progress = if local_progress.max_player_turn >= global_progress.max_player_turn {
-            &local_progress
-        } else {
-            &global_progress
-        };
+        let search_progress = &local_progress;
         let initial_hp = self.start.combat.entities.player.current_hp;
         let incumbent = self.best_witness();
         let incumbent_final_hp =
@@ -754,56 +748,43 @@ impl OracleRunCombatWorkV1 {
             lookahead_work: local_counters.lookahead_work,
             engine_steps: local_counters
                 .engine_steps
-                .saturating_add(global_counters.engine_steps),
+                .saturating_add(discrepancy_counters.engine_steps),
             exact_states: local_counters
                 .exact_nodes
-                .saturating_add(global_counters.exact_states),
+                .saturating_add(discrepancy_counters.exact_states),
             applied_action_transitions: local_counters
                 .applied_action_transitions
-                .saturating_add(global_counters.applied_action_transitions),
-            unique_successor_states: local_counters
-                .unique_successor_states
-                .saturating_add(global_counters.unique_successor_states),
+                .saturating_add(discrepancy_counters.applied_action_transitions),
+            unique_successor_states: local_counters.unique_successor_states,
             duplicate_exact_successors: local_counters
                 .duplicate_exact_successors
-                .saturating_add(global_counters.duplicate_exact_successors),
+                .saturating_add(discrepancy_counters.duplicate_or_dominated_states),
             completed_turn_options: local_counters
                 .completed_turn_options
-                .saturating_add(global_counters.completed_turn_options),
+                .saturating_add(discrepancy_counters.turn_macro_options_generated),
             retained_state_work: self
                 .local_search
                 .retained_state_work()
-                .saturating_add(self.global_search.retained_state_work()),
+                .saturating_add(self.discrepancy_search.retained_state_work()),
             queued_anchor_entries: local_progress
                 .queued_anchor_entries
-                .saturating_add(global_progress.queued_anchor_entries),
-            queued_guided_entries: sum_lane_counts(
-                &local_progress.queued_guided_entries,
-                &global_progress.queued_guided_entries,
-            ),
+                .saturating_add(self.discrepancy_search.frontier_entries()),
+            queued_guided_entries: local_progress.queued_guided_entries.clone(),
             root_state: search_progress.root_state.clone(),
-            max_player_turn: local_progress
-                .max_player_turn
-                .max(global_progress.max_player_turn),
+            max_player_turn: local_progress.max_player_turn,
             deepest_survival_state: search_progress.deepest_survival_state.clone(),
             deepest_progress_state: search_progress.deepest_progress_state.clone(),
             deepest_survival_actions: search_progress.deepest_survival_actions.clone(),
             deepest_progress_actions: search_progress.deepest_progress_actions.clone(),
             recent_turn_survival_envelope: search_progress.recent_turn_survival_envelope.clone(),
-            max_path_atomic_depth: local_progress
-                .max_path_atomic_depth
-                .max(global_progress.max_path_atomic_depth),
-            max_completed_turn_options_at_state: local_progress
-                .max_completed_turn_options_at_state
-                .max(global_progress.max_completed_turn_options_at_state),
+            max_path_atomic_depth: local_progress.max_path_atomic_depth,
+            max_completed_turn_options_at_state: local_progress.max_completed_turn_options_at_state,
             generation_gap_count: local_progress
                 .generation_gap_count
-                .saturating_add(global_progress.generation_gap_count),
-            pending_witness_replay: local_progress.pending_witness_replay
-                || global_progress.pending_witness_replay,
+                .saturating_add(discrepancy_counters.transition_step_limit_gaps),
+            pending_witness_replay: local_progress.pending_witness_replay,
             policy_witness_proposals: local_counters
                 .policy_witness_proposals
-                .saturating_add(global_counters.policy_witness_proposals)
                 .saturating_add(self.prior_policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             advisor_nodes: 0,
@@ -822,7 +803,7 @@ impl OracleRunCombatWorkV1 {
             last_status: overall_status_label(
                 self.best_witness().is_some(),
                 self.local_status.as_ref(),
-                self.global_status.as_ref(),
+                self.discrepancy_status.as_ref(),
                 self.last_status.as_ref(),
             ),
         }
@@ -843,6 +824,9 @@ impl OracleRunCombatWorkV1 {
                 OracleCombatWitnessDiscoverySource::PlannerSearch => {
                     CombatAutomationTrajectorySource::SearchCombat
                 }
+                OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
+                    CombatAutomationTrajectorySource::SearchCombat
+                }
                 OracleCombatWitnessDiscoverySource::SolvedSuffixComposition => {
                     CombatAutomationTrajectorySource::SearchCombat
                 }
@@ -858,18 +842,20 @@ impl OracleRunCombatWorkV1 {
         ));
         let status = self.last_status.as_ref().unwrap_or(&default_status);
         Ok(RunProgressOutcome::message(format!(
-            "Combat-search portfolio did not modify state. status={status:?} generation_work={} local_work={} global_work={} exact_states={} retained_work={}",
+            "Combat-search portfolio did not modify state. status={status:?} generation_work={} local_work={} discrepancy_work={} exact_states={} retained_work={}",
             self.prior_generation_work
                 .saturating_add(self.current_generation_work()),
             self.local_search.counters().generation_work,
-            self.global_search.counters().generation_work,
+            self.discrepancy_search
+                .counters()
+                .applied_action_transitions,
             self.local_search
                 .counters()
                 .exact_nodes
-                .saturating_add(self.global_search.counters().exact_states),
+                .saturating_add(self.discrepancy_search.counters().exact_states),
             self.local_search
                 .retained_state_work()
-                .saturating_add(self.global_search.retained_state_work()),
+                .saturating_add(self.discrepancy_search.retained_state_work()),
         ))
         .with_combat_search_rejection(
             RunControlCombatSearchRejection::NoCompleteWinningCandidate,
@@ -884,40 +870,19 @@ fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
 fn select_portfolio_member(
     next: PortfolioMemberV1,
     local_complete: bool,
-    global_complete: bool,
+    discrepancy_complete: bool,
 ) -> Option<PortfolioMemberV1> {
-    match (next, local_complete, global_complete) {
+    match (next, local_complete, discrepancy_complete) {
         (_, true, true) => None,
         (PortfolioMemberV1::LocalTurnGraph, false, _)
-        | (PortfolioMemberV1::GlobalAgenda, false, true) => Some(PortfolioMemberV1::LocalTurnGraph),
-        (PortfolioMemberV1::GlobalAgenda, _, false)
-        | (PortfolioMemberV1::LocalTurnGraph, true, false) => Some(PortfolioMemberV1::GlobalAgenda),
+        | (PortfolioMemberV1::PolicyDiscrepancy, false, true) => {
+            Some(PortfolioMemberV1::LocalTurnGraph)
+        }
+        (PortfolioMemberV1::PolicyDiscrepancy, _, false)
+        | (PortfolioMemberV1::LocalTurnGraph, true, false) => {
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
+        }
     }
-}
-
-fn combat_witness_better(candidate: &OracleCombatWitness, incumbent: &OracleCombatWitness) -> bool {
-    let candidate_hp = candidate.final_position.combat.entities.player.current_hp;
-    let incumbent_hp = incumbent.final_position.combat.entities.player.current_hp;
-    candidate_hp > incumbent_hp
-        || (candidate_hp == incumbent_hp
-            && (candidate.actions.len() < incumbent.actions.len()
-                || (candidate.actions.len() == incumbent.actions.len()
-                    && candidate
-                        .negative_log_policy
-                        .total_cmp(&incumbent.negative_log_policy)
-                        .is_lt())))
-}
-
-fn sum_lane_counts(left: &[usize], right: &[usize]) -> Vec<usize> {
-    let lane_count = left.len().max(right.len());
-    (0..lane_count)
-        .map(|index| {
-            left.get(index)
-                .copied()
-                .unwrap_or(0)
-                .saturating_add(right.get(index).copied().unwrap_or(0))
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -960,26 +925,21 @@ mod tests {
     }
 
     #[test]
-    fn lane_counters_are_aggregated_without_dropping_longer_portfolio() {
-        assert_eq!(sum_lane_counts(&[1, 2], &[4, 8, 16]), vec![5, 10, 16]);
-    }
-
-    #[test]
     fn portfolio_alternates_live_members_and_skips_completed_members() {
         assert_eq!(
             select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, false, false),
             Some(PortfolioMemberV1::LocalTurnGraph)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::GlobalAgenda, false, false),
-            Some(PortfolioMemberV1::GlobalAgenda)
+            select_portfolio_member(PortfolioMemberV1::PolicyDiscrepancy, false, false),
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
         assert_eq!(
             select_portfolio_member(PortfolioMemberV1::LocalTurnGraph, true, false),
-            Some(PortfolioMemberV1::GlobalAgenda)
+            Some(PortfolioMemberV1::PolicyDiscrepancy)
         );
         assert_eq!(
-            select_portfolio_member(PortfolioMemberV1::GlobalAgenda, false, true),
+            select_portfolio_member(PortfolioMemberV1::PolicyDiscrepancy, false, true),
             Some(PortfolioMemberV1::LocalTurnGraph)
         );
         assert_eq!(
@@ -1014,7 +974,12 @@ mod tests {
             RunControlCombatWorkAdvanceV1::Pending
         );
         assert_eq!(work.local_search.counters().generation_work, 1);
-        assert_eq!(work.global_search.counters().generation_work, 0);
+        assert_eq!(
+            work.discrepancy_search
+                .counters()
+                .applied_action_transitions,
+            0
+        );
         assert_eq!(work.remaining_work, 15);
 
         assert_eq!(
@@ -1022,7 +987,12 @@ mod tests {
             RunControlCombatWorkAdvanceV1::Pending
         );
         assert_eq!(work.local_search.counters().generation_work, 1);
-        assert_eq!(work.global_search.counters().generation_work, 1);
+        assert_eq!(
+            work.discrepancy_search
+                .counters()
+                .applied_action_transitions,
+            1
+        );
         assert_eq!(work.remaining_work, 14);
     }
 
@@ -1054,7 +1024,12 @@ mod tests {
             counters.lookahead_work > 0,
             "the production local search should evaluate its rollout lookahead"
         );
-        assert_eq!(work.global_search.counters().generation_work, 0);
+        assert_eq!(
+            work.discrepancy_search
+                .counters()
+                .applied_action_transitions,
+            0
+        );
         assert_eq!(
             before_remaining.saturating_sub(work.remaining_work),
             counters
@@ -1069,7 +1044,7 @@ mod tests {
             overall_status_label(
                 false,
                 Some(&LocalTurnGraphWitnessStatus::FrontierExhausted),
-                Some(&OracleCombatWitnessStatus::FrontierExhausted),
+                Some(&PolicyDiscrepancyStatus::FrontierExhausted),
                 None,
             ),
             Some("frontier_exhausted")
@@ -1078,7 +1053,7 @@ mod tests {
             overall_status_label(
                 false,
                 Some(&LocalTurnGraphWitnessStatus::MechanicsGap),
-                Some(&OracleCombatWitnessStatus::FrontierExhausted),
+                Some(&PolicyDiscrepancyStatus::FrontierExhausted),
                 None,
             ),
             Some("mechanics_gap")
@@ -1107,45 +1082,45 @@ fn local_witness_status_label(status: &LocalTurnGraphWitnessStatus) -> &'static 
     }
 }
 
-fn global_witness_status_label(status: &OracleCombatWitnessStatus) -> &'static str {
+fn discrepancy_status_label(status: &PolicyDiscrepancyStatus) -> &'static str {
     match status {
-        OracleCombatWitnessStatus::WitnessFound => "witness_found",
-        OracleCombatWitnessStatus::Partial(_) => "partial",
-        OracleCombatWitnessStatus::FrontierExhausted => "frontier_exhausted",
-        OracleCombatWitnessStatus::MechanicsGap => "mechanics_gap",
-        OracleCombatWitnessStatus::ReplayMismatch(_) => "replay_mismatch",
+        PolicyDiscrepancyStatus::WitnessFound => "witness_found",
+        PolicyDiscrepancyStatus::Partial(_) => "partial",
+        PolicyDiscrepancyStatus::FrontierExhausted => "frontier_exhausted",
+        PolicyDiscrepancyStatus::ReplayMismatch => "replay_mismatch",
     }
 }
 
 fn portfolio_status_label(status: &PortfolioStatusV1) -> &'static str {
     match status {
         PortfolioStatusV1::Local(status) => local_witness_status_label(status),
-        PortfolioStatusV1::Global(status) => global_witness_status_label(status),
+        PortfolioStatusV1::PolicyDiscrepancy(status) => discrepancy_status_label(status),
     }
 }
 
 fn overall_status_label(
     has_witness: bool,
     local: Option<&LocalTurnGraphWitnessStatus>,
-    global: Option<&OracleCombatWitnessStatus>,
+    discrepancy: Option<&PolicyDiscrepancyStatus>,
     last: Option<&PortfolioStatusV1>,
 ) -> Option<&'static str> {
     if has_witness {
         return Some("witness_found");
     }
     if matches!(local, Some(LocalTurnGraphWitnessStatus::FrontierExhausted))
-        && matches!(global, Some(OracleCombatWitnessStatus::FrontierExhausted))
+        && matches!(
+            discrepancy,
+            Some(PolicyDiscrepancyStatus::FrontierExhausted)
+        )
     {
         return Some("frontier_exhausted");
     }
     if matches!(local, Some(LocalTurnGraphWitnessStatus::ReplayMismatch(_)))
-        || matches!(global, Some(OracleCombatWitnessStatus::ReplayMismatch(_)))
+        || matches!(discrepancy, Some(PolicyDiscrepancyStatus::ReplayMismatch))
     {
         return Some("replay_mismatch");
     }
-    if matches!(local, Some(LocalTurnGraphWitnessStatus::MechanicsGap))
-        || matches!(global, Some(OracleCombatWitnessStatus::MechanicsGap))
-    {
+    if matches!(local, Some(LocalTurnGraphWitnessStatus::MechanicsGap)) {
         return Some("mechanics_gap");
     }
     last.map(portfolio_status_label)

@@ -412,6 +412,20 @@ impl PolicyDiscrepancySession {
         }
     }
 
+    pub fn counters(&self) -> PolicyDiscrepancyCounters {
+        self.used
+    }
+
+    pub fn frontier_entries(&self) -> usize {
+        self.frontier.len()
+    }
+
+    pub fn retained_state_work(&self) -> usize {
+        self.frontier
+            .len()
+            .saturating_add(self.best_state_discrepancy.len())
+    }
+
     pub fn state_diagnostic(&self, position: &CombatPosition) -> PolicyDiscrepancyStateDiagnostic {
         let key = combat_exact_state_key(&position.engine, &position.combat);
         PolicyDiscrepancyStateDiagnostic {

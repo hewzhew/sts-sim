@@ -125,6 +125,7 @@ pub enum OracleCombatWitnessDiscoverySource {
     #[default]
     LegacyUnattributed,
     PlannerSearch,
+    PolicyDiscrepancySearch,
     SolvedSuffixComposition,
     PolicyProposal,
     RestoredExactActions,
