@@ -3,32 +3,31 @@
   "source": {
     "seed": 20260713008,
     "ascension": 0,
-    "generation": 192,
-    "branch_id": 125,
-    "parent_id": 124
+    "generation": 190,
+    "branch_id": 346
   },
   "gap": {
-    "boundary": "Act 3 Floor 48 oracle analysis combat",
-    "reason": "oracle_analysis_export",
-    "search_nodes": 2000000,
-    "search_ms": 30000,
+    "boundary": "Act 3 Floor 48 historical combat",
+    "reason": "verified_run_witness_extraction",
+    "search_nodes": 0,
+    "search_ms": 0,
     "rescue_search_nodes": 0,
     "rescue_search_ms": 0
   },
   "run": {
     "act": 3,
     "floor": 48,
-    "hp": 93,
+    "hp": 84,
     "max_hp": 93,
-    "gold": 88,
-    "deck_size": 24,
+    "gold": 123,
+    "deck_size": 21,
     "relic_count": 12,
     "potion_slots": 3
   },
   "combat": {
     "engine_state": "CombatPlayerTurn",
     "turn": 0,
-    "hp": 93,
+    "hp": 84,
     "max_hp": 93,
     "block": 0,
     "energy": 4,
@@ -42,12 +41,12 @@
         "uuid": 10009
       },
       {
-        "id": "FiendFire",
-        "uuid": 10012
+        "id": "Defend",
+        "uuid": 6
       },
       {
-        "id": "PommelStrike",
-        "uuid": 10015
+        "id": "Reaper",
+        "uuid": 10012
       },
       {
         "id": "BurningPact",
@@ -55,11 +54,12 @@
         "upgrades": 1
       },
       {
-        "id": "BurningPact",
-        "uuid": 10014
+        "id": "TrueGrit",
+        "uuid": 10007,
+        "upgrades": 1
       }
     ],
-    "draw_count": 19,
+    "draw_count": 16,
     "discard_count": 0,
     "exhaust_count": 0
   },
@@ -384,7 +384,7 @@
       "key": null,
       "label": "Card reward [Wild Strike, Exhume, Thunderclap]",
       "state_before": {
-        "location": "Act 1 Floor 5 | HP 81/88 | Gold 146 | Boss Hexaghost",
+        "location": "Act 1 Floor 5 | HP 88/88 | Gold 146 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -402,7 +402,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 1 Floor 5 | HP 81/88 | Gold 146 | Boss Hexaghost",
+        "location": "Act 1 Floor 5 | HP 88/88 | Gold 146 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -421,7 +421,7 @@
       "key": null,
       "label": "20 gold",
       "state_before": {
-        "location": "Act 1 Floor 5 | HP 81/88 | Gold 146 | Boss Hexaghost",
+        "location": "Act 1 Floor 5 | HP 88/88 | Gold 146 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -438,7 +438,7 @@
       "key": null,
       "label": "Potion AttackPotion",
       "state_before": {
-        "location": "Act 1 Floor 5 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 5 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -454,7 +454,7 @@
       "key": null,
       "label": "y=5 Rest",
       "state_before": {
-        "location": "Act 1 Floor 5 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 5 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -469,7 +469,7 @@
       "key": null,
       "label": "Smith Bash",
       "state_before": {
-        "location": "Act 1 Floor 6 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 6 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -495,7 +495,7 @@
       "key": null,
       "label": "y=6 Monster",
       "state_before": {
-        "location": "Act 1 Floor 6 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 6 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -510,7 +510,7 @@
       "key": null,
       "label": "Card reward [Burning Pact, Fire Breathing+1, Armaments]",
       "state_before": {
-        "location": "Act 1 Floor 7 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 7 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -527,7 +527,7 @@
       "key": null,
       "label": "Burning Pact",
       "state_before": {
-        "location": "Act 1 Floor 7 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 7 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -546,7 +546,7 @@
       "key": null,
       "label": "16 gold",
       "state_before": {
-        "location": "Act 1 Floor 7 | HP 81/88 | Gold 166 | Boss Hexaghost",
+        "location": "Act 1 Floor 7 | HP 88/88 | Gold 166 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -562,7 +562,7 @@
       "key": null,
       "label": "y=7 Event",
       "state_before": {
-        "location": "Act 1 Floor 7 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 7 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -577,7 +577,7 @@
       "key": null,
       "label": "[Search] 25% chance of a fight.",
       "state_before": {
-        "location": "Act 1 Floor 8 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 8 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "DeadAdventurer"
       },
       "decision_evidence": {
@@ -593,7 +593,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 1 Floor 8 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 8 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "DeadAdventurer"
       },
       "decision_evidence": {
@@ -609,7 +609,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 1 Floor 8 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 8 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "DeadAdventurer"
       },
       "decision_evidence": {
@@ -624,7 +624,7 @@
       "key": null,
       "label": "y=8 Treasure",
       "state_before": {
-        "location": "Act 1 Floor 8 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 8 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -640,7 +640,7 @@
       "key": null,
       "label": "Open chest",
       "state_before": {
-        "location": "Act 1 Floor 9 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 9 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "Treasure Room"
       },
       "decision_evidence": {
@@ -655,7 +655,7 @@
       "key": null,
       "label": "23 gold",
       "state_before": {
-        "location": "Act 1 Floor 9 | HP 81/88 | Gold 182 | Boss Hexaghost",
+        "location": "Act 1 Floor 9 | HP 88/88 | Gold 182 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -672,7 +672,7 @@
       "key": null,
       "label": "Relic OddlySmoothStone",
       "state_before": {
-        "location": "Act 1 Floor 9 | HP 81/88 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 9 | HP 88/88 | Gold 205 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -688,7 +688,7 @@
       "key": null,
       "label": "y=9 Event",
       "state_before": {
-        "location": "Act 1 Floor 9 | HP 81/88 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 9 | HP 88/88 | Gold 205 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -704,7 +704,7 @@
       "key": null,
       "label": "[Donut] Gain 5 Max HP.",
       "state_before": {
-        "location": "Act 1 Floor 10 | HP 81/88 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 10 | HP 88/88 | Gold 205 | Boss Hexaghost",
         "title": "BigFish"
       },
       "decision_evidence": {
@@ -721,7 +721,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 1 Floor 10 | HP 86/93 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 10 | HP 93/93 | Gold 205 | Boss Hexaghost",
         "title": "BigFish"
       },
       "decision_evidence": {
@@ -736,7 +736,7 @@
       "key": null,
       "label": "y=10 Monster",
       "state_before": {
-        "location": "Act 1 Floor 10 | HP 86/93 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 10 | HP 93/93 | Gold 205 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -751,7 +751,7 @@
       "key": null,
       "label": "Card reward [Perfected Strike, Clash, Wild Strike]",
       "state_before": {
-        "location": "Act 1 Floor 11 | HP 69/93 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 11 | HP 71/93 | Gold 205 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -768,7 +768,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 1 Floor 11 | HP 69/93 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 11 | HP 71/93 | Gold 205 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -787,7 +787,7 @@
       "key": null,
       "label": "11 gold",
       "state_before": {
-        "location": "Act 1 Floor 11 | HP 69/93 | Gold 205 | Boss Hexaghost",
+        "location": "Act 1 Floor 11 | HP 71/93 | Gold 205 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -803,7 +803,7 @@
       "key": null,
       "label": "y=11 Rest",
       "state_before": {
-        "location": "Act 1 Floor 11 | HP 69/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 11 | HP 71/93 | Gold 216 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -819,7 +819,7 @@
       "key": null,
       "label": "Smith Clothesline",
       "state_before": {
-        "location": "Act 1 Floor 12 | HP 69/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 12 | HP 71/93 | Gold 216 | Boss Hexaghost",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -845,7 +845,7 @@
       "key": null,
       "label": "y=12 Elite",
       "state_before": {
-        "location": "Act 1 Floor 12 | HP 69/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 12 | HP 71/93 | Gold 216 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -860,7 +860,7 @@
       "key": null,
       "label": "Card reward [Power Through, Sentinel, Sword Boomerang]",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 216 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -879,7 +879,7 @@
       "key": null,
       "label": "Power Through",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 216 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -898,7 +898,7 @@
       "key": null,
       "label": "29 gold",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 216 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 216 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -916,7 +916,7 @@
       "key": null,
       "label": "Relic BlueCandle",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -933,7 +933,7 @@
       "key": null,
       "label": "Potion SpeedPotion",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -949,7 +949,7 @@
       "key": null,
       "label": "y=13 Monster",
       "state_before": {
-        "location": "Act 1 Floor 13 | HP 55/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 13 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -964,7 +964,7 @@
       "key": null,
       "label": "Card reward [Twin Strike, Inflame+1, Blood for Blood]",
       "state_before": {
-        "location": "Act 1 Floor 14 | HP 58/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 14 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -981,7 +981,7 @@
       "key": null,
       "label": "Inflame+1",
       "state_before": {
-        "location": "Act 1 Floor 14 | HP 58/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 14 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1000,7 +1000,7 @@
       "key": null,
       "label": "17 gold",
       "state_before": {
-        "location": "Act 1 Floor 14 | HP 58/93 | Gold 245 | Boss Hexaghost",
+        "location": "Act 1 Floor 14 | HP 57/93 | Gold 245 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1016,7 +1016,7 @@
       "key": null,
       "label": "y=14 Rest",
       "state_before": {
-        "location": "Act 1 Floor 14 | HP 58/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 14 | HP 57/93 | Gold 262 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1031,7 +1031,7 @@
       "key": null,
       "label": "Smith Burning Pact",
       "state_before": {
-        "location": "Act 1 Floor 15 | HP 58/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 15 | HP 57/93 | Gold 262 | Boss Hexaghost",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -1057,7 +1057,7 @@
       "key": null,
       "label": "Boss room",
       "state_before": {
-        "location": "Act 1 Floor 15 | HP 58/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 15 | HP 57/93 | Gold 262 | Boss Hexaghost",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1072,7 +1072,7 @@
       "key": null,
       "label": "Card reward [Offering, Barricade+1, Corruption+1]",
       "state_before": {
-        "location": "Act 1 Floor 16 | HP 26/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 16 | HP 17/93 | Gold 262 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1080,7 +1080,8 @@
         "candidates": [
           "97 gold",
           "Potion PowerPotion",
-          "Card reward [Offering, Barricade+1, Corruption+1]"
+          "Card reward [Offering, Barricade+1, Corruption+1]",
+          "Proceed to boss relic"
         ],
         "source": "owner_policy"
       }
@@ -1089,7 +1090,7 @@
       "key": null,
       "label": "Offering",
       "state_before": {
-        "location": "Act 1 Floor 16 | HP 26/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 16 | HP 17/93 | Gold 262 | Boss Hexaghost",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1108,14 +1109,15 @@
       "key": null,
       "label": "97 gold",
       "state_before": {
-        "location": "Act 1 Floor 16 | HP 26/93 | Gold 262 | Boss Hexaghost",
+        "location": "Act 1 Floor 16 | HP 17/93 | Gold 262 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "0",
         "candidates": [
           "97 gold",
-          "Potion PowerPotion"
+          "Potion PowerPotion",
+          "Proceed to boss relic"
         ],
         "source": "owner_policy"
       }
@@ -1124,13 +1126,14 @@
       "key": null,
       "label": "Potion PowerPotion",
       "state_before": {
-        "location": "Act 1 Floor 16 | HP 26/93 | Gold 359 | Boss Hexaghost",
+        "location": "Act 1 Floor 16 | HP 17/93 | Gold 359 | Boss Hexaghost",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "0",
         "candidates": [
-          "Potion PowerPotion"
+          "Potion PowerPotion",
+          "Proceed to boss relic"
         ],
         "source": "owner_policy"
       }
@@ -1139,7 +1142,7 @@
       "key": null,
       "label": "FusionHammer",
       "state_before": {
-        "location": "Act 1 Floor 16 | HP 26/93 | Gold 359 | Boss Hexaghost",
+        "location": "Act 1 Floor 16 | HP 17/93 | Gold 359 | Boss Hexaghost",
         "title": "Boss Relic"
       },
       "decision_evidence": {
@@ -1174,7 +1177,7 @@
       "key": null,
       "label": "Card reward [Iron Wave, Feel No Pain+1, Second Wind+1]",
       "state_before": {
-        "location": "Act 2 Floor 17 | HP 85/93 | Gold 359 | Boss The Champ",
+        "location": "Act 2 Floor 17 | HP 93/93 | Gold 359 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1192,7 +1195,7 @@
       "key": null,
       "label": "Second Wind+1",
       "state_before": {
-        "location": "Act 2 Floor 17 | HP 85/93 | Gold 359 | Boss The Champ",
+        "location": "Act 2 Floor 17 | HP 93/93 | Gold 359 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1211,7 +1214,7 @@
       "key": null,
       "label": "15 gold",
       "state_before": {
-        "location": "Act 2 Floor 17 | HP 85/93 | Gold 359 | Boss The Champ",
+        "location": "Act 2 Floor 17 | HP 93/93 | Gold 359 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1228,7 +1231,7 @@
       "key": null,
       "label": "Potion LiquidMemories",
       "state_before": {
-        "location": "Act 2 Floor 17 | HP 85/93 | Gold 374 | Boss The Champ",
+        "location": "Act 2 Floor 17 | HP 93/93 | Gold 374 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1244,7 +1247,7 @@
       "key": null,
       "label": "y=1 Monster",
       "state_before": {
-        "location": "Act 2 Floor 17 | HP 85/93 | Gold 374 | Boss The Champ",
+        "location": "Act 2 Floor 17 | HP 93/93 | Gold 374 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1259,7 +1262,7 @@
       "key": null,
       "label": "Card reward [Feel No Pain+1, Pummel+1, Clothesline]",
       "state_before": {
-        "location": "Act 2 Floor 18 | HP 80/93 | Gold 374 | Boss The Champ",
+        "location": "Act 2 Floor 18 | HP 93/93 | Gold 374 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1268,9 +1271,6 @@
           "12 gold",
           "Potion EnergyPotion",
           "Card reward [Feel No Pain+1, Pummel+1, Clothesline]",
-          "Discard Speed Potion to make room for potion reward",
-          "Discard Power Potion to make room for potion reward",
-          "Discard Liquid Memories to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -1280,7 +1280,7 @@
       "key": null,
       "label": "Feel No Pain+1",
       "state_before": {
-        "location": "Act 2 Floor 18 | HP 80/93 | Gold 374 | Boss The Champ",
+        "location": "Act 2 Floor 18 | HP 93/93 | Gold 374 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1299,7 +1299,7 @@
       "key": null,
       "label": "12 gold",
       "state_before": {
-        "location": "Act 2 Floor 18 | HP 80/93 | Gold 374 | Boss The Champ",
+        "location": "Act 2 Floor 18 | HP 93/93 | Gold 374 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1307,9 +1307,6 @@
         "candidates": [
           "12 gold",
           "Potion EnergyPotion",
-          "Discard Speed Potion to make room for potion reward",
-          "Discard Power Potion to make room for potion reward",
-          "Discard Liquid Memories to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -1317,18 +1314,15 @@
     },
     {
       "key": null,
-      "label": "Open map preview",
+      "label": "Potion EnergyPotion",
       "state_before": {
-        "location": "Act 2 Floor 18 | HP 80/93 | Gold 386 | Boss The Champ",
+        "location": "Act 2 Floor 18 | HP 93/93 | Gold 386 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
-        "candidate_id": "skip",
+        "candidate_id": "0",
         "candidates": [
           "Potion EnergyPotion",
-          "Discard Speed Potion to make room for potion reward",
-          "Discard Power Potion to make room for potion reward",
-          "Discard Liquid Memories to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -1338,29 +1332,28 @@
       "key": null,
       "label": "y=2 Shop",
       "state_before": {
-        "location": "Act 2 Floor 18 | HP 80/93 | Gold 386 | Boss The Champ",
-        "title": "Map Preview"
+        "location": "Act 2 Floor 18 | HP 93/93 | Gold 386 | Boss The Champ",
+        "title": "Map"
       },
       "decision_evidence": {
         "candidate_id": "3",
         "candidates": [
           "y=2 Event",
           "y=2 Monster",
-          "y=2 Shop",
-          "Back to reward screen"
+          "y=2 Shop"
         ],
         "source": "owner_policy"
       }
     },
     {
       "key": null,
-      "label": "Disarm | 75 gold",
+      "label": "Remove Strike | 75 gold",
       "state_before": {
-        "location": "Act 2 Floor 19 | HP 80/93 | Gold 386 | Boss The Champ",
+        "location": "Act 2 Floor 19 | HP 93/93 | Gold 386 | Boss The Champ",
         "title": "Shop"
       },
       "decision_evidence": {
-        "candidate_id": "card-3",
+        "candidate_id": "purge-0",
         "candidates": [
           "Clash | 46 gold",
           "Twin Strike | 50 gold",
@@ -1401,7 +1394,7 @@
       "key": null,
       "label": "OrangePellets | 148 gold",
       "state_before": {
-        "location": "Act 2 Floor 19 | HP 80/93 | Gold 311 | Boss The Champ",
+        "location": "Act 2 Floor 19 | HP 93/93 | Gold 311 | Boss The Champ",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -1410,6 +1403,7 @@
           "Clash | 46 gold",
           "Twin Strike | 50 gold",
           "True Grit | 50 gold",
+          "Disarm | 75 gold",
           "Fire Breathing+1 | 38 gold",
           "Discovery | 90 gold",
           "Magnetism+1 | 191 gold",
@@ -1419,24 +1413,7 @@
           "Weak Potion | 49 gold",
           "Duplication Potion | 72 gold",
           "Fairy in a Bottle | 97 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Bash+1 | 75 gold",
-          "Remove Clothesline+1 | 75 gold",
-          "Remove Burning Pact+1 | 75 gold",
-          "Remove Power Through | 75 gold",
-          "Remove Inflame+1 | 75 gold",
-          "Remove Offering | 75 gold",
-          "Remove Second Wind+1 | 75 gold",
-          "Remove Feel No Pain+1 | 75 gold",
-          "Remove Disarm | 75 gold",
+          "Remove card | 75 gold",
           "Leave shop"
         ],
         "source": "owner_policy"
@@ -1444,17 +1421,18 @@
     },
     {
       "key": null,
-      "label": "Remove Strike | 75 gold",
+      "label": "True Grit | 50 gold",
       "state_before": {
-        "location": "Act 2 Floor 19 | HP 80/93 | Gold 163 | Boss The Champ",
+        "location": "Act 2 Floor 19 | HP 93/93 | Gold 163 | Boss The Champ",
         "title": "Shop"
       },
       "decision_evidence": {
-        "candidate_id": "purge-0",
+        "candidate_id": "card-2",
         "candidates": [
           "Clash | 46 gold",
           "Twin Strike | 50 gold",
           "True Grit | 50 gold",
+          "Disarm | 75 gold",
           "Fire Breathing+1 | 38 gold",
           "Discovery | 90 gold",
           "Magnetism+1 | 191 gold",
@@ -1463,24 +1441,7 @@
           "Weak Potion | 49 gold",
           "Duplication Potion | 72 gold",
           "Fairy in a Bottle | 97 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Strike | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Defend | 75 gold",
-          "Remove Bash+1 | 75 gold",
-          "Remove Clothesline+1 | 75 gold",
-          "Remove Burning Pact+1 | 75 gold",
-          "Remove Power Through | 75 gold",
-          "Remove Inflame+1 | 75 gold",
-          "Remove Offering | 75 gold",
-          "Remove Second Wind+1 | 75 gold",
-          "Remove Feel No Pain+1 | 75 gold",
-          "Remove Disarm | 75 gold",
+          "Remove card | 75 gold",
           "Leave shop"
         ],
         "source": "owner_policy"
@@ -1490,7 +1451,7 @@
       "key": null,
       "label": "Leave shop",
       "state_before": {
-        "location": "Act 2 Floor 19 | HP 80/93 | Gold 88 | Boss The Champ",
+        "location": "Act 2 Floor 19 | HP 93/93 | Gold 113 | Boss The Champ",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -1498,7 +1459,7 @@
         "candidates": [
           "Clash | 46 gold",
           "Twin Strike | 50 gold",
-          "True Grit | 50 gold",
+          "Disarm | 75 gold",
           "Fire Breathing+1 | 38 gold",
           "Discovery | 90 gold",
           "Magnetism+1 | 191 gold",
@@ -1517,7 +1478,7 @@
       "key": null,
       "label": "y=3 Monster",
       "state_before": {
-        "location": "Act 2 Floor 19 | HP 80/93 | Gold 88 | Boss The Champ",
+        "location": "Act 2 Floor 19 | HP 93/93 | Gold 113 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1532,7 +1493,7 @@
       "key": null,
       "label": "Card reward [Iron Wave, Armaments, Body Slam+1]",
       "state_before": {
-        "location": "Act 2 Floor 20 | HP 63/93 | Gold 88 | Boss The Champ",
+        "location": "Act 2 Floor 20 | HP 93/93 | Gold 113 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1549,7 +1510,7 @@
       "key": null,
       "label": "Body Slam+1",
       "state_before": {
-        "location": "Act 2 Floor 20 | HP 63/93 | Gold 88 | Boss The Champ",
+        "location": "Act 2 Floor 20 | HP 93/93 | Gold 113 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1568,7 +1529,7 @@
       "key": null,
       "label": "16 gold",
       "state_before": {
-        "location": "Act 2 Floor 20 | HP 63/93 | Gold 88 | Boss The Champ",
+        "location": "Act 2 Floor 20 | HP 93/93 | Gold 113 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1584,7 +1545,7 @@
       "key": null,
       "label": "y=4 Monster",
       "state_before": {
-        "location": "Act 2 Floor 20 | HP 63/93 | Gold 104 | Boss The Champ",
+        "location": "Act 2 Floor 20 | HP 93/93 | Gold 129 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1599,7 +1560,7 @@
       "key": null,
       "label": "Card reward [Wild Strike+1, Searing Blow, Pommel Strike]",
       "state_before": {
-        "location": "Act 2 Floor 21 | HP 63/93 | Gold 104 | Boss The Champ",
+        "location": "Act 2 Floor 21 | HP 88/93 | Gold 129 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1616,7 +1577,7 @@
       "key": null,
       "label": "Pommel Strike",
       "state_before": {
-        "location": "Act 2 Floor 21 | HP 63/93 | Gold 104 | Boss The Champ",
+        "location": "Act 2 Floor 21 | HP 88/93 | Gold 129 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1635,7 +1596,7 @@
       "key": null,
       "label": "16 gold",
       "state_before": {
-        "location": "Act 2 Floor 21 | HP 63/93 | Gold 104 | Boss The Champ",
+        "location": "Act 2 Floor 21 | HP 88/93 | Gold 129 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1651,7 +1612,7 @@
       "key": null,
       "label": "y=5 Rest",
       "state_before": {
-        "location": "Act 2 Floor 21 | HP 63/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 21 | HP 88/93 | Gold 145 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1666,7 +1627,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 2 Floor 22 | HP 63/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 22 | HP 88/93 | Gold 145 | Boss The Champ",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -1681,7 +1642,7 @@
       "key": null,
       "label": "y=6 Event",
       "state_before": {
-        "location": "Act 2 Floor 22 | HP 90/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 22 | HP 93/93 | Gold 145 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1697,7 +1658,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 2 Floor 23 | HP 90/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 23 | HP 93/93 | Gold 145 | Boss The Champ",
         "title": "Addict"
       },
       "decision_evidence": {
@@ -1714,7 +1675,7 @@
       "key": null,
       "label": "y=7 Monster",
       "state_before": {
-        "location": "Act 2 Floor 23 | HP 90/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 23 | HP 93/93 | Gold 145 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1729,7 +1690,7 @@
       "key": null,
       "label": "Card reward [Heavy Blade, Anger, Metallicize+1]",
       "state_before": {
-        "location": "Act 2 Floor 24 | HP 79/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 24 | HP 82/93 | Gold 145 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1747,7 +1708,7 @@
       "key": null,
       "label": "Heavy Blade",
       "state_before": {
-        "location": "Act 2 Floor 24 | HP 79/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 24 | HP 82/93 | Gold 145 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1766,7 +1727,7 @@
       "key": null,
       "label": "18 gold",
       "state_before": {
-        "location": "Act 2 Floor 24 | HP 79/93 | Gold 120 | Boss The Champ",
+        "location": "Act 2 Floor 24 | HP 82/93 | Gold 145 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1783,7 +1744,7 @@
       "key": null,
       "label": "Potion SmokeBomb",
       "state_before": {
-        "location": "Act 2 Floor 24 | HP 79/93 | Gold 138 | Boss The Champ",
+        "location": "Act 2 Floor 24 | HP 82/93 | Gold 163 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1799,7 +1760,7 @@
       "key": null,
       "label": "y=8 Treasure",
       "state_before": {
-        "location": "Act 2 Floor 24 | HP 79/93 | Gold 138 | Boss The Champ",
+        "location": "Act 2 Floor 24 | HP 82/93 | Gold 163 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1815,7 +1776,7 @@
       "key": null,
       "label": "Open chest",
       "state_before": {
-        "location": "Act 2 Floor 25 | HP 79/93 | Gold 138 | Boss The Champ",
+        "location": "Act 2 Floor 25 | HP 82/93 | Gold 163 | Boss The Champ",
         "title": "Treasure Room"
       },
       "decision_evidence": {
@@ -1830,7 +1791,7 @@
       "key": null,
       "label": "24 gold",
       "state_before": {
-        "location": "Act 2 Floor 25 | HP 79/93 | Gold 138 | Boss The Champ",
+        "location": "Act 2 Floor 25 | HP 82/93 | Gold 163 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1847,7 +1808,7 @@
       "key": null,
       "label": "Relic JuzuBracelet",
       "state_before": {
-        "location": "Act 2 Floor 25 | HP 79/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 25 | HP 82/93 | Gold 187 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1863,7 +1824,7 @@
       "key": null,
       "label": "y=9 Rest",
       "state_before": {
-        "location": "Act 2 Floor 25 | HP 79/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 25 | HP 82/93 | Gold 187 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1879,7 +1840,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 2 Floor 26 | HP 79/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 26 | HP 82/93 | Gold 187 | Boss The Champ",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -1894,7 +1855,7 @@
       "key": null,
       "label": "y=10 Monster",
       "state_before": {
-        "location": "Act 2 Floor 26 | HP 93/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 26 | HP 93/93 | Gold 187 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1909,7 +1870,7 @@
       "key": null,
       "label": "Card reward [Flex, Anger, Warcry+1]",
       "state_before": {
-        "location": "Act 2 Floor 27 | HP 89/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 27 | HP 93/93 | Gold 187 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1926,7 +1887,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 2 Floor 27 | HP 89/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 27 | HP 93/93 | Gold 187 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -1945,7 +1906,7 @@
       "key": null,
       "label": "18 gold",
       "state_before": {
-        "location": "Act 2 Floor 27 | HP 89/93 | Gold 162 | Boss The Champ",
+        "location": "Act 2 Floor 27 | HP 93/93 | Gold 187 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1961,7 +1922,7 @@
       "key": null,
       "label": "y=11 Monster",
       "state_before": {
-        "location": "Act 2 Floor 27 | HP 89/93 | Gold 180 | Boss The Champ",
+        "location": "Act 2 Floor 27 | HP 93/93 | Gold 205 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -1976,7 +1937,7 @@
       "key": null,
       "label": "Card reward [Burning Pact, Sword Boomerang, Entrench]",
       "state_before": {
-        "location": "Act 2 Floor 28 | HP 79/93 | Gold 180 | Boss The Champ",
+        "location": "Act 2 Floor 28 | HP 78/93 | Gold 205 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -1992,13 +1953,13 @@
     },
     {
       "key": null,
-      "label": "Burning Pact",
+      "label": "Skip card reward",
       "state_before": {
-        "location": "Act 2 Floor 28 | HP 79/93 | Gold 180 | Boss The Champ",
+        "location": "Act 2 Floor 28 | HP 78/93 | Gold 205 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
-        "candidate_id": "0",
+        "candidate_id": "skip-card-reward",
         "candidates": [
           "Burning Pact",
           "Sword Boomerang",
@@ -2013,7 +1974,7 @@
       "key": null,
       "label": "14 gold",
       "state_before": {
-        "location": "Act 2 Floor 28 | HP 79/93 | Gold 180 | Boss The Champ",
+        "location": "Act 2 Floor 28 | HP 78/93 | Gold 205 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2030,7 +1991,7 @@
       "key": null,
       "label": "Potion SkillPotion",
       "state_before": {
-        "location": "Act 2 Floor 28 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 28 | HP 78/93 | Gold 219 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2046,7 +2007,7 @@
       "key": null,
       "label": "y=12 Event",
       "state_before": {
-        "location": "Act 2 Floor 28 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 28 | HP 78/93 | Gold 219 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2063,13 +2024,13 @@
       "key": null,
       "label": "[Fight] Engage the bandits!",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 78/93 | Gold 219 | Boss The Champ",
         "title": "MaskedBandits"
       },
       "decision_evidence": {
         "candidate_id": "1",
         "candidates": [
-          "[Pay] Lose all (194) Gold.",
+          "[Pay] Lose all (219) Gold.",
           "[Fight] Engage the bandits!"
         ],
         "source": "owner_policy"
@@ -2079,7 +2040,7 @@
       "key": null,
       "label": "Card reward [True Grit, Heavy Blade, Pummel]",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 65/93 | Gold 219 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2097,7 +2058,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 65/93 | Gold 219 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2116,7 +2077,7 @@
       "key": null,
       "label": "31 gold",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 194 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 65/93 | Gold 219 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2133,7 +2094,7 @@
       "key": null,
       "label": "Relic RedMask",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 225 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 65/93 | Gold 250 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2149,7 +2110,7 @@
       "key": null,
       "label": "y=13 Monster",
       "state_before": {
-        "location": "Act 2 Floor 29 | HP 79/93 | Gold 225 | Boss The Champ",
+        "location": "Act 2 Floor 29 | HP 65/93 | Gold 250 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2164,7 +2125,7 @@
       "key": null,
       "label": "Card reward [Fiend Fire, Sword Boomerang+1, Clash]",
       "state_before": {
-        "location": "Act 2 Floor 30 | HP 79/93 | Gold 225 | Boss The Champ",
+        "location": "Act 2 Floor 30 | HP 56/93 | Gold 250 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2181,7 +2142,7 @@
       "key": null,
       "label": "Fiend Fire",
       "state_before": {
-        "location": "Act 2 Floor 30 | HP 79/93 | Gold 225 | Boss The Champ",
+        "location": "Act 2 Floor 30 | HP 56/93 | Gold 250 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2200,7 +2161,7 @@
       "key": null,
       "label": "14 gold",
       "state_before": {
-        "location": "Act 2 Floor 30 | HP 79/93 | Gold 225 | Boss The Champ",
+        "location": "Act 2 Floor 30 | HP 56/93 | Gold 250 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2216,7 +2177,7 @@
       "key": null,
       "label": "y=14 Rest",
       "state_before": {
-        "location": "Act 2 Floor 30 | HP 79/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 30 | HP 56/93 | Gold 264 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2231,7 +2192,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 2 Floor 31 | HP 79/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 31 | HP 56/93 | Gold 264 | Boss The Champ",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -2246,7 +2207,7 @@
       "key": null,
       "label": "Boss room",
       "state_before": {
-        "location": "Act 2 Floor 31 | HP 93/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 31 | HP 83/93 | Gold 264 | Boss The Champ",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2261,7 +2222,7 @@
       "key": null,
       "label": "Card reward [Brutality+1, Reaper, Bludgeon]",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 264 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2279,7 +2240,7 @@
       "key": null,
       "label": "Reaper",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 264 | Boss The Champ",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2298,7 +2259,7 @@
       "key": null,
       "label": "101 gold",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 239 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 264 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2315,7 +2276,7 @@
       "key": null,
       "label": "Potion RegenPotion",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 340 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 365 | Boss The Champ",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2331,7 +2292,7 @@
       "key": null,
       "label": "EmptyCage",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 340 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 365 | Boss The Champ",
         "title": "Boss Relic"
       },
       "decision_evidence": {
@@ -2349,7 +2310,7 @@
       "key": null,
       "label": "deck-select 1 2",
       "state_before": {
-        "location": "Act 2 Floor 32 | HP 38/93 | Gold 340 | Boss The Champ",
+        "location": "Act 2 Floor 32 | HP 27/93 | Gold 365 | Boss The Champ",
         "title": "Run Choice Purge"
       },
       "decision_evidence": {
@@ -2364,7 +2325,7 @@
       "key": null,
       "label": "y=0 Monster",
       "state_before": {
-        "location": "Act 3 Floor 32 | HP 93/93 | Gold 340 | Boss Donu And Deca",
+        "location": "Act 3 Floor 32 | HP 93/93 | Gold 365 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2380,7 +2341,7 @@
       "key": null,
       "label": "Card reward [Fire Breathing+1, True Grit+1, Bloodletting]",
       "state_before": {
-        "location": "Act 3 Floor 33 | HP 75/93 | Gold 340 | Boss Donu And Deca",
+        "location": "Act 3 Floor 33 | HP 93/93 | Gold 365 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2398,7 +2359,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 33 | HP 75/93 | Gold 340 | Boss Donu And Deca",
+        "location": "Act 3 Floor 33 | HP 93/93 | Gold 365 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2417,7 +2378,7 @@
       "key": null,
       "label": "15 gold",
       "state_before": {
-        "location": "Act 3 Floor 33 | HP 75/93 | Gold 340 | Boss Donu And Deca",
+        "location": "Act 3 Floor 33 | HP 93/93 | Gold 365 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2434,7 +2395,7 @@
       "key": null,
       "label": "Potion BlockPotion",
       "state_before": {
-        "location": "Act 3 Floor 33 | HP 75/93 | Gold 355 | Boss Donu And Deca",
+        "location": "Act 3 Floor 33 | HP 93/93 | Gold 380 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2450,7 +2411,7 @@
       "key": null,
       "label": "y=1 Monster",
       "state_before": {
-        "location": "Act 3 Floor 33 | HP 75/93 | Gold 355 | Boss Donu And Deca",
+        "location": "Act 3 Floor 33 | HP 93/93 | Gold 380 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2466,7 +2427,7 @@
       "key": null,
       "label": "Card reward [Havoc+1, Burning Pact, Twin Strike+1]",
       "state_before": {
-        "location": "Act 3 Floor 34 | HP 75/93 | Gold 355 | Boss Donu And Deca",
+        "location": "Act 3 Floor 34 | HP 93/93 | Gold 380 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2481,13 +2442,13 @@
     },
     {
       "key": null,
-      "label": "Burning Pact",
+      "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 34 | HP 75/93 | Gold 355 | Boss Donu And Deca",
+        "location": "Act 3 Floor 34 | HP 93/93 | Gold 380 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
-        "candidate_id": "1",
+        "candidate_id": "skip-card-reward",
         "candidates": [
           "Havoc+1",
           "Burning Pact",
@@ -2502,7 +2463,7 @@
       "key": null,
       "label": "10 gold",
       "state_before": {
-        "location": "Act 3 Floor 34 | HP 75/93 | Gold 355 | Boss Donu And Deca",
+        "location": "Act 3 Floor 34 | HP 93/93 | Gold 380 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2518,7 +2479,7 @@
       "key": null,
       "label": "y=2 Shop",
       "state_before": {
-        "location": "Act 3 Floor 34 | HP 75/93 | Gold 365 | Boss Donu And Deca",
+        "location": "Act 3 Floor 34 | HP 93/93 | Gold 390 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2533,7 +2494,7 @@
       "key": null,
       "label": "Remove Strike | 100 gold",
       "state_before": {
-        "location": "Act 3 Floor 35 | HP 75/93 | Gold 365 | Boss Donu And Deca",
+        "location": "Act 3 Floor 35 | HP 93/93 | Gold 390 | Boss Donu And Deca",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -2566,14 +2527,12 @@
           "Remove Offering | 100 gold",
           "Remove Second Wind+1 | 100 gold",
           "Remove Feel No Pain+1 | 100 gold",
-          "Remove Disarm | 100 gold",
+          "Remove True Grit | 100 gold",
           "Remove Body Slam+1 | 100 gold",
           "Remove Pommel Strike | 100 gold",
           "Remove Heavy Blade | 100 gold",
-          "Remove Burning Pact | 100 gold",
           "Remove Fiend Fire | 100 gold",
           "Remove Reaper | 100 gold",
-          "Remove Burning Pact | 100 gold",
           "Leave shop"
         ],
         "source": "owner_policy"
@@ -2583,7 +2542,7 @@
       "key": null,
       "label": "FrozenEye | 155 gold",
       "state_before": {
-        "location": "Act 3 Floor 35 | HP 75/93 | Gold 265 | Boss Donu And Deca",
+        "location": "Act 3 Floor 35 | HP 93/93 | Gold 290 | Boss Donu And Deca",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -2612,7 +2571,7 @@
       "key": null,
       "label": "Pommel Strike | 53 gold",
       "state_before": {
-        "location": "Act 3 Floor 35 | HP 75/93 | Gold 110 | Boss Donu And Deca",
+        "location": "Act 3 Floor 35 | HP 93/93 | Gold 135 | Boss Donu And Deca",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -2640,7 +2599,7 @@
       "key": null,
       "label": "Leave shop",
       "state_before": {
-        "location": "Act 3 Floor 35 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 35 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "Shop"
       },
       "decision_evidence": {
@@ -2667,7 +2626,7 @@
       "key": null,
       "label": "y=3 Event",
       "state_before": {
-        "location": "Act 3 Floor 35 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 35 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2682,7 +2641,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 3 Floor 36 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 36 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "MysteriousSphere"
       },
       "decision_evidence": {
@@ -2698,7 +2657,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 3 Floor 36 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 36 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "MysteriousSphere"
       },
       "decision_evidence": {
@@ -2713,7 +2672,7 @@
       "key": null,
       "label": "y=4 Event",
       "state_before": {
-        "location": "Act 3 Floor 36 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 36 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2729,7 +2688,7 @@
       "key": null,
       "label": "Recall",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "SensoryStone"
       },
       "decision_evidence": {
@@ -2744,7 +2703,7 @@
       "key": null,
       "label": "[Focus 3] Obtain 3 colorless cards. Take 10 damage.",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 75/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "SensoryStone"
       },
       "decision_evidence": {
@@ -2761,7 +2720,7 @@
       "key": null,
       "label": "Card reward [Madness, Good Instincts, Secret Weapon]",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2779,7 +2738,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2798,7 +2757,7 @@
       "key": null,
       "label": "Card reward [Impatience, Secret Weapon, Bandage Up]",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2815,7 +2774,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2834,7 +2793,7 @@
       "key": null,
       "label": "Card reward [Metamorphosis, Flash of Steel, Trip]",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2850,7 +2809,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -2869,7 +2828,7 @@
       "key": null,
       "label": "y=5 Rest",
       "state_before": {
-        "location": "Act 3 Floor 37 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 37 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2884,7 +2843,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 3 Floor 38 | HP 65/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 38 | HP 83/93 | Gold 82 | Boss Donu And Deca",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -2899,7 +2858,7 @@
       "key": null,
       "label": "y=6 Monster",
       "state_before": {
-        "location": "Act 3 Floor 38 | HP 92/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 38 | HP 93/93 | Gold 82 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2914,7 +2873,7 @@
       "key": null,
       "label": "Card reward [Searing Blow+1, Flame Barrier, Headbutt+1]",
       "state_before": {
-        "location": "Act 3 Floor 39 | HP 56/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 39 | HP 89/93 | Gold 82 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2929,13 +2888,13 @@
     },
     {
       "key": null,
-      "label": "Flame Barrier",
+      "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 39 | HP 56/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 39 | HP 89/93 | Gold 82 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
-        "candidate_id": "1",
+        "candidate_id": "skip-card-reward",
         "candidates": [
           "Searing Blow+1",
           "Flame Barrier",
@@ -2950,7 +2909,7 @@
       "key": null,
       "label": "15 gold",
       "state_before": {
-        "location": "Act 3 Floor 39 | HP 56/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 39 | HP 89/93 | Gold 82 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -2966,7 +2925,7 @@
       "key": null,
       "label": "y=7 Rest",
       "state_before": {
-        "location": "Act 3 Floor 39 | HP 56/93 | Gold 72 | Boss Donu And Deca",
+        "location": "Act 3 Floor 39 | HP 89/93 | Gold 97 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -2981,7 +2940,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 3 Floor 40 | HP 56/93 | Gold 72 | Boss Donu And Deca",
+        "location": "Act 3 Floor 40 | HP 89/93 | Gold 97 | Boss Donu And Deca",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -2996,7 +2955,7 @@
       "key": null,
       "label": "y=8 Treasure",
       "state_before": {
-        "location": "Act 3 Floor 40 | HP 83/93 | Gold 72 | Boss Donu And Deca",
+        "location": "Act 3 Floor 40 | HP 93/93 | Gold 97 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3012,7 +2971,7 @@
       "key": null,
       "label": "Open chest",
       "state_before": {
-        "location": "Act 3 Floor 41 | HP 83/93 | Gold 72 | Boss Donu And Deca",
+        "location": "Act 3 Floor 41 | HP 93/93 | Gold 97 | Boss Donu And Deca",
         "title": "Treasure Room"
       },
       "decision_evidence": {
@@ -3027,7 +2986,7 @@
       "key": null,
       "label": "25 gold",
       "state_before": {
-        "location": "Act 3 Floor 41 | HP 83/93 | Gold 72 | Boss Donu And Deca",
+        "location": "Act 3 Floor 41 | HP 93/93 | Gold 97 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -3044,7 +3003,7 @@
       "key": null,
       "label": "Relic WarPaint",
       "state_before": {
-        "location": "Act 3 Floor 41 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 41 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -3060,7 +3019,7 @@
       "key": null,
       "label": "y=9 Event",
       "state_before": {
-        "location": "Act 3 Floor 41 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 41 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3075,7 +3034,7 @@
       "key": null,
       "label": "Proceed",
       "state_before": {
-        "location": "Act 3 Floor 42 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 42 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Falling"
       },
       "decision_evidence": {
@@ -3090,7 +3049,7 @@
       "key": null,
       "label": "[Attack] Remove Heavy Blade.",
       "state_before": {
-        "location": "Act 3 Floor 42 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 42 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Falling"
       },
       "decision_evidence": {
@@ -3107,7 +3066,7 @@
       "key": null,
       "label": "Leave",
       "state_before": {
-        "location": "Act 3 Floor 42 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 42 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Falling"
       },
       "decision_evidence": {
@@ -3122,7 +3081,7 @@
       "key": null,
       "label": "y=10 Rest",
       "state_before": {
-        "location": "Act 3 Floor 42 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 42 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3137,7 +3096,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 3 Floor 43 | HP 83/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 43 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -3152,7 +3111,7 @@
       "key": null,
       "label": "y=11 Event",
       "state_before": {
-        "location": "Act 3 Floor 43 | HP 93/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 43 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3165,13 +3124,13 @@
     },
     {
       "key": null,
-      "label": "[3 Potions] Lose 40 Gold.",
+      "label": "[2 Potions] Lose 30 Gold.",
       "state_before": {
-        "location": "Act 3 Floor 44 | HP 93/93 | Gold 97 | Boss Donu And Deca",
+        "location": "Act 3 Floor 44 | HP 93/93 | Gold 122 | Boss Donu And Deca",
         "title": "WomanInBlue"
       },
       "decision_evidence": {
-        "candidate_id": "2",
+        "candidate_id": "1",
         "candidates": [
           "[1 Potion] Lose 20 Gold.",
           "[2 Potions] Lose 30 Gold.",
@@ -3185,7 +3144,7 @@
       "key": null,
       "label": "Potion FairyPotion",
       "state_before": {
-        "location": "Act 3 Floor 44 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 44 | HP 93/93 | Gold 92 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
@@ -3193,7 +3152,6 @@
         "candidates": [
           "Potion FairyPotion",
           "Potion SpeedPotion",
-          "Potion WeakenPotion",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3203,30 +3161,13 @@
       "key": null,
       "label": "Potion SpeedPotion",
       "state_before": {
-        "location": "Act 3 Floor 44 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 44 | HP 93/93 | Gold 92 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "0",
         "candidates": [
           "Potion SpeedPotion",
-          "Potion WeakenPotion",
-          "Open map preview"
-        ],
-        "source": "owner_policy"
-      }
-    },
-    {
-      "key": null,
-      "label": "Potion WeakenPotion",
-      "state_before": {
-        "location": "Act 3 Floor 44 | HP 93/93 | Gold 57 | Boss Donu And Deca",
-        "title": "Reward Screen"
-      },
-      "decision_evidence": {
-        "candidate_id": "0",
-        "candidates": [
-          "Potion WeakenPotion",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3236,7 +3177,7 @@
       "key": null,
       "label": "y=12 Monster",
       "state_before": {
-        "location": "Act 3 Floor 44 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 44 | HP 93/93 | Gold 92 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3251,14 +3192,13 @@
       "key": null,
       "label": "Card reward [Pommel Strike, Havoc, Flex+1]",
       "state_before": {
-        "location": "Act 3 Floor 45 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 45 | HP 69/93 | Gold 92 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
-        "candidate_id": "2",
+        "candidate_id": "1",
         "candidates": [
           "16 gold",
-          "Potion ExplosivePotion",
           "Card reward [Pommel Strike, Havoc, Flex+1]",
           "Open map preview"
         ],
@@ -3269,7 +3209,7 @@
       "key": null,
       "label": "Skip card reward",
       "state_before": {
-        "location": "Act 3 Floor 45 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 45 | HP 69/93 | Gold 92 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -3288,30 +3228,13 @@
       "key": null,
       "label": "16 gold",
       "state_before": {
-        "location": "Act 3 Floor 45 | HP 93/93 | Gold 57 | Boss Donu And Deca",
+        "location": "Act 3 Floor 45 | HP 69/93 | Gold 92 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "0",
         "candidates": [
           "16 gold",
-          "Potion ExplosivePotion",
-          "Open map preview"
-        ],
-        "source": "owner_policy"
-      }
-    },
-    {
-      "key": null,
-      "label": "Potion ExplosivePotion",
-      "state_before": {
-        "location": "Act 3 Floor 45 | HP 93/93 | Gold 73 | Boss Donu And Deca",
-        "title": "Reward Screen"
-      },
-      "decision_evidence": {
-        "candidate_id": "0",
-        "candidates": [
-          "Potion ExplosivePotion",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3321,7 +3244,7 @@
       "key": null,
       "label": "y=13 Monster",
       "state_before": {
-        "location": "Act 3 Floor 45 | HP 93/93 | Gold 73 | Boss Donu And Deca",
+        "location": "Act 3 Floor 45 | HP 69/93 | Gold 108 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3337,15 +3260,18 @@
       "key": null,
       "label": "Card reward [Sever Soul, Twin Strike, Whirlwind+1]",
       "state_before": {
-        "location": "Act 3 Floor 46 | HP 66/93 | Gold 73 | Boss Donu And Deca",
+        "location": "Act 3 Floor 46 | HP 57/93 | Gold 108 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "2",
         "candidates": [
           "15 gold",
-          "Potion WeakenPotion",
+          "Potion ExplosivePotion",
           "Card reward [Sever Soul, Twin Strike, Whirlwind+1]",
+          "Discard Smoke Bomb to make room for potion reward",
+          "Discard Fairy in a Bottle to make room for potion reward",
+          "Discard Speed Potion to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3355,7 +3281,7 @@
       "key": null,
       "label": "Whirlwind+1",
       "state_before": {
-        "location": "Act 3 Floor 46 | HP 66/93 | Gold 73 | Boss Donu And Deca",
+        "location": "Act 3 Floor 46 | HP 57/93 | Gold 108 | Boss Donu And Deca",
         "title": "Card Reward"
       },
       "decision_evidence": {
@@ -3374,14 +3300,17 @@
       "key": null,
       "label": "15 gold",
       "state_before": {
-        "location": "Act 3 Floor 46 | HP 66/93 | Gold 73 | Boss Donu And Deca",
+        "location": "Act 3 Floor 46 | HP 57/93 | Gold 108 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
         "candidate_id": "0",
         "candidates": [
           "15 gold",
-          "Potion WeakenPotion",
+          "Potion ExplosivePotion",
+          "Discard Smoke Bomb to make room for potion reward",
+          "Discard Fairy in a Bottle to make room for potion reward",
+          "Discard Speed Potion to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3389,15 +3318,18 @@
     },
     {
       "key": null,
-      "label": "Potion WeakenPotion",
+      "label": "Open map preview",
       "state_before": {
-        "location": "Act 3 Floor 46 | HP 66/93 | Gold 88 | Boss Donu And Deca",
+        "location": "Act 3 Floor 46 | HP 57/93 | Gold 123 | Boss Donu And Deca",
         "title": "Reward Screen"
       },
       "decision_evidence": {
-        "candidate_id": "0",
+        "candidate_id": "skip",
         "candidates": [
-          "Potion WeakenPotion",
+          "Potion ExplosivePotion",
+          "Discard Smoke Bomb to make room for potion reward",
+          "Discard Fairy in a Bottle to make room for potion reward",
+          "Discard Speed Potion to make room for potion reward",
           "Open map preview"
         ],
         "source": "owner_policy"
@@ -3407,13 +3339,14 @@
       "key": null,
       "label": "y=14 Rest",
       "state_before": {
-        "location": "Act 3 Floor 46 | HP 66/93 | Gold 88 | Boss Donu And Deca",
-        "title": "Map"
+        "location": "Act 3 Floor 46 | HP 57/93 | Gold 123 | Boss Donu And Deca",
+        "title": "Map Preview"
       },
       "decision_evidence": {
         "candidate_id": "1",
         "candidates": [
-          "y=14 Rest"
+          "y=14 Rest",
+          "Back to reward screen"
         ],
         "source": "owner_policy"
       }
@@ -3422,7 +3355,7 @@
       "key": null,
       "label": "Rest",
       "state_before": {
-        "location": "Act 3 Floor 47 | HP 66/93 | Gold 88 | Boss Donu And Deca",
+        "location": "Act 3 Floor 47 | HP 57/93 | Gold 123 | Boss Donu And Deca",
         "title": "Campfire"
       },
       "decision_evidence": {
@@ -3437,7 +3370,7 @@
       "key": null,
       "label": "Boss room",
       "state_before": {
-        "location": "Act 3 Floor 47 | HP 93/93 | Gold 88 | Boss Donu And Deca",
+        "location": "Act 3 Floor 47 | HP 84/93 | Gold 123 | Boss Donu And Deca",
         "title": "Map"
       },
       "decision_evidence": {
@@ -3456,7 +3389,7 @@
     "card_rng": 575,
     "treasure_rng": 32,
     "relic_rng": 7,
-    "potion_rng": 83,
+    "potion_rng": 80,
     "monster_hp_rng": 49,
     "ai_rng": 0,
     "shuffle_rng": 0,
@@ -3479,13 +3412,11 @@
           },
           {
             "id": "Defend",
-            "uuid": 5,
-            "upgrades": 1
+            "uuid": 5
           },
           {
             "id": "Defend",
-            "uuid": 6,
-            "upgrades": 1
+            "uuid": 6
           },
           {
             "id": "Defend",
@@ -3493,7 +3424,8 @@
           },
           {
             "id": "Defend",
-            "uuid": 8
+            "uuid": 8,
+            "upgrades": 1
           },
           {
             "id": "Bash",
@@ -3534,8 +3466,9 @@
             "upgrades": 1
           },
           {
-            "id": "Disarm",
-            "uuid": 10007
+            "id": "TrueGrit",
+            "uuid": 10007,
+            "upgrades": 1
           },
           {
             "id": "BodySlam",
@@ -3547,36 +3480,24 @@
             "uuid": 10009
           },
           {
-            "id": "BurningPact",
+            "id": "FiendFire",
             "uuid": 10011
           },
           {
-            "id": "FiendFire",
+            "id": "Reaper",
             "uuid": 10012
           },
           {
-            "id": "Reaper",
+            "id": "PommelStrike",
             "uuid": 10013
           },
           {
-            "id": "BurningPact",
+            "id": "Parasite",
             "uuid": 10014
           },
           {
-            "id": "PommelStrike",
-            "uuid": 10015
-          },
-          {
-            "id": "FlameBarrier",
-            "uuid": 10016
-          },
-          {
-            "id": "Parasite",
-            "uuid": 10017
-          },
-          {
             "id": "Whirlwind",
-            "uuid": 10018,
+            "uuid": 10015,
             "upgrades": 1
           }
         ],
@@ -3608,31 +3529,13 @@
       "zones": {
         "draw_pile": [
           {
+            "id": "PommelStrike",
+            "uuid": 10013
+          },
+          {
             "id": "FeelNoPain",
             "uuid": 10006,
             "upgrades": 1
-          },
-          {
-            "id": "Inflame",
-            "uuid": 10003,
-            "upgrades": 1
-          },
-          {
-            "id": "SecondWind",
-            "uuid": 10005,
-            "upgrades": 1
-          },
-          {
-            "id": "Offering",
-            "uuid": 10004
-          },
-          {
-            "id": "FlameBarrier",
-            "uuid": 10016
-          },
-          {
-            "id": "BurningPact",
-            "uuid": 10011
           },
           {
             "id": "Strike",
@@ -3645,28 +3548,8 @@
           },
           {
             "id": "Defend",
-            "uuid": 7
-          },
-          {
-            "id": "Defend",
-            "uuid": 8
-          },
-          {
-            "id": "PowerThrough",
-            "uuid": 10002
-          },
-          {
-            "id": "Disarm",
-            "uuid": 10007
-          },
-          {
-            "id": "Whirlwind",
-            "uuid": 10018,
+            "uuid": 8,
             "upgrades": 1
-          },
-          {
-            "id": "Reaper",
-            "uuid": 10013
           },
           {
             "id": "BodySlam",
@@ -3674,23 +3557,48 @@
             "upgrades": 1
           },
           {
+            "id": "Offering",
+            "uuid": 10004
+          },
+          {
+            "id": "Parasite",
+            "uuid": 10014
+          },
+          {
+            "id": "Whirlwind",
+            "uuid": 10015,
+            "upgrades": 1
+          },
+          {
+            "id": "SecondWind",
+            "uuid": 10005,
+            "upgrades": 1
+          },
+          {
+            "id": "Inflame",
+            "uuid": 10003,
+            "upgrades": 1
+          },
+          {
+            "id": "Defend",
+            "uuid": 7
+          },
+          {
+            "id": "Defend",
+            "uuid": 5
+          },
+          {
+            "id": "FiendFire",
+            "uuid": 10011
+          },
+          {
             "id": "Clothesline",
             "uuid": 10000,
             "upgrades": 1
           },
           {
-            "id": "Defend",
-            "uuid": 6,
-            "upgrades": 1
-          },
-          {
-            "id": "Defend",
-            "uuid": 5,
-            "upgrades": 1
-          },
-          {
-            "id": "Parasite",
-            "uuid": 10017
+            "id": "PowerThrough",
+            "uuid": 10002
           }
         ],
         "hand": [
@@ -3699,12 +3607,12 @@
             "uuid": 10009
           },
           {
-            "id": "FiendFire",
-            "uuid": 10012
+            "id": "Defend",
+            "uuid": 6
           },
           {
-            "id": "PommelStrike",
-            "uuid": 10015
+            "id": "Reaper",
+            "uuid": 10012
           },
           {
             "id": "BurningPact",
@@ -3712,25 +3620,26 @@
             "upgrades": 1
           },
           {
-            "id": "BurningPact",
-            "uuid": 10014
+            "id": "TrueGrit",
+            "uuid": 10007,
+            "upgrades": 1
           }
         ],
         "discard_pile": [],
         "exhaust_pile": [],
         "limbo": [],
         "queued_cards": [],
-        "card_uuid_counter": 10018
+        "card_uuid_counter": 10015
       },
       "entities": {
         "player": {
           "id": 0,
-          "current_hp": 93,
+          "current_hp": 84,
           "max_hp": 93,
           "block": 0,
           "facing_left": false,
           "gold_delta_this_combat": 0,
-          "gold": 88,
+          "gold": 123,
           "max_orbs": 0,
           "orbs": [],
           "stance": "Neutral",
@@ -4320,28 +4229,20 @@
         ],
         "potions": [
           {
+            "id": "SmokeBomb",
+            "uuid": 50000
+          },
+          {
             "id": "FairyPotion",
-            "uuid": 50000,
+            "uuid": 50001,
             "can_use": false
           },
           {
-            "id": "WeakenPotion",
-            "uuid": 50001,
-            "requires_target": true
-          },
-          null
+            "id": "SpeedPotion",
+            "uuid": 50002
+          }
         ],
         "power_db": {
-          "0": [
-            {
-              "power_type": "Dexterity",
-              "instance_id": null,
-              "amount": 1,
-              "extra_data": 0,
-              "payload": "None",
-              "just_applied": true
-            }
-          ],
           "1": [
             {
               "power_type": "Artifact",
@@ -4355,6 +4256,16 @@
           "2": [
             {
               "power_type": "Artifact",
+              "instance_id": null,
+              "amount": 1,
+              "extra_data": 0,
+              "payload": "None",
+              "just_applied": true
+            }
+          ],
+          "0": [
+            {
+              "power_type": "Dexterity",
               "instance_id": null,
               "amount": 1,
               "extra_data": 0,
@@ -4400,9 +4311,9 @@
             "counter": 7
           },
           "potion_rng": {
-            "seed0": 8033501553198392190,
-            "seed1": 10574263004493796891,
-            "counter": 83
+            "seed0": 11897301000326779408,
+            "seed1": 13894556672783884524,
+            "counter": 80
           },
           "monster_hp_rng": {
             "seed0": 10339585754132873319,

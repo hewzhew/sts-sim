@@ -518,6 +518,8 @@ fn construction_role(
     admission: &RewardAdmission,
     strategic_delta: &AcquisitionStrategicDelta,
 ) -> Option<AcquisitionConstructionRole> {
+    let supported_hand_exhaust_conversion =
+        deck_plan.has_supported_hand_exhaust_conversion(admission);
     if strategic_delta.improves_hard_gap {
         return Some(AcquisitionConstructionRole::HardStrategicGap);
     }
@@ -527,12 +529,15 @@ fn construction_role(
     if has_combat_sustain(admission) {
         return Some(AcquisitionConstructionRole::CombatSustain);
     }
+    // Acute HP pressure still blocks ordinary scaling picks, but it must not
+    // erase a hand-exhaust conversion whose payoff package is already live.
+    // Deployability debt remains an independent guard below.
     if admission.class
         == crate::ai::strategy::reward_admission::RewardAdmissionClass::BuildsSupportedPackage
         && ((admission_is_strength_payoff(admission)
             && deck_plan.has_open_stable_strength_payoff_slot())
-            || deck_plan.has_supported_hand_exhaust_conversion(admission))
-        && !deck_plan.survival_pressure()
+            || supported_hand_exhaust_conversion)
+        && (!deck_plan.survival_pressure() || supported_hand_exhaust_conversion)
         && (!strategic_delta.adds_deployability_debt || deck_plan.roles.energy_units > 0)
     {
         return Some(AcquisitionConstructionRole::SupportedPackagePayoff);

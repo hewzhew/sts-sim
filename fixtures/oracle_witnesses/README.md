@@ -141,25 +141,24 @@ A second full-run witness records the typed reward-semantics repair:
 - `seed20260713008_a0_body_slam_fiend_fire_full_run.continuation.json` follows
   the production owner after it recognizes a supported block payoff at A2F20
   (`Body Slam+`) and a supported hand-exhaust conversion at A2F30
-  (`Fiend Fire`). Production combat search independently solves the run
-  through Champ and the Act 3 hallways.
-- At Donu and Deca, the local graph remains `BudgetUnknown` after 30 seconds.
-  Policy-discrepancy search now replaces the former global agenda as the
-  portfolio's second production member. From a fresh pre-boss workspace,
-  ordinary production `advance` found and committed the checked-in 75-action
-  witness in 7.2 seconds without manual actions, a V2 donor, or a trained
-  artifact, and won at 10/93 HP. The journal records this combat as
-  `search_combat`.
-- Fresh import and replay verify seed 20260713008, A0, 217 journal entries,
-  192 decisions, 25 combat resolutions, 673 combat actions, terminal victory
+  (`Fiend Fire`). A current-policy audit reports 185 rank-zero agreements,
+  zero nonzero-rank choices, and no choice absent from the production owner
+  surface. All 25 combats came from production search or its mature policy
+  proposal; none used manual exact actions or a V2 donor.
+- At Donu and Deca, ordinary production `advance` used the portfolio's
+  policy-discrepancy member to find and commit the checked-in 79-action
+  witness in 5.9 seconds. It entered at 84/93 HP and won at 33/93 HP without
+  a trained artifact. The journal records the combat as `search_combat`.
+- Fresh import and replay verify seed 20260713008, A0, 215 journal entries,
+  190 decisions, 25 combat resolutions, 687 combat actions, terminal victory
   at F48, and final fingerprint
-  `30d6700e3482c04292f89118debfb6577c4dd06210d979c10c76b648c4e4f974`.
+  `53266ac0b66c99c9721ccba90a4da3fc7910d0e3862156bdc3b23bfc83d2d4a3`.
 - SHA-256: full-run continuation
-  `C8A906BEC565C16FD4D98C2AD853F5535026DA32EC278E788F2F942941454D65`;
+  `FDEF8A84BC0230A16800DEA5AAB385BA809A9FA0B9FC405AEF47742372BCE520`;
   Donu and Deca combat case
-  `3255149E0D3157143A5BB589FFB5DDC7709D8A79A6F9B5B6ED42E6A440F645DA`;
+  `FFFB7088B4D0FE74C7AC24613CFF5DE722FBBFC2F31D69802DF726F3D2C4FCBE`;
   policy-discrepancy witness
-  `10FF0CA23D045E1BC3FCDE37789D613A7939D5BD6A28914DA7671318E2B747F0`.
+  `FB4B8098DD4079502788D2F1C9991CE62D6003C3397FE8E0AB631F63A652EE2B`.
 
 ## seed 20260713009, A0, Time Eater
 

@@ -925,6 +925,70 @@ mod tests {
             .collect()
     }
 
+    #[test]
+    fn supported_hand_exhaust_conversion_reaches_production_owner_ordering() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 30;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.current_hp = 56;
+        session.run_state.max_hp = 93;
+        session.run_state.gold = 250;
+        session.run_state.relics = [
+            RelicId::BurningBlood,
+            RelicId::FrozenEgg,
+            RelicId::ArtOfWar,
+            RelicId::OddlySmoothStone,
+            RelicId::BlueCandle,
+            RelicId::FusionHammer,
+            RelicId::OrangePellets,
+            RelicId::JuzuBracelet,
+            RelicId::RedMask,
+        ]
+        .into_iter()
+        .map(RelicState::new)
+        .collect();
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 1),
+            (CardId::BurningPact, 1),
+            (CardId::PowerThrough, 0),
+            (CardId::Inflame, 1),
+            (CardId::Offering, 0),
+            (CardId::SecondWind, 1),
+            (CardId::FeelNoPain, 1),
+            (CardId::TrueGrit, 0),
+            (CardId::BodySlam, 1),
+            (CardId::PommelStrike, 0),
+            (CardId::HeavyBlade, 0),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::FiendFire, 0),
+                (CardId::SwordBoomerang, 1),
+                (CardId::Clash, 0),
+            ],
+        );
+
+        assert!(
+            ordered
+                .iter()
+                .position(|card| *card == Some(CardId::FiendFire))
+                < ordered.iter().position(Option::is_none),
+            "supported hand-exhaust conversion must reach the production owner instead of losing to skip: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
     fn force_next_elite(session: &mut RunControlSession, encounter: EncounterId) {
         let mut current = MapRoomNode::new(0, 0);
         current.class = Some(RoomType::MonsterRoom);
