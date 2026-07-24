@@ -110,6 +110,10 @@ pub enum OracleAnalysisServiceCommandV1 {
         quantum_ms: u64,
         #[serde(default)]
         wall_ms: Option<u64>,
+        /// Keep the verified incumbent resident and spend the requested
+        /// allowance looking for a better exact witness.
+        #[serde(default)]
+        improve_incumbent: bool,
     },
     AcceptCombat,
     EscapeCombat,
@@ -377,6 +381,34 @@ mod tests {
         assert!(matches!(
             command,
             OracleAnalysisServiceCommandV1::RoutePolicyAudit { node: 185 }
+        ));
+    }
+
+    #[test]
+    fn advance_quality_mode_is_explicit_and_backward_compatible() {
+        let defaulted = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "advance",
+        }))
+        .expect("parse legacy advance command");
+        assert!(matches!(
+            defaulted,
+            OracleAnalysisServiceCommandV1::Advance {
+                improve_incumbent: false,
+                ..
+            }
+        ));
+
+        let improving = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "advance",
+            "improve_incumbent": true,
+        }))
+        .expect("parse quality advance command");
+        assert!(matches!(
+            improving,
+            OracleAnalysisServiceCommandV1::Advance {
+                improve_incumbent: true,
+                ..
+            }
         ));
     }
 

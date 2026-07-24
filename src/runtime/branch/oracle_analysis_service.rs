@@ -473,6 +473,7 @@ fn execute_command(
             quantum_nodes,
             quantum_ms,
             wall_ms,
+            improve_incumbent,
         } => {
             if max_quanta == 0 || quantum_nodes == 0 || quantum_ms == 0 {
                 return Err(
@@ -485,7 +486,7 @@ fn execute_command(
                 quantum_nodes,
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
-                improve_incumbent: false,
+                improve_incumbent,
             })?;
             (
                 json!({"report": report, "node": node_transition_summary(&view)}),

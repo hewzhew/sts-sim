@@ -80,6 +80,10 @@ enum LiveCommand {
         quantum_ms: u64,
         #[arg(long, default_value_t = 10_000)]
         wall_ms: u64,
+        /// Spend the full bounded allowance improving a verified incumbent
+        /// instead of materializing the first exact victory immediately.
+        #[arg(long)]
+        improve_incumbent: bool,
     },
     /// Choose an owner-ranked decision at the current node.
     Choose {
@@ -238,6 +242,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             quantum_nodes,
             quantum_ms,
             wall_ms,
+            improve_incumbent,
         } => {
             let before = live_call(
                 endpoint,
@@ -250,6 +255,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                     quantum_nodes,
                     quantum_ms,
                     wall_ms: Some(wall_ms),
+                    improve_incumbent,
                 },
             )?;
             print_json(&compact_live_advance(&before, &result))
@@ -700,6 +706,7 @@ fn run_live_to_stop(endpoint: &Path, config: LiveRunConfig) -> Result<Value, Str
                 quantum_nodes: config.quantum_nodes,
                 quantum_ms: config.quantum_ms,
                 wall_ms: Some(wall_ms),
+                improve_incumbent: true,
             },
         )?;
         let report = result
@@ -1705,6 +1712,33 @@ mod tests {
                 },
                 ..
             } if path == PathBuf::from("victory.json")
+        ));
+    }
+
+    #[test]
+    fn typed_live_advance_exposes_bounded_incumbent_improvement() {
+        let cli = Cli::try_parse_from([
+            "oracle_lab_client",
+            "--canonical-oracle",
+            "live",
+            "--session",
+            "seed009",
+            "advance",
+            "--wall-ms",
+            "5000",
+            "--improve-incumbent",
+        ])
+        .expect("parse quality-improving live advance");
+        assert!(matches!(
+            cli.command,
+            Command::Live {
+                command: LiveCommand::Advance {
+                    wall_ms: 5000,
+                    improve_incumbent: true,
+                    ..
+                },
+                ..
+            }
         ));
     }
 
