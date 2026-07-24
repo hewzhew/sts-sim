@@ -2313,6 +2313,7 @@ mod tests {
                 }],
                 strengthened_capabilities: Vec::new(),
                 hard_startup_liability: false,
+                hard_duplicate_liability: false,
                 component_debt_count: 0,
                 access_saturated: false,
                 stable_surface_index: 0,

@@ -82,9 +82,13 @@ struct CardRewardProductionOrderKeyV1 {
     surface_rank: u8,
     lane_rank: u8,
     unavoidable_gaps_by_deadline: [usize; MAX_OBLIGATION_DEADLINE_NODES + 1],
-    candidate_score_rank: i32,
     possible_pool_gaps: usize,
     residual: CapabilityResidualOrderKeyV1,
+    hard_startup_liability: bool,
+    component_debt_count: usize,
+    access_saturated: bool,
+    lacks_independent_function: bool,
+    legacy_score_tiebreak_rank: i32,
     candidate_tiebreak_rank: u8,
 }
 
@@ -203,9 +207,13 @@ fn card_reward_choice_rank(
             surface_rank: 0,
             lane_rank: 0,
             unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
-            candidate_score_rank: 0,
             possible_pool_gaps: current_obligation_key.possible_pool_gaps,
             residual: current_residual_key,
+            hard_startup_liability: false,
+            component_debt_count: 0,
+            access_saturated: false,
+            lacks_independent_function: false,
+            legacy_score_tiebreak_rank: 0,
             candidate_tiebreak_rank: 0,
         },
         Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
@@ -222,6 +230,16 @@ fn card_reward_choice_rank(
                 .annotation
                 .evaluation()
                 .map(|evaluation| evaluation.order_key(has_mainline_take));
+            let coverage_improves = after_obligation_key < current_obligation_key
+                || (after_obligation_key == current_obligation_key
+                    && after_residual_key < current_residual_key);
+            let functional = card_reward_functional_evidence(
+                &session.run_state,
+                strategy,
+                *card,
+                *upgrades,
+                coverage_improves,
+            );
             CardRewardProductionOrderKeyV1 {
                 surface_rank: 1,
                 lane_rank: candidate_lane_rank(
@@ -229,9 +247,14 @@ fn card_reward_choice_rank(
                     has_mainline_take,
                 ),
                 unavoidable_gaps_by_deadline: after_obligation_key.unavoidable_gaps_by_deadline,
-                candidate_score_rank: evaluation_key.map_or(0, |key| key.score_rank),
                 possible_pool_gaps: after_obligation_key.possible_pool_gaps,
                 residual: after_residual_key,
+                hard_startup_liability: functional.hard_liability.is_some(),
+                component_debt_count: functional.component_debt_count,
+                access_saturated: functional.access_saturated,
+                lacks_independent_function: !functional.has_unburdened_independent_value()
+                    && !functional.has(CardRewardFunctionV1::Answer),
+                legacy_score_tiebreak_rank: evaluation_key.map_or(0, |key| key.score_rank),
                 candidate_tiebreak_rank: evaluation_key.map_or(9, |key| key.tiebreak_rank),
             }
         }
@@ -245,9 +268,13 @@ fn card_reward_choice_rank(
                 surface_rank: 1,
                 lane_rank: candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
                 unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
-                candidate_score_rank: evaluation_key.map_or(0, |key| key.score_rank),
                 possible_pool_gaps: current_obligation_key.possible_pool_gaps,
                 residual: current_residual_key,
+                hard_startup_liability: false,
+                component_debt_count: 0,
+                access_saturated: false,
+                lacks_independent_function: true,
+                legacy_score_tiebreak_rank: evaluation_key.map_or(0, |key| key.score_rank),
                 candidate_tiebreak_rank: evaluation_key.map_or(7, |key| key.tiebreak_rank),
             }
         }
@@ -255,9 +282,13 @@ fn card_reward_choice_rank(
             surface_rank: 2,
             lane_rank: candidate_lane_rank(CandidateLane::Reject, has_mainline_take),
             unavoidable_gaps_by_deadline: current_obligation_key.unavoidable_gaps_by_deadline,
-            candidate_score_rank: 0,
             possible_pool_gaps: current_obligation_key.possible_pool_gaps,
             residual: current_residual_key,
+            hard_startup_liability: true,
+            component_debt_count: usize::MAX,
+            access_saturated: true,
+            lacks_independent_function: true,
+            legacy_score_tiebreak_rank: 0,
             candidate_tiebreak_rank: 9,
         },
     }
@@ -299,6 +330,9 @@ fn card_reward_has_supported_recovery(
     let Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) = &choice.key else {
         return false;
     };
+    if card_reward_has_hard_duplicate_liability(choice) {
+        return false;
+    }
     let functional =
         card_reward_functional_evidence(&session.run_state, strategy, *card, *upgrades, false);
     functional.has(CardRewardFunctionV1::Recovery)
@@ -315,6 +349,9 @@ fn card_reward_repairs_or_strengthens_active_obligation(
     let Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) = &choice.key else {
         return false;
     };
+    if card_reward_has_hard_duplicate_liability(choice) {
+        return false;
+    }
     let before =
         strategic_obligation_order_key(session, &session.run_state, &strategy.threat_coverage);
     let trial = run_state_after_card(&session.run_state, *card, *upgrades);
@@ -337,6 +374,16 @@ fn card_reward_repairs_or_strengthens_active_obligation(
     functional.has(CardRewardFunctionV1::Answer)
         && functional.hard_liability.is_none()
         && functional.component_debt_count == 0
+}
+
+fn card_reward_has_hard_duplicate_liability(choice: &OwnerChoice) -> bool {
+    choice.annotation.admission().is_some_and(|admission| {
+        admission.reasons.iter().any(|reason| match reason {
+            RewardAdmissionReason::DuplicateBurden(_) => true,
+            RewardAdmissionReason::DuplicateConcern(concern) => concern.is_hard_penalty(),
+            _ => false,
+        })
+    })
 }
 
 fn attach_card_reward_provenance(
@@ -402,6 +449,7 @@ fn attach_card_reward_provenance(
             &after,
         ),
         hard_startup_liability: functional.hard_liability.is_some(),
+        hard_duplicate_liability: card_reward_has_hard_duplicate_liability(choice),
         component_debt_count: functional.component_debt_count,
         access_saturated: functional.access_saturated,
         stable_surface_index,
@@ -1199,6 +1247,82 @@ mod tests {
         assert!(
             second_wind < ordered.iter().position(Option::is_none),
             "the exact fuel-backed Second Wind+ must remain above skip: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn fuel_backed_fnp_engine_outranks_an_additional_damage_payoff() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 18;
+        session.run_state.current_hp = 93;
+        session.run_state.max_hp = 93;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 0),
+            (CardId::BurningPact, 1),
+            (CardId::PowerThrough, 0),
+            (CardId::Inflame, 1),
+            (CardId::Offering, 0),
+            (CardId::SecondWind, 1),
+        ]);
+
+        let (ordered, diagnostics) = ordered_reward_for_state(
+            session,
+            &[
+                (CardId::FeelNoPain, 1),
+                (CardId::Pummel, 1),
+                (CardId::Clothesline, 0),
+            ],
+        );
+
+        assert_eq!(
+            ordered.first(),
+            Some(&Some(CardId::FeelNoPain)),
+            "an upgraded FNP backed by broad exact exhaust and status fuel closes the missing repeatable defensive engine before another supported damage payoff or a redundant debuff copy: {ordered:?}; {diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn unsupported_fnp_does_not_outrank_a_supported_damage_payoff() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 18;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.master_deck = exact_deck(&[
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 0),
+            (CardId::Inflame, 1),
+            (CardId::Offering, 0),
+        ]);
+
+        let (ordered, diagnostics) =
+            ordered_reward_for_state(session, &[(CardId::FeelNoPain, 1), (CardId::Pummel, 1)]);
+
+        assert!(
+            ordered
+                .iter()
+                .position(|card| *card == Some(CardId::Pummel))
+                < ordered
+                    .iter()
+                    .position(|card| *card == Some(CardId::FeelNoPain)),
+            "without an exhaust source, the prospective FNP payoff must not receive the fuel-backed engine preference: {ordered:?}; {diagnostics:#?}"
         );
     }
 

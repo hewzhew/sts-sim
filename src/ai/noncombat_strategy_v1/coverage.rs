@@ -1,3 +1,7 @@
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades, CombatEvent, Mechanic, TriggeredEffect,
+};
+use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::ai::card_reward_policy_v1::card_facts;
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{CardId, CardType};
@@ -24,7 +28,9 @@ struct CapabilityFacts {
     draw_sources: usize,
     energy_sources: usize,
     exhaust_generators: usize,
+    broad_exhaust_generators: usize,
     exhaust_payoffs: usize,
+    exhaust_block_payoffs: usize,
     debuff_sources: usize,
     dense_card_sources: usize,
     retaliation_safe_sources: usize,
@@ -60,9 +66,22 @@ pub fn threat_coverage_from_run_state_v1(
             usize::from(observed.draw_cards > i32::from(mechanics.hand_topdeck_selection));
         facts.energy_sources += usize::from(observed.energy_gain > 0);
         facts.exhaust_generators += usize::from(observed.exhausts_other_cards);
+        facts.broad_exhaust_generators += usize::from(
+            card_analysis_profile_v1(observed.card, card.upgrades)
+                .is_block_plan_broad_exhaust_source,
+        );
         facts.exhaust_payoffs += usize::from(observed.pick_dependencies.contains(
             &crate::ai::card_reward_policy_v1::CardRewardPickDependencyV1::ExhaustPackage,
         ));
+        facts.exhaust_block_payoffs += usize::from(
+            card_definition_with_upgrades(observed.card, card.upgrades)
+                .event_handlers
+                .iter()
+                .any(|handler| {
+                    handler.on == CombatEvent::CardExhausted
+                        && handler.effect == TriggeredEffect::Provide(Mechanic::Block)
+                }),
+        );
         facts.debuff_sources += usize::from(observed.weak > 0)
             + usize::from(observed.vulnerable > 0)
             + usize::from(observed.enemy_strength_down > 0);
@@ -176,8 +195,12 @@ fn ledger_from_capability_facts(
                 Kind::SustainedDefense,
                 defense_coverage(&facts),
                 vec![format!(
-                    "block_total={} weak_sources={} strength_down_sources={}",
-                    facts.block_total, facts.weak_sources, facts.strength_down_sources
+                    "block_total={} weak_sources={} strength_down_sources={} broad_exhaust_generators={} exhaust_block_payoffs={}",
+                    facts.block_total,
+                    facts.weak_sources,
+                    facts.strength_down_sources,
+                    facts.broad_exhaust_generators,
+                    facts.exhaust_block_payoffs
                 )],
             ),
             capability(
@@ -303,11 +326,20 @@ fn frontload_coverage(facts: &CapabilityFacts) -> Coverage {
 }
 
 fn defense_coverage(facts: &CapabilityFacts) -> Coverage {
+    let supported_exhaust_block_engine =
+        facts.exhaust_generators > 0 && facts.exhaust_block_payoffs > 0;
+    let broad_exhaust_block_engine =
+        facts.broad_exhaust_generators > 0 && facts.exhaust_block_payoffs > 0;
     if facts.strength_down_sources > 0 && facts.block_total >= 25
         || facts.weak_sources >= 2 && facts.block_total >= 35
+        || broad_exhaust_block_engine && facts.block_total >= 25
     {
         Coverage::Strong
-    } else if facts.strength_down_sources > 0 || facts.weak_sources > 0 || facts.block_total >= 30 {
+    } else if facts.strength_down_sources > 0
+        || facts.weak_sources > 0
+        || facts.block_total >= 30
+        || supported_exhaust_block_engine
+    {
         Coverage::Supported
     } else if facts.block_total > 0 {
         Coverage::Thin

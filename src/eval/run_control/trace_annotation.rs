@@ -441,6 +441,8 @@ pub struct CardRewardOwnerProvenanceV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strengthened_capabilities: Vec<StrategyCapabilityKindV1>,
     pub hard_startup_liability: bool,
+    #[serde(default)]
+    pub hard_duplicate_liability: bool,
     pub component_debt_count: usize,
     pub access_saturated: bool,
     pub stable_surface_index: usize,
