@@ -136,6 +136,28 @@ fixture or its future state hashes.
   full-run continuation
   `72BDFD54DB3C83260E388703C70E6ED7452BE3A0C95E89976F44077D92BDD1E3`.
 
+A second full-run witness records the typed reward-semantics repair:
+
+- `seed20260713008_a0_body_slam_fiend_fire_full_run.continuation.json` follows
+  the production owner after it recognizes a supported block payoff at A2F20
+  (`Body Slam+`) and a supported hand-exhaust conversion at A2F30
+  (`Fiend Fire`). Production combat search independently solves the run
+  through Champ and the Act 3 hallways.
+- At Donu and Deca, the production local graph remains `BudgetUnknown` after
+  30 seconds. The independent policy-discrepancy search finds the checked-in
+  75-action witness in 3.7 seconds without a V2 donor or trained artifact and
+  wins at 10/93 HP.
+- Fresh import and replay verify seed 20260713008, A0, 217 journal entries,
+  192 decisions, 25 combat resolutions, 673 combat actions, terminal victory
+  at F48, and final fingerprint
+  `30d6700e3482c04292f89118debfb6577c4dd06210d979c10c76b648c4e4f974`.
+- SHA-256: full-run continuation
+  `9AA2032E94CD3580CF294A98007B2FE0764D19B8DED4D7608B5ECEEB9CF40733`;
+  Donu and Deca combat case
+  `3255149E0D3157143A5BB589FFB5DDC7709D8A79A6F9B5B6ED42E6A440F645DA`;
+  policy-discrepancy witness
+  `10FF0CA23D045E1BC3FCDE37789D613A7939D5BD6A28914DA7671318E2B747F0`.
+
 ## seed 20260713009, A0, Time Eater
 
 This run preserves both the clean production-search cutover comparison and a
