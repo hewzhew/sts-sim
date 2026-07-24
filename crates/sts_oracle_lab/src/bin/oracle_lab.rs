@@ -24,12 +24,13 @@ use sts_combat_planner::{
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
-    PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig, SharedCombatActionPolicy,
-    SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction, TurnOptionGenerationStatus,
-    TurnOptionGeneratorConfig, TurnOptionGeneratorSession, UniformCombatActionPolicy,
+    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    LocalTurnGraphWitnessSession, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
+    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
+    SharedCombatActionPolicy, SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction,
+    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    UniformCombatActionPolicy,
 };
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
@@ -68,7 +69,7 @@ use sts_simulator::runtime::branch::{
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
-use sts_simulator::state::core::ClientInput;
+use sts_simulator::state::core::{ClientInput, EngineState};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -239,6 +240,11 @@ enum Command {
         /// starting the planner. Repeat the flag to compose verified segments.
         #[arg(long)]
         prefix_actions: Vec<PathBuf>,
+        /// Stop replay as soon as this exact player-turn boundary is reached.
+        /// This avoids hand-slicing a saved action prefix to inspect or export
+        /// an earlier turn.
+        #[arg(long, requires = "prefix_actions")]
+        prefix_stop_at_player_turn: Option<u32>,
         /// Print compact, card-labelled traces instead of raw action arrays.
         #[arg(long, conflicts_with = "full")]
         readable: bool,
@@ -249,6 +255,11 @@ enum Command {
         /// Replay the prefix and print its exact successor without starting search.
         #[arg(long)]
         replay_only: bool,
+        /// Diagnostic-only replay counterfactual. Replace the combat root's
+        /// current HP before applying --prefix-actions; the output remains
+        /// explicitly non-authoritative for the original run.
+        #[arg(long, requires = "replay_only")]
+        counterfactual_hp: Option<i32>,
         /// Save the exact prefix successor as a standalone combat case.
         #[arg(long)]
         export_prefix_case: Option<PathBuf>,
@@ -510,6 +521,12 @@ enum Command {
         /// and keep searching until the explicit work/deadline allowance.
         #[arg(long)]
         improve_incumbent: bool,
+        /// Stop at the first replay-verified witness whose HP loss is at most
+        /// this non-negative bound. This exposes the planner's existing
+        /// satisfaction contract without collapsing every combat to either
+        /// first-win or best-HP search.
+        #[arg(long, conflicts_with = "improve_incumbent")]
+        max_hp_loss: Option<u32>,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
         #[arg(long, default_value_t = 4)]
@@ -526,12 +543,29 @@ enum Command {
         /// deepest progress, and terminal witness paths.
         #[arg(long)]
         readable: bool,
+        /// Print only compact per-turn traces for the deepest states and
+        /// witness. Omits raw action hashes and full frontier diagnostics.
+        #[arg(long, conflicts_with = "readable")]
+        trace: bool,
         /// Report exact graph membership and local service for selected states.
         #[arg(long)]
         watch_exact_state_hash: Vec<String>,
         /// If a replay-verified win is found, save its exact ClientInput list.
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
+        /// Save the exact deepest-survival state as a standalone diagnostic
+        /// combat case. Inspect `deepest.survival_node.exhausted` before using
+        /// it as a segmented-search continuation.
+        #[arg(
+            long,
+            visible_alias = "export-deepest-case",
+            conflicts_with = "export_deepest_progress_case"
+        )]
+        export_deepest_survival_case: Option<PathBuf>,
+        /// Save the exact deepest-progress state as a new standalone combat
+        /// case instead of the survival envelope.
+        #[arg(long, conflicts_with = "export_deepest_survival_case")]
+        export_deepest_progress_case: Option<PathBuf>,
     },
     /// Generate one exact turn boundary, select one deferred beam window,
     /// then dovetail resumable layered continuations for its candidates.
@@ -807,6 +841,22 @@ enum Command {
         per_bucket_limit: usize,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+        /// Number of selected non-loss turn plans shown by the default compact
+        /// report.
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+        /// Include every selected plan and the complete preselection audit.
+        #[arg(long)]
+        full: bool,
+        /// Export this zero-based rank among the displayed non-loss plans.
+        #[arg(long)]
+        export_rank: Option<usize>,
+        /// Save the selected plan's exact next-turn state as a combat case.
+        #[arg(long, requires = "export_rank")]
+        export_case: Option<PathBuf>,
+        /// Save the selected plan's exact ClientInput list.
+        #[arg(long, requires = "export_rank")]
+        export_actions: Option<PathBuf>,
     },
     /// Generate complete-turn proposals with an independent action-depth beam.
     /// Finished short turns never displace still-live longer prefixes.
@@ -2317,13 +2367,17 @@ fn main() -> Result<(), String> {
             max_selections,
             wall_ms,
             improve_incumbent,
+            max_hp_loss,
             max_engine_steps_per_transition,
             generation_quantum_work,
             max_turn_depth,
             full_health,
             readable,
+            trace,
             watch_exact_state_hash,
             export_witness_actions,
+            export_deepest_survival_case,
+            export_deepest_progress_case,
         } => {
             let command_started = Instant::now();
             let mut loaded = load_combat_case(&case)?;
@@ -2344,8 +2398,15 @@ fn main() -> Result<(), String> {
                     max_engine_steps_per_transition,
                 )?)
             };
-            let root = CombatDecisionRoot::new(loaded.position)
+            let root = CombatDecisionRoot::new(loaded.position.clone())
                 .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+            let satisfaction = if improve_incumbent {
+                OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+            } else if let Some(limit) = max_hp_loss {
+                OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
+            } else {
+                OracleCombatWitnessSatisfaction::FirstWitness
+            };
             let config = LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition,
@@ -2361,11 +2422,7 @@ fn main() -> Result<(), String> {
                 lookahead_max_evaluations: max_nodes.saturating_div(24).max(1),
                 lookahead_work_per_evaluation: 24,
                 max_turn_depth,
-                satisfaction: if improve_incumbent {
-                    OracleCombatWitnessSatisfaction::BudgetOrExhaustion
-                } else {
-                    OracleCombatWitnessSatisfaction::FirstWitness
-                },
+                satisfaction,
             };
             let policy = if let Some(path) = guidance_bundle.as_deref() {
                 CombatGuidanceBundleV1::load(path)?.policy(existing_combat_knowledge_policy_v1())?
@@ -2422,7 +2479,42 @@ fn main() -> Result<(), String> {
                 &EngineCombatStepper,
             );
             let progress = session.progress_snapshot();
-            let deepest_survival_trace = readable
+            let root_action_families = session
+                .root_action_families()
+                .into_iter()
+                .map(|family| {
+                    json!({
+                        "action": combat_action_label(
+                            &search_root_position,
+                            &family.first_action,
+                        ),
+                        "best_root_negative_log_policy":
+                            family.best_root_negative_log_policy,
+                        "completed_root_turn_options":
+                            family.completed_root_turn_options,
+                        "terminal_wins": family.terminal_wins,
+                        "terminal_losses": family.terminal_losses,
+                        "escapes": family.escapes,
+                        "unique_next_turn_successors":
+                            family.unique_next_turn_successors,
+                        "retained_next_turn_successors":
+                            family.retained_next_turn_successors,
+                        "reachable_exact_states": family.reachable_exact_states,
+                        "reachable_retained_states":
+                            family.reachable_retained_states,
+                        "reachable_generation_work":
+                            family.reachable_generation_work,
+                        "reachable_completed_turn_options":
+                            family.reachable_completed_turn_options,
+                        "max_player_turn": family.max_player_turn,
+                        "best_hp_at_max_turn": family.best_hp_at_max_turn,
+                        "lowest_enemy_hp_at_max_turn":
+                            family.lowest_enemy_hp_at_max_turn,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let include_trace = readable || trace;
+            let deepest_survival_trace = include_trace
                 .then(|| {
                     replay_combat_path(
                         search_root_position.clone(),
@@ -2431,7 +2523,7 @@ fn main() -> Result<(), String> {
                     )
                 })
                 .transpose()?;
-            let deepest_progress_trace = readable
+            let deepest_progress_trace = include_trace
                 .then(|| {
                     replay_combat_path(
                         search_root_position.clone(),
@@ -2440,7 +2532,19 @@ fn main() -> Result<(), String> {
                     )
                 })
                 .transpose()?;
-            let witness_trace = if readable {
+            let deepest_survival_node = local_graph_state_snapshot_for_path(
+                &session,
+                search_root_position.clone(),
+                &progress.deepest_survival_actions,
+                max_engine_steps_per_transition,
+            )?;
+            let deepest_progress_node = local_graph_state_snapshot_for_path(
+                &session,
+                search_root_position.clone(),
+                &progress.deepest_progress_actions,
+                max_engine_steps_per_transition,
+            )?;
+            let witness_trace = if include_trace {
                 report
                     .witness
                     .as_ref()
@@ -2520,11 +2624,83 @@ fn main() -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
             }
+            let exported_deepest_survival_actions =
+                if let Some(path) = export_deepest_survival_case.as_ref() {
+                    Some(export_descendant_combat_case(
+                        &loaded,
+                        &progress.deepest_survival_actions,
+                        path,
+                        max_engine_steps_per_transition,
+                        "local_turn_graph_deepest_survival",
+                    )?)
+                } else {
+                    None
+                };
+            let exported_deepest_progress_actions =
+                if let Some(path) = export_deepest_progress_case.as_ref() {
+                    Some(export_descendant_combat_case(
+                        &loaded,
+                        &progress.deepest_progress_actions,
+                        path,
+                        max_engine_steps_per_transition,
+                        "local_turn_graph_deepest_progress",
+                    )?)
+                } else {
+                    None
+                };
             let watched_corridor_output = if readable {
                 watched_corridor.clone().unwrap_or(Value::Null)
             } else {
                 compact_local_corridor_report(watched_corridor.as_ref())
             };
+            if trace {
+                let compact_survival_trace =
+                    if progress.deepest_survival_actions == progress.deepest_progress_actions {
+                        json!({"same_as": "deepest_progress_trace"})
+                    } else {
+                        compact_combat_trace(deepest_survival_trace.as_ref())
+                    };
+                return print_json(&json!({
+                    "schema_name": "LocalTurnGraphCombatTraceV1",
+                    "schema_version": 1,
+                    "case": case,
+                    "status": format!("{:?}", report.status),
+                    "satisfaction": format!("{satisfaction:?}"),
+                    "elapsed_ms": command_started.elapsed().as_millis(),
+                    "counterfactual": {
+                        "full_health": full_health,
+                        "original_hp": original_hp,
+                        "search_hp": initial_hp,
+                    },
+                    "work": {
+                        "generation_work": report.counters.generation_work,
+                        "exact_nodes": report.counters.exact_nodes,
+                        "completed_turn_options": report.counters.completed_turn_options,
+                        "applied_action_transitions": report.counters.applied_action_transitions,
+                    },
+                    "root_action_families": root_action_families,
+                    "deepest": {
+                        "progress_state": progress.deepest_progress_state,
+                        "progress_node": deepest_progress_node,
+                        "progress_trace": compact_combat_trace(deepest_progress_trace.as_ref()),
+                        "survival_state": progress.deepest_survival_state,
+                        "survival_node": deepest_survival_node,
+                        "survival_trace": compact_survival_trace,
+                    },
+                    "witness": report.witness.as_ref().map(|witness| json!({
+                        "final_hp": witness.final_position.combat.entities.player.current_hp,
+                        "action_count": witness.actions.len(),
+                        "trace": compact_combat_trace(witness_trace.as_ref()),
+                    })),
+                    "exported_witness_actions": report.witness.is_some()
+                        .then_some(export_witness_actions.as_ref())
+                        .flatten(),
+                    "exported_deepest_survival_case": export_deepest_survival_case,
+                    "exported_deepest_survival_actions": exported_deepest_survival_actions,
+                    "exported_deepest_progress_case": export_deepest_progress_case,
+                    "exported_deepest_progress_actions": exported_deepest_progress_actions,
+                }));
+            }
             print_json(&json!({
                 "schema_name": "LocalTurnGraphCombatSearchReportV1",
                 "schema_version": 1,
@@ -2539,11 +2715,7 @@ fn main() -> Result<(), String> {
                 "guidance_bundle": guidance_bundle,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 "watch_corridor_actions": watch_corridor_actions,
-                "satisfaction": if improve_incumbent {
-                    "budget_or_exhaustion"
-                } else {
-                    "first_witness"
-                },
+                "satisfaction": format!("{satisfaction:?}"),
                 "scheduler": if anchor_only {
                     "anchor_only"
                 } else if root_turn_anchor_only {
@@ -2565,6 +2737,7 @@ fn main() -> Result<(), String> {
                     "generated_options": report.root_generated_options,
                     "children": report.root_children,
                 },
+                "root_action_families": root_action_families,
                 "counters": {
                     "selections": report.counters.selections,
                     "node_visits": report.counters.node_visits,
@@ -2594,9 +2767,11 @@ fn main() -> Result<(), String> {
                     "max_player_turn": progress.max_player_turn,
                     "max_path_atomic_depth": progress.max_path_atomic_depth,
                     "deepest_survival_state": progress.deepest_survival_state,
+                    "deepest_survival_node": deepest_survival_node,
                     "deepest_survival_actions": readable.then_some(&progress.deepest_survival_actions),
                     "deepest_survival_trace": deepest_survival_trace,
                     "deepest_progress_state": progress.deepest_progress_state,
+                    "deepest_progress_node": deepest_progress_node,
                     "deepest_progress_actions": readable.then_some(&progress.deepest_progress_actions),
                     "deepest_progress_trace": deepest_progress_trace,
                     "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
@@ -2608,6 +2783,10 @@ fn main() -> Result<(), String> {
                 "exported_witness_actions": report.witness.is_some()
                     .then_some(export_witness_actions.as_ref())
                     .flatten(),
+                "exported_deepest_survival_case": export_deepest_survival_case,
+                "exported_deepest_survival_actions": exported_deepest_survival_actions,
+                "exported_deepest_progress_case": export_deepest_progress_case,
+                "exported_deepest_progress_actions": exported_deepest_progress_actions,
             }))
         }
         Command::CombatCaseLayered {
@@ -4140,9 +4319,11 @@ fn main() -> Result<(), String> {
             watch_corridor_actions,
             corridor_prefix_turns,
             prefix_actions,
+            prefix_stop_at_player_turn,
             readable,
             full,
             replay_only,
+            counterfactual_hp,
             export_prefix_case,
             shadow_corridor_actions,
             shadow_corridor_case,
@@ -4166,7 +4347,18 @@ fn main() -> Result<(), String> {
                     )
                 })
                 .transpose()?;
-            let case = load_combat_case(&case)?;
+            let mut case = load_combat_case(&case)?;
+            let original_hp = case.position.combat.entities.player.current_hp;
+            if let Some(hp) = counterfactual_hp {
+                let max_hp = case.position.combat.entities.player.max_hp;
+                if !(1..=max_hp).contains(&hp) {
+                    return Err(format!(
+                        "counterfactual HP must be within 1..={max_hp}, got {hp}"
+                    ));
+                }
+                case.position.combat.entities.player.current_hp = hp;
+                case.combat = sts_simulator::eval::combat_case::combat_summary(&case.position);
+            }
             let stepper = EngineCombatStepper;
             let initial_position = case.position.clone();
             let mut position = initial_position.clone();
@@ -4209,8 +4401,15 @@ fn main() -> Result<(), String> {
                     }
                 }
             }
+            let mut applied_prefix = Vec::with_capacity(prefix.len());
             let mut prefix_replay_actions = Vec::with_capacity(prefix.len());
             for (action_index, input) in prefix.iter().enumerate() {
+                if prefix_stop_at_player_turn.is_some_and(|target_turn| {
+                    position.combat.turn.turn_count == target_turn
+                        && matches!(position.engine, EngineState::CombatPlayerTurn)
+                }) {
+                    break;
+                }
                 if stepper.choice_for_legal_input(&position, input).is_none() {
                     return Err(format!(
                         "combat prefix action {action_index} is not legal at its exact state: {input:?}"
@@ -4238,8 +4437,20 @@ fn main() -> Result<(), String> {
                         ),
                     engine_steps: step.engine_steps,
                 });
+                applied_prefix.push(input.clone());
                 position = step.position;
             }
+            if let Some(target_turn) = prefix_stop_at_player_turn {
+                if position.combat.turn.turn_count != target_turn
+                    || !matches!(position.engine, EngineState::CombatPlayerTurn)
+                {
+                    return Err(format!(
+                        "prefix did not reach player turn {target_turn}; stopped at turn {} in {:?}",
+                        position.combat.turn.turn_count, position.engine
+                    ));
+                }
+            }
+            prefix = applied_prefix;
             if let Some(path) = export_prefix_case.as_ref() {
                 let mut focused_case = case.clone();
                 focused_case.position = position.clone();
@@ -4263,6 +4474,11 @@ fn main() -> Result<(), String> {
                     "schema_name": "OracleCombatPrefixReplayV1",
                     "schema_version": 1,
                     "action_count": prefix.len(),
+                    "counterfactual": {
+                        "enabled": counterfactual_hp.is_some(),
+                        "original_hp": original_hp,
+                        "replay_hp": case.position.combat.entities.player.current_hp,
+                    },
                     "exported_case": export_prefix_case,
                     "trace": prefix_trace,
                     "guide_components": {
@@ -4900,6 +5116,11 @@ fn main() -> Result<(), String> {
             max_end_states,
             per_bucket_limit,
             max_engine_steps_per_transition,
+            limit,
+            full,
+            export_rank,
+            export_case,
+            export_actions,
         } => {
             let case = load_combat_case(&case)?;
             let mut config = sts_simulator::ai::combat_search_v2::CombatSearchV2Config::default();
@@ -4914,6 +5135,52 @@ fn main() -> Result<(), String> {
                     &case.position.combat,
                     &config,
                 );
+            let exported_plan = if let Some(rank) = export_rank {
+                let candidate = audit
+                    .candidates
+                    .iter()
+                    .filter(|candidate| candidate.report.bucket != "terminal_loss")
+                    .nth(rank)
+                    .ok_or_else(|| format!("non-loss turn-plan rank {rank} is unavailable"))?;
+                if let Some(path) = export_case.as_ref() {
+                    let mut exported = case.clone();
+                    exported.position = candidate.position.clone();
+                    exported.combat =
+                        sts_simulator::eval::combat_case::combat_summary(&exported.position);
+                    exported.run.hp = exported.position.combat.entities.player.current_hp;
+                    exported.run.max_hp = exported.position.combat.entities.player.max_hp;
+                    exported.gap.boundary =
+                        format!("{} + audited turn plan rank {rank}", exported.gap.boundary);
+                    exported.gap.reason = "oracle_lab_turn_plan_audit_successor".to_string();
+                    exported.combat_search_attempts.clear();
+                    exported.failed_search = None;
+                    save_combat_case(path, &exported)?;
+                }
+                if let Some(path) = export_actions.as_ref() {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                    }
+                    let inputs = candidate
+                        .report
+                        .actions
+                        .iter()
+                        .map(|action| action.input.clone())
+                        .collect::<Vec<_>>();
+                    std::fs::write(
+                        path,
+                        serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                Some(json!({
+                    "rank": rank,
+                    "plan_index": candidate.report.plan_index,
+                    "case": export_case,
+                    "actions": export_actions,
+                }))
+            } else {
+                None
+            };
             let selected = audit
                 .report
                 .candidates
@@ -4955,12 +5222,48 @@ fn main() -> Result<(), String> {
                     })
                 })
                 .collect::<Vec<_>>();
+            if !full {
+                let compact_selected = audit
+                    .report
+                    .candidates
+                    .iter()
+                    .filter(|candidate| candidate.bucket != "terminal_loss")
+                    .take(limit)
+                    .map(|candidate| {
+                        json!({
+                            "plan_index": candidate.plan_index,
+                            "bucket": candidate.bucket,
+                            "stop_reason": candidate.stop_reason,
+                            "action_count": candidate.action_count,
+                            "actions": candidate.actions.iter().map(|action| {
+                                action.action_key.as_str()
+                            }).collect::<Vec<_>>(),
+                            "end_exact_state_hash": candidate.steps.last().map(|step| {
+                                step.state_after_exact_state_hash.as_str()
+                            }),
+                            "final_hp": candidate.eval_final_hp,
+                            "risk_margin": candidate.eval_risk_margin,
+                            "enemy_progress": candidate.eval_enemy_progress,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                return print_json(&json!({
+                    "schema_name": "OracleTurnPlanAuditCompactV1",
+                    "schema_version": 1,
+                    "behavioral_scope": "read_only_no_search_seeding",
+                    "config": audit.report.config,
+                    "enumeration": audit.report.enumeration,
+                    "exported_plan": exported_plan,
+                    "selected_non_loss": compact_selected,
+                }));
+            }
             print_json(&json!({
                 "schema_name": "OracleTurnPlanAuditV1",
                 "schema_version": 1,
                 "behavioral_scope": "read_only_no_search_seeding",
                 "config": audit.report.config,
                 "enumeration": audit.report.enumeration,
+                "exported_plan": exported_plan,
                 "preselection": preselection,
                 "selected": selected,
             }))
@@ -6325,6 +6628,102 @@ fn combat_policy_surface(
     })
 }
 
+fn export_descendant_combat_case(
+    base: &CombatCase,
+    actions: &[TurnOptionAction],
+    output: &Path,
+    max_engine_steps_per_transition: usize,
+    reason: &str,
+) -> Result<PathBuf, String> {
+    let position = replay_descendant_position(
+        base.position.clone(),
+        actions,
+        max_engine_steps_per_transition,
+    )?;
+
+    let mut exported = base.clone();
+    exported.position = position;
+    exported.combat = sts_simulator::eval::combat_case::combat_summary(&exported.position);
+    exported.run.hp = exported.position.combat.entities.player.current_hp;
+    exported.run.max_hp = exported.position.combat.entities.player.max_hp;
+    exported.gap.boundary = format!(
+        "{} + {} exact descendant actions",
+        exported.gap.boundary,
+        actions.len()
+    );
+    exported.gap.reason = reason.to_string();
+    exported.combat_search_attempts.clear();
+    exported.failed_search = None;
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    save_combat_case(output, &exported)?;
+
+    let stem = output
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("deepest");
+    let action_output = output.with_file_name(format!("{stem}.prefix.actions.json"));
+    let inputs = actions
+        .iter()
+        .map(|action| action.input.clone())
+        .collect::<Vec<_>>();
+    std::fs::write(
+        &action_output,
+        serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(action_output)
+}
+
+fn local_graph_state_snapshot_for_path(
+    session: &LocalTurnGraphWitnessSession,
+    root: sts_simulator::sim::combat::CombatPosition,
+    actions: &[TurnOptionAction],
+    max_engine_steps_per_transition: usize,
+) -> Result<Option<LocalTurnGraphStateSnapshot>, String> {
+    let position = replay_descendant_position(root, actions, max_engine_steps_per_transition)?;
+    let exact_state_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+        &position.engine,
+        &position.combat,
+    );
+    Ok(session.state_snapshot_by_exact_hash(&exact_state_hash))
+}
+
+fn replay_descendant_position(
+    mut position: sts_simulator::sim::combat::CombatPosition,
+    actions: &[TurnOptionAction],
+    max_engine_steps_per_transition: usize,
+) -> Result<sts_simulator::sim::combat::CombatPosition, String> {
+    let stepper = EngineCombatStepper;
+    for (index, action) in actions.iter().enumerate() {
+        if stepper
+            .choice_for_legal_input(&position, &action.input)
+            .is_none()
+        {
+            return Err(format!(
+                "deepest-case action {index} is not legal at turn {}: {:?}",
+                position.combat.turn.turn_count, action.input
+            ));
+        }
+        let result = stepper.apply_to_stable(
+            &position,
+            action.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if result.truncated {
+            return Err(format!(
+                "deepest-case action {index} exceeded {max_engine_steps_per_transition} engine steps"
+            ));
+        }
+        position = result.position;
+    }
+    Ok(position)
+}
+
 fn replay_combat_path(
     mut position: sts_simulator::sim::combat::CombatPosition,
     actions: &[TurnOptionAction],
@@ -6748,6 +7147,46 @@ fn compact_corridor_report(report: Option<&Value>) -> Value {
         "furthest_accepted": furthest_accepted,
         "terminal": report.get("terminal"),
         "terminal_final_hp": report.get("terminal_final_hp"),
+    })
+}
+
+fn compact_combat_trace(trace: Option<&Value>) -> Value {
+    let Some(trace) = trace else {
+        return Value::Null;
+    };
+    let turns = trace
+        .get("turns")
+        .and_then(Value::as_array)
+        .map(|turns| {
+            turns
+                .iter()
+                .map(|turn| {
+                    let end = turn.get("end");
+                    json!({
+                        "turn": turn.get("turn"),
+                        "action_range": turn.get("action_range"),
+                        "start_hp": turn.get("start_hp"),
+                        "actions": turn.get("actions"),
+                        "end": {
+                            "hp": end.and_then(|value| value.get("hp")),
+                            "block": end.and_then(|value| value.get("block")),
+                            "energy": end.and_then(|value| value.get("energy")),
+                            "hand": end.and_then(|value| value.get("hand")),
+                            "piles": end.and_then(|value| value.get("piles")),
+                            "player_powers": end.and_then(|value| value.get("player_powers")),
+                            "monsters": end.and_then(|value| value.get("monsters")),
+                        },
+                        "terminal": turn.get("terminal"),
+                        "partial": turn.get("partial"),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "action_count": trace.get("action_count"),
+        "turns": turns,
+        "terminal": trace.get("terminal"),
     })
 }
 
