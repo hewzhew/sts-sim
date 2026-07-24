@@ -148,3 +148,40 @@ fn awakened_one_form_two_has_no_remaining_rebirth_debt() {
     assert_eq!(value.awakened_rebirth_pending_count, 0);
     assert_eq!(value.awakened_rebirth_debt_hp, 0);
 }
+
+#[test]
+fn time_eater_haste_window_counts_the_forced_heal_as_phase_debt() {
+    let mut combat = blank_test_combat();
+    let mut eater = test_monster(EnemyId::TimeEater);
+    eater.id = 13;
+    eater.current_hp = 105;
+    eater.max_hp = 456;
+    eater.time_eater.used_haste = true;
+    eater.set_planned_move_id(TIME_EATER_HASTE_MOVE_ID);
+    combat.entities.monsters = vec![eater];
+
+    let value = enemy_phase_value(&combat);
+
+    assert_eq!(value.raw_living_enemy_hp, 105);
+    assert_eq!(value.phase_adjusted_living_enemy_hp, 228);
+    assert_eq!(value.time_eater_haste_pending_count, 1);
+    assert_eq!(value.time_eater_haste_debt_hp, 123);
+}
+
+#[test]
+fn time_eater_after_haste_keeps_raw_hp_without_phantom_debt() {
+    let mut combat = blank_test_combat();
+    let mut eater = test_monster(EnemyId::TimeEater);
+    eater.id = 14;
+    eater.current_hp = 105;
+    eater.max_hp = 456;
+    eater.time_eater.used_haste = true;
+    eater.set_planned_move_id(2);
+    combat.entities.monsters = vec![eater];
+
+    let value = enemy_phase_value(&combat);
+
+    assert_eq!(value.phase_adjusted_living_enemy_hp, 105);
+    assert_eq!(value.time_eater_haste_pending_count, 0);
+    assert_eq!(value.time_eater_haste_debt_hp, 0);
+}

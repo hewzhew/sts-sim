@@ -10,6 +10,10 @@ const HEXAGHOST_ACTIVATE_MOVE_ID: u8 = 5;
 const BRONZE_AUTOMATON_HYPER_BEAM_MOVE_ID: u8 = 2;
 const BRONZE_AUTOMATON_SPAWN_ORBS_MOVE_ID: u8 = 4;
 const BRONZE_ORB_STASIS_MOVE_ID: u8 = 3;
+// Java TimeEater uses move byte 5 for Haste. `used_haste` is set when this
+// move is selected, before the player receives the setup/heal window, so the
+// planned move is the authoritative fact while that window is active.
+const TIME_EATER_HASTE_MOVE_ID: u8 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyMechanicsProfileV1 {
@@ -218,7 +222,9 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                 profile.time_eater_haste_used = Some(haste_used);
                 profile.time_eater_current_hp = Some(monster.current_hp);
                 profile.time_eater_half_hp = Some(half_hp);
-                if monster.current_hp < half_hp && !haste_used {
+                if monster.planned_move_id() == TIME_EATER_HASTE_MOVE_ID
+                    || (monster.current_hp < half_hp && !haste_used)
+                {
                     profile.time_eater_pending_haste_count += 1;
                 }
             }

@@ -2,7 +2,7 @@ use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::CombatSearchPhaseGuardPluginId;
 use super::constants::{
     AWAKENED_POWER_PENALTY, AWAKENED_STRENGTH_TRANSITION_SETUP_BONUS, PHASE_ROLE_ADJUSTMENT,
-    STASIS_TARGET_SETUP_MAX, TIME_EATER_CLOCK_PENALTY,
+    STASIS_TARGET_SETUP_MAX, TIME_EATER_CLOCK_PENALTY, TIME_EATER_HASTE_WASTE_PENALTY,
 };
 use super::types::{PhaseActionOrderingFacts, PhaseActionOrderingHint};
 use crate::content::cards::CardType;
@@ -131,7 +131,7 @@ fn apply_time_eater_clock_hint(
         {
             hint.role_rank_adjustment = hint
                 .role_rank_adjustment
-                .saturating_sub(TIME_EATER_CLOCK_PENALTY);
+                .saturating_sub(TIME_EATER_HASTE_WASTE_PENALTY);
             hint.phase_transition_safety -= facts.target_progress.min(20);
         }
         if facts.future_debuff && facts.mitigation <= 0 {

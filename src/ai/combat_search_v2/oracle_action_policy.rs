@@ -12,7 +12,7 @@ use crate::{
 };
 use serde::Serialize;
 
-use super::action_ordering::{order_indexed_action_choices, IndexedActionChoice};
+use super::action_ordering::{order_indexed_action_choices_with_plugins, IndexedActionChoice};
 use super::frontier::SearchNode;
 use super::value::combat_search_state_value;
 
@@ -150,10 +150,15 @@ pub fn oracle_atomic_action_policy_weights(
         })
         .collect::<Vec<_>>();
     let mut rank_by_input = vec![None; inputs.len()];
-    for (rank, choice) in order_indexed_action_choices(&position.engine, &position.combat, choices)
-        .choices
-        .into_iter()
-        .enumerate()
+    for (rank, choice) in order_indexed_action_choices_with_plugins(
+        &position.engine,
+        &position.combat,
+        choices,
+        oracle_action_ordering_plugins(position),
+    )
+    .choices
+    .into_iter()
+    .enumerate()
     {
         rank_by_input[choice.original_action_id] = Some(rank);
     }
@@ -192,7 +197,7 @@ pub fn oracle_atomic_action_policy_priority_diagnostics_v1(
                 &position.engine,
                 &position.combat,
                 input,
-                super::CombatSearchActionOrderingPlugins::default(),
+                oracle_action_ordering_plugins(position),
             );
             Some(OracleAtomicActionPriorityDiagnosticV1 {
                 role: priority.role.label(),
@@ -226,6 +231,30 @@ pub fn oracle_atomic_action_policy_priority_diagnostics_v1(
             })
         })
         .collect()
+}
+
+fn oracle_action_ordering_plugins(
+    position: &CombatPosition,
+) -> super::CombatSearchActionOrderingPlugins<'static> {
+    use crate::content::monsters::EnemyId;
+
+    let phase_guard = if position.combat.entities.monsters.iter().any(|monster| {
+        monster.is_alive_for_action()
+            && EnemyId::from_id(monster.monster_type) == Some(EnemyId::TimeEater)
+    }) {
+        super::CombatSearchPhaseGuardPluginId::TimeEaterClockHint
+    } else if position.combat.entities.monsters.iter().any(|monster| {
+        monster.is_alive_for_action()
+            && EnemyId::from_id(monster.monster_type) == Some(EnemyId::Champ)
+    }) {
+        super::CombatSearchPhaseGuardPluginId::ChampSplitGuard
+    } else {
+        super::CombatSearchPhaseGuardPluginId::Default
+    };
+    super::CombatSearchActionOrderingPlugins {
+        phase_guard,
+        ..super::CombatSearchActionOrderingPlugins::default()
+    }
 }
 
 /// Reuses the mature search's typed, lexicographic state knowledge without
@@ -610,6 +639,41 @@ mod tests {
         assert!(weights
             .iter()
             .all(|weight| weight.is_finite() && *weight > 0.0));
+    }
+
+    #[test]
+    fn oracle_policy_uses_time_eater_haste_window_knowledge_automatically() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut eater = crate::test_support::test_monster(EnemyId::TimeEater);
+        eater.id = 1;
+        eater.current_hp = 200;
+        eater.max_hp = 456;
+        eater.time_eater.used_haste = true;
+        eater.set_planned_move_id(5);
+        combat.entities.monsters = vec![eater];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Cleave, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        combat.turn.energy = 3;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        ];
+
+        let weights = oracle_atomic_action_policy_weights(&position, &inputs);
+
+        assert!(
+            weights[1] > weights[0],
+            "setup/mitigation must outrank nonlethal damage that Haste will erase"
+        );
     }
 
     #[test]

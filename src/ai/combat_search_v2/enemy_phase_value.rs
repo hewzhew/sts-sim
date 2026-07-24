@@ -3,6 +3,10 @@ use crate::content::powers::{store, PowerId};
 
 // Java large slimes and Slime Boss use move byte 3 for the Split move.
 const SPLIT_MOVE_ID: u8 = 3;
+// Java TimeEater uses move byte 5 for Haste, which removes debuffs and heals
+// back to exactly half HP. Damage below that threshold is not durable progress
+// unless the player kills before the move executes.
+const TIME_EATER_HASTE_MOVE_ID: u8 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnemyPhaseValueV1 {
@@ -16,6 +20,8 @@ pub(super) struct EnemyPhaseValueV1 {
     pub(super) split_debt_hp: i32,
     pub(super) awakened_rebirth_pending_count: usize,
     pub(super) awakened_rebirth_debt_hp: i32,
+    pub(super) time_eater_haste_pending_count: usize,
+    pub(super) time_eater_haste_debt_hp: i32,
     pub(super) guardian_defensive_count: usize,
     pub(super) guardian_defensive_block: i32,
 }
@@ -48,8 +54,18 @@ pub(super) fn enemy_phase_value(combat: &CombatState) -> EnemyPhaseValueV1 {
             } else {
                 0
             };
+            let time_eater_haste_debt_hp = if is_time_eater_haste_pending(monster) {
+                monster
+                    .max_hp
+                    .saturating_div(2)
+                    .saturating_sub(raw_hp)
+                    .max(0)
+            } else {
+                0
+            };
             let adjusted_hp = raw_hp
                 .saturating_add(split_debt_hp)
+                .saturating_add(time_eater_haste_debt_hp)
                 .saturating_add(awakened_rebirth_debt_hp);
             let adjusted_effort = adjusted_hp.saturating_add(raw_block);
             value.raw_living_enemy_hp += raw_hp;
@@ -64,6 +80,10 @@ pub(super) fn enemy_phase_value(combat: &CombatState) -> EnemyPhaseValueV1 {
             if awakened_rebirth_debt_hp > 0 {
                 value.awakened_rebirth_pending_count += 1;
                 value.awakened_rebirth_debt_hp += awakened_rebirth_debt_hp;
+            }
+            if time_eater_haste_debt_hp > 0 {
+                value.time_eater_haste_pending_count += 1;
+                value.time_eater_haste_debt_hp += time_eater_haste_debt_hp;
             }
             if is_guardian_defensive(monster) {
                 value.guardian_defensive_count += 1;
@@ -96,6 +116,11 @@ fn has_split_power(combat: &CombatState, monster: &MonsterEntity) -> bool {
 fn is_guardian_defensive(monster: &MonsterEntity) -> bool {
     EnemyId::from_id(monster.monster_type) == Some(EnemyId::TheGuardian)
         && !monster.guardian.is_open
+}
+
+fn is_time_eater_haste_pending(monster: &MonsterEntity) -> bool {
+    EnemyId::from_id(monster.monster_type) == Some(EnemyId::TimeEater)
+        && monster.planned_move_id() == TIME_EATER_HASTE_MOVE_ID
 }
 
 #[cfg(test)]
