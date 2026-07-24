@@ -129,6 +129,18 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         node: usize,
     },
+    /// Replay a saved witness exactly and compare every committed non-combat
+    /// choice with the current production owner ordering. No search runs.
+    AuditRunWitnessPolicy {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        node: usize,
+        /// Include every owner/witness divergence instead of the compact
+        /// completion summary.
+        #[arg(long)]
+        details: bool,
+    },
     /// Inspect the retired global-agenda search on one exact case. Production
     /// run combat uses `combat-case`; this command remains only for controlled
     /// historical comparisons and explicit V2-donor diagnostics.
@@ -1943,6 +1955,47 @@ fn main() -> Result<(), String> {
             )?;
             print_json(&json!({
                 "schema_name": "ExactOracleRunWitnessReplayV1",
+                "schema_version": 1,
+                "workspace": workspace,
+                "node_id": node,
+                "report": report,
+            }))
+        }
+        Command::AuditRunWitnessPolicy {
+            workspace,
+            node,
+            details,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let continuation = analysis.continuation(node)?;
+            let expected_final = continuation.session.into_session()?;
+            let report =
+                sts_simulator::eval::run_control::exact_audit_run_progress_journal_policy_v1(
+                    analysis.seed,
+                    analysis.ascension,
+                    &continuation.journal,
+                    &expected_final,
+                    sts_simulator::runtime::branch::current_oracle_candidate_order_v1,
+                )?;
+            let report = if details {
+                serde_json::to_value(report)
+                    .map_err(|error| format!("failed to encode witness policy audit: {error}"))?
+            } else {
+                json!({
+                    "replay": report.replay,
+                    "decisions_with_owner_preferences": report.decisions_with_owner_preferences,
+                    "decisions_without_owner_preferences": report.decisions_without_owner_preferences,
+                    "rank_zero_agreements": report.rank_zero_agreements,
+                    "nonzero_rank_choices": report.nonzero_rank_choices,
+                    "choices_absent_from_owner_preferences": report.choices_absent_from_owner_preferences,
+                    "discrepancy_sum": report.discrepancy_sum,
+                    "max_owner_rank": report.max_owner_rank,
+                    "first_divergence": report.first_divergence,
+                    "combat_sources": report.combat_sources,
+                })
+            };
+            print_json(&json!({
+                "schema_name": "ExactOracleRunWitnessPolicyAuditV1",
                 "schema_version": 1,
                 "workspace": workspace,
                 "node_id": node,

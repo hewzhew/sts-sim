@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use super::combat_line_executor::drawn_cards_from_action_result;
@@ -7,7 +9,7 @@ use super::combat_line_trace::{
 use super::oracle_run_explorer::run_session_fingerprint_v1;
 use super::{
     RunCombatResolutionBoundaryV1, RunControlConfig, RunControlSession, RunDecisionBoundaryV1,
-    RunProgressJournalV1, RunProgressStepV1,
+    RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -27,6 +29,37 @@ pub struct ExactRunProgressReplayReportV1 {
     pub engine_state: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct WitnessPolicyDecisionAuditV1 {
+    pub journal_entry: usize,
+    pub decision_ordinal: usize,
+    pub act: u8,
+    pub floor: i32,
+    pub boundary: String,
+    pub location: String,
+    pub chosen_candidate_id: String,
+    pub chosen_label: String,
+    pub owner_rank: Option<usize>,
+    pub owner_candidate_count: usize,
+    pub owner_first_candidate_id: Option<String>,
+    pub owner_first_label: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExactRunWitnessPolicyAuditReportV1 {
+    pub replay: ExactRunProgressReplayReportV1,
+    pub decisions_with_owner_preferences: usize,
+    pub decisions_without_owner_preferences: usize,
+    pub rank_zero_agreements: usize,
+    pub nonzero_rank_choices: usize,
+    pub choices_absent_from_owner_preferences: usize,
+    pub discrepancy_sum: usize,
+    pub max_owner_rank: Option<usize>,
+    pub first_divergence: Option<WitnessPolicyDecisionAuditV1>,
+    pub divergences: Vec<WitnessPolicyDecisionAuditV1>,
+    pub combat_sources: BTreeMap<String, usize>,
+}
+
 /// Re-executes a committed run journal from the canonical initial state and
 /// verifies every recorded decision/combat boundary plus the final normalized
 /// session fingerprint. This is deliberately independent of owner policy and
@@ -38,6 +71,148 @@ pub fn exact_replay_run_progress_journal_v1(
     journal: &RunProgressJournalV1,
     expected_final: &RunControlSession,
 ) -> Result<ExactRunProgressReplayReportV1, String> {
+    exact_replay_run_progress_journal_observed_v1(
+        seed,
+        ascension,
+        journal,
+        expected_final,
+        |_, _, _| Ok(()),
+    )
+}
+
+/// Replays an exact witness and compares every committed non-combat choice
+/// against the ordering produced by the current owner implementation.
+///
+/// The owner remains read-only: its ordering neither mutates the replay nor
+/// decides whether the historical witness is valid. An absent rank means that
+/// the current owner did not include the committed action in its preference
+/// list; it is reported separately instead of being converted into an
+/// arbitrary discrepancy score.
+pub fn exact_audit_run_progress_journal_policy_v1<F>(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    mut decision_order: F,
+) -> Result<ExactRunWitnessPolicyAuditReportV1, String>
+where
+    F: FnMut(&RunControlSession) -> Vec<String>,
+{
+    let mut decision_audits = Vec::new();
+    let replay = exact_replay_run_progress_journal_observed_v1(
+        seed,
+        ascension,
+        journal,
+        expected_final,
+        |entry_index, session, record| {
+            let owner_order = decision_order(session);
+            let selected_id = record.selection.candidate_id.clone();
+            let owner_rank = owner_order
+                .iter()
+                .position(|candidate_id| candidate_id == &selected_id);
+            let chosen_label = record
+                .before
+                .candidates
+                .iter()
+                .find(|candidate| candidate.candidate_id == selected_id)
+                .map(|candidate| candidate.label.clone())
+                .unwrap_or_else(|| selected_id.clone());
+            let owner_first_candidate_id = owner_order.first().cloned();
+            let owner_first_label = owner_first_candidate_id.as_ref().and_then(|candidate_id| {
+                record
+                    .before
+                    .candidates
+                    .iter()
+                    .find(|candidate| &candidate.candidate_id == candidate_id)
+                    .map(|candidate| candidate.label.clone())
+            });
+            decision_audits.push(WitnessPolicyDecisionAuditV1 {
+                journal_entry: entry_index,
+                decision_ordinal: decision_audits.len(),
+                act: session.run_state.act_num,
+                floor: session.run_state.floor_num,
+                boundary: record.before.title.clone(),
+                location: record.before.location.clone(),
+                chosen_candidate_id: selected_id,
+                chosen_label,
+                owner_rank,
+                owner_candidate_count: owner_order.len(),
+                owner_first_candidate_id,
+                owner_first_label,
+            });
+            Ok(())
+        },
+    )?;
+
+    let decisions_with_owner_preferences = decision_audits
+        .iter()
+        .filter(|audit| audit.owner_candidate_count > 0)
+        .count();
+    let decisions_without_owner_preferences = decision_audits
+        .len()
+        .saturating_sub(decisions_with_owner_preferences);
+    let rank_zero_agreements = decision_audits
+        .iter()
+        .filter(|audit| audit.owner_rank == Some(0))
+        .count();
+    let nonzero_rank_choices = decision_audits
+        .iter()
+        .filter(|audit| audit.owner_rank.is_some_and(|rank| rank > 0))
+        .count();
+    let choices_absent_from_owner_preferences = decision_audits
+        .iter()
+        .filter(|audit| audit.owner_candidate_count > 0 && audit.owner_rank.is_none())
+        .count();
+    let discrepancy_sum = decision_audits
+        .iter()
+        .filter_map(|audit| audit.owner_rank)
+        .sum();
+    let max_owner_rank = decision_audits
+        .iter()
+        .filter_map(|audit| audit.owner_rank)
+        .max();
+    let divergences = decision_audits
+        .into_iter()
+        .filter(|audit| {
+            audit.owner_candidate_count > 0
+                && (audit.owner_rank.is_none() || audit.owner_rank.is_some_and(|rank| rank > 0))
+        })
+        .collect::<Vec<_>>();
+    let first_divergence = divergences.first().cloned();
+    let mut combat_sources = BTreeMap::new();
+    for entry in journal.entries() {
+        if let RunProgressStepV1::CombatResolution(record) = entry {
+            *combat_sources
+                .entry(record.trajectory.source.label().to_string())
+                .or_insert(0) += 1;
+        }
+    }
+
+    Ok(ExactRunWitnessPolicyAuditReportV1 {
+        replay,
+        decisions_with_owner_preferences,
+        decisions_without_owner_preferences,
+        rank_zero_agreements,
+        nonzero_rank_choices,
+        choices_absent_from_owner_preferences,
+        discrepancy_sum,
+        max_owner_rank,
+        first_divergence,
+        divergences,
+        combat_sources,
+    })
+}
+
+fn exact_replay_run_progress_journal_observed_v1<F>(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    mut before_decision: F,
+) -> Result<ExactRunProgressReplayReportV1, String>
+where
+    F: FnMut(usize, &RunControlSession, &RunDecisionTransactionV1) -> Result<(), String>,
+{
     let mut session = RunControlSession::new(RunControlConfig {
         seed,
         ascension_level: ascension,
@@ -62,6 +237,7 @@ pub fn exact_replay_run_progress_journal_v1(
                         actual_before,
                     ));
                 }
+                before_decision(entry_index, &session, record)?;
                 session
                     .apply_decision_action(record.action.clone())
                     .map_err(|error| {
@@ -210,4 +386,34 @@ fn decision_boundaries_match(
     actual.decision_step == expected.decision_step
         && actual.title == expected.title
         && actual.location == expected.location
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_witness_policy_audit_is_exact_and_search_free() {
+        let seed = 20260713006;
+        let config = RunControlConfig {
+            seed,
+            ascension_level: 0,
+            ..RunControlConfig::default()
+        };
+        let expected_final = RunControlSession::new(config);
+        let report = exact_audit_run_progress_journal_policy_v1(
+            seed,
+            0,
+            &RunProgressJournalV1::default(),
+            &expected_final,
+            |_| panic!("an empty journal must not ask the owner for an ordering"),
+        )
+        .unwrap();
+
+        assert_eq!(report.replay.journal_entries, 0);
+        assert_eq!(report.replay.combat_resolutions, 0);
+        assert_eq!(report.decisions_with_owner_preferences, 0);
+        assert!(report.divergences.is_empty());
+        assert!(report.combat_sources.is_empty());
+    }
 }

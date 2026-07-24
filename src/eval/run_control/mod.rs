@@ -169,7 +169,11 @@ pub use progress_options::{
     RunControlAutoStepOptions, RunControlCombatSearchQuantum, RunControlCombatSegmentMode,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
-pub use progress_replay::{exact_replay_run_progress_journal_v1, ExactRunProgressReplayReportV1};
+pub use progress_replay::{
+    exact_audit_run_progress_journal_policy_v1, exact_replay_run_progress_journal_v1,
+    ExactRunProgressReplayReportV1, ExactRunWitnessPolicyAuditReportV1,
+    WitnessPolicyDecisionAuditV1,
+};
 pub use progress_step::{RunControlAutoStopKind, RunControlAutoStopV1, RunProgressStepV1};
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{

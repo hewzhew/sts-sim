@@ -255,6 +255,15 @@ pub(super) fn oracle_candidate_order(
     }
 }
 
+/// Public read-only view of the exact owner ordering used by oracle run
+/// exploration. Diagnostic tools use this to compare a saved witness with the
+/// current production policy without advancing or mutating that witness.
+pub fn current_oracle_candidate_order_v1(
+    session: &sts_simulator::eval::run_control::RunControlSession,
+) -> Vec<String> {
+    oracle_candidate_order(session)
+}
+
 /// Captures the same typed evidence used to order a card-reward candidate.
 /// The oracle explorer invokes this immediately before materializing the
 /// selected edge, so the journal records the actual parent state rather than
