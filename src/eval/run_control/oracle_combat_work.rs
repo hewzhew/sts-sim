@@ -18,7 +18,7 @@ use super::combat_line_executor::apply_oracle_combat_witness;
 use super::combat_search::RunControlCombatWorkAdvanceV1;
 use super::combat_search_setup::prepare_search_combat;
 use super::oracle_combat_policy::{
-    existing_combat_rollout_lookahead_v1, existing_combat_rollout_witness_proposal_v1,
+    existing_combat_rollout_lookahead_v1, existing_combat_rollout_witness_v1,
     ExistingCombatKnowledgePolicy,
 };
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
@@ -41,7 +41,11 @@ pub(super) struct OracleRunCombatWorkV1 {
     quantum_count: usize,
     prior_generation_work: u64,
     prior_policy_witness_proposals: usize,
+    policy_witness_proposals: usize,
+    policy_witness_replay_engine_steps: usize,
     policy_witness_proposal_rejections: usize,
+    policy_witness: Option<OracleCombatWitness>,
+    discrepancy_witness: Option<OracleCombatWitness>,
     restart_count: usize,
     last_status: Option<PortfolioStatusV1>,
     local_status: Option<LocalTurnGraphWitnessStatus>,
@@ -247,7 +251,11 @@ impl OracleRunCombatWorkV1 {
             quantum_count: 0,
             prior_generation_work: 0,
             prior_policy_witness_proposals: 0,
+            policy_witness_proposals: 0,
+            policy_witness_replay_engine_steps: 0,
             policy_witness_proposal_rejections: 0,
+            policy_witness: None,
+            discrepancy_witness: None,
             restart_count: 0,
             last_status: None,
             local_status: None,
@@ -294,7 +302,7 @@ impl OracleRunCombatWorkV1 {
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
         if let Some(incumbent) = checkpoint.incumbent {
-            work.local_search.restore_verified_witness(incumbent)?;
+            work.restore_checkpoint_incumbent(incumbent)?;
         }
         Ok(work)
     }
@@ -318,9 +326,26 @@ impl OracleRunCombatWorkV1 {
         work.incumbent_revision = prior.incumbent_revision;
         work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
         if let Some(incumbent) = prior.incumbent {
-            work.local_search.restore_verified_witness(incumbent)?;
+            work.restore_checkpoint_incumbent(incumbent)?;
         }
         Ok(work)
+    }
+
+    fn restore_checkpoint_incumbent(
+        &mut self,
+        incumbent: OracleCombatWitness,
+    ) -> Result<(), String> {
+        if incumbent.discovery_source == OracleCombatWitnessDiscoverySource::PolicyProposal {
+            self.policy_witness = Some(incumbent);
+            Ok(())
+        } else if incumbent.discovery_source
+            == OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch
+        {
+            self.discrepancy_witness = Some(incumbent);
+            Ok(())
+        } else {
+            self.local_search.restore_verified_witness(incumbent)
+        }
     }
 
     fn offer_initial_rollout_policy_proposal(&mut self) {
@@ -336,7 +361,7 @@ impl OracleRunCombatWorkV1 {
         }
         let started = Instant::now();
         let deadline = started.checked_add(allowance);
-        let proposal_result = existing_combat_rollout_witness_proposal_v1(
+        let proposal_result = existing_combat_rollout_witness_v1(
             &self.start,
             MAX_POLICY_ACTIONS,
             self.max_transition_steps,
@@ -355,24 +380,13 @@ impl OracleRunCombatWorkV1 {
         }) else {
             return;
         };
-        let before_replay_steps = self
-            .local_search
-            .counters()
-            .policy_witness_replay_engine_steps;
-        if self
-            .local_search
-            .offer_witness_proposal(proposal, &crate::sim::combat::EngineCombatStepper)
-            .is_err()
-        {
-            self.policy_witness_proposal_rejections =
-                self.policy_witness_proposal_rejections.saturating_add(1);
-        }
-        let replay_steps = self
-            .local_search
-            .counters()
+        self.policy_witness_proposals = self.policy_witness_proposals.saturating_add(1);
+        let replay_steps = proposal.replay_engine_steps;
+        self.policy_witness_replay_engine_steps = self
             .policy_witness_replay_engine_steps
-            .saturating_sub(before_replay_steps);
+            .saturating_add(replay_steps);
         self.remaining_engine_steps = self.remaining_engine_steps.saturating_sub(replay_steps);
+        self.policy_witness = Some(proposal);
     }
 
     /// Restores a legacy exact combat state whose checkpoint did not preserve
@@ -399,7 +413,7 @@ impl OracleRunCombatWorkV1 {
             incumbent_revision: self.incumbent_revision,
             policy_witness_proposals: self
                 .prior_policy_witness_proposals
-                .saturating_add(self.local_search.counters().policy_witness_proposals),
+                .saturating_add(self.policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             incumbent: self.best_witness().cloned(),
@@ -448,7 +462,11 @@ impl OracleRunCombatWorkV1 {
         }
         let work = quantum.additional_nodes.min(self.remaining_work);
         if work == 0 || wall_allowance_exhausted(self.remaining_wall_time) {
-            return RunControlCombatWorkAdvanceV1::AllowanceExhausted;
+            return if self.best_witness().is_some() {
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
+            } else {
+                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+            };
         }
         let requested_wall = quantum.soft_wall_ms.map(Duration::from_millis);
         let soft_wall = [requested_wall, self.remaining_wall_time, global_remaining]
@@ -458,6 +476,8 @@ impl OracleRunCombatWorkV1 {
         if soft_wall == Some(Duration::ZERO) {
             return if global_remaining == Some(Duration::ZERO) {
                 RunControlCombatWorkAdvanceV1::GlobalDeadlineReached
+            } else if self.best_witness().is_some() {
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
             } else {
                 RunControlCombatWorkAdvanceV1::AllowanceExhausted
             };
@@ -465,9 +485,7 @@ impl OracleRunCombatWorkV1 {
         let deadline = soft_wall.and_then(|duration| now.checked_add(duration));
         self.last_quantum_generation_work = 0;
         self.last_quantum_engine_steps = 0;
-        let before_incumbent_hp = self
-            .best_witness()
-            .map(|witness| witness.final_position.combat.entities.player.current_hp);
+        let before_incumbent_quality = self.best_witness().map(combat_witness_quality);
         let engine_grant = self
             .remaining_engine_steps
             .min(work.saturating_mul(self.max_transition_steps));
@@ -479,8 +497,7 @@ impl OracleRunCombatWorkV1 {
             return RunControlCombatWorkAdvanceV1::ReadyToFinish;
         };
         self.next_portfolio_member = member.other();
-        let (consumed_work, consumed_engine, member_complete, witness_found, status) = match member
-        {
+        let (consumed_work, consumed_engine, member_complete, status) = match member {
             PortfolioMemberV1::LocalTurnGraph => {
                 let before = self.local_search.counters();
                 let report = self.local_search.advance(
@@ -495,18 +512,15 @@ impl OracleRunCombatWorkV1 {
                 let after = report.counters;
                 let before_work = before.generation_work.saturating_add(before.lookahead_work);
                 let after_work = after.generation_work.saturating_add(after.lookahead_work);
-                let member_complete = !matches!(
-                    report.status,
-                    LocalTurnGraphWitnessStatus::Partial(_)
-                        | LocalTurnGraphWitnessStatus::WitnessFound
-                );
-                let witness_found =
-                    matches!(report.status, LocalTurnGraphWitnessStatus::WitnessFound);
+                let member_complete = match &report.status {
+                    LocalTurnGraphWitnessStatus::Partial(_) => false,
+                    LocalTurnGraphWitnessStatus::WitnessFound => stop_on_first_witness,
+                    _ => true,
+                };
                 (
                     after_work.saturating_sub(before_work),
                     after.engine_steps.saturating_sub(before.engine_steps),
                     member_complete,
-                    witness_found,
                     PortfolioStatusV1::Local(report.status),
                 )
             }
@@ -521,8 +535,7 @@ impl OracleRunCombatWorkV1 {
                     },
                 );
                 let after = report.after;
-                let mut status = report.status;
-                let mut witness_found = matches!(status, PolicyDiscrepancyStatus::WitnessFound);
+                let status = report.status;
                 if let Some(witness) = report.witness {
                     let witness = OracleCombatWitness {
                         actions: witness.actions,
@@ -532,9 +545,12 @@ impl OracleRunCombatWorkV1 {
                         discovery_source:
                             OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch,
                     };
-                    if self.local_search.restore_verified_witness(witness).is_err() {
-                        status = PolicyDiscrepancyStatus::ReplayMismatch;
-                        witness_found = false;
+                    if self
+                        .discrepancy_witness
+                        .as_ref()
+                        .is_none_or(|current| combat_witness_better(&witness, current))
+                    {
+                        self.discrepancy_witness = Some(witness);
                     }
                 }
                 let member_complete = !matches!(status, PolicyDiscrepancyStatus::Partial(_));
@@ -544,7 +560,6 @@ impl OracleRunCombatWorkV1 {
                         .saturating_sub(before.applied_action_transitions),
                     after.engine_steps.saturating_sub(before.engine_steps),
                     member_complete,
-                    witness_found,
                     PortfolioStatusV1::PolicyDiscrepancy(status),
                 )
             }
@@ -561,12 +576,15 @@ impl OracleRunCombatWorkV1 {
         }
         self.last_quantum_generation_work = consumed_work;
         self.last_quantum_engine_steps = consumed_engine;
-        let after_incumbent_hp = self
-            .best_witness()
-            .map(|witness| witness.final_position.combat.entities.player.current_hp);
-        if after_incumbent_hp.is_some()
-            && (before_incumbent_hp.is_none() || after_incumbent_hp > before_incumbent_hp)
-        {
+        let after_incumbent_quality = self.best_witness().map(combat_witness_quality);
+        let incumbent_improved = match (before_incumbent_quality, after_incumbent_quality) {
+            (None, Some(_)) => true,
+            (Some(before), Some(after)) => combat_witness_quality_better(after, before),
+            _ => false,
+        };
+        let acceptance_improved =
+            combat_witness_acceptance_improved(before_incumbent_quality, after_incumbent_quality);
+        if incumbent_improved {
             self.incumbent_revision = self.incumbent_revision.saturating_add(1);
             self.quanta_since_incumbent_improvement = 0;
         } else {
@@ -580,7 +598,7 @@ impl OracleRunCombatWorkV1 {
         }
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(status);
-        if (stop_on_first_witness && witness_found)
+        if (stop_on_first_witness && acceptance_improved)
             || (self.local_complete && self.discrepancy_complete)
         {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
@@ -588,7 +606,11 @@ impl OracleRunCombatWorkV1 {
             || self.remaining_engine_steps == 0
             || wall_allowance_exhausted(self.remaining_wall_time)
         {
-            RunControlCombatWorkAdvanceV1::AllowanceExhausted
+            if self.best_witness().is_some() {
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
+            } else {
+                RunControlCombatWorkAdvanceV1::AllowanceExhausted
+            }
         } else {
             RunControlCombatWorkAdvanceV1::Pending
         }
@@ -708,7 +730,20 @@ impl OracleRunCombatWorkV1 {
     }
 
     fn best_witness(&self) -> Option<&OracleCombatWitness> {
-        self.local_search.witness()
+        [
+            self.local_search.witness(),
+            self.discrepancy_witness.as_ref(),
+            self.policy_witness.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .reduce(|best, candidate| {
+            if combat_witness_better(candidate, best) {
+                candidate
+            } else {
+                best
+            }
+        })
     }
 
     pub(super) fn quantum_count(&self) -> usize {
@@ -748,7 +783,8 @@ impl OracleRunCombatWorkV1 {
             lookahead_work: local_counters.lookahead_work,
             engine_steps: local_counters
                 .engine_steps
-                .saturating_add(discrepancy_counters.engine_steps),
+                .saturating_add(discrepancy_counters.engine_steps)
+                .saturating_add(self.policy_witness_replay_engine_steps),
             exact_states: local_counters
                 .exact_nodes
                 .saturating_add(discrepancy_counters.exact_states),
@@ -783,7 +819,7 @@ impl OracleRunCombatWorkV1 {
                 .generation_gap_count
                 .saturating_add(discrepancy_counters.transition_step_limit_gaps),
             pending_witness_replay: local_progress.pending_witness_replay,
-            policy_witness_proposals: local_counters
+            policy_witness_proposals: self
                 .policy_witness_proposals
                 .saturating_add(self.prior_policy_witness_proposals),
             policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
@@ -863,6 +899,51 @@ impl OracleRunCombatWorkV1 {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CombatWitnessQualityV1 {
+    final_hp: i32,
+    action_count: usize,
+    negative_log_policy: f64,
+}
+
+fn combat_witness_quality(witness: &OracleCombatWitness) -> CombatWitnessQualityV1 {
+    CombatWitnessQualityV1 {
+        final_hp: witness.final_position.combat.entities.player.current_hp,
+        action_count: witness.actions.len(),
+        negative_log_policy: witness.negative_log_policy,
+    }
+}
+
+fn combat_witness_quality_better(
+    left: CombatWitnessQualityV1,
+    right: CombatWitnessQualityV1,
+) -> bool {
+    left.final_hp
+        .cmp(&right.final_hp)
+        .then_with(|| right.action_count.cmp(&left.action_count))
+        .then_with(|| {
+            right
+                .negative_log_policy
+                .total_cmp(&left.negative_log_policy)
+        })
+        == std::cmp::Ordering::Greater
+}
+
+fn combat_witness_acceptance_improved(
+    before: Option<CombatWitnessQualityV1>,
+    after: Option<CombatWitnessQualityV1>,
+) -> bool {
+    match (before, after) {
+        (None, Some(_)) => true,
+        (Some(before), Some(after)) => after.final_hp > before.final_hp,
+        _ => false,
+    }
+}
+
+fn combat_witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {
+    combat_witness_quality_better(combat_witness_quality(left), combat_witness_quality(right))
+}
+
 fn wall_allowance_exhausted(remaining: Option<Duration>) -> bool {
     remaining.is_some_and(|duration| duration < MIN_USABLE_WALL_ALLOWANCE)
 }
@@ -914,6 +995,19 @@ mod tests {
                 room_type: crate::state::map::node::RoomType::MonsterRoom,
             }),
         ));
+        session
+    }
+
+    fn one_strike_win_session() -> RunControlSession {
+        let mut session = hallway_combat_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.turn.energy = 1;
+        combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::Strike,
+            1,
+        )];
+        combat.entities.monsters[0].current_hp = 1;
+        combat.entities.monsters[0].max_hp = 1;
         session
     }
 
@@ -994,6 +1088,66 @@ mod tests {
             1
         );
         assert_eq!(work.remaining_work, 14);
+    }
+
+    #[test]
+    fn policy_fallback_does_not_precomplete_the_independent_local_search() {
+        let session = one_strike_win_session();
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("one-strike combat should create a portfolio");
+
+        assert!(work.policy_witness.is_some());
+        assert_eq!(work.policy_witness_proposals, 1);
+        assert!(
+            work.local_search.witness().is_none(),
+            "a verified fallback must not masquerade as a local-search result"
+        );
+
+        let _ = work.advance(
+            &RunControlCombatSearchQuantum {
+                label: "independent_local_search_contract",
+                additional_nodes: 1,
+                soft_wall_ms: None,
+            },
+            None,
+        );
+        assert!(
+            work.local_search.counters().generation_work > 0,
+            "the local graph must receive real work despite the fallback witness"
+        );
+    }
+
+    #[test]
+    fn equal_hp_search_result_does_not_end_fallback_improvement() {
+        let fallback = CombatWitnessQualityV1 {
+            final_hp: 56,
+            action_count: 33,
+            negative_log_policy: 33.0,
+        };
+        let equal_hp_search_result = CombatWitnessQualityV1 {
+            final_hp: 56,
+            action_count: 30,
+            negative_log_policy: 5.0,
+        };
+
+        assert!(combat_witness_quality_better(
+            equal_hp_search_result,
+            fallback
+        ));
+        assert!(!combat_witness_acceptance_improved(
+            Some(fallback),
+            Some(equal_hp_search_result)
+        ));
     }
 
     #[test]

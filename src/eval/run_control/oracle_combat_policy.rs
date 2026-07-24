@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 
 use sts_combat_planner::{
     CombatActionPolicy, CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
-    CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, TurnOptionAction,
+    CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, OracleCombatWitness,
+    OracleCombatWitnessDiscoverySource, TurnOptionAction,
 };
 
 use crate::sim::combat::{
@@ -242,20 +243,21 @@ fn materialize_advisor_proposal(
         512,
         "V2 advisor",
     )
+    .map(MaterializedPolicyLineV1::into_proposal)
 }
 
-/// Runs only the mature deterministic tactical policy and materializes its
-/// complete line as an untrusted planner proposal.
+/// Runs only the mature deterministic tactical policy and exactly verifies
+/// its complete line as a fallback witness.
 ///
-/// This deliberately does not start the legacy V2 frontier. The caller must
-/// still pass the proposal through a planner-owned exact root replay before it
-/// can become a witness.
-pub(super) fn existing_combat_rollout_witness_proposal_v1(
+/// This deliberately does not start the legacy V2 frontier. The returned
+/// witness is exact evidence, but it remains separate from the local graph so
+/// merely having a cheap fallback cannot terminate independent search.
+pub(super) fn existing_combat_rollout_witness_v1(
     root: &CombatPosition,
     max_actions: usize,
     max_engine_steps_per_action: usize,
     deadline: Option<Instant>,
-) -> Result<Option<CombatPolicyWitnessProposal>, String> {
+) -> Result<Option<OracleCombatWitness>, String> {
     let Some(proposal) = crate::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
         root,
         max_actions,
@@ -270,7 +272,38 @@ pub(super) fn existing_combat_rollout_witness_proposal_v1(
         max_engine_steps_per_action,
         "mature rollout policy",
     )
+    .map(|line| line.into_witness(OracleCombatWitnessDiscoverySource::PolicyProposal))
     .map(Some)
+}
+
+struct MaterializedPolicyLineV1 {
+    actions: Vec<TurnOptionAction>,
+    final_position: CombatPosition,
+    final_hp_hint: i32,
+    replay_engine_steps: usize,
+}
+
+impl MaterializedPolicyLineV1 {
+    fn into_proposal(self) -> CombatPolicyWitnessProposal {
+        CombatPolicyWitnessProposal {
+            actions: self.actions,
+            final_hp_hint: self.final_hp_hint,
+        }
+    }
+
+    fn into_witness(
+        self,
+        discovery_source: OracleCombatWitnessDiscoverySource,
+    ) -> OracleCombatWitness {
+        let negative_log_policy = self.actions.len() as f64;
+        OracleCombatWitness {
+            actions: self.actions,
+            final_position: self.final_position,
+            negative_log_policy,
+            replay_engine_steps: self.replay_engine_steps,
+            discovery_source,
+        }
+    }
 }
 
 fn materialize_policy_inputs(
@@ -279,10 +312,11 @@ fn materialize_policy_inputs(
     final_hp_hint: i32,
     max_engine_steps_per_action: usize,
     source_label: &str,
-) -> Result<CombatPolicyWitnessProposal, String> {
+) -> Result<MaterializedPolicyLineV1, String> {
     let stepper = EngineCombatStepper;
     let mut position = root.clone();
     let mut actions = Vec::new();
+    let mut replay_engine_steps = 0usize;
     for (index, input) in inputs.into_iter().enumerate() {
         if stepper.choice_for_legal_input(&position, &input).is_none() {
             return Err(format!(
@@ -302,6 +336,7 @@ fn materialize_policy_inputs(
                 "{source_label} action {index} could not reach a stable exact successor"
             ));
         }
+        replay_engine_steps = replay_engine_steps.saturating_add(step.engine_steps);
         actions.push(TurnOptionAction {
             input,
             expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
@@ -317,11 +352,11 @@ fn materialize_policy_inputs(
             "{source_label} proposal did not replay to a true combat victory"
         ));
     }
-    Ok(CombatPolicyWitnessProposal {
+    Ok(MaterializedPolicyLineV1 {
         actions,
-        // Retain the donor's non-authoritative estimate. Planner-owned replay
-        // derives final HP again and never trusts this hint.
+        final_position: position,
         final_hp_hint,
+        replay_engine_steps,
     })
 }
 
