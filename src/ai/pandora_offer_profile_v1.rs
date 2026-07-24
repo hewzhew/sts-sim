@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1;
+use crate::ai::card_semantics_v1::CardRewardSemanticRoleV1;
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -33,7 +33,7 @@ pub struct PandoraOfferProfileV1 {
 }
 
 pub fn pandora_offer_profile_v1(run_state: &RunState) -> PandoraOfferProfileV1 {
-    use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+    use crate::ai::card_semantics_v1::card_reward_semantic_profile_v1;
     use crate::content::cards::{is_starter_basic, is_starter_defend, is_starter_strike};
     use crate::state::rewards::RewardCard;
 

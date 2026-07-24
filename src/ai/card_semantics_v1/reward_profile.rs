@@ -1,14 +1,13 @@
-use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
-use super::facts::card_facts;
-use super::types::{
-    CardRewardPickDependencyV1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+use super::{
+    card_mechanics_profile_v1, card_reward_facts_v1, CardRewardPickDependencyV1,
+    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1, CombatExternalPayoffV1,
 };
 
 pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticProfileV1 {
-    let facts = card_facts(card);
+    let facts = card_reward_facts_v1(card);
     let mechanics = card_mechanics_profile_v1(facts.card);
     let mut roles = Vec::new();
 

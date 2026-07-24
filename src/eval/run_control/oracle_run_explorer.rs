@@ -10,10 +10,11 @@ use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTarg
 
 use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
 use super::{
-    build_decision_surface, DecisionCandidateKey, NeowOracleExpansionV1,
-    RunControlCombatSearchQuantum, RunControlCombatSearchRejection, RunControlCombatWorkAdvanceV1,
-    RunControlSearchCombatOptions, RunControlSession, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
+    build_decision_surface, positive_ranked_run_policy_prior_v1, DecisionCandidateKey,
+    NeowOracleExpansionV1, RunControlCombatSearchQuantum, RunControlCombatSearchRejection,
+    RunControlCombatWorkAdvanceV1, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
+    RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
     StrategicProbeShadowOrderKeyV1,
 };
 
@@ -349,12 +350,11 @@ pub struct OracleRunExploreBudgetV1 {
     pub combat: OracleRunCombatBudgetsV1,
     pub combat_quantum_nodes: usize,
     pub combat_quantum_ms: Option<u64>,
-    pub decision_order: Option<OracleRunDecisionOrderFnV1>,
+    pub decision_prior: Option<RunPolicyPriorFnV1>,
     pub decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     pub combat_edge_order: Option<OracleRunCombatEdgeOrderFnV1>,
 }
 
-pub type OracleRunDecisionOrderFnV1 = fn(&RunControlSession) -> Vec<String>;
 pub type OracleRunDecisionAnnotationFnV1 =
     fn(&RunControlSession, &str) -> Option<RunControlTraceAnnotationV1>;
 pub type OracleRunCombatEdgeOrderFnV1 =
@@ -937,14 +937,14 @@ impl OracleRunExplorerV1 {
     fn register_decision_work(
         &mut self,
         branch_id: usize,
-        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<(), String> {
         let branch = self
             .branches
             .iter()
             .find(|branch| branch.branch_id == branch_id)
             .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
-        let mut work = decision_work_for_branch(branch, decision_order)?;
+        let mut work = decision_work_for_branch(branch, decision_prior)?;
         work.retain(|item| {
             self.registered_work_keys
                 .insert(item.stable_work_key.clone())
@@ -957,7 +957,7 @@ impl OracleRunExplorerV1 {
         &mut self,
         branch_id: usize,
         combat_budgets: &OracleRunCombatBudgetsV1,
-        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<(), String> {
         let branch = self
             .branches
@@ -988,7 +988,7 @@ impl OracleRunExplorerV1 {
                 Ok(())
             }
             OracleRunBoundaryV1::TerminalVictory | OracleRunBoundaryV1::TerminalDefeat => Ok(()),
-            _ => self.register_decision_work(branch_id, decision_order),
+            _ => self.register_decision_work(branch_id, decision_prior),
         }
     }
 
@@ -1052,27 +1052,19 @@ impl OracleRunExplorerV1 {
 
         let annotation =
             decision_annotation.and_then(|annotate| annotate(&parent.session, &work.candidate_id));
-        let mut session = parent.session.clone();
-        let mut outcome = session.apply_owner_candidate(&work.candidate_id, work.action.clone())?;
-        if outcome.progress_steps.len() != 1 {
-            return Err(format!(
-                "oracle decision '{}' committed {} progress steps; expected one",
-                work.candidate_id,
-                outcome.progress_steps.len()
-            ));
-        }
+        let successor = super::exact_run_decision_successor_v1(
+            &parent.session,
+            &work.candidate_id,
+            work.action.clone(),
+        )?;
+        let mut session = successor.session;
+        let mut transaction = successor.transaction;
         if let Some(annotation) = annotation {
-            let [RunProgressStepV1::Decision(transaction)] = outcome.progress_steps.as_mut_slice()
-            else {
-                return Err(
-                    "oracle owner decision did not produce one decision transaction".to_string(),
-                );
-            };
             transaction.trace_annotations.push(annotation);
         }
         let forced_steps = settle_oracle_forced_transitions(&mut session)?;
         let mut journal = parent.journal;
-        journal.append_committed_steps(outcome.progress_steps)?;
+        journal.append_committed_steps(vec![RunProgressStepV1::Decision(transaction)])?;
         journal.append_committed_steps(forced_steps)?;
         let mut replay = parent.replay;
         replay.push(OracleRunReplayStepV1 {
@@ -1267,7 +1259,7 @@ fn settle_oracle_forced_transitions(
 
 pub fn seed_oracle_run_explorer_v1(
     expansion: NeowOracleExpansionV1,
-    decision_order: Option<OracleRunDecisionOrderFnV1>,
+    decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<OracleRunExplorerV1, String> {
     if !expansion.unresolved.is_empty() {
         return Err(format!(
@@ -1323,7 +1315,7 @@ pub fn seed_oracle_run_explorer_v1(
             .iter()
             .find(|branch| branch.branch_id == branch_id)
             .ok_or_else(|| format!("missing oracle root branch {branch_id}"))?;
-        for work in decision_work_for_branch(branch, decision_order)? {
+        for work in decision_work_for_branch(branch, decision_prior)? {
             if explorer
                 .registered_work_keys
                 .insert(work.stable_work_key.clone())
@@ -1359,7 +1351,7 @@ pub fn seed_oracle_run_explorer_from_session_v1(
     session: RunControlSession,
     journal: RunProgressJournalV1,
     combat_budgets: &OracleRunCombatBudgetsV1,
-    decision_order: Option<OracleRunDecisionOrderFnV1>,
+    decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<OracleRunExplorerV1, String> {
     let mut explorer = OracleRunExplorerV1::empty();
     let branch_id = explorer.next_branch_id;
@@ -1381,7 +1373,7 @@ pub fn seed_oracle_run_explorer_from_session_v1(
     let branch_id = explorer
         .accept_branch(branch)
         .ok_or_else(|| "continued oracle state was unexpectedly duplicated".to_string())?;
-    explorer.schedule_branch(branch_id, combat_budgets, decision_order)?;
+    explorer.schedule_branch(branch_id, combat_budgets, decision_prior)?;
     Ok(explorer)
 }
 
@@ -1707,7 +1699,7 @@ pub fn drive_oracle_run_explorer_v1(
                             explorer.schedule_branch(
                                 branch_id,
                                 &budget.combat,
-                                budget.decision_order,
+                                budget.decision_prior,
                             )?;
                         }
                         FinishedOracleCombatV1::Unresolved(unresolved) => {
@@ -1754,7 +1746,7 @@ pub fn drive_oracle_run_explorer_v1(
                     if boundary == OracleRunBoundaryV1::TerminalVictory {
                         break OracleRunExploreStopV1::Victory { branch_id };
                     }
-                    explorer.schedule_branch(branch_id, &budget.combat, budget.decision_order)?;
+                    explorer.schedule_branch(branch_id, &budget.combat, budget.decision_prior)?;
                 }
             }
             ScheduledOracleRunWorkV1::DeferredCombat(deferred) => {
@@ -1803,7 +1795,7 @@ fn stable_oracle_work_key(
 
 pub(super) fn decision_work_for_branch(
     branch: &OracleRunBranchV1,
-    decision_order: Option<OracleRunDecisionOrderFnV1>,
+    decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<Vec<LazyOracleRunDecisionV1>, String> {
     let kind = work_kind(branch.boundary)?;
     let mut work = if matches!(
@@ -1837,50 +1829,48 @@ pub(super) fn decision_work_for_branch(
             branch.boundary, branch.branch_id
         ));
     }
-    apply_decision_policy(branch, &mut work, decision_order);
+    apply_decision_policy(branch, &mut work, decision_prior)?;
     Ok(work)
 }
-
-const ORACLE_RUN_POLICY_UNIFORM_MIX: f64 = 0.05;
-const ORACLE_RUN_POLICY_RANK_DECAY: f64 = 0.25;
 
 fn apply_decision_policy(
     branch: &OracleRunBranchV1,
     work: &mut [LazyOracleRunDecisionV1],
-    decision_order: Option<OracleRunDecisionOrderFnV1>,
-) {
-    let preferred_ids = decision_order
-        .map(|order| order(&branch.session))
-        .unwrap_or_default();
-    let mut ordered_indices = Vec::with_capacity(work.len());
-    for candidate_id in preferred_ids {
-        if let Some(index) = work
+    decision_prior: Option<RunPolicyPriorFnV1>,
+) -> Result<(), String> {
+    let prior = {
+        let legal = work
             .iter()
-            .position(|candidate| candidate.candidate_id == candidate_id)
-        {
-            if !ordered_indices.contains(&index) {
-                ordered_indices.push(index);
-            }
-        }
-    }
-    for index in 0..work.len() {
-        if !ordered_indices.contains(&index) {
-            ordered_indices.push(index);
-        }
-    }
+            .map(|candidate| RunPolicyCandidateV1 {
+                candidate_id: &candidate.candidate_id,
+                label: &candidate.label,
+                action: &candidate.action,
+            })
+            .collect::<Vec<_>>();
+        let prior = match decision_prior {
+            Some(policy) => policy(&branch.session, &legal)?,
+            None => positive_ranked_run_policy_prior_v1(&legal, std::iter::empty())?,
+        };
+        prior.validate_for(&legal)?;
+        prior
+    };
 
-    let raw = (0..work.len())
-        .map(|rank| ORACLE_RUN_POLICY_RANK_DECAY.powi(rank as i32))
-        .collect::<Vec<_>>();
-    let raw_sum = raw.iter().sum::<f64>();
-    let uniform = 1.0 / work.len() as f64;
-    for (rank, index) in ordered_indices.into_iter().enumerate() {
-        let probability = (1.0 - ORACLE_RUN_POLICY_UNIFORM_MIX) * raw[rank] / raw_sum
-            + ORACLE_RUN_POLICY_UNIFORM_MIX * uniform;
-        work[index].path_negative_log_policy = branch.path_negative_log_policy - probability.ln();
+    let work_indices = work
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| (candidate.candidate_id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    for (rank, entry) in prior.entries.into_iter().enumerate() {
+        let index = work_indices
+            .get(&entry.candidate_id)
+            .copied()
+            .expect("validated policy prior must reference one legal candidate");
+        work[index].path_negative_log_policy =
+            branch.path_negative_log_policy - entry.probability.ln();
         work[index].path_discrepancy = branch.path_discrepancy.saturating_add(rank as u64);
         work[index].path_depth = branch.path_depth.saturating_add(1);
     }
+    Ok(())
 }
 
 fn run_choice_work_for_branch(
@@ -2514,13 +2504,17 @@ mod tests {
 
     #[test]
     fn decision_policy_prefers_owner_order_and_keeps_every_fallback_positive() {
-        fn prefer_second(_: &RunControlSession) -> Vec<String> {
-            vec!["second".to_string()]
+        fn prefer_second(
+            _: &RunControlSession,
+            legal: &[RunPolicyCandidateV1<'_>],
+        ) -> Result<crate::eval::run_control::RunPolicyPriorV1, String> {
+            positive_ranked_run_policy_prior_v1(legal, ["second".to_string()])
         }
 
         let branch = test_branch(7, None);
         let mut work = vec![test_decision(7, "first"), test_decision(7, "second")];
-        apply_decision_policy(&branch, &mut work, Some(prefer_second));
+        apply_decision_policy(&branch, &mut work, Some(prefer_second))
+            .expect("valid complete policy prior");
 
         let first = work
             .iter()
@@ -2691,7 +2685,7 @@ mod tests {
                 combat: combat_budgets.clone(),
                 combat_quantum_nodes: 1,
                 combat_quantum_ms: None,
-                decision_order: None,
+                decision_prior: None,
                 decision_annotation: None,
                 combat_edge_order: None,
             },

@@ -285,7 +285,7 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
     let initial_neow_frontier = oracle_neow_frontier_summary(neow_expansion.clone());
     let explorer = seed_oracle_run_explorer_v1(
         neow_expansion,
-        Some(super::owner_audit::oracle_candidate_order),
+        Some(super::owner_audit::legacy_oracle_policy_prior_v1),
     )
     .map_err(|error| format!("failed to seed oracle run explorer: {error}"))?;
     let explored = drive_oracle_run_explorer_v1(
@@ -296,8 +296,8 @@ pub fn run_oracle_run(config: OracleRunConfig) -> Result<OracleRunReportV1, Stri
             combat: oracle_combat_budgets(&config),
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
-            decision_order: Some(super::owner_audit::oracle_candidate_order),
-            decision_annotation: Some(super::owner_audit::oracle_candidate_annotation),
+            decision_prior: Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            decision_annotation: None,
             // The current endpoint lexicographic key has not been calibrated
             // against disjoint expert-reviewed/exact cases.  Keep the narrow
             // edge-order hook available for experiments, but do not let that
@@ -333,7 +333,7 @@ pub fn run_oracle_run_from_continuation(
             continuation.session.into_session()?,
             continuation.journal,
             &combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
         )?
     };
     let explored = drive_oracle_run_explorer_v1(
@@ -344,8 +344,8 @@ pub fn run_oracle_run_from_continuation(
             combat: combat_budgets,
             combat_quantum_nodes: config.budget.combat_quantum_nodes,
             combat_quantum_ms: Some(config.budget.combat_quantum_ms),
-            decision_order: Some(super::owner_audit::oracle_candidate_order),
-            decision_annotation: Some(super::owner_audit::oracle_candidate_annotation),
+            decision_prior: Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            decision_annotation: None,
             combat_edge_order: None,
         },
     )

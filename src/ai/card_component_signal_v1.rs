@@ -1,6 +1,6 @@
 use crate::ai::block_plan_profile_v1::{BlockPlanProfileV1, BlockPlanReadinessV1};
-use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::card_semantics_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::deck_startup_profile_v1::{
     startup_energy_candidate_discounted_by_snecko_v1, DeckStartupProfileV1,
 };
@@ -494,7 +494,7 @@ fn push_signal(values: &mut Vec<CardComponentSignalKindV1>, value: CardComponent
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+    use crate::ai::card_semantics_v1::card_reward_semantic_profile_v1;
     use crate::state::rewards::RewardCard;
     use CardComponentSignalKindV1::*;
 

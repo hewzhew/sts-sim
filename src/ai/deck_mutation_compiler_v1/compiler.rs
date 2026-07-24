@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::card_semantics_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::opening_hand_target_plan_v1::{
     opening_hand_target_profile_for_card_v1, OpeningHandDebtTierV1,
 };

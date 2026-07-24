@@ -24,13 +24,14 @@ use super::oracle_combat_work::{
 use super::oracle_run_explorer::{
     decision_work_for_branch, seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
     OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatBudgetsV1,
-    OracleRunDecisionAnnotationFnV1, OracleRunDecisionOrderFnV1, OracleRunExplorerCheckpointV1,
-    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
+    OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
+    OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
     CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1,
     RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunProgressJournalV1, RunProgressStepV1,
+    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyPriorFnV1, RunProgressJournalV1,
+    RunProgressStepV1,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -342,7 +343,7 @@ pub struct OracleAnalysisSessionV1 {
     edges: Vec<OracleAnalysisEdgeV1>,
     combat_jobs: BTreeMap<usize, OracleRunCombatWorkV1>,
     combat_budgets: OracleRunCombatBudgetsV1,
-    decision_order: Option<OracleRunDecisionOrderFnV1>,
+    decision_prior: Option<RunPolicyPriorFnV1>,
     decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
 }
 
@@ -351,7 +352,7 @@ impl OracleAnalysisSessionV1 {
         mut explorer: OracleRunExplorerV1,
         preferred_cursor_node_id: Option<usize>,
         combat_budgets: OracleRunCombatBudgetsV1,
-        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_prior: Option<RunPolicyPriorFnV1>,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     ) -> Result<Self, String> {
         let cursor_node_id = preferred_cursor_node_id
@@ -390,7 +391,7 @@ impl OracleAnalysisSessionV1 {
             edges: Vec::new(),
             combat_jobs,
             combat_budgets,
-            decision_order,
+            decision_prior,
             decision_annotation,
         };
         session.seed_canonical_edges();
@@ -404,7 +405,7 @@ impl OracleAnalysisSessionV1 {
     pub fn restore(
         checkpoint: OracleAnalysisSessionCheckpointV1,
         combat_budgets: OracleRunCombatBudgetsV1,
-        decision_order: Option<OracleRunDecisionOrderFnV1>,
+        decision_prior: Option<RunPolicyPriorFnV1>,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     ) -> Result<Self, String> {
         if checkpoint.schema_name != ORACLE_ANALYSIS_SESSION_SCHEMA_NAME
@@ -449,7 +450,7 @@ impl OracleAnalysisSessionV1 {
             edges: checkpoint.edges,
             combat_jobs,
             combat_budgets,
-            decision_order,
+            decision_prior,
             decision_annotation,
         };
         session.validate_navigation_state()?;
@@ -771,7 +772,7 @@ impl OracleAnalysisSessionV1 {
         ) {
             Vec::new()
         } else {
-            decision_work_for_branch(branch, self.decision_order)?
+            decision_work_for_branch(branch, self.decision_prior)?
         };
         choices.sort_by(|left, right| {
             left.path_discrepancy
@@ -910,7 +911,7 @@ impl OracleAnalysisSessionV1 {
     pub fn try_choice(&mut self, requested_ref: &str) -> Result<usize, String> {
         let (parent_node_id, _) = parse_choice_ref(requested_ref)?;
         let parent = self.require_branch(parent_node_id)?;
-        let work = decision_work_for_branch(parent, self.decision_order)?
+        let work = decision_work_for_branch(parent, self.decision_prior)?
             .into_iter()
             .find(|work| choice_ref(work) == requested_ref)
             .ok_or_else(|| {

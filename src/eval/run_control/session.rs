@@ -5,10 +5,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use crate::content::relics::RelicId;
-use crate::eval::card_reward_value_loop::{
-    CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
-    CardRewardStrategyPackageCalibrationV1,
-};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, EngineState};
 use crate::state::map::state::MapState;
@@ -39,9 +35,6 @@ pub struct RunControlConfig {
     pub search_max_hp_loss: Option<u32>,
     pub search_potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub search_max_potions_used: Option<u32>,
-    pub card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
-    pub card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
-    pub card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
 }
 
 impl Default for RunControlConfig {
@@ -58,9 +51,6 @@ impl Default for RunControlConfig {
             search_max_hp_loss: None,
             search_potion_policy: None,
             search_max_potions_used: None,
-            card_reward_outcome_calibration: None,
-            card_reward_route_risk_calibration: None,
-            card_reward_strategy_package_calibration: None,
         }
     }
 }
@@ -79,12 +69,6 @@ pub struct RunControlSession {
     pub(in crate::eval::run_control) search_max_hp_loss: Option<u32>,
     pub(in crate::eval::run_control) search_potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub(in crate::eval::run_control) search_max_potions_used: Option<u32>,
-    pub(in crate::eval::run_control) card_reward_outcome_calibration:
-        Option<CardRewardOutcomeCalibrationV1>,
-    pub(in crate::eval::run_control) card_reward_route_risk_calibration:
-        Option<CardRewardRouteRiskCalibrationV1>,
-    pub(in crate::eval::run_control) card_reward_strategy_package_calibration:
-        Option<CardRewardStrategyPackageCalibrationV1>,
     pub(super) combat_outcomes: CombatOutcomeTracker,
     pub(in crate::eval::run_control) combat_sequence: u64,
     pub(in crate::eval::run_control) auto_capture_last_combat_sequence: Option<u64>,
@@ -159,9 +143,6 @@ pub struct RunControlSessionCheckpointV1 {
     search_max_hp_loss: Option<u32>,
     search_potion_policy: Option<CombatSearchV2PotionPolicy>,
     search_max_potions_used: Option<u32>,
-    card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
-    card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
-    card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
     combat_outcomes: CombatOutcomeTracker,
     combat_sequence: u64,
     auto_capture_last_combat_sequence: Option<u64>,
@@ -182,12 +163,6 @@ struct RunControlSessionCheckpointExtrasV1 {
     shop_visit_context: Option<ShopVisitContextV1>,
     #[serde(skip_serializing_if = "auto_capture_config_is_default")]
     auto_capture: AutoCombatCaptureConfig,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
     #[serde(skip_serializing_if = "combat_outcome_tracker_is_default")]
     combat_outcomes: CombatOutcomeTracker,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -221,11 +196,6 @@ impl Serialize for RunControlSessionCheckpointV1 {
             reward_automation: self.reward_automation.clone(),
             shop_visit_context: self.shop_visit_context,
             auto_capture: self.auto_capture.clone(),
-            card_reward_outcome_calibration: self.card_reward_outcome_calibration.clone(),
-            card_reward_route_risk_calibration: self.card_reward_route_risk_calibration.clone(),
-            card_reward_strategy_package_calibration: self
-                .card_reward_strategy_package_calibration
-                .clone(),
             combat_outcomes: self.combat_outcomes.clone(),
             auto_capture_last_combat_sequence: self.auto_capture_last_combat_sequence,
             last_completed_combat_sequence: self.last_completed_combat_sequence,
@@ -292,9 +262,6 @@ fn compact_checkpoint_from_values(
         search_max_hp_loss: compact_value(items, 6, "search_max_hp_loss")?,
         search_potion_policy: compact_value(items, 7, "search_potion_policy")?,
         search_max_potions_used: compact_value(items, 8, "search_max_potions_used")?,
-        card_reward_outcome_calibration: extras.card_reward_outcome_calibration,
-        card_reward_route_risk_calibration: extras.card_reward_route_risk_calibration,
-        card_reward_strategy_package_calibration: extras.card_reward_strategy_package_calibration,
         combat_outcomes: extras.combat_outcomes,
         combat_sequence: compact_value(items, 9, "combat_sequence")?,
         auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
@@ -341,12 +308,6 @@ struct RunControlSessionCheckpointLegacyV1 {
     #[serde(default)]
     search_max_potions_used: Option<u32>,
     #[serde(default)]
-    card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
-    #[serde(default)]
-    card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
-    #[serde(default)]
-    card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
-    #[serde(default)]
     combat_outcomes: CombatOutcomeTracker,
     combat_sequence: u64,
     #[serde(default)]
@@ -380,9 +341,6 @@ impl RunControlSessionCheckpointLegacyV1 {
             search_max_hp_loss: self.search_max_hp_loss,
             search_potion_policy: self.search_potion_policy,
             search_max_potions_used: self.search_max_potions_used,
-            card_reward_outcome_calibration: self.card_reward_outcome_calibration,
-            card_reward_route_risk_calibration: self.card_reward_route_risk_calibration,
-            card_reward_strategy_package_calibration: self.card_reward_strategy_package_calibration,
             combat_outcomes: self.combat_outcomes,
             combat_sequence: self.combat_sequence,
             auto_capture_last_combat_sequence: self.auto_capture_last_combat_sequence,
@@ -633,10 +591,6 @@ impl RunControlSession {
             search_max_hp_loss: config.search_max_hp_loss,
             search_potion_policy: config.search_potion_policy,
             search_max_potions_used: config.search_max_potions_used,
-            card_reward_outcome_calibration: config.card_reward_outcome_calibration,
-            card_reward_route_risk_calibration: config.card_reward_route_risk_calibration,
-            card_reward_strategy_package_calibration: config
-                .card_reward_strategy_package_calibration,
             combat_outcomes: CombatOutcomeTracker::default(),
             combat_sequence: 0,
             auto_capture_last_combat_sequence: None,
@@ -734,11 +688,6 @@ impl RunControlSessionCheckpointV1 {
             search_max_hp_loss: session.search_max_hp_loss,
             search_potion_policy: session.search_potion_policy,
             search_max_potions_used: session.search_max_potions_used,
-            card_reward_outcome_calibration: session.card_reward_outcome_calibration.clone(),
-            card_reward_route_risk_calibration: session.card_reward_route_risk_calibration.clone(),
-            card_reward_strategy_package_calibration: session
-                .card_reward_strategy_package_calibration
-                .clone(),
             combat_outcomes: session.combat_outcomes.clone(),
             combat_sequence: session.combat_sequence,
             auto_capture_last_combat_sequence: session.auto_capture_last_combat_sequence,
@@ -870,9 +819,6 @@ impl RunControlSessionCheckpointV1 {
             search_max_hp_loss: self.search_max_hp_loss,
             search_potion_policy: self.search_potion_policy,
             search_max_potions_used: self.search_max_potions_used,
-            card_reward_outcome_calibration: self.card_reward_outcome_calibration,
-            card_reward_route_risk_calibration: self.card_reward_route_risk_calibration,
-            card_reward_strategy_package_calibration: self.card_reward_strategy_package_calibration,
             combat_outcomes: self.combat_outcomes,
             combat_sequence: self.combat_sequence,
             auto_capture_last_combat_sequence: self.auto_capture_last_combat_sequence,

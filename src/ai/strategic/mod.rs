@@ -1,17 +1,14 @@
 mod audit;
 mod candidate;
-mod card_reward_adapter;
 mod compiler;
 mod delta;
 mod ledger;
 mod retention;
 mod run_debt;
-mod shop_adapter;
 mod snapshot;
 
 pub use audit::{audit_delta_coverage, StrategicAuditReport};
 pub use candidate::{CandidateAction, StrategicDecisionSite};
-pub use card_reward_adapter::strategic_trace_for_card_reward;
 pub use compiler::{
     compile_decision, AcquisitionVerdict, CompiledDecision, StrategicDecisionTrace,
 };
@@ -34,8 +31,4 @@ pub use run_debt::{
     run_debt_tag_rank_adjustment_v1, RunDebtContractKindV1, RunDebtContractV1, RunDebtLedgerV1,
     RunDebtProjectionV1,
 };
-pub use shop_adapter::strategic_trace_for_shop;
 pub use snapshot::{StrategicDeckFacts, StrategicRouteFacts, StrategicSnapshot};
-
-#[cfg(test)]
-mod tests;

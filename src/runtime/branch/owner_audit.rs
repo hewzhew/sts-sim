@@ -40,9 +40,6 @@ mod candidate_ir_adapter;
 mod capsule_artifact_store;
 #[path = "owner_audit/card_reward_owner.rs"]
 mod card_reward_owner;
-#[cfg(test)]
-#[path = "owner_audit/challenger_execution_smoke.rs"]
-mod challenger_execution_smoke;
 #[path = "owner_audit/cli_args.rs"]
 mod cli_args;
 #[path = "owner_audit/combat_gap_case.rs"]
@@ -78,8 +75,6 @@ mod expansion_policy;
 mod frontier_checkpoint;
 #[path = "owner_audit/neow_owner.rs"]
 mod neow_owner;
-#[path = "owner_audit/owner_candidate_eval.rs"]
-mod owner_candidate_eval;
 #[path = "owner_audit/owner_choice_expander.rs"]
 mod owner_choice_expander;
 #[path = "owner_audit/owner_commands.rs"]
@@ -144,8 +139,6 @@ mod run_stop_recorder;
 mod runner;
 #[path = "owner_audit/search_comparability.rs"]
 mod search_comparability;
-#[path = "owner_audit/shop_investment.rs"]
-mod shop_investment;
 #[path = "owner_audit/shop_route_evidence.rs"]
 mod shop_route_evidence;
 #[path = "owner_audit/shop_tiny_owner.rs"]
@@ -200,10 +193,58 @@ impl OwnerAuditRuntime {
     }
 }
 
-/// Returns a preferred exploration order for the oracle run without changing
-/// the real branch or removing any legal candidate.  The oracle explorer owns
-/// completeness; the existing owners are only a soft first-choice hint.
-pub(super) fn oracle_candidate_order(
+/// Adapts the current production owners into a complete positive-support
+/// policy prior. The exact decision model still owns legality and successor
+/// construction; this legacy adapter only guides exploration order.
+pub(super) fn legacy_oracle_policy_prior_v1(
+    session: &sts_simulator::eval::run_control::RunControlSession,
+    legal: &[sts_simulator::eval::run_control::RunPolicyCandidateV1<'_>],
+) -> Result<sts_simulator::eval::run_control::RunPolicyPriorV1, String> {
+    if matches!(
+        session.engine_state,
+        sts_simulator::state::core::EngineState::Shop(_)
+    ) {
+        return sts_simulator::eval::run_control::exact_shop_policy_prior_v1(session, legal);
+    }
+    let card_reward_ids = sts_simulator::eval::run_control::build_decision_surface(session)
+        .view
+        .candidates
+        .into_iter()
+        .filter(|candidate| {
+            candidate.action.executable_action_ref().is_some()
+                && matches!(
+                    candidate.key,
+                    Some(
+                        sts_simulator::eval::run_control::DecisionCandidateKey::CardRewardPick {
+                            ..
+                        } | sts_simulator::eval::run_control::DecisionCandidateKey::CardRewardOpen {
+                            ..
+                        } | sts_simulator::eval::run_control::DecisionCandidateKey::CardRewardSingingBowl {
+                            ..
+                        } | sts_simulator::eval::run_control::DecisionCandidateKey::CardRewardSkip {
+                            ..
+                        }
+                    )
+                )
+        })
+        .map(|candidate| candidate.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    if !card_reward_ids.is_empty()
+        && card_reward_ids.iter().all(|candidate_id| {
+            legal
+                .iter()
+                .any(|candidate| candidate.candidate_id == candidate_id.as_str())
+        })
+    {
+        return sts_simulator::eval::run_control::exact_card_reward_policy_prior_v1(session, legal);
+    }
+    sts_simulator::eval::run_control::positive_ranked_run_policy_prior_v1(
+        legal,
+        legacy_oracle_preferred_candidate_ids_v1(session),
+    )
+}
+
+fn legacy_oracle_preferred_candidate_ids_v1(
     session: &sts_simulator::eval::run_control::RunControlSession,
 ) -> Vec<String> {
     use owner_model::{OwnerDecision, OwnerRoutine};
@@ -261,34 +302,7 @@ pub(super) fn oracle_candidate_order(
 pub fn current_oracle_candidate_order_v1(
     session: &sts_simulator::eval::run_control::RunControlSession,
 ) -> Vec<String> {
-    oracle_candidate_order(session)
-}
-
-/// Captures the same typed evidence used to order a card-reward candidate.
-/// The oracle explorer invokes this immediately before materializing the
-/// selected edge, so the journal records the actual parent state rather than
-/// reconstructing an explanation after the run has moved on.
-pub(super) fn oracle_candidate_annotation(
-    session: &sts_simulator::eval::run_control::RunControlSession,
-    candidate_id: &str,
-) -> Option<sts_simulator::eval::run_control::RunControlTraceAnnotationV1> {
-    use owner_model::OwnerDecision;
-    use sts_simulator::eval::run_control::{build_decision_surface, RunControlTraceAnnotationV1};
-
-    let owner = boundary_router::owner_for_current_boundary(session)?;
-    let surface = build_decision_surface(session);
-    let OwnerDecision::Candidates(choices) = owners::owner_decision(session, owner, &surface)
-    else {
-        return None;
-    };
-    let provenance = choices
-        .into_iter()
-        .find(|choice| choice.candidate_id == candidate_id)?
-        .annotation
-        .candidate()?
-        .card_reward_provenance
-        .clone()?;
-    Some(RunControlTraceAnnotationV1::CardRewardOwnerDecision { provenance })
+    legacy_oracle_preferred_candidate_ids_v1(session)
 }
 
 #[cfg(test)]
@@ -299,6 +313,105 @@ mod tests {
     #[test]
     fn owner_audit_runtime_exposes_cli_entrypoint() {
         let _entrypoint: fn() -> Result<(), String> = OwnerAuditRuntime::run_cli;
+    }
+
+    #[test]
+    fn legacy_oracle_adapter_covers_the_complete_exact_surface() {
+        use sts_simulator::eval::run_control::{
+            build_decision_surface, RunControlConfig, RunControlSession, RunPolicyCandidateV1,
+        };
+        use sts_simulator::state::core::EngineState;
+        use sts_simulator::state::shop::ShopState;
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::Shop(ShopState::new());
+        let surface = build_decision_surface(&session);
+        let legal = surface
+            .view
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                Some(RunPolicyCandidateV1 {
+                    candidate_id: &candidate.id,
+                    label: &candidate.label,
+                    action: candidate.action.executable_action_ref()?,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let prior =
+            legacy_oracle_policy_prior_v1(&session, &legal).expect("complete legacy policy prior");
+
+        prior.validate_for(&legal).expect("valid policy prior");
+        assert_eq!(prior.entries.len(), legal.len());
+        assert!(prior.entries.iter().all(|entry| entry.probability > 0.0));
+    }
+
+    #[test]
+    fn oracle_adapter_composes_card_prior_with_the_full_reward_surface() {
+        use sts_simulator::content::cards::CardId;
+        use sts_simulator::eval::run_control::{
+            build_decision_surface, DecisionCandidateKey, RunControlConfig, RunControlSession,
+            RunPolicyCandidateV1,
+        };
+        use sts_simulator::state::core::EngineState;
+        use sts_simulator::state::rewards::{RewardCard, RewardItem, RewardState};
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let cards = vec![
+            RewardCard::new(CardId::BattleTrance, 1),
+            RewardCard::new(CardId::WildStrike, 0),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Card {
+            cards: cards.clone(),
+        }];
+        reward.pending_card_choice = Some(cards);
+        reward.pending_card_reward_index = Some(0);
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let surface = build_decision_surface(&session);
+        let legal = surface
+            .view
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                Some(RunPolicyCandidateV1 {
+                    candidate_id: &candidate.id,
+                    label: &candidate.label,
+                    action: candidate.action.executable_action_ref()?,
+                })
+            })
+            .collect::<Vec<_>>();
+        let prior =
+            legacy_oracle_policy_prior_v1(&session, &legal).expect("composed card reward prior");
+        prior.validate_for(&legal).expect("valid composed prior");
+
+        let rank = |predicate: fn(&DecisionCandidateKey) -> bool| {
+            let candidate_id = surface
+                .view
+                .candidates
+                .iter()
+                .find(|candidate| candidate.key.as_ref().is_some_and(predicate))
+                .map(|candidate| candidate.id.as_str())
+                .expect("typed reward candidate");
+            prior
+                .entries
+                .iter()
+                .position(|entry| entry.candidate_id == candidate_id)
+                .expect("prior entry")
+        };
+        assert!(
+            rank(|key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::BattleTrance,
+                    ..
+                }
+            )) < rank(|key| matches!(key, DecisionCandidateKey::CardRewardSkip { .. }))
+        );
+        assert_eq!(prior.entries.len(), legal.len());
+        assert!(prior.entries.iter().all(|entry| entry.probability > 0.0));
     }
 
     #[test]

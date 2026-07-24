@@ -10,10 +10,7 @@ pub(super) fn noncombat_policy_annotation(
     record: NonCombatDecisionRecordV1,
 ) -> Result<RunControlTraceAnnotationV1, String> {
     validate_noncombat_policy_record(policy_name, &record)?;
-    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-        record,
-        card_reward_packet: None,
-    })
+    Ok(RunControlTraceAnnotationV1::NonCombatPolicyDecision { record })
 }
 
 pub(super) fn validate_noncombat_policy_record(

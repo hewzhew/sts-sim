@@ -5,8 +5,8 @@ use crate::state::events::EventId;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 use super::{
-    build_decision_surface, DecisionCandidateKey, OracleRunDecisionOrderFnV1, RunControlSession,
-    RunDecisionAction, RunProgressJournalV1,
+    build_decision_surface, DecisionCandidateKey, RunControlSession, RunDecisionAction,
+    RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1,
 };
 
 const MAX_NEOW_MATERIALIZATIONS: usize = 4_096;
@@ -169,13 +169,32 @@ pub fn expand_oracle_neow_candidates_v1(
 /// strategic root order and never need to reproduce Neow engine semantics.
 pub fn ordered_oracle_neow_root_candidate_ids_v1(
     start: &RunControlSession,
-    decision_order: OracleRunDecisionOrderFnV1,
+    decision_prior: RunPolicyPriorFnV1,
 ) -> Result<Vec<String>, String> {
     let mut session = start.clone();
     let mut replay = Vec::new();
     let mut journal = RunProgressJournalV1::default();
     advance_neow_intro(&mut session, &mut replay, &mut journal)?;
-    Ok(decision_order(&session))
+    let surface = build_decision_surface(&session);
+    let legal = surface
+        .view
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            Some(RunPolicyCandidateV1 {
+                candidate_id: &candidate.id,
+                label: &candidate.label,
+                action: candidate.action.executable_action_ref()?,
+            })
+        })
+        .collect::<Vec<_>>();
+    let prior = decision_prior(&session, &legal)?;
+    prior.validate_for(&legal)?;
+    Ok(prior
+        .entries
+        .into_iter()
+        .map(|entry| entry.candidate_id)
+        .collect())
 }
 
 fn advance_neow_intro(
@@ -397,16 +416,13 @@ fn apply_exact(
     journal: &mut RunProgressJournalV1,
     successor: ExecutableSuccessor,
 ) -> Result<(), String> {
-    let outcome =
-        session.apply_owner_candidate(&successor.candidate_id, successor.action.clone())?;
-    if outcome.progress_steps.len() != 1 {
-        return Err(format!(
-            "candidate '{}' committed {} progress steps; expected exactly one",
-            successor.candidate_id,
-            outcome.progress_steps.len()
-        ));
-    }
-    journal.append_committed_steps(outcome.progress_steps)?;
+    let exact = super::exact_run_decision_successor_v1(
+        session,
+        &successor.candidate_id,
+        successor.action.clone(),
+    )?;
+    *session = exact.session;
+    journal.append_committed_steps(vec![super::RunProgressStepV1::Decision(exact.transaction)])?;
     replay.push(NeowOracleReplayStepV1 {
         candidate_id: successor.candidate_id,
         label: successor.label,

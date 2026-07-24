@@ -1,4 +1,4 @@
-use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::card_semantics_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;

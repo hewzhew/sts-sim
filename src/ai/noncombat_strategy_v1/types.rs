@@ -407,6 +407,10 @@ pub struct RunStrategySnapshotV2 {
 }
 
 impl RunStrategySnapshotV2 {
+    pub fn deck_facts(&self) -> &StrategyDeckFactsV1 {
+        &self.v1.deck
+    }
+
     pub fn package(&self, id: StrategyPackageIdV2) -> Option<&StrategyPackageV2> {
         self.packages.iter().find(|package| package.id == id)
     }

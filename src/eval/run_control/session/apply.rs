@@ -319,7 +319,7 @@ impl RunControlSession {
         candidate_label: String,
     ) -> Result<AppliedDecisionEffect, String> {
         match action {
-            RunDecisionAction::Input(input) => self.execute_input_inner(input, true, true),
+            RunDecisionAction::Input(input) => self.execute_input_inner(input, true),
             custom @ (RunDecisionAction::SkipCardReward { .. }
             | RunDecisionAction::SingingBowlCardReward { .. }) => {
                 self.execute_custom_decision_atomically(custom, candidate_label)
@@ -387,18 +387,17 @@ impl RunControlSession {
         reward_index: usize,
         candidate_label: String,
     ) -> Result<AppliedDecisionEffect, String> {
-        super::super::card_reward_auto::ensure_singing_bowl_card_reward_action(self, reward_index)?;
+        super::super::reward_auto::ensure_singing_bowl_card_reward_action(self, reward_index)?;
         let before = RunVisibleSnapshot::capture(self);
-        let opened =
-            self.execute_input_inner(ClientInput::ClaimReward(reward_index), false, false)?;
-        let Some(opened_cards) = super::super::card_reward_auto::active_pending_reward_cards(self)
+        let opened = self.execute_input_inner(ClientInput::ClaimReward(reward_index), false)?;
+        let Some(opened_cards) = super::super::reward_auto::active_pending_reward_cards(self)
         else {
             return Err(
                 "Singing Bowl opened a reward item but no pending card choice appeared".to_string(),
             );
         };
         let consumed =
-            self.execute_input_inner(ClientInput::SelectCard(opened_cards.len()), false, false)?;
+            self.execute_input_inner(ClientInput::SelectCard(opened_cards.len()), false)?;
         let mut trace_annotations = opened.trace_annotations;
         trace_annotations.extend(consumed.trace_annotations);
         self.finish_custom_decision_effect(candidate_label, before, trace_annotations, None)
@@ -467,7 +466,7 @@ impl RunControlSession {
         &mut self,
         input: ClientInput,
     ) -> Result<RunProgressOutcome, String> {
-        self.apply_input_inner(input, true)
+        self.apply_input_inner(input)
     }
 
     pub(in crate::eval::run_control) fn apply_combat_resolution_input(
@@ -477,39 +476,22 @@ impl RunControlSession {
         if self.active_combat.is_none() {
             return Err("combat resolution input requires an active combat".to_string());
         }
-        let effect = self.execute_input_inner(input, false, false)?;
+        let effect = self.execute_input_inner(input, false)?;
         Ok(effect.project_progress_outcome())
     }
 
-    fn apply_input_inner(
-        &mut self,
-        input: ClientInput,
-        trace_manual_card_reward_selection: bool,
-    ) -> Result<RunProgressOutcome, String> {
-        let effect = self.execute_input_inner(input, trace_manual_card_reward_selection, true)?;
+    fn apply_input_inner(&mut self, input: ClientInput) -> Result<RunProgressOutcome, String> {
+        let effect = self.execute_input_inner(input, true)?;
         Ok(effect.project_progress_outcome())
     }
 
     fn execute_input_inner(
         &mut self,
         input: ClientInput,
-        trace_manual_card_reward_selection: bool,
         advance_decision_step: bool,
     ) -> Result<AppliedDecisionEffect, String> {
         self.ensure_combat_started_if_needed()?;
         self.validate_input_for_current_state(&input)?;
-        let manual_card_reward_annotation = if trace_manual_card_reward_selection {
-            match &input {
-                ClientInput::SelectCard(index) => {
-                    super::super::card_reward_auto::manual_card_reward_selection_annotation(
-                        self, *index,
-                    )?
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
         self.observe_shop_visit_before_input();
         let gold_before_input = self.run_state.gold;
         let before_snapshot = RunVisibleSnapshot::capture(self);
@@ -585,9 +567,6 @@ impl RunControlSession {
         self.observe_active_combat_started();
         let auto_capture = super::super::auto_capture::maybe_auto_capture_combat_start(self)?;
         let mut trace_annotations = Vec::new();
-        if let Some(annotation) = manual_card_reward_annotation {
-            trace_annotations.push(annotation);
-        }
         if advance_decision_step {
             self.decision_step = self.decision_step.saturating_add(1);
         }

@@ -2,8 +2,9 @@ use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CombatEvent, Mechanic, TriggeredEffect,
 };
 use crate::ai::card_analysis_v1::card_analysis_profile_v1;
-use crate::ai::card_reward_policy_v1::card_facts;
-use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::card_semantics_v1::{
+    card_mechanics_profile_v1, card_reward_facts_v1, CardRewardPickDependencyV1,
+};
 use crate::content::cards::{CardId, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::rewards::RewardCard;
@@ -43,7 +44,7 @@ pub fn threat_coverage_from_run_state_v1(
     let mut facts = CapabilityFacts::default();
     for card in &run_state.master_deck {
         let card = RewardCard::new(card.id, card.upgrades);
-        let observed = card_facts(&card);
+        let observed = card_reward_facts_v1(&card);
         if observed.card_type == CardType::Attack {
             facts.single_target_damage = facts
                 .single_target_damage
@@ -58,9 +59,11 @@ pub fn threat_coverage_from_run_state_v1(
             observed.strength_gain > 0
                 && !card_mechanics_profile_v1(observed.card).temporary_strength_burst,
         );
-        facts.scaling_payoffs += usize::from(observed.pick_dependencies.contains(
-            &crate::ai::card_reward_policy_v1::CardRewardPickDependencyV1::StrengthScaling,
-        ));
+        facts.scaling_payoffs += usize::from(
+            observed
+                .pick_dependencies
+                .contains(&CardRewardPickDependencyV1::StrengthScaling),
+        );
         let mechanics = card_mechanics_profile_v1(observed.card);
         facts.draw_sources +=
             usize::from(observed.draw_cards > i32::from(mechanics.hand_topdeck_selection));
@@ -70,9 +73,11 @@ pub fn threat_coverage_from_run_state_v1(
             card_analysis_profile_v1(observed.card, card.upgrades)
                 .is_block_plan_broad_exhaust_source,
         );
-        facts.exhaust_payoffs += usize::from(observed.pick_dependencies.contains(
-            &crate::ai::card_reward_policy_v1::CardRewardPickDependencyV1::ExhaustPackage,
-        ));
+        facts.exhaust_payoffs += usize::from(
+            observed
+                .pick_dependencies
+                .contains(&CardRewardPickDependencyV1::ExhaustPackage),
+        );
         facts.exhaust_block_payoffs += usize::from(
             card_definition_with_upgrades(observed.card, card.upgrades)
                 .event_handlers

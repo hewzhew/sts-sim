@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
 use crate::ai::combat_search_v2::{
     CombatSearchV2QuantumEvidence, CombatSearchV2RootEvidenceSnapshot, SearchTerminalLabel,
 };
@@ -505,8 +504,6 @@ pub enum RunControlTraceAnnotationV1 {
     },
     NonCombatPolicyDecision {
         record: NonCombatDecisionRecordV1,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        card_reward_packet: Option<PublicRewardDecisionPacketV1>,
     },
     NonCombatHumanBoundary {
         record: NonCombatDecisionRecordV1,

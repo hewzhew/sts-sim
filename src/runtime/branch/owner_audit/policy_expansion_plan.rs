@@ -405,7 +405,6 @@ mod tests {
                     scores: Vec::new(),
                 },
                 admission: Some(admission),
-                card_reward_provenance: None,
             }),
             expansion: if auto {
                 OwnerChoiceExpansion::AutoAllowed
@@ -477,7 +476,6 @@ mod tests {
                     scores: Vec::new(),
                 },
                 admission: None,
-                card_reward_provenance: None,
             }),
             expansion: OwnerChoiceExpansion::AutoAllowed,
         }
@@ -519,7 +517,6 @@ mod tests {
                     class: RewardAdmissionClass::BuildsSupportedPackage,
                     reasons,
                 }),
-                card_reward_provenance: None,
             }),
             expansion: OwnerChoiceExpansion::InspectOnly("candidate score rejected"),
         }

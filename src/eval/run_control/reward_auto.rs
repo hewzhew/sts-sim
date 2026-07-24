@@ -2,7 +2,10 @@ use crate::ai::reward_policy_v1::{
     build_reward_decision_context_v1, plan_reward_decision_v1, RewardPolicyActionV1,
     RewardPolicyClassV1, RewardPolicyConfigV1,
 };
+use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::RewardCard;
+use crate::state::rewards::RewardItem;
 
 use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::RunControlTraceAnnotationV1;
@@ -22,6 +25,53 @@ impl Default for RewardAutomationConfig {
             claim_safe_relic_without_sapphire_key: true,
         }
     }
+}
+
+pub(in crate::eval::run_control) fn ensure_singing_bowl_card_reward_action(
+    session: &RunControlSession,
+    reward_index: usize,
+) -> Result<(), String> {
+    if !session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SingingBowl)
+    {
+        return Err("Singing Bowl card reward requires Singing Bowl relic".to_string());
+    }
+
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return Err("Singing Bowl card reward requires a reward screen".to_string()),
+    };
+    if reward.pending_card_choice.is_some() {
+        return Err(
+            "Singing Bowl visible card reward requires an unopened card reward item".to_string(),
+        );
+    }
+    if !matches!(
+        reward.items.get(reward_index),
+        Some(RewardItem::Card { .. })
+    ) {
+        return Err(format!(
+            "reward item {reward_index} is not a visible card reward item"
+        ));
+    }
+    Ok(())
+}
+
+pub(in crate::eval::run_control) fn active_pending_reward_cards(
+    session: &RunControlSession,
+) -> Option<Vec<RewardCard>> {
+    let cards = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward.pending_card_choice.as_ref()?,
+        EngineState::RewardOverlay { reward_state, .. } => {
+            reward_state.pending_card_choice.as_ref()?
+        }
+        _ => return None,
+    };
+    Some(cards.clone())
 }
 
 struct RewardPolicyPlan {

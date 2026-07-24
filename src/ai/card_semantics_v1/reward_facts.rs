@@ -2,16 +2,12 @@ use crate::ai::analysis::card_semantics::{
     card_definition as strategic_card_definition, DamageScalingAxis, Mechanic, PayoffRequirement,
     PlayEffect,
 };
-use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardTarget};
 use crate::state::rewards::RewardCard;
 
-use super::types::{
-    CardRewardDamageFactsV1, CardRewardFactsV1, CardRewardPickDependencyV1,
-    CardRewardScalingSignalV1,
-};
+use super::{CardRewardDamageFactsV1, CardRewardFactsV1, CardRewardPickDependencyV1};
 
-pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
+pub fn card_reward_facts_v1(card: &RewardCard) -> CardRewardFactsV1 {
     let def = get_card_definition(card.id);
     let upgrades = i32::from(card.upgrades);
     let damage_per_hit = (def.base_damage + def.upgrade_damage * upgrades).max(0);
@@ -47,49 +43,6 @@ pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
         pick_dependencies: pick_dependencies(card.id),
         unsupported_mechanics: unsupported_mechanics(card.id),
     }
-}
-
-pub(crate) fn scaling_signals(facts: &CardRewardFactsV1) -> Vec<CardRewardScalingSignalV1> {
-    let mut signals = Vec::new();
-    if card_mechanics_profile_v1(facts.card).temporary_strength_burst && facts.strength_gain > 0 {
-        signals.push(CardRewardScalingSignalV1::TemporaryStrengthBurst);
-    } else if facts.strength_gain > 0 {
-        signals.push(CardRewardScalingSignalV1::StrengthGain);
-    }
-    if facts
-        .pick_dependencies
-        .contains(&CardRewardPickDependencyV1::StrengthScaling)
-    {
-        signals.push(CardRewardScalingSignalV1::StrengthPayoff);
-    }
-    if facts.vulnerable > 0 {
-        signals.push(CardRewardScalingSignalV1::Vulnerable);
-    }
-    if facts.weak > 0 {
-        signals.push(CardRewardScalingSignalV1::Weak);
-    }
-    if facts.enemy_strength_down > 0 {
-        signals.push(CardRewardScalingSignalV1::EnemyStrengthDown);
-    }
-    if facts
-        .pick_dependencies
-        .contains(&CardRewardPickDependencyV1::ExhaustPackage)
-    {
-        signals.push(CardRewardScalingSignalV1::ExhaustPayoff);
-    }
-    if facts
-        .pick_dependencies
-        .contains(&CardRewardPickDependencyV1::StatusPackage)
-    {
-        signals.push(CardRewardScalingSignalV1::StatusPayoff);
-    }
-    if facts
-        .pick_dependencies
-        .contains(&CardRewardPickDependencyV1::BlockDensity)
-    {
-        signals.push(CardRewardScalingSignalV1::BlockEngine);
-    }
-    signals
 }
 
 fn hit_count(card_id: CardId, upgrades: i32, damage_per_hit: i32) -> i32 {
@@ -285,14 +238,14 @@ mod tests {
 
     #[test]
     fn seeing_red_facts_report_fixed_energy_gain() {
-        let facts = card_facts(&RewardCard::new(CardId::SeeingRed, 0));
+        let facts = card_reward_facts_v1(&RewardCard::new(CardId::SeeingRed, 0));
 
         assert_eq!(facts.energy_gain, 2);
     }
 
     #[test]
     fn shockwave_facts_do_not_claim_direct_strength_reduction() {
-        let facts = card_facts(&RewardCard::new(CardId::Shockwave, 0));
+        let facts = card_reward_facts_v1(&RewardCard::new(CardId::Shockwave, 0));
 
         assert!(facts.weak > 0);
         assert!(facts.vulnerable > 0);
@@ -302,7 +255,7 @@ mod tests {
     #[test]
     fn per_hit_strength_scalers_share_the_strength_payoff_semantics() {
         for card in [CardId::Whirlwind, CardId::FiendFire] {
-            let facts = card_facts(&RewardCard::new(card, 0));
+            let facts = card_reward_facts_v1(&RewardCard::new(card, 0));
             assert!(
                 facts
                     .pick_dependencies

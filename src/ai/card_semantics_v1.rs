@@ -1,4 +1,4 @@
-use crate::content::cards::CardId;
+use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,7 @@ pub struct PotionMechanicsProfileV1 {
 pub enum RelicAcquisitionTraitV1 {
     CoreDefenseOrSurvival,
     CoreCardAccess,
+    EliteFightLeverage,
     ShopEconomyMultiplier,
     StatusDigest,
     DebuffControl,
@@ -108,6 +109,105 @@ pub enum AcquisitionRequirementV1 {
     LowHpDeathInsurance,
     RouteEscapeValue,
 }
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CardRewardFactsV1 {
+    pub card: CardId,
+    #[serde(default)]
+    pub upgrades: u8,
+    pub name: String,
+    pub card_type: CardType,
+    pub rarity: CardRarity,
+    pub cost: i8,
+    pub damage: CardRewardDamageFactsV1,
+    pub block: i32,
+    pub draw_cards: i32,
+    pub energy_gain: i32,
+    pub vulnerable: i32,
+    pub weak: i32,
+    pub strength_gain: i32,
+    pub enemy_strength_down: i32,
+    pub exhausts: bool,
+    pub exhausts_other_cards: bool,
+    pub adds_status_cards: i32,
+    pub upgrades_cards: bool,
+    pub is_random_output: bool,
+    pub has_conditional_playability: bool,
+    pub is_aoe: bool,
+    pub pick_dependencies: Vec<CardRewardPickDependencyV1>,
+    pub unsupported_mechanics: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct CardRewardDamageFactsV1 {
+    pub damage_per_hit: i32,
+    pub hit_count: i32,
+    pub total_damage: i32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CardRewardPickDependencyV1 {
+    RouteUpgradeDensity,
+    StrengthScaling,
+    BlockDensity,
+    StrikeDensity,
+    ExhaustPackage,
+    StatusPackage,
+    SelfDamagePackage,
+    RandomOutputPolicy,
+    ConditionalPlayabilityPolicy,
+    UnsupportedMechanics,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CardRewardSemanticProfileV1 {
+    pub card: CardId,
+    pub name: String,
+    pub roles: Vec<CardRewardSemanticRoleV1>,
+    pub dependencies: Vec<CardRewardPickDependencyV1>,
+    pub unsupported_mechanics: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum CardRewardSemanticRoleV1 {
+    FrontloadDamage,
+    AoeDamage,
+    Block,
+    BlockRetention,
+    BlockMultiplier,
+    CardDraw,
+    CycleAccess,
+    DiscardPileTopdeckAccess,
+    HandTopdeckSelection,
+    EnergySource,
+    Vulnerable,
+    Weak,
+    EnemyStrengthDown,
+    ScalingSource,
+    TemporaryStrengthBurst,
+    StrengthPayoff,
+    BlockPayoff,
+    StrikePayoff,
+    UpgradePayoff,
+    ExhaustGenerator,
+    ExhaustReuse,
+    ExhaustPayoff,
+    StatusGenerator,
+    StatusPayoff,
+    SelfDamagePayoff,
+    CombatExternalPayoff,
+    CombatSustain,
+    PackagePayoff,
+    RandomOutput,
+    ConditionalPlayability,
+    UnsupportedMechanics,
+}
+
+mod reward_facts;
+mod reward_profile;
+
+pub use reward_facts::card_reward_facts_v1;
+pub use reward_profile::card_reward_semantic_profile_v1;
 
 pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
     CardMechanicsProfileV1 {
@@ -284,6 +384,9 @@ pub fn relic_acquisition_traits_v1(relic: RelicId) -> Vec<RelicAcquisitionTraitV
         push_relic_trait(&mut traits, RelicAcquisitionTraitV1::DebuffControl);
     }
     match relic {
+        RelicId::PreservedInsect => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::EliteFightLeverage);
+        }
         RelicId::MembershipCard | RelicId::Courier => {
             push_relic_trait(&mut traits, RelicAcquisitionTraitV1::ShopEconomyMultiplier);
         }

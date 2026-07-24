@@ -2,7 +2,7 @@ mod accepted_combat_line_evidence;
 mod auto_capture;
 mod auto_step;
 mod bounded_run_driver;
-mod card_reward_auto;
+mod card_reward_policy_prior;
 mod combat_auto_policy;
 mod combat_candidate_line;
 mod combat_case_adjudication;
@@ -32,6 +32,7 @@ mod decision_surface;
 #[cfg(test)]
 mod decision_surface_tests;
 mod decision_transaction;
+mod exact_run_model;
 mod forced_transition;
 mod input_gate;
 mod next_hint;
@@ -57,10 +58,13 @@ pub mod registry;
 mod render;
 mod reward_auto;
 mod route_policy;
+mod run_policy_evidence;
+mod run_policy_prior;
 mod selection_surface;
 mod session;
 mod session_trace;
 mod shop_legal;
+mod shop_policy_prior;
 mod strategic_checkpoint_probe;
 mod strategic_encounter_probe;
 mod strategic_mechanism_probe;
@@ -76,6 +80,11 @@ pub use auto_capture::AutoCombatCaptureConfig;
 pub use bounded_run_driver::{
     BoundedRunDriveErrorV1, BoundedRunDriveResultV1, BoundedRunDriveStopV1, BoundedRunDriver,
     BoundedRunResultV1, BoundedRunStepContextV1, BoundedRunStepControlV1,
+};
+pub use card_reward_policy_prior::{
+    exact_card_reward_policy_decision_v1, exact_card_reward_policy_prior_v1,
+    CardRewardPolicyAcquisitionV1, CardRewardPolicyActionEvidenceV1, CardRewardPolicyBandV1,
+    ExactCardRewardPolicyDecisionV1,
 };
 pub use combat_case_adjudication::{
     adjudicate_combat_case_line_v1, CombatCaseAdjudicationProbeV1, COMBAT_CASE_PROJECTION_TRUST_V1,
@@ -105,6 +114,7 @@ pub use decision_transaction::{
     RunDecisionSelectionV1, RunDecisionTransactionV1, RUN_DECISION_TRANSACTION_SCHEMA_NAME,
     RUN_DECISION_TRANSACTION_SCHEMA_VERSION,
 };
+pub use exact_run_model::{exact_run_decision_successor_v1, ExactRunDecisionSuccessorV1};
 pub use forced_transition::{
     RunForcedTransitionKindV1, RunForcedTransitionV1, RUN_FORCED_TRANSITION_SCHEMA_NAME,
     RUN_FORCED_TRANSITION_SCHEMA_VERSION,
@@ -134,10 +144,10 @@ pub use oracle_run_explorer::{
     OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunActiveCombatCheckpointV1,
     OracleRunBoundaryV1, OracleRunBranchCheckpointV1, OracleRunBranchV1, OracleRunCombatBudgetsV1,
     OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunDecisionAnnotationFnV1,
-    OracleRunDecisionOrderFnV1, OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1,
-    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerCheckpointV1,
-    OracleRunExplorerV1, OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1,
-    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
+    OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
+    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
+    OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1,
+    OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
@@ -185,6 +195,15 @@ pub use render::{
 pub use reward_auto::{
     apply_reward_policy_step, reward_surface_has_only_unclaimable_potions, RewardAutomationConfig,
 };
+pub use run_policy_evidence::{
+    exact_run_policy_decision_v1, run_policy_state_delta_v1, run_policy_state_evidence_v1,
+    ExactRunPolicyActionSuccessorV1, ExactRunPolicyDecisionV1, RunPolicyCapabilityChangeV1,
+    RunPolicyStateDeltaV1, RunPolicyStateEvidenceV1, RunPolicyThreatGapKeyV1,
+};
+pub use run_policy_prior::{
+    positive_ranked_run_policy_prior_v1, RunActionPriorV1, RunPolicyCandidateV1,
+    RunPolicyPriorFnV1, RunPolicyPriorV1,
+};
 pub use session::{
     canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
     RunControlCombatSearchRejection, RunControlConfig, RunControlSession,
@@ -199,6 +218,11 @@ pub use session_trace::{
     SESSION_TRACE_SCHEMA_VERSION,
 };
 pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
+pub use shop_policy_prior::{
+    exact_shop_policy_decision_v1, exact_shop_policy_prior_v1, ExactShopPolicyDecisionV1,
+    ShopPolicyAcquisitionV1, ShopPolicyActionEvidenceV1, ShopPolicyBandV1,
+    ShopPolicyCapabilityChangeV1, ShopPolicyFollowupV1, ShopPolicyThreatGapKeyV1,
+};
 pub use strategic_checkpoint_probe::{
     run_strategic_checkpoint_probe_decomposition_v1, StrategicCheckpointProbeDecompositionV1,
     StrategicCheckpointProbeOmissionV1, StrategicCheckpointProbeStateSummaryV1,

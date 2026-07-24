@@ -153,6 +153,13 @@ impl CandidateAction {
             CandidateAction::Parameterized { .. } | CandidateAction::Unavailable { .. } => None,
         }
     }
+
+    pub fn executable_action_ref(&self) -> Option<&RunDecisionAction> {
+        match self {
+            CandidateAction::Execute(action) => Some(action),
+            CandidateAction::Parameterized { .. } | CandidateAction::Unavailable { .. } => None,
+        }
+    }
 }
 
 impl From<ClientInput> for CandidateAction {

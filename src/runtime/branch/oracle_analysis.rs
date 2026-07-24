@@ -67,13 +67,13 @@ impl OracleAnalysisWorkspaceV1 {
         });
         let preferred_neow_roots = ordered_oracle_neow_root_candidate_ids_v1(
             &session,
-            super::owner_audit::oracle_candidate_order,
+            super::owner_audit::legacy_oracle_policy_prior_v1,
         )?;
         let expansion = expand_oracle_neow_candidates_v1(&session)
             .map_err(|error| format!("failed to materialize oracle Neow roots: {error}"))?;
         let explorer = seed_oracle_run_explorer_v1(
             expansion,
-            Some(super::owner_audit::oracle_candidate_order),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
         )?;
         let first_root = preferred_neow_roots
             .iter()
@@ -91,8 +91,8 @@ impl OracleAnalysisWorkspaceV1 {
             explorer,
             first_root,
             combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
-            Some(super::owner_audit::oracle_candidate_annotation),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            None,
         )?;
         Ok(Self {
             seed: config.seed,
@@ -132,15 +132,15 @@ impl OracleAnalysisWorkspaceV1 {
             continuation.session.into_session()?,
             continuation.journal,
             &combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
         )?;
         let cursor = explorer.branches.first().map(|branch| branch.branch_id);
         let analysis = OracleAnalysisSessionV1::from_explorer(
             explorer,
             cursor,
             combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
-            Some(super::owner_audit::oracle_candidate_annotation),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            None,
         )?;
         Ok(Self {
             seed: config.seed,
@@ -189,15 +189,15 @@ impl OracleAnalysisWorkspaceV1 {
             branch.session,
             branch.journal,
             &combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
         )?;
         let cursor = explorer.branches.first().map(|branch| branch.branch_id);
         let analysis = OracleAnalysisSessionV1::from_explorer(
             explorer,
             cursor,
             combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
-            Some(super::owner_audit::oracle_candidate_annotation),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            None,
         )?;
         Ok(Self {
             seed: config.seed,
@@ -239,8 +239,8 @@ impl OracleAnalysisWorkspaceV1 {
         let session = OracleAnalysisSessionV1::restore(
             artifact.session,
             combat_budgets,
-            Some(super::owner_audit::oracle_candidate_order),
-            Some(super::owner_audit::oracle_candidate_annotation),
+            Some(super::owner_audit::legacy_oracle_policy_prior_v1),
+            None,
         )?;
         Ok(Self {
             seed: artifact.seed,

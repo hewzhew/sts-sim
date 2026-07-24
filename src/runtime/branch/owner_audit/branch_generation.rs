@@ -249,7 +249,6 @@ mod tests {
                         .map(|_| vec![RewardAdmissionReason::FrontloadDamage])
                         .unwrap_or_default(),
                 }),
-                card_reward_provenance: None,
             }),
             expansion: if auto {
                 OwnerChoiceExpansion::AutoAllowed

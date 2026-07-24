@@ -185,7 +185,7 @@ fn thin_or_missing_functions(deficit: &DeckStrategicDeficit) -> Vec<DeckRepairFu
 }
 
 fn functions_for_card(card: CardId, upgrades: u8) -> Vec<DeckRepairFunctionV1> {
-    use crate::ai::card_reward_policy_v1::{
+    use crate::ai::card_semantics_v1::{
         card_reward_semantic_profile_v1, CardRewardSemanticRoleV1 as Role,
     };
     use crate::state::rewards::RewardCard;
@@ -234,9 +234,7 @@ fn functions_for_card(card: CardId, upgrades: u8) -> Vec<DeckRepairFunctionV1> {
 }
 
 fn card_semantics_supported_for_repair(card: CardId, upgrades: u8) -> bool {
-    use crate::ai::card_reward_policy_v1::{
-        card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
-    };
+    use crate::ai::card_semantics_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
     use crate::state::rewards::RewardCard;
 
     let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, upgrades));

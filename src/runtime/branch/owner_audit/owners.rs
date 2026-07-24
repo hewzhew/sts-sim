@@ -18,9 +18,15 @@ pub(super) fn owner_decision(
 ) -> OwnerDecision {
     match owner {
         Owner::NeowStart => neow_owner_decision(session, surface),
-        Owner::CardReward => OwnerDecision::Candidates(card_reward_owner_choices(session, surface)),
+        Owner::CardReward => match card_reward_owner_choices(session, surface) {
+            Ok(choices) => OwnerDecision::Candidates(choices),
+            Err(err) => OwnerDecision::Gap(err),
+        },
         Owner::BossRelic => OwnerDecision::Candidates(boss_relic_owner_choices(session, surface)),
-        Owner::ShopTiny => OwnerDecision::Candidates(shop_tiny_owner_choices(session, surface)),
+        Owner::ShopTiny => match shop_tiny_owner_choices(session, surface) {
+            Ok(choices) => OwnerDecision::Candidates(choices),
+            Err(err) => OwnerDecision::Gap(err),
+        },
         Owner::Event(_) => event_owner_decision(session, surface),
         Owner::RewardTiny => reward_tiny_owner_decision(surface),
         Owner::Campfire => campfire_owner_decision(session, surface),

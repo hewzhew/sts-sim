@@ -1077,7 +1077,7 @@ fn run_control_progress_step_stops_on_card_reward_with_singing_bowl() {
 }
 
 #[test]
-fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
+fn run_control_manual_card_reward_pick_executes_without_fabricating_policy_evidence() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Shockwave,
         crate::content::cards::CardId::Clash,
@@ -1094,41 +1094,10 @@ fn run_control_manual_card_reward_pick_selects_card_with_noncombat_record() {
         .master_deck
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Clash));
-    let annotation = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
-                record,
-                card_reward_packet,
-            } => Some((record, card_reward_packet)),
-            _ => None,
-        })
-        .expect("manual pick should attach a card reward noncombat record");
-    let (record, packet) = annotation;
-    crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
-        .expect("manual card reward record should validate");
-    assert_eq!(
-        record.site,
-        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::CardReward
-    );
-    assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
-    );
-    assert_eq!(
-        record.selection.selected_candidate_id.as_deref(),
-        Some("card_reward:1:Clash")
-    );
-    assert_eq!(
-        record.selection.selection_mode,
-        "human_visible_card_reward_pick"
-    );
-    assert_eq!(
-        record.provenance.source_policy,
-        "run_control_manual_card_reward_pick_v1"
-    );
-    assert!(packet.is_some());
+    assert!(outcome.trace_annotations.iter().all(|annotation| !matches!(
+        annotation,
+        crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
+    )));
 }
 
 #[test]
