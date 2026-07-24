@@ -518,14 +518,20 @@ fn shop_candidates(
             reward_card_label(card.card_id, card.upgrades),
             card.price
         );
-        let note = shop_block_note(card.can_buy, card.blocked_reason.as_deref());
+        let block_reason = super::super::shop_merchandise_purchase_block_reason_v1(
+            &session.run_state,
+            card.can_buy,
+            card.blocked_reason.as_deref(),
+            card.price,
+        );
+        let note = shop_block_note(block_reason.is_none(), block_reason.as_deref());
         let key = DecisionCandidateKey::ShopBuyCard {
             shop_slot: idx,
             card: card.card_id,
             upgrades: card.upgrades,
             price: card.price,
         };
-        let mut candidate = if card.can_buy {
+        let mut candidate = if block_reason.is_none() {
             candidate(
                 format!("card-{idx}"),
                 label,
@@ -536,9 +542,7 @@ fn shop_candidates(
             unavailable_candidate(
                 format!("card-{idx}"),
                 label,
-                card.blocked_reason
-                    .clone()
-                    .unwrap_or_else(|| "cannot buy".to_string()),
+                block_reason.unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
         };
@@ -547,13 +551,19 @@ fn shop_candidates(
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(idx, relic)| {
         let label = format!("{:?} | {} gold", relic.relic_id, relic.price);
-        let note = shop_block_note(relic.can_buy, relic.blocked_reason.as_deref());
+        let block_reason = super::super::shop_merchandise_purchase_block_reason_v1(
+            &session.run_state,
+            relic.can_buy,
+            relic.blocked_reason.as_deref(),
+            relic.price,
+        );
+        let note = shop_block_note(block_reason.is_none(), block_reason.as_deref());
         let key = DecisionCandidateKey::ShopBuyRelic {
             shop_slot: idx,
             relic: relic.relic_id,
             price: relic.price,
         };
-        let mut candidate = if relic.can_buy {
+        let mut candidate = if block_reason.is_none() {
             candidate(
                 format!("relic-{idx}"),
                 label,
@@ -564,10 +574,7 @@ fn shop_candidates(
             unavailable_candidate(
                 format!("relic-{idx}"),
                 label,
-                relic
-                    .blocked_reason
-                    .clone()
-                    .unwrap_or_else(|| "cannot buy".to_string()),
+                block_reason.unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
         };

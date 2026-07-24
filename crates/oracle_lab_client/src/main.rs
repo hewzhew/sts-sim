@@ -441,18 +441,33 @@ fn run_live_owner(endpoint: &Path, steps: u8) -> Result<Value, String> {
             };
             break;
         };
-        applied.push(json!({
-            "node": node_id,
-            "candidate_id": choice.get("candidate_id"),
-            "label": choice.get("label"),
-        }));
-        node = live_call(
+        let next = live_call(
             endpoint,
             OracleAnalysisServiceCommandV1::Choose {
                 node: node_id,
                 owner_rank: 0,
             },
         )?;
+        let next_node_id = next
+            .get("node_id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "live owner choice response omitted node_id".to_string())?
+            as usize;
+        if next_node_id == node_id {
+            return Err(format!(
+                "live owner choice '{}' at node {node_id} made no progress",
+                choice
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .unwrap_or("<unlabeled>")
+            ));
+        }
+        applied.push(json!({
+            "node": node_id,
+            "candidate_id": choice.get("candidate_id"),
+            "label": choice.get("label"),
+        }));
+        node = next;
     }
     Ok(json!({
         "requested_steps": steps,

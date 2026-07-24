@@ -236,7 +236,9 @@ pub use session_trace::{
     SessionTraceStepSourceV1, SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME,
     SESSION_TRACE_SCHEMA_VERSION,
 };
-pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
+pub(crate) use shop_legal::{
+    shop_merchandise_purchase_block_reason_v1, shop_potion_purchase_block_reason_v1,
+};
 pub use shop_policy_prior::{
     exact_shop_policy_decision_v1, exact_shop_policy_prior_v1, ExactShopPolicyDecisionV1,
     ShopPolicyAcquisitionV1, ShopPolicyActionEvidenceV1, ShopPolicyBandV1,

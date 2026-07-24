@@ -77,6 +77,49 @@ fn shop_potion_candidate_is_unavailable_when_potion_slots_are_full() {
 }
 
 #[test]
+fn shop_candidates_become_unavailable_when_current_gold_is_too_low() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.gold = 40;
+    let mut shop = crate::state::shop::ShopState::new();
+    shop.cards.push(crate::state::shop::ShopCard {
+        card_id: CardId::Armaments,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(crate::state::shop::ShopRelic {
+        relic_id: RelicId::InkBottle,
+        price: 260,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    session.engine_state = EngineState::Shop(shop);
+
+    let surface = build_decision_surface(&session);
+    for id in ["card-0", "relic-0"] {
+        let candidate = surface
+            .view
+            .candidates
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .expect("shop candidate");
+        assert_eq!(
+            candidate.action,
+            CandidateAction::Unavailable {
+                reason: "not enough gold".to_string()
+            }
+        );
+    }
+    assert!(session
+        .validate_input_for_current_state(&ClientInput::BuyCard(0))
+        .is_err());
+    assert!(session
+        .validate_input_for_current_state(&ClientInput::BuyRelic(0))
+        .is_err());
+}
+
+#[test]
 fn decision_surface_visible_ids_resolve_to_their_candidate() {
     for session in contract_sessions() {
         let surface = build_decision_surface(&session);

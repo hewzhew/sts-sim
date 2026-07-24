@@ -1063,6 +1063,14 @@ impl OracleRunExplorerV1 {
             transaction.trace_annotations.push(annotation);
         }
         let forced_steps = settle_oracle_forced_transitions(&mut session)?;
+        let successor_fingerprint = run_session_fingerprint_v1(&session);
+        if successor_fingerprint == parent.state_fingerprint {
+            return Err(format!(
+                "oracle decision '{}' ({}) produced no state change at branch {}; \
+                 executable decision surfaces must not expose no-op actions",
+                work.label, work.candidate_id, parent.branch_id
+            ));
+        }
         let mut journal = parent.journal;
         journal.append_committed_steps(vec![RunProgressStepV1::Decision(transaction)])?;
         journal.append_committed_steps(forced_steps)?;
@@ -1077,7 +1085,7 @@ impl OracleRunExplorerV1 {
             parent_branch_id: Some(parent.branch_id),
             neow_root_candidate_id: parent.neow_root_candidate_id,
             neow_root_label: parent.neow_root_label,
-            state_fingerprint: run_session_fingerprint_v1(&session),
+            state_fingerprint: successor_fingerprint,
             boundary: classify_run_boundary(&session),
             path_negative_log_policy: work.path_negative_log_policy,
             path_discrepancy: work.path_discrepancy,
