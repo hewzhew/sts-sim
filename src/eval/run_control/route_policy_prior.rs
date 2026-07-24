@@ -29,6 +29,7 @@ pub enum RoutePolicyBandV1 {
     FlexibleGrowth,
     Ordinary,
     ForcedPressure,
+    AbandonUnclaimableRewards,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -53,6 +54,7 @@ pub struct RoutePolicyContextV1 {
     pub critical_recovery: bool,
     pub recovery_pressure: bool,
     pub shop_conversion_ready: bool,
+    pub pending_rewards_only_unclaimable_potions: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -290,7 +292,18 @@ fn route_policy_context_v1(session: &RunControlSession) -> RoutePolicyContextV1 
         critical_recovery: max_hp > 0 && current_hp.saturating_mul(3) <= max_hp,
         recovery_pressure: max_hp > 0 && current_hp.saturating_mul(2) <= max_hp,
         shop_conversion_ready: session.run_state.gold >= 150,
+        pending_rewards_only_unclaimable_potions:
+            map_overlay_pending_rewards_only_unclaimable_potions(session),
     }
+}
+
+fn map_overlay_pending_rewards_only_unclaimable_potions(session: &RunControlSession) -> bool {
+    let EngineState::MapOverlay { return_state } = &session.engine_state else {
+        return false;
+    };
+    let mut returned = session.clone();
+    returned.engine_state = return_state.as_ref().clone();
+    super::reward_surface_has_only_unclaimable_potions(&returned)
 }
 
 fn route_action_evidence_v1(
@@ -496,7 +509,11 @@ fn route_policy_band_v1(
         room_type, path, ..
     } = action
     else {
-        return RoutePolicyBandV1::PreservePendingRewards;
+        return if context.pending_rewards_only_unclaimable_potions {
+            RoutePolicyBandV1::AbandonUnclaimableRewards
+        } else {
+            RoutePolicyBandV1::PreservePendingRewards
+        };
     };
     if *room_type == Some(RoomType::MonsterRoomBoss) {
         return RoutePolicyBandV1::ForcedBoss;
@@ -731,9 +748,42 @@ mod tests {
                     critical_recovery: false,
                     recovery_pressure: false,
                     shop_conversion_ready: false,
+                    pending_rewards_only_unclaimable_potions: false,
                 }
             ),
             RoutePolicyBandV1::Ordinary
+        );
+    }
+
+    #[test]
+    fn full_potion_belt_does_not_loop_back_to_an_unclaimable_reward() {
+        use crate::content::potions::{Potion, PotionId};
+        use crate::state::rewards::{RewardItem, RewardState};
+
+        let mut session = two_route_session();
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::WeakenPotion, 1)),
+            Some(Potion::new(PotionId::FearPotion, 2)),
+            Some(Potion::new(PotionId::DexterityPotion, 3)),
+        ];
+        let mut reward = RewardState::new();
+        reward.items.push(RewardItem::Potion {
+            potion_id: PotionId::FirePotion,
+        });
+        session.engine_state = EngineState::map_overlay(EngineState::RewardScreen(reward));
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+
+        let decision =
+            exact_route_policy_decision_v1(&session, &legal).expect("exact route decision");
+
+        assert!(matches!(
+            decision.evidence.first().map(|evidence| &evidence.action),
+            Some(RoutePolicyActionV1::Select { .. })
+        ));
+        assert_eq!(
+            decision.evidence.last().map(|evidence| evidence.band),
+            Some(RoutePolicyBandV1::AbandonUnclaimableRewards)
         );
     }
 }
