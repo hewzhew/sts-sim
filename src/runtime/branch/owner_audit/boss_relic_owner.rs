@@ -1,60 +1,92 @@
-use sts_simulator::ai::strategy::boss_relic_admission::{
-    assess_boss_relic_admission, skip_boss_relic_admission,
+use std::collections::BTreeMap;
+
+use sts_simulator::eval::run_control::{
+    exact_boss_relic_policy_prior_v1, DecisionCandidateKey, DecisionSurface, RunControlSession,
+    RunPolicyCandidateV1,
 };
-use sts_simulator::ai::strategy::decision_pipeline::{boss_relic_order_key, CandidateOrderKey};
-use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunControlSession};
 use sts_simulator::state::core::EngineState;
 
-use super::candidate_ir_adapter::{boss_relic_kind, is_boss_relic_key};
 use super::owner_commands::executable_choices_including_cancel;
-use super::owner_model::{ChoiceAnnotation, OwnerChoice};
+use super::owner_model::{OwnerChoice, OwnerChoiceExpansion};
 
 pub(super) fn boss_relic_owner_choices(
     session: &RunControlSession,
     surface: &DecisionSurface,
-) -> Vec<OwnerChoice> {
-    let EngineState::BossRelicSelect(_) = &session.engine_state else {
-        return Vec::new();
-    };
+) -> Result<Vec<OwnerChoice>, String> {
+    if !matches!(session.engine_state, EngineState::BossRelicSelect(_)) {
+        return Err("Boss relic owner requires BossRelicSelect engine state".to_string());
+    }
     let mut choices = executable_choices_including_cancel(surface)
         .into_iter()
-        .filter(|choice| is_boss_relic_key(&choice.key))
-        .map(|mut choice| {
-            choice.annotation = boss_relic_annotation_for_choice(session, &choice);
-            choice
-        })
-        .enumerate()
+        .filter(|choice| choice.key.as_ref().is_some_and(is_boss_relic_key))
         .collect::<Vec<_>>();
-    choices.sort_by_key(|(index, choice)| (boss_relic_choice_rank(choice), *index));
-    choices.into_iter().map(|(_, choice)| choice).collect()
-}
-
-fn boss_relic_annotation_for_choice(
-    session: &RunControlSession,
-    choice: &OwnerChoice,
-) -> ChoiceAnnotation {
-    match choice.key {
-        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
-            ChoiceAnnotation::BossRelic(assess_boss_relic_admission(&session.run_state, relic))
-        }
-        Some(DecisionCandidateKey::BossRelicSkip) => {
-            ChoiceAnnotation::BossRelic(skip_boss_relic_admission())
-        }
-        _ => ChoiceAnnotation::None,
+    if choices.is_empty() {
+        return Err("boss relic owner found no executable typed candidate".to_string());
     }
+
+    let prior = {
+        let legal = choices
+            .iter()
+            .map(|choice| RunPolicyCandidateV1 {
+                candidate_id: &choice.candidate_id,
+                label: &choice.label,
+                action: &choice.action,
+            })
+            .collect::<Vec<_>>();
+        exact_boss_relic_policy_prior_v1(session, &legal)?
+    };
+    let ranks = prior
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(rank, entry)| (entry.candidate_id.as_str(), rank))
+        .collect::<BTreeMap<_, _>>();
+    choices.sort_by_key(|choice| {
+        ranks
+            .get(choice.candidate_id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
+    for choice in &mut choices {
+        choice.expansion = OwnerChoiceExpansion::AutoAllowed;
+    }
+    Ok(choices)
 }
 
-fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
-    let kind = boss_relic_kind(&choice.key);
-    match choice.key {
-        Some(DecisionCandidateKey::BossRelicPick { .. }) => (
-            0,
-            boss_relic_order_key(kind, choice.annotation.boss_relic()),
-        ),
-        Some(DecisionCandidateKey::BossRelicSkip) => (
-            1,
-            boss_relic_order_key(kind, choice.annotation.boss_relic()),
-        ),
-        _ => (2, CandidateOrderKey::fallback()),
+fn is_boss_relic_key(key: &DecisionCandidateKey) -> bool {
+    matches!(
+        key,
+        DecisionCandidateKey::BossRelicPick { .. } | DecisionCandidateKey::BossRelicSkip
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::content::relics::RelicId;
+    use sts_simulator::eval::run_control::{build_decision_surface, RunControlConfig};
+    use sts_simulator::state::rewards::BossRelicChoiceState;
+
+    #[test]
+    fn owner_keeps_every_boss_relic_and_skip_expandable() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![
+            RelicId::CoffeeDripper,
+            RelicId::RunicPyramid,
+            RelicId::PandorasBox,
+        ]));
+        let surface = build_decision_surface(&session);
+
+        let choices =
+            boss_relic_owner_choices(&session, &surface).expect("typed boss relic choices");
+
+        assert_eq!(choices.len(), 4);
+        assert!(choices.iter().all(OwnerChoice::auto_expand_allowed));
+        assert!(choices
+            .iter()
+            .all(|choice| choice.key.as_ref().is_some_and(is_boss_relic_key)));
+        assert!(choices
+            .iter()
+            .any(|choice| { matches!(choice.key, Some(DecisionCandidateKey::BossRelicSkip)) }));
     }
 }

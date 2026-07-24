@@ -1,6 +1,7 @@
 mod accepted_combat_line_evidence;
 mod auto_capture;
 mod auto_step;
+mod boss_relic_policy_prior;
 mod bounded_run_driver;
 mod campfire_policy_prior;
 mod card_reward_policy_prior;
@@ -78,6 +79,12 @@ pub use accepted_combat_line_evidence::{
     accepted_combat_line_evidence_v1, AcceptedCombatLineEvidenceV1,
 };
 pub use auto_capture::AutoCombatCaptureConfig;
+pub use boss_relic_policy_prior::{
+    exact_boss_relic_policy_decision_v1, exact_boss_relic_policy_prior_v1,
+    BossRelicActionSupplyDeltaV1, BossRelicPolicyActionEvidenceV1, BossRelicPolicyActionV1,
+    BossRelicPolicyBandV1, BossRelicPolicyFollowupV1, BossRelicStartupDeltaV1,
+    ExactBossRelicPolicyDecisionV1,
+};
 pub use bounded_run_driver::{
     BoundedRunDriveErrorV1, BoundedRunDriveResultV1, BoundedRunDriveStopV1, BoundedRunDriver,
     BoundedRunResultV1, BoundedRunStepContextV1, BoundedRunStepControlV1,

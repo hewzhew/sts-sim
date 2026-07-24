@@ -472,9 +472,29 @@ Implemented on 2026-07-24:
 - `campfire_policy_v1`, its single-answer `Stop` contract, local score
   thresholds, and owner fallbacks were physically deleted.
 
-Then migrate boss relic, route, and event policy through the same interface.
-Each slice must delete its old production authority before the next site is
-started.
+### Slice 8: boss-relic cutover and retirement
+
+Implemented on 2026-07-24:
+
+- every offered relic and skip already carries a typed candidate key on the
+  exact public surface, and every action is executed from one immutable parent;
+- normal relics that advance the Act and relics that open a nested selection or
+  reward boundary remain distinct exact successors;
+- the prior compares only effects attributable to the relic itself: energy,
+  exact deck mutation, starter replacement, startup profile, action supply,
+  shared relic traits, and typed run-debt contracts;
+- post-transition HP and threat deltas are deliberately not compared across
+  heterogeneous boundaries, because some candidates advance the Act while
+  Astrolabe, Empty Cage, Calling Bell, and Tiny House first open nested work;
+- energy constraints remain typed evidence and never remove an otherwise legal
+  relic; skip and all offered relics retain positive support and are
+  auto-expandable;
+- the production owner and oracle adapter both consume the same exact prior;
+- `boss_relic_policy_v1`, `boss_relic_admission`, boss-specific ordering, and
+  their annotation/report compatibility chain were physically deleted.
+
+Then migrate route and event policy through the same interface. Each slice must
+delete its old production authority before the next site is started.
 
 ## Explicit non-goals
 
@@ -507,5 +527,7 @@ The architecture is accepted only when:
    migrated;
 9. every exact Campfire action is typed, positively supported, and
    auto-expandable, with no `campfire_policy_v1` fallback;
-10. seed006 through seed009 preserved witnesses replay exactly;
-11. a new run can still find an A0 Act 3 Boss witness under the oracle contract.
+10. every exact Boss Relic action is positively supported and auto-expandable,
+    with no `boss_relic_policy_v1` or `boss_relic_admission` fallback;
+11. seed006 through seed009 preserved witnesses replay exactly;
+12. a new run can still find an A0 Act 3 Boss witness under the oracle contract.

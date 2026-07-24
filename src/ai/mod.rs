@@ -3,7 +3,6 @@ pub mod analysis;
 pub mod block_plan_profile_v1;
 pub mod boss_matchup;
 pub mod boss_mechanics_v1;
-pub mod boss_relic_policy_v1;
 pub mod card_analysis_v1;
 pub mod card_component_signal_v1;
 pub mod card_semantics_v1;

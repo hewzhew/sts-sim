@@ -6,7 +6,6 @@
 //! models.
 
 pub mod acquisition;
-pub mod boss_relic_admission;
 pub mod boss_scaling_evidence;
 pub mod boss_survival_evidence;
 pub mod campfire_upgrade_quality;

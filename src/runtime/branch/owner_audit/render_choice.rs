@@ -1,4 +1,3 @@
-use sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact;
 use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
 use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
 use sts_simulator::eval::run_control::{DecisionCandidateKey, RunDecisionAction};
@@ -21,13 +20,6 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
                 candidate_lane_label(decision.evaluation.lane),
                 decision.evaluation.total_score(),
                 render_candidate_decision_compact(decision)
-            )
-        }
-        ChoiceAnnotation::BossRelic(admission) => {
-            format!(
-                "{:<34} {}",
-                base,
-                render_boss_relic_admission_compact(admission)
             )
         }
         ChoiceAnnotation::None => base,

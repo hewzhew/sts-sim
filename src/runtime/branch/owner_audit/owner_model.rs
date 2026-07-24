@@ -1,4 +1,3 @@
-use sts_simulator::ai::strategy::boss_relic_admission::BossRelicAdmission;
 use sts_simulator::ai::strategy::decision_pipeline::{CandidateEvaluation, CleanupTarget};
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::eval::run_control::{
@@ -36,7 +35,6 @@ pub(super) struct OwnerChoice {
 pub(super) enum ChoiceAnnotation {
     None,
     Candidate(OwnerCandidateDecision),
-    BossRelic(BossRelicAdmission),
 }
 
 #[derive(Clone)]
@@ -82,13 +80,6 @@ impl ChoiceAnnotation {
     pub(super) fn candidate(&self) -> Option<&OwnerCandidateDecision> {
         match self {
             ChoiceAnnotation::Candidate(decision) => Some(decision),
-            _ => None,
-        }
-    }
-
-    pub(super) fn boss_relic(&self) -> Option<&BossRelicAdmission> {
-        match self {
-            ChoiceAnnotation::BossRelic(admission) => Some(admission),
             _ => None,
         }
     }

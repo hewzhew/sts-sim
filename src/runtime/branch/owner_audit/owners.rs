@@ -22,7 +22,10 @@ pub(super) fn owner_decision(
             Ok(choices) => OwnerDecision::Candidates(choices),
             Err(err) => OwnerDecision::Gap(err),
         },
-        Owner::BossRelic => OwnerDecision::Candidates(boss_relic_owner_choices(session, surface)),
+        Owner::BossRelic => match boss_relic_owner_choices(session, surface) {
+            Ok(choices) => OwnerDecision::Candidates(choices),
+            Err(err) => OwnerDecision::Gap(err),
+        },
         Owner::ShopTiny => match shop_tiny_owner_choices(session, surface) {
             Ok(choices) => OwnerDecision::Candidates(choices),
             Err(err) => OwnerDecision::Gap(err),

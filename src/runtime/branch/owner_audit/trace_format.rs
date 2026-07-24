@@ -121,12 +121,6 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
             "shop_boss_preview": shop_boss_preview_value(decision.evaluation.candidate.kind),
             "admission": decision.admission.as_ref().map(admission_value),
         }),
-        ChoiceAnnotation::BossRelic(admission) => json!({
-            "kind": "boss_relic",
-            "relic": admission.relic,
-            "lane": format!("{:?}", admission.lane),
-            "class": format!("{:?}", admission.class),
-        }),
     }
 }
 

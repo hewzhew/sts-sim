@@ -206,6 +206,18 @@ pub(super) fn legacy_oracle_policy_prior_v1(
     ) {
         return sts_simulator::eval::run_control::exact_shop_policy_prior_v1(session, legal);
     }
+    if matches!(
+        session.engine_state,
+        sts_simulator::state::core::EngineState::Campfire
+    ) {
+        return sts_simulator::eval::run_control::exact_campfire_policy_prior_v1(session, legal);
+    }
+    if matches!(
+        session.engine_state,
+        sts_simulator::state::core::EngineState::BossRelicSelect(_)
+    ) {
+        return sts_simulator::eval::run_control::exact_boss_relic_policy_prior_v1(session, legal);
+    }
     let card_reward_ids = sts_simulator::eval::run_control::build_decision_surface(session)
         .view
         .candidates

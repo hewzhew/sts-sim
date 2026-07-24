@@ -254,12 +254,6 @@ pub(super) enum ChoiceAnnotationSnapshot {
         pressure_response: Option<Value>,
         detail: String,
     },
-    BossRelic {
-        relic: Value,
-        lane: String,
-        class: String,
-        detail: String,
-    },
 }
 
 impl ChoiceAnnotationSnapshot {
@@ -310,19 +304,13 @@ impl ChoiceAnnotationSnapshot {
                 ),
                 detail: render::render_candidate_decision_compact(decision),
             },
-            ChoiceAnnotation::BossRelic(admission) => Self::BossRelic {
-                relic: json!(admission.relic),
-                lane: format!("{:?}", admission.lane),
-                class: format!("{:?}", admission.class),
-                detail: sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact(admission),
-            },
         }
     }
 
     pub(super) fn detail(&self) -> Option<&str> {
         match self {
             Self::None => None,
-            Self::Candidate { detail, .. } | Self::BossRelic { detail, .. } => Some(detail),
+            Self::Candidate { detail, .. } => Some(detail),
         }
     }
 }

@@ -4,9 +4,6 @@ use crate::ai::strategy::acquisition::{
     assess_card_acquisition, evaluate_deck_construction_contract, AcquisitionContext,
     AcquisitionPolicyVerdict,
 };
-use crate::ai::strategy::boss_relic_admission::{
-    boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
-};
 use crate::ai::strategy::boss_scaling_evidence::{
     admission_is_strength_payoff, assess_boss_scaling_evidence,
 };
@@ -299,26 +296,6 @@ pub fn evaluate_decision_candidate(
         adjudication,
         expansion,
         scores,
-    }
-}
-
-pub fn boss_relic_order_key(
-    kind: DecisionCandidateKind,
-    admission: Option<&BossRelicAdmission>,
-) -> CandidateOrderKey {
-    match kind {
-        DecisionCandidateKind::BossRelicPick { .. } | DecisionCandidateKind::BossRelicSkip => {
-            CandidateOrderKey {
-                lane_rank: admission
-                    .map(boss_relic_admission_order_rank)
-                    .unwrap_or_else(|| {
-                        boss_relic_admission_order_rank(&skip_boss_relic_admission())
-                    }),
-                score_rank: 0,
-                tiebreak_rank: candidate_tiebreak_rank(kind),
-            }
-        }
-        _ => CandidateOrderKey::fallback(),
     }
 }
 
