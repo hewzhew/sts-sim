@@ -310,6 +310,10 @@ pub struct LocalTurnGraphWitnessSession {
 }
 
 impl LocalTurnGraphWitnessSession {
+    pub fn set_satisfaction(&mut self, satisfaction: OracleCombatWitnessSatisfaction) {
+        self.config.satisfaction = satisfaction;
+    }
+
     pub fn with_policy(
         root: CombatDecisionRoot,
         config: LocalTurnGraphWitnessConfig,

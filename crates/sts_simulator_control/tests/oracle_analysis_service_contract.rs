@@ -226,6 +226,7 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
         quantum_nodes: 2,
         quantum_ms: Some(100),
         wall_ms: Some(100),
+        improve_incumbent: false,
     };
     let (first, _) = workspace.advance(request.clone()).expect("first advance");
     let first_progress = first.combat.expect("first progress");

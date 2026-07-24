@@ -1687,6 +1687,43 @@ fn budget_satisfaction_retains_a_verified_incumbent_without_stopping_on_it() {
     );
 }
 
+#[test]
+fn verified_first_witness_can_be_reopened_for_quality_search() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut session = OracleCombatWitnessSession::with_policy(
+        root(),
+        OracleCombatWitnessConfig {
+            generator: config(),
+            generation_work_per_agenda_pop: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        },
+        Arc::new(UniformCombatActionPolicy),
+    );
+
+    let first = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(100, 100, 400),
+    );
+    assert_eq!(first.status, OracleCombatWitnessStatus::WitnessFound);
+    let first_work = first.after.generation_work;
+
+    session.set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+    let resumed = session.advance(
+        &stepper,
+        OracleCombatWitnessQuantum::deterministic(100, 100, 400),
+    );
+
+    assert!(matches!(
+        resumed.status,
+        OracleCombatWitnessStatus::Partial(_)
+    ));
+    assert!(resumed.witness.is_some());
+    assert!(
+        resumed.after.generation_work > first_work,
+        "reopened quality search must perform new work"
+    );
+}
+
 fn finish(
     session: &mut TurnOptionGeneratorSession,
     stepper: &TinyTurnStepper,

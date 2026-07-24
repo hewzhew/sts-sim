@@ -410,6 +410,31 @@ impl OracleRunCombatWorkV1 {
         quantum: &RunControlCombatSearchQuantum,
         global_deadline: Option<Instant>,
     ) -> RunControlCombatWorkAdvanceV1 {
+        self.advance_with_witness_policy(quantum, global_deadline, true)
+    }
+
+    /// Continues serving the portfolio after the first verified witness so an
+    /// analyst can spend an explicit bounded budget improving the incumbent.
+    /// Production progression keeps using `advance`, which commits the first
+    /// exact witness and therefore preserves its latency contract.
+    pub(super) fn advance_improving_incumbent(
+        &mut self,
+        quantum: &RunControlCombatSearchQuantum,
+        global_deadline: Option<Instant>,
+    ) -> RunControlCombatWorkAdvanceV1 {
+        self.local_search
+            .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+        self.global_search
+            .set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
+        self.advance_with_witness_policy(quantum, global_deadline, false)
+    }
+
+    fn advance_with_witness_policy(
+        &mut self,
+        quantum: &RunControlCombatSearchQuantum,
+        global_deadline: Option<Instant>,
+        stop_on_first_witness: bool,
+    ) -> RunControlCombatWorkAdvanceV1 {
         let now = Instant::now();
         let global_remaining =
             global_deadline.map(|deadline| deadline.saturating_duration_since(now));
@@ -538,7 +563,8 @@ impl OracleRunCombatWorkV1 {
         }
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(status);
-        if witness_found || (self.local_complete && self.global_complete) {
+        if (stop_on_first_witness && witness_found) || (self.local_complete && self.global_complete)
+        {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
         } else if self.remaining_work == 0
             || self.remaining_engine_steps == 0

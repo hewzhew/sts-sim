@@ -467,6 +467,7 @@ fn execute_command(
                 quantum_nodes,
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
+                improve_incumbent: false,
             })?;
             (
                 json!({"report": report, "node": node_transition_summary(&view)}),

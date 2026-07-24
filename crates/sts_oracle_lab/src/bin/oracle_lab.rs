@@ -57,6 +57,7 @@ use sts_simulator::runtime::branch::{
     load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
     oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1,
     save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
+    OracleRunContinuationV1,
 };
 use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
@@ -140,6 +141,22 @@ enum Command {
         /// completion summary.
         #[arg(long)]
         details: bool,
+    },
+    /// Replace one historical combat trajectory with another exact trajectory
+    /// and emit a continuation only if the full run still replays exactly.
+    SpliceCombatWitness {
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        node: usize,
+        #[arg(long)]
+        journal_entry: usize,
+        #[arg(long)]
+        replacement_workspace: PathBuf,
+        #[arg(long)]
+        replacement_node: usize,
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Inspect the retired global-agenda search on one exact case. Production
     /// run combat uses `combat-case`; this command remains only for controlled
@@ -903,6 +920,11 @@ enum Command {
         quantum_ms: u64,
         #[arg(long)]
         wall_ms: Option<u64>,
+        /// Keep the verified incumbent resident and spend the full bounded
+        /// request looking for a higher-HP witness. Use `accept-combat`
+        /// afterwards to commit the best result.
+        #[arg(long)]
+        improve_incumbent: bool,
     },
     /// Accept the current combat's already verified incumbent.
     AcceptCombat {
@@ -2000,6 +2022,76 @@ fn main() -> Result<(), String> {
                 "workspace": workspace,
                 "node_id": node,
                 "report": report,
+            }))
+        }
+        Command::SpliceCombatWitness {
+            workspace,
+            node,
+            journal_entry,
+            replacement_workspace,
+            replacement_node,
+            output,
+        } => {
+            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
+            let continuation = analysis.continuation(node)?;
+            let replacement_analysis = load_oracle_analysis_workspace_v1(&replacement_workspace)?;
+            let replacement_continuation = replacement_analysis.continuation(replacement_node)?;
+            if continuation.seed != replacement_continuation.seed
+                || continuation.ascension != replacement_continuation.ascension
+            {
+                return Err("combat splice requires matching seed and ascension".to_string());
+            }
+            let replacement = replacement_continuation
+                .journal
+                .entries()
+                .iter()
+                .rev()
+                .find_map(RunProgressStepV1::as_combat_resolution)
+                .ok_or_else(|| {
+                    "replacement witness contains no committed combat resolution".to_string()
+                })?;
+            let original_source = continuation
+                .journal
+                .entries()
+                .get(journal_entry)
+                .and_then(RunProgressStepV1::as_combat_resolution)
+                .map(|record| record.trajectory.source.label())
+                .ok_or_else(|| {
+                    format!("journal entry {journal_entry} is not a combat resolution")
+                })?;
+            let expected_final = continuation.session.clone().into_session()?;
+            let (journal, replay) =
+                sts_simulator::eval::run_control::splice_exact_combat_resolution_v1(
+                    continuation.seed,
+                    continuation.ascension,
+                    &continuation.journal,
+                    &expected_final,
+                    journal_entry,
+                    replacement,
+                )?;
+            let replacement_source = replacement.trajectory.source.label();
+            let output_continuation = OracleRunContinuationV1 {
+                schema_name: continuation.schema_name,
+                schema_version: continuation.schema_version,
+                seed: continuation.seed,
+                ascension: continuation.ascension,
+                journal,
+                session: continuation.session,
+                explorer_frontier: None,
+            };
+            save_oracle_run_continuation_v1(&output, &output_continuation)?;
+            print_json(&json!({
+                "schema_name": "ExactOracleCombatWitnessSpliceV1",
+                "schema_version": 1,
+                "workspace": workspace,
+                "node_id": node,
+                "journal_entry": journal_entry,
+                "original_source": original_source,
+                "replacement_workspace": replacement_workspace,
+                "replacement_node_id": replacement_node,
+                "replacement_source": replacement_source,
+                "output": output,
+                "replay": replay,
             }))
         }
         Command::BuildValuePrototype {
@@ -5666,6 +5758,7 @@ fn main() -> Result<(), String> {
             quantum_nodes,
             quantum_ms,
             wall_ms,
+            improve_incumbent,
         } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let (report, view) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
@@ -5673,6 +5766,7 @@ fn main() -> Result<(), String> {
                 quantum_nodes,
                 quantum_ms: Some(quantum_ms),
                 wall_ms,
+                improve_incumbent,
             })?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&AdvanceOutput { report, view })

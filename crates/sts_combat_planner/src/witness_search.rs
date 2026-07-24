@@ -473,6 +473,10 @@ pub struct OracleCombatWitnessSession {
 }
 
 impl OracleCombatWitnessSession {
+    pub fn set_satisfaction(&mut self, satisfaction: OracleCombatWitnessSatisfaction) {
+        self.config.satisfaction = satisfaction;
+    }
+
     pub fn new(root: CombatDecisionRoot, config: OracleCombatWitnessConfig) -> Self {
         Self::with_policy(root, config, uniform_policy())
     }

@@ -292,6 +292,10 @@ pub struct OracleAnalysisAdvanceRequestV1 {
     pub quantum_nodes: usize,
     pub quantum_ms: Option<u64>,
     pub wall_ms: Option<u64>,
+    /// Spend the requested budget improving an existing/new incumbent instead
+    /// of materializing the first verified witness immediately.
+    #[serde(default)]
+    pub improve_incumbent: bool,
 }
 
 impl Default for OracleAnalysisAdvanceRequestV1 {
@@ -301,6 +305,7 @@ impl Default for OracleAnalysisAdvanceRequestV1 {
             quantum_nodes: 50_000,
             quantum_ms: Some(1_000),
             wall_ms: None,
+            improve_incumbent: false,
         }
     }
 }
@@ -983,7 +988,12 @@ impl OracleAnalysisSessionV1 {
                 .combat_jobs
                 .get_mut(&source_node_id)
                 .expect("analysis combat job inserted above");
-            match work.advance(&quantum, deadline) {
+            let advance = if request.improve_incumbent {
+                work.advance_improving_incumbent(&quantum, deadline)
+            } else {
+                work.advance(&quantum, deadline)
+            };
+            match advance {
                 RunControlCombatWorkAdvanceV1::Pending => {
                     quanta_served = quanta_served.saturating_add(1);
                 }

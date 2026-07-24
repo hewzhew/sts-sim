@@ -8,8 +8,8 @@ use super::combat_line_trace::{
 };
 use super::oracle_run_explorer::run_session_fingerprint_v1;
 use super::{
-    RunCombatResolutionBoundaryV1, RunControlConfig, RunControlSession, RunDecisionBoundaryV1,
-    RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
+    RunCombatResolutionBoundaryV1, RunCombatResolutionV1, RunControlConfig, RunControlSession,
+    RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -201,6 +201,43 @@ where
         divergences,
         combat_sources,
     })
+}
+
+/// Replaces one committed combat trajectory while preserving the surrounding
+/// strategic history. The replacement is accepted only when its exact combat
+/// boundaries match and the entire resulting journal still replays to the
+/// original final session fingerprint.
+pub fn splice_exact_combat_resolution_v1(
+    seed: u64,
+    ascension: u8,
+    journal: &RunProgressJournalV1,
+    expected_final: &RunControlSession,
+    journal_entry: usize,
+    replacement: &RunCombatResolutionV1,
+) -> Result<(RunProgressJournalV1, ExactRunProgressReplayReportV1), String> {
+    let original = journal
+        .entries()
+        .get(journal_entry)
+        .and_then(RunProgressStepV1::as_combat_resolution)
+        .ok_or_else(|| {
+            format!("journal entry {journal_entry} is not a committed combat resolution")
+        })?;
+    if !combat_boundaries_match(&replacement.before, &original.before) {
+        return Err(format!(
+            "replacement combat before-boundary does not match journal entry {journal_entry}"
+        ));
+    }
+    if !combat_boundaries_match(&replacement.after, &original.after) {
+        return Err(format!(
+            "replacement combat after-boundary does not match journal entry {journal_entry}"
+        ));
+    }
+
+    let mut entries = journal.entries().to_vec();
+    entries[journal_entry] = RunProgressStepV1::CombatResolution(replacement.clone());
+    let journal = RunProgressJournalV1::from_committed_steps(entries)?;
+    let replay = exact_replay_run_progress_journal_v1(seed, ascension, &journal, expected_final)?;
+    Ok((journal, replay))
 }
 
 fn exact_replay_run_progress_journal_observed_v1<F>(
