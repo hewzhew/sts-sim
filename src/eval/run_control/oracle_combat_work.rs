@@ -598,7 +598,17 @@ impl OracleRunCombatWorkV1 {
         }
         self.quantum_count = self.quantum_count.saturating_add(1);
         self.last_status = Some(status);
+        // A verified policy line is a fallback, not an instant terminal
+        // signal. Give the independent local graph one complete caller-sized
+        // work quantum to challenge it. If that bounded challenge cannot
+        // improve HP, commit the exact fallback instead of spending the
+        // encounter's entire wall allowance proving that no improvement
+        // exists.
+        let fallback_challenge_complete = stop_on_first_witness
+            && self.policy_witness.is_some()
+            && self.current_local_search_work() >= quantum.additional_nodes;
         if (stop_on_first_witness && acceptance_improved)
+            || fallback_challenge_complete
             || (self.local_complete && self.discrepancy_complete)
         {
             RunControlCombatWorkAdvanceV1::ReadyToFinish
@@ -721,12 +731,16 @@ impl OracleRunCombatWorkV1 {
     }
 
     fn current_generation_work(&self) -> u64 {
-        let local = self.local_search.counters();
-        (local.generation_work.saturating_add(local.lookahead_work) as u64).saturating_add(
+        (self.current_local_search_work() as u64).saturating_add(
             self.discrepancy_search
                 .counters()
                 .applied_action_transitions as u64,
         )
+    }
+
+    fn current_local_search_work(&self) -> usize {
+        let local = self.local_search.counters();
+        local.generation_work.saturating_add(local.lookahead_work)
     }
 
     fn best_witness(&self) -> Option<&OracleCombatWitness> {
@@ -1113,7 +1127,7 @@ mod tests {
             "a verified fallback must not masquerade as a local-search result"
         );
 
-        let _ = work.advance(
+        let result = work.advance(
             &RunControlCombatSearchQuantum {
                 label: "independent_local_search_contract",
                 additional_nodes: 1,
@@ -1124,6 +1138,11 @@ mod tests {
         assert!(
             work.local_search.counters().generation_work > 0,
             "the local graph must receive real work despite the fallback witness"
+        );
+        assert_eq!(
+            result,
+            RunControlCombatWorkAdvanceV1::ReadyToFinish,
+            "after one complete caller-sized challenge, the exact fallback may finish"
         );
     }
 
