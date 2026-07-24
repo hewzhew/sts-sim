@@ -314,10 +314,7 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
         LiveCommand::Save => {
             print_json(&live_call(endpoint, OracleAnalysisServiceCommandV1::Save)?)
         }
-        LiveCommand::Shutdown => print_json(&live_call(
-            endpoint,
-            OracleAnalysisServiceCommandV1::Shutdown,
-        )?),
+        LiveCommand::Shutdown => print_json(&shutdown_live_session(endpoint)?),
         LiveCommand::Combat {
             node,
             max_engine_steps_per_transition,
@@ -377,6 +374,29 @@ fn live_call(endpoint: &Path, command: OracleAnalysisServiceCommandV1) -> Result
             response.event
         )
     })
+}
+
+fn shutdown_live_session(endpoint_path: &Path) -> Result<Value, String> {
+    let endpoint = active_endpoint(endpoint_path);
+    let result = live_call(endpoint_path, OracleAnalysisServiceCommandV1::Shutdown)?;
+
+    // The service saves before acknowledging shutdown, then removes its
+    // endpoint as the process exits. Wait briefly so stale host images can be
+    // reclaimed immediately instead of surviving until the next session
+    // launch.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while active_endpoint(endpoint_path).is_some() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(25));
+    }
+    if let Some(executable) = endpoint.and_then(|endpoint| endpoint.executable) {
+        let root = repository_root();
+        prune_unreferenced_service_images(
+            &root.join("target").join("oracle-lab").join("hosts"),
+            &root.join("target").join("oracle-lab").join("sessions"),
+            &executable,
+        );
+    }
+    Ok(result)
 }
 
 fn resolve_live_node(endpoint: &Path, node: Option<usize>) -> Result<usize, String> {
