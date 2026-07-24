@@ -293,7 +293,7 @@ fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'s
     match kind {
         RunControlAutoAppliedKindV1::RewardPolicyCandidate => "reward",
         RunControlAutoAppliedKindV1::CombatSearch => "combat",
-        RunControlAutoAppliedKindV1::RoutePlanner => "route",
+        RunControlAutoAppliedKindV1::RoutePolicy => "route",
         RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
         RunControlAutoAppliedKindV1::AutoCapture => "capture",

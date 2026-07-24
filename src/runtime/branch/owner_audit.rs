@@ -218,6 +218,9 @@ pub(super) fn legacy_oracle_policy_prior_v1(
     ) {
         return sts_simulator::eval::run_control::exact_boss_relic_policy_prior_v1(session, legal);
     }
+    if session.engine_state.is_map_surface() {
+        return sts_simulator::eval::run_control::exact_route_policy_prior_v1(session, legal);
+    }
     let card_reward_ids = sts_simulator::eval::run_control::build_decision_surface(session)
         .view
         .candidates

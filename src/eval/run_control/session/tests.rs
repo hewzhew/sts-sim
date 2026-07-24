@@ -221,7 +221,7 @@ fn run_control_progress_step_stops_at_event_owner_boundary() {
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
         .expect("progress step should stop at the event owner boundary");
@@ -264,7 +264,7 @@ fn run_control_auto_step_collapses_terminal_event_leave_to_map() {
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
         .expect("auto-step should collapse the terminal Scrap Ooze leave screen");
@@ -731,7 +731,7 @@ fn run_control_progress_step_stops_on_high_agency_boss_relic_choice() {
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
         .expect("progress step should stop for high-agency boss relic choices");
@@ -813,30 +813,6 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
 }
 
 #[test]
-fn run_control_route_plan_keeps_manual_safety_gate_when_all_routes_are_forced_risk() {
-    let mut session = test_session_with_forced_unsafe_elite_route();
-    let before = (
-        session.run_state.map.current_x,
-        session.run_state.map.current_y,
-        session.run_state.current_hp,
-    );
-
-    let err = session
-        .apply_route_plan()
-        .expect_err("manual route planning should keep the safety gate");
-
-    assert!(err.contains("route planner selected only reject-unless-forced routes"));
-    assert_eq!(
-        before,
-        (
-            session.run_state.map.current_x,
-            session.run_state.map.current_y,
-            session.run_state.current_hp
-        )
-    );
-}
-
-#[test]
 fn run_control_auto_step_applies_forced_route_when_no_safe_alternative_exists() {
     let mut session = test_session_with_forced_unsafe_elite_route();
     let before = (
@@ -847,17 +823,17 @@ fn run_control_auto_step_applies_forced_route_when_no_safe_alternative_exists() 
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
-        .expect("auto-step should apply the least-bad forced route");
+        .expect("auto-step should apply the only exact route");
 
     assert!(outcome
         .message
-        .contains("route planner: x=0 Elite [reject_unless_forced"));
+        .contains("exact route policy: (0,0) Some(MonsterRoomElite)"));
     assert!(!outcome
         .message
-        .contains("route planner declined automatic map selection"));
+        .contains("exact route policy declined automatic map selection"));
     assert_ne!(
         before,
         (
@@ -867,33 +843,10 @@ fn run_control_auto_step_applies_forced_route_when_no_safe_alternative_exists() 
         )
     );
     assert!(outcome.action_result.is_some());
-    let record = outcome
-        .trace_annotations
-        .iter()
-        .find_map(|annotation| match annotation {
-            RunControlTraceAnnotationV1::RoutePlannerSelection {
-                noncombat_record, ..
-            } => noncombat_record.as_ref(),
-            _ => None,
-        })
-        .expect("forced route planner application should attach a noncombat policy record");
-    assert_eq!(
-        record.site,
-        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Map
-    );
-    assert_eq!(
-        record.data_role,
-        crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
-    );
-    assert_eq!(
-        record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
-    );
-    assert!(!record.candidates.is_empty());
 }
 
 #[test]
-fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_planner() {
+fn run_control_auto_step_returns_from_map_overlay_before_route_policy() {
     let mut session = test_session_at_card_reward(vec![
         crate::content::cards::CardId::Clash,
         crate::content::cards::CardId::PommelStrike,
@@ -906,7 +859,7 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
         .expect("map overlay back should be routine automation");
@@ -914,7 +867,7 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
     assert!(outcome.message.contains("Back to reward screen"));
     assert!(!outcome
         .message
-        .contains("route planner declined automatic map selection"));
+        .contains("exact route policy declined automatic map selection"));
     assert!(outcome
         .message
         .contains("Result: one atomic progress step applied"));
@@ -922,15 +875,15 @@ fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_pla
 }
 
 #[test]
-fn run_control_progress_step_can_use_route_planner() {
+fn run_control_progress_step_can_use_exact_route_policy() {
     let mut session = test_session_with_first_monster_room();
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
-        .expect("progress step should use route planner");
+        .expect("progress step should use exact route policy");
 
     assert!(outcome
         .message
@@ -938,7 +891,7 @@ fn run_control_progress_step_can_use_route_planner() {
     assert!(outcome
         .message
         .contains("Result: one atomic progress step applied"));
-    assert!(outcome.message.contains("route planner:"));
+    assert!(outcome.message.contains("exact route policy:"));
     assert!(outcome
         .message
         .contains("Next: play manually, cap the combat if useful"));
@@ -1193,22 +1146,18 @@ fn visible_singing_bowl_candidate_consumes_unopened_card_reward_item() {
 }
 
 #[test]
-fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
+fn run_control_auto_step_route_policy_advances_map_then_stops_at_combat() {
     let mut session = test_session_with_first_monster_room();
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
-        .expect("auto-step route planner should choose a map node");
+        .expect("auto-step route policy should choose a map node");
 
-    assert!(outcome.message.contains("route planner:"));
-    assert!(outcome.message.contains("x="));
-    assert!(outcome.message.contains("command=go"));
-    assert!(outcome
-        .message
-        .contains("label_role=behavior_policy_not_teacher"));
+    assert!(outcome.message.contains("exact route policy:"));
+    assert!(outcome.message.contains("(0,0)"));
     assert!(outcome
         .message
         .contains("Result: one atomic progress step applied"));
@@ -1228,7 +1177,7 @@ fn run_control_auto_step_route_planner_advances_map_then_stops_at_combat() {
 }
 
 #[test]
-fn run_control_auto_step_route_planner_reports_auto_capture() {
+fn run_control_auto_step_route_policy_reports_auto_capture() {
     let root = unique_temp_dir("run_control_auto_step_route_auto_capture");
     let mut session = test_session_with_first_monster_room();
     session.auto_capture = AutoCombatCaptureConfig {
@@ -1238,20 +1187,16 @@ fn run_control_auto_step_route_planner_reports_auto_capture() {
 
     let outcome = session
         .apply_progress_step(crate::eval::run_control::RunControlAutoStepOptions {
-            route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+            route: crate::eval::run_control::RunControlRouteAutomationMode::Policy,
             ..Default::default()
         })
-        .expect("route planner should enter combat and auto-capture");
+        .expect("route policy should enter combat and auto-capture");
 
-    assert!(outcome.message.contains("route planner:"));
+    assert!(outcome.message.contains("exact route policy:"));
     assert!(outcome.message.contains("auto capture:"));
     assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
         annotation,
         RunControlTraceAnnotationV1::AutoCombatCapture { .. }
-    )));
-    assert!(outcome.trace_annotations.iter().any(|annotation| matches!(
-        annotation,
-        RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
     )));
 
     let _ = fs::remove_dir_all(root);

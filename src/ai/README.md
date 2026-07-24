@@ -9,7 +9,7 @@ flat policy layer. New code should choose an owner layer before it is added.
 | --- | --- | --- |
 | shared facts and analysis | `analysis`, `strategic`, `strategy`, `route_window_facts`, `event_resource_budget` | Public-state facts and reusable strategy inputs. These modules should not click buttons or apply actions. |
 | deck mutation | `deck_mutation_compiler_v1` | Shared compiler for remove/transform/sacrifice-style deck changes. Event owners should not copy card-target ordering. |
-| non-combat policies | `*_policy_v1`, `noncombat_*`, `route_planner_v1` | Scene-specific policy adapters. They choose typed candidates and should delegate shared valuation to strategy/compiler modules. |
+| non-combat policies | `*_policy_v1`, `noncombat_*` | Scene-specific policy adapters. They choose typed candidates and should delegate shared facts to strategy/compiler modules. Route uses the exact successor policy in run control; visible path-family facts live in `route_window_facts`. |
 | combat automation | `combat_auto_policy_v1`, `combat_search_v2`, `combat_state_key`, `combat_state_snapshot` | In-combat search, keys, snapshots, and automation support. Combat search does not decide reward, shop, route, or event policy. |
 | boss matchup work | `boss_matchup`, `boss_mechanics_v1` | Boss-specific facts and review-facing matchup analysis. Keep this evidence-oriented unless a separate policy boundary is explicitly introduced. |
 

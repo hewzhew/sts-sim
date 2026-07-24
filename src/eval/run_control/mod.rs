@@ -60,6 +60,7 @@ pub mod registry;
 mod render;
 mod reward_auto;
 mod route_policy;
+mod route_policy_prior;
 mod run_policy_evidence;
 mod run_policy_prior;
 mod selection_surface;
@@ -207,6 +208,11 @@ pub use render::{
 };
 pub use reward_auto::{
     apply_reward_policy_step, reward_surface_has_only_unclaimable_potions, RewardAutomationConfig,
+};
+pub use route_policy_prior::{
+    exact_route_policy_decision_v1, exact_route_policy_prior_v1, ExactRoutePolicyDecisionV1,
+    RoutePolicyActionEvidenceV1, RoutePolicyActionV1, RoutePolicyArrivalV1, RoutePolicyBandV1,
+    RoutePolicyContextV1, RoutePolicyPathEvidenceV1,
 };
 pub use run_policy_evidence::{
     exact_run_policy_decision_v1, run_policy_state_delta_v1, run_policy_state_evidence_v1,

@@ -12,7 +12,6 @@ use crate::ai::planner_core::{
     stable_planner_id, PlannerBehaviorEvent, PLANNER_BEHAVIOR_EVENT_SCHEMA_NAME,
     PLANNER_BEHAVIOR_EVENT_SCHEMA_VERSION,
 };
-use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::ai::strategy::pressure_assessment::PressureAxis;
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
@@ -354,56 +353,6 @@ pub struct CombatSearchTraceSummary {
     pub root_turn_plan_diag_us: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoutePlannerCandidateSummaryV1 {
-    /// Compatibility display view for old session traces and compact route
-    /// snippets. New route/map tooling should consume `MapDecisionPacketV1`
-    /// from `RoutePlannerSelection::map_decision_packet` instead of treating
-    /// this summary as a source of truth.
-    pub rank: usize,
-    pub target_x: i32,
-    pub target_y: i32,
-    pub room_type: String,
-    pub move_kind: String,
-    pub safety: String,
-    pub score: f32,
-    #[serde(default)]
-    pub elite_prep_bp: i32,
-    #[serde(default)]
-    pub first_elite: RoutePlannerFirstEliteEvidenceV1,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reasons: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cautions: Vec<String>,
-    pub command: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoutePlannerFirstEliteEvidenceV1 {
-    pub paths_with_first_elite: usize,
-    pub forced: bool,
-    pub optional: bool,
-    pub min_hallway_fights_before: usize,
-    pub max_hallway_fights_before: usize,
-    pub min_unknowns_before: usize,
-    pub max_unknowns_before: usize,
-    pub min_fires_before: usize,
-    pub max_fires_before: usize,
-    pub min_shops_before: usize,
-    pub max_shops_before: usize,
-    pub can_bail_to_rest_before: bool,
-    pub can_bail_to_shop_before: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoutePlannerSelectionEvidenceV1 {
-    pub elite_prep_bp: i32,
-    pub first_elite: RoutePlannerFirstEliteEvidenceV1,
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CardRewardFunctionV1 {
@@ -454,53 +403,6 @@ pub struct CardRewardOwnerProvenanceV1 {
 pub enum RunControlTraceAnnotationV1 {
     CardRewardOwnerDecision {
         provenance: CardRewardOwnerProvenanceV1,
-    },
-    RoutePlannerSelection {
-        summary: String,
-        selected_index: Option<usize>,
-        candidate_count: usize,
-        target_x: i32,
-        target_y: i32,
-        room_type: String,
-        move_kind: String,
-        safety: String,
-        score: f32,
-        command: String,
-        /// Compatibility top-3 display view. New consumers should read the
-        /// typed `map_decision_packet`.
-        top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        /// Compatibility full display view. Branch experiment and journal
-        /// conversion should prefer `map_decision_packet` and only fall back to
-        /// this field for old traces.
-        candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
-        label_role: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        map_decision_packet: Option<MapDecisionPacketV1>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        route_evidence: Option<RoutePlannerSelectionEvidenceV1>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        noncombat_record: Option<NonCombatDecisionRecordV1>,
-    },
-    RoutePlannerCandidatePool {
-        summary: String,
-        selected_index: Option<usize>,
-        candidate_count: usize,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        /// Compatibility top-3 display view. New consumers should read the
-        /// typed `map_decision_packet`.
-        top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        /// Compatibility full display view. Branch experiment and journal
-        /// conversion should prefer `map_decision_packet` and only fall back to
-        /// this field for old traces.
-        candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
-        label_role: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        map_decision_packet: Option<MapDecisionPacketV1>,
-        stop_reason: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        noncombat_record: Option<NonCombatDecisionRecordV1>,
     },
     NonCombatPolicyDecision {
         record: NonCombatDecisionRecordV1,
@@ -729,14 +631,6 @@ fn validate_run_control_trace_annotation_v1(
             }
             Ok(())
         }
-        RunControlTraceAnnotationV1::RoutePlannerSelection {
-            noncombat_record: Some(record),
-            ..
-        } => validate_noncombat_record_annotation(idx, "route_planner_selection", record),
-        RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
-            noncombat_record: Some(record),
-            ..
-        } => validate_noncombat_record_annotation(idx, "route_planner_candidate_pool", record),
         RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => {
             validate_noncombat_record_annotation(idx, "noncombat_policy_decision", record)
         }
@@ -746,15 +640,7 @@ fn validate_run_control_trace_annotation_v1(
         RunControlTraceAnnotationV1::PlannerBehaviorDecision { event } => {
             validate_planner_behavior_event(idx, event)
         }
-        RunControlTraceAnnotationV1::RoutePlannerSelection {
-            noncombat_record: None,
-            ..
-        }
-        | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
-            noncombat_record: None,
-            ..
-        }
-        | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
+        RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
         | RunControlTraceAnnotationV1::CombatSearchPerformance { .. }
         | RunControlTraceAnnotationV1::AcceptedCombatLine { .. } => Ok(()),

@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai::route_planner_v1::route_targets;
 use crate::content::relics::RelicId;
 use crate::state::map::node::{MapRoomNode, RoomType};
 use crate::state::RunState;
@@ -104,6 +103,61 @@ pub struct RouteWindowNode {
     pub x: i32,
     pub y: i32,
     pub room_type: Option<RoomType>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteWindowTarget {
+    pub x: i32,
+    pub y: i32,
+    pub room_type: Option<RoomType>,
+    pub has_emerald_key: bool,
+    pub uses_wing_boots: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteFirstEliteSegment {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_campfires_before: usize,
+    pub max_campfires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutePathFamilySummary {
+    pub path_count: usize,
+    pub path_budget_exhausted: bool,
+    pub min_early_pressure: usize,
+    pub max_early_pressure: usize,
+    pub min_elites: usize,
+    pub max_elites: usize,
+    pub min_shops: usize,
+    pub max_shops: usize,
+    pub min_campfires: usize,
+    pub max_campfires: usize,
+    pub min_unknowns: usize,
+    pub max_unknowns: usize,
+    pub min_treasures: usize,
+    pub max_treasures: usize,
+    pub first_shop_floor: Option<i32>,
+    pub first_campfire_floor: Option<i32>,
+    pub min_damage_rooms_before_recovery: usize,
+    pub max_damage_rooms_before_recovery: usize,
+    pub min_unknowns_before_recovery: usize,
+    pub max_unknowns_before_recovery: usize,
+    pub paths_with_recovery_before_damage: usize,
+    pub first_elite: RouteFirstEliteSegment,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -211,6 +265,115 @@ pub struct RouteWindowPath {
 pub struct RouteWindowPathFamily {
     pub coverage: RouteWindowCoverage,
     pub paths: Vec<RouteWindowPath>,
+}
+
+pub fn route_window_targets(run_state: &RunState) -> Vec<RouteWindowTarget> {
+    let map = &run_state.map;
+    if map.current_y == 14 && map.can_travel_to(0, 15, false) {
+        return vec![boss_target()];
+    }
+    let target_y = if map.current_y == -1 {
+        0
+    } else {
+        map.current_y + 1
+    };
+    if target_y == 15 && map.can_travel_to(0, 15, false) {
+        return vec![boss_target()];
+    }
+    let wing_boots_available = wing_boots_charges(run_state) > 0;
+    map.graph
+        .get(target_y.max(0) as usize)
+        .into_iter()
+        .flat_map(|row| row.iter())
+        .filter_map(|node| {
+            let normal = map.can_travel_to(node.x, node.y, false);
+            let wing = wing_boots_available && map.can_travel_to(node.x, node.y, true);
+            if normal || wing {
+                Some(RouteWindowTarget {
+                    x: node.x,
+                    y: node.y,
+                    room_type: node.class,
+                    has_emerald_key: node.has_emerald_key,
+                    uses_wing_boots: !normal && wing,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+pub fn summarize_route_from_target(
+    run_state: &RunState,
+    x: i32,
+    y: i32,
+    path_budget: usize,
+) -> RoutePathFamilySummary {
+    if y >= 15 {
+        return RoutePathFamilySummary {
+            path_count: 1,
+            ..RoutePathFamilySummary::default()
+        };
+    }
+    let family = build_route_path_family_from_target(
+        run_state,
+        x,
+        y,
+        RouteWindowFactsConfig {
+            horizon_nodes: 15_usize.saturating_sub(y.max(0) as usize),
+            path_budget,
+        },
+    );
+    summarize_route_path_family(&family)
+}
+
+pub fn summarize_route_path_family(family: &RouteWindowPathFamily) -> RoutePathFamilySummary {
+    let paths = family
+        .paths
+        .iter()
+        .map(route_path_stats)
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return RoutePathFamilySummary {
+            path_budget_exhausted: family.coverage.path_budget_exhausted,
+            ..RoutePathFamilySummary::default()
+        };
+    }
+    let min = |read: fn(&RoutePathStats) -> usize| paths.iter().map(read).min().unwrap_or_default();
+    let max = |read: fn(&RoutePathStats) -> usize| paths.iter().map(read).max().unwrap_or_default();
+    RoutePathFamilySummary {
+        path_count: paths.len(),
+        path_budget_exhausted: family.coverage.path_budget_exhausted,
+        min_early_pressure: min(|stats| stats.early_pressure),
+        max_early_pressure: max(|stats| stats.early_pressure),
+        min_elites: min(|stats| stats.elites),
+        max_elites: max(|stats| stats.elites),
+        min_shops: min(|stats| stats.shops),
+        max_shops: max(|stats| stats.shops),
+        min_campfires: min(|stats| stats.campfires),
+        max_campfires: max(|stats| stats.campfires),
+        min_unknowns: min(|stats| stats.unknowns),
+        max_unknowns: max(|stats| stats.unknowns),
+        min_treasures: min(|stats| stats.treasures),
+        max_treasures: max(|stats| stats.treasures),
+        first_shop_floor: paths
+            .iter()
+            .filter_map(|stats| stats.first_shop_floor)
+            .min(),
+        first_campfire_floor: paths
+            .iter()
+            .filter_map(|stats| stats.first_campfire_floor)
+            .min(),
+        min_damage_rooms_before_recovery: min(|stats| stats.damage_rooms_before_recovery),
+        max_damage_rooms_before_recovery: max(|stats| stats.damage_rooms_before_recovery),
+        min_unknowns_before_recovery: min(|stats| stats.unknowns_before_recovery),
+        max_unknowns_before_recovery: max(|stats| stats.unknowns_before_recovery),
+        paths_with_recovery_before_damage: paths
+            .iter()
+            .filter(|stats| stats.recovery_before_damage)
+            .count(),
+        first_elite: first_elite_segment(&paths),
+    }
 }
 
 pub fn build_route_window_facts(
@@ -348,13 +511,155 @@ fn build_route_path_family(
     }
 }
 
+fn boss_target() -> RouteWindowTarget {
+    RouteWindowTarget {
+        x: 0,
+        y: 15,
+        room_type: Some(RoomType::MonsterRoomBoss),
+        has_emerald_key: false,
+        uses_wing_boots: false,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RoutePathStats {
+    early_pressure: usize,
+    elites: usize,
+    shops: usize,
+    campfires: usize,
+    unknowns: usize,
+    treasures: usize,
+    first_shop_floor: Option<i32>,
+    first_campfire_floor: Option<i32>,
+    first_elite_seen: bool,
+    hallway_fights_before_first_elite: usize,
+    unknowns_before_first_elite: usize,
+    campfires_before_first_elite: usize,
+    shops_before_first_elite: usize,
+    first_recovery_seen: bool,
+    damage_rooms_before_recovery: usize,
+    unknowns_before_recovery: usize,
+    recovery_before_damage: bool,
+}
+
+fn route_path_stats(path: &RouteWindowPath) -> RoutePathStats {
+    path.nodes
+        .iter()
+        .fold(RoutePathStats::default(), update_route_path_stats)
+}
+
+fn update_route_path_stats(mut stats: RoutePathStats, node: &RouteWindowNode) -> RoutePathStats {
+    match node.room_type {
+        Some(RoomType::MonsterRoom) => {
+            if node.y <= 3 {
+                stats.early_pressure += 1;
+            }
+            if !stats.first_elite_seen {
+                stats.hallway_fights_before_first_elite += 1;
+            }
+            if !stats.first_recovery_seen {
+                stats.damage_rooms_before_recovery += 1;
+            }
+        }
+        Some(RoomType::MonsterRoomElite) => {
+            stats.elites += 1;
+            if node.y <= 3 {
+                stats.early_pressure += 1;
+            }
+            stats.first_elite_seen = true;
+            if !stats.first_recovery_seen {
+                stats.damage_rooms_before_recovery += 1;
+            }
+        }
+        Some(RoomType::ShopRoom) => {
+            stats.shops += 1;
+            stats.first_shop_floor.get_or_insert(node.y + 1);
+            if !stats.first_elite_seen {
+                stats.shops_before_first_elite += 1;
+            }
+            observe_recovery(&mut stats);
+        }
+        Some(RoomType::RestRoom) => {
+            stats.campfires += 1;
+            stats.first_campfire_floor.get_or_insert(node.y + 1);
+            if !stats.first_elite_seen {
+                stats.campfires_before_first_elite += 1;
+            }
+            observe_recovery(&mut stats);
+        }
+        Some(RoomType::EventRoom) => {
+            stats.unknowns += 1;
+            if !stats.first_elite_seen {
+                stats.unknowns_before_first_elite += 1;
+            }
+            if !stats.first_recovery_seen {
+                stats.unknowns_before_recovery += 1;
+            }
+        }
+        Some(RoomType::TreasureRoom) => stats.treasures += 1,
+        _ => {}
+    }
+    stats
+}
+
+fn observe_recovery(stats: &mut RoutePathStats) {
+    if !stats.first_recovery_seen {
+        stats.recovery_before_damage =
+            stats.damage_rooms_before_recovery == 0 && stats.unknowns_before_recovery == 0;
+        stats.first_recovery_seen = true;
+    }
+}
+
+fn first_elite_segment(paths: &[RoutePathStats]) -> RouteFirstEliteSegment {
+    let elite_paths = paths
+        .iter()
+        .filter(|stats| stats.first_elite_seen)
+        .collect::<Vec<_>>();
+    if elite_paths.is_empty() {
+        return RouteFirstEliteSegment::default();
+    }
+    let min = |read: fn(&RoutePathStats) -> usize| {
+        elite_paths
+            .iter()
+            .map(|stats| read(stats))
+            .min()
+            .unwrap_or_default()
+    };
+    let max = |read: fn(&RoutePathStats) -> usize| {
+        elite_paths
+            .iter()
+            .map(|stats| read(stats))
+            .max()
+            .unwrap_or_default()
+    };
+    RouteFirstEliteSegment {
+        paths_with_first_elite: elite_paths.len(),
+        forced: elite_paths.len() == paths.len(),
+        optional: elite_paths.len() < paths.len(),
+        min_hallway_fights_before: min(|stats| stats.hallway_fights_before_first_elite),
+        max_hallway_fights_before: max(|stats| stats.hallway_fights_before_first_elite),
+        min_unknowns_before: min(|stats| stats.unknowns_before_first_elite),
+        max_unknowns_before: max(|stats| stats.unknowns_before_first_elite),
+        min_campfires_before: min(|stats| stats.campfires_before_first_elite),
+        max_campfires_before: max(|stats| stats.campfires_before_first_elite),
+        min_shops_before: min(|stats| stats.shops_before_first_elite),
+        max_shops_before: max(|stats| stats.shops_before_first_elite),
+        can_bail_to_rest_before: elite_paths
+            .iter()
+            .any(|stats| stats.campfires_before_first_elite > 0),
+        can_bail_to_shop_before: elite_paths
+            .iter()
+            .any(|stats| stats.shops_before_first_elite > 0),
+    }
+}
+
 fn route_window_cursor(run_state: &RunState) -> RouteWindowCursor {
     let start_targets = if run_state.map.is_checkpoint_externalized_placeholder()
         || run_state.map.graph.is_empty()
     {
         Vec::new()
     } else {
-        route_targets(run_state)
+        route_window_targets(run_state)
             .into_iter()
             .map(|target| RouteWindowNode {
                 x: target.x,

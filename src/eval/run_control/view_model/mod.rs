@@ -11,6 +11,7 @@ use crate::content::relics::RelicId;
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{EventActionKind, EventId};
+use crate::state::map::node::RoomType;
 use crate::state::selection::{SelectionReason, SelectionScope};
 
 use super::RunDecisionAction;
@@ -19,9 +20,7 @@ pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
 use context::{decision_context, decision_warnings};
 use labels::pending_choice_label;
-pub(super) use labels::{
-    boss_label, combat_card_label, monster_name, reward_card_label, room_type_label,
-};
+pub(super) use labels::{boss_label, combat_card_label, monster_name, reward_card_label};
 pub use resolution::{CandidateResolution, FollowupBoundary};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59,6 +58,14 @@ pub struct DecisionCandidate {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DecisionCandidateKey {
+    RouteSelect {
+        x: i32,
+        y: i32,
+        room_type: Option<RoomType>,
+        uses_wing_boots: bool,
+        has_emerald_key: bool,
+    },
+    RouteCancel,
     EventOption {
         event_id: EventId,
         screen: usize,

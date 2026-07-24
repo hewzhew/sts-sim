@@ -2,14 +2,8 @@ use sts_simulator::ai::noncombat_strategy_v1::{
     threat_coverage_from_run_state_v1, StrategyThreatProfileV1, StrategyThreatSourceRecordV1,
     StrategyThreatSourceV1, StrategyThreatTagV1,
 };
-use sts_simulator::ai::route_planner_v1::{
-    plan_route_decision_v1, PathThreatExposureV1, RoutePlannerConfigV1,
-};
 use sts_simulator::content::cards::CardId;
 use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::core::EngineState;
-use sts_simulator::state::map::node::{MapEdge, MapRoomNode, RoomType};
-use sts_simulator::state::map::state::MapState;
 use sts_simulator::state::run::RunState;
 
 fn one_threat(
@@ -139,49 +133,4 @@ fn artifact_coverage_requires_multiple_independent_debuff_applications() {
         StrategyThreatSourceV1::ActBoss,
         StrategyThreatTagV1::ArtifactBlocksDebuff
     ));
-}
-
-#[test]
-fn route_survival_envelope_reads_shared_deck_coverage() {
-    let starter = one_hallway_then_rest_run();
-    let starter_trace = plan_route_decision_v1(
-        &starter,
-        &EngineState::MapNavigation,
-        RoutePlannerConfigV1::default(),
-    );
-    let starter_envelope = &starter_trace.candidates[0].survival_envelope;
-    assert_ne!(
-        starter_envelope.threat_exposure,
-        PathThreatExposureV1::Covered
-    );
-    assert!(!starter_envelope.uncovered_threats.is_empty());
-
-    let mut prepared = starter;
-    prepared.add_card_to_deck(CardId::Whirlwind);
-    prepared.add_card_to_deck(CardId::Shockwave);
-    let prepared_trace = plan_route_decision_v1(
-        &prepared,
-        &EngineState::MapNavigation,
-        RoutePlannerConfigV1::default(),
-    );
-    let prepared_envelope = &prepared_trace.candidates[0].survival_envelope;
-    assert_eq!(
-        prepared_envelope.threat_exposure,
-        PathThreatExposureV1::Covered
-    );
-    assert!(prepared_envelope.uncovered_threats.is_empty());
-}
-
-fn one_hallway_then_rest_run() -> RunState {
-    let mut run = RunState::new(1, 0, false, "Ironclad");
-    run.act_num = 2;
-    run.floor_num = 18;
-    run.event_state = None;
-    let mut hallway = MapRoomNode::new(0, 0);
-    hallway.class = Some(RoomType::MonsterRoom);
-    hallway.edges.insert(MapEdge::new(0, 0, 0, 1));
-    let mut rest = MapRoomNode::new(0, 1);
-    rest.class = Some(RoomType::RestRoom);
-    run.map = MapState::new(vec![vec![hallway], vec![rest]]);
-    run
 }

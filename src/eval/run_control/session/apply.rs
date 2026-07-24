@@ -98,12 +98,11 @@ impl RunControlSession {
     pub(in crate::eval::run_control) fn execute_route_candidate_transaction(
         &mut self,
         candidate_id: &str,
-        trace_annotation: RunControlTraceAnnotationV1,
     ) -> Result<RunDecisionTransactionV1, String> {
         self.execute_candidate_transaction_with_source(
             candidate_id,
             RunDecisionSelectionSourceV1::RoutePolicy,
-            vec![trace_annotation],
+            Vec::new(),
         )
     }
 

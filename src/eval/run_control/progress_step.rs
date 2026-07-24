@@ -53,8 +53,8 @@ pub struct RunControlAutoStopV1 {
 pub enum RunControlAutoStopKind {
     HpLossGateRequired,
     CombatSearchNoCompleteWin,
-    RoutePlannerNoMutation,
-    RoutePlannerDeclined,
+    RoutePolicyNoMutation,
+    RoutePolicyDeclined,
     AutoCandidateNotExecutable,
     HumanBoundary,
     CombatBoundary,

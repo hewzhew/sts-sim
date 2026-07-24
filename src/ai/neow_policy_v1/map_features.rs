@@ -1,15 +1,18 @@
-use crate::ai::route_planner_v1::{route_targets, summarize_route_from, RoutePlannerConfigV1};
+use crate::ai::route_window_facts::{route_window_targets, summarize_route_from_target};
 use crate::state::map::node::RoomType;
 use crate::state::run::RunState;
 
 use super::types::NeowMapFeaturesV1;
 
+const NEOW_ROUTE_PATH_BUDGET_V1: usize = 2_000;
+
 pub fn neow_map_features_from_run_state_v1(run_state: &RunState) -> NeowMapFeaturesV1 {
-    let config = RoutePlannerConfigV1::default();
-    let targets = route_targets(run_state);
+    let targets = route_window_targets(run_state);
     let summaries = targets
         .iter()
-        .map(|target| summarize_route_from(run_state, target.x, target.y, &config))
+        .map(|target| {
+            summarize_route_from_target(run_state, target.x, target.y, NEOW_ROUTE_PATH_BUDGET_V1)
+        })
         .collect::<Vec<_>>();
     let early_shop_available = summaries
         .iter()
@@ -43,7 +46,7 @@ fn has_elite_by_floor(run_state: &RunState, max_visible_floor: i32) -> bool {
 }
 
 fn has_shop_before_first_elite(run_state: &RunState) -> bool {
-    route_targets(run_state).iter().any(|target| {
+    route_window_targets(run_state).iter().any(|target| {
         let mut stack = vec![(target.x, target.y, None::<i32>, None::<i32>)];
         while let Some((x, y, first_shop, first_elite)) = stack.pop() {
             let Some(node) = run_state
@@ -77,7 +80,7 @@ fn has_shop_before_first_elite(run_state: &RunState) -> bool {
 }
 
 fn has_lament_elite_snipe_candidate(run_state: &RunState) -> bool {
-    route_targets(run_state)
+    route_window_targets(run_state)
         .iter()
         .any(|target| elite_within_three_combats(run_state, target.x, target.y, 0))
 }

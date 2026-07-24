@@ -58,5 +58,5 @@ pub struct RunControlAutoStepOptions {
 pub enum RunControlRouteAutomationMode {
     #[default]
     Manual,
-    Planner,
+    Policy,
 }

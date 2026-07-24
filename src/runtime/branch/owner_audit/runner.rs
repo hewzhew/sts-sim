@@ -215,7 +215,7 @@ fn execute_one_noncombat_step(
     log: &mut AdvanceLog,
 ) -> Result<BoundedRunStepControlV1<AdvanceResult>, String> {
     let outcome = session.apply_progress_step(RunControlAutoStepOptions {
-        route: RunControlRouteAutomationMode::Planner,
+        route: RunControlRouteAutomationMode::Policy,
         ..RunControlAutoStepOptions::default()
     })?;
     match outcome.progress_steps.as_slice() {

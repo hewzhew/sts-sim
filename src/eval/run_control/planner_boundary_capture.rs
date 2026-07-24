@@ -569,7 +569,9 @@ fn planner_action_for_candidate(
         }),
         Some(DecisionCandidateKey::BossRelicSkip) => Some(PlannerAction::SkipBossRelic),
         Some(
-            DecisionCandidateKey::CampfireRest
+            DecisionCandidateKey::RouteSelect { .. }
+            | DecisionCandidateKey::RouteCancel
+            | DecisionCandidateKey::CampfireRest
             | DecisionCandidateKey::CampfireSmith { .. }
             | DecisionCandidateKey::CampfireDig
             | DecisionCandidateKey::CampfireLift

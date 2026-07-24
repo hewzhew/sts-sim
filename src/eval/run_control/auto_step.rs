@@ -55,7 +55,6 @@ impl AutoAppliedLog {
             kind,
             label,
             action_result,
-            route_decision_packet: None,
         });
     }
 
@@ -71,7 +70,6 @@ impl AutoAppliedLog {
             kind,
             label: label.into(),
             action_result: outcome.action_result.clone(),
-            route_decision_packet: route_decision_packet(&outcome.trace_annotations),
         });
     }
 
@@ -88,25 +86,6 @@ impl AutoAppliedLog {
     fn len(&self) -> usize {
         self.steps.len()
     }
-}
-
-fn route_decision_packet(
-    annotations: &[RunControlTraceAnnotationV1],
-) -> Option<crate::ai::route_planner_v1::MapDecisionPacketV1> {
-    annotations
-        .iter()
-        .rev()
-        .find_map(|annotation| match annotation {
-            RunControlTraceAnnotationV1::RoutePlannerSelection {
-                map_decision_packet,
-                ..
-            }
-            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
-                map_decision_packet,
-                ..
-            } => map_decision_packet.clone(),
-            _ => None,
-        })
 }
 
 pub(super) fn apply_guarded_auto_step(
@@ -297,17 +276,16 @@ pub(super) fn apply_guarded_auto_step(
     }
 
     if session.engine_state.is_map_surface()
-        && options.route == RunControlRouteAutomationMode::Planner
+        && options.route == RunControlRouteAutomationMode::Policy
     {
-        let route_result =
-            super::route_policy::apply_route_plan_with_summary_allowing_forced_risk(session);
+        let route_result = super::route_policy::apply_route_policy_with_summary(session);
         match route_result {
             Ok(applied_route) => {
                 if applied_route.outcome.action_result.is_some() {
                     let auto_capture_summaries =
                         auto_capture_summaries(&applied_route.outcome.trace_annotations);
                     applied.push_outcome(
-                        RunControlAutoAppliedKindV1::RoutePlanner,
+                        RunControlAutoAppliedKindV1::RoutePolicy,
                         applied_route.auto_step_summary,
                         &applied_route.outcome,
                     );
@@ -331,29 +309,21 @@ pub(super) fn apply_guarded_auto_step(
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
-                    RunControlAutoStopKind::RoutePlannerNoMutation,
-                    "route planner did not modify state",
+                    RunControlAutoStopKind::RoutePolicyNoMutation,
+                    "route policy did not modify state",
                     Some(applied_route.outcome.message),
                 );
             }
             Err(err) => {
-                let detail =
-                    match super::route_policy::route_policy_stop_for_session(session, &err)? {
-                        Some((annotation, summary)) => {
-                            trace_annotations.push(annotation);
-                            Some(format!("{summary}\n{err}"))
-                        }
-                        None => Some(err),
-                    };
                 return finish_auto_step(
                     session,
                     &before,
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
-                    RunControlAutoStopKind::RoutePlannerDeclined,
-                    "route planner declined automatic map selection",
-                    detail,
+                    RunControlAutoStopKind::RoutePolicyDeclined,
+                    "exact route policy declined automatic map selection",
+                    Some(err),
                 );
             }
         }
@@ -487,8 +457,6 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
                 ..
             } => Some(format!("auto capture: {case_id} -> {capture_path}")),
             RunControlTraceAnnotationV1::CardRewardOwnerDecision { .. }
-            | RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
-            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
             | RunControlTraceAnnotationV1::PlannerBehaviorDecision { .. }
@@ -1110,7 +1078,7 @@ mod tests {
         let outcome = apply_guarded_auto_step(
             &mut session,
             RunControlAutoStepOptions {
-                route: RunControlRouteAutomationMode::Planner,
+                route: RunControlRouteAutomationMode::Policy,
                 ..RunControlAutoStepOptions::default()
             },
         )

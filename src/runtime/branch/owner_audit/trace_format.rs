@@ -281,45 +281,7 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::eval::run_control::{
-        RunControlAutoStepOptions, RunControlConfig, RunControlRouteAutomationMode,
-        RunControlSession, RunProgressJournalV1,
-    };
-    use sts_simulator::state::core::EngineState;
-
     use super::*;
-
-    #[test]
-    fn route_auto_step_trace_retains_typed_map_decision_packet() {
-        let mut session = RunControlSession::new(RunControlConfig::default());
-        session.run_state.event_state = None;
-        session.engine_state = EngineState::MapNavigation;
-
-        let outcome = session
-            .apply_progress_step(RunControlAutoStepOptions {
-                route: RunControlRouteAutomationMode::Planner,
-                ..RunControlAutoStepOptions::default()
-            })
-            .expect("owner progress step should select one route");
-        let journal = RunProgressJournalV1::from_committed_steps(outcome.progress_steps)
-            .expect("route progress should form one journal segment");
-        let value = serde_json::to_value(journal).expect("journal should serialize");
-        let route_annotation = value["entries"][0]["record"]["trace_annotations"]
-            .as_array()
-            .and_then(|annotations| {
-                annotations
-                    .iter()
-                    .find(|annotation| annotation["kind"] == "route_planner_selection")
-            })
-            .expect("decision transaction should retain route planner evidence");
-        assert_eq!(
-            route_annotation["map_decision_packet"]["schema_name"],
-            serde_json::json!("MapDecisionPacketV1")
-        );
-        assert!(route_annotation["map_decision_packet"]["candidates"]
-            .as_array()
-            .is_some_and(|candidates| !candidates.is_empty()));
-    }
 
     #[test]
     fn trace_nodes_reference_durable_heads_without_recent_evidence_payloads() {

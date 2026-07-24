@@ -493,8 +493,31 @@ Implemented on 2026-07-24:
 - `boss_relic_policy_v1`, `boss_relic_admission`, boss-specific ordering, and
   their annotation/report compatibility chain were physically deleted.
 
-Then migrate route and event policy through the same interface. Each slice must
-delete its old production authority before the next site is started.
+### Slice 9: route cutover and retirement
+
+Implemented on 2026-07-25:
+
+- normal map moves, Wing Boots jumps, and map-overlay cancellation carry typed
+  candidate keys on the exact public surface;
+- `exact_route_policy_decision_v1` executes every legal route action from the
+  same immutable parent and verifies the actual arrival coordinate and Wing
+  Boots charge consumption;
+- visible target enumeration and bounded path-family summaries live in
+  `route_window_facts`, which states map facts without choosing a route;
+- route evidence is structured as coverage, damage rooms before recovery,
+  campfire/shop access, optional elite exposure, treasure, unknown-room
+  exposure, and mobility cost rather than one total route score;
+- low-HP recovery, spendable shop access, and flexible growth are comparison
+  bands over the exact successors; no band changes legality and every legal
+  route retains positive support;
+- production auto-route and oracle expansion consume the same exact prior;
+- `route_planner_v1`, the former two-stage `route_policy` adapter, scalar
+  scoring/risk gates, map decision packet, old route trace annotations, and
+  compatibility tests were physically deleted.
+
+Event policy is the next remaining non-combat site. It must migrate through the
+same interface and delete its old production authority before this migration is
+declared complete.
 
 ## Explicit non-goals
 
@@ -529,5 +552,8 @@ The architecture is accepted only when:
    auto-expandable, with no `campfire_policy_v1` fallback;
 10. every exact Boss Relic action is positively supported and auto-expandable,
     with no `boss_relic_policy_v1` or `boss_relic_admission` fallback;
-11. seed006 through seed009 preserved witnesses replay exactly;
-12. a new run can still find an A0 Act 3 Boss witness under the oracle contract.
+11. every exact Route action is typed, positively supported, and observed
+    through its actual successor, with no `route_planner_v1` or old route trace
+    fallback;
+12. seed006 through seed009 preserved witnesses replay exactly;
+13. a new run can still find an A0 Act 3 Boss witness under the oracle contract.

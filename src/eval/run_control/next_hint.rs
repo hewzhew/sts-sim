@@ -14,7 +14,7 @@ pub(super) fn run_control_next_hint(session: &RunControlSession) -> &'static str
             }
         }
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
-            "Next: use rs to inspect route evidence, rg to accept the route planner, or type a visible path id."
+            "Next: use rs to inspect route evidence, rg to accept the exact route policy, or type a visible path id."
         }
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             "Next: choose a card id or skip; use deck/map/relics before choosing if needed."

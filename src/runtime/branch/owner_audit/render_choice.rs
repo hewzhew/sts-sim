@@ -60,6 +60,21 @@ pub(super) fn render_candidate_decision_compact(decision: &OwnerCandidateDecisio
 
 fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
     match key {
+        DecisionCandidateKey::RouteSelect {
+            x,
+            y,
+            room_type,
+            uses_wing_boots,
+            ..
+        } => format!(
+            "route ({x},{y}) {room_type:?}{}",
+            if *uses_wing_boots {
+                " via Wing Boots"
+            } else {
+                ""
+            }
+        ),
+        DecisionCandidateKey::RouteCancel => "return to rewards".to_string(),
         DecisionCandidateKey::EventOption {
             option_index,
             action,

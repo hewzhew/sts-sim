@@ -126,9 +126,16 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     if target_y == 15 {
         return with_map_overlay_back_candidate(
             session,
-            vec![candidate(
+            vec![keyed_candidate(
                 "0",
                 "Boss room",
+                DecisionCandidateKey::RouteSelect {
+                    x: 0,
+                    y: 15,
+                    room_type: Some(crate::state::map::node::RoomType::MonsterRoomBoss),
+                    uses_wing_boots: false,
+                    has_emerald_key: false,
+                },
                 ClientInput::SelectMapNode(0),
                 Some("boss"),
             )],
@@ -141,7 +148,7 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
         .run_state
         .relics
         .iter()
-        .any(|relic| relic.id == RelicId::WingBoots && relic.counter > 0);
+        .any(|relic| relic.id == RelicId::WingBoots && !relic.used_up && relic.counter > 0);
     let candidates = row
         .iter()
         .filter_map(|node| {
@@ -149,16 +156,30 @@ fn map_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
             let wing_boots =
                 has_wing_boots_charge && session.run_state.map.can_travel_to(node.x, node.y, true);
             if normal {
-                Some(candidate(
+                Some(keyed_candidate(
                     node.x.to_string(),
                     format!("y={} {}", node.y, room_type_label(node.class)),
+                    DecisionCandidateKey::RouteSelect {
+                        x: node.x,
+                        y: node.y,
+                        room_type: node.class,
+                        uses_wing_boots: false,
+                        has_emerald_key: node.has_emerald_key,
+                    },
                     ClientInput::SelectMapNode(node.x as usize),
                     node.has_emerald_key.then_some("emerald elite"),
                 ))
             } else if wing_boots {
-                Some(candidate(
+                Some(keyed_candidate(
                     format!("fly-{}-{}", node.x, node.y),
                     format!("y={} {} (Wing Boots)", node.y, room_type_label(node.class)),
+                    DecisionCandidateKey::RouteSelect {
+                        x: node.x,
+                        y: node.y,
+                        room_type: node.class,
+                        uses_wing_boots: true,
+                        has_emerald_key: node.has_emerald_key,
+                    },
                     ClientInput::FlyToNode(node.x as usize, node.y as usize),
                     node.has_emerald_key.then_some("emerald elite"),
                 ))
@@ -175,9 +196,10 @@ fn with_map_overlay_back_candidate(
     mut candidates: Vec<DecisionCandidate>,
 ) -> Vec<DecisionCandidate> {
     if matches!(session.engine_state, EngineState::MapOverlay { .. }) {
-        candidates.push(candidate(
+        candidates.push(keyed_candidate(
             "back",
             "Back to reward screen",
+            DecisionCandidateKey::RouteCancel,
             ClientInput::Cancel,
             Some("unclaimed rewards remain"),
         ));

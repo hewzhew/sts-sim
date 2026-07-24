@@ -313,12 +313,8 @@ fn route_future_from_run_state_v1(run_state: &RunState) -> Option<StrategyRouteF
         return None;
     }
 
-    let summary = crate::ai::route_planner_v1::summarize_route_from(
-        run_state,
-        x,
-        y,
-        &crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
-    );
+    let summary =
+        crate::ai::route_window_facts::summarize_route_from_target(run_state, x, y, 2_000);
     if summary.path_count == 0 {
         return None;
     }
@@ -344,9 +340,9 @@ fn route_future_from_run_state_v1(run_state: &RunState) -> Option<StrategyRouteF
     };
 
     Some(StrategyRouteFutureV1 {
-        min_fires: summary.min_fires,
-        max_fires: summary.max_fires,
-        first_fire_floor: summary.first_fire_floor,
+        min_fires: summary.min_campfires,
+        max_fires: summary.max_campfires,
+        first_fire_floor: summary.first_campfire_floor,
         max_early_pressure: summary.max_early_pressure,
         need_heal: missing_hp_ratio.clamp(0.0, 1.0),
         avoid_damage,
