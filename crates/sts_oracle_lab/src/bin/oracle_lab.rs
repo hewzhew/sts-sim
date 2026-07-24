@@ -25,7 +25,6 @@ use sts_combat_planner::{
     LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
     LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
     OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
     OracleCombatWitnessSession, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
     PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig, SharedCombatActionPolicy,
@@ -44,6 +43,10 @@ use sts_simulator::eval::combat_action_imitation::{
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
 use sts_simulator::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
+use sts_simulator::eval::combat_guidance_bundle::{
+    combat_value_prototype_policy_v1, typed_combat_value_features_v1, CombatGuidanceBundleV1,
+    CombatValuePrototypeArtifactV1, GUIDE_LEARNED_BOUNDARY_VALUE,
+};
 use sts_simulator::eval::combat_search_v2::{
     run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
     CombatSearchV2RunOptions,
@@ -448,6 +451,14 @@ enum Command {
         /// exact witness. This is a teacher upper-bound control, not production.
         #[arg(long)]
         value_prototype_artifact: Option<PathBuf>,
+        /// One immutable, compatibility-checked package containing both the
+        /// typed action residual and cross-turn value prototypes.
+        #[arg(
+            long,
+            conflicts_with = "action_imitation_artifact",
+            conflicts_with = "value_prototype_artifact"
+        )]
+        guidance_bundle: Option<PathBuf>,
         /// Diagnostic-only perfect-information control. Repeat to compose an
         /// exact verified corridor without hand-splicing witness segments.
         /// It changes guide order only; every action and terminal result is
@@ -653,6 +664,16 @@ enum Command {
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+    },
+    /// Package already-built action and value artifacts into one immutable,
+    /// runtime-compatible guidance unit.
+    BuildCombatGuidanceBundle {
+        #[arg(long)]
+        action_imitation_artifact: PathBuf,
+        #[arg(long)]
+        value_prototype_artifact: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Check when one exact complete-turn action sequence is generated.
     TurnMembership {
@@ -1005,10 +1026,6 @@ enum ShadowCorridorGuide {
     TypedFeature,
 }
 
-const COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME: &str = "CombatValuePrototypeArtifactV1";
-const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 1;
-const COMBAT_TYPED_FEATURE_SCHEMA: &str = "existing-combat-guides/concatenated-v1";
-
 const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_NAME: &str = "CombatActionImitationCorpusManifestV1";
 const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_VERSION: u32 = 1;
 
@@ -1032,181 +1049,6 @@ struct LoadedCombatActionImitationDemonstrationV1 {
     id: String,
     position: sts_simulator::sim::combat::CombatPosition,
     actions: Vec<ClientInput>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CombatValuePrototypeArtifactV1 {
-    schema_name: String,
-    schema_version: u32,
-    feature_schema: String,
-    training_authority: String,
-    source_action_count: usize,
-    source_terminal_final_hp: i32,
-    feature_count: usize,
-    prototypes: Vec<CombatValuePrototypeV1>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    one_turn_viability_prototypes: Vec<CombatValueStatePrototypeV1>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    one_turn_loss_prototypes: Vec<CombatValueStatePrototypeV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CombatValuePrototypeV1 {
-    player_turn: u32,
-    value_rank: i32,
-    features: Vec<i32>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CombatValueStatePrototypeV1 {
-    player_turn: u32,
-    features: Vec<i32>,
-}
-
-impl CombatValuePrototypeArtifactV1 {
-    fn from_corridor(corridor: &ExactTurnCorridor) -> Self {
-        let mut prototypes = corridor
-            .typed_target_by_turn
-            .iter()
-            .map(
-                |(player_turn, (value_rank, features))| CombatValuePrototypeV1 {
-                    player_turn: *player_turn,
-                    value_rank: *value_rank,
-                    features: features.clone(),
-                },
-            )
-            .collect::<Vec<_>>();
-        prototypes.sort_by_key(|prototype| prototype.player_turn);
-        Self {
-            schema_name: COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME.to_string(),
-            schema_version: COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION,
-            feature_schema: COMBAT_TYPED_FEATURE_SCHEMA.to_string(),
-            training_authority: "exact_terminal_win_demonstration".to_string(),
-            source_action_count: corridor.action_count,
-            source_terminal_final_hp: corridor.terminal_final_hp,
-            feature_count: prototypes
-                .first()
-                .map(|prototype| prototype.features.len())
-                .unwrap_or_default(),
-            prototypes,
-            one_turn_viability_prototypes: Vec::new(),
-            one_turn_loss_prototypes: Vec::new(),
-        }
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        if self.schema_name != COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME
-            || self.schema_version != COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION
-            || self.feature_schema != COMBAT_TYPED_FEATURE_SCHEMA
-        {
-            return Err("unsupported combat value prototype schema".to_string());
-        }
-        if self.prototypes.is_empty() || self.feature_count == 0 {
-            return Err("combat value prototype artifact is empty".to_string());
-        }
-        if self
-            .prototypes
-            .iter()
-            .any(|prototype| prototype.features.len() != self.feature_count)
-            || self
-                .one_turn_loss_prototypes
-                .iter()
-                .any(|prototype| prototype.features.len() != self.feature_count)
-            || self
-                .one_turn_viability_prototypes
-                .iter()
-                .any(|prototype| prototype.features.len() != self.feature_count)
-        {
-            return Err("combat value prototype feature widths disagree".to_string());
-        }
-        if self
-            .prototypes
-            .windows(2)
-            .any(|pair| pair[0].player_turn >= pair[1].player_turn)
-        {
-            return Err("combat value prototypes must have unique ascending turns".to_string());
-        }
-        Ok(())
-    }
-
-    fn targets_by_turn(&self) -> HashMap<u32, (i32, Vec<i32>)> {
-        self.prototypes
-            .iter()
-            .map(|prototype| {
-                (
-                    prototype.player_turn,
-                    (prototype.value_rank, prototype.features.clone()),
-                )
-            })
-            .collect()
-    }
-
-    fn add_one_turn_viability_evidence(
-        &mut self,
-        evidence: &[OracleCombatOneTurnViabilityEvidence],
-    ) {
-        let mut known = self
-            .one_turn_viability_prototypes
-            .iter()
-            .map(|prototype| (prototype.player_turn, prototype.features.clone()))
-            .collect::<std::collections::HashSet<_>>();
-        for sample in evidence {
-            let player_turn = sample.position.combat.turn.turn_count;
-            let features = typed_combat_feature_components(&sample.position);
-            if known.insert((player_turn, features.clone())) {
-                self.one_turn_viability_prototypes
-                    .push(CombatValueStatePrototypeV1 {
-                        player_turn,
-                        features,
-                    });
-            }
-        }
-        self.one_turn_viability_prototypes
-            .sort_by_key(|prototype| prototype.player_turn);
-    }
-
-    fn add_one_turn_loss_evidence(&mut self, evidence: &[OracleCombatOneTurnLossEvidence]) {
-        let mut known = self
-            .one_turn_loss_prototypes
-            .iter()
-            .map(|prototype| (prototype.player_turn, prototype.features.clone()))
-            .collect::<std::collections::HashSet<_>>();
-        for sample in evidence {
-            let player_turn = sample.position.combat.turn.turn_count;
-            let features = typed_combat_feature_components(&sample.position);
-            if known.insert((player_turn, features.clone())) {
-                self.one_turn_loss_prototypes
-                    .push(CombatValueStatePrototypeV1 {
-                        player_turn,
-                        features,
-                    });
-            }
-        }
-        self.one_turn_loss_prototypes
-            .sort_by_key(|prototype| prototype.player_turn);
-    }
-
-    fn report(&self) -> Value {
-        json!({
-            "kind": "typed_feature_value_prototype",
-            "authority": "guide_only",
-            "feature_schema": self.feature_schema,
-            "training_authority": self.training_authority,
-            "feature_count": self.feature_count,
-            "prototype_count": self.prototypes.len(),
-            "one_turn_viability_prototype_count": self.one_turn_viability_prototypes.len(),
-            "one_turn_viability_prototype_authority": "training_evidence_only",
-            "one_turn_loss_prototype_count": self.one_turn_loss_prototypes.len(),
-            "one_turn_loss_prototype_authority": "training_evidence_only",
-            "source_action_count": self.source_action_count,
-            "source_terminal_final_hp": self.source_terminal_final_hp,
-            "runtime_reads_exact_hashes": false,
-            "runtime_reads_witness_actions": false,
-        })
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -1551,113 +1393,37 @@ fn value_prototype_shadow_policy(
     })
 }
 
-#[derive(Clone)]
-struct ValuePrototypeBoundaryControlPolicy {
-    base: SharedCombatActionPolicy,
-    typed_target_by_turn: Arc<HashMap<u32, (i32, Vec<i32>)>>,
-}
-
-impl CombatActionPolicy for ValuePrototypeBoundaryControlPolicy {
-    fn weights(
-        &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        choices: &[CombatPolicyChoice<'_>],
-    ) -> Vec<f64> {
-        self.base.weights(position, choices)
-    }
-
-    fn structured_selection_member_weights(
-        &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
-        members: &[ClientInput],
-    ) -> Vec<f64> {
-        self.base
-            .structured_selection_member_weights(position, family, members)
-    }
-
-    fn state_guides(
-        &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-    ) -> Vec<CombatStateGuide> {
-        let rank = self
-            .typed_target_by_turn
-            .get(&position.combat.turn.turn_count)
-            .map_or_else(
-                || vec![0, i32::MIN / 4, 0],
-                |(corridor_rank, target)| {
-                    let candidate = typed_combat_feature_components(position);
-                    let distance = normalized_feature_distance(target, &candidate);
-                    vec![i32::from(distance == 0), -distance, *corridor_rank]
-                },
-            );
-        vec![CombatStateGuide::new(GUIDE_TYPED_CORRIDOR, rank)]
-    }
-
-    fn turn_generation_guides(
-        &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-    ) -> Vec<CombatStateGuide> {
-        // This control isolates the cross-turn value question. The inner
-        // complete-turn generator keeps its existing guides and action prior.
-        self.base.turn_generation_guides(position)
-    }
-}
-
-fn value_prototype_boundary_control_policy(
-    base: SharedCombatActionPolicy,
-    artifact: &CombatValuePrototypeArtifactV1,
-) -> SharedCombatActionPolicy {
-    Arc::new(ValuePrototypeBoundaryControlPolicy {
-        base,
-        typed_target_by_turn: Arc::new(artifact.targets_by_turn()),
-    })
-}
-
 fn load_value_prototype(path: &Path) -> Result<CombatValuePrototypeArtifactV1, String> {
-    let artifact = serde_json::from_slice::<CombatValuePrototypeArtifactV1>(
-        &std::fs::read(path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("invalid combat value prototype artifact: {error}"))?;
-    artifact.validate()?;
-    Ok(artifact)
+    CombatValuePrototypeArtifactV1::load(path)
 }
 
 fn save_value_prototype(
     path: &PathBuf,
     artifact: &CombatValuePrototypeArtifactV1,
 ) -> Result<(), String> {
-    artifact.validate()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let bytes = serde_json::to_vec_pretty(artifact).map_err(|error| error.to_string())?;
-    std::fs::write(path, bytes).map_err(|error| error.to_string())
+    artifact.save(path)
+}
+
+fn value_prototype_from_corridor(
+    corridor: &ExactTurnCorridor,
+) -> Result<CombatValuePrototypeArtifactV1, String> {
+    CombatValuePrototypeArtifactV1::from_ranked_features(
+        "exact_terminal_win_demonstration",
+        corridor.action_count,
+        corridor.terminal_final_hp,
+        corridor
+            .typed_target_by_turn
+            .iter()
+            .map(|(player_turn, (value_rank, features))| {
+                (*player_turn, *value_rank, features.clone())
+            }),
+    )
 }
 
 fn typed_combat_feature_components(
     position: &sts_simulator::sim::combat::CombatPosition,
 ) -> Vec<i32> {
-    let mut features =
-        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(
-            position,
-        );
-    features.extend(
-        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(
-            position,
-        ),
-    );
-    features.extend(
-        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(
-            position,
-        ),
-    );
-    features.extend(
-        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(
-            position,
-        ),
-    );
-    features
+    typed_combat_value_features_v1(position)
 }
 
 fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
@@ -2106,11 +1872,36 @@ fn main() -> Result<(), String> {
         } => {
             let corridor =
                 load_exact_turn_corridor(&case, &actions, max_engine_steps_per_transition)?;
-            let artifact = CombatValuePrototypeArtifactV1::from_corridor(&corridor);
+            let artifact = value_prototype_from_corridor(&corridor)?;
             save_value_prototype(&output, &artifact)?;
             print_json(&json!({
                 "output": output,
                 "artifact": artifact.report(),
+            }))
+        }
+        Command::BuildCombatGuidanceBundle {
+            action_imitation_artifact,
+            value_prototype_artifact,
+            output,
+        } => {
+            let action = CombatActionImitationArtifactV1::load(&action_imitation_artifact)?;
+            let value = CombatValuePrototypeArtifactV1::load(&value_prototype_artifact)?;
+            let bundle = CombatGuidanceBundleV1::new(
+                "verified_exact_combat_witness_distillation",
+                action,
+                value,
+            )?;
+            bundle.save(&output)?;
+            print_json(&json!({
+                "output": output,
+                "schema_name": bundle.schema_name,
+                "schema_version": bundle.schema_version,
+                "training_authority": bundle.training_authority,
+                "action_source_trajectory_count": bundle.action_imitation.source_trajectory_count,
+                "action_source_action_count": bundle.action_imitation.source_action_count,
+                "value_source_action_count": bundle.boundary_value.source_action_count,
+                "runtime_reads_exact_hashes": false,
+                "runtime_reads_witness_actions": false,
             }))
         }
         Command::BuildActionImitation {
@@ -2254,6 +2045,7 @@ fn main() -> Result<(), String> {
             rollout_lookahead,
             action_imitation_artifact,
             value_prototype_artifact,
+            guidance_bundle,
             diagnostic_corridor_actions,
             watch_corridor_actions,
             max_nodes,
@@ -2310,18 +2102,22 @@ fn main() -> Result<(), String> {
                     OracleCombatWitnessSatisfaction::FirstWitness
                 },
             };
-            let policy = action_imitation_artifact
-                .as_deref()
-                .map(|path| {
-                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
-                })
-                .transpose()?
-                .unwrap_or_else(existing_combat_knowledge_policy_v1);
-            let policy = if let Some(path) = value_prototype_artifact.as_deref() {
-                let artifact = load_value_prototype(path)?;
-                value_prototype_boundary_control_policy(policy, &artifact)
+            let policy = if let Some(path) = guidance_bundle.as_deref() {
+                CombatGuidanceBundleV1::load(path)?.policy(existing_combat_knowledge_policy_v1())?
             } else {
-                policy
+                let policy = action_imitation_artifact
+                    .as_deref()
+                    .map(|path| {
+                        load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                    })
+                    .transpose()?
+                    .unwrap_or_else(existing_combat_knowledge_policy_v1);
+                if let Some(path) = value_prototype_artifact.as_deref() {
+                    let artifact = load_value_prototype(path)?;
+                    combat_value_prototype_policy_v1(policy, &artifact)
+                } else {
+                    policy
+                }
             };
             let policy = if diagnostic_corridor_actions.is_empty() {
                 policy
@@ -2475,6 +2271,7 @@ fn main() -> Result<(), String> {
                 },
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
+                "guidance_bundle": guidance_bundle,
                 "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 "watch_corridor_actions": watch_corridor_actions,
                 "satisfaction": if improve_incumbent {
@@ -4320,8 +4117,18 @@ fn main() -> Result<(), String> {
                 export_augmented_value_prototype.as_ref(),
                 shadow_value_artifact.as_mut(),
             ) {
-                artifact.add_one_turn_viability_evidence(search.one_turn_viability_evidence());
-                artifact.add_one_turn_loss_evidence(search.one_turn_loss_evidence());
+                artifact.add_one_turn_viability_positions(
+                    search
+                        .one_turn_viability_evidence()
+                        .iter()
+                        .map(|sample| &sample.position),
+                );
+                artifact.add_one_turn_loss_positions(
+                    search
+                        .one_turn_loss_evidence()
+                        .iter()
+                        .map(|sample| &sample.position),
+                );
                 save_value_prototype(path, artifact)?;
             }
             let shadow_corridor_report = shadow_corridor
@@ -5050,9 +4857,9 @@ fn main() -> Result<(), String> {
                     let artifact = load_value_prototype(path)?;
                     let report = artifact.report();
                     (
-                        value_prototype_boundary_control_policy(policy, &artifact),
+                        combat_value_prototype_policy_v1(policy, &artifact),
                         Some(report),
-                        Some(GUIDE_TYPED_CORRIDOR),
+                        Some(GUIDE_LEARNED_BOUNDARY_VALUE),
                     )
                 } else {
                     (policy, None, None)

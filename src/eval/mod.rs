@@ -11,6 +11,7 @@ pub mod card_reward_value_loop;
 pub mod combat_action_imitation;
 pub mod combat_capture;
 pub mod combat_case;
+pub mod combat_guidance_bundle;
 pub mod combat_lab_v1;
 pub mod combat_search_v2;
 pub mod combat_state_features;
