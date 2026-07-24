@@ -258,7 +258,11 @@ fn obtain_card_value(kind: EventCardKind) -> i32 {
 
 fn relic_value(kind: EventRelicKind) -> i32 {
     match kind {
-        EventRelicKind::RandomRareRelic => 380,
+        // At Neow, the rare-relic option can cost the Ironclad's entire
+        // starting purse.  Keep that real cost, but do not let a guaranteed
+        // rarity upgrade become worse than the free common relic merely
+        // because both effects share one undifferentiated integer scale.
+        EventRelicKind::RandomRareRelic => 420,
         EventRelicKind::RandomUncommonRelic | EventRelicKind::RandomRelic => 330,
         EventRelicKind::RandomCommonRelic => 300,
         EventRelicKind::Specific(_) => 260,
@@ -267,6 +271,36 @@ fn relic_value(kind: EventRelicKind) -> i32 {
         | EventRelicKind::RandomBook
         | EventRelicKind::RandomFace => 220,
         EventRelicKind::Unknown => 180,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rank_neow_option;
+    use sts_simulator::state::events::{EventEffect, EventOptionSemantics, EventRelicKind};
+
+    #[test]
+    fn starting_gold_rare_relic_stays_ahead_of_free_common_relic() {
+        let rare = rank_neow_option(&EventOptionSemantics {
+            effects: vec![
+                EventEffect::LoseGold(99),
+                EventEffect::ObtainRelic {
+                    count: 1,
+                    kind: EventRelicKind::RandomRareRelic,
+                },
+            ],
+            ..EventOptionSemantics::default()
+        });
+        let common = rank_neow_option(&EventOptionSemantics {
+            effects: vec![EventEffect::ObtainRelic {
+                count: 1,
+                kind: EventRelicKind::RandomCommonRelic,
+            }],
+            ..EventOptionSemantics::default()
+        });
+
+        assert_eq!(rare.tier, common.tier);
+        assert!(rare.score > common.score);
     }
 }
 

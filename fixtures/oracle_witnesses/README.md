@@ -24,6 +24,24 @@ must rediscover the line from every earlier prefix.
 
 ## seed 20260713007, A0, Awakened One
 
+- `seed20260713007_a0_autonomous_full_run.continuation.json` is the first
+  current-production, zero-manual-deviation witness from a new F0 workspace.
+  The Neow owner selected the exact rare-relic root (Pocketwatch), the Act 1
+  boss-relic owner selected Pandora's Box, and the owner then replanned every
+  later decision without importing a historical prefix or accepting manual
+  combat actions.
+- The run entered Awakened One at 40/85 HP. Production search found an
+  85-action witness in 11.780 seconds and won at 13/85 HP.
+- A current-policy audit reports 177 rank-zero agreements, zero nonzero-rank
+  choices, zero choices absent from the owner surface, and total discrepancy
+  zero. Combat provenance is 11 mature-policy proposals and 12 search
+  witnesses.
+- Independent replay verifies 211 journal entries, 188 decisions, 23 combat
+  resolutions, 577 combat actions, terminal victory at F48, and final
+  fingerprint
+  `a27ea45e57b07deb7d2fd321dfa09fc35dcaefc5e4d9f6b9f864bacbfdda3394`.
+- SHA-256: autonomous full-run continuation
+  `136188EB2326987DC5331CFE281FBB3C872BF9299CB74BBFFD4F248C96400FB5`.
 - Run target: no keys; stop after the Act 3 boss.
 - Combat start: Act 3 floor 48, 78/85 HP, one Block Potion.
 - Action witness: `seed20260713007_a0_awakened_one.actions.json` (68 actions).

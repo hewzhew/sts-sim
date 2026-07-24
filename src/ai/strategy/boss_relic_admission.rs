@@ -232,11 +232,9 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
-    let lane = lane_for_relic(run_state, &facts, relic, class, &mut reasons);
-    let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
-    let projected_startup = projected_startup_profile(run_state, relic);
-    if relic == RelicId::PandorasBox {
-        let profile = pandora_offer_profile_v1(run_state);
+    let pandora_profile =
+        (relic == RelicId::PandorasBox).then(|| pandora_offer_profile_v1(run_state));
+    if let Some(profile) = pandora_profile.as_ref() {
         reasons.push(BossRelicAdmissionReason::PandoraOfferFacts {
             starter_strikes: profile.starter_strikes,
             starter_defends: profile.starter_defends,
@@ -246,6 +244,16 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             high_variance: profile.high_variance,
         });
     }
+    let lane = lane_for_relic(
+        run_state,
+        &facts,
+        relic,
+        class,
+        pandora_profile.as_ref(),
+        &mut reasons,
+    );
+    let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
+    let projected_startup = projected_startup_profile(run_state, relic);
     if relic == RelicId::RunicPyramid {
         reasons.push(BossRelicAdmissionReason::PyramidApparitionCoverage(
             projected_startup.pyramid_apparition_coverage,
@@ -299,8 +307,16 @@ fn lane_for_relic(
     facts: &RunStrategicFacts,
     relic: RelicId,
     class: BossRelicAdmissionClass,
+    pandora_profile: Option<&crate::ai::pandora_offer_profile_v1::PandoraOfferProfileV1>,
     reasons: &mut Vec<BossRelicAdmissionReason>,
 ) -> BossRelicAdmissionLane {
+    if pandora_profile.is_some_and(|profile| {
+        profile.horizon == PandoraOfferHorizonV1::AfterAct1
+            && profile.transform_targets >= 6
+            && profile.transform_share_percent >= 40
+    }) {
+        return BossRelicAdmissionLane::Mainline;
+    }
     if facts.has_act2_energy_gap() {
         if relic == RelicId::CoffeeDripper && coffee_dripper_no_rest_debt_high(run_state) {
             reasons.push(BossRelicAdmissionReason::NoRestDebt);
@@ -310,26 +326,12 @@ fn lane_for_relic(
             reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
             return BossRelicAdmissionLane::Mainline;
         }
-        if relic == RelicId::Sozu && !has_live_potion_synergy(run_state) {
-            reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
-            return BossRelicAdmissionLane::Mainline;
-        }
         if relic == RelicId::EmptyCage {
             reasons.push(BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap);
             return BossRelicAdmissionLane::Probe;
         }
     }
     default_lane(class)
-}
-
-fn has_live_potion_synergy(run_state: &RunState) -> bool {
-    run_state.relics.iter().any(|relic| {
-        !relic.used_up
-            && matches!(
-                relic.id,
-                RelicId::WhiteBeastStatue | RelicId::SacredBark | RelicId::PotionBelt
-            )
-    })
 }
 
 fn coffee_dripper_no_rest_debt_high(run_state: &RunState) -> bool {
@@ -566,48 +568,20 @@ mod tests {
     }
 
     #[test]
-    fn sozu_solves_unconstrained_act2_energy_gap_before_black_blood() {
+    fn sozu_potion_lock_is_not_an_unconstrained_act2_energy_solution() {
         let run = RunState::new(1552225673, 0, false, "Ironclad");
 
         let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
         let black_blood = assess_boss_relic_admission(&run, RelicId::BlackBlood);
 
-        assert_eq!(sozu.lane, BossRelicAdmissionLane::Mainline);
-        assert!(sozu
+        assert_eq!(sozu.lane, BossRelicAdmissionLane::Probe);
+        assert!(!sozu
             .reasons
             .contains(&BossRelicAdmissionReason::Act2EnergyGap));
         assert!(
-            boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&black_blood),
-            "an unconstrained energy solution should outrank a starter upgrade"
+            boss_relic_admission_order_rank(&black_blood) < boss_relic_admission_order_rank(&sozu),
+            "permanently losing future potion access is not a default energy shortcut"
         );
-    }
-
-    #[test]
-    fn potion_synergy_relics_keep_sozu_out_of_act2_energy_shortcut() {
-        for synergy in [
-            RelicId::WhiteBeastStatue,
-            RelicId::SacredBark,
-            RelicId::PotionBelt,
-        ] {
-            let mut run = RunState::new(1552225673, 0, false, "Ironclad");
-            run.relics.push(RelicState::new(synergy));
-
-            let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
-            let black_blood = assess_boss_relic_admission(&run, RelicId::BlackBlood);
-
-            assert_eq!(sozu.lane, BossRelicAdmissionLane::Probe, "{synergy:?}");
-            assert!(
-                !sozu
-                    .reasons
-                    .contains(&BossRelicAdmissionReason::Act2EnergyGap),
-                "{synergy:?}"
-            );
-            assert!(
-                boss_relic_admission_order_rank(&black_blood)
-                    < boss_relic_admission_order_rank(&sozu),
-                "{synergy:?} should keep Sozu behind the unconstrained starter upgrade"
-            );
-        }
     }
 
     #[test]
@@ -718,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn pandora_offer_facts_do_not_change_admission_order_rank() {
+    fn act1_pandora_opportunity_changes_lane_only_with_many_starters() {
         let mut many = RunState::new(1, 0, false, "Ironclad");
         many.act_num = 1;
         many.master_deck = (0..4)
@@ -733,6 +707,8 @@ mod tests {
 
         let many_admission = assess_boss_relic_admission(&many, RelicId::PandorasBox);
         let few_admission = assess_boss_relic_admission(&few, RelicId::PandorasBox);
+        let many_sozu = assess_boss_relic_admission(&many, RelicId::Sozu);
+        let few_sozu = assess_boss_relic_admission(&few, RelicId::Sozu);
 
         assert!(many_admission.reasons.iter().any(|reason| matches!(
             reason,
@@ -741,10 +717,19 @@ mod tests {
                 ..
             }
         )));
-        assert_eq!(
-            boss_relic_admission_order_rank(&many_admission),
-            boss_relic_admission_order_rank(&few_admission),
+        assert_eq!(many_admission.lane, BossRelicAdmissionLane::Mainline);
+        assert_eq!(few_admission.lane, BossRelicAdmissionLane::Probe);
+        assert!(
+            boss_relic_admission_order_rank(&many_admission)
+                < boss_relic_admission_order_rank(&many_sozu),
+            "transforming most of the Act 1 starter shell should outrank Sozu's permanent potion lock",
         );
+        assert!(
+            boss_relic_admission_order_rank(&many_admission)
+                < boss_relic_admission_order_rank(&few_admission),
+            "a small transform surface must not inherit the Act 1 mainline promotion",
+        );
+        assert_eq!(few_sozu.lane, BossRelicAdmissionLane::Probe);
     }
 
     #[test]
@@ -766,14 +751,14 @@ mod tests {
     }
 
     #[test]
-    fn energy_gap_mainline_stays_ahead_of_burden_free_probe() {
+    fn default_energy_mainline_stays_ahead_of_burden_free_probe() {
         let run = RunState::new(1552225673, 0, false, "Ironclad");
 
-        let sozu = assess_boss_relic_admission(&run, RelicId::Sozu);
+        let hammer = assess_boss_relic_admission(&run, RelicId::FusionHammer);
         let bark = assess_boss_relic_admission(&run, RelicId::SacredBark);
 
-        assert_eq!(sozu.lane, BossRelicAdmissionLane::Mainline);
+        assert_eq!(hammer.lane, BossRelicAdmissionLane::Mainline);
         assert_eq!(bark.lane, BossRelicAdmissionLane::Probe);
-        assert!(boss_relic_admission_order_rank(&sozu) < boss_relic_admission_order_rank(&bark));
+        assert!(boss_relic_admission_order_rank(&hammer) < boss_relic_admission_order_rank(&bark));
     }
 }

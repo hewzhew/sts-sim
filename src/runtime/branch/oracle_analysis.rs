@@ -10,11 +10,11 @@ use crate::eval::combat_case::{
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
-    expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_from_checkpoint_v1,
-    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1,
-    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
-    OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, RunControlConfig,
-    RunControlSession,
+    expand_oracle_neow_candidates_v1, ordered_oracle_neow_root_candidate_ids_v1,
+    seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
+    seed_oracle_run_explorer_v1, OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
+    OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
+    RunControlConfig, RunControlSession,
 };
 use crate::state::core::ClientInput;
 
@@ -65,13 +65,26 @@ impl OracleAnalysisWorkspaceV1 {
             reward_automation: super::oracle_run::oracle_reward_automation_config(),
             ..RunControlConfig::default()
         });
+        let preferred_neow_roots = ordered_oracle_neow_root_candidate_ids_v1(
+            &session,
+            super::owner_audit::oracle_candidate_order,
+        )?;
         let expansion = expand_oracle_neow_candidates_v1(&session)
             .map_err(|error| format!("failed to materialize oracle Neow roots: {error}"))?;
         let explorer = seed_oracle_run_explorer_v1(
             expansion,
             Some(super::owner_audit::oracle_candidate_order),
         )?;
-        let first_root = explorer.branches.first().map(|branch| branch.branch_id);
+        let first_root = preferred_neow_roots
+            .iter()
+            .find_map(|candidate_id| {
+                explorer
+                    .branches
+                    .iter()
+                    .find(|branch| branch.neow_root_candidate_id == *candidate_id)
+                    .map(|branch| branch.branch_id)
+            })
+            .or_else(|| explorer.branches.first().map(|branch| branch.branch_id));
         let combat_budgets =
             oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
         let analysis = OracleAnalysisSessionV1::from_explorer(
@@ -413,4 +426,27 @@ fn validate_analysis_config(config: &OracleRunConfig) -> Result<(), String> {
         return Err("oracle analysis combat quantum must be positive".to_string());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
+    use crate::content::relics::RelicId;
+
+    #[test]
+    fn seed007_starts_from_the_owner_preferred_exact_neow_root() {
+        let workspace = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
+            seed: 20260713007,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        })
+        .expect("seed007 oracle workspace");
+        let view = workspace.view().expect("seed007 initial view");
+
+        assert!(view.neow_root_label.contains("random rare relic"));
+        assert!(view
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Pocketwatch));
+    }
 }

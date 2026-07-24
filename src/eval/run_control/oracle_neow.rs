@@ -5,8 +5,8 @@ use crate::state::events::EventId;
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 use super::{
-    build_decision_surface, DecisionCandidateKey, RunControlSession, RunDecisionAction,
-    RunProgressJournalV1,
+    build_decision_surface, DecisionCandidateKey, OracleRunDecisionOrderFnV1, RunControlSession,
+    RunDecisionAction, RunProgressJournalV1,
 };
 
 const MAX_NEOW_MATERIALIZATIONS: usize = 4_096;
@@ -160,6 +160,22 @@ pub fn expand_oracle_neow_candidates_v1(
     }
 
     Ok(expansion)
+}
+
+/// Ask a production decision owner to rank the real Neow option surface.
+///
+/// A fresh run first exposes a forced "Proceed" screen. Keeping that
+/// transition here ensures callers never mistake the intro button for the
+/// strategic root order and never need to reproduce Neow engine semantics.
+pub fn ordered_oracle_neow_root_candidate_ids_v1(
+    start: &RunControlSession,
+    decision_order: OracleRunDecisionOrderFnV1,
+) -> Result<Vec<String>, String> {
+    let mut session = start.clone();
+    let mut replay = Vec::new();
+    let mut journal = RunProgressJournalV1::default();
+    advance_neow_intro(&mut session, &mut replay, &mut journal)?;
+    Ok(decision_order(&session))
 }
 
 fn advance_neow_intro(

@@ -123,8 +123,9 @@ pub use oracle_combat_policy::{
 };
 pub use oracle_combat_work::OracleRunCombatWorkCheckpointV1;
 pub use oracle_neow::{
-    expand_oracle_neow_candidates_v1, CompletedNeowCandidateV1, NeowOracleExpansionV1,
-    NeowOracleReplayStepV1, UnresolvedNeowCandidateV1,
+    expand_oracle_neow_candidates_v1, ordered_oracle_neow_root_candidate_ids_v1,
+    CompletedNeowCandidateV1, NeowOracleExpansionV1, NeowOracleReplayStepV1,
+    UnresolvedNeowCandidateV1,
 };
 pub use oracle_run_explorer::{
     drive_oracle_run_explorer_v1, seed_oracle_run_explorer_from_checkpoint_v1,
