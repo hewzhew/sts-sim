@@ -4,7 +4,9 @@ use std::collections::BTreeSet;
 use crate::ai::card_semantics_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
-use crate::ai::noncombat_strategy_v1::StrategyThreatSourceV1;
+use crate::ai::noncombat_strategy_v1::{
+    threat_relevant_capability_improvements_v1, StrategyThreatSourceV1,
+};
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
@@ -50,6 +52,7 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_saturated: bool,
+    pub improves_threat_relevant_capability: bool,
     surface_index: usize,
 }
 
@@ -201,6 +204,13 @@ fn card_reward_action_evidence_v1(
                 && delta.capability_improvements.is_empty()
                 && delta.resolved_formation_needs.is_empty()
     );
+    let improves_threat_relevant_capability =
+        !threat_relevant_capability_improvements_v1(
+            &decision.before.threats,
+            &decision.before.threat_coverage,
+            &action.after.threat_coverage,
+        )
+        .is_empty();
     let band = card_reward_band_v1(
         &acquisition,
         &delta,
@@ -208,6 +218,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_saturated,
+        improves_threat_relevant_capability,
     );
 
     Ok(CardRewardPolicyActionEvidenceV1 {
@@ -220,6 +231,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_saturated,
+        improves_threat_relevant_capability,
         surface_index,
     })
 }
@@ -262,6 +274,7 @@ fn card_reward_band_v1(
     status_burden: bool,
     duplicate_low_marginal: bool,
     access_saturated: bool,
+    improves_threat_relevant_capability: bool,
 ) -> CardRewardPolicyBandV1 {
     match acquisition {
         CardRewardPolicyAcquisitionV1::OpenReward => CardRewardPolicyBandV1::ResolvePendingBoundary,
@@ -277,7 +290,7 @@ fn card_reward_band_v1(
                 CardRewardPolicyBandV1::Liability
             } else if !delta.closed_threat_gaps.is_empty() {
                 CardRewardPolicyBandV1::CloseThreatGap
-            } else if !delta.capability_improvements.is_empty() {
+            } else if improves_threat_relevant_capability {
                 CardRewardPolicyBandV1::ImproveRequiredCapability
             } else if !delta.resolved_formation_needs.is_empty()
                 || !delta.added_formation_strengths.is_empty()
@@ -308,17 +321,13 @@ fn is_access_role(role: CardRewardSemanticRoleV1) -> bool {
 fn is_independent_role(role: CardRewardSemanticRoleV1) -> bool {
     matches!(
         role,
-        CardRewardSemanticRoleV1::FrontloadDamage
-            | CardRewardSemanticRoleV1::AoeDamage
+        CardRewardSemanticRoleV1::AoeDamage
             | CardRewardSemanticRoleV1::Block
-            | CardRewardSemanticRoleV1::BlockRetention
-            | CardRewardSemanticRoleV1::BlockMultiplier
             | CardRewardSemanticRoleV1::CardDraw
             | CardRewardSemanticRoleV1::CycleAccess
             | CardRewardSemanticRoleV1::DiscardPileTopdeckAccess
             | CardRewardSemanticRoleV1::HandTopdeckSelection
             | CardRewardSemanticRoleV1::EnergySource
-            | CardRewardSemanticRoleV1::Vulnerable
             | CardRewardSemanticRoleV1::Weak
             | CardRewardSemanticRoleV1::EnemyStrengthDown
             | CardRewardSemanticRoleV1::ScalingSource
@@ -541,5 +550,104 @@ mod tests {
             .entries
             .iter()
             .all(|entry| entry.probability.is_finite() && entry.probability > 0.0));
+    }
+
+    #[test]
+    fn repeated_ordinary_frontload_needs_real_marginal_strategic_evidence() {
+        let mut session = reward_session(&[
+            (CardId::IronWave, 0),
+            (CardId::WildStrike, 0),
+            (CardId::DualWield, 0),
+        ]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 1;
+        session.run_state.current_hp = 80;
+        session.run_state.max_hp = 80;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+
+        let first_decision = decision(&session);
+        assert!(
+            position(&first_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::WildStrike,
+                    ..
+                }
+            )) < position(&first_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "a first frontload card that closes exact current gaps remains admissible"
+        );
+
+        let mut second = reward_session(&[
+            (CardId::PerfectedStrike, 0),
+            (CardId::Clash, 0),
+            (CardId::Warcry, 0),
+        ]);
+        second.run_state.act_num = 1;
+        second.run_state.floor_num = 2;
+        second.run_state.current_hp = 75;
+        second.run_state.max_hp = 80;
+        second.run_state.master_deck = session.run_state.master_deck.clone();
+        second
+            .run_state
+            .master_deck
+            .push(CombatCard::new(CardId::WildStrike, 11));
+        let second_decision = decision(&second);
+        let skip = position(&second_decision, |key| {
+            matches!(key, DecisionCandidateKey::CardRewardSkip { .. })
+        });
+        for card in [CardId::Clash, CardId::PerfectedStrike] {
+            assert!(
+                skip < position(&second_decision, |key| matches!(
+                    key,
+                    DecisionCandidateKey::CardRewardPick {
+                        card: candidate,
+                        ..
+                    } if *candidate == card
+                )),
+                "{card:?} must not outrank skip merely by increasing an irrelevant capability or repeating an ordinary answer role; evidence={:#?}",
+                second_decision.evidence
+            );
+        }
+
+        let mut mitigation = reward_session(&[(CardId::Shockwave, 1)]);
+        mitigation.run_state.act_num = 2;
+        mitigation.run_state.floor_num = 17;
+        mitigation.run_state.current_hp = 74;
+        mitigation.run_state.max_hp = 80;
+        mitigation.run_state.boss_key = Some(EncounterId::TheChamp);
+        mitigation.run_state.master_deck = second.run_state.master_deck;
+        let mitigation_decision = decision(&mitigation);
+        assert!(
+            position(&mitigation_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Shockwave,
+                    ..
+                }
+            )) < position(&mitigation_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "a durable mitigation answer for the known Champ must remain independently admissible"
+        );
     }
 }
