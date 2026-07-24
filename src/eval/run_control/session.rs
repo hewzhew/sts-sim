@@ -427,7 +427,8 @@ pub struct RunProgressOutcome {
     pub progress_steps: Vec<RunProgressStepV1>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RunControlCombatSearchRejection {
     InvalidCardIdentity,
     NoCompleteWinningCandidate,

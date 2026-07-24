@@ -1037,7 +1037,7 @@ impl OracleAnalysisSessionV1 {
                 .iter()
                 .rev()
                 .find(|unresolved| unresolved.branch_id == source_node_id)
-                .map(|unresolved| unresolved.evidence_kind)
+                .map(|unresolved| unresolved.evidence_kind.as_str())
             {
                 Some("exhaustive_refutation") => {
                     OracleAnalysisAdvanceStatusV1::ExhaustiveRefutation

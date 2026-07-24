@@ -162,8 +162,8 @@ pub struct OracleNeowFrontierSummaryV1 {
 pub struct OracleUnresolvedCombatSummaryV1 {
     pub branch_id: usize,
     pub rejection: String,
-    pub evidence_kind: &'static str,
-    pub last_status: Option<&'static str>,
+    pub evidence_kind: String,
+    pub last_status: Option<String>,
     pub nodes_expanded: u64,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
@@ -458,8 +458,8 @@ fn finish_oracle_run_report(
             .map(|combat| OracleUnresolvedCombatSummaryV1 {
                 branch_id: combat.branch_id,
                 rejection: format!("{:?}", combat.rejection),
-                evidence_kind: combat.evidence_kind,
-                last_status: combat.last_status,
+                evidence_kind: combat.evidence_kind.clone(),
+                last_status: combat.last_status.clone(),
                 nodes_expanded: combat.nodes_expanded,
                 exact_states: combat.exact_states,
                 applied_action_transitions: combat.applied_action_transitions,

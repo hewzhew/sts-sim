@@ -161,6 +161,13 @@ pub struct OracleRunExplorerCheckpointV1 {
     pub journal_nodes: Vec<OracleRunJournalNodeCheckpointV1>,
     #[serde(default)]
     pub combat_search_restarts: usize,
+    /// The last top-level Neow option that received strategic service.
+    /// Persisting this cursor prevents a wide option from regaining the first
+    /// slot every time a continuation is resumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_served_neow_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unresolved_combats: Vec<OracleRunUnresolvedCombatV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -174,12 +181,13 @@ pub struct ExactDuplicateOracleRunBranchV1 {
     pub journal: RunProgressJournalV1,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OracleRunUnresolvedCombatV1 {
     pub branch_id: usize,
     pub rejection: RunControlCombatSearchRejection,
-    pub evidence_kind: &'static str,
-    pub last_status: Option<&'static str>,
+    pub evidence_kind: String,
+    pub last_status: Option<String>,
     pub nodes_expanded: u64,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
@@ -381,6 +389,7 @@ pub struct OracleRunExplorerV1 {
     pub combat_search_restarts: usize,
     pending_combats: VecDeque<PendingOracleCombatV1>,
     deferred_combats: VecDeque<DeferredOracleCombatV1>,
+    last_served_neow_root: Option<String>,
     next_branch_id: usize,
     state_index: BTreeMap<String, usize>,
     registered_work_keys: BTreeSet<String>,
@@ -431,6 +440,7 @@ impl OracleRunExplorerV1 {
             combat_search_restarts: 0,
             pending_combats: VecDeque::new(),
             deferred_combats: VecDeque::new(),
+            last_served_neow_root: None,
             next_branch_id: 0,
             state_index: BTreeMap::new(),
             registered_work_keys: BTreeSet::new(),
@@ -503,6 +513,11 @@ impl OracleRunExplorerV1 {
         if live_branch_ids.is_empty() {
             return Ok(None);
         }
+        live_branch_ids.extend(
+            self.unresolved_combats
+                .iter()
+                .map(|combat| combat.branch_id),
+        );
         self.checkpoint_for_branches(live_branch_ids, active_combat)
             .map(Some)
     }
@@ -611,6 +626,8 @@ impl OracleRunExplorerV1 {
                 .collect(),
             journal_nodes,
             combat_search_restarts: self.combat_search_restarts,
+            last_served_neow_root: self.last_served_neow_root.clone(),
+            unresolved_combats: self.unresolved_combats.clone(),
         })
     }
 
@@ -701,29 +718,62 @@ impl OracleRunExplorerV1 {
         self.pending_decisions.remove(index)
     }
 
+    #[cfg(test)]
     fn best_decision_index(&self) -> Option<usize> {
         self.pending_decisions
             .iter()
             .enumerate()
             .min_by(|(left_index, left), (right_index, right)| {
-                combat_edge_probe_order(left, right)
-                    .then_with(|| left.path_discrepancy.cmp(&right.path_discrepancy))
-                    .then_with(|| right.parent_act.cmp(&left.parent_act))
-                    .then_with(|| right.parent_floor.cmp(&left.parent_floor))
-                    .then_with(|| right.path_depth.cmp(&left.path_depth))
-                    .then_with(|| {
-                        left.path_negative_log_policy
-                            .total_cmp(&right.path_negative_log_policy)
-                    })
-                    .then_with(|| left_index.cmp(right_index))
+                oracle_run_decision_priority_order(*left_index, left, *right_index, right)
             })
             .map(|(index, _)| index)
     }
 
-    fn best_deferred_combat_index(&self) -> Option<usize> {
+    fn next_neow_root_for_service(&self) -> Option<String> {
+        let mut roots = BTreeSet::new();
+        roots.extend(
+            self.pending_decisions
+                .iter()
+                .map(|decision| decision.neow_root_candidate_id.clone()),
+        );
+        for deferred in &self.deferred_combats {
+            let branch = self
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == deferred.branch_id)
+                .expect("deferred combat branch must remain live");
+            roots.insert(branch.neow_root_candidate_id.clone());
+        }
+        let after_cursor = self.last_served_neow_root.as_ref().and_then(|last| {
+            roots
+                .iter()
+                .find(|candidate| candidate.as_str() > last.as_str())
+                .cloned()
+        });
+        after_cursor.or_else(|| roots.first().cloned())
+    }
+
+    fn best_decision_index_for_root(&self, root: &str) -> Option<usize> {
+        self.pending_decisions
+            .iter()
+            .enumerate()
+            .filter(|(_, decision)| decision.neow_root_candidate_id == root)
+            .min_by(|(left_index, left), (right_index, right)| {
+                oracle_run_decision_priority_order(*left_index, left, *right_index, right)
+            })
+            .map(|(index, _)| index)
+    }
+
+    fn best_deferred_combat_index_for_root(&self, root: &str) -> Option<usize> {
         self.deferred_combats
             .iter()
             .enumerate()
+            .filter(|(_, deferred)| {
+                self.branches
+                    .iter()
+                    .find(|branch| branch.branch_id == deferred.branch_id)
+                    .is_some_and(|branch| branch.neow_root_candidate_id == root)
+            })
             .min_by(|(left_index, left), (right_index, right)| {
                 let left_branch = self
                     .branches
@@ -764,8 +814,9 @@ impl OracleRunExplorerV1 {
     }
 
     fn take_next_scheduled_work(&mut self) -> Option<ScheduledOracleRunWorkV1> {
-        let decision_index = self.best_decision_index();
-        let deferred_index = self.best_deferred_combat_index();
+        let root = self.next_neow_root_for_service()?;
+        let decision_index = self.best_decision_index_for_root(&root);
+        let deferred_index = self.best_deferred_combat_index_for_root(&root);
         let take_deferred = match (decision_index, deferred_index) {
             (None, Some(_)) => true,
             (Some(_), None) => false,
@@ -802,6 +853,7 @@ impl OracleRunExplorerV1 {
             }
             (None, None) => return None,
         };
+        self.last_served_neow_root = Some(root);
         if take_deferred {
             self.deferred_combats
                 .remove(deferred_index.expect("deferred index selected"))
@@ -1138,8 +1190,9 @@ impl OracleRunExplorerV1 {
                     }
                     Some("mechanics_gap") | Some("replay_mismatch") => "setup_or_mechanics_error",
                     _ => "budget_unknown",
-                },
-                last_status: progress.last_status,
+                }
+                .to_string(),
+                last_status: progress.last_status.map(str::to_string),
                 nodes_expanded,
                 exact_states: progress.exact_states,
                 applied_action_transitions: progress.applied_action_transitions,
@@ -1333,6 +1386,8 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         deferred_combats,
         journal_nodes,
         combat_search_restarts,
+        last_served_neow_root,
+        unresolved_combats,
     } = checkpoint;
     let legacy_state_fingerprints = state_fingerprint_algorithm.is_none();
     if let Some(algorithm) = state_fingerprint_algorithm.as_deref() {
@@ -1345,6 +1400,8 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
     let mut explorer = OracleRunExplorerV1::empty();
     explorer.next_branch_id = next_branch_id;
     explorer.combat_search_restarts = combat_search_restarts;
+    explorer.last_served_neow_root = last_served_neow_root;
+    explorer.unresolved_combats = unresolved_combats;
     for saved in branches {
         let journal = restore_frontier_journal(saved.journal, saved.journal_tip, &journal_nodes)?;
         let session = saved.session.into_session()?;
@@ -1445,6 +1502,9 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
                 "oracle frontier active combat branch {branch_id} duplicates registered work"
             ));
         }
+        if explorer.last_served_neow_root.is_none() {
+            explorer.last_served_neow_root = Some(branch.neow_root_candidate_id.clone());
+        }
         let work = OracleRunCombatWorkV1::restart_from_checkpoint(
             &branch.session,
             combat_budgets.for_session_stage(&branch.session, active.stage),
@@ -1474,6 +1534,9 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
             return Err(format!(
                 "oracle frontier active combat branch {branch_id} duplicates registered work"
             ));
+        }
+        if explorer.last_served_neow_root.is_none() {
+            explorer.last_served_neow_root = Some(branch.neow_root_candidate_id.clone());
         }
         let work = OracleRunCombatWorkV1::restart_from_exact_state(
             &branch.session,
@@ -1899,6 +1962,24 @@ fn combat_edge_probe_order(
     }
 }
 
+fn oracle_run_decision_priority_order(
+    left_index: usize,
+    left: &LazyOracleRunDecisionV1,
+    right_index: usize,
+    right: &LazyOracleRunDecisionV1,
+) -> std::cmp::Ordering {
+    combat_edge_probe_order(left, right)
+        .then_with(|| left.path_discrepancy.cmp(&right.path_discrepancy))
+        .then_with(|| right.parent_act.cmp(&left.parent_act))
+        .then_with(|| right.parent_floor.cmp(&left.parent_floor))
+        .then_with(|| right.path_depth.cmp(&left.path_depth))
+        .then_with(|| {
+            left.path_negative_log_policy
+                .total_cmp(&right.path_negative_log_policy)
+        })
+        .then_with(|| left_index.cmp(&right_index))
+}
+
 fn work_kind(boundary: OracleRunBoundaryV1) -> Result<OracleRunWorkKindV1, String> {
     match boundary {
         OracleRunBoundaryV1::MapDecision => Ok(OracleRunWorkKindV1::MapTravel),
@@ -2164,6 +2245,56 @@ mod tests {
         assert_eq!(checkpoint.deferred_combats.len(), 1);
         assert_eq!(checkpoint.deferred_combats[0].branch_id, 0);
         assert_eq!(checkpoint.deferred_combats[0].stage, 1);
+    }
+
+    #[test]
+    fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
+        let mut explorer = OracleRunExplorerV1::empty();
+        let mut unresolved_branch = test_branch(0, None);
+        unresolved_branch.boundary = OracleRunBoundaryV1::Combat;
+        let live_branch = test_branch(1, None);
+        explorer.branches = vec![unresolved_branch, live_branch];
+        explorer.next_branch_id = 2;
+        explorer
+            .pending_decisions
+            .push_back(test_decision(1, "live-work"));
+        explorer
+            .unresolved_combats
+            .push(OracleRunUnresolvedCombatV1 {
+                branch_id: 0,
+                rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
+                evidence_kind: "budget_unknown".to_string(),
+                last_status: Some("partial".to_string()),
+                nodes_expanded: 10,
+                exact_states: 9,
+                applied_action_transitions: 8,
+                unique_successor_states: 7,
+                duplicate_exact_successors: 6,
+                completed_turn_options: 5,
+                retained_state_work: 4,
+                max_player_turn: 3,
+                max_path_atomic_depth: 2,
+                generation_gap_count: 1,
+                incumbent_final_hp: None,
+            });
+
+        let checkpoint = explorer
+            .frontier_checkpoint()
+            .expect("checkpoint")
+            .expect("live decision keeps a continuation");
+        assert!(checkpoint
+            .branches
+            .iter()
+            .any(|branch| branch.branch_id == 0));
+        assert_eq!(checkpoint.unresolved_combats.len(), 1);
+        let encoded = serde_json::to_string(&checkpoint).expect("serialize checkpoint");
+        let decoded: OracleRunExplorerCheckpointV1 =
+            serde_json::from_str(&encoded).expect("deserialize checkpoint");
+        assert_eq!(decoded.unresolved_combats.len(), 1);
+        assert_eq!(
+            decoded.unresolved_combats[0].evidence_kind,
+            "budget_unknown"
+        );
     }
 
     fn test_owner_annotation(
@@ -2443,6 +2574,45 @@ mod tests {
 
         let selected = explorer.take_best_decision().expect("strategic work");
         assert_eq!(selected.candidate_id, "root-1-rank-0");
+    }
+
+    #[test]
+    fn a_wide_neow_root_cannot_monopolize_strategic_service() {
+        let mut explorer = OracleRunExplorerV1::empty();
+        let mut root_zero_first = test_decision(0, "root-0-first");
+        root_zero_first.neow_root_candidate_id = "0".to_string();
+        let mut root_zero_second = test_decision(1, "root-0-second");
+        root_zero_second.neow_root_candidate_id = "0".to_string();
+        root_zero_second.path_depth = 100;
+        let mut root_one = test_decision(2, "root-1");
+        root_one.neow_root_candidate_id = "1".to_string();
+        root_one.path_discrepancy = 20;
+        explorer.pending_decisions = VecDeque::from([root_zero_first, root_zero_second, root_one]);
+
+        let first = explorer
+            .take_next_scheduled_work()
+            .expect("first root service");
+        assert!(matches!(
+            first,
+            ScheduledOracleRunWorkV1::Decision(ref decision)
+                if decision.neow_root_candidate_id == "0"
+        ));
+        let second = explorer
+            .take_next_scheduled_work()
+            .expect("second root service");
+        assert!(matches!(
+            second,
+            ScheduledOracleRunWorkV1::Decision(ref decision)
+                if decision.neow_root_candidate_id == "1"
+        ));
+        let third = explorer
+            .take_next_scheduled_work()
+            .expect("wrapped root service");
+        assert!(matches!(
+            third,
+            ScheduledOracleRunWorkV1::Decision(ref decision)
+                if decision.neow_root_candidate_id == "0"
+        ));
     }
 
     #[test]
