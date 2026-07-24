@@ -687,6 +687,7 @@ fn card_reward_functional_evidence(
             same_card_count,
             formation_needs: strategy.formation_summary().needs,
             startup: startup.clone(),
+            block_plan: sts_simulator::ai::block_plan_profile_v1::block_plan_profile_v1(run_state),
         },
         &profile,
     );
@@ -722,6 +723,7 @@ fn card_reward_functional_evidence(
             matches!(
                 signal,
                 CardComponentSignalKindV1::ExhaustPayoffSupported
+                    | CardComponentSignalKindV1::BlockPayoffSupported
                     | CardComponentSignalKindV1::ExhaustEngineEnabler
                     | CardComponentSignalKindV1::FnpEngineUnlock
                     | CardComponentSignalKindV1::SelfDamagePayoffSupported

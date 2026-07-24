@@ -1,3 +1,4 @@
+use crate::ai::block_plan_profile_v1::{BlockPlanProfileV1, BlockPlanReadinessV1};
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::{
@@ -24,6 +25,8 @@ pub enum CardComponentSignalKindV1 {
     ExhaustAccess,
     ExhaustPayoffSupported,
     ExhaustPayoffUnsupported,
+    BlockPayoffSupported,
+    BlockPayoffUnsupported,
     DuplicateNoDrawAccessDebt,
     DuplicateAccessRequiresTurnPlanning,
     PayoffWithoutVisibleGapFill,
@@ -52,6 +55,8 @@ impl CardComponentSignalKindV1 {
             Self::ExhaustAccess => "improves_exhaust_access",
             Self::ExhaustPayoffSupported => "exhaust_payoff_has_generator",
             Self::ExhaustPayoffUnsupported => "exhaust_payoff_without_generator",
+            Self::BlockPayoffSupported => "block_payoff_has_supported_block_plan",
+            Self::BlockPayoffUnsupported => "block_payoff_without_supported_block_plan",
             Self::DuplicateNoDrawAccessDebt => "duplicate_draw_access_applies_no_draw_debuff",
             Self::DuplicateAccessRequiresTurnPlanning => "duplicate_access_requires_turn_planning",
             Self::PayoffWithoutVisibleGapFill => "payoff_without_visible_gap_fill",
@@ -88,6 +93,7 @@ pub struct CardComponentSignalContextV1 {
     pub same_card_count: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub startup: DeckStartupProfileV1,
+    pub block_plan: BlockPlanProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -168,6 +174,22 @@ fn add_generic_components(
     }
     if profile
         .roles
+        .contains(&CardRewardSemanticRoleV1::BlockPayoff)
+    {
+        if context.block_plan.readiness >= BlockPlanReadinessV1::Supported {
+            push_signal(
+                &mut report.positive_signals,
+                CardComponentSignalKindV1::BlockPayoffSupported,
+            );
+        } else {
+            push_signal(
+                &mut report.debt_signals,
+                CardComponentSignalKindV1::BlockPayoffUnsupported,
+            );
+        }
+    }
+    if profile
+        .roles
         .contains(&CardRewardSemanticRoleV1::StrengthPayoff)
     {
         add_strength_payoff_component(context, report);
@@ -215,6 +237,7 @@ fn package_payoff_support_signal(signal: CardComponentSignalKindV1) -> bool {
         signal,
         CardComponentSignalKindV1::FormationNeedCoverage
             | CardComponentSignalKindV1::ExhaustPayoffSupported
+            | CardComponentSignalKindV1::BlockPayoffSupported
             | CardComponentSignalKindV1::ExhaustEngineEnabler
             | CardComponentSignalKindV1::FnpEngineUnlock
             | CardComponentSignalKindV1::SelfDamagePayoffSupported
@@ -480,6 +503,7 @@ mod tests {
             same_card_count: 0,
             formation_needs: vec![StrategyDeckFormationNeedV1::Consistency],
             startup: DeckStartupProfileV1::default(),
+            block_plan: BlockPlanProfileV1::default(),
         }
     }
 
@@ -613,6 +637,32 @@ mod tests {
 
         assert!(report.positive_signals.contains(&ExhaustPayoffSupported));
         assert!(!report.debt_signals.contains(&PayoffWithoutVisibleGapFill));
+    }
+
+    #[test]
+    fn block_payoff_requires_a_supported_block_plan() {
+        let unsupported = evaluate_card_component_signals_v1(
+            &context(),
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::BodySlam, 1)),
+        );
+
+        assert!(unsupported.debt_signals.contains(&BlockPayoffUnsupported));
+        assert!(unsupported
+            .debt_signals
+            .contains(&PayoffWithoutVisibleGapFill));
+
+        let mut supported_context = context();
+        supported_context.block_plan.readiness = BlockPlanReadinessV1::Supported;
+        let supported = evaluate_card_component_signals_v1(
+            &supported_context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::BodySlam, 1)),
+        );
+
+        assert!(supported.positive_signals.contains(&BlockPayoffSupported));
+        assert!(!supported.debt_signals.contains(&BlockPayoffUnsupported));
+        assert!(!supported
+            .debt_signals
+            .contains(&PayoffWithoutVisibleGapFill));
     }
 
     #[test]

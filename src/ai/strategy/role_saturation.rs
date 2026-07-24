@@ -87,6 +87,7 @@ pub fn assess_role_saturation(
 
     if admission_is_strength_payoff(admission)
         && !admission_recovers_current_hp(admission)
+        && !deck.has_supported_hand_exhaust_conversion(admission)
         && deck.roles.strength_payoff_units >= strength_payoff_capacity(deck)
     {
         assessment.add(

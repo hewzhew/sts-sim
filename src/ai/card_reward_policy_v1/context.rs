@@ -30,7 +30,7 @@ pub fn build_card_reward_decision_context_v1(
         .enumerate()
         .map(|(index, card)| {
             let facts = card_facts(&card);
-            let impact = candidate_impact(&facts, &deck, route.as_ref());
+            let impact = candidate_impact(&facts, &deck, &block_plan, route.as_ref());
             let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v2(
                 strategy_candidate_facts(&facts),
                 &strategy,

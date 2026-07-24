@@ -48,13 +48,13 @@ pub fn assess_deck_admission_from_inventory(
     if access_still_needed(inventory, admission) {
         return DeckAdmission::Welcome;
     }
+    if admission.class == RewardAdmissionClass::BuildsSupportedPackage {
+        return DeckAdmission::Welcome;
+    }
     if let Some(admission) = repeated_role_admission(deck_size, context, inventory, admission) {
         return admission;
     }
     if context.survival_pressure() && survival_relevant(admission) {
-        return DeckAdmission::Welcome;
-    }
-    if admission.class == RewardAdmissionClass::BuildsSupportedPackage {
         return DeckAdmission::Welcome;
     }
     let (soft_limit, hard_limit) = deck_size_limits(context);

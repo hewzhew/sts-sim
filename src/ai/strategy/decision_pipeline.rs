@@ -1439,12 +1439,18 @@ fn fragile_supported_payoff(context: DecisionPipelineContext, admission: &Reward
     {
         return false;
     }
+    if context
+        .deck_plan
+        .has_supported_hand_exhaust_conversion(admission)
+    {
+        return false;
+    }
     if admission_is_strength_payoff(admission) {
         return !context.deck_plan.has_open_stable_strength_payoff_slot();
     }
     if admission_damage_uses(admission, Mechanic::Block) {
-        let roles = context.deck_plan.roles;
-        return roles.block_units < 4 && roles.cycle_block_units < 2;
+        return context.deck_plan.block_plan_readiness
+            < crate::ai::block_plan_profile_v1::BlockPlanReadinessV1::Supported;
     }
     false
 }
@@ -2744,6 +2750,123 @@ mod tests {
             sword_boomerang.lane,
             CandidateLane::Mainline,
             "low-margin payoff should remain disciplined: {sword_boomerang:#?}"
+        );
+    }
+
+    #[test]
+    fn reward_supported_block_engine_admits_zero_cost_block_payoff() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BurningPact,
+            CardId::PowerThrough,
+            CardId::SecondWind,
+            CardId::FeelNoPain,
+        ];
+
+        let body_slam =
+            reward_card_with_act_boss(&deck, CardId::BodySlam, 1, 2, EncounterId::TheChamp);
+
+        assert_eq!(
+            body_slam.lane,
+            CandidateLane::Mainline,
+            "a zero-cost block payoff should be actionable once the deck has a real block engine: {body_slam:#?}"
+        );
+    }
+
+    #[test]
+    fn reward_starter_block_does_not_claim_supported_body_slam_package() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ];
+
+        let body_slam =
+            reward_card_with_act_boss(&deck, CardId::BodySlam, 1, 1, EncounterId::TheGuardian);
+
+        assert_ne!(
+            body_slam.lane,
+            CandidateLane::Mainline,
+            "starter Defends alone must not certify a supported block-payoff package: {body_slam:#?}"
+        );
+    }
+
+    #[test]
+    fn reward_supported_exhaust_conversion_preserves_fiend_fire_independent_value() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::BurningPact,
+            CardId::PowerThrough,
+            CardId::Inflame,
+            CardId::Offering,
+            CardId::SecondWind,
+            CardId::FeelNoPain,
+            CardId::Disarm,
+            CardId::BodySlam,
+            CardId::PommelStrike,
+            CardId::HeavyBlade,
+            CardId::BurningPact,
+        ];
+
+        let fiend_fire =
+            reward_card_with_act_boss(&deck, CardId::FiendFire, 0, 2, EncounterId::TheChamp);
+
+        assert_eq!(
+            fiend_fire.lane,
+            CandidateLane::Mainline,
+            "supported exhaust conversion must survive an unrelated strength-payoff fragility check: {fiend_fire:#?}"
+        );
+    }
+
+    #[test]
+    fn reward_fiend_fire_without_exhaust_payoff_is_not_promoted_by_conversion_support() {
+        let deck = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Immolate,
+            CardId::Cleave,
+            CardId::PommelStrike,
+            CardId::BattleTrance,
+            CardId::Inflame,
+            CardId::HeavyBlade,
+        ];
+
+        let fiend_fire =
+            reward_card_with_act_boss(&deck, CardId::FiendFire, 0, 2, EncounterId::TheChamp);
+
+        assert_ne!(
+            fiend_fire.lane,
+            CandidateLane::Mainline,
+            "hand exhaust alone must not impersonate a supported exhaust conversion: {fiend_fire:#?}"
         );
     }
 

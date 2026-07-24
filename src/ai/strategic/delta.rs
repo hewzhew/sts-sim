@@ -193,6 +193,9 @@ fn positive_component_signal_pressure(signal: CardComponentSignalKindV1) -> Pres
         | CardComponentSignalKindV1::ExhaustPayoffSupported => {
             PressureKind::MissingJob(StrategicJob::ExhaustAccess)
         }
+        CardComponentSignalKindV1::BlockPayoffSupported => {
+            PressureKind::MissingJob(StrategicJob::Scaling)
+        }
         CardComponentSignalKindV1::SelfDamagePayoffSupported
         | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
         | CardComponentSignalKindV1::StrengthPayoffSupported => {
@@ -208,6 +211,7 @@ fn negative_component_signal_pressure(signal: CardComponentSignalKindV1) -> Pres
     match signal {
         CardComponentSignalKindV1::PayoffWithoutVisibleGapFill
         | CardComponentSignalKindV1::ExhaustPayoffUnsupported
+        | CardComponentSignalKindV1::BlockPayoffUnsupported
         | CardComponentSignalKindV1::SelfDamagePayoffUnsupported
         | CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator
         | CardComponentSignalKindV1::StrengthPayoffUnsupported => {

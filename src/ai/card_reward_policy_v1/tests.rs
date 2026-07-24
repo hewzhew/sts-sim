@@ -1570,7 +1570,9 @@ fn context_for_run_with_route(
         .enumerate()
         .map(|(index, card)| {
             let facts = super::facts::card_facts(&card);
-            let impact = super::impact::candidate_impact(&facts, &deck, route.as_ref());
+            let block_plan = crate::ai::block_plan_profile_v1::block_plan_profile_v1(run_state);
+            let impact =
+                super::impact::candidate_impact(&facts, &deck, &block_plan, route.as_ref());
             let plan_delta = crate::ai::noncombat_strategy_v1::candidate_plan_delta_v2(
                 super::profile::strategy_candidate_facts(&facts),
                 &strategy,

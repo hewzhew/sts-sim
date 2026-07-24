@@ -4,10 +4,12 @@ use super::types::{
     CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickDependencyV1,
     CardRewardRouteEvidenceV1, DeckProfileV1,
 };
+use crate::ai::block_plan_profile_v1::{BlockPlanProfileV1, BlockPlanReadinessV1};
 
 pub(crate) fn candidate_impact(
     facts: &CardRewardFactsV1,
     deck: &DeckProfileV1,
+    block_plan: &BlockPlanProfileV1,
     route: Option<&CardRewardRouteEvidenceV1>,
 ) -> CardRewardCandidateImpactV1 {
     let mut dependency_assessments = Vec::new();
@@ -15,7 +17,7 @@ pub(crate) fn candidate_impact(
     let mut evidence_notes = Vec::new();
 
     for dependency in &facts.pick_dependencies {
-        let assessment = assess_dependency(*dependency, facts, deck, route);
+        let assessment = assess_dependency(*dependency, facts, deck, block_plan, route);
         if let Some(gap) = blocker_for_assessment(&assessment) {
             push_gap(&mut approval_blockers, gap);
         }
@@ -65,6 +67,7 @@ fn assess_dependency(
     dependency: CardRewardPickDependencyV1,
     facts: &CardRewardFactsV1,
     deck: &DeckProfileV1,
+    block_plan: &BlockPlanProfileV1,
     route: Option<&CardRewardRouteEvidenceV1>,
 ) -> CardRewardDependencyAssessmentV1 {
     match dependency {
@@ -122,7 +125,16 @@ fn assess_dependency(
             }
         }
         CardRewardPickDependencyV1::BlockDensity => {
-            if deck.total_block > 0 {
+            if block_plan.readiness >= BlockPlanReadinessV1::Supported {
+                CardRewardDependencyAssessmentV1 {
+                    dependency,
+                    status: CardRewardDependencyStatusV1::Satisfied,
+                    reason: format!(
+                        "deck has a supported block plan (readiness={:?})",
+                        block_plan.readiness
+                    ),
+                }
+            } else if deck.total_block > 0 {
                 CardRewardDependencyAssessmentV1 {
                     dependency,
                     status: CardRewardDependencyStatusV1::Unknown,

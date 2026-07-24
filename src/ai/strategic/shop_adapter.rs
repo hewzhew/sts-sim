@@ -694,6 +694,7 @@ fn component_context_from_shop_context(
         same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
         startup: context.startup.clone(),
+        block_plan: context.block_plan.clone(),
     }
 }
 

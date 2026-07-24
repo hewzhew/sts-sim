@@ -529,8 +529,9 @@ fn construction_role(
     }
     if admission.class
         == crate::ai::strategy::reward_admission::RewardAdmissionClass::BuildsSupportedPackage
-        && admission_is_strength_payoff(admission)
-        && deck_plan.has_open_stable_strength_payoff_slot()
+        && ((admission_is_strength_payoff(admission)
+            && deck_plan.has_open_stable_strength_payoff_slot())
+            || deck_plan.has_supported_hand_exhaust_conversion(admission))
         && !deck_plan.survival_pressure()
         && (!strategic_delta.adds_deployability_debt || deck_plan.roles.energy_units > 0)
     {
@@ -612,12 +613,15 @@ fn fragile_supported_payoff(deck_plan: DeckPlanSnapshot, admission: &RewardAdmis
     {
         return false;
     }
+    if deck_plan.has_supported_hand_exhaust_conversion(admission) {
+        return false;
+    }
     if admission_is_strength_payoff(admission) {
         return !deck_plan.has_open_stable_strength_payoff_slot();
     }
     if admission_damage_uses(admission, Mechanic::Block) {
-        let roles = deck_plan.roles;
-        return roles.block_units < 4 && roles.cycle_block_units < 2;
+        return deck_plan.block_plan_readiness
+            < crate::ai::block_plan_profile_v1::BlockPlanReadinessV1::Supported;
     }
     false
 }

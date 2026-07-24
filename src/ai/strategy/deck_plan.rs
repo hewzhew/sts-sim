@@ -1,4 +1,8 @@
-use crate::ai::block_plan_profile_v1::has_second_wind_block_engine_fuel_v1;
+use crate::ai::analysis::card_semantics::{CardBurden, CombatEvent};
+use crate::ai::block_plan_profile_v1::{
+    block_plan_profile_from_deck_v1, block_plan_profile_v1, has_second_wind_block_engine_fuel_v1,
+    BlockPlanReadinessV1,
+};
 use crate::ai::strategy::deck_admission::{
     assess_deck_admission_from_inventory, DeckAdmission, DeckAdmissionContext,
 };
@@ -25,6 +29,7 @@ pub struct DeckPlanSnapshot {
     pub boss_key: Option<EncounterId>,
     pub deck_size: usize,
     pub roles: DeckRoleInventory,
+    pub block_plan_readiness: BlockPlanReadinessV1,
     pub construction: DeckConstructionPressure,
     pub strategic_deficit: DeckStrategicDeficitSummary,
     pub run_facts: RunStrategicFacts,
@@ -32,7 +37,7 @@ pub struct DeckPlanSnapshot {
 
 impl DeckPlanSnapshot {
     pub fn from_run_state(run_state: &RunState) -> Self {
-        Self::from_deck(
+        let mut snapshot = Self::from_deck(
             &run_state.master_deck,
             DeckAdmissionContext {
                 act: run_state.act_num,
@@ -41,7 +46,9 @@ impl DeckPlanSnapshot {
             },
             RunStrategicFacts::from_run_state(run_state),
         )
-        .with_boss_key(run_state.boss_key)
+        .with_boss_key(run_state.boss_key);
+        snapshot.block_plan_readiness = block_plan_profile_v1(run_state).readiness;
+        snapshot
     }
 
     pub fn from_deck(
@@ -54,6 +61,7 @@ impl DeckPlanSnapshot {
             boss_key: None,
             deck_size: deck.len(),
             roles: DeckRoleInventory::from_deck(deck),
+            block_plan_readiness: block_plan_profile_from_deck_v1(deck).readiness,
             construction: assess_deck_construction_pressure(
                 deck,
                 DeckConstructionContext { act: context.act },
@@ -98,6 +106,16 @@ impl DeckPlanSnapshot {
 
     pub fn has_open_stable_strength_payoff_slot(self) -> bool {
         self.roles.strength_source_units > 0 && self.roles.strength_payoff_units == 0
+    }
+
+    pub fn has_supported_hand_exhaust_conversion(self, admission: &RewardAdmission) -> bool {
+        self.roles.exhaust_payoff_units > 0
+            && admission
+                .reasons
+                .contains(&RewardAdmissionReason::Emits(CombatEvent::CardExhausted))
+            && admission
+                .reasons
+                .contains(&RewardAdmissionReason::Burden(CardBurden::ExhaustsHand))
     }
 
     pub fn candidate_establishes_fuel_backed_second_wind_plan(

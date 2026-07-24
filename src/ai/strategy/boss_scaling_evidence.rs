@@ -110,7 +110,9 @@ pub fn assess_boss_scaling_evidence(
         };
     }
     if candidate_block_payoff(admission) {
-        return if deck.roles.block_units >= 4 || deck.roles.cycle_block_units >= 2 {
+        return if deck.block_plan_readiness
+            >= crate::ai::block_plan_profile_v1::BlockPlanReadinessV1::Supported
+        {
             BossScalingEvidence::relevant("boss-block-damage-engine", 55)
         } else {
             BossScalingEvidence::score_only("boss-speculative-payoff", -35)

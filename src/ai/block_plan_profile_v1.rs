@@ -1,5 +1,6 @@
 use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::content::relics::RelicId;
+use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
 
@@ -83,7 +84,7 @@ impl BlockPlanProfileV1 {
 }
 
 pub fn block_plan_profile_v1(run_state: &RunState) -> BlockPlanProfileV1 {
-    let mut profile = BlockPlanProfileV1::default();
+    let mut profile = block_plan_profile_from_deck_v1(&run_state.master_deck);
 
     for relic in &run_state.relics {
         if matches!(relic.id, RelicId::Calipers) {
@@ -91,7 +92,13 @@ pub fn block_plan_profile_v1(run_state: &RunState) -> BlockPlanProfileV1 {
         }
     }
 
-    for card in &run_state.master_deck {
+    finalize_block_plan_profile_v1(&mut profile);
+    profile
+}
+
+pub fn block_plan_profile_from_deck_v1(deck: &[CombatCard]) -> BlockPlanProfileV1 {
+    let mut profile = BlockPlanProfileV1::default();
+    for card in deck {
         let analysis = card_analysis_profile_v1(card.id, card.upgrades);
         if analysis.is_block_plan_plain_coverage {
             profile.plain_block_cards = profile.plain_block_cards.saturating_add(1);
@@ -138,9 +145,13 @@ pub fn block_plan_profile_v1(run_state: &RunState) -> BlockPlanProfileV1 {
         }
     }
 
+    finalize_block_plan_profile_v1(&mut profile);
+    profile
+}
+
+fn finalize_block_plan_profile_v1(profile: &mut BlockPlanProfileV1) {
     profile.readiness = block_plan_readiness_v1(&profile);
     profile.diagnosis = block_plan_diagnosis_v1(&profile);
-    profile
 }
 
 fn block_plan_readiness_v1(profile: &BlockPlanProfileV1) -> BlockPlanReadinessV1 {
