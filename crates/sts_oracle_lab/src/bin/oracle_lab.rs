@@ -2228,7 +2228,10 @@ fn main() -> Result<(), String> {
                     .map(|audit| {
                         json!({
                             "id": demonstration.id,
-                            "audit": audit,
+                            "source_action_count": audit.source_action_count,
+                            "ranked_decision_count": audit.ranked_decision_count,
+                            "skipped_forced_decision_count": audit.skipped_forced_decision_count,
+                            "miss_count": audit.misses.len(),
                         })
                     })
                 })
@@ -2244,7 +2247,20 @@ fn main() -> Result<(), String> {
                 } else {
                     "uniform"
                 },
-                "artifact": artifact,
+                "artifact": {
+                    "schema_name": artifact.schema_name,
+                    "schema_version": artifact.schema_version,
+                    "feature_schema": artifact.feature_schema,
+                    "runtime_compatibility_id": artifact.runtime_compatibility_id,
+                    "source_trajectory_count": artifact.source_trajectory_count,
+                    "source_action_count": artifact.source_action_count,
+                    "ranked_decision_count": artifact.ranked_decision_count,
+                    "pairwise_comparison_count": artifact.pairwise_comparison_count,
+                    "skipped_forced_decision_count": artifact.skipped_forced_decision_count,
+                    "training_top1_correct": artifact.training_top1_correct,
+                    "training_top1_total": artifact.training_top1_total,
+                    "coefficient_count": artifact.coefficients.len(),
+                },
                 "demonstrations": audits,
             }))
         }
