@@ -57,6 +57,11 @@ struct Cli {
     #[arg(long, default_value_t = 1_000)]
     combat_quantum_ms: u64,
 
+    /// Run a cheap exact first pass at 1/N of each encounter allowance.
+    /// Budget-unknown edges remain live and compete for one full-budget retry.
+    #[arg(long, default_value_t = 1)]
+    combat_initial_divisor: u32,
+
     /// Save the first exact unresolved combat, or the selected active combat
     /// at a bounded stop, as a standalone combat case.
     #[arg(long)]
@@ -302,6 +307,7 @@ fn main() -> Result<(), String> {
             boss_ms: cli.boss_ms,
             combat_quantum_nodes: cli.combat_quantum_nodes,
             combat_quantum_ms: cli.combat_quantum_ms,
+            combat_initial_divisor: cli.combat_initial_divisor,
         },
     };
     let report = if let Some(path) = cli.resume.as_ref() {
@@ -323,9 +329,52 @@ fn main() -> Result<(), String> {
         save_oracle_run_continuation_v1(path, &report.continuation)?;
     }
     let output = if cli.summary_only {
+        let compact_pending_combats = report
+            .explorer
+            .pending_combats
+            .iter()
+            .map(|combat| serde_json::json!({
+                "branch_id": combat.branch_id,
+                "act": combat.act,
+                "floor": combat.floor,
+                "player_hp": combat.player_hp,
+                "player_max_hp": combat.player_max_hp,
+                "enemies": combat.enemies.iter().map(|enemy| enemy.name.as_str()).collect::<Vec<_>>(),
+                "generation_work": combat.nodes_expanded,
+                "exact_states": combat.exact_states,
+                "completed_turn_options": combat.completed_turn_options,
+                "max_player_turn": combat.max_player_turn,
+                "incumbent_final_hp": combat.incumbent_final_hp,
+                "last_status": combat.last_status,
+                "remaining_wall_ms": combat.remaining_wall_ms,
+                "restart_count": combat.restart_count,
+                "resume_kind": combat.resume_kind,
+            }))
+            .collect::<Vec<_>>();
+        let compact_explorer = serde_json::json!({
+            "stop": report.explorer.stop,
+            "work_items": report.explorer.work_items,
+            "combat_quanta": report.explorer.combat_quanta,
+            "decision_service_ms": report.explorer.decision_service_ms,
+            "combat_service_ms": report.explorer.combat_service_ms,
+            "materialized_branches": report.explorer.materialized_branches,
+            "pending_decisions": report.explorer.pending_decisions,
+            "pending_decision_discrepancy_counts": compact_discrepancy_counts(
+                &report.explorer.pending_decision_discrepancy_counts
+            ),
+            "deferred_combats": report.explorer.deferred_combats,
+            "deferred_combat_effective_discrepancy_counts": compact_discrepancy_counts(
+                &report.explorer.deferred_combat_effective_discrepancy_counts
+            ),
+            "pending_combats": compact_pending_combats,
+            "combat_search_restarts": report.explorer.combat_search_restarts,
+            "exact_duplicates": report.explorer.exact_duplicates,
+            "unresolved_combat_count": report.explorer.unresolved_combats.len(),
+            "neow_root_progress": report.explorer.neow_root_progress,
+        });
         serde_json::json!({
             "schema_name": "OracleRunCompactReportV1",
-            "schema_version": 1,
+            "schema_version": 2,
             "seed": report.seed,
             "ascension": report.ascension,
             "act": report.act,
@@ -338,36 +387,7 @@ fn main() -> Result<(), String> {
             "build_identity": report.build_identity,
             "victory": report.victory_witness.is_some(),
             "committed_progress_steps": report.committed_progress_steps,
-            "explorer": {
-                "stop": report.explorer.stop,
-                "work_items": report.explorer.work_items,
-                "combat_quanta": report.explorer.combat_quanta,
-                "decision_service_ms": report.explorer.decision_service_ms,
-                "combat_service_ms": report.explorer.combat_service_ms,
-                "materialized_branches": report.explorer.materialized_branches,
-                "pending_decisions": report.explorer.pending_decisions,
-                "pending_combats": report.explorer.pending_combats.iter().map(|combat| serde_json::json!({
-                    "branch_id": combat.branch_id,
-                    "act": combat.act,
-                    "floor": combat.floor,
-                    "player_hp": combat.player_hp,
-                    "player_max_hp": combat.player_max_hp,
-                    "enemies": combat.enemies.iter().map(|enemy| enemy.name.as_str()).collect::<Vec<_>>(),
-                    "generation_work": combat.nodes_expanded,
-                    "exact_states": combat.exact_states,
-                    "completed_turn_options": combat.completed_turn_options,
-                    "max_player_turn": combat.max_player_turn,
-                    "incumbent_final_hp": combat.incumbent_final_hp,
-                    "last_status": combat.last_status,
-                    "remaining_wall_ms": combat.remaining_wall_ms,
-                    "restart_count": combat.restart_count,
-                    "resume_kind": combat.resume_kind,
-                })).collect::<Vec<_>>(),
-                "combat_search_restarts": report.explorer.combat_search_restarts,
-                "exact_duplicates": report.explorer.exact_duplicates,
-                "unresolved_combat_count": report.explorer.unresolved_combats.len(),
-                "neow_root_progress": report.explorer.neow_root_progress,
-            },
+            "explorer": compact_explorer,
         })
     } else {
         serde_json::to_value(&report)
@@ -379,4 +399,24 @@ fn main() -> Result<(), String> {
             .map_err(|error| format!("failed to serialize oracle report: {error}"))?
     );
     Ok(())
+}
+
+fn compact_discrepancy_counts(
+    counts: &std::collections::BTreeMap<u64, usize>,
+) -> serde_json::Value {
+    let exact = counts
+        .iter()
+        .filter(|(discrepancy, _)| **discrepancy < 10)
+        .map(|(discrepancy, count)| (discrepancy.to_string(), *count))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let overflow_count = counts
+        .iter()
+        .filter(|(discrepancy, _)| **discrepancy >= 10)
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    serde_json::json!({
+        "exact_0_through_9": exact,
+        "ten_plus": overflow_count,
+        "max": counts.last_key_value().map(|(discrepancy, _)| *discrepancy),
+    })
 }

@@ -28,7 +28,7 @@ use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
 
 pub const ORACLE_RUN_REPORT_SCHEMA_NAME: &str = "OracleRunReport";
-pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 13;
+pub const ORACLE_RUN_REPORT_SCHEMA_VERSION: u32 = 14;
 pub const ORACLE_RUN_CONTINUATION_SCHEMA_NAME: &str = "OracleRunContinuation";
 pub const ORACLE_RUN_CONTINUATION_SCHEMA_VERSION: u32 = 1;
 
@@ -45,6 +45,8 @@ pub struct OracleRunBudget {
     pub boss_ms: u64,
     pub combat_quantum_nodes: usize,
     pub combat_quantum_ms: u64,
+    #[serde(default = "default_combat_initial_divisor")]
+    pub combat_initial_divisor: u32,
 }
 
 impl Default for OracleRunBudget {
@@ -60,8 +62,13 @@ impl Default for OracleRunBudget {
             boss_ms: 30_000,
             combat_quantum_nodes: 50_000,
             combat_quantum_ms: 1_000,
+            combat_initial_divisor: 1,
         }
     }
+}
+
+const fn default_combat_initial_divisor() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug)]
@@ -185,7 +192,10 @@ pub struct OracleRunExplorerSummaryV1 {
     pub elapsed_ms: u64,
     pub materialized_branches: usize,
     pub pending_decisions: usize,
+    pub pending_decision_discrepancy_counts: std::collections::BTreeMap<u64, usize>,
     pub pending_combats: Vec<OraclePendingCombatSummaryV1>,
+    pub deferred_combats: usize,
+    pub deferred_combat_effective_discrepancy_counts: std::collections::BTreeMap<u64, usize>,
     pub combat_search_restarts: usize,
     pub neow_root_progress: Vec<OracleNeowRootProgressSummaryV1>,
     pub exact_duplicates: usize,
@@ -212,6 +222,7 @@ pub struct OracleNeowRootProgressSummaryV1 {
     pub furthest_branch_id: usize,
     pub pending_decisions: usize,
     pub pending_combats: usize,
+    pub deferred_combats: usize,
     pub unresolved_combats: usize,
 }
 
@@ -412,7 +423,9 @@ fn finish_oracle_run_report(
     };
     let victory_witness =
         matches!(explored.stop, OracleRunExploreStopV1::Victory { .. }).then_some(journal.clone());
-    let neow_root_progress = oracle_neow_root_progress(&explored, &pending_combats);
+    let deferred_combat_branch_ids = explored.explorer.deferred_combat_branch_ids();
+    let neow_root_progress =
+        oracle_neow_root_progress(&explored, &pending_combats, &deferred_combat_branch_ids);
     let explorer_summary = OracleRunExplorerSummaryV1 {
         stop: explored.stop,
         work_items: explored.work_items,
@@ -427,7 +440,14 @@ fn finish_oracle_run_report(
         elapsed_ms: explored.elapsed_ms,
         materialized_branches: explored.explorer.branches.len(),
         pending_decisions: explored.explorer.pending_decisions.len(),
+        pending_decision_discrepancy_counts: explored
+            .explorer
+            .pending_decision_discrepancy_counts(),
         pending_combats,
+        deferred_combats: explored.explorer.deferred_combat_count(),
+        deferred_combat_effective_discrepancy_counts: explored
+            .explorer
+            .deferred_combat_effective_discrepancy_counts(),
         combat_search_restarts: explored.explorer.combat_search_restarts,
         neow_root_progress,
         exact_duplicates: explored.explorer.retired_exact_duplicates.len(),
@@ -517,6 +537,7 @@ fn oracle_target_profile(executable: &Path) -> Option<String> {
 fn oracle_neow_root_progress(
     explored: &OracleRunExploreResultV1,
     pending_combats: &[OraclePendingCombatSummaryV1],
+    deferred_combat_branch_ids: &[usize],
 ) -> Vec<OracleNeowRootProgressSummaryV1> {
     let mut by_root = std::collections::BTreeMap::<String, OracleNeowRootProgressSummaryV1>::new();
     for branch in &explored.explorer.branches {
@@ -531,6 +552,7 @@ fn oracle_neow_root_progress(
                 furthest_branch_id: branch.branch_id,
                 pending_decisions: 0,
                 pending_combats: 0,
+                deferred_combats: 0,
                 unresolved_combats: 0,
             });
         entry.materialized_branches = entry.materialized_branches.saturating_add(1);
@@ -562,6 +584,18 @@ fn oracle_neow_root_progress(
         {
             if let Some(entry) = by_root.get_mut(&branch.neow_root_candidate_id) {
                 entry.pending_combats = entry.pending_combats.saturating_add(1);
+            }
+        }
+    }
+    for branch_id in deferred_combat_branch_ids {
+        if let Some(branch) = explored
+            .explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == *branch_id)
+        {
+            if let Some(entry) = by_root.get_mut(&branch.neow_root_candidate_id) {
+                entry.deferred_combats = entry.deferred_combats.saturating_add(1);
             }
         }
     }
@@ -774,6 +808,9 @@ fn validate_config(config: &OracleRunConfig) -> Result<(), String> {
     if config.budget.combat_quantum_nodes == 0 || config.budget.combat_quantum_ms == 0 {
         return Err("oracle run combat quantum must be positive".to_string());
     }
+    if config.budget.combat_initial_divisor == 0 {
+        return Err("oracle run combat initial divisor must be positive".to_string());
+    }
     if config.ascension > 20 {
         return Err(format!(
             "oracle run ascension must be in 0..=20, got {}",
@@ -828,6 +865,7 @@ pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombat
             enable_legacy_no_win_rescue: false,
             ..RunControlSearchCombatOptions::default()
         },
+        initial_divisor: config.budget.combat_initial_divisor,
     }
 }
 

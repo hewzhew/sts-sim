@@ -291,6 +291,31 @@ impl OracleRunCombatWorkV1 {
         Ok(work)
     }
 
+    /// Restarts an exact combat at a higher configured fidelity while
+    /// preserving all charged work and any already verified incumbent. The
+    /// tactical frontier itself is intentionally not serialized, so the
+    /// restart is explicit in both accounting and diagnostics.
+    pub(super) fn restart_for_higher_fidelity(
+        session: &RunControlSession,
+        options: RunControlSearchCombatOptions,
+        prior: OracleRunCombatWorkCheckpointV1,
+    ) -> Result<Self, String> {
+        let mut work = Self::new_with_policy_proposal(session, options, false)?;
+        work.quantum_count = prior.quantum_count;
+        work.prior_generation_work = prior.consumed_nodes;
+        work.prior_policy_witness_proposals = prior.policy_witness_proposals;
+        work.policy_witness_proposal_rejections = prior.policy_witness_proposal_rejections;
+        work.restart_count = prior.restart_count.saturating_add(1);
+        work.incumbent_revision = prior.incumbent_revision;
+        work.quanta_since_incumbent_improvement = prior.quanta_since_incumbent_improvement;
+        if let Some(incumbent) = prior.incumbent {
+            work.local_search
+                .restore_verified_witness(incumbent.clone())?;
+            work.global_search.restore_verified_witness(incumbent)?;
+        }
+        Ok(work)
+    }
+
     fn offer_initial_rollout_policy_proposal(&mut self) {
         const MAX_POLICY_ACTIONS: usize = 256;
         const POLICY_WALL_LIMIT: Duration = Duration::from_millis(100);
