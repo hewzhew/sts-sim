@@ -256,7 +256,8 @@ pub fn oracle_rollout_witness_proposal_v1(
         max_actions,
         deadline,
         &mut performance,
-    );
+    )
+    .filter(|proposal| rollout_proposal_exactly_replays_to_win(position, proposal, &config));
     let severe_no_potion_loss = baseline.as_ref().is_none_or(|baseline| {
         let player = &position.combat.entities.player;
         let material_loss = (player.current_hp / 4).max(6);
@@ -302,7 +303,8 @@ pub fn oracle_rollout_witness_proposal_v1(
             max_actions.saturating_sub(1),
             deadline,
             &mut performance,
-        );
+        )
+        .filter(|proposal| rollout_proposal_exactly_replays_to_win(position, proposal, &config));
         if severe_no_potion_loss
             && candidate.as_ref().is_some_and(|candidate| {
                 best.as_ref()
@@ -313,6 +315,34 @@ pub fn oracle_rollout_witness_proposal_v1(
         }
     }
     best
+}
+
+fn rollout_proposal_exactly_replays_to_win(
+    root: &CombatPosition,
+    proposal: &OracleRolloutWitnessProposalV1,
+    config: &CombatSearchV2Config,
+) -> bool {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    for input in &proposal.actions {
+        if stepper.choice_for_legal_input(&position, input).is_none() {
+            return false;
+        }
+        let result = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: config.max_engine_steps_per_action,
+                deadline: None,
+            },
+        );
+        if result.truncated || result.timed_out {
+            return false;
+        }
+        position = result.position;
+    }
+    EngineCombatStepper.terminal(&position) == CombatTerminal::Win
+        && !position.combat.runtime.combat_smoked
 }
 
 /// Runs the mature complete tactical search as a bounded proposal donor when

@@ -40,6 +40,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     quantum_count: usize,
     prior_generation_work: u64,
     prior_policy_witness_proposals: usize,
+    policy_witness_proposal_rejections: usize,
     restart_count: usize,
     last_status: Option<PortfolioStatusV1>,
     local_status: Option<LocalTurnGraphWitnessStatus>,
@@ -87,6 +88,8 @@ pub struct OracleRunCombatWorkCheckpointV1 {
     #[serde(default)]
     pub policy_witness_proposals: usize,
     #[serde(default)]
+    pub policy_witness_proposal_rejections: usize,
+    #[serde(default)]
     pub quanta_since_incumbent_improvement: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incumbent: Option<OracleCombatWitness>,
@@ -132,6 +135,7 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub generation_gap_count: usize,
     pub pending_witness_replay: bool,
     pub policy_witness_proposals: usize,
+    pub policy_witness_proposal_rejections: usize,
     pub advisor_nodes: u64,
     pub advisor_elapsed_ms: u64,
     pub advisor_active: bool,
@@ -234,6 +238,7 @@ impl OracleRunCombatWorkV1 {
             quantum_count: 0,
             prior_generation_work: 0,
             prior_policy_witness_proposals: 0,
+            policy_witness_proposal_rejections: 0,
             restart_count: 0,
             last_status: None,
             local_status: None,
@@ -246,7 +251,7 @@ impl OracleRunCombatWorkV1 {
             witness_source: CombatAutomationTrajectorySource::SearchCombat,
         };
         if offer_policy_proposal {
-            work.offer_initial_rollout_policy_proposal()?;
+            work.offer_initial_rollout_policy_proposal();
         }
         Ok(work)
     }
@@ -274,6 +279,7 @@ impl OracleRunCombatWorkV1 {
         work.quantum_count = checkpoint.quantum_count;
         work.prior_generation_work = checkpoint.consumed_nodes;
         work.prior_policy_witness_proposals = checkpoint.policy_witness_proposals;
+        work.policy_witness_proposal_rejections = checkpoint.policy_witness_proposal_rejections;
         work.restart_count = checkpoint.restart_count.saturating_add(1);
         work.incumbent_revision = checkpoint.incumbent_revision;
         work.quanta_since_incumbent_improvement = checkpoint.quanta_since_incumbent_improvement;
@@ -285,7 +291,7 @@ impl OracleRunCombatWorkV1 {
         Ok(work)
     }
 
-    fn offer_initial_rollout_policy_proposal(&mut self) -> Result<(), String> {
+    fn offer_initial_rollout_policy_proposal(&mut self) {
         const MAX_POLICY_ACTIONS: usize = 256;
         const POLICY_WALL_LIMIT: Duration = Duration::from_millis(100);
 
@@ -294,40 +300,47 @@ impl OracleRunCombatWorkV1 {
             .map(|remaining| remaining.min(POLICY_WALL_LIMIT))
             .unwrap_or(POLICY_WALL_LIMIT);
         if allowance.is_zero() {
-            return Ok(());
+            return;
         }
         let started = Instant::now();
         let deadline = started.checked_add(allowance);
-        let proposal = existing_combat_rollout_witness_proposal_v1(
+        let proposal_result = existing_combat_rollout_witness_proposal_v1(
             &self.start,
             MAX_POLICY_ACTIONS,
             self.max_transition_steps,
             deadline,
-        )?;
+        );
         if let Some(remaining) = &mut self.remaining_wall_time {
             *remaining = remaining.saturating_sub(started.elapsed());
         }
-        let Some(proposal) = proposal else {
-            return Ok(());
+        let Some(proposal) = (match proposal_result {
+            Ok(proposal) => proposal,
+            Err(_) => {
+                self.policy_witness_proposal_rejections =
+                    self.policy_witness_proposal_rejections.saturating_add(1);
+                None
+            }
+        }) else {
+            return;
         };
         let before_replay_steps = self
             .local_search
             .counters()
             .policy_witness_replay_engine_steps;
-        self.local_search
+        if self
+            .local_search
             .offer_witness_proposal(proposal, &crate::sim::combat::EngineCombatStepper)
-            .map_err(|error| {
-                format!(
-                    "mature rollout policy proposal failed planner-owned exact replay: {error:?}"
-                )
-            })?;
+            .is_err()
+        {
+            self.policy_witness_proposal_rejections =
+                self.policy_witness_proposal_rejections.saturating_add(1);
+        }
         let replay_steps = self
             .local_search
             .counters()
             .policy_witness_replay_engine_steps
             .saturating_sub(before_replay_steps);
         self.remaining_engine_steps = self.remaining_engine_steps.saturating_sub(replay_steps);
-        Ok(())
     }
 
     /// Restores a legacy exact combat state whose checkpoint did not preserve
@@ -355,6 +368,7 @@ impl OracleRunCombatWorkV1 {
                 .prior_policy_witness_proposals
                 .saturating_add(self.local_search.counters().policy_witness_proposals)
                 .saturating_add(self.global_search.counters().policy_witness_proposals),
+            policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             quanta_since_incumbent_improvement: self.quanta_since_incumbent_improvement,
             incumbent: self.best_witness().cloned(),
             // Kept in checkpoint schema so old files still deserialize. New
@@ -729,6 +743,7 @@ impl OracleRunCombatWorkV1 {
                 .policy_witness_proposals
                 .saturating_add(global_counters.policy_witness_proposals)
                 .saturating_add(self.prior_policy_witness_proposals),
+            policy_witness_proposal_rejections: self.policy_witness_proposal_rejections,
             advisor_nodes: 0,
             advisor_elapsed_ms: 0,
             advisor_active: false,

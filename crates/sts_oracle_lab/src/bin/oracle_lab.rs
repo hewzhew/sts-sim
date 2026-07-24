@@ -674,6 +674,11 @@ enum Command {
         quantum_nodes: usize,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+        /// Maximum atomic inputs allowed in the standalone deterministic
+        /// rollout proposal. Exposed so production proposal bounds can be
+        /// reproduced exactly.
+        #[arg(long, default_value_t = 80)]
+        root_rollout_max_actions: usize,
         /// Save the exact replayable winner found by the no-rollout control.
         /// The compact audit never embeds action arrays in its JSON report.
         #[arg(long)]
@@ -5305,6 +5310,7 @@ fn main() -> Result<(), String> {
             wall_ms,
             quantum_nodes,
             max_engine_steps_per_transition,
+            root_rollout_max_actions,
             export_without_rollout_witness_actions,
         } => {
             let loaded_case = load_combat_case(&case)?;
@@ -5365,7 +5371,7 @@ fn main() -> Result<(), String> {
             let root_rollout =
                 sts_simulator::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
                     &loaded.position,
-                    80,
+                    root_rollout_max_actions,
                     Instant::now().checked_add(Duration::from_millis(wall_ms)),
                 );
             let root_rollout_report = root_rollout.map(|proposal| {
