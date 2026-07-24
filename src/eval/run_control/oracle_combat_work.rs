@@ -24,6 +24,7 @@ use super::oracle_combat_policy::{
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
 use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
 use super::trace_annotation::CombatAutomationTrajectorySource;
+use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::ClientInput;
 
 pub(super) struct OracleRunCombatWorkV1 {
@@ -156,17 +157,19 @@ impl OracleRunCombatWorkV1 {
         self.local_search.root_action_families()
     }
 
-    pub(super) fn new(
+    pub(super) fn new_with_guidance(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
+        guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        Self::new_with_policy_proposal(session, options, true)
+        Self::new_with_policy_proposal(session, options, true, guidance)
     }
 
     fn new_with_policy_proposal(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         offer_policy_proposal: bool,
+        guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         let prepared = prepare_search_combat(session, options)?;
         let max_transition_steps = prepared.config.max_engine_steps_per_action.max(1);
@@ -193,6 +196,11 @@ impl OracleRunCombatWorkV1 {
         let root = CombatDecisionRoot::new(prepared.start.clone())
             .map_err(|error| format!("invalid oracle combat root: {error:?}"))?;
         let policy = Arc::new(ExistingCombatKnowledgePolicy::default());
+        let policy = if let Some(guidance) = guidance {
+            guidance.policy(policy)?
+        } else {
+            policy
+        };
         let local_search = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
             root.clone(),
             LocalTurnGraphWitnessConfig {
@@ -256,15 +264,16 @@ impl OracleRunCombatWorkV1 {
         Ok(work)
     }
 
-    pub(super) fn restart_from_checkpoint(
+    pub(super) fn restart_from_checkpoint_with_guidance(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         checkpoint: OracleRunCombatWorkCheckpointV1,
+        guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
         // A process restart restores the already charged incumbent and
         // allowance. Re-running a non-serialized policy proposal here would
         // repeatedly pay the same startup computation and obscure accounting.
-        let mut work = Self::new_with_policy_proposal(session, options, false)?;
+        let mut work = Self::new_with_policy_proposal(session, options, false, guidance)?;
         work.remaining_work = work.remaining_work.min(checkpoint.remaining_nodes);
         work.remaining_engine_steps = work
             .remaining_engine_steps
@@ -295,12 +304,13 @@ impl OracleRunCombatWorkV1 {
     /// preserving all charged work and any already verified incumbent. The
     /// tactical frontier itself is intentionally not serialized, so the
     /// restart is explicit in both accounting and diagnostics.
-    pub(super) fn restart_for_higher_fidelity(
+    pub(super) fn restart_for_higher_fidelity_with_guidance(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
         prior: OracleRunCombatWorkCheckpointV1,
+        guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        let mut work = Self::new_with_policy_proposal(session, options, false)?;
+        let mut work = Self::new_with_policy_proposal(session, options, false, guidance)?;
         work.quantum_count = prior.quantum_count;
         work.prior_generation_work = prior.consumed_nodes;
         work.prior_policy_witness_proposals = prior.policy_witness_proposals;
@@ -371,11 +381,12 @@ impl OracleRunCombatWorkV1 {
     /// Restores a legacy exact combat state whose checkpoint did not preserve
     /// tactical allowance or incumbent information.  It must be reported as a
     /// search restart even though its allowance necessarily starts fresh.
-    pub(super) fn restart_from_exact_state(
+    pub(super) fn restart_from_exact_state_with_guidance(
         session: &RunControlSession,
         options: RunControlSearchCombatOptions,
+        guidance: Option<&CombatGuidanceBundleV1>,
     ) -> Result<Self, String> {
-        let mut work = Self::new(session, options)?;
+        let mut work = Self::new_with_guidance(session, options, guidance)?;
         work.restart_count = 1;
         Ok(work)
     }
@@ -980,7 +991,7 @@ mod tests {
     #[test]
     fn portfolio_charges_each_live_search_from_one_shared_allowance() {
         let session = hallway_combat_session();
-        let mut work = OracleRunCombatWorkV1::new(
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
             &session,
             RunControlSearchCombatOptions {
                 max_nodes: Some(16),
@@ -989,6 +1000,7 @@ mod tests {
                 ),
                 ..RunControlSearchCombatOptions::default()
             },
+            None,
         )
         .expect("portfolio should accept an active combat");
         let quantum = RunControlCombatSearchQuantum {
@@ -1017,7 +1029,7 @@ mod tests {
     #[test]
     fn production_lookahead_work_is_charged_to_the_shared_allowance() {
         let session = hallway_combat_session();
-        let mut work = OracleRunCombatWorkV1::new(
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
             &session,
             RunControlSearchCombatOptions {
                 max_nodes: Some(4_096),
@@ -1026,6 +1038,7 @@ mod tests {
                 ),
                 ..RunControlSearchCombatOptions::default()
             },
+            None,
         )
         .expect("portfolio should accept an active combat");
         let quantum = RunControlCombatSearchQuantum {

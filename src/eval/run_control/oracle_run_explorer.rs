@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
@@ -268,6 +270,9 @@ pub struct OracleRunCombatBudgetsV1 {
     /// allowance. A budget-unknown result remains a live exact edge and may
     /// later earn one full-budget restart.
     pub initial_divisor: u32,
+    /// Optional immutable learned guidance. Exact simulation, legality,
+    /// terminal checks, and replay remain authoritative.
+    pub guidance_bundle: Option<Arc<CombatGuidanceBundleV1>>,
 }
 
 impl OracleRunCombatBudgetsV1 {
@@ -277,7 +282,13 @@ impl OracleRunCombatBudgetsV1 {
             elite: options.clone(),
             boss: options,
             initial_divisor: 1,
+            guidance_bundle: None,
         }
+    }
+
+    pub fn with_guidance_bundle(mut self, bundle: Option<CombatGuidanceBundleV1>) -> Self {
+        self.guidance_bundle = bundle.map(Arc::new);
+        self
     }
 
     pub(super) fn for_session(&self, session: &RunControlSession) -> RunControlSearchCombatOptions {
@@ -964,9 +975,10 @@ impl OracleRunExplorerV1 {
                 if !self.registered_work_keys.insert(key) {
                     return Ok(());
                 }
-                let work = OracleRunCombatWorkV1::new(
+                let work = OracleRunCombatWorkV1::new_with_guidance(
                     &branch.session,
                     combat_budgets.for_session_stage(&branch.session, 0),
+                    combat_budgets.guidance_bundle.as_deref(),
                 )?;
                 self.pending_combats.push_back(PendingOracleCombatV1 {
                     branch_id,
@@ -1000,10 +1012,11 @@ impl OracleRunExplorerV1 {
                     deferred.branch_id
                 )
             })?;
-        let work = OracleRunCombatWorkV1::restart_for_higher_fidelity(
+        let work = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
             &branch.session,
             combat_budgets.for_session_stage(&branch.session, deferred.stage),
             deferred.prior_work,
+            combat_budgets.guidance_bundle.as_deref(),
         )?;
         self.pending_combats.push_back(PendingOracleCombatV1 {
             branch_id: deferred.branch_id,
@@ -1505,10 +1518,11 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         if explorer.last_served_neow_root.is_none() {
             explorer.last_served_neow_root = Some(branch.neow_root_candidate_id.clone());
         }
-        let work = OracleRunCombatWorkV1::restart_from_checkpoint(
+        let work = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
             &branch.session,
             combat_budgets.for_session_stage(&branch.session, active.stage),
             active.work,
+            combat_budgets.guidance_bundle.as_deref(),
         )?;
         explorer.pending_combats.push_back(PendingOracleCombatV1 {
             branch_id,
@@ -1538,9 +1552,10 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         if explorer.last_served_neow_root.is_none() {
             explorer.last_served_neow_root = Some(branch.neow_root_candidate_id.clone());
         }
-        let work = OracleRunCombatWorkV1::restart_from_exact_state(
+        let work = OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
             &branch.session,
             combat_budgets.for_session(&branch.session),
+            combat_budgets.guidance_bundle.as_deref(),
         )?;
         explorer.pending_combats.push_back(PendingOracleCombatV1 {
             branch_id,
@@ -2172,6 +2187,7 @@ mod tests {
             elite: options.clone(),
             boss: options,
             initial_divisor: 4,
+            guidance_bundle: None,
         };
         let session = RunControlSession::new(RunControlConfig::default());
 

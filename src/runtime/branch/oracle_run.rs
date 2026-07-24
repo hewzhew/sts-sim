@@ -866,6 +866,7 @@ pub(super) fn oracle_combat_budgets(config: &OracleRunConfig) -> OracleRunCombat
             ..RunControlSearchCombatOptions::default()
         },
         initial_divisor: config.budget.combat_initial_divisor,
+        guidance_bundle: None,
     }
 }
 

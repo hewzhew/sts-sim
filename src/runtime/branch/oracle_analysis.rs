@@ -7,6 +7,7 @@ use crate::eval::combat_case::{
     CombatCase, CombatCaseGap, CombatCasePathStep, CombatCaseRngSummary, CombatCaseRunSummary,
     CombatCaseSource,
 };
+use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
     expand_oracle_neow_candidates_v1, seed_oracle_run_explorer_from_checkpoint_v1,
@@ -33,6 +34,8 @@ pub struct OracleAnalysisWorkspaceArtifactV1 {
     pub seed: u64,
     pub ascension: u8,
     pub budget: OracleRunBudget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
     pub session: OracleAnalysisSessionCheckpointV1,
 }
 
@@ -40,12 +43,21 @@ pub struct OracleAnalysisWorkspaceV1 {
     pub seed: u64,
     pub ascension: u8,
     pub budget: OracleRunBudget,
+    pub combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
     pub session: OracleAnalysisSessionV1,
 }
 
 impl OracleAnalysisWorkspaceV1 {
     pub fn new(config: OracleRunConfig) -> Result<Self, String> {
+        Self::new_with_combat_guidance(config, None)
+    }
+
+    pub fn new_with_combat_guidance(
+        config: OracleRunConfig,
+        combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
+    ) -> Result<Self, String> {
         validate_analysis_config(&config)?;
+        validate_combat_guidance(&combat_guidance_bundle)?;
         let session = RunControlSession::new(RunControlConfig {
             seed: config.seed,
             ascension_level: config.ascension,
@@ -60,10 +72,12 @@ impl OracleAnalysisWorkspaceV1 {
             Some(super::owner_audit::oracle_candidate_order),
         )?;
         let first_root = explorer.branches.first().map(|branch| branch.branch_id);
+        let combat_budgets =
+            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
         let analysis = OracleAnalysisSessionV1::from_explorer(
             explorer,
             first_root,
-            oracle_combat_budgets(&config),
+            combat_budgets,
             Some(super::owner_audit::oracle_candidate_order),
             Some(super::owner_audit::oracle_candidate_annotation),
         )?;
@@ -71,6 +85,7 @@ impl OracleAnalysisWorkspaceV1 {
             seed: config.seed,
             ascension: config.ascension,
             budget: config.budget,
+            combat_guidance_bundle,
             session: analysis,
         })
     }
@@ -79,14 +94,24 @@ impl OracleAnalysisWorkspaceV1 {
         config: OracleRunConfig,
         continuation: OracleRunContinuationV1,
     ) -> Result<Self, String> {
+        Self::from_continuation_with_combat_guidance(config, continuation, None)
+    }
+
+    pub fn from_continuation_with_combat_guidance(
+        config: OracleRunConfig,
+        continuation: OracleRunContinuationV1,
+        combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
+    ) -> Result<Self, String> {
         validate_analysis_config(&config)?;
+        validate_combat_guidance(&combat_guidance_bundle)?;
         if continuation.seed != config.seed || continuation.ascension != config.ascension {
             return Err(format!(
                 "oracle continuation is seed {} A{}, requested analysis is seed {} A{}",
                 continuation.seed, continuation.ascension, config.seed, config.ascension
             ));
         }
-        let combat_budgets = oracle_combat_budgets(&config);
+        let combat_budgets =
+            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
         // Import the exact selected state and its committed journal. Historical
         // automatic frontier work is intentionally not treated as an editable
         // analysis tree; the workbench creates explicit variations from here.
@@ -108,6 +133,7 @@ impl OracleAnalysisWorkspaceV1 {
             seed: config.seed,
             ascension: config.ascension,
             budget: config.budget,
+            combat_guidance_bundle,
             session: analysis,
         })
     }
@@ -117,14 +143,25 @@ impl OracleAnalysisWorkspaceV1 {
         continuation: OracleRunContinuationV1,
         branch_id: usize,
     ) -> Result<Self, String> {
+        Self::from_continuation_branch_with_combat_guidance(config, continuation, branch_id, None)
+    }
+
+    pub fn from_continuation_branch_with_combat_guidance(
+        config: OracleRunConfig,
+        continuation: OracleRunContinuationV1,
+        branch_id: usize,
+        combat_guidance_bundle: Option<CombatGuidanceBundleV1>,
+    ) -> Result<Self, String> {
         validate_analysis_config(&config)?;
+        validate_combat_guidance(&combat_guidance_bundle)?;
         if continuation.seed != config.seed || continuation.ascension != config.ascension {
             return Err(format!(
                 "oracle continuation is seed {} A{}, requested analysis is seed {} A{}",
                 continuation.seed, continuation.ascension, config.seed, config.ascension
             ));
         }
-        let combat_budgets = oracle_combat_budgets(&config);
+        let combat_budgets =
+            oracle_combat_budgets(&config).with_guidance_bundle(combat_guidance_bundle.clone());
         let frontier = continuation.explorer_frontier.ok_or_else(|| {
             "oracle continuation has no retained frontier from which to import a branch".to_string()
         })?;
@@ -153,6 +190,7 @@ impl OracleAnalysisWorkspaceV1 {
             seed: config.seed,
             ascension: config.ascension,
             budget: config.budget,
+            combat_guidance_bundle,
             session: analysis,
         })
     }
@@ -182,9 +220,12 @@ impl OracleAnalysisWorkspaceV1 {
             budget: artifact.budget,
         };
         validate_analysis_config(&config)?;
+        validate_combat_guidance(&artifact.combat_guidance_bundle)?;
+        let combat_budgets = oracle_combat_budgets(&config)
+            .with_guidance_bundle(artifact.combat_guidance_bundle.clone());
         let session = OracleAnalysisSessionV1::restore(
             artifact.session,
-            oracle_combat_budgets(&config),
+            combat_budgets,
             Some(super::owner_audit::oracle_candidate_order),
             Some(super::owner_audit::oracle_candidate_annotation),
         )?;
@@ -192,6 +233,7 @@ impl OracleAnalysisWorkspaceV1 {
             seed: artifact.seed,
             ascension: artifact.ascension,
             budget: artifact.budget,
+            combat_guidance_bundle: artifact.combat_guidance_bundle,
             session,
         })
     }
@@ -203,6 +245,7 @@ impl OracleAnalysisWorkspaceV1 {
             seed: self.seed,
             ascension: self.ascension,
             budget: self.budget,
+            combat_guidance_bundle: self.combat_guidance_bundle.clone(),
             session: self.session.checkpoint()?,
         })
     }
@@ -237,6 +280,14 @@ impl OracleAnalysisWorkspaceV1 {
         self.session.accept_cursor_combat_actions(actions)?;
         self.view()
     }
+}
+
+fn validate_combat_guidance(guidance: &Option<CombatGuidanceBundleV1>) -> Result<(), String> {
+    guidance
+        .as_ref()
+        .map(CombatGuidanceBundleV1::validate)
+        .transpose()
+        .map(|_| ())
 }
 
 pub fn save_oracle_analysis_workspace_v1(

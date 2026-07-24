@@ -426,10 +426,11 @@ impl OracleAnalysisSessionV1 {
                         saved.branch_id
                     )
                 })?;
-            let work = OracleRunCombatWorkV1::restart_from_checkpoint(
+            let work = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
                 &branch.session,
                 combat_budgets.for_session(&branch.session),
                 saved.work,
+                combat_budgets.guidance_bundle.as_deref(),
             )?;
             if combat_jobs.insert(saved.branch_id, work).is_some() {
                 return Err(format!(
@@ -954,9 +955,10 @@ impl OracleAnalysisSessionV1 {
         });
         let resumes_existing_search = self.combat_jobs.contains_key(&source_node_id);
         if !resumes_existing_search {
-            let work = OracleRunCombatWorkV1::new(
+            let work = OracleRunCombatWorkV1::new_with_guidance(
                 &branch.session,
                 self.combat_budgets.for_session(&branch.session),
+                self.combat_budgets.guidance_bundle.as_deref(),
             )?;
             self.combat_jobs.insert(source_node_id, work);
         }
@@ -1109,9 +1111,10 @@ impl OracleAnalysisSessionV1 {
                     branch.boundary
                 ));
             }
-            OracleRunCombatWorkV1::restart_from_exact_state(
+            OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
                 &branch.session,
                 self.combat_budgets.for_session(&branch.session),
+                self.combat_budgets.guidance_bundle.as_deref(),
             )?
         };
         if let Err(error) = work.verify_and_restore_action_witness(actions) {
@@ -1135,9 +1138,10 @@ impl OracleAnalysisSessionV1 {
                     branch.boundary
                 ));
             }
-            OracleRunCombatWorkV1::restart_from_exact_state(
+            OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
                 &branch.session,
                 self.combat_budgets.for_session(&branch.session),
+                self.combat_budgets.guidance_bundle.as_deref(),
             )?
         };
         self.combat_jobs.insert(node_id, work);

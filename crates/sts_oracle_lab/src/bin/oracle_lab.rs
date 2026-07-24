@@ -91,6 +91,10 @@ enum Command {
         ascension: u8,
         #[arg(long)]
         workspace: PathBuf,
+        /// Embed one validated guidance bundle into the workspace so every
+        /// later process restore uses the same immutable search policy.
+        #[arg(long)]
+        combat_guidance_bundle: Option<PathBuf>,
         #[command(flatten)]
         budget: BudgetArgs,
     },
@@ -103,6 +107,10 @@ enum Command {
         /// Import one retained frontier branch instead of the report-selected state.
         #[arg(long)]
         branch_id: Option<usize>,
+        /// Embed one validated guidance bundle into the workspace so every
+        /// later process restore uses the same immutable search policy.
+        #[arg(long)]
+        combat_guidance_bundle: Option<PathBuf>,
         #[command(flatten)]
         budget: BudgetArgs,
     },
@@ -1662,13 +1670,21 @@ fn main() -> Result<(), String> {
             seed,
             ascension,
             workspace,
+            combat_guidance_bundle,
             budget,
         } => {
-            let analysis = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
-                seed,
-                ascension,
-                budget: budget.into_budget(),
-            })?;
+            let guidance = combat_guidance_bundle
+                .as_deref()
+                .map(CombatGuidanceBundleV1::load)
+                .transpose()?;
+            let analysis = OracleAnalysisWorkspaceV1::new_with_combat_guidance(
+                OracleRunConfig {
+                    seed,
+                    ascension,
+                    budget: budget.into_budget(),
+                },
+                guidance,
+            )?;
             let view = analysis.view()?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
             print_json(&view)
@@ -1677,21 +1693,33 @@ fn main() -> Result<(), String> {
             continuation,
             workspace,
             branch_id,
+            combat_guidance_bundle,
             budget,
         } => {
             let continuation = load_oracle_run_continuation_v1(&continuation)?;
+            let guidance = combat_guidance_bundle
+                .as_deref()
+                .map(CombatGuidanceBundleV1::load)
+                .transpose()?;
             let config = OracleRunConfig {
                 seed: continuation.seed,
                 ascension: continuation.ascension,
                 budget: budget.into_budget(),
             };
             let analysis = match branch_id {
-                Some(branch_id) => OracleAnalysisWorkspaceV1::from_continuation_branch(
+                Some(branch_id) => {
+                    OracleAnalysisWorkspaceV1::from_continuation_branch_with_combat_guidance(
+                        config,
+                        continuation,
+                        branch_id,
+                        guidance,
+                    )?
+                }
+                None => OracleAnalysisWorkspaceV1::from_continuation_with_combat_guidance(
                     config,
                     continuation,
-                    branch_id,
+                    guidance,
                 )?,
-                None => OracleAnalysisWorkspaceV1::from_continuation(config, continuation)?,
             };
             let view = analysis.view()?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
