@@ -91,9 +91,10 @@ pub use bounded_run_driver::{
     BoundedRunResultV1, BoundedRunStepContextV1, BoundedRunStepControlV1,
 };
 pub use campfire_policy_prior::{
-    exact_campfire_policy_decision_v1, exact_campfire_policy_prior_v1,
-    CampfirePolicyActionEvidenceV1, CampfirePolicyActionV1, CampfirePolicyBandV1,
-    ExactCampfirePolicyDecisionV1,
+    exact_campfire_policy_audit_v1, exact_campfire_policy_decision_v1,
+    exact_campfire_policy_prior_v1, CampfirePolicyActionEvidenceV1, CampfirePolicyActionV1,
+    CampfirePolicyAuditCandidateV1, CampfirePolicyBandV1, CampfireRecoveryContextV1,
+    ExactCampfirePolicyAuditV1, ExactCampfirePolicyDecisionV1,
 };
 pub use card_reward_policy_prior::{
     exact_card_reward_policy_decision_v1, exact_card_reward_policy_prior_v1,
@@ -241,8 +242,9 @@ pub(crate) use shop_legal::{
     shop_merchandise_purchase_block_reason_v1, shop_potion_purchase_block_reason_v1,
 };
 pub use shop_policy_prior::{
-    exact_shop_policy_decision_v1, exact_shop_policy_prior_v1, ExactShopPolicyDecisionV1,
-    ShopPolicyAcquisitionV1, ShopPolicyActionEvidenceV1, ShopPolicyBandV1,
+    exact_shop_policy_audit_v1, exact_shop_policy_decision_v1, exact_shop_policy_prior_v1,
+    ExactShopPolicyAuditV1, ExactShopPolicyDecisionV1, ShopPolicyAcquisitionV1,
+    ShopPolicyActionEvidenceV1, ShopPolicyAuditCandidateV1, ShopPolicyBandV1,
     ShopPolicyCapabilityChangeV1, ShopPolicyFollowupV1, ShopPolicyThreatGapKeyV1,
 };
 pub use strategic_checkpoint_probe::{

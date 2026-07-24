@@ -1,15 +1,20 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+use serde::Serialize;
+
 use crate::ai::card_semantics_v1::{
-    card_reward_semantic_profile_v1, potion_acquisition_traits_v1,
-    relic_acquisition_requirements_v1, relic_acquisition_traits_v1, AcquisitionRequirementV1,
-    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1, PotionAcquisitionTraitV1,
-    RelicAcquisitionTraitV1,
+    card_reward_semantic_profile_v1, potion_acquisition_requirements_v1,
+    potion_acquisition_traits_v1, relic_acquisition_requirements_v1, relic_acquisition_traits_v1,
+    AcquisitionRequirementV1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+    PotionAcquisitionTraitV1, RelicAcquisitionTraitV1,
 };
 use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
 use crate::ai::noncombat_strategy_v1::{
     StrategyCapabilityKindV1, StrategyDeckFormationNeedV1, StrategyPackageIdV2,
+};
+use crate::ai::route_window_facts::{
+    build_route_path_family_from_target, route_window_targets, RouteWindowFactsConfig,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::PotionId;
@@ -24,7 +29,8 @@ use super::{
     RunPolicyThreatGapKeyV1,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ShopPolicyBandV1 {
     ResolvePendingBoundary,
     ImmediateSurvival,
@@ -37,7 +43,8 @@ pub enum ShopPolicyBandV1 {
     Liability,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ShopPolicyFollowupV1 {
     Shop,
     Reward,
@@ -63,6 +70,8 @@ pub enum ShopPolicyAcquisitionV1 {
     Potion {
         potion: PotionId,
         traits: Vec<PotionAcquisitionTraitV1>,
+        requirements: Vec<AcquisitionRequirementV1>,
+        requirements_satisfied: bool,
     },
     Purge {
         card: CardId,
@@ -103,6 +112,139 @@ pub struct ExactShopPolicyDecisionV1 {
     pub exact: ExactRunPolicyDecisionV1,
     pub evidence: Vec<ShopPolicyActionEvidenceV1>,
     pub prior: RunPolicyPriorV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShopPolicyAuditCandidateV1 {
+    pub owner_rank: usize,
+    pub candidate_id: String,
+    pub label: String,
+    pub candidate_key: DecisionCandidateKey,
+    pub acquisition: String,
+    pub band: ShopPolicyBandV1,
+    pub followup: ShopPolicyFollowupV1,
+    pub gold_spent: i32,
+    pub hp_gain: i32,
+    pub max_hp_gain: i32,
+    pub deck_size_delta: isize,
+    pub closed_threat_gaps: Vec<String>,
+    pub capability_improvements: Vec<String>,
+    pub resolved_formation_needs: Vec<String>,
+    pub added_formation_strengths: Vec<String>,
+    pub matched_consumable_capabilities: Vec<String>,
+    pub upgrade_scope_before: Option<String>,
+    pub upgrade_scope_after: Option<String>,
+    pub introduces_status_burden: bool,
+    pub redundant_upgrade_access: bool,
+    pub surface_index: usize,
+    pub prior_probability: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExactShopPolicyAuditV1 {
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub candidates: Vec<ShopPolicyAuditCandidateV1>,
+}
+
+impl ExactShopPolicyDecisionV1 {
+    pub fn audit(
+        &self,
+        legal: &[RunPolicyCandidateV1<'_>],
+    ) -> Result<ExactShopPolicyAuditV1, String> {
+        let candidates = self
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(owner_rank, evidence)| {
+                let legal_candidate = legal
+                    .iter()
+                    .find(|candidate| candidate.candidate_id == evidence.candidate_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "shop policy audit could not find legal candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                let prior_probability = self
+                    .prior
+                    .entries
+                    .iter()
+                    .find(|entry| entry.candidate_id == evidence.candidate_id)
+                    .map(|entry| entry.probability)
+                    .ok_or_else(|| {
+                        format!(
+                            "shop policy audit could not find prior for candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                Ok(ShopPolicyAuditCandidateV1 {
+                    owner_rank,
+                    candidate_id: evidence.candidate_id.clone(),
+                    label: legal_candidate.label.to_string(),
+                    candidate_key: evidence.candidate_key.clone(),
+                    acquisition: format!("{:?}", evidence.acquisition),
+                    band: evidence.band,
+                    followup: evidence.followup,
+                    gold_spent: evidence.gold_spent,
+                    hp_gain: evidence.hp_gain,
+                    max_hp_gain: evidence.max_hp_gain,
+                    deck_size_delta: evidence.deck_size_delta,
+                    closed_threat_gaps: evidence
+                        .closed_threat_gaps
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    capability_improvements: evidence
+                        .capability_improvements
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    resolved_formation_needs: evidence
+                        .resolved_formation_needs
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    added_formation_strengths: evidence
+                        .added_formation_strengths
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    matched_consumable_capabilities: evidence
+                        .matched_consumable_capabilities
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    upgrade_scope_before: evidence
+                        .upgrade_scope_before
+                        .map(|value| format!("{value:?}")),
+                    upgrade_scope_after: evidence
+                        .upgrade_scope_after
+                        .map(|value| format!("{value:?}")),
+                    introduces_status_burden: evidence.introduces_status_burden,
+                    redundant_upgrade_access: evidence.redundant_upgrade_access,
+                    surface_index: evidence.surface_index,
+                    prior_probability,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(ExactShopPolicyAuditV1 {
+            current_hp: self.exact.before.resources.current_hp,
+            max_hp: self.exact.before.resources.max_hp,
+            gold: self.exact.before.resources.gold,
+            candidates,
+        })
+    }
+}
+
+pub fn exact_shop_policy_audit_v1(
+    session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<ExactShopPolicyAuditV1, String> {
+    exact_shop_policy_decision_v1(session, legal)?.audit(legal)
 }
 
 pub fn exact_shop_policy_prior_v1(
@@ -294,10 +436,18 @@ fn acquisition_v1(
                 requirements_satisfied,
             }
         }
-        DecisionCandidateKey::ShopBuyPotion { potion, .. } => ShopPolicyAcquisitionV1::Potion {
-            potion: *potion,
-            traits: potion_acquisition_traits_v1(*potion),
-        },
+        DecisionCandidateKey::ShopBuyPotion { potion, .. } => {
+            let requirements = potion_acquisition_requirements_v1(*potion);
+            let requirements_satisfied = requirements
+                .iter()
+                .all(|requirement| acquisition_requirement_satisfied(parent, *requirement));
+            ShopPolicyAcquisitionV1::Potion {
+                potion: *potion,
+                traits: potion_acquisition_traits_v1(*potion),
+                requirements,
+                requirements_satisfied,
+            }
+        }
         DecisionCandidateKey::ShopPurgeCard { card, upgrades, .. } => {
             ShopPolicyAcquisitionV1::Purge {
                 card: *card,
@@ -328,8 +478,35 @@ fn acquisition_requirement_satisfied(
         AcquisitionRequirementV1::LowHpDeathInsurance => {
             parent.run_state.current_hp.saturating_mul(2) <= parent.run_state.max_hp
         }
-        AcquisitionRequirementV1::RouteEscapeValue => true,
+        AcquisitionRequirementV1::RouteEscapeValue => route_escape_value_v1(parent),
     }
+}
+
+fn route_escape_value_v1(parent: &RunControlSession) -> bool {
+    route_window_targets(&parent.run_state)
+        .into_iter()
+        .any(|target| {
+            let family = build_route_path_family_from_target(
+                &parent.run_state,
+                target.x,
+                target.y,
+                RouteWindowFactsConfig {
+                    horizon_nodes: 5,
+                    path_budget: 2_000,
+                },
+            );
+            family.paths.iter().any(|path| {
+                path.nodes.iter().any(|node| {
+                    matches!(
+                        node.room_type,
+                        Some(
+                            crate::state::map::node::RoomType::MonsterRoom
+                                | crate::state::map::node::RoomType::MonsterRoomElite
+                        )
+                    )
+                })
+            })
+        })
 }
 
 fn matched_consumable_capabilities_v1(
@@ -469,8 +646,12 @@ fn strategic_acquisition_supported(
                     ShopPolicyFollowupV1::Reward | ShopPolicyFollowupV1::Selection
                 )
         }
-        ShopPolicyAcquisitionV1::Potion { .. }
-        | ShopPolicyAcquisitionV1::Purge { .. }
+        ShopPolicyAcquisitionV1::Potion {
+            requirements,
+            requirements_satisfied,
+            ..
+        } => !requirements.is_empty() && *requirements_satisfied,
+        ShopPolicyAcquisitionV1::Purge { .. }
         | ShopPolicyAcquisitionV1::OpenRewards
         | ShopPolicyAcquisitionV1::Leave => false,
     }
@@ -529,7 +710,9 @@ mod tests {
     use super::*;
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
     use crate::runtime::combat::CombatCard;
-    use crate::state::shop::{ShopCard, ShopRelic, ShopState};
+    use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::state::map::state::MapState;
+    use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
     fn policy_candidates<'a>(
         surface: &'a super::super::DecisionSurface,
@@ -649,6 +832,90 @@ mod tests {
             ShopPolicyBandV1::ImmediateSurvival
         );
         assert!(decision.evidence[0].hp_gain > 0);
+    }
+
+    #[test]
+    fn smoke_bomb_is_a_strategic_asset_only_when_the_visible_route_has_an_escape_edge() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 100;
+        for uuid in 30_000..30_003 {
+            session
+                .run_state
+                .master_deck
+                .push(CombatCard::new(CardId::Impervious, uuid));
+        }
+        let mut combat = MapRoomNode::new(0, 0);
+        combat.class = Some(RoomType::MonsterRoom);
+        combat.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut rest = MapRoomNode::new(0, 1);
+        rest.class = Some(RoomType::RestRoom);
+        session.run_state.map = MapState::new(vec![vec![combat], vec![rest]]);
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.potions.push(ShopPotion {
+            potion_id: PotionId::SmokeBomb,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop.clone());
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_shop_policy_decision_v1(&session, &legal).expect("route escape shop policy");
+        let smoke = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyPotion {
+                        potion: PotionId::SmokeBomb,
+                        ..
+                    }
+                )
+            })
+            .expect("Smoke Bomb evidence");
+        assert!(matches!(
+            smoke.band,
+            ShopPolicyBandV1::ImproveRequiredCapability | ShopPolicyBandV1::EstablishStrategicAsset
+        ));
+        assert!(matches!(
+            smoke.acquisition,
+            ShopPolicyAcquisitionV1::Potion {
+                requirements_satisfied: true,
+                ..
+            }
+        ));
+
+        let mut no_route = session;
+        no_route.run_state.map = MapState::new(Vec::new());
+        no_route.engine_state = EngineState::Shop(shop);
+        let surface = build_decision_surface(&no_route);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_shop_policy_decision_v1(&no_route, &legal).expect("no-route shop policy");
+        let smoke = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyPotion {
+                        potion: PotionId::SmokeBomb,
+                        ..
+                    }
+                )
+            })
+            .expect("Smoke Bomb evidence");
+        assert_eq!(smoke.band, ShopPolicyBandV1::SpeculativePurchase);
+        assert!(matches!(
+            smoke.acquisition,
+            ShopPolicyAcquisitionV1::Potion {
+                requirements_satisfied: false,
+                ..
+            }
+        ));
     }
 
     #[test]

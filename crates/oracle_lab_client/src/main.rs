@@ -103,6 +103,16 @@ enum LiveCommand {
         #[arg(long)]
         node: Option<usize>,
     },
+    /// Explain the exact shop owner's complete ranked evidence at a shop node.
+    Shop {
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// Explain the exact campfire owner's complete ranked evidence at a campfire node.
+    Campfire {
+        #[arg(long)]
+        node: Option<usize>,
+    },
     /// List every retained exact variation and its parent/child edges.
     Tree,
     /// Apply the owner's first choice for a bounded number of decisions.
@@ -269,6 +279,20 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::RoutePolicyAudit { node },
+            )?)
+        }
+        LiveCommand::Shop { node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::ShopPolicyAudit { node },
+            )?)
+        }
+        LiveCommand::Campfire { node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CampfirePolicyAudit { node },
             )?)
         }
         LiveCommand::Tree => {

@@ -507,9 +507,10 @@ fn route_policy_band_v1(
     if context.recovery_pressure && path.some_path_recovers_before_damage() {
         return RoutePolicyBandV1::RecoveryOption;
     }
-    if path.optional_elite()
-        || path.max_campfires > path.min_campfires
-        || path.max_shops > path.min_shops
+    if path.min_elites == 0
+        && (path.optional_elite()
+            || path.max_campfires > path.min_campfires
+            || path.max_shops > path.min_shops)
     {
         return RoutePolicyBandV1::FlexibleGrowth;
     }
@@ -697,5 +698,42 @@ mod tests {
             }
         ));
         assert_eq!(first.band, RoutePolicyBandV1::CriticalRecovery);
+    }
+
+    #[test]
+    fn mandatory_elite_is_not_relabelled_as_flexible_by_later_room_variation() {
+        let action = RoutePolicyActionV1::Select {
+            x: 1,
+            y: 1,
+            room_type: Some(RoomType::MonsterRoomElite),
+            uses_wing_boots: false,
+            has_emerald_key: false,
+            actual_wing_boots_spent: 0,
+            arrival: RoutePolicyArrivalV1::Combat,
+            path: RoutePolicyPathEvidenceV1 {
+                coverage: Some(RouteWindowCoverageKind::CompleteWithinHorizon),
+                observed_path_count: 2,
+                min_elites: 1,
+                max_elites: 1,
+                min_campfires: 1,
+                max_campfires: 2,
+                ..RoutePolicyPathEvidenceV1::default()
+            },
+        };
+
+        assert_eq!(
+            route_policy_band_v1(
+                &action,
+                RoutePolicyContextV1 {
+                    current_hp: 70,
+                    max_hp: 80,
+                    gold: 0,
+                    critical_recovery: false,
+                    recovery_pressure: false,
+                    shop_conversion_ready: false,
+                }
+            ),
+            RoutePolicyBandV1::Ordinary
+        );
     }
 }

@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use crate::ai::deck_mutation_compiler_v1::{
     deck_removal_target_snapshots_v1, DeckMutationTargetLossTierV1,
 };
@@ -12,6 +14,7 @@ use crate::ai::upgrade_planner_v1::{
 };
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
+use crate::engine::campfire_handler::apply_campfire_rest_healing;
 
 use super::{
     exact_run_policy_decision_v1, positive_ranked_run_policy_prior_v1, run_policy_state_delta_v1,
@@ -19,10 +22,12 @@ use super::{
     RunControlSession, RunPolicyCandidateV1, RunPolicyPriorV1, RunPolicyStateDeltaV1,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CampfirePolicyBandV1 {
     ImmediateSurvival,
     PayRequiredUpgradeDebt,
+    PrepareBossSurvival,
     RepairDeck,
     ImproveReliability,
     PreserveSurvival,
@@ -80,11 +85,20 @@ pub struct CampfirePolicyActionEvidenceV1 {
 #[derive(Clone, Debug)]
 pub struct ExactCampfirePolicyDecisionV1 {
     pub exact: ExactRunPolicyDecisionV1,
+    pub recovery: CampfireRecoveryContextV1,
     pub evidence: Vec<CampfirePolicyActionEvidenceV1>,
     pub prior: RunPolicyPriorV1,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampfireRecoveryContextV1 {
+    pub boss_nodes_remaining: Option<usize>,
+    pub rest_heal_capacity: i32,
+}
+
 struct CampfirePolicyContextV1 {
+    recovery: CampfireRecoveryContextV1,
     repair_upgrades: BTreeMap<(usize, u32), DeckRepairUpgradePriorityV1>,
     upgrade_evidence: BTreeMap<(usize, u32), CampfireSmithEvidenceV1>,
     target_losses: BTreeMap<(usize, u32), DeckMutationTargetLossTierV1>,
@@ -96,6 +110,109 @@ struct CampfireSmithEvidenceV1 {
     verdict: UpgradeVerdictV1,
     roles: Vec<UpgradeRoleV1>,
     pays_debts: Vec<UpgradeDebtKindV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampfirePolicyAuditCandidateV1 {
+    pub owner_rank: usize,
+    pub candidate_id: String,
+    pub label: String,
+    pub candidate_key: DecisionCandidateKey,
+    pub action: String,
+    pub band: CampfirePolicyBandV1,
+    pub hp_gain: i32,
+    pub max_hp_gain: i32,
+    pub gold_delta: i32,
+    pub deck_size_delta: isize,
+    pub closed_threat_gaps: Vec<String>,
+    pub capability_improvements: Vec<String>,
+    pub surface_index: usize,
+    pub prior_probability: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExactCampfirePolicyAuditV1 {
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub recovery: CampfireRecoveryContextV1,
+    pub candidates: Vec<CampfirePolicyAuditCandidateV1>,
+}
+
+impl ExactCampfirePolicyDecisionV1 {
+    pub fn audit(
+        &self,
+        legal: &[RunPolicyCandidateV1<'_>],
+    ) -> Result<ExactCampfirePolicyAuditV1, String> {
+        let candidates = self
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(owner_rank, evidence)| {
+                let legal_candidate = legal
+                    .iter()
+                    .find(|candidate| candidate.candidate_id == evidence.candidate_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "campfire policy audit could not find legal candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                let prior_probability = self
+                    .prior
+                    .entries
+                    .iter()
+                    .find(|entry| entry.candidate_id == evidence.candidate_id)
+                    .map(|entry| entry.probability)
+                    .ok_or_else(|| {
+                        format!(
+                            "campfire policy audit could not find prior for candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                Ok(CampfirePolicyAuditCandidateV1 {
+                    owner_rank,
+                    candidate_id: evidence.candidate_id.clone(),
+                    label: legal_candidate.label.to_string(),
+                    candidate_key: evidence.candidate_key.clone(),
+                    action: format!("{:?}", evidence.action),
+                    band: evidence.band,
+                    hp_gain: evidence.delta.hp_gain,
+                    max_hp_gain: evidence.delta.max_hp_gain,
+                    gold_delta: evidence.delta.gold_delta,
+                    deck_size_delta: evidence.delta.deck_size_delta,
+                    closed_threat_gaps: evidence
+                        .delta
+                        .closed_threat_gaps
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    capability_improvements: evidence
+                        .delta
+                        .capability_improvements
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    surface_index: evidence.surface_index,
+                    prior_probability,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(ExactCampfirePolicyAuditV1 {
+            current_hp: self.exact.before.resources.current_hp,
+            max_hp: self.exact.before.resources.max_hp,
+            recovery: self.recovery,
+            candidates,
+        })
+    }
+}
+
+pub fn exact_campfire_policy_audit_v1(
+    session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<ExactCampfirePolicyAuditV1, String> {
+    exact_campfire_policy_decision_v1(session, legal)?.audit(legal)
 }
 
 pub fn exact_campfire_policy_prior_v1(
@@ -142,6 +259,7 @@ pub fn exact_campfire_policy_decision_v1(
 
     Ok(ExactCampfirePolicyDecisionV1 {
         exact,
+        recovery: context.recovery,
         evidence,
         prior,
     })
@@ -185,10 +303,28 @@ fn campfire_policy_context_v1(parent: &RunControlSession) -> CampfirePolicyConte
         })
         .collect();
     CampfirePolicyContextV1 {
+        recovery: campfire_recovery_context_v1(parent),
         repair_upgrades,
         upgrade_evidence,
         target_losses,
         low_loss_removals,
+    }
+}
+
+fn campfire_recovery_context_v1(parent: &RunControlSession) -> CampfireRecoveryContextV1 {
+    let mut empty_hp = parent.run_state.clone();
+    empty_hp.current_hp = 0;
+    apply_campfire_rest_healing(&mut empty_hp);
+    let boss_nodes_remaining = parent
+        .run_state
+        .boss_key
+        .is_some()
+        .then_some(parent.run_state.map.current_y)
+        .filter(|current_y| (0..=14).contains(current_y))
+        .map(|current_y| 15_usize.saturating_sub(current_y as usize));
+    CampfireRecoveryContextV1 {
+        boss_nodes_remaining,
+        rest_heal_capacity: empty_hp.current_hp.max(0),
     }
 }
 
@@ -243,7 +379,7 @@ fn campfire_action_evidence_v1(
     })?;
     let delta = run_policy_state_delta_v1(&decision.before, &successor.after);
     let action = campfire_action_v1(parent, successor, &candidate_key, &delta, context)?;
-    let band = campfire_policy_band_v1(parent, &action);
+    let band = campfire_policy_band_v1(parent, &action, context.recovery);
 
     Ok(CampfirePolicyActionEvidenceV1 {
         candidate_id: successor.candidate_id.clone(),
@@ -363,6 +499,7 @@ fn relic_counter(session: &RunControlSession, relic_id: RelicId) -> i32 {
 fn campfire_policy_band_v1(
     parent: &RunControlSession,
     action: &CampfirePolicyActionV1,
+    recovery: CampfireRecoveryContextV1,
 ) -> CampfirePolicyBandV1 {
     match action {
         CampfirePolicyActionV1::Rest { hp_gain } if *hp_gain <= 0 => {
@@ -370,6 +507,15 @@ fn campfire_policy_band_v1(
         }
         CampfirePolicyActionV1::Rest { hp_gain } if parent.run_state.current_hp <= *hp_gain => {
             CampfirePolicyBandV1::ImmediateSurvival
+        }
+        CampfirePolicyActionV1::Rest { hp_gain }
+            if recovery
+                .boss_nodes_remaining
+                .is_some_and(|nodes| nodes <= 3)
+                && recovery.rest_heal_capacity > 0
+                && hp_gain.saturating_mul(4) >= recovery.rest_heal_capacity.saturating_mul(3) =>
+        {
+            CampfirePolicyBandV1::PrepareBossSurvival
         }
         CampfirePolicyActionV1::Rest { .. } => CampfirePolicyBandV1::PreserveSurvival,
         CampfirePolicyActionV1::Smith {
@@ -522,6 +668,7 @@ fn upgrade_verdict_rank(verdict: Option<UpgradeVerdictV1>) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::monsters::factory::EncounterId;
     use crate::content::relics::RelicState;
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
     use crate::runtime::combat::CombatCard;
@@ -601,6 +748,61 @@ mod tests {
         let decision =
             exact_campfire_policy_decision_v1(&full_hp, &legal).expect("full hp campfire");
         assert_ne!(decision.prior.entries[0].candidate_id, "rest");
+    }
+
+    #[test]
+    fn efficient_pre_boss_rest_precedes_useful_upgrade_but_wasteful_rest_does_not() {
+        let mut needs_recovery = campfire_session(&[CardId::Whirlwind, CardId::SecondWind]);
+        needs_recovery.run_state.current_hp = 56;
+        needs_recovery.run_state.max_hp = 88;
+        needs_recovery.run_state.boss_key = Some(EncounterId::TimeEater);
+        needs_recovery.run_state.map.current_y = 14;
+        let surface = build_decision_surface(&needs_recovery);
+        let legal = policy_candidates(&surface);
+        let decision = exact_campfire_policy_decision_v1(&needs_recovery, &legal)
+            .expect("pre-boss recovery decision");
+        assert_eq!(decision.recovery.boss_nodes_remaining, Some(1));
+        assert_eq!(decision.recovery.rest_heal_capacity, 26);
+        assert_eq!(decision.prior.entries[0].candidate_id, "rest");
+        assert_eq!(
+            decision.evidence[0].band,
+            CampfirePolicyBandV1::PrepareBossSurvival
+        );
+
+        let mut healthy = needs_recovery;
+        healthy.run_state.current_hp = 70;
+        let surface = build_decision_surface(&healthy);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_campfire_policy_decision_v1(&healthy, &legal).expect("healthy boss campfire");
+        assert_ne!(decision.prior.entries[0].candidate_id, "rest");
+    }
+
+    #[test]
+    fn required_boss_upgrade_precedes_non_emergency_pre_boss_rest() {
+        let mut session = campfire_session(&[CardId::Entrench]);
+        session.run_state.current_hp = 51;
+        session.run_state.max_hp = 82;
+        session.run_state.boss_key = Some(EncounterId::Collector);
+        session.run_state.map.current_y = 14;
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_campfire_policy_decision_v1(&session, &legal).expect("boss upgrade decision");
+
+        assert_eq!(decision.evidence[0].candidate_id, "smith-0");
+        assert_eq!(
+            decision.evidence[0].band,
+            CampfirePolicyBandV1::PayRequiredUpgradeDebt
+        );
+        assert_eq!(
+            decision
+                .evidence
+                .iter()
+                .find(|candidate| candidate.candidate_id == "rest")
+                .map(|candidate| candidate.band),
+            Some(CampfirePolicyBandV1::PrepareBossSurvival)
+        );
     }
 
     #[test]

@@ -317,7 +317,36 @@ fn legacy_oracle_preferred_candidate_ids_v1(
 pub fn current_oracle_candidate_order_v1(
     session: &sts_simulator::eval::run_control::RunControlSession,
 ) -> Vec<String> {
-    legacy_oracle_preferred_candidate_ids_v1(session)
+    use sts_simulator::eval::run_control::{build_decision_surface, RunPolicyCandidateV1};
+
+    let surface = build_decision_surface(session);
+    let legal = surface
+        .view
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            candidate
+                .action
+                .executable_action_ref()
+                .map(|action| RunPolicyCandidateV1 {
+                    candidate_id: &candidate.id,
+                    label: &candidate.label,
+                    action,
+                })
+        })
+        .collect::<Vec<_>>();
+    if legal.is_empty() {
+        return Vec::new();
+    }
+    legacy_oracle_policy_prior_v1(session, &legal)
+        .map(|prior| {
+            prior
+                .entries
+                .into_iter()
+                .map(|entry| entry.candidate_id)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -360,6 +389,47 @@ mod tests {
         prior.validate_for(&legal).expect("valid policy prior");
         assert_eq!(prior.entries.len(), legal.len());
         assert!(prior.entries.iter().all(|entry| entry.probability > 0.0));
+    }
+
+    #[test]
+    fn policy_audit_uses_the_same_complete_route_prior_as_production() {
+        use sts_simulator::eval::run_control::{
+            build_decision_surface, RunControlConfig, RunControlSession,
+        };
+        use sts_simulator::state::core::EngineState;
+        use sts_simulator::state::map::node::{MapEdge, MapRoomNode, RoomType};
+        use sts_simulator::state::map::state::MapState;
+
+        let mut left = MapRoomNode::new(0, 0);
+        left.class = Some(RoomType::MonsterRoom);
+        left.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut right = MapRoomNode::new(1, 0);
+        right.class = Some(RoomType::MonsterRoomElite);
+        right.edges.insert(MapEdge::new(1, 0, 1, 1));
+        let mut left_next = MapRoomNode::new(0, 1);
+        left_next.class = Some(RoomType::RestRoom);
+        let mut right_next = MapRoomNode::new(1, 1);
+        right_next.class = Some(RoomType::RestRoom);
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.run_state.map = MapState::new(vec![vec![left, right], vec![left_next, right_next]]);
+        session.engine_state = EngineState::MapNavigation;
+
+        let surface = build_decision_surface(&session);
+        let legal_ids = surface
+            .view
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.action.executable_action_ref().is_some())
+            .map(|candidate| candidate.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let audited = current_oracle_candidate_order_v1(&session)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(audited, legal_ids);
+        assert_eq!(audited.len(), 2);
     }
 
     #[test]

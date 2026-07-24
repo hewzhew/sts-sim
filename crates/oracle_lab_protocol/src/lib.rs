@@ -71,6 +71,12 @@ pub enum OracleAnalysisServiceCommandV1 {
     RoutePolicyAudit {
         node: usize,
     },
+    ShopPolicyAudit {
+        node: usize,
+    },
+    CampfirePolicyAudit {
+        node: usize,
+    },
     View {
         #[serde(default)]
         node: Option<usize>,
