@@ -70,6 +70,12 @@ struct Cli {
     #[arg(long)]
     continuation_out: Option<PathBuf>,
 
+    /// Print only bounded-run identity, frontier accounting, and terminal
+    /// status. Exact continuation and combat artifacts remain available
+    /// through their dedicated output flags.
+    #[arg(long)]
+    summary_only: bool,
+
     /// Diagnose the exact run state stored in --resume against the fixed
     /// semantic encounter suite without advancing the run.
     #[arg(long)]
@@ -316,9 +322,60 @@ fn main() -> Result<(), String> {
     if let Some(path) = cli.continuation_out.as_ref() {
         save_oracle_run_continuation_v1(path, &report.continuation)?;
     }
+    let output = if cli.summary_only {
+        serde_json::json!({
+            "schema_name": "OracleRunCompactReportV1",
+            "schema_version": 1,
+            "seed": report.seed,
+            "ascension": report.ascension,
+            "act": report.act,
+            "floor": report.floor,
+            "current_hp": report.current_hp,
+            "max_hp": report.max_hp,
+            "gold": report.gold,
+            "engine_state": report.engine_state,
+            "elapsed_ms": report.elapsed_ms,
+            "build_identity": report.build_identity,
+            "victory": report.victory_witness.is_some(),
+            "committed_progress_steps": report.committed_progress_steps,
+            "explorer": {
+                "stop": report.explorer.stop,
+                "work_items": report.explorer.work_items,
+                "combat_quanta": report.explorer.combat_quanta,
+                "decision_service_ms": report.explorer.decision_service_ms,
+                "combat_service_ms": report.explorer.combat_service_ms,
+                "materialized_branches": report.explorer.materialized_branches,
+                "pending_decisions": report.explorer.pending_decisions,
+                "pending_combats": report.explorer.pending_combats.iter().map(|combat| serde_json::json!({
+                    "branch_id": combat.branch_id,
+                    "act": combat.act,
+                    "floor": combat.floor,
+                    "player_hp": combat.player_hp,
+                    "player_max_hp": combat.player_max_hp,
+                    "enemies": combat.enemies.iter().map(|enemy| enemy.name.as_str()).collect::<Vec<_>>(),
+                    "generation_work": combat.nodes_expanded,
+                    "exact_states": combat.exact_states,
+                    "completed_turn_options": combat.completed_turn_options,
+                    "max_player_turn": combat.max_player_turn,
+                    "incumbent_final_hp": combat.incumbent_final_hp,
+                    "last_status": combat.last_status,
+                    "remaining_wall_ms": combat.remaining_wall_ms,
+                    "restart_count": combat.restart_count,
+                    "resume_kind": combat.resume_kind,
+                })).collect::<Vec<_>>(),
+                "combat_search_restarts": report.explorer.combat_search_restarts,
+                "exact_duplicates": report.explorer.exact_duplicates,
+                "unresolved_combat_count": report.explorer.unresolved_combats.len(),
+                "neow_root_progress": report.explorer.neow_root_progress,
+            },
+        })
+    } else {
+        serde_json::to_value(&report)
+            .map_err(|error| format!("failed to serialize oracle report: {error}"))?
+    };
     println!(
         "{}",
-        serde_json::to_string_pretty(&report)
+        serde_json::to_string_pretty(&output)
             .map_err(|error| format!("failed to serialize oracle report: {error}"))?
     );
     Ok(())
