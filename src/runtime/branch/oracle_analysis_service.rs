@@ -301,7 +301,7 @@ fn execute_command(
         OracleAnalysisServiceCommandV1::Capabilities => (
             json!({
                 "commands": [
-                    "ping", "capabilities", "status", "explain", "view", "tree", "try",
+                    "ping", "capabilities", "status", "explain", "route_policy_audit", "view", "tree", "try",
                     "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "save", "shutdown"
@@ -339,6 +339,12 @@ fn execute_command(
             };
             (to_value(choice)?, false, false, false)
         }
+        OracleAnalysisServiceCommandV1::RoutePolicyAudit { node } => (
+            to_value(&workspace.session.route_policy_audit(node)?)?,
+            false,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::View { node } => {
             let view = if let Some(node) = node {
                 workspace.session.view_node(node)?

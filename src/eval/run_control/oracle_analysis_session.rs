@@ -28,9 +28,10 @@ use super::oracle_run_explorer::{
     OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
-    CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1,
-    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyPriorFnV1, RunProgressJournalV1,
+    build_decision_surface, exact_route_policy_audit_v1, CombatAutomationMonsterStateV1,
+    CombatAutomationTrajectoryRecordV1, ExactRoutePolicyAuditV1, RunControlCombatSearchQuantum,
+    RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
+    RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1,
     RunProgressStepV1,
 };
 
@@ -906,6 +907,27 @@ impl OracleAnalysisSessionV1 {
             encounter,
             combat: self.combat_progress(node_id),
         })
+    }
+
+    pub fn route_policy_audit(&self, node_id: usize) -> Result<ExactRoutePolicyAuditV1, String> {
+        let branch = self.require_branch(node_id)?;
+        let surface = build_decision_surface(&branch.session);
+        let legal = surface
+            .view
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .action
+                    .executable_action_ref()
+                    .map(|action| RunPolicyCandidateV1 {
+                        candidate_id: &candidate.id,
+                        label: &candidate.label,
+                        action,
+                    })
+            })
+            .collect::<Vec<_>>();
+        exact_route_policy_audit_v1(&branch.session, &legal)
     }
 
     pub fn try_choice(&mut self, requested_ref: &str) -> Result<usize, String> {

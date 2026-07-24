@@ -210,8 +210,9 @@ pub use reward_auto::{
     apply_reward_policy_step, reward_surface_has_only_unclaimable_potions, RewardAutomationConfig,
 };
 pub use route_policy_prior::{
-    exact_route_policy_decision_v1, exact_route_policy_prior_v1, ExactRoutePolicyDecisionV1,
-    RoutePolicyActionEvidenceV1, RoutePolicyActionV1, RoutePolicyArrivalV1, RoutePolicyBandV1,
+    exact_route_policy_audit_v1, exact_route_policy_decision_v1, exact_route_policy_prior_v1,
+    ExactRoutePolicyAuditV1, ExactRoutePolicyDecisionV1, RoutePolicyActionEvidenceV1,
+    RoutePolicyActionV1, RoutePolicyArrivalV1, RoutePolicyAuditCandidateV1, RoutePolicyBandV1,
     RoutePolicyContextV1, RoutePolicyPathEvidenceV1,
 };
 pub use run_policy_evidence::{

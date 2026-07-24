@@ -68,6 +68,9 @@ pub enum OracleAnalysisServiceCommandV1 {
         node: usize,
         owner_rank: u64,
     },
+    RoutePolicyAudit {
+        node: usize,
+    },
     View {
         #[serde(default)]
         node: Option<usize>,
@@ -354,6 +357,19 @@ mod tests {
                 node: 17,
                 max_engine_steps_per_transition: 512,
             }
+        ));
+    }
+
+    #[test]
+    fn route_policy_audit_requires_an_explicit_node() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "route_policy_audit",
+            "node": 185,
+        }))
+        .expect("parse route policy audit command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::RoutePolicyAudit { node: 185 }
         ));
     }
 

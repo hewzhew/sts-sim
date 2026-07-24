@@ -98,6 +98,13 @@ enum LiveCommand {
         #[arg(long)]
         node: Option<usize>,
     },
+    /// Explain the exact route owner's complete ranked evidence at a map node.
+    Route {
+        #[arg(long)]
+        node: Option<usize>,
+    },
+    /// List every retained exact variation and its parent/child edges.
+    Tree,
     /// Apply the owner's first choice for a bounded number of decisions.
     Owner {
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=64))]
@@ -254,6 +261,16 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
                 OracleAnalysisServiceCommandV1::View { node: Some(node) },
             )?;
             print_json(&compact_live_inventory(&view))
+        }
+        LiveCommand::Route { node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::RoutePolicyAudit { node },
+            )?)
+        }
+        LiveCommand::Tree => {
+            print_json(&live_call(endpoint, OracleAnalysisServiceCommandV1::Tree)?)
         }
         LiveCommand::Owner { steps } => print_json(&run_live_owner(endpoint, steps)?),
         LiveCommand::Run {

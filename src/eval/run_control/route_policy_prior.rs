@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+use serde::Serialize;
+
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, RouteWindowCoverageKind, RouteWindowFactsConfig,
     RouteWindowPath, RouteWindowPathFamily,
@@ -17,7 +19,8 @@ use super::{
 
 const ROUTE_PATH_BUDGET_V1: usize = 2_000;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RoutePolicyBandV1 {
     PreservePendingRewards,
     ForcedBoss,
@@ -28,7 +31,8 @@ pub enum RoutePolicyBandV1 {
     ForcedPressure,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RoutePolicyArrivalV1 {
     Combat,
     Event,
@@ -40,7 +44,8 @@ pub enum RoutePolicyArrivalV1 {
     Other,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutePolicyContextV1 {
     pub current_hp: i32,
     pub max_hp: i32,
@@ -50,7 +55,8 @@ pub struct RoutePolicyContextV1 {
     pub shop_conversion_ready: bool,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutePolicyPathEvidenceV1 {
     pub coverage: Option<RouteWindowCoverageKind>,
     pub observed_path_count: usize,
@@ -90,7 +96,8 @@ impl RoutePolicyPathEvidenceV1 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum RoutePolicyActionV1 {
     Select {
         x: i32,
@@ -105,7 +112,8 @@ pub enum RoutePolicyActionV1 {
     CancelToPendingRewards,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutePolicyActionEvidenceV1 {
     pub candidate_id: String,
     pub candidate_key: DecisionCandidateKey,
@@ -114,12 +122,89 @@ pub struct RoutePolicyActionEvidenceV1 {
     surface_index: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutePolicyAuditCandidateV1 {
+    pub owner_rank: usize,
+    pub candidate_id: String,
+    pub label: String,
+    pub candidate_key: DecisionCandidateKey,
+    pub action: RoutePolicyActionV1,
+    pub band: RoutePolicyBandV1,
+    pub surface_index: usize,
+    pub prior_probability: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExactRoutePolicyAuditV1 {
+    pub context: RoutePolicyContextV1,
+    pub candidates: Vec<RoutePolicyAuditCandidateV1>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ExactRoutePolicyDecisionV1 {
     pub exact: ExactRunPolicyDecisionV1,
     pub context: RoutePolicyContextV1,
     pub evidence: Vec<RoutePolicyActionEvidenceV1>,
     pub prior: RunPolicyPriorV1,
+}
+
+impl ExactRoutePolicyDecisionV1 {
+    pub fn audit(
+        &self,
+        legal: &[RunPolicyCandidateV1<'_>],
+    ) -> Result<ExactRoutePolicyAuditV1, String> {
+        let candidates = self
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(owner_rank, evidence)| {
+                let legal_candidate = legal
+                    .iter()
+                    .find(|candidate| candidate.candidate_id == evidence.candidate_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "route policy audit could not find legal candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                let prior_probability = self
+                    .prior
+                    .entries
+                    .iter()
+                    .find(|entry| entry.candidate_id == evidence.candidate_id)
+                    .map(|entry| entry.probability)
+                    .ok_or_else(|| {
+                        format!(
+                            "route policy audit could not find prior for candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                Ok(RoutePolicyAuditCandidateV1 {
+                    owner_rank,
+                    candidate_id: evidence.candidate_id.clone(),
+                    label: legal_candidate.label.to_string(),
+                    candidate_key: evidence.candidate_key.clone(),
+                    action: evidence.action.clone(),
+                    band: evidence.band,
+                    surface_index: evidence.surface_index,
+                    prior_probability,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(ExactRoutePolicyAuditV1 {
+            context: self.context,
+            candidates,
+        })
+    }
+}
+
+pub fn exact_route_policy_audit_v1(
+    session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<ExactRoutePolicyAuditV1, String> {
+    exact_route_policy_decision_v1(session, legal)?.audit(legal)
 }
 
 pub fn exact_route_policy_prior_v1(
@@ -576,6 +661,23 @@ mod tests {
             .entries
             .iter()
             .all(|entry| entry.probability.is_finite() && entry.probability > 0.0));
+
+        let audit = decision.audit(&legal).expect("typed route audit");
+        assert_eq!(audit.candidates.len(), legal.len());
+        assert_eq!(
+            audit
+                .candidates
+                .iter()
+                .map(|candidate| candidate.owner_rank)
+                .collect::<Vec<_>>(),
+            (0..legal.len()).collect::<Vec<_>>()
+        );
+        assert!(audit
+            .candidates
+            .iter()
+            .all(|candidate| candidate.prior_probability.is_finite()
+                && candidate.prior_probability > 0.0));
+        serde_json::to_value(audit).expect("serialize typed route audit");
     }
 
     #[test]
