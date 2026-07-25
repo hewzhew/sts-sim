@@ -1,7 +1,9 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
+mod action_successor_reanalysis;
 mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
+mod exact_combat_evidence;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -671,6 +673,14 @@ enum Command {
         output: PathBuf,
         #[arg(long, default_value_t = 250)]
         max_engine_steps_per_transition: usize,
+    },
+    /// Reanalyse every bounded legal action at one exact witness state.
+    ///
+    /// The offline corpus keeps exact wins, exact refutations, terminal
+    /// non-wins, and budget-unknown successors as distinct evidence kinds.
+    BuildActionSuccessorCorpus {
+        #[command(flatten)]
+        args: action_successor_reanalysis::ActionSuccessorReanalysisArgs,
     },
     /// Build offline complete-turn successor evidence from verified witnesses.
     ///
@@ -2317,6 +2327,10 @@ fn main() -> Result<(), String> {
                 },
                 "demonstrations": audits,
             }))
+        }
+        Command::BuildActionSuccessorCorpus { args } => {
+            let report = action_successor_reanalysis::build(args)?;
+            print_json(&report)
         }
         Command::AuditActionImitation {
             case,

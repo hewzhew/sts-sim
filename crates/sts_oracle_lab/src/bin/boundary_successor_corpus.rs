@@ -12,8 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption, CompleteTurnOptionBoundary,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport,
-    LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus, OracleCombatWitnessSatisfaction,
     TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
@@ -26,8 +24,10 @@ use sts_simulator::sim::combat::{
 use sts_simulator::state::core::ClientInput;
 
 use super::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-    load_exact_turn_corridor, source_content_fingerprint,
+    exact_combat_evidence::{
+        evaluate_nonterminal_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
+    },
+    existing_combat_knowledge_policy_v1, load_exact_turn_corridor, source_content_fingerprint,
 };
 
 const MANIFEST_SCHEMA_V1: &str = "BoundarySuccessorCorpusManifestV1";
@@ -178,42 +178,7 @@ struct BoundarySuccessorCandidate {
     successor_position: CombatPosition,
     successor_features: Vec<i32>,
     successor_semantic_features: Vec<CombatStateFeatureV1>,
-    evidence: SuccessorEvidence,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum SuccessorEvidence {
-    ExactWin {
-        source: &'static str,
-        final_hp: i32,
-        suffix_action_count: usize,
-        search_cost: Option<SuccessorSearchCost>,
-    },
-    ExactRefutation {
-        source: &'static str,
-        search_cost: SuccessorSearchCost,
-    },
-    ExactTerminalNonWin {
-        boundary: String,
-    },
-    BudgetUnknown {
-        status: String,
-        search_cost: SuccessorSearchCost,
-        deepest_player_turn: u32,
-        gap_count: usize,
-        depth_limited_successors: usize,
-    },
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct SuccessorSearchCost {
-    generation_work: usize,
-    lookahead_work: usize,
-    applied_action_transitions: usize,
-    engine_steps: usize,
-    exact_nodes: usize,
-    exact_edges: usize,
+    evidence: ExactCombatEvidence,
 }
 
 pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
@@ -686,12 +651,11 @@ fn build_candidate(
     solve_work_per_candidate: usize,
 ) -> Result<BoundarySuccessorCandidate, String> {
     let evidence = if option.exact_successor_hash() == verified_successor_hash {
-        SuccessorEvidence::ExactWin {
-            source: "verified_witness_suffix",
-            final_hp: verified_final_hp,
-            suffix_action_count: verified_suffix_action_count,
-            search_cost: None,
-        }
+        known_exact_win(
+            "verified_witness_suffix",
+            verified_final_hp,
+            verified_suffix_action_count,
+        )
     } else {
         evaluate_successor(option, config, solve_work_per_candidate)?
     };
@@ -802,93 +766,26 @@ fn evaluate_successor(
     option: &CompleteTurnOption,
     config: CorpusConfig,
     solve_work_per_candidate: usize,
-) -> Result<SuccessorEvidence, String> {
+) -> Result<ExactCombatEvidence, String> {
     match option.boundary() {
         CompleteTurnOptionBoundary::TerminalWin => {
-            return Ok(SuccessorEvidence::ExactWin {
-                source: "immediate_terminal_replay",
-                final_hp: option.exact_successor().combat.entities.player.current_hp,
-                suffix_action_count: 0,
-                search_cost: None,
-            });
+            return Ok(known_exact_win(
+                "immediate_terminal_replay",
+                option.exact_successor().combat.entities.player.current_hp,
+                0,
+            ));
         }
         CompleteTurnOptionBoundary::TerminalLoss | CompleteTurnOptionBoundary::Escape => {
-            return Ok(SuccessorEvidence::ExactTerminalNonWin {
-                boundary: format!("{:?}", option.boundary()),
-            });
+            return Ok(exact_terminal_non_win(format!("{:?}", option.boundary())));
         }
         CompleteTurnOptionBoundary::NextPlayerTurn => {}
     }
-    let root = CombatDecisionRoot::new(option.exact_successor().clone())
-        .map_err(|error| format!("invalid successor root: {error:?}"))?;
-    let search_config = LocalTurnGraphWitnessConfig {
-        generator: TurnOptionGeneratorConfig {
-            max_engine_steps_per_transition: config.max_engine_steps_per_transition,
-            ..TurnOptionGeneratorConfig::default()
-        },
-        generation_quantum_work: 4,
-        backed_generation_quantum_work: 256,
-        initial_expansion_work: 64,
-        root_initial_expansion_work: 2_048,
-        lookahead_max_evaluations: solve_work_per_candidate.saturating_div(24).max(1),
-        lookahead_work_per_evaluation: 24,
-        max_turn_depth: 32,
-        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-    };
-    let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
-        root,
-        search_config,
-        existing_combat_knowledge_policy_v1(),
-        existing_combat_rollout_lookahead_v1(),
-    );
-    let report = session.advance(
-        LocalTurnGraphWitnessQuantum {
-            additional_selections: solve_work_per_candidate.saturating_mul(8),
-            additional_generation_work: solve_work_per_candidate,
-            additional_engine_steps: solve_work_per_candidate
-                .saturating_mul(config.max_engine_steps_per_transition),
-            deadline: None,
-        },
-        &EngineCombatStepper,
-    );
-    if let Some(witness) = report.witness.as_ref() {
-        return Ok(SuccessorEvidence::ExactWin {
-            source: "bounded_exact_search",
-            final_hp: witness.final_position.combat.entities.player.current_hp,
-            suffix_action_count: witness.actions.len(),
-            search_cost: Some(search_cost(&report)),
-        });
-    }
-    if matches!(
-        report.status,
-        LocalTurnGraphWitnessStatus::FrontierExhausted
-    ) && report.generation_gaps.is_empty()
-        && report.counters.depth_limited_successors == 0
-    {
-        return Ok(SuccessorEvidence::ExactRefutation {
-            source: "gap_free_frontier_exhaustion",
-            search_cost: search_cost(&report),
-        });
-    }
-    let progress = session.progress_snapshot();
-    Ok(SuccessorEvidence::BudgetUnknown {
-        status: format!("{:?}", report.status),
-        search_cost: search_cost(&report),
-        deepest_player_turn: progress.max_player_turn,
-        gap_count: report.generation_gaps.len(),
-        depth_limited_successors: report.counters.depth_limited_successors,
-    })
-}
-
-fn search_cost(report: &LocalTurnGraphWitnessReport) -> SuccessorSearchCost {
-    SuccessorSearchCost {
-        generation_work: report.counters.generation_work,
-        lookahead_work: report.counters.lookahead_work,
-        applied_action_transitions: report.counters.applied_action_transitions,
-        engine_steps: report.counters.engine_steps,
-        exact_nodes: report.counters.exact_nodes,
-        exact_edges: report.counters.exact_edges,
-    }
+    evaluate_nonterminal_position(
+        option.exact_successor(),
+        solve_work_per_candidate,
+        config.max_engine_steps_per_transition,
+    )
+    .map(|evaluation| evaluation.evidence)
 }
 
 fn replay_inputs(

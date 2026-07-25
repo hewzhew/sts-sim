@@ -1,0 +1,407 @@
+//! Action-level exact successor reanalysis at one replayed witness state.
+//!
+//! This is the narrow DAgger/Expert-Iteration seam: replay to a state reached
+//! by a verified witness, independently search every bounded legal action
+//! successor, and preserve exact wins, exact refutations, and budget-unknown
+//! results as different evidence kinds. The command only writes an offline
+//! corpus; it cannot alter the production policy.
+
+use std::path::PathBuf;
+
+use clap::Args;
+use serde::Serialize;
+use serde_json::{json, Value};
+use sts_combat_planner::CombatPolicyChoice;
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
+use sts_simulator::eval::combat_case::load_combat_case;
+use sts_simulator::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
+use sts_simulator::sim::combat_action::combat_action_key;
+use sts_simulator::state::core::ClientInput;
+
+use super::exact_combat_evidence::{
+    evaluate_nonterminal_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
+};
+use super::{
+    combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_segments,
+    oracle_lab_runtime_identity,
+};
+
+const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
+
+#[derive(Debug, Args)]
+pub(crate) struct ActionSuccessorReanalysisArgs {
+    /// Exact combat case at the beginning of the verified witness.
+    #[arg(long)]
+    case: PathBuf,
+    /// One or more consecutive exact action segments forming the witness.
+    #[arg(long, required = true)]
+    actions: Vec<PathBuf>,
+    /// Number of witness actions replayed before auditing the next action.
+    #[arg(long)]
+    through: usize,
+    /// Destination for the typed offline evidence corpus.
+    #[arg(long)]
+    output: PathBuf,
+    /// Deterministic exact-search work for each non-terminal successor.
+    #[arg(long, default_value_t = 5_000)]
+    solve_work_per_candidate: usize,
+    /// Maximum independent successor searches evaluated concurrently.
+    #[arg(long, default_value_t = 4)]
+    candidate_jobs: usize,
+    /// Maximum canonical structured-selection inputs materialized.
+    #[arg(long, default_value_t = 256)]
+    max_structured_alternatives: usize,
+    /// Optional learned residual policy whose current action order is recorded.
+    /// The artifact affects reporting only; every selected successor receives
+    /// the same exact-search budget.
+    #[arg(long)]
+    action_imitation_artifact: Option<PathBuf>,
+    #[arg(long, default_value_t = 250)]
+    max_engine_steps_per_transition: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ActionSuccessorCandidate {
+    canonical_index: usize,
+    input: ClientInput,
+    label: String,
+    action_key: String,
+    known_witness_action: bool,
+    policy_rank: usize,
+    raw_policy_weight: f64,
+    policy_probability: f64,
+    transition_engine_steps: usize,
+    exact_successor_hash: String,
+    evidence: ExactCombatEvidence,
+    continuation_witness_actions: Option<Vec<ClientInput>>,
+}
+
+pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String> {
+    if args.solve_work_per_candidate == 0
+        || args.candidate_jobs == 0
+        || args.max_structured_alternatives == 0
+        || args.max_engine_steps_per_transition == 0
+    {
+        return Err("action-successor reanalysis budgets must be positive".to_string());
+    }
+
+    let case = load_combat_case(&args.case)?;
+    let witness_actions = load_combat_action_segments(&args.actions)?;
+    if args.through > witness_actions.len() {
+        return Err(format!(
+            "--through {} exceeds the {} available witness actions",
+            args.through,
+            witness_actions.len()
+        ));
+    }
+    let final_position = replay_inputs(
+        case.position.clone(),
+        &witness_actions,
+        args.max_engine_steps_per_transition,
+    )?;
+    if EngineCombatStepper.terminal(&final_position) != CombatTerminal::Win
+        || final_position.combat.runtime.combat_smoked
+    {
+        return Err("action-successor source is not an exact non-smoke victory".to_string());
+    }
+    let root_position = replay_inputs(
+        case.position,
+        &witness_actions[..args.through],
+        args.max_engine_steps_per_transition,
+    )?;
+    if EngineCombatStepper.terminal(&root_position) != CombatTerminal::Unresolved {
+        return Err("action-successor audit root is already terminal".to_string());
+    }
+
+    let known_witness_action = witness_actions.get(args.through).cloned();
+    let known_witness_continuation = witness_actions
+        .get(args.through.saturating_add(1)..)
+        .unwrap_or_default();
+    let mut inputs =
+        concrete_combat_action_candidates_v1(&root_position, args.max_structured_alternatives);
+    if let Some(known) = &known_witness_action {
+        if !inputs.contains(known) {
+            inputs.push(known.clone());
+        }
+    }
+    if inputs.is_empty() {
+        return Err("action-successor audit root has no materialized legal actions".to_string());
+    }
+
+    let policy = args
+        .action_imitation_artifact
+        .as_deref()
+        .map(|path| {
+            super::load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+        })
+        .transpose()?
+        .unwrap_or_else(existing_combat_knowledge_policy_v1);
+    let choices = inputs
+        .iter()
+        .map(CombatPolicyChoice::Atomic)
+        .collect::<Vec<_>>();
+    let raw_weights = policy.weights(&root_position, &choices);
+    let safe_weights = if raw_weights.len() == inputs.len() {
+        raw_weights
+            .into_iter()
+            .map(|weight| {
+                if weight.is_finite() && weight > 0.0 {
+                    weight
+                } else {
+                    1.0
+                }
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![1.0; inputs.len()]
+    };
+    let weight_total = safe_weights.iter().sum::<f64>();
+    let uniform = 1.0 / inputs.len() as f64;
+    let probabilities = safe_weights
+        .iter()
+        .map(|weight| 0.95 * (*weight / weight_total) + 0.05 * uniform)
+        .collect::<Vec<_>>();
+    let policy_ranks = safe_weights
+        .iter()
+        .map(|weight| {
+            1 + safe_weights
+                .iter()
+                .filter(|candidate| **candidate > *weight)
+                .count()
+        })
+        .collect::<Vec<_>>();
+
+    let jobs = args.candidate_jobs.min(inputs.len()).max(1);
+    let chunk_len = inputs.len().div_ceil(jobs);
+    let batches = std::thread::scope(|scope| {
+        let handles = inputs
+            .chunks(chunk_len)
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let root_position = &root_position;
+                let known_witness_action = &known_witness_action;
+                let known_witness_continuation = known_witness_continuation;
+                let safe_weights = &safe_weights;
+                let probabilities = &probabilities;
+                let policy_ranks = &policy_ranks;
+                let args = &args;
+                let final_hp = final_position.combat.entities.player.current_hp;
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .enumerate()
+                        .map(|(offset, input)| {
+                            let canonical_index = chunk_index * chunk_len + offset;
+                            build_candidate(
+                                canonical_index,
+                                input,
+                                root_position,
+                                known_witness_action.as_ref(),
+                                known_witness_continuation,
+                                final_hp,
+                                safe_weights[canonical_index],
+                                probabilities[canonical_index],
+                                policy_ranks[canonical_index],
+                                args.solve_work_per_candidate,
+                                args.max_engine_steps_per_transition,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .map_err(|_| "action-successor candidate worker panicked".to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })?;
+    let mut candidates = batches
+        .into_iter()
+        .flatten()
+        .collect::<Result<Vec<_>, String>>()?;
+    candidates.sort_by_key(|candidate| candidate.canonical_index);
+
+    let legal_surface = EngineCombatStepper.legal_action_surface(&root_position);
+    let mut evidence_counts = std::collections::BTreeMap::<&'static str, usize>::new();
+    for candidate in &candidates {
+        *evidence_counts
+            .entry(candidate.evidence.kind())
+            .or_default() += 1;
+    }
+    let corpus = json!({
+        "schema_name": CORPUS_SCHEMA,
+        "schema_version": 1,
+        "runtime": oracle_lab_runtime_identity(),
+        "source_case": args.case,
+        "source_actions": args.actions,
+        "through": args.through,
+        "root_exact_state_hash": combat_exact_state_hash_v1(
+            &root_position.engine,
+            &root_position.combat,
+        ),
+        "root_position": root_position,
+        "known_witness_action": known_witness_action,
+        "known_witness_final_hp": final_position.combat.entities.player.current_hp,
+        "action_imitation_artifact": args.action_imitation_artifact,
+        "surface": {
+            "materialized_candidates": candidates.len(),
+            "atomic_actions": legal_surface.atomic_actions.len(),
+            "structured_family_count": legal_surface.selection_families.len(),
+            "max_structured_alternatives": args.max_structured_alternatives,
+            "complete": legal_surface.selection_families.is_empty(),
+        },
+        "config": {
+            "solve_work_per_candidate": args.solve_work_per_candidate,
+            "candidate_jobs": jobs,
+            "max_engine_steps_per_transition": args.max_engine_steps_per_transition,
+        },
+        "evidence_counts": evidence_counts,
+        "candidates": candidates,
+    });
+    if let Some(parent) = args.output.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    std::fs::write(
+        &args.output,
+        serde_json::to_vec_pretty(&corpus).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({
+        "schema_name": "ActionSuccessorReanalysisBuildReportV1",
+        "schema_version": 1,
+        "output": args.output,
+        "root_exact_state_hash": corpus["root_exact_state_hash"],
+        "known_witness_action": corpus["known_witness_action"],
+        "surface": corpus["surface"],
+        "evidence_counts": corpus["evidence_counts"],
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_candidate(
+    canonical_index: usize,
+    input: &ClientInput,
+    root_position: &CombatPosition,
+    known_witness_action: Option<&ClientInput>,
+    known_witness_continuation: &[ClientInput],
+    known_final_hp: i32,
+    raw_policy_weight: f64,
+    policy_probability: f64,
+    policy_rank: usize,
+    solve_work_per_candidate: usize,
+    max_engine_steps_per_transition: usize,
+) -> Result<ActionSuccessorCandidate, String> {
+    let step = EngineCombatStepper.apply_to_stable(
+        root_position,
+        input.clone(),
+        CombatStepLimits {
+            max_engine_steps: max_engine_steps_per_transition,
+            deadline: None,
+        },
+    );
+    if step.truncated || step.timed_out {
+        return Err(format!(
+            "action-successor candidate {canonical_index} did not reach a stable state"
+        ));
+    }
+    let is_known_witness_action = known_witness_action == Some(input);
+    let (evidence, continuation_witness_actions) = if is_known_witness_action {
+        (
+            known_exact_win(
+                "verified_witness_suffix",
+                known_final_hp,
+                known_witness_continuation.len(),
+            ),
+            Some(known_witness_continuation.to_vec()),
+        )
+    } else {
+        match step.terminal {
+            CombatTerminal::Win if !step.position.combat.runtime.combat_smoked => (
+                known_exact_win(
+                    "immediate_terminal_replay",
+                    step.position.combat.entities.player.current_hp,
+                    0,
+                ),
+                Some(Vec::new()),
+            ),
+            CombatTerminal::Win => (exact_terminal_non_win("SmokeEscape"), None),
+            CombatTerminal::Loss => (exact_terminal_non_win("Loss"), None),
+            CombatTerminal::Unresolved => {
+                let evaluation = evaluate_nonterminal_position(
+                    &step.position,
+                    solve_work_per_candidate,
+                    max_engine_steps_per_transition,
+                )?;
+                (evaluation.evidence, evaluation.witness_actions)
+            }
+        }
+    };
+    if let Some(continuation) = continuation_witness_actions.as_ref() {
+        let complete = std::iter::once(input.clone())
+            .chain(continuation.iter().cloned())
+            .collect::<Vec<_>>();
+        let replayed = replay_inputs(
+            root_position.clone(),
+            &complete,
+            max_engine_steps_per_transition,
+        )?;
+        if EngineCombatStepper.terminal(&replayed) != CombatTerminal::Win
+            || replayed.combat.runtime.combat_smoked
+        {
+            return Err(format!(
+                "action-successor candidate {canonical_index} produced a non-replayable win"
+            ));
+        }
+    }
+    Ok(ActionSuccessorCandidate {
+        canonical_index,
+        input: input.clone(),
+        label: combat_action_label(root_position, input),
+        action_key: combat_action_key(&root_position.combat, input),
+        known_witness_action: is_known_witness_action,
+        policy_rank,
+        raw_policy_weight,
+        policy_probability,
+        transition_engine_steps: step.engine_steps,
+        exact_successor_hash: combat_exact_state_hash_v1(
+            &step.position.engine,
+            &step.position.combat,
+        ),
+        evidence,
+        continuation_witness_actions,
+    })
+}
+
+fn replay_inputs(
+    mut position: CombatPosition,
+    inputs: &[ClientInput],
+    max_engine_steps_per_transition: usize,
+) -> Result<CombatPosition, String> {
+    for (index, input) in inputs.iter().enumerate() {
+        if !EngineCombatStepper.is_legal_action(&position, input) {
+            return Err(format!("witness action {index} is not legal"));
+        }
+        let step = EngineCombatStepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return Err(format!(
+                "witness action {index} did not reach a stable state"
+            ));
+        }
+        position = step.position;
+    }
+    Ok(position)
+}

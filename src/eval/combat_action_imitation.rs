@@ -789,6 +789,28 @@ fn concrete_training_inputs(
     demonstrated: &ClientInput,
     max_structured_alternatives: usize,
 ) -> Vec<ClientInput> {
+    let mut candidates =
+        concrete_combat_action_candidates_v1(position, max_structured_alternatives);
+    if !candidates.contains(demonstrated) {
+        candidates.push(demonstrated.clone());
+    }
+    let stepper = EngineCombatStepper;
+    let mut unique = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if stepper.is_legal_action(position, &candidate) && !unique.contains(&candidate) {
+            unique.push(candidate);
+        }
+    }
+    unique
+}
+
+/// Materializes the same bounded legal-input surface used by semantic action
+/// imitation. Atomic actions are complete. Canonical pending-choice families
+/// are expanded lazily up to the explicit caller-provided limit.
+pub fn concrete_combat_action_candidates_v1(
+    position: &CombatPosition,
+    max_structured_alternatives: usize,
+) -> Vec<ClientInput> {
     let stepper = EngineCombatStepper;
     let mut candidates = stepper.atomic_actions(position);
     if let EngineState::PendingChoice(choice) = &position.engine {
@@ -799,9 +821,6 @@ fn concrete_training_inputs(
         {
             candidates.extend(inputs.take(max_structured_alternatives));
         }
-    }
-    if !candidates.contains(demonstrated) {
-        candidates.push(demonstrated.clone());
     }
     let mut unique = Vec::with_capacity(candidates.len());
     for candidate in candidates {
