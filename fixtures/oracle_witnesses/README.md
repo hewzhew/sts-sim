@@ -42,6 +42,43 @@ must rediscover the line from every earlier prefix.
   `a27ea45e57b07deb7d2fd321dfa09fc35dcaefc5e4d9f6b9f864bacbfdda3394`.
 - SHA-256: autonomous full-run continuation
   `136188EB2326987DC5331CFE281FBB3C872BF9299CB74BBFFD4F248C96400FB5`.
+
+A later capability-migration run preserves a distinct, explicitly
+non-autonomous result:
+
+- `seed20260713007_a0_relevant_capability_guided_full_run.continuation.json`
+  contains the exact F0-to-F48 journal. The ordinary production owner and
+  combat portfolio reached the Act 3 boss at 45/80 HP. At that exact combat
+  root, V2 supplied one replay-verified 37-action, 14 HP donor witness for
+  offline distillation only.
+- The typed action residual and boundary-value prototype read neither exact
+  state hashes nor witness actions at runtime. With the resulting immutable
+  guidance bundle, the production local-turn graph independently generated a
+  different 39-action witness in 2.325 seconds and won at 17/80 HP.
+- This is evidence that the new search can inherit useful tactical semantics
+  from an exact donor and improve on its demonstrated line. It is not evidence
+  that the single-demonstration artifact generalizes, and it is deliberately
+  kept separate from the autonomous baseline above.
+- The exact boss root, donor, and newly generated winner are preserved as
+  `seed20260713007_a0_relevant_capability_awakened_one.combat-case.json`,
+  `seed20260713007_a0_relevant_capability_awakened_one.v2-donor.actions.json`,
+  and `seed20260713007_a0_relevant_capability_awakened_one.actions.json`.
+  The approximately 1 MiB generated guidance bundle is not checked in; it can
+  be rebuilt deterministically from the case and donor using
+  `build-action-imitation`, `build-value-prototype`, and
+  `build-combat-guidance-bundle`.
+- Fresh replay verifies seed 20260713007, A0, 208 journal entries, 181
+  decisions, 27 combat resolutions, 521 combat actions, terminal victory at
+  F48, and final fingerprint
+  `3bdc01bf89bc0e3b4bbff45e6de66e0681ec8e5b20b1c18341fe3f38835fd03d`.
+- SHA-256: full-run continuation
+  `C61BAB981323E98A4D20B5BB943994BEBA409FC568E922A7A61897F41F9211AA`;
+  combat case
+  `B0999E519A23F049FCBF80736F0E46C959347AA1B48103F8E58EBE7A56F9ED88`;
+  new-search witness
+  `C0AEC68E17B1C4BDF0B2791048626DF6BC5E5E142D51CA0B0898487148D8D3AC`;
+  donor witness
+  `54784E55606ECDBF54C1ADE3E2CC18AC2DE42FF1EEDFD69B4F3C7B975814F70E`.
 - Run target: no keys; stop after the Act 3 boss.
 - Combat start: Act 3 floor 48, 78/85 HP, one Block Potion.
 - Action witness: `seed20260713007_a0_awakened_one.actions.json` (68 actions).
