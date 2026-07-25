@@ -79,6 +79,25 @@ non-autonomous result:
   `C0AEC68E17B1C4BDF0B2791048626DF6BC5E5E142D51CA0B0898487148D8D3AC`;
   donor witness
   `54784E55606ECDBF54C1ADE3E2CC18AC2DE42FF1EEDFD69B4F3C7B975814F70E`.
+
+A multi-trajectory accumulation control keeps that boundary explicit:
+
+- `combat_guidance_boss_corpus_v1.manifest.json` names six verified Boss
+  demonstrations (361 exact actions) across seeds 006 through 009. The
+  generated artifacts remain build outputs and are not checked in.
+- With the seed007 relevant-capability donor included, the combined bundle
+  trained 331 ranked decisions and the production local-turn graph generated
+  a new 40-action witness in 1.722 seconds / 3,056 generation work, again
+  winning at 17/80 HP. The exact result is preserved as
+  `seed20260713007_a0_relevant_capability_awakened_one.six-boss-corpus.actions.json`
+  with SHA-256
+  `C87E7EDE11A0E12B25E0163C69036AAF3F0D1E7F72E41DBC1FAF7EA5DE9FD377`.
+- A held-out control built from the other five demonstrations did not find a
+  witness in 10 seconds and gave the Demon Form root family only 68 generation
+  work. This proves that the corpus can accumulate an explicitly demonstrated
+  capability without catastrophic interference; it does not yet prove
+  zero-shot transfer to a strategically different deck.
+
 - Run target: no keys; stop after the Act 3 boss.
 - Combat start: Act 3 floor 48, 78/85 HP, one Block Potion.
 - Action witness: `seed20260713007_a0_awakened_one.actions.json` (68 actions).
