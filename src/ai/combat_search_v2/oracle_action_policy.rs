@@ -238,6 +238,11 @@ fn oracle_action_ordering_plugins(
 ) -> super::CombatSearchActionOrderingPlugins<'static> {
     use crate::content::monsters::EnemyId;
 
+    let awakened_one_curiosity = position.combat.entities.monsters.iter().any(|monster| {
+        monster.is_alive_for_action()
+            && EnemyId::from_id(monster.monster_type) == Some(EnemyId::AwakenedOne)
+            && store::has_power(&position.combat, monster.id, PowerId::Curiosity)
+    });
     let phase_guard = if position.combat.entities.monsters.iter().any(|monster| {
         monster.is_alive_for_action()
             && EnemyId::from_id(monster.monster_type) == Some(EnemyId::TimeEater)
@@ -253,6 +258,17 @@ fn oracle_action_ordering_plugins(
     };
     super::CombatSearchActionOrderingPlugins {
         phase_guard,
+        // Curiosity is a real cost, but the ordinary phase rule assigns it
+        // equally to every Power.  Preserve the existing semantic distinction
+        // between a key engine/scaling Power and a low-impact Power so the
+        // oracle policy does not bury every viable long-fight setup behind
+        // ordinary nonlethal attacks.  The Curiosity penalty still applies,
+        // and lethal/survival roles remain ahead of this prior.
+        action_prior: if awakened_one_curiosity {
+            super::CombatSearchActionPriorPluginId::KeyCardOnline
+        } else {
+            super::CombatSearchActionPriorPluginId::Default
+        },
         ..super::CombatSearchActionOrderingPlugins::default()
     }
 }
@@ -674,6 +690,86 @@ mod tests {
             weights[1] > weights[0],
             "setup/mitigation must outrank nonlethal damage that Haste will erase"
         );
+    }
+
+    #[test]
+    fn awakened_policy_preserves_key_setup_without_promoting_every_power() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.id = 1;
+        awakened.current_hp = 300;
+        awakened.max_hp = 300;
+        combat.entities.monsters = vec![awakened];
+        combat
+            .entities
+            .power_db
+            .insert(1, vec![test_power_amount(PowerId::Curiosity, 1)]);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 11),
+            CombatCard::new(CardId::Evolve, 12),
+            CombatCard::new(CardId::Strike, 13),
+        ];
+        combat.turn.energy = 6;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 2,
+                target: Some(1),
+            },
+        ];
+
+        let weights = oracle_atomic_action_policy_weights(&position, &inputs);
+
+        assert!(
+            weights[0] > weights[2],
+            "Demon Form must retain long-fight setup relevance under Curiosity"
+        );
+        assert!(
+            weights[2] > weights[1],
+            "a low-impact Power must still pay the ordinary Curiosity penalty"
+        );
+    }
+
+    #[test]
+    fn awakened_key_setup_prior_does_not_override_immediate_lethal() {
+        let mut combat = crate::test_support::blank_test_combat();
+        let mut awakened = crate::test_support::test_monster(EnemyId::AwakenedOne);
+        awakened.id = 1;
+        awakened.current_hp = 6;
+        awakened.max_hp = 300;
+        combat.entities.monsters = vec![awakened];
+        combat
+            .entities
+            .power_db
+            .insert(1, vec![test_power_amount(PowerId::Curiosity, 1)]);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 11),
+            CombatCard::new(CardId::Strike, 12),
+        ];
+        combat.turn.energy = 6;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = vec![
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ];
+
+        let weights = oracle_atomic_action_policy_weights(&position, &inputs);
+
+        assert!(weights[1] > weights[0]);
     }
 
     #[test]
