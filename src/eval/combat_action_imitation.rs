@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -178,6 +178,65 @@ struct RankingExample {
     demonstrated_index: usize,
     candidates: Vec<SparseFeatures>,
     base_logits: Vec<f64>,
+}
+
+#[derive(Clone, Debug)]
+struct IndexedRankingExample {
+    demonstrated_index: usize,
+    candidates: Vec<Vec<(usize, f64)>>,
+    base_logits: Vec<f64>,
+}
+
+#[derive(Clone, Debug)]
+struct IndexedTrainingCorpus {
+    feature_names: Vec<String>,
+    examples: Vec<IndexedRankingExample>,
+}
+
+impl IndexedTrainingCorpus {
+    fn compile(examples: &[RankingExample]) -> Self {
+        let feature_names = examples
+            .iter()
+            .flat_map(|example| &example.candidates)
+            .flat_map(|candidate| candidate.keys().map(String::as_str))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let feature_indices = feature_names
+            .iter()
+            .enumerate()
+            .map(|(index, feature)| (feature.as_str(), index))
+            .collect::<HashMap<_, _>>();
+        let examples = examples
+            .iter()
+            .map(|example| IndexedRankingExample {
+                demonstrated_index: example.demonstrated_index,
+                base_logits: example.base_logits.clone(),
+                candidates: example
+                    .candidates
+                    .iter()
+                    .map(|candidate| {
+                        candidate
+                            .iter()
+                            .map(|(feature, value)| {
+                                (
+                                    *feature_indices
+                                        .get(feature.as_str())
+                                        .expect("indexed feature must exist"),
+                                    *value,
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect(),
+            })
+            .collect();
+        Self {
+            feature_names,
+            examples,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -752,6 +811,61 @@ fn train_sparse_softmax(
     examples: &[RankingExample],
     config: CombatActionImitationTrainingConfigV1,
 ) -> BTreeMap<String, f64> {
+    let corpus = IndexedTrainingCorpus::compile(examples);
+    let mut weights = vec![0.0; corpus.feature_names.len()];
+    for epoch in 0..config.epochs {
+        let learning_rate = config.learning_rate / (1.0 + epoch as f64 * 0.05).sqrt();
+        let shrink = (1.0 - learning_rate * config.l2_penalty).clamp(0.0, 1.0);
+        for weight in &mut weights {
+            *weight *= shrink;
+        }
+        for example in &corpus.examples {
+            let scores = example
+                .candidates
+                .iter()
+                .zip(&example.base_logits)
+                .map(|(candidate, base)| {
+                    indexed_sparse_score(&weights, candidate) * config.logit_scale + base
+                })
+                .collect::<Vec<_>>();
+            let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let exponentials = scores
+                .iter()
+                .map(|score| (score - max_score).exp())
+                .collect::<Vec<_>>();
+            let total = exponentials.iter().sum::<f64>().max(f64::MIN_POSITIVE);
+            for (candidate_index, candidate) in example.candidates.iter().enumerate() {
+                let target = f64::from(candidate_index == example.demonstrated_index);
+                let gradient =
+                    (target - exponentials[candidate_index] / total) * config.logit_scale;
+                if gradient.abs() < f64::EPSILON {
+                    continue;
+                }
+                for &(feature_index, value) in candidate {
+                    weights[feature_index] += learning_rate * gradient * value;
+                }
+            }
+        }
+    }
+    corpus
+        .feature_names
+        .into_iter()
+        .zip(weights)
+        .collect::<BTreeMap<_, _>>()
+}
+
+fn indexed_sparse_score(weights: &[f64], features: &[(usize, f64)]) -> f64 {
+    features
+        .iter()
+        .map(|(feature_index, value)| weights[*feature_index] * value)
+        .sum()
+}
+
+#[cfg(test)]
+fn train_sparse_softmax_reference(
+    examples: &[RankingExample],
+    config: CombatActionImitationTrainingConfigV1,
+) -> BTreeMap<String, f64> {
     let mut weights = BTreeMap::<String, f64>::new();
     for epoch in 0..config.epochs {
         let learning_rate = config.learning_rate / (1.0 + epoch as f64 * 0.05).sqrt();
@@ -1236,6 +1350,38 @@ mod tests {
             0
         );
         assert!(weights["signal"] > 0.0);
+    }
+
+    #[test]
+    fn indexed_sparse_softmax_matches_string_map_reference() {
+        let examples = vec![
+            RankingExample {
+                demonstrated_index: 1,
+                base_logits: vec![0.25, -0.5, 0.0],
+                candidates: vec![
+                    BTreeMap::from([("shared".to_string(), 1.0), ("alpha".to_string(), -0.5)]),
+                    BTreeMap::from([("shared".to_string(), 0.25), ("beta".to_string(), 2.0)]),
+                    BTreeMap::from([("gamma".to_string(), 1.5)]),
+                ],
+            },
+            RankingExample {
+                demonstrated_index: 0,
+                base_logits: vec![-0.1, 0.2],
+                candidates: vec![
+                    BTreeMap::from([("alpha".to_string(), 0.75), ("gamma".to_string(), -1.0)]),
+                    BTreeMap::from([("beta".to_string(), 0.5), ("shared".to_string(), -0.25)]),
+                ],
+            },
+        ];
+        let config = CombatActionImitationTrainingConfigV1 {
+            epochs: 17,
+            ..CombatActionImitationTrainingConfigV1::default()
+        };
+
+        let indexed = train_sparse_softmax(&examples, config);
+        let reference = train_sparse_softmax_reference(&examples, config);
+
+        assert_eq!(indexed, reference);
     }
 
     #[test]
