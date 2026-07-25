@@ -8,6 +8,9 @@ use sts_combat_planner::{
     SharedCombatActionPolicy, UniformCombatActionPolicy,
 };
 
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades as strategic_card_definition, PlayEffect, TriggeredEffect,
+};
 use crate::content::cards::{get_card_definition, java_id, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
@@ -19,8 +22,8 @@ use crate::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use crate::state::core::{ClientInput, EngineState};
 
 pub const COMBAT_ACTION_IMITATION_SCHEMA_NAME: &str = "CombatActionImitationArtifactV1";
-pub const COMBAT_ACTION_IMITATION_SCHEMA_VERSION: u32 = 2;
-const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v4";
+pub const COMBAT_ACTION_IMITATION_SCHEMA_VERSION: u32 = 3;
+const COMBAT_ACTION_FEATURE_SCHEMA: &str = "typed-state-and-generation-x-semantic-action/v5";
 const COMBAT_ACTION_IMITATION_RUNTIME_ID: &str = env!("STS_COMBAT_ACTION_IMITATION_RUNTIME_ID");
 
 #[derive(Clone, Copy, Debug)]
@@ -176,6 +179,7 @@ type SparseFeatures = BTreeMap<String, f64>;
 #[derive(Clone, Debug)]
 struct RankingExample {
     demonstrated_index: usize,
+    accepted_indices: Vec<usize>,
     candidates: Vec<SparseFeatures>,
     base_logits: Vec<f64>,
 }
@@ -183,6 +187,7 @@ struct RankingExample {
 #[derive(Clone, Debug)]
 struct IndexedRankingExample {
     demonstrated_index: usize,
+    accepted_indices: Vec<usize>,
     candidates: Vec<Vec<(usize, f64)>>,
     base_logits: Vec<f64>,
 }
@@ -212,6 +217,7 @@ impl IndexedTrainingCorpus {
             .iter()
             .map(|example| IndexedRankingExample {
                 demonstrated_index: example.demonstrated_index,
+                accepted_indices: example.accepted_indices.clone(),
                 base_logits: example.base_logits.clone(),
                 candidates: example
                     .candidates
@@ -335,11 +341,21 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
                     )
                 })?;
             if candidates.len() > 1 {
-                pairwise_comparison_count =
-                    pairwise_comparison_count.saturating_add(candidates.len().saturating_sub(1));
+                let accepted_indices = exact_adjacent_swap_accepted_indices(
+                    &stepper,
+                    &position,
+                    demonstration.actions,
+                    action_index,
+                    &candidates,
+                    demonstrated_index,
+                    config.max_engine_steps_per_transition,
+                );
+                pairwise_comparison_count = pairwise_comparison_count
+                    .saturating_add(candidates.len().saturating_sub(accepted_indices.len()));
                 let state = typed_combat_feature_components_v1(&position);
                 examples.push(RankingExample {
                     demonstrated_index,
+                    accepted_indices,
                     base_logits: concrete_base_logits(
                         &position,
                         &candidates,
@@ -391,12 +407,12 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
     let training_top1_correct = examples
         .iter()
         .filter(|example| {
-            runtime_candidate_index(
+            example.accepted_indices.contains(&runtime_candidate_index(
                 &weights,
                 example,
                 config.logit_scale,
                 config.max_abs_log_factor,
-            ) == example.demonstrated_index
+            ))
         })
         .count();
     let coefficients = weights
@@ -409,7 +425,9 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
         schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
         feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
         runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
-        training_authority: "exact_terminal_win_action_demonstrations".to_string(),
+        training_authority:
+            "exact_terminal_win_demonstration_with_exact_adjacent_alternatives_excluded_from_negatives"
+                .to_string(),
         source_trajectory_count: demonstrations.len(),
         source_action_count,
         source_terminal_final_hp,
@@ -427,9 +445,10 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
     Ok(artifact)
 }
 
-/// Replays one verified demonstration and exposes only decisions the learned
-/// policy does not rank first. This is a training-representation diagnostic;
-/// it neither changes policy weights nor grants the witness runtime authority.
+/// Replays one verified demonstration and exposes only decisions whose learned
+/// winner is absent from the demonstrated-or-exactly-accepted set. This is a
+/// training-representation diagnostic; it neither changes policy weights nor
+/// grants the witness runtime authority.
 pub fn audit_combat_action_imitation_v1(
     root: &CombatPosition,
     demonstrated_actions: &[ClientInput],
@@ -504,7 +523,16 @@ pub fn audit_combat_action_imitation_v1(
                 })
                 .map(|(index, _)| index)
                 .unwrap_or_default();
-            if best_index != demonstrated_index {
+            let accepted_indices = exact_adjacent_swap_accepted_indices(
+                &stepper,
+                &position,
+                demonstrated_actions,
+                action_index,
+                &candidates,
+                demonstrated_index,
+                max_engine_steps_per_transition,
+            );
+            if !accepted_indices.contains(&best_index) {
                 misses.push(CombatActionImitationDecisionAuditV1 {
                     action_index,
                     player_turn: position.combat.turn.turn_count,
@@ -784,6 +812,113 @@ fn concrete_training_inputs(
     unique
 }
 
+fn exact_adjacent_swap_accepted_indices(
+    stepper: &EngineCombatStepper,
+    position: &CombatPosition,
+    demonstrated_actions: &[ClientInput],
+    action_index: usize,
+    candidates: &[ClientInput],
+    demonstrated_index: usize,
+    max_engine_steps_per_transition: usize,
+) -> Vec<usize> {
+    let mut accepted_indices = vec![demonstrated_index];
+    let limits = CombatStepLimits {
+        max_engine_steps: max_engine_steps_per_transition,
+        deadline: None,
+    };
+    let demonstrated = &demonstrated_actions[action_index];
+    let Some(next_demonstrated) = demonstrated_actions.get(action_index + 1) else {
+        accepted_indices.sort_unstable();
+        accepted_indices.dedup();
+        return accepted_indices;
+    };
+    let Some(after_demonstrated) = exact_stable_successor(stepper, position, demonstrated, limits)
+    else {
+        return accepted_indices;
+    };
+    let Some(swapped_first) =
+        remap_input_by_card_uuid(&after_demonstrated, next_demonstrated, position)
+    else {
+        return accepted_indices;
+    };
+    let Some(swapped_index) = candidates
+        .iter()
+        .position(|candidate| candidate == &swapped_first)
+    else {
+        return accepted_indices;
+    };
+    if swapped_index == demonstrated_index {
+        return accepted_indices;
+    }
+    let Some(after_swapped_first) =
+        exact_stable_successor(stepper, position, &swapped_first, limits)
+    else {
+        return accepted_indices;
+    };
+    let Some(swapped_second) =
+        remap_input_by_card_uuid(position, demonstrated, &after_swapped_first)
+    else {
+        return accepted_indices;
+    };
+    let Some(mut swapped_position) =
+        exact_stable_successor(stepper, &after_swapped_first, &swapped_second, limits)
+    else {
+        return accepted_indices;
+    };
+    for suffix_action in &demonstrated_actions[action_index.saturating_add(2)..] {
+        let Some(successor) =
+            exact_stable_successor(stepper, &swapped_position, suffix_action, limits)
+        else {
+            return accepted_indices;
+        };
+        swapped_position = successor;
+    }
+    if stepper.terminal(&swapped_position) == CombatTerminal::Win
+        && !swapped_position.combat.runtime.combat_smoked
+    {
+        accepted_indices.push(swapped_index);
+    }
+    accepted_indices.sort_unstable();
+    accepted_indices.dedup();
+    accepted_indices
+}
+
+fn exact_stable_successor(
+    stepper: &EngineCombatStepper,
+    position: &CombatPosition,
+    input: &ClientInput,
+    limits: CombatStepLimits,
+) -> Option<CombatPosition> {
+    if !stepper.is_legal_action(position, input) {
+        return None;
+    }
+    let step = stepper.apply_to_stable(position, input.clone(), limits);
+    (!step.truncated && !step.timed_out).then_some(step.position)
+}
+
+fn remap_input_by_card_uuid(
+    source: &CombatPosition,
+    input: &ClientInput,
+    destination: &CombatPosition,
+) -> Option<ClientInput> {
+    match input {
+        ClientInput::PlayCard { card_index, target } => {
+            let uuid = source.combat.zones.hand.get(*card_index)?.uuid;
+            let card_index = destination
+                .combat
+                .zones
+                .hand
+                .iter()
+                .position(|card| card.uuid == uuid)?;
+            Some(ClientInput::PlayCard {
+                card_index,
+                target: *target,
+            })
+        }
+        _ => Some(input.clone()),
+    }
+}
+
 fn concrete_base_logits(
     position: &CombatPosition,
     candidates: &[ClientInput],
@@ -828,14 +963,33 @@ fn train_sparse_softmax(
                     indexed_sparse_score(&weights, candidate) * config.logit_scale + base
                 })
                 .collect::<Vec<_>>();
-            let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let is_active = |candidate_index: usize| {
+                candidate_index == example.demonstrated_index
+                    || !example.accepted_indices.contains(&candidate_index)
+            };
+            let max_score = scores
+                .iter()
+                .enumerate()
+                .filter(|(candidate_index, _)| is_active(*candidate_index))
+                .map(|(_, score)| *score)
+                .fold(f64::NEG_INFINITY, f64::max);
             let exponentials = scores
                 .iter()
-                .map(|score| (score - max_score).exp())
+                .enumerate()
+                .map(|(candidate_index, score)| {
+                    if is_active(candidate_index) {
+                        (score - max_score).exp()
+                    } else {
+                        0.0
+                    }
+                })
                 .collect::<Vec<_>>();
             let total = exponentials.iter().sum::<f64>().max(f64::MIN_POSITIVE);
             for (candidate_index, candidate) in example.candidates.iter().enumerate() {
-                let target = f64::from(candidate_index == example.demonstrated_index);
+                if !is_active(candidate_index) {
+                    continue;
+                }
+                let target = usize::from(candidate_index == example.demonstrated_index) as f64;
                 let gradient =
                     (target - exponentials[candidate_index] / total) * config.logit_scale;
                 if gradient.abs() < f64::EPSILON {
@@ -882,14 +1036,33 @@ fn train_sparse_softmax_reference(
                     sparse_score(&weights, candidate) * config.logit_scale + base
                 })
                 .collect::<Vec<_>>();
-            let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let is_active = |candidate_index: usize| {
+                candidate_index == example.demonstrated_index
+                    || !example.accepted_indices.contains(&candidate_index)
+            };
+            let max_score = scores
+                .iter()
+                .enumerate()
+                .filter(|(candidate_index, _)| is_active(*candidate_index))
+                .map(|(_, score)| *score)
+                .fold(f64::NEG_INFINITY, f64::max);
             let exponentials = scores
                 .iter()
-                .map(|score| (score - max_score).exp())
+                .enumerate()
+                .map(|(candidate_index, score)| {
+                    if is_active(candidate_index) {
+                        (score - max_score).exp()
+                    } else {
+                        0.0
+                    }
+                })
                 .collect::<Vec<_>>();
             let total = exponentials.iter().sum::<f64>().max(f64::MIN_POSITIVE);
             for (candidate_index, candidate) in example.candidates.iter().enumerate() {
-                let target = f64::from(candidate_index == example.demonstrated_index);
+                if !is_active(candidate_index) {
+                    continue;
+                }
+                let target = usize::from(candidate_index == example.demonstrated_index) as f64;
                 let gradient =
                     (target - exponentials[candidate_index] / total) * config.logit_scale;
                 if gradient.abs() < f64::EPSILON {
@@ -1024,6 +1197,7 @@ fn action_semantic_tokens(position: &CombatPosition, input: &ClientInput) -> Vec
                 card_tokens.push(format!("card/{}+{}", java_id(card.id), card.upgrades));
                 card_tokens.push(format!("card_type/{:?}", definition.card_type));
                 tokens.extend(card_tokens.iter().cloned());
+                push_strategic_card_semantic_tokens(card.id, card.upgrades, &mut tokens);
             }
             let target_start = tokens.len();
             push_target_tokens(position, *target, &mut tokens);
@@ -1083,6 +1257,42 @@ fn action_semantic_tokens(position: &CombatPosition, input: &ClientInput) -> Vec
     tokens.sort();
     tokens.dedup();
     tokens
+}
+
+fn push_strategic_card_semantic_tokens(card: CardId, upgrades: u8, tokens: &mut Vec<String>) {
+    let semantics = strategic_card_definition(card, upgrades);
+    for effect in semantics.play_effects {
+        tokens.push(format!("semantic/play_effect/{effect:?}"));
+        if let PlayEffect::Provide(mechanic) = effect {
+            tokens.push(format!("semantic/provides/{mechanic:?}"));
+            tokens.push(format!("semantic/provides_immediately/{mechanic:?}"));
+        }
+    }
+    for rule in semantics.installed_rules {
+        tokens.push(format!("semantic/installs/{rule:?}"));
+    }
+    for handler in semantics.event_handlers {
+        tokens.push(format!(
+            "semantic/event_handler/{:?}/{:?}",
+            handler.on, handler.effect
+        ));
+        if let TriggeredEffect::Provide(mechanic) = handler.effect {
+            tokens.push(format!("semantic/provides/{mechanic:?}"));
+            tokens.push(format!(
+                "semantic/provides_on/{:?}/{mechanic:?}",
+                handler.on
+            ));
+        }
+    }
+    for requirement in semantics.payoff_requirements {
+        tokens.push(format!("semantic/requires/{requirement:?}"));
+    }
+    for burden in semantics.burdens {
+        tokens.push(format!("semantic/burden/{burden:?}"));
+    }
+    for behavior in semantics.duplicate_behaviors {
+        tokens.push(format!("semantic/duplicate/{behavior:?}"));
+    }
 }
 
 fn push_target_tokens(
@@ -1305,11 +1515,14 @@ pub fn typed_combat_feature_components_v1(position: &CombatPosition) -> Vec<i32>
 mod tests {
     use super::*;
     use crate::content::cards::CardId;
+    use crate::content::monsters::EnemyId;
     use crate::content::powers::store;
     use crate::runtime::combat::CombatCard;
     use crate::runtime::combat::{Power, PowerPayload};
     use crate::state::core::{DiscoveryChoiceState, PendingChoice};
-    use crate::testing::support::{blank_test_combat, test_monster};
+    use crate::testing::support::{
+        blank_test_combat, combat_with_monsters, planned_monster, test_monster,
+    };
     use sts_combat_planner::UniformCombatActionPolicy;
 
     struct ConstantPolicy(f64);
@@ -1327,6 +1540,7 @@ mod tests {
     fn synthetic_example(positive: f64, negative: f64) -> RankingExample {
         RankingExample {
             demonstrated_index: 0,
+            accepted_indices: vec![0],
             base_logits: vec![0.0; 2],
             candidates: vec![
                 BTreeMap::from([("signal".to_string(), positive)]),
@@ -1353,10 +1567,31 @@ mod tests {
     }
 
     #[test]
+    fn exact_alternative_is_excluded_from_negative_training() {
+        let examples = vec![RankingExample {
+            demonstrated_index: 0,
+            accepted_indices: vec![0, 1],
+            base_logits: vec![0.0; 3],
+            candidates: vec![
+                BTreeMap::from([("demonstrated".to_string(), 1.0)]),
+                BTreeMap::from([("accepted_alternative".to_string(), 1.0)]),
+                BTreeMap::from([("negative".to_string(), 1.0)]),
+            ],
+        }];
+        let weights =
+            train_sparse_softmax(&examples, CombatActionImitationTrainingConfigV1::default());
+
+        assert!(weights["demonstrated"] > 0.0);
+        assert!(weights["negative"] < 0.0);
+        assert_eq!(weights["accepted_alternative"], 0.0);
+    }
+
+    #[test]
     fn indexed_sparse_softmax_matches_string_map_reference() {
         let examples = vec![
             RankingExample {
                 demonstrated_index: 1,
+                accepted_indices: vec![1, 2],
                 base_logits: vec![0.25, -0.5, 0.0],
                 candidates: vec![
                     BTreeMap::from([("shared".to_string(), 1.0), ("alpha".to_string(), -0.5)]),
@@ -1366,6 +1601,7 @@ mod tests {
             },
             RankingExample {
                 demonstrated_index: 0,
+                accepted_indices: vec![0],
                 base_logits: vec![-0.1, 0.2],
                 candidates: vec![
                     BTreeMap::from([("alpha".to_string(), 0.75), ("gamma".to_string(), -1.0)]),
@@ -1382,6 +1618,66 @@ mod tests {
         let reference = train_sparse_softmax_reference(&examples, config);
 
         assert_eq!(indexed, reference);
+    }
+
+    #[test]
+    fn exact_winning_adjacent_swap_excludes_the_alternative_from_negatives() {
+        let mut monster = planned_monster(EnemyId::JawWorm, 1);
+        monster.current_hp = 6;
+        let mut combat = combat_with_monsters(vec![monster]);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Defend, 11),
+            CombatCard::new(CardId::Inflame, 12),
+            CombatCard::new(CardId::Strike, 13),
+        ];
+        combat.entities.player.current_hp = 1;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let demonstrated = ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        };
+        let next = ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        };
+        let lethal = ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        };
+        let candidates = concrete_training_inputs(&position, &demonstrated, 256);
+        let demonstrated_index = candidates
+            .iter()
+            .position(|candidate| candidate == &demonstrated)
+            .expect("Defend is legal");
+        let inflame_index = candidates
+            .iter()
+            .position(|candidate| {
+                matches!(
+                    candidate,
+                    ClientInput::PlayCard {
+                        card_index: 1,
+                        target: None
+                    }
+                )
+            })
+            .expect("Inflame is legal");
+        let end_turn_index = candidates
+            .iter()
+            .position(|candidate| matches!(candidate, ClientInput::EndTurn))
+            .expect("end turn is legal");
+        let accepted = exact_adjacent_swap_accepted_indices(
+            &EngineCombatStepper,
+            &position,
+            &[demonstrated, next, lethal],
+            0,
+            &candidates,
+            demonstrated_index,
+            250,
+        );
+
+        assert!(accepted.contains(&demonstrated_index));
+        assert!(accepted.contains(&inflame_index));
+        assert!(!accepted.contains(&end_turn_index));
     }
 
     #[test]
@@ -1421,6 +1717,36 @@ mod tests {
         );
         assert_eq!(left_features, right_features);
         assert!(left_features.keys().all(|feature| !feature.contains("99")));
+    }
+
+    #[test]
+    fn strength_sources_share_mechanic_semantics_without_losing_timing() {
+        let mut combat = blank_test_combat();
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Inflame, 11),
+            CombatCard::new(CardId::DemonForm, 12),
+        ];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inflame = action_semantic_tokens(
+            &position,
+            &ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+        let demon_form = action_semantic_tokens(
+            &position,
+            &ClientInput::PlayCard {
+                card_index: 1,
+                target: None,
+            },
+        );
+
+        assert!(inflame.contains(&"semantic/provides/Strength".to_string()));
+        assert!(demon_form.contains(&"semantic/provides/Strength".to_string()));
+        assert!(inflame.contains(&"semantic/provides_immediately/Strength".to_string()));
+        assert!(!demon_form.contains(&"semantic/provides_immediately/Strength".to_string()));
+        assert!(demon_form.contains(&"semantic/provides_on/TurnStart/Strength".to_string()));
     }
 
     #[test]
