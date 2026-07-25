@@ -135,9 +135,18 @@ impl CompleteTurnOption {
         negative_log_policy: f64,
     ) -> Self {
         let engine_steps = actions.iter().map(|action| action.engine_steps).sum();
+        // A complete turn boundary is reached by the final exact action, so
+        // its replay hash is already the exact successor identity. Rebuilding
+        // and hashing the full combat key here duplicates the hottest work in
+        // action generation. The fallback only covers defensive construction
+        // of an empty action list.
+        let exact_successor_hash = actions
+            .last()
+            .map(|action| action.expected_successor_hash.clone())
+            .unwrap_or_else(|| exact_hash(&exact_successor));
         Self {
             root_exact_state_hash,
-            exact_successor_hash: exact_hash(&exact_successor),
+            exact_successor_hash,
             actions,
             boundary,
             exact_successor,

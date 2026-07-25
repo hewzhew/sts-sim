@@ -77,6 +77,15 @@ struct LoadedReanalysisDecision {
     labels: Vec<String>,
 }
 
+struct ReanalysisAudit {
+    report: Value,
+    source: PathBuf,
+    contains_budget_unknown: bool,
+    base_exact_win_mass: f64,
+    learned_exact_win_mass: f64,
+    target_exact_win_mass: f64,
+}
+
 pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
     if args.max_engine_steps_per_transition == 0 {
         return Err("action reanalysis policy transition budget must be positive".to_string());
@@ -153,8 +162,30 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
-
-    artifact.save(&args.output)?;
+    let promotion_failures = reanalysis_audits
+        .iter()
+        .filter(|audit| promotion_gate_rejects(audit))
+        .map(|audit| {
+            json!({
+                "source": audit.source,
+                "reason": "learned_exact_win_mass_below_base_with_budget_unknown",
+                "base_exact_win_mass": audit.base_exact_win_mass,
+                "learned_exact_win_mass": audit.learned_exact_win_mass,
+                "target_exact_win_mass": audit.target_exact_win_mass,
+            })
+        })
+        .collect::<Vec<_>>();
+    let artifact_saved = promotion_failures.is_empty();
+    if artifact_saved {
+        artifact.save(&args.output)?;
+    } else if args.output.exists() {
+        std::fs::remove_file(&args.output).map_err(|error| {
+            format!(
+                "failed to remove rejected action policy artifact {}: {error}",
+                args.output.display()
+            )
+        })?;
+    }
     Ok(json!({
         "schema_name": "OracleCombatActionReanalysisPolicyBuildV1",
         "schema_version": 1,
@@ -163,6 +194,12 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
         "output": args.output,
         "training_base": "existing_combat_knowledge_v1",
         "exact_support_mass": args.exact_support_mass,
+        "promotion": {
+            "status": if artifact_saved { "accepted" } else { "rejected" },
+            "artifact_saved": artifact_saved,
+            "contract": "no_exact_win_mass_regression_on_reanalysis_states_with_budget_unknown",
+            "failures": promotion_failures,
+        },
         "artifact": {
             "schema_name": artifact.schema_name,
             "schema_version": artifact.schema_version,
@@ -180,8 +217,16 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
             "coefficient_count": artifact.coefficients.len(),
         },
         "demonstrations": demonstration_audits,
-        "reanalysis": reanalysis_audits,
+        "reanalysis": reanalysis_audits
+            .into_iter()
+            .map(|audit| audit.report)
+            .collect::<Vec<_>>(),
     }))
+}
+
+fn promotion_gate_rejects(audit: &ReanalysisAudit) -> bool {
+    audit.contains_budget_unknown
+        && audit.learned_exact_win_mass + 1.0e-12 < audit.base_exact_win_mass
 }
 
 fn load_reanalysis_corpus(path: &PathBuf) -> Result<LoadedReanalysisDecision, String> {
@@ -243,7 +288,7 @@ fn audit_reanalysis_decision(
     base_policy: &dyn CombatActionPolicy,
     learned_policy: &dyn CombatActionPolicy,
     config: CombatActionReanalysisTrainingConfigV1,
-) -> Result<Value, String> {
+) -> Result<ReanalysisAudit, String> {
     let choices = decision
         .candidates
         .iter()
@@ -327,29 +372,43 @@ fn audit_reanalysis_decision(
             })
         })
         .collect::<Vec<_>>();
-    Ok(json!({
+    let base_exact_win_mass = exact_win_mass(&base_probabilities);
+    let learned_exact_win_mass = exact_win_mass(&learned_probabilities);
+    let target_exact_win_mass = exact_win_mass(&target_probabilities);
+    let contains_budget_unknown = evidence
+        .iter()
+        .any(|evidence| matches!(evidence, CombatActionReanalysisEvidenceV1::BudgetUnknown));
+    let report = json!({
         "source": decision.source,
         "candidate_count": decision.candidates.len(),
         "mass_by_evidence": {
             "base": {
-                "exact_win": exact_win_mass(&base_probabilities),
+                "exact_win": base_exact_win_mass,
                 "budget_unknown": budget_unknown_mass(&base_probabilities),
                 "exact_non_win": exact_non_win_mass(&base_probabilities),
             },
             "target": {
-                "exact_win": exact_win_mass(&target_probabilities),
+                "exact_win": target_exact_win_mass,
                 "budget_unknown": budget_unknown_mass(&target_probabilities),
                 "exact_non_win": exact_non_win_mass(&target_probabilities),
             },
             "learned": {
-                "exact_win": exact_win_mass(&learned_probabilities),
+                "exact_win": learned_exact_win_mass,
                 "budget_unknown": budget_unknown_mass(&learned_probabilities),
                 "exact_non_win": exact_non_win_mass(&learned_probabilities),
             },
         },
         "target_total_variation": target_total_variation,
         "candidates": candidates,
-    }))
+    });
+    Ok(ReanalysisAudit {
+        report,
+        source: decision.source.clone(),
+        contains_budget_unknown,
+        base_exact_win_mass,
+        learned_exact_win_mass,
+        target_exact_win_mass,
+    })
 }
 
 fn ranks(weights: &[f64]) -> Vec<usize> {
@@ -401,10 +460,15 @@ fn evidence_name(evidence: CombatActionReanalysisEvidenceV1) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use serde_json::json;
     use sts_simulator::eval::combat_action_imitation::{
         conservative_combat_reanalysis_target_v1, CombatActionReanalysisEvidenceV1,
         CombatActionReanalysisTrainingConfigV1,
     };
+
+    use super::{promotion_gate_rejects, ReanalysisAudit};
 
     #[test]
     fn conservative_target_preserves_unknown_mass_and_only_zeros_exact_non_wins() {
@@ -441,5 +505,43 @@ mod tests {
             CombatActionReanalysisTrainingConfigV1::default(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn all_exact_wins_preserve_the_base_distribution() {
+        let evidence = [
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 9 },
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 30 },
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 30 },
+        ];
+        let target = conservative_combat_reanalysis_target_v1(
+            &[8.0, 3.0, 1.0],
+            &evidence,
+            CombatActionReanalysisTrainingConfigV1 {
+                exact_support_mass: 0.5,
+            },
+        )
+        .expect("all-win target");
+
+        assert!((target[0] - 8.0 / 12.0).abs() < 1.0e-12);
+        assert!((target[1] - 3.0 / 12.0).abs() < 1.0e-12);
+        assert!((target[2] - 1.0 / 12.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn promotion_gate_rejects_only_evidence_regression_under_uncertainty() {
+        let audit = |contains_budget_unknown, base_exact_win_mass, learned_exact_win_mass| {
+            ReanalysisAudit {
+                report: json!({}),
+                source: PathBuf::from("source.json"),
+                contains_budget_unknown,
+                base_exact_win_mass,
+                learned_exact_win_mass,
+                target_exact_win_mass: 0.75,
+            }
+        };
+        assert!(promotion_gate_rejects(&audit(true, 0.4, 0.2)));
+        assert!(!promotion_gate_rejects(&audit(true, 0.4, 0.6)));
+        assert!(!promotion_gate_rejects(&audit(false, 1.0, 1.0)));
     }
 }

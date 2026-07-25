@@ -1,6 +1,7 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
 mod action_reanalysis_policy;
+mod action_reanalysis_queue;
 mod action_successor_reanalysis;
 mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
@@ -689,6 +690,20 @@ enum Command {
         #[command(flatten)]
         args: action_reanalysis_policy::ActionReanalysisPolicyArgs,
     },
+    /// Rank exact witness states for bounded action-successor reanalysis.
+    ///
+    /// This is a read-only compute-order tool. It does not treat policy
+    /// disagreement as negative evidence and cannot alter production policy.
+    BuildActionReanalysisQueue {
+        #[command(flatten)]
+        args: action_reanalysis_queue::ActionReanalysisQueueArgs,
+    },
+    /// Reanalyse the highest-priority states from a saved queue in one
+    /// invocation, reusing the same verified manifest and policy identity.
+    BuildActionReanalysisBatch {
+        #[command(flatten)]
+        args: action_reanalysis_queue::ActionReanalysisBatchArgs,
+    },
     /// Build offline complete-turn successor evidence from verified witnesses.
     ///
     /// This command never changes a production policy. Exact wins,
@@ -1159,6 +1174,8 @@ struct CombatActionImitationCorpusEntryV1 {
 
 struct LoadedCombatActionImitationDemonstrationV1 {
     id: String,
+    case_path: PathBuf,
+    action_paths: Vec<PathBuf>,
     position: sts_simulator::sim::combat::CombatPosition,
     actions: Vec<ClientInput>,
 }
@@ -1723,6 +1740,8 @@ fn load_combat_action_imitation_corpus(
             let actions = load_combat_action_segments(&action_paths)?;
             Ok(LoadedCombatActionImitationDemonstrationV1 {
                 id: entry.id,
+                case_path,
+                action_paths,
                 position: case.position,
                 actions,
             })
@@ -2343,6 +2362,14 @@ fn main() -> Result<(), String> {
             let report = action_reanalysis_policy::build(args)?;
             print_json(&report)
         }
+        Command::BuildActionReanalysisQueue { args } => {
+            let report = action_reanalysis_queue::build(args)?;
+            print_json(&report)
+        }
+        Command::BuildActionReanalysisBatch { args } => {
+            let report = action_reanalysis_queue::build_batch(args)?;
+            print_json(&report)
+        }
         Command::AuditActionImitation {
             case,
             actions,
@@ -2493,6 +2520,7 @@ fn main() -> Result<(), String> {
             } else {
                 LocalTurnGraphWitnessSession::with_policy(root, config, policy)
             };
+            let search_started = Instant::now();
             let report = session.advance(
                 LocalTurnGraphWitnessQuantum {
                     additional_selections: max_selections,
@@ -2503,6 +2531,25 @@ fn main() -> Result<(), String> {
                 },
                 &EngineCombatStepper,
             );
+            let search_elapsed_ms = search_started.elapsed().as_millis();
+            let performance_timing = json!({
+                "selection_elapsed_ns": report.performance_timing.selection_elapsed_ns,
+                "generation_elapsed_ns": report.performance_timing.generation_elapsed_ns,
+                "admission_elapsed_ns": report.performance_timing.admission_elapsed_ns,
+                "atomic_expand_elapsed_ns": report.performance_timing.atomic_expand_elapsed_ns,
+                "transition_simulation_elapsed_ns":
+                    report.performance_timing.transition_simulation_elapsed_ns,
+                "transition_identity_elapsed_ns":
+                    report.performance_timing.transition_identity_elapsed_ns,
+                "transition_admission_elapsed_ns":
+                    report.performance_timing.transition_admission_elapsed_ns,
+                "transition_trace_elapsed_ns":
+                    report.performance_timing.transition_trace_elapsed_ns,
+                "transition_seen_elapsed_ns":
+                    report.performance_timing.transition_seen_elapsed_ns,
+                "transition_publish_elapsed_ns":
+                    report.performance_timing.transition_publish_elapsed_ns,
+            });
             let progress = session.progress_snapshot();
             let root_action_families = session
                 .root_action_families()
@@ -2726,7 +2773,7 @@ fn main() -> Result<(), String> {
                     "exported_deepest_progress_actions": exported_deepest_progress_actions,
                 }));
             }
-            print_json(&json!({
+            let mut output = json!({
                 "schema_name": "LocalTurnGraphCombatSearchReportV1",
                 "schema_version": 1,
                 "case": case,
@@ -2812,7 +2859,13 @@ fn main() -> Result<(), String> {
                 "exported_deepest_survival_actions": exported_deepest_survival_actions,
                 "exported_deepest_progress_case": export_deepest_progress_case,
                 "exported_deepest_progress_actions": exported_deepest_progress_actions,
-            }))
+            });
+            let output_object = output
+                .as_object_mut()
+                .expect("combat-case report must be a JSON object");
+            output_object.insert("search_elapsed_ms".to_string(), json!(search_elapsed_ms));
+            output_object.insert("performance_timing".to_string(), performance_timing);
+            print_json(&output)
         }
         Command::CombatCaseLayered {
             case,

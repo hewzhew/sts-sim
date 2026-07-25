@@ -22,7 +22,7 @@ use sts_simulator::sim::combat_action::combat_action_key;
 use sts_simulator::state::core::ClientInput;
 
 use super::exact_combat_evidence::{
-    evaluate_nonterminal_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
+    evaluate_unresolved_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
 };
 use super::{
     combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_segments,
@@ -35,32 +35,32 @@ const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
 pub(crate) struct ActionSuccessorReanalysisArgs {
     /// Exact combat case at the beginning of the verified witness.
     #[arg(long)]
-    case: PathBuf,
+    pub(crate) case: PathBuf,
     /// One or more consecutive exact action segments forming the witness.
     #[arg(long, required = true)]
-    actions: Vec<PathBuf>,
+    pub(crate) actions: Vec<PathBuf>,
     /// Number of witness actions replayed before auditing the next action.
     #[arg(long)]
-    through: usize,
+    pub(crate) through: usize,
     /// Destination for the typed offline evidence corpus.
     #[arg(long)]
-    output: PathBuf,
+    pub(crate) output: PathBuf,
     /// Deterministic exact-search work for each non-terminal successor.
     #[arg(long, default_value_t = 5_000)]
-    solve_work_per_candidate: usize,
+    pub(crate) solve_work_per_candidate: usize,
     /// Maximum independent successor searches evaluated concurrently.
     #[arg(long, default_value_t = 4)]
-    candidate_jobs: usize,
+    pub(crate) candidate_jobs: usize,
     /// Maximum canonical structured-selection inputs materialized.
     #[arg(long, default_value_t = 256)]
-    max_structured_alternatives: usize,
+    pub(crate) max_structured_alternatives: usize,
     /// Optional learned residual policy whose current action order is recorded.
     /// The artifact affects reporting only; every selected successor receives
     /// the same exact-search budget.
     #[arg(long)]
-    action_imitation_artifact: Option<PathBuf>,
+    pub(crate) action_imitation_artifact: Option<PathBuf>,
     #[arg(long, default_value_t = 250)]
-    max_engine_steps_per_transition: usize,
+    pub(crate) max_engine_steps_per_transition: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -206,6 +206,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                                 probabilities[canonical_index],
                                 policy_ranks[canonical_index],
                                 args.solve_work_per_candidate,
+                                args.max_structured_alternatives,
                                 args.max_engine_steps_per_transition,
                             )
                         })
@@ -296,6 +297,7 @@ fn build_candidate(
     policy_probability: f64,
     policy_rank: usize,
     solve_work_per_candidate: usize,
+    max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
 ) -> Result<ActionSuccessorCandidate, String> {
     let step = EngineCombatStepper.apply_to_stable(
@@ -334,9 +336,10 @@ fn build_candidate(
             CombatTerminal::Win => (exact_terminal_non_win("SmokeEscape"), None),
             CombatTerminal::Loss => (exact_terminal_non_win("Loss"), None),
             CombatTerminal::Unresolved => {
-                let evaluation = evaluate_nonterminal_position(
+                let evaluation = evaluate_unresolved_position(
                     &step.position,
                     solve_work_per_candidate,
+                    max_structured_alternatives,
                     max_engine_steps_per_transition,
                 )?;
                 (evaluation.evidence, evaluation.witness_actions)

@@ -11,6 +11,7 @@ use sts_combat_planner::{
 use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades as strategic_card_definition, PlayEffect, TriggeredEffect,
 };
+use crate::ai::combat_state_key::combat_exact_state_hash_v1;
 use crate::content::cards::{get_card_definition, java_id, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
@@ -273,9 +274,10 @@ pub struct CombatActionReanalysisDecisionV1<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct CombatActionReanalysisTrainingConfigV1 {
-    /// Probability mass explicitly transferred to the uniformly weighted
-    /// exact-win support. The remaining mass preserves the base policy over
-    /// exact wins and budget-unknown actions; exact non-wins receive no mass.
+    /// Probability mass transferred to uniformly weighted exact-win support
+    /// while budget-unknown alternatives remain. With no unknown alternatives
+    /// there is no uncertainty mass to transfer: exact non-wins are removed
+    /// and the base policy is renormalized over exact wins.
     pub exact_support_mass: f64,
 }
 
@@ -308,6 +310,10 @@ pub fn conservative_combat_reanalysis_target_v1(
     if exact_wins == 0 {
         return Err("combat reanalysis target requires at least one exact win".to_string());
     }
+    let unknown_count = evidence
+        .iter()
+        .filter(|item| matches!(item, CombatActionReanalysisEvidenceV1::BudgetUnknown))
+        .count();
 
     let eligible = evidence
         .iter()
@@ -336,7 +342,12 @@ pub fn conservative_combat_reanalysis_target_v1(
         .map(|(weight, _)| *weight / max_weight)
         .sum::<f64>()
         .max(f64::MIN_POSITIVE);
-    let preserved_mass = 1.0 - config.exact_support_mass;
+    let exact_support_mass = if unknown_count == 0 {
+        0.0
+    } else {
+        config.exact_support_mass
+    };
+    let preserved_mass = 1.0 - exact_support_mass;
     Ok(safe_weights
         .iter()
         .zip(evidence)
@@ -348,7 +359,7 @@ pub fn conservative_combat_reanalysis_target_v1(
             let preserved = preserved_mass * (*weight / max_weight) / scaled_total;
             let exact_support =
                 if matches!(evidence, CombatActionReanalysisEvidenceV1::ExactWin { .. }) {
-                    config.exact_support_mass / exact_wins as f64
+                    exact_support_mass / exact_wins as f64
                 } else {
                     0.0
                 };
@@ -442,6 +453,15 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
     let mut pairwise_comparison_count = 0usize;
     let mut source_action_count = 0usize;
     let mut source_terminal_final_hp = i32::MAX;
+    let mut reanalysis_root_hashes = BTreeSet::new();
+    for (source_index, decision) in reanalysis.iter().enumerate() {
+        let hash = combat_exact_state_hash_v1(&decision.root.engine, &decision.root.combat);
+        if !reanalysis_root_hashes.insert(hash) {
+            return Err(format!(
+                "combat action reanalysis decision {source_index} duplicates an exact root"
+            ));
+        }
+    }
 
     for (source_index, demonstration) in demonstrations.iter().enumerate() {
         let mut position = demonstration.root.clone();
@@ -452,7 +472,7 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
                     "demonstration {source_index} action {action_index} is not legal at its exact replay state"
                 ));
             }
-            let candidates = concrete_training_inputs(
+            let candidates = concrete_combat_action_candidates_for_witness_v1(
                 &position,
                 demonstrated,
                 config.max_structured_alternatives,
@@ -466,41 +486,44 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
                     )
                 })?;
             if candidates.len() > 1 {
-                let accepted_indices = exact_adjacent_swap_accepted_indices(
-                    &stepper,
-                    &position,
-                    demonstration.actions,
-                    action_index,
-                    &candidates,
-                    demonstrated_index,
-                    config.max_engine_steps_per_transition,
-                );
-                pairwise_comparison_count = pairwise_comparison_count
-                    .saturating_add(candidates.len().saturating_sub(accepted_indices.len()));
-                let state = typed_combat_feature_components_v1(&position);
-                let mut target_probabilities = vec![0.0; candidates.len()];
-                target_probabilities[demonstrated_index] = 1.0;
-                examples.push(RankingExample {
-                    target_probabilities,
-                    neutral_indices: accepted_indices
-                        .iter()
-                        .copied()
-                        .filter(|index| *index != demonstrated_index)
-                        .collect(),
-                    top1_accepted_indices: accepted_indices,
-                    base_logits: concrete_base_logits(
+                let exact_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+                if !reanalysis_root_hashes.contains(&exact_hash) {
+                    let accepted_indices = exact_witness_adjacent_accepted_indices_v1(
+                        &stepper,
                         &position,
+                        demonstration.actions,
+                        action_index,
                         &candidates,
-                        base_policy.as_ref(),
-                        config.base_weight_exponent,
-                    ),
-                    candidates: candidates
-                        .iter()
-                        .map(|candidate| {
-                            action_feature_vector_with_state(&position, candidate, &state)
-                        })
-                        .collect(),
-                });
+                        demonstrated_index,
+                        config.max_engine_steps_per_transition,
+                    );
+                    pairwise_comparison_count = pairwise_comparison_count
+                        .saturating_add(candidates.len().saturating_sub(accepted_indices.len()));
+                    let state = typed_combat_feature_components_v1(&position);
+                    let mut target_probabilities = vec![0.0; candidates.len()];
+                    target_probabilities[demonstrated_index] = 1.0;
+                    examples.push(RankingExample {
+                        target_probabilities,
+                        neutral_indices: accepted_indices
+                            .iter()
+                            .copied()
+                            .filter(|index| *index != demonstrated_index)
+                            .collect(),
+                        top1_accepted_indices: accepted_indices,
+                        base_logits: concrete_base_logits(
+                            &position,
+                            &candidates,
+                            base_policy.as_ref(),
+                            config.base_weight_exponent,
+                        ),
+                        candidates: candidates
+                            .iter()
+                            .map(|candidate| {
+                                action_feature_vector_with_state(&position, candidate, &state)
+                            })
+                            .collect(),
+                    });
+                }
             } else {
                 skipped_forced_decision_count = skipped_forced_decision_count.saturating_add(1);
             }
@@ -663,7 +686,7 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
                 .to_string()
         } else {
             format!(
-                "exact_terminal_win_demonstrations_plus_typed_bounded_reanalysis_with_{:.6}_exact_support_mass_and_budget_unknown_base_mass",
+                "exact_terminal_win_demonstrations_with_exact_state_targets_replaced_by_typed_bounded_reanalysis_with_{:.6}_exact_support_mass_and_budget_unknown_base_mass",
                 reanalysis_config.exact_support_mass
             )
         },
@@ -713,8 +736,11 @@ pub fn audit_combat_action_imitation_v1(
                 "action imitation audit action {action_index} is not legal at its exact replay state"
             ));
         }
-        let candidates =
-            concrete_training_inputs(&position, demonstrated, max_structured_alternatives);
+        let candidates = concrete_combat_action_candidates_for_witness_v1(
+            &position,
+            demonstrated,
+            max_structured_alternatives,
+        );
         let demonstrated_index = candidates
             .iter()
             .position(|candidate| candidate == demonstrated)
@@ -762,7 +788,7 @@ pub fn audit_combat_action_imitation_v1(
                 })
                 .map(|(index, _)| index)
                 .unwrap_or_default();
-            let accepted_indices = exact_adjacent_swap_accepted_indices(
+            let accepted_indices = exact_witness_adjacent_accepted_indices_v1(
                 &stepper,
                 &position,
                 demonstrated_actions,
@@ -1023,7 +1049,10 @@ fn validate_training_config(config: CombatActionImitationTrainingConfigV1) -> Re
     Ok(())
 }
 
-fn concrete_training_inputs(
+/// Materializes the bounded legal surface used to compare one action from an
+/// exact terminal witness. The demonstrated action is retained even when it
+/// belongs to a structured family beyond the materialization limit.
+pub fn concrete_combat_action_candidates_for_witness_v1(
     position: &CombatPosition,
     demonstrated: &ClientInput,
     max_structured_alternatives: usize,
@@ -1070,7 +1099,11 @@ pub fn concrete_combat_action_candidates_v1(
     unique
 }
 
-fn exact_adjacent_swap_accepted_indices(
+/// Returns actions that are already proven compatible with the same exact
+/// terminal witness by swapping only the demonstrated action with its direct
+/// successor. This is deliberately narrow: broader equivalence belongs to
+/// bounded exact successor reanalysis, not imitation labels.
+pub fn exact_witness_adjacent_accepted_indices_v1(
     stepper: &EngineCombatStepper,
     position: &CombatPosition,
     demonstrated_actions: &[ClientInput],
@@ -1906,7 +1939,8 @@ mod tests {
             card_index: 0,
             target: Some(1),
         };
-        let candidates = concrete_training_inputs(&position, &demonstrated, 256);
+        let candidates =
+            concrete_combat_action_candidates_for_witness_v1(&position, &demonstrated, 256);
         let demonstrated_index = candidates
             .iter()
             .position(|candidate| candidate == &demonstrated)
@@ -1927,7 +1961,7 @@ mod tests {
             .iter()
             .position(|candidate| matches!(candidate, ClientInput::EndTurn))
             .expect("end turn is legal");
-        let accepted = exact_adjacent_swap_accepted_indices(
+        let accepted = exact_witness_adjacent_accepted_indices_v1(
             &EngineCombatStepper,
             &position,
             &[demonstrated, next, lethal],

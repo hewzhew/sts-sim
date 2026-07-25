@@ -14,8 +14,10 @@ use sts_combat_planner::{
 use sts_simulator::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
 };
-use sts_simulator::sim::combat::{CombatPosition, EngineCombatStepper};
-use sts_simulator::state::core::ClientInput;
+use sts_simulator::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
+use sts_simulator::state::core::{ClientInput, EngineState};
 
 pub(crate) struct ExactCombatEvaluation {
     pub(crate) evidence: ExactCombatEvidence,
@@ -58,7 +60,7 @@ impl ExactCombatEvidence {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct ExactCombatSearchCost {
     generation_work: usize,
     lookahead_work: usize,
@@ -66,6 +68,19 @@ pub(crate) struct ExactCombatSearchCost {
     engine_steps: usize,
     exact_nodes: usize,
     exact_edges: usize,
+}
+
+impl ExactCombatSearchCost {
+    fn add_assign(&mut self, other: &Self) {
+        self.generation_work = self.generation_work.saturating_add(other.generation_work);
+        self.lookahead_work = self.lookahead_work.saturating_add(other.lookahead_work);
+        self.applied_action_transitions = self
+            .applied_action_transitions
+            .saturating_add(other.applied_action_transitions);
+        self.engine_steps = self.engine_steps.saturating_add(other.engine_steps);
+        self.exact_nodes = self.exact_nodes.saturating_add(other.exact_nodes);
+        self.exact_edges = self.exact_edges.saturating_add(other.exact_edges);
+    }
 }
 
 pub(crate) fn known_exact_win(
@@ -162,6 +177,153 @@ pub(crate) fn evaluate_nonterminal_position(
             deepest_player_turn: progress.max_player_turn,
             gap_count: report.generation_gaps.len(),
             depth_limited_successors: report.counters.depth_limited_successors,
+        },
+        witness_actions: None,
+    })
+}
+
+/// Evaluates any unresolved player-input state. Ordinary action states enter
+/// exact combat search directly. Structured pending choices are first
+/// materialized into canonical complete inputs; each resulting stable state
+/// receives an equal share of the parent action's search budget. A discovered
+/// win is replayable through the selected structured input. A bounded miss or
+/// truncated structured surface remains `BudgetUnknown`.
+pub(crate) fn evaluate_unresolved_position(
+    position: &CombatPosition,
+    solve_work: usize,
+    max_structured_alternatives: usize,
+    max_engine_steps_per_transition: usize,
+) -> Result<ExactCombatEvaluation, String> {
+    let EngineState::PendingChoice(choice) = &position.engine else {
+        return evaluate_nonterminal_position(
+            position,
+            solve_work,
+            max_engine_steps_per_transition,
+        );
+    };
+    let Some(inputs) =
+        sts_simulator::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs(
+            choice,
+        )
+    else {
+        return Ok(ExactCombatEvaluation {
+            evidence: ExactCombatEvidence::BudgetUnknown {
+                status: "UnsupportedStructuredChoice".to_string(),
+                search_cost: ExactCombatSearchCost::default(),
+                deepest_player_turn: position.combat.turn.turn_count,
+                gap_count: 1,
+                depth_limited_successors: 0,
+            },
+            witness_actions: None,
+        });
+    };
+    let mut inputs = inputs
+        .take(max_structured_alternatives.saturating_add(1))
+        .collect::<Vec<_>>();
+    let surface_truncated = inputs.len() > max_structured_alternatives;
+    inputs.truncate(max_structured_alternatives);
+    if inputs.is_empty() {
+        return Err("structured successor has no canonical legal input".to_string());
+    }
+
+    let per_choice_work = solve_work.div_ceil(inputs.len()).max(1);
+    let mut aggregate_cost = ExactCombatSearchCost::default();
+    let mut deepest_player_turn = position.combat.turn.turn_count;
+    let mut gap_count = usize::from(surface_truncated);
+    let mut depth_limited_successors = 0usize;
+    let mut unknown_seen = surface_truncated;
+    for input in inputs {
+        let step = EngineCombatStepper.apply_to_stable(
+            position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            unknown_seen = true;
+            gap_count = gap_count.saturating_add(1);
+            continue;
+        }
+        match step.terminal {
+            CombatTerminal::Win if !step.position.combat.runtime.combat_smoked => {
+                return Ok(ExactCombatEvaluation {
+                    evidence: known_exact_win(
+                        "structured_choice_immediate_terminal_replay",
+                        step.position.combat.entities.player.current_hp,
+                        1,
+                    ),
+                    witness_actions: Some(vec![input]),
+                });
+            }
+            CombatTerminal::Win | CombatTerminal::Loss => continue,
+            CombatTerminal::Unresolved => {}
+        }
+        let evaluation = evaluate_unresolved_position(
+            &step.position,
+            per_choice_work,
+            max_structured_alternatives,
+            max_engine_steps_per_transition,
+        )?;
+        match &evaluation.evidence {
+            ExactCombatEvidence::ExactWin { .. } => {
+                let mut actions = vec![input];
+                actions.extend(evaluation.witness_actions.unwrap_or_default());
+                let mut evidence = evaluation.evidence;
+                if let ExactCombatEvidence::ExactWin {
+                    suffix_action_count,
+                    ..
+                } = &mut evidence
+                {
+                    *suffix_action_count = suffix_action_count.saturating_add(1);
+                }
+                return Ok(ExactCombatEvaluation {
+                    evidence,
+                    witness_actions: Some(actions),
+                });
+            }
+            ExactCombatEvidence::ExactRefutation { search_cost, .. } => {
+                aggregate_cost.add_assign(search_cost);
+            }
+            ExactCombatEvidence::ExactTerminalNonWin { .. } => {}
+            ExactCombatEvidence::BudgetUnknown {
+                search_cost,
+                deepest_player_turn: child_deepest,
+                gap_count: child_gaps,
+                depth_limited_successors: child_depth_limited,
+                ..
+            } => {
+                unknown_seen = true;
+                aggregate_cost.add_assign(search_cost);
+                deepest_player_turn = deepest_player_turn.max(*child_deepest);
+                gap_count = gap_count.saturating_add(*child_gaps);
+                depth_limited_successors =
+                    depth_limited_successors.saturating_add(*child_depth_limited);
+            }
+        }
+    }
+    if unknown_seen {
+        return Ok(ExactCombatEvaluation {
+            evidence: ExactCombatEvidence::BudgetUnknown {
+                status: if surface_truncated {
+                    "StructuredChoiceSurfaceTruncated"
+                } else {
+                    "StructuredChoiceContainsBudgetUnknown"
+                }
+                .to_string(),
+                search_cost: aggregate_cost,
+                deepest_player_turn,
+                gap_count,
+                depth_limited_successors,
+            },
+            witness_actions: None,
+        });
+    }
+    Ok(ExactCombatEvaluation {
+        evidence: ExactCombatEvidence::ExactRefutation {
+            source: "structured_choices_all_exact_non_win".to_string(),
+            search_cost: aggregate_cost,
         },
         witness_actions: None,
     })

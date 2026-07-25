@@ -123,10 +123,28 @@ pub struct LocalTurnGraphWitnessCounters {
     pub policy_witness_replay_engine_steps: usize,
 }
 
+/// Wall-clock diagnostics kept outside deterministic search counters.
+///
+/// Search budgets and equality contracts never read this structure.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalTurnGraphPerformanceTiming {
+    pub selection_elapsed_ns: u64,
+    pub generation_elapsed_ns: u64,
+    pub admission_elapsed_ns: u64,
+    pub atomic_expand_elapsed_ns: u64,
+    pub transition_simulation_elapsed_ns: u64,
+    pub transition_identity_elapsed_ns: u64,
+    pub transition_admission_elapsed_ns: u64,
+    pub transition_trace_elapsed_ns: u64,
+    pub transition_seen_elapsed_ns: u64,
+    pub transition_publish_elapsed_ns: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct LocalTurnGraphWitnessReport {
     pub status: LocalTurnGraphWitnessStatus,
     pub counters: LocalTurnGraphWitnessCounters,
+    pub performance_timing: LocalTurnGraphPerformanceTiming,
     pub root_visits: usize,
     pub root_generated_options: usize,
     pub root_children: usize,
@@ -300,6 +318,7 @@ pub struct LocalTurnGraphWitnessSession {
     nodes: Vec<GraphNode>,
     nodes_by_hash: HashMap<String, usize>,
     used: LocalTurnGraphWitnessCounters,
+    performance_timing: LocalTurnGraphPerformanceTiming,
     granted_selections: usize,
     granted_generation_work: usize,
     granted_engine_steps: usize,
@@ -389,6 +408,7 @@ impl LocalTurnGraphWitnessSession {
                 exact_nodes: 1,
                 ..LocalTurnGraphWitnessCounters::default()
             },
+            performance_timing: LocalTurnGraphPerformanceTiming::default(),
             granted_selections: 0,
             granted_generation_work: 0,
             granted_engine_steps: 0,
@@ -639,7 +659,13 @@ impl LocalTurnGraphWitnessSession {
                 );
             }
 
-            match self.select_work() {
+            let selection_started = Instant::now();
+            let selected_work = self.select_work();
+            self.performance_timing.selection_elapsed_ns = self
+                .performance_timing
+                .selection_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(selection_started));
+            match selected_work {
                 SelectedWork::Widen {
                     node_id,
                     path,
@@ -1355,6 +1381,7 @@ impl LocalTurnGraphWitnessSession {
             .saturating_sub(self.used.atomic_lookahead_evaluations);
         let remaining_lookahead_work = remaining_work.saturating_sub(work);
 
+        let generation_started = Instant::now();
         let (
             before,
             after,
@@ -1364,6 +1391,8 @@ impl LocalTurnGraphWitnessSession {
             after_lookahead_work,
             before_diagnostics,
             after_diagnostics,
+            before_timing,
+            after_timing,
             options,
             new_gaps,
         ) = {
@@ -1379,6 +1408,7 @@ impl LocalTurnGraphWitnessSession {
             let before_lookahead_evaluations = node.generator.lookahead_evaluations();
             let before_lookahead_work = node.generator.lookahead_work();
             let before_diagnostics = node.generator.diagnostics();
+            let before_timing = node.generator.timing();
             node.generator.advance_with_lookahead(
                 stepper,
                 CombatPlanningQuantum {
@@ -1402,6 +1432,7 @@ impl LocalTurnGraphWitnessSession {
                 }
             }
             let after_diagnostics = node.generator.diagnostics();
+            let after_timing = node.generator.timing();
             let options = node.generator.take_completed_options();
             let gaps = node.generator.gaps()[node.synced_gaps..].to_vec();
             node.synced_gaps = node.generator.gaps().len();
@@ -1414,10 +1445,16 @@ impl LocalTurnGraphWitnessSession {
                 after_lookahead_work,
                 before_diagnostics,
                 after_diagnostics,
+                before_timing,
+                after_timing,
                 options,
                 gaps,
             )
         };
+        self.performance_timing.generation_elapsed_ns = self
+            .performance_timing
+            .generation_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(generation_started));
 
         let used_work = after.generation_work.saturating_sub(before.generation_work);
         let used_lookahead_evaluations =
@@ -1457,8 +1494,65 @@ impl LocalTurnGraphWitnessSession {
                 .duplicate_exact_successors
                 .saturating_sub(before_diagnostics.duplicate_exact_successors),
         );
+        self.performance_timing.atomic_expand_elapsed_ns = self
+            .performance_timing
+            .atomic_expand_elapsed_ns
+            .saturating_add(
+                after_timing
+                .atomic_expand_elapsed_ns
+                .saturating_sub(before_timing.atomic_expand_elapsed_ns),
+            );
+        self.performance_timing.transition_simulation_elapsed_ns = self
+            .performance_timing
+            .transition_simulation_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_simulation_elapsed_ns
+                    .saturating_sub(before_timing.transition_simulation_elapsed_ns),
+            );
+        self.performance_timing.transition_identity_elapsed_ns = self
+            .performance_timing
+            .transition_identity_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_identity_elapsed_ns
+                    .saturating_sub(before_timing.transition_identity_elapsed_ns),
+            );
+        self.performance_timing.transition_admission_elapsed_ns = self
+            .performance_timing
+            .transition_admission_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_admission_elapsed_ns
+                    .saturating_sub(before_timing.transition_admission_elapsed_ns),
+            );
+        self.performance_timing.transition_trace_elapsed_ns = self
+            .performance_timing
+            .transition_trace_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_trace_elapsed_ns
+                    .saturating_sub(before_timing.transition_trace_elapsed_ns),
+            );
+        self.performance_timing.transition_seen_elapsed_ns = self
+            .performance_timing
+            .transition_seen_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_seen_elapsed_ns
+                    .saturating_sub(before_timing.transition_seen_elapsed_ns),
+            );
+        self.performance_timing.transition_publish_elapsed_ns = self
+            .performance_timing
+            .transition_publish_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_elapsed_ns),
+            );
         self.generation_gaps.extend(new_gaps);
 
+        let admission_started = Instant::now();
         for option in options {
             if node_id == 0 {
                 self.record_root_option(&option);
@@ -1502,6 +1596,10 @@ impl LocalTurnGraphWitnessSession {
             }
         }
         self.refresh_exhaustion(node_id);
+        self.performance_timing.admission_elapsed_ns = self
+            .performance_timing
+            .admission_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(admission_started));
         true
     }
 
@@ -1706,6 +1804,7 @@ impl LocalTurnGraphWitnessSession {
         LocalTurnGraphWitnessReport {
             status,
             counters: self.used.clone(),
+            performance_timing: self.performance_timing,
             root_visits: self.nodes[0].visits,
             root_generated_options: self.nodes[0].generated_options,
             root_children: self.nodes[0].children.len(),
@@ -2347,6 +2446,10 @@ fn replay_witness(
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+fn elapsed_nanos_u64(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {

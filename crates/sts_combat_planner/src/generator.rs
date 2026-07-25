@@ -1,9 +1,12 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Instant;
 
-use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
+use sts_core::ai::combat_state_key::{
+    combat_exact_state_key, combat_exact_state_key_identity_v1, CombatExactStateKey,
+};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
 
@@ -49,6 +52,7 @@ struct AtomicActionCursorWork {
     parent: Arc<PartialTurnOption>,
     candidates: Vec<AtomicActionCandidate>,
     next_candidate: usize,
+    guides: Vec<CombatStateGuide>,
 }
 
 impl AtomicActionCursorWork {
@@ -56,6 +60,7 @@ impl AtomicActionCursorWork {
         parent: Arc<PartialTurnOption>,
         inputs: Vec<ClientInput>,
         probabilities: Vec<f64>,
+        guides: Vec<CombatStateGuide>,
     ) -> Option<Self> {
         let mut candidates = inputs
             .into_iter()
@@ -78,6 +83,7 @@ impl AtomicActionCursorWork {
             parent,
             candidates,
             next_candidate: 0,
+            guides,
         })
     }
 
@@ -144,6 +150,26 @@ impl GeneratorWork {
 enum ActionTransitionStatus {
     Consumed,
     TimedOut,
+}
+
+#[derive(Clone, Debug)]
+struct IndexedExactStateKey {
+    digest: [u8; 32],
+    key: CombatExactStateKey,
+}
+
+impl PartialEq for IndexedExactStateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.digest == other.digest && self.key == other.key
+    }
+}
+
+impl Eq for IndexedExactStateKey {}
+
+impl Hash for IndexedExactStateKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.digest.hash(state);
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -296,7 +322,7 @@ pub struct TurnOptionGeneratorSession {
     scheduled_round: VecDeque<(usize, usize)>,
     live_work_items: usize,
     next_sequence_id: u64,
-    seen: HashSet<CombatExactStateKey>,
+    seen: HashSet<IndexedExactStateKey>,
     completed: Vec<CompleteTurnOption>,
     total_completed_options: usize,
     gaps: Vec<TurnOptionGenerationGap>,
@@ -309,8 +335,26 @@ pub struct TurnOptionGeneratorSession {
     lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     lookahead_evaluations: usize,
     lookahead_work: usize,
+    atomic_expand_elapsed_ns: u64,
+    transition_simulation_elapsed_ns: u64,
+    transition_identity_elapsed_ns: u64,
+    transition_admission_elapsed_ns: u64,
+    transition_trace_elapsed_ns: u64,
+    transition_seen_elapsed_ns: u64,
+    transition_publish_elapsed_ns: u64,
     used: CombatPlanningCounters,
     granted: CombatPlanningCounters,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TurnOptionGeneratorTiming {
+    pub atomic_expand_elapsed_ns: u64,
+    pub transition_simulation_elapsed_ns: u64,
+    pub transition_identity_elapsed_ns: u64,
+    pub transition_admission_elapsed_ns: u64,
+    pub transition_trace_elapsed_ns: u64,
+    pub transition_seen_elapsed_ns: u64,
+    pub transition_publish_elapsed_ns: u64,
 }
 
 impl TurnOptionGeneratorSession {
@@ -342,10 +386,13 @@ impl TurnOptionGeneratorSession {
         lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     ) -> Self {
         let mut seen = HashSet::new();
-        seen.insert(combat_exact_state_key(
-            &root.position().engine,
-            &root.position().combat,
-        ));
+        let root_key =
+            combat_exact_state_key(&root.position().engine, &root.position().combat);
+        let (root_digest, _) = combat_exact_state_key_identity_v1(&root_key);
+        seen.insert(IndexedExactStateKey {
+            digest: root_digest,
+            key: root_key,
+        });
         let root_work = GeneratorWork::Expand(PartialTurnOption {
             position: root.position().clone(),
             actions: Vec::new(),
@@ -377,6 +424,13 @@ impl TurnOptionGeneratorSession {
             lookahead_evaluator,
             lookahead_evaluations: 0,
             lookahead_work: 0,
+            atomic_expand_elapsed_ns: 0,
+            transition_simulation_elapsed_ns: 0,
+            transition_identity_elapsed_ns: 0,
+            transition_admission_elapsed_ns: 0,
+            transition_trace_elapsed_ns: 0,
+            transition_seen_elapsed_ns: 0,
+            transition_publish_elapsed_ns: 0,
             used: CombatPlanningCounters::default(),
             granted: CombatPlanningCounters::default(),
         };
@@ -397,8 +451,9 @@ impl TurnOptionGeneratorSession {
     /// prefix that was never generated from one that was generated and later
     /// consumed.  It does not change retention or scheduling.
     pub fn has_seen_exact_position(&self, position: &CombatPosition) -> bool {
-        self.seen
-            .contains(&combat_exact_state_key(&position.engine, &position.combat))
+        let key = combat_exact_state_key(&position.engine, &position.combat);
+        let (digest, _) = combat_exact_state_key_identity_v1(&key);
+        self.seen.contains(&IndexedExactStateKey { digest, key })
     }
 
     /// Counts still-live generator work rooted at one exact partial-turn
@@ -622,6 +677,18 @@ impl TurnOptionGeneratorSession {
             unique_successor_states: self.seen.len().saturating_sub(1),
             duplicate_exact_successors: self.duplicate_exact_successors,
             completed_turn_options: self.total_completed_options,
+        }
+    }
+
+    pub(crate) fn timing(&self) -> TurnOptionGeneratorTiming {
+        TurnOptionGeneratorTiming {
+            atomic_expand_elapsed_ns: self.atomic_expand_elapsed_ns,
+            transition_simulation_elapsed_ns: self.transition_simulation_elapsed_ns,
+            transition_identity_elapsed_ns: self.transition_identity_elapsed_ns,
+            transition_admission_elapsed_ns: self.transition_admission_elapsed_ns,
+            transition_trace_elapsed_ns: self.transition_trace_elapsed_ns,
+            transition_seen_elapsed_ns: self.transition_seen_elapsed_ns,
+            transition_publish_elapsed_ns: self.transition_publish_elapsed_ns,
         }
     }
 
@@ -909,7 +976,11 @@ impl TurnOptionGeneratorSession {
                         continue;
                     }
                     self.atomic_state_expansions = self.atomic_state_expansions.saturating_add(1);
+                    let expand_started = Instant::now();
                     self.expand(stepper, partial);
+                    self.atomic_expand_elapsed_ns = self
+                        .atomic_expand_elapsed_ns
+                        .saturating_add(elapsed_nanos_u64(expand_started));
                 }
                 GeneratorWork::AtomicActions(mut cursor) => {
                     let action = cursor
@@ -1041,6 +1112,7 @@ impl TurnOptionGeneratorSession {
         transition_reservation: usize,
         deadline: Option<Instant>,
     ) -> ActionTransitionStatus {
+        let simulation_started = Instant::now();
         if stepper
             .choice_for_legal_input(&action.parent.position, &action.input)
             .is_none()
@@ -1049,6 +1121,9 @@ impl TurnOptionGeneratorSession {
                 TurnOptionGenerationGapKind::GeneratedInputRejected,
                 &action.parent,
             );
+            self.transition_simulation_elapsed_ns = self
+                .transition_simulation_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(simulation_started));
             return ActionTransitionStatus::Consumed;
         }
         let result = stepper.apply_to_stable(
@@ -1060,6 +1135,9 @@ impl TurnOptionGeneratorSession {
             },
         );
         self.used.engine_steps = self.used.engine_steps.saturating_add(result.engine_steps);
+        self.transition_simulation_elapsed_ns = self
+            .transition_simulation_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(simulation_started));
         if result.timed_out {
             return ActionTransitionStatus::TimedOut;
         }
@@ -1072,14 +1150,31 @@ impl TurnOptionGeneratorSession {
         }
 
         self.applied_action_transitions = self.applied_action_transitions.saturating_add(1);
+        let identity_started = Instant::now();
+        let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
+        let (digest, successor_hash) = combat_exact_state_key_identity_v1(&key);
+        let indexed_key = IndexedExactStateKey { digest, key };
+        self.transition_identity_elapsed_ns = self
+            .transition_identity_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(identity_started));
+        let admission_started = Instant::now();
+        let trace_started = Instant::now();
         let mut actions = action.parent.actions.clone();
         actions.push(TurnOptionAction {
             input: action.input,
-            expected_successor_hash: exact_hash(&result.position),
+            expected_successor_hash: successor_hash,
             engine_steps: result.engine_steps,
         });
-        let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
-        if self.seen.insert(key) {
+        self.transition_trace_elapsed_ns = self
+            .transition_trace_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(trace_started));
+        let seen_started = Instant::now();
+        let unseen = self.seen.insert(indexed_key);
+        self.transition_seen_elapsed_ns = self
+            .transition_seen_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(seen_started));
+        let publish_started = Instant::now();
+        if unseen {
             let partial = PartialTurnOption {
                 position: result.position,
                 actions,
@@ -1109,6 +1204,12 @@ impl TurnOptionGeneratorSession {
         } else {
             self.duplicate_exact_successors = self.duplicate_exact_successors.saturating_add(1);
         }
+        self.transition_publish_elapsed_ns = self
+            .transition_publish_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(publish_started));
+        self.transition_admission_elapsed_ns = self
+            .transition_admission_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(admission_started));
         ActionTransitionStatus::Consumed
     }
 
@@ -1166,10 +1267,12 @@ impl TurnOptionGeneratorSession {
         // Sharing it avoids one full combat-state and action-prefix clone for
         // every legal action while preserving the exact search graph.
         let parent = Arc::new(partial);
+        let parent_guides = self.policy.turn_generation_guides(&parent.position);
         if let Some(cursor) = AtomicActionCursorWork::new(
             parent.clone(),
             surface.atomic_actions,
             atomic_probabilities,
+            parent_guides.clone(),
         ) {
             let priority = cursor
                 .priority()
@@ -1207,7 +1310,12 @@ impl TurnOptionGeneratorSession {
                                 .map(|member_probability| probability * member_probability)
                                 .collect::<Vec<_>>();
                         if let Some(cursor) =
-                            AtomicActionCursorWork::new(parent.clone(), members, probabilities)
+                            AtomicActionCursorWork::new(
+                                parent.clone(),
+                                members,
+                                probabilities,
+                                parent_guides.clone(),
+                            )
                         {
                             let priority = cursor
                                 .priority()
@@ -1259,7 +1367,10 @@ impl TurnOptionGeneratorSession {
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
         debug_assert!(priority.levin_log_priority.is_finite());
-        let mut guides = self.policy.turn_generation_guides(work.position());
+        let mut guides = match &work {
+            GeneratorWork::AtomicActions(cursor) => cursor.guides.clone(),
+            _ => self.policy.turn_generation_guides(work.position()),
+        };
         if let GeneratorWork::Expand(partial) = &work {
             if let Some(lookahead) = partial.lookahead_guide.as_ref() {
                 if let Some(existing) = guides.iter_mut().find(|guide| guide.lane == lookahead.lane)
@@ -1379,6 +1490,10 @@ impl TurnOptionGeneratorSession {
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
+}
+
+fn elapsed_nanos_u64(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -1518,6 +1633,7 @@ mod priority_tests {
                 ClientInput::Proceed,
             ],
             vec![0.2, 0.5, 0.3],
+            Vec::new(),
         )
         .expect("non-empty action surface");
 

@@ -48,7 +48,27 @@ pub fn combat_exact_state_key(engine: &EngineState, combat: &CombatState) -> Com
 }
 
 pub fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
-    hash_debug(&combat_exact_state_key(engine, combat))
+    combat_exact_state_key_hash_v1(&combat_exact_state_key(engine, combat))
+}
+
+/// Stable diagnostic hash for an already-materialized exact combat key.
+///
+/// Search hot paths frequently need both the typed key for transposition and
+/// its durable string identity for replay evidence. Reusing the same key
+/// avoids rebuilding the full combat key twice without changing hash bytes.
+pub fn combat_exact_state_key_hash_v1(key: &CombatExactStateKey) -> String {
+    combat_exact_state_key_identity_v1(key).1
+}
+
+/// Returns the binary digest and its durable lowercase-hex representation for
+/// one already-materialized exact key.
+///
+/// The binary digest lets exact transposition tables choose a bucket without
+/// hashing the large typed key a second time. Callers must still compare the
+/// typed key inside equal-digest buckets; the digest alone is not equality.
+pub fn combat_exact_state_key_identity_v1(key: &CombatExactStateKey) -> ([u8; 32], String) {
+    let digest = debug_digest(key);
+    (digest, hex_lower(&digest))
 }
 
 /// In-combat bucket for Combat Search V2 resource dominance. It keeps runtime
@@ -139,7 +159,16 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
 }
 
 fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
-    hash_bytes(format!("{value:?}").as_bytes())
+    hex_lower(&debug_digest(value))
+}
+
+fn debug_digest<T: std::fmt::Debug>(value: &T) -> [u8; 32] {
+    let mut hasher = Blake2b512::new();
+    hasher.update(format!("{value:?}").as_bytes());
+    let digest = hasher.finalize();
+    digest[..32]
+        .try_into()
+        .expect("Blake2b-512 always contains a 32-byte prefix")
 }
 
 fn diagnostic_hash<T: std::fmt::Debug>(value: &T) -> String {
@@ -149,13 +178,6 @@ fn diagnostic_hash<T: std::fmt::Debug>(value: &T) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("{hash:016x}")
-}
-
-fn hash_bytes(bytes: &[u8]) -> String {
-    let mut hasher = Blake2b512::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    hex_lower(&digest[..32])
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
