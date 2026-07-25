@@ -178,16 +178,17 @@ type SparseFeatures = BTreeMap<String, f64>;
 
 #[derive(Clone, Debug)]
 struct RankingExample {
-    demonstrated_index: usize,
-    accepted_indices: Vec<usize>,
+    target_probabilities: Vec<f64>,
+    neutral_indices: Vec<usize>,
+    top1_accepted_indices: Vec<usize>,
     candidates: Vec<SparseFeatures>,
     base_logits: Vec<f64>,
 }
 
 #[derive(Clone, Debug)]
 struct IndexedRankingExample {
-    demonstrated_index: usize,
-    accepted_indices: Vec<usize>,
+    target_probabilities: Vec<f64>,
+    neutral_indices: Vec<usize>,
     candidates: Vec<Vec<(usize, f64)>>,
     base_logits: Vec<f64>,
 }
@@ -216,8 +217,8 @@ impl IndexedTrainingCorpus {
         let examples = examples
             .iter()
             .map(|example| IndexedRankingExample {
-                demonstrated_index: example.demonstrated_index,
-                accepted_indices: example.accepted_indices.clone(),
+                target_probabilities: example.target_probabilities.clone(),
+                neutral_indices: example.neutral_indices.clone(),
                 base_logits: example.base_logits.clone(),
                 candidates: example
                     .candidates
@@ -249,6 +250,111 @@ impl IndexedTrainingCorpus {
 pub struct CombatActionImitationDemonstrationV1<'a> {
     pub root: &'a CombatPosition,
     pub actions: &'a [ClientInput],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CombatActionReanalysisEvidenceV1 {
+    ExactWin { final_hp: i32 },
+    ExactNonWin,
+    BudgetUnknown,
+}
+
+#[derive(Clone, Debug)]
+pub struct CombatActionReanalysisCandidateV1 {
+    pub input: ClientInput,
+    pub evidence: CombatActionReanalysisEvidenceV1,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CombatActionReanalysisDecisionV1<'a> {
+    pub root: &'a CombatPosition,
+    pub candidates: &'a [CombatActionReanalysisCandidateV1],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CombatActionReanalysisTrainingConfigV1 {
+    /// Probability mass explicitly transferred to the uniformly weighted
+    /// exact-win support. The remaining mass preserves the base policy over
+    /// exact wins and budget-unknown actions; exact non-wins receive no mass.
+    pub exact_support_mass: f64,
+}
+
+impl Default for CombatActionReanalysisTrainingConfigV1 {
+    fn default() -> Self {
+        Self {
+            exact_support_mass: 0.5,
+        }
+    }
+}
+
+/// Constructs a conservative policy-improvement target from typed bounded
+/// evidence. `BudgetUnknown` candidates retain their relative base-policy
+/// probability and therefore are not recast as losses.
+pub fn conservative_combat_reanalysis_target_v1(
+    base_weights: &[f64],
+    evidence: &[CombatActionReanalysisEvidenceV1],
+    config: CombatActionReanalysisTrainingConfigV1,
+) -> Result<Vec<f64>, String> {
+    if base_weights.is_empty() || base_weights.len() != evidence.len() {
+        return Err("combat reanalysis target requires aligned non-empty inputs".to_string());
+    }
+    if !config.exact_support_mass.is_finite() || !(0.0..1.0).contains(&config.exact_support_mass) {
+        return Err("combat reanalysis exact-support mass must be in 0..1".to_string());
+    }
+    let exact_wins = evidence
+        .iter()
+        .filter(|item| matches!(item, CombatActionReanalysisEvidenceV1::ExactWin { .. }))
+        .count();
+    if exact_wins == 0 {
+        return Err("combat reanalysis target requires at least one exact win".to_string());
+    }
+
+    let eligible = evidence
+        .iter()
+        .map(|item| !matches!(item, CombatActionReanalysisEvidenceV1::ExactNonWin))
+        .collect::<Vec<_>>();
+    let safe_weights = base_weights
+        .iter()
+        .map(|weight| {
+            if weight.is_finite() && *weight > 0.0 {
+                *weight
+            } else {
+                1.0
+            }
+        })
+        .collect::<Vec<_>>();
+    let max_weight = safe_weights
+        .iter()
+        .zip(&eligible)
+        .filter(|(_, eligible)| **eligible)
+        .map(|(weight, _)| *weight)
+        .fold(f64::MIN_POSITIVE, f64::max);
+    let scaled_total = safe_weights
+        .iter()
+        .zip(&eligible)
+        .filter(|(_, eligible)| **eligible)
+        .map(|(weight, _)| *weight / max_weight)
+        .sum::<f64>()
+        .max(f64::MIN_POSITIVE);
+    let preserved_mass = 1.0 - config.exact_support_mass;
+    Ok(safe_weights
+        .iter()
+        .zip(evidence)
+        .zip(eligible)
+        .map(|((weight, evidence), eligible)| {
+            if !eligible {
+                return 0.0;
+            }
+            let preserved = preserved_mass * (*weight / max_weight) / scaled_total;
+            let exact_support =
+                if matches!(evidence, CombatActionReanalysisEvidenceV1::ExactWin { .. }) {
+                    config.exact_support_mass / exact_wins as f64
+                } else {
+                    0.0
+                };
+            preserved + exact_support
+        })
+        .collect())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -307,9 +413,28 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
     config: CombatActionImitationTrainingConfigV1,
     base_policy: SharedCombatActionPolicy,
 ) -> Result<CombatActionImitationArtifactV1, String> {
+    train_combat_action_imitation_with_reanalysis_and_base_v1(
+        demonstrations,
+        &[],
+        config,
+        CombatActionReanalysisTrainingConfigV1::default(),
+        base_policy,
+    )
+}
+
+pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
+    demonstrations: &[CombatActionImitationDemonstrationV1<'_>],
+    reanalysis: &[CombatActionReanalysisDecisionV1<'_>],
+    config: CombatActionImitationTrainingConfigV1,
+    reanalysis_config: CombatActionReanalysisTrainingConfigV1,
+    base_policy: SharedCombatActionPolicy,
+) -> Result<CombatActionImitationArtifactV1, String> {
     validate_training_config(config)?;
     if demonstrations.is_empty() {
-        return Err("combat action imitation requires at least one demonstration".to_string());
+        return Err(
+            "combat action imitation requires at least one exact terminal demonstration"
+                .to_string(),
+        );
     }
     let stepper = EngineCombatStepper;
     let mut examples = Vec::new();
@@ -353,9 +478,16 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
                 pairwise_comparison_count = pairwise_comparison_count
                     .saturating_add(candidates.len().saturating_sub(accepted_indices.len()));
                 let state = typed_combat_feature_components_v1(&position);
+                let mut target_probabilities = vec![0.0; candidates.len()];
+                target_probabilities[demonstrated_index] = 1.0;
                 examples.push(RankingExample {
-                    demonstrated_index,
-                    accepted_indices,
+                    target_probabilities,
+                    neutral_indices: accepted_indices
+                        .iter()
+                        .copied()
+                        .filter(|index| *index != demonstrated_index)
+                        .collect(),
+                    top1_accepted_indices: accepted_indices,
                     base_logits: concrete_base_logits(
                         &position,
                         &candidates,
@@ -399,6 +531,105 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
         source_terminal_final_hp =
             source_terminal_final_hp.min(position.combat.entities.player.current_hp);
     }
+
+    for (source_index, decision) in reanalysis.iter().enumerate() {
+        if stepper.terminal(decision.root) != CombatTerminal::Unresolved {
+            return Err(format!(
+                "combat action reanalysis decision {source_index} is already terminal"
+            ));
+        }
+        let legal_surface = stepper.legal_action_surface(decision.root);
+        if !legal_surface.selection_families.is_empty() {
+            return Err(format!(
+                "combat action reanalysis decision {source_index} has a structured action family; v1 requires a complete atomic surface"
+            ));
+        }
+        if decision.candidates.len() != legal_surface.atomic_actions.len()
+            || legal_surface.atomic_actions.iter().any(|expected| {
+                !decision
+                    .candidates
+                    .iter()
+                    .any(|candidate| &candidate.input == expected)
+            })
+        {
+            return Err(format!(
+                "combat action reanalysis decision {source_index} does not cover its complete atomic surface"
+            ));
+        }
+        let mut unique_inputs = Vec::with_capacity(decision.candidates.len());
+        for candidate in decision.candidates {
+            if !stepper.is_legal_action(decision.root, &candidate.input)
+                || unique_inputs.contains(&candidate.input)
+            {
+                return Err(format!(
+                    "combat action reanalysis decision {source_index} contains an invalid or duplicate action"
+                ));
+            }
+            unique_inputs.push(candidate.input.clone());
+        }
+        if decision.candidates.len() <= 1 {
+            skipped_forced_decision_count = skipped_forced_decision_count.saturating_add(1);
+            continue;
+        }
+
+        let choices = unique_inputs
+            .iter()
+            .map(CombatPolicyChoice::Atomic)
+            .collect::<Vec<_>>();
+        let base_weights = base_policy.weights(decision.root, &choices);
+        if base_weights.len() != decision.candidates.len() {
+            return Err(format!(
+                "combat action reanalysis decision {source_index} received a misaligned base policy"
+            ));
+        }
+        let typed_evidence = decision
+            .candidates
+            .iter()
+            .map(|candidate| candidate.evidence)
+            .collect::<Vec<_>>();
+        let target_probabilities = conservative_combat_reanalysis_target_v1(
+            &base_weights,
+            &typed_evidence,
+            reanalysis_config,
+        )?;
+        let exact_win_indices = typed_evidence
+            .iter()
+            .enumerate()
+            .filter_map(|(index, evidence)| {
+                matches!(evidence, CombatActionReanalysisEvidenceV1::ExactWin { .. })
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let exact_non_win_count = typed_evidence
+            .iter()
+            .filter(|evidence| matches!(evidence, CombatActionReanalysisEvidenceV1::ExactNonWin))
+            .count();
+        pairwise_comparison_count = pairwise_comparison_count
+            .saturating_add(exact_win_indices.len().saturating_mul(exact_non_win_count));
+        source_action_count = source_action_count.saturating_add(decision.candidates.len());
+        for evidence in typed_evidence {
+            if let CombatActionReanalysisEvidenceV1::ExactWin { final_hp } = evidence {
+                source_terminal_final_hp = source_terminal_final_hp.min(final_hp);
+            }
+        }
+        let state = typed_combat_feature_components_v1(decision.root);
+        examples.push(RankingExample {
+            target_probabilities,
+            neutral_indices: Vec::new(),
+            top1_accepted_indices: exact_win_indices,
+            base_logits: concrete_base_logits(
+                decision.root,
+                &unique_inputs,
+                base_policy.as_ref(),
+                config.base_weight_exponent,
+            ),
+            candidates: unique_inputs
+                .iter()
+                .map(|candidate| action_feature_vector_with_state(decision.root, candidate, &state))
+                .collect(),
+        });
+    }
+
     if examples.is_empty() {
         return Err("combat action imitation source contains no ranked decisions".to_string());
     }
@@ -407,12 +638,14 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
     let training_top1_correct = examples
         .iter()
         .filter(|example| {
-            example.accepted_indices.contains(&runtime_candidate_index(
-                &weights,
-                example,
-                config.logit_scale,
-                config.max_abs_log_factor,
-            ))
+            example
+                .top1_accepted_indices
+                .contains(&runtime_candidate_index(
+                    &weights,
+                    example,
+                    config.logit_scale,
+                    config.max_abs_log_factor,
+                ))
         })
         .count();
     let coefficients = weights
@@ -425,9 +658,15 @@ pub fn train_combat_action_imitation_from_demonstrations_with_base_v1(
         schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
         feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
         runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
-        training_authority:
+        training_authority: if reanalysis.is_empty() {
             "exact_terminal_win_demonstration_with_exact_adjacent_alternatives_excluded_from_negatives"
-                .to_string(),
+                .to_string()
+        } else {
+            format!(
+                "exact_terminal_win_demonstrations_plus_typed_bounded_reanalysis_with_{:.6}_exact_support_mass_and_budget_unknown_base_mass",
+                reanalysis_config.exact_support_mass
+            )
+        },
         source_trajectory_count: demonstrations.len(),
         source_action_count,
         source_terminal_final_hp,
@@ -983,8 +1222,8 @@ fn train_sparse_softmax(
                 })
                 .collect::<Vec<_>>();
             let is_active = |candidate_index: usize| {
-                candidate_index == example.demonstrated_index
-                    || !example.accepted_indices.contains(&candidate_index)
+                example.target_probabilities[candidate_index] > 0.0
+                    || !example.neutral_indices.contains(&candidate_index)
             };
             let max_score = scores
                 .iter()
@@ -1008,7 +1247,7 @@ fn train_sparse_softmax(
                 if !is_active(candidate_index) {
                     continue;
                 }
-                let target = usize::from(candidate_index == example.demonstrated_index) as f64;
+                let target = example.target_probabilities[candidate_index];
                 let gradient =
                     (target - exponentials[candidate_index] / total) * config.logit_scale;
                 if gradient.abs() < f64::EPSILON {
@@ -1056,8 +1295,8 @@ fn train_sparse_softmax_reference(
                 })
                 .collect::<Vec<_>>();
             let is_active = |candidate_index: usize| {
-                candidate_index == example.demonstrated_index
-                    || !example.accepted_indices.contains(&candidate_index)
+                example.target_probabilities[candidate_index] > 0.0
+                    || !example.neutral_indices.contains(&candidate_index)
             };
             let max_score = scores
                 .iter()
@@ -1081,7 +1320,7 @@ fn train_sparse_softmax_reference(
                 if !is_active(candidate_index) {
                     continue;
                 }
-                let target = usize::from(candidate_index == example.demonstrated_index) as f64;
+                let target = example.target_probabilities[candidate_index];
                 let gradient =
                     (target - exponentials[candidate_index] / total) * config.logit_scale;
                 if gradient.abs() < f64::EPSILON {
@@ -1558,8 +1797,9 @@ mod tests {
 
     fn synthetic_example(positive: f64, negative: f64) -> RankingExample {
         RankingExample {
-            demonstrated_index: 0,
-            accepted_indices: vec![0],
+            target_probabilities: vec![1.0, 0.0],
+            neutral_indices: Vec::new(),
+            top1_accepted_indices: vec![0],
             base_logits: vec![0.0; 2],
             candidates: vec![
                 BTreeMap::from([("signal".to_string(), positive)]),
@@ -1588,8 +1828,9 @@ mod tests {
     #[test]
     fn exact_alternative_is_excluded_from_negative_training() {
         let examples = vec![RankingExample {
-            demonstrated_index: 0,
-            accepted_indices: vec![0, 1],
+            target_probabilities: vec![1.0, 0.0, 0.0],
+            neutral_indices: vec![1],
+            top1_accepted_indices: vec![0, 1],
             base_logits: vec![0.0; 3],
             candidates: vec![
                 BTreeMap::from([("demonstrated".to_string(), 1.0)]),
@@ -1609,8 +1850,9 @@ mod tests {
     fn indexed_sparse_softmax_matches_string_map_reference() {
         let examples = vec![
             RankingExample {
-                demonstrated_index: 1,
-                accepted_indices: vec![1, 2],
+                target_probabilities: vec![0.0, 1.0, 0.0],
+                neutral_indices: vec![2],
+                top1_accepted_indices: vec![1, 2],
                 base_logits: vec![0.25, -0.5, 0.0],
                 candidates: vec![
                     BTreeMap::from([("shared".to_string(), 1.0), ("alpha".to_string(), -0.5)]),
@@ -1619,8 +1861,9 @@ mod tests {
                 ],
             },
             RankingExample {
-                demonstrated_index: 0,
-                accepted_indices: vec![0],
+                target_probabilities: vec![1.0, 0.0],
+                neutral_indices: Vec::new(),
+                top1_accepted_indices: vec![0],
                 base_logits: vec![-0.1, 0.2],
                 candidates: vec![
                     BTreeMap::from([("alpha".to_string(), 0.75), ("gamma".to_string(), -1.0)]),

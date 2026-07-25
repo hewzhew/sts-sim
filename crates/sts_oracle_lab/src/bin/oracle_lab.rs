@@ -1,5 +1,6 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
+mod action_reanalysis_policy;
 mod action_successor_reanalysis;
 mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
@@ -681,6 +682,12 @@ enum Command {
     BuildActionSuccessorCorpus {
         #[command(flatten)]
         args: action_successor_reanalysis::ActionSuccessorReanalysisArgs,
+    },
+    /// Train a conservative residual policy from exact witnesses plus typed
+    /// action-successor reanalysis. Budget-unknown actions retain base mass.
+    BuildActionReanalysisPolicy {
+        #[command(flatten)]
+        args: action_reanalysis_policy::ActionReanalysisPolicyArgs,
     },
     /// Build offline complete-turn successor evidence from verified witnesses.
     ///
@@ -2330,6 +2337,10 @@ fn main() -> Result<(), String> {
         }
         Command::BuildActionSuccessorCorpus { args } => {
             let report = action_successor_reanalysis::build(args)?;
+            print_json(&report)
+        }
+        Command::BuildActionReanalysisPolicy { args } => {
+            let report = action_reanalysis_policy::build(args)?;
             print_json(&report)
         }
         Command::AuditActionImitation {

@@ -5,7 +5,7 @@
 //! graph search. A bounded miss remains `BudgetUnknown`; only gap-free,
 //! depth-complete frontier exhaustion is an exact refutation.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
     CombatDecisionRoot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
     LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
@@ -22,17 +22,17 @@ pub(crate) struct ExactCombatEvaluation {
     pub(crate) witness_actions: Option<Vec<ClientInput>>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum ExactCombatEvidence {
     ExactWin {
-        source: &'static str,
+        source: String,
         final_hp: i32,
         suffix_action_count: usize,
         search_cost: Option<ExactCombatSearchCost>,
     },
     ExactRefutation {
-        source: &'static str,
+        source: String,
         search_cost: ExactCombatSearchCost,
     },
     ExactTerminalNonWin {
@@ -58,7 +58,7 @@ impl ExactCombatEvidence {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct ExactCombatSearchCost {
     generation_work: usize,
     lookahead_work: usize,
@@ -74,7 +74,7 @@ pub(crate) fn known_exact_win(
     suffix_action_count: usize,
 ) -> ExactCombatEvidence {
     ExactCombatEvidence::ExactWin {
-        source,
+        source: source.to_string(),
         final_hp,
         suffix_action_count,
         search_cost: None,
@@ -126,7 +126,7 @@ pub(crate) fn evaluate_nonterminal_position(
     if let Some(witness) = report.witness.as_ref() {
         return Ok(ExactCombatEvaluation {
             evidence: ExactCombatEvidence::ExactWin {
-                source: "bounded_exact_search",
+                source: "bounded_exact_search".to_string(),
                 final_hp: witness.final_position.combat.entities.player.current_hp,
                 suffix_action_count: witness.actions.len(),
                 search_cost: Some(search_cost(&report)),
@@ -148,7 +148,7 @@ pub(crate) fn evaluate_nonterminal_position(
     {
         return Ok(ExactCombatEvaluation {
             evidence: ExactCombatEvidence::ExactRefutation {
-                source: "gap_free_frontier_exhaustion",
+                source: "gap_free_frontier_exhaustion".to_string(),
                 search_cost: search_cost(&report),
             },
             witness_actions: None,
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(known_exact_win("verified", 17, 3).kind(), "exact_win");
         assert_eq!(
             ExactCombatEvidence::ExactRefutation {
-                source: "exhausted",
+                source: "exhausted".to_string(),
                 search_cost: cost.clone(),
             }
             .kind(),
