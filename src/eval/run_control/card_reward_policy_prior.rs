@@ -204,13 +204,12 @@ fn card_reward_action_evidence_v1(
                 && delta.capability_improvements.is_empty()
                 && delta.resolved_formation_needs.is_empty()
     );
-    let improves_threat_relevant_capability =
-        !threat_relevant_capability_improvements_v1(
-            &decision.before.threats,
-            &decision.before.threat_coverage,
-            &action.after.threat_coverage,
-        )
-        .is_empty();
+    let improves_threat_relevant_capability = !threat_relevant_capability_improvements_v1(
+        &decision.before.threats,
+        &decision.before.threat_coverage,
+        &action.after.threat_coverage,
+    )
+    .is_empty();
     let band = card_reward_band_v1(
         &acquisition,
         &delta,

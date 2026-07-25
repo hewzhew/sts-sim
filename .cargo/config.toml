@@ -15,6 +15,8 @@ test-control = ["test", "-p", "sts_simulator_control"]
 test-runtime = ["test", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "control-full", "--lib"]
 check-runtime = ["check", "-p", "sts_oracle_runtime", "--no-default-features", "--features", "control-full", "--lib"]
 check-workspace = ["check", "--workspace", "--all-targets", "--all-features"]
+# One canonical formatting gate for local work and CI.
+fmt-check = ["fmt", "--all", "--", "--check"]
 # The standard release directory is the one canonical optimized oracle
 # artifact. `release-final` remains available for slow deployment builds.
 oracle-lab = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle"]

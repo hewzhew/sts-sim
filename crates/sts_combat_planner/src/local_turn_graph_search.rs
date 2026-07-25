@@ -1499,8 +1499,8 @@ impl LocalTurnGraphWitnessSession {
             .atomic_expand_elapsed_ns
             .saturating_add(
                 after_timing
-                .atomic_expand_elapsed_ns
-                .saturating_sub(before_timing.atomic_expand_elapsed_ns),
+                    .atomic_expand_elapsed_ns
+                    .saturating_sub(before_timing.atomic_expand_elapsed_ns),
             );
         self.performance_timing.transition_simulation_elapsed_ns = self
             .performance_timing

@@ -386,8 +386,7 @@ impl TurnOptionGeneratorSession {
         lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     ) -> Self {
         let mut seen = HashSet::new();
-        let root_key =
-            combat_exact_state_key(&root.position().engine, &root.position().combat);
+        let root_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
         let (root_digest, _) = combat_exact_state_key_identity_v1(&root_key);
         seen.insert(IndexedExactStateKey {
             digest: root_digest,
@@ -1309,14 +1308,12 @@ impl TurnOptionGeneratorSession {
                                 .into_iter()
                                 .map(|member_probability| probability * member_probability)
                                 .collect::<Vec<_>>();
-                        if let Some(cursor) =
-                            AtomicActionCursorWork::new(
-                                parent.clone(),
-                                members,
-                                probabilities,
-                                parent_guides.clone(),
-                            )
-                        {
+                        if let Some(cursor) = AtomicActionCursorWork::new(
+                            parent.clone(),
+                            members,
+                            probabilities,
+                            parent_guides.clone(),
+                        ) {
                             let priority = cursor
                                 .priority()
                                 .expect("ranked selection retains probability mass");
