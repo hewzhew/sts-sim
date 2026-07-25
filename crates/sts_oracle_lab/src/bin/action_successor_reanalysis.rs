@@ -7,11 +7,13 @@
 //! corpus; it cannot alter the production policy.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use clap::Args;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
+use sts_simulator::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
 use sts_simulator::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
 use sts_simulator::eval::combat_case::load_combat_case;
@@ -51,6 +53,13 @@ pub(crate) struct ActionSuccessorReanalysisArgs {
     /// Maximum independent successor searches evaluated concurrently.
     #[arg(long, default_value_t = 4)]
     pub(crate) candidate_jobs: usize,
+    /// Optional legacy-teacher allowance after the exact successor search
+    /// returns BudgetUnknown. Zero disables the teacher. A proposal becomes
+    /// ExactWin only after full replay from that action successor succeeds.
+    #[arg(long, default_value_t = 0)]
+    pub(crate) v2_teacher_wall_ms_per_candidate: u64,
+    #[arg(long, default_value_t = 800_000)]
+    pub(crate) v2_teacher_max_nodes_per_candidate: usize,
     /// Maximum canonical structured-selection inputs materialized.
     #[arg(long, default_value_t = 256)]
     pub(crate) max_structured_alternatives: usize,
@@ -86,6 +95,12 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         || args.max_engine_steps_per_transition == 0
     {
         return Err("action-successor reanalysis budgets must be positive".to_string());
+    }
+    if args.v2_teacher_wall_ms_per_candidate > 0 && args.v2_teacher_max_nodes_per_candidate == 0 {
+        return Err(
+            "--v2-teacher-max-nodes-per-candidate must be positive when the teacher is enabled"
+                .to_string(),
+        );
     }
 
     let case = load_combat_case(&args.case)?;
@@ -206,6 +221,8 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
                                 probabilities[canonical_index],
                                 policy_ranks[canonical_index],
                                 args.solve_work_per_candidate,
+                                args.v2_teacher_wall_ms_per_candidate,
+                                args.v2_teacher_max_nodes_per_candidate,
                                 args.max_structured_alternatives,
                                 args.max_engine_steps_per_transition,
                             )
@@ -261,6 +278,8 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         "config": {
             "solve_work_per_candidate": args.solve_work_per_candidate,
             "candidate_jobs": jobs,
+            "v2_teacher_wall_ms_per_candidate": args.v2_teacher_wall_ms_per_candidate,
+            "v2_teacher_max_nodes_per_candidate": args.v2_teacher_max_nodes_per_candidate,
             "max_engine_steps_per_transition": args.max_engine_steps_per_transition,
         },
         "evidence_counts": evidence_counts,
@@ -297,6 +316,8 @@ fn build_candidate(
     policy_probability: f64,
     policy_rank: usize,
     solve_work_per_candidate: usize,
+    v2_teacher_wall_ms_per_candidate: u64,
+    v2_teacher_max_nodes_per_candidate: usize,
     max_structured_alternatives: usize,
     max_engine_steps_per_transition: usize,
 ) -> Result<ActionSuccessorCandidate, String> {
@@ -342,7 +363,45 @@ fn build_candidate(
                     max_structured_alternatives,
                     max_engine_steps_per_transition,
                 )?;
-                (evaluation.evidence, evaluation.witness_actions)
+                if !matches!(
+                    &evaluation.evidence,
+                    ExactCombatEvidence::BudgetUnknown { .. }
+                ) || v2_teacher_wall_ms_per_candidate == 0
+                {
+                    (evaluation.evidence, evaluation.witness_actions)
+                } else {
+                    let deadline = Instant::now()
+                        .checked_add(Duration::from_millis(v2_teacher_wall_ms_per_candidate))
+                        .ok_or_else(|| "V2 teacher deadline overflowed".to_string())?;
+                    match oracle_search_witness_proposal_v1(
+                        &step.position,
+                        v2_teacher_max_nodes_per_candidate,
+                        Some(deadline),
+                    ) {
+                        Some(proposal) => {
+                            let replayed = replay_inputs(
+                                step.position.clone(),
+                                &proposal.actions,
+                                max_engine_steps_per_transition,
+                            )?;
+                            if EngineCombatStepper.terminal(&replayed) == CombatTerminal::Win
+                                && !replayed.combat.runtime.combat_smoked
+                            {
+                                (
+                                    known_exact_win(
+                                        "v2_teacher_exact_replay",
+                                        replayed.combat.entities.player.current_hp,
+                                        proposal.actions.len(),
+                                    ),
+                                    Some(proposal.actions),
+                                )
+                            } else {
+                                (evaluation.evidence, evaluation.witness_actions)
+                            }
+                        }
+                        None => (evaluation.evidence, evaluation.witness_actions),
+                    }
+                }
             }
         }
     };

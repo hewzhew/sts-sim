@@ -78,6 +78,12 @@ pub(crate) struct ActionReanalysisBatchArgs {
     /// Maximum independent successors evaluated concurrently within a state.
     #[arg(long, default_value_t = 4)]
     candidate_jobs: usize,
+    /// Optional legacy-teacher allowance for exact-search BudgetUnknown
+    /// successors. Zero disables teacher proposals.
+    #[arg(long, default_value_t = 0)]
+    v2_teacher_wall_ms_per_candidate: u64,
+    #[arg(long, default_value_t = 800_000)]
+    v2_teacher_max_nodes_per_candidate: usize,
     /// Maximum canonical structured-selection inputs materialized.
     #[arg(long, default_value_t = 256)]
     max_structured_alternatives: usize,
@@ -449,6 +455,12 @@ pub(crate) fn build_batch(args: ActionReanalysisBatchArgs) -> Result<Value, Stri
     {
         return Err("action reanalysis batch limits must be positive".to_string());
     }
+    if args.v2_teacher_wall_ms_per_candidate > 0 && args.v2_teacher_max_nodes_per_candidate == 0 {
+        return Err(
+            "--v2-teacher-max-nodes-per-candidate must be positive when the teacher is enabled"
+                .to_string(),
+        );
+    }
     let queue = load_queue(&args.queue)?;
     if queue.queue.is_empty() {
         return Err("action reanalysis queue contains no states".to_string());
@@ -491,6 +503,8 @@ pub(crate) fn build_batch(args: ActionReanalysisBatchArgs) -> Result<Value, Stri
                 output: output.clone(),
                 solve_work_per_candidate: args.solve_work_per_candidate,
                 candidate_jobs: args.candidate_jobs,
+                v2_teacher_wall_ms_per_candidate: args.v2_teacher_wall_ms_per_candidate,
+                v2_teacher_max_nodes_per_candidate: args.v2_teacher_max_nodes_per_candidate,
                 max_structured_alternatives: args.max_structured_alternatives,
                 action_imitation_artifact: Some(queue.action_imitation_artifact.clone()),
                 max_engine_steps_per_transition: args.max_engine_steps_per_transition,
@@ -518,6 +532,8 @@ pub(crate) fn build_batch(args: ActionReanalysisBatchArgs) -> Result<Value, Stri
             "skip": args.skip,
             "solve_work_per_candidate": args.solve_work_per_candidate,
             "candidate_jobs": args.candidate_jobs,
+            "v2_teacher_wall_ms_per_candidate": args.v2_teacher_wall_ms_per_candidate,
+            "v2_teacher_max_nodes_per_candidate": args.v2_teacher_max_nodes_per_candidate,
             "max_structured_alternatives": args.max_structured_alternatives,
             "max_engine_steps_per_transition": args.max_engine_steps_per_transition,
         },

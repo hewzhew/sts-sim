@@ -6,6 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption, CompleteTurnOptionBoundary,
     TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
+use sts_simulator::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
 use sts_simulator::eval::combat_state_features::{
     semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
@@ -61,6 +63,13 @@ pub struct BoundarySuccessorCorpusArgs {
     /// Maximum independent successor searches evaluated concurrently.
     #[arg(long, default_value_t = 4)]
     candidate_jobs: usize,
+    /// Optional legacy-teacher allowance after the exact successor search
+    /// returns BudgetUnknown. Zero disables the teacher. A teacher proposal
+    /// becomes ExactWin only after full replay from the candidate succeeds.
+    #[arg(long, default_value_t = 0)]
+    v2_teacher_wall_ms_per_candidate: u64,
+    #[arg(long, default_value_t = 800_000)]
+    v2_teacher_max_nodes_per_candidate: usize,
     /// Ignore a matching content-addressed output and recompute all evidence.
     #[arg(long)]
     force_rebuild: bool,
@@ -130,6 +139,8 @@ struct CorpusConfig {
     candidate_selection: CandidateSelection,
     solve_work_per_candidate: usize,
     candidate_jobs: usize,
+    v2_teacher_wall_ms_per_candidate: u64,
+    v2_teacher_max_nodes_per_candidate: usize,
     max_engine_steps_per_transition: usize,
 }
 
@@ -191,6 +202,12 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
     if args.candidate_jobs == 0 {
         return Err("--candidate-jobs must be positive".to_string());
     }
+    if args.v2_teacher_wall_ms_per_candidate > 0 && args.v2_teacher_max_nodes_per_candidate == 0 {
+        return Err(
+            "--v2-teacher-max-nodes-per-candidate must be positive when the teacher is enabled"
+                .to_string(),
+        );
+    }
     let manifest_path = args
         .manifest
         .canonicalize()
@@ -219,6 +236,8 @@ pub fn build(args: BoundarySuccessorCorpusArgs) -> Result<Value, String> {
         candidate_selection: args.candidate_selection,
         solve_work_per_candidate: args.solve_work_per_candidate,
         candidate_jobs: args.candidate_jobs,
+        v2_teacher_wall_ms_per_candidate: args.v2_teacher_wall_ms_per_candidate,
+        v2_teacher_max_nodes_per_candidate: args.v2_teacher_max_nodes_per_candidate,
         max_engine_steps_per_transition: args.max_engine_steps_per_transition,
     };
     let mut input_paths = vec![manifest_path.clone()];
@@ -780,12 +799,46 @@ fn evaluate_successor(
         }
         CompleteTurnOptionBoundary::NextPlayerTurn => {}
     }
-    evaluate_nonterminal_position(
+    let exact = evaluate_nonterminal_position(
         option.exact_successor(),
         solve_work_per_candidate,
         config.max_engine_steps_per_transition,
-    )
-    .map(|evaluation| evaluation.evidence)
+    )?;
+    if !matches!(&exact.evidence, ExactCombatEvidence::BudgetUnknown { .. })
+        || config.v2_teacher_wall_ms_per_candidate == 0
+    {
+        return Ok(exact.evidence);
+    }
+    let deadline = Instant::now()
+        .checked_add(Duration::from_millis(
+            config.v2_teacher_wall_ms_per_candidate,
+        ))
+        .ok_or_else(|| "V2 teacher deadline overflowed".to_string())?;
+    let Some(proposal) = oracle_search_witness_proposal_v1(
+        option.exact_successor(),
+        config.v2_teacher_max_nodes_per_candidate,
+        Some(deadline),
+    ) else {
+        return Ok(exact.evidence);
+    };
+    let action_count = proposal.actions.len();
+    let Ok(replayed) = replay_inputs(
+        option.exact_successor().clone(),
+        &proposal.actions,
+        config.max_engine_steps_per_transition,
+    ) else {
+        return Ok(exact.evidence);
+    };
+    if EngineCombatStepper.terminal(&replayed) != sts_simulator::sim::combat::CombatTerminal::Win
+        || replayed.combat.runtime.combat_smoked
+    {
+        return Ok(exact.evidence);
+    }
+    Ok(known_exact_win(
+        "v2_teacher_exact_replay",
+        replayed.combat.entities.player.current_hp,
+        action_count,
+    ))
 }
 
 fn replay_inputs(
