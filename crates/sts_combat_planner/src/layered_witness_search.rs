@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -15,24 +16,15 @@ use super::witness_search::{
 };
 use super::TurnOptionGeneratorSession;
 
-/// Lab-only control that keeps tactical generation and strategic depth on
-/// separate clocks. Every retained state in one player-turn layer receives a
-/// bounded complete-turn generation allowance before any successor is
-/// expanded into the following player turn.
+/// Lab-only control that keeps tactical generation and strategic depth as
+/// independently resumable work. Each live semantic view supplies a small
+/// complete-turn proposal portfolio; the search deepens the lowest-discrepancy
+/// portfolio while periodic coverage service resumes suspended widening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LayeredCombatWitnessConfig {
     pub generator: TurnOptionGeneratorConfig,
     pub beam_width: usize,
     pub retained_per_view: usize,
-    /// Do not close a turn layer before this much shared generator work has
-    /// been available, even if a shallow candidate pool appears full.
-    pub minimum_generation_work_per_layer: usize,
-    /// Hard ceiling for one layer. This is independent of retained parent
-    /// count so a wide beam cannot multiply the tactical budget by itself.
-    pub maximum_generation_work_per_layer: usize,
-    /// A layer may close after the minimum allowance once its exact candidate
-    /// pool reaches this multiple of the retained beam width.
-    pub candidate_pool_multiplier: usize,
     pub generation_quantum_work: usize,
     pub max_turn_layers: usize,
 }
@@ -43,9 +35,6 @@ impl Default for LayeredCombatWitnessConfig {
             generator: TurnOptionGeneratorConfig::default(),
             beam_width: 32,
             retained_per_view: 6,
-            minimum_generation_work_per_layer: 640,
-            maximum_generation_work_per_layer: 8_192,
-            candidate_pool_multiplier: 8,
             generation_quantum_work: 8,
             max_turn_layers: 32,
         }
@@ -374,6 +363,9 @@ struct BeamCohort {
 struct LayerWorker {
     parent: BeamState,
     generator: TurnOptionGeneratorSession,
+    reported_gap_count: usize,
+    counted_expanded: bool,
+    counted_truncated: bool,
 }
 
 struct ActiveLayer {
@@ -388,10 +380,13 @@ struct ActiveLayer {
     service_views: Vec<LayerServiceView>,
     next_service_view: usize,
     next_by_hash: HashMap<String, BeamState>,
-    generation_work: usize,
+    emitted_exact_state_hashes: HashSet<String>,
+    emitted_windows: usize,
+    completed_by_service_view: BTreeMap<LayerServiceView, usize>,
+    published_service_supply: BTreeMap<LayerServiceView, usize>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum LayerServiceView {
     Anchor,
     Guide(CombatGuideLaneId),
@@ -404,6 +399,8 @@ pub struct LayeredCombatWitnessSession {
     solved_suffixes: Arc<LayeredCombatSolvedSuffixIndex>,
     checked_root_suffix: bool,
     agenda: CohortAgenda,
+    widening_agenda: WideningAgenda,
+    frontier_service_count: usize,
     next_cohort_id: usize,
     depth_limited: Vec<BeamCohort>,
     active_layer: Option<ActiveLayer>,
@@ -555,6 +552,8 @@ impl LayeredCombatWitnessSession {
             solved_suffixes,
             checked_root_suffix: false,
             agenda,
+            widening_agenda: BTreeMap::new(),
+            frontier_service_count: 0,
             next_cohort_id,
             depth_limited: Vec::new(),
             active_layer: None,
@@ -624,6 +623,8 @@ impl LayeredCombatWitnessSession {
             solved_suffixes,
             checked_root_suffix: true,
             agenda,
+            widening_agenda: BTreeMap::new(),
+            frontier_service_count: 0,
             next_cohort_id,
             depth_limited: Vec::new(),
             active_layer: None,
@@ -663,6 +664,27 @@ impl LayeredCombatWitnessSession {
                     .collect(),
             })
             .collect::<Vec<_>>();
+        windows.extend(
+            self.widening_agenda
+                .values()
+                .chain(self.active_layer.iter())
+                .filter(|expansion| !expansion.next_by_hash.is_empty())
+                .map(|expansion| {
+                    let (ranked, _) = rank_multi_view(
+                        expansion.next_by_hash.values().cloned().collect(),
+                        self.config,
+                        self.policy.as_ref(),
+                    );
+                    LayeredCombatDeferredWindow {
+                        relative_turn_depth: expansion.relative_turn_depth.saturating_add(1),
+                        window_discrepancy: expansion
+                            .window_discrepancy
+                            .saturating_add(expansion.emitted_windows),
+                        source_window_index: expansion.emitted_windows,
+                        candidates: ranked.iter().map(BeamState::public_snapshot).collect(),
+                    }
+                }),
+        );
         windows.sort_by_key(|window| {
             (
                 window.relative_turn_depth,
@@ -679,9 +701,20 @@ impl LayeredCombatWitnessSession {
                 visit(state);
             }
         }
+        for expansion in self.widening_agenda.values() {
+            for worker in &expansion.workers {
+                visit(&worker.parent);
+            }
+            for candidate in expansion.next_by_hash.values() {
+                visit(candidate);
+            }
+        }
         if let Some(active) = self.active_layer.as_ref() {
             for worker in &active.workers {
                 visit(&worker.parent);
+            }
+            for candidate in active.next_by_hash.values() {
+                visit(candidate);
             }
         }
     }
@@ -766,8 +799,8 @@ impl LayeredCombatWitnessSession {
                 return self.snapshot(status);
             }
 
-            if self.active_layer_is_complete() {
-                self.finish_active_layer();
+            if self.active_layer_has_publishable_portfolio() {
+                self.release_active_window();
                 continue;
             }
 
@@ -779,20 +812,45 @@ impl LayeredCombatWitnessSession {
                 quantum.deadline,
                 stepper,
             ) {
-                self.finish_active_layer();
+                self.release_active_window();
                 continue;
             }
             if let Some(status) = self.terminal_status.clone() {
                 return self.snapshot(status);
+            }
+            if self.active_layer_has_publishable_portfolio() {
+                self.release_active_window();
+            } else {
+                self.suspend_active_layer();
             }
         }
     }
 
     fn start_next_layer(&mut self) -> bool {
         loop {
-            let Some((_, cohort)) = self.agenda.pop_first() else {
+            let Some(selection) = select_layered_agenda_item(
+                &self.agenda,
+                &self.widening_agenda,
+                self.frontier_service_count,
+            ) else {
                 return false;
             };
+            self.frontier_service_count = self.frontier_service_count.saturating_add(1);
+            if let LayeredAgendaSelection::Widening(key) = selection {
+                let expansion = self
+                    .widening_agenda
+                    .remove(&key)
+                    .expect("the selected widening item must remain live");
+                self.active_layer = Some(expansion);
+                return true;
+            }
+            let LayeredAgendaSelection::Cohort(key) = selection else {
+                unreachable!("widening selection returned above");
+            };
+            let cohort = self
+                .agenda
+                .remove(&key)
+                .expect("the selected cohort must remain live");
             if cohort.relative_turn_depth >= self.config.max_turn_layers {
                 self.depth_limited.push(cohort);
                 continue;
@@ -833,6 +891,9 @@ impl LayeredCombatWitnessSession {
                     Some(LayerWorker {
                         parent: parent.clone(),
                         generator,
+                        reported_gap_count: 0,
+                        counted_expanded: false,
+                        counted_truncated: false,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -850,28 +911,27 @@ impl LayeredCombatWitnessSession {
                 service_views,
                 next_service_view: 0,
                 next_by_hash: HashMap::new(),
-                generation_work: 0,
+                emitted_exact_state_hashes: HashSet::new(),
+                emitted_windows: 0,
+                completed_by_service_view: BTreeMap::new(),
+                published_service_supply: BTreeMap::new(),
             });
             return true;
         }
     }
 
-    fn active_layer_is_complete(&self) -> bool {
+    fn active_layer_has_publishable_portfolio(&self) -> bool {
         let Some(active) = self.active_layer.as_ref() else {
             return false;
         };
-        let candidate_pool_target = self
-            .config
-            .beam_width
-            .max(1)
-            .saturating_mul(self.config.candidate_pool_multiplier.max(1));
-        active.generation_work >= self.config.maximum_generation_work_per_layer.max(1)
-            || (active.generation_work >= self.config.minimum_generation_work_per_layer
-                && active.next_by_hash.len() >= candidate_pool_target)
-            || active
-                .workers
-                .iter()
-                .all(|worker| worker.generator.is_finished())
+        if active
+            .workers
+            .iter()
+            .all(|worker| worker.generator.is_finished())
+        {
+            return !active.next_by_hash.is_empty();
+        }
+        proposal_portfolio_has_service_supply(active, self.config.retained_per_view.max(1))
     }
 
     fn service_active_layer(
@@ -903,16 +963,10 @@ impl LayeredCombatWitnessSession {
             LayerServiceView::Anchor => TurnOptionGeneratorPreferredLane::Anchor,
             LayerServiceView::Guide(lane) => TurnOptionGeneratorPreferredLane::Guide(lane),
         });
-        let layer_remaining = self
-            .config
-            .maximum_generation_work_per_layer
-            .max(1)
-            .saturating_sub(active.generation_work);
         let work = self
             .config
             .generation_quantum_work
             .max(1)
-            .min(layer_remaining)
             .min(remaining_work);
         if work == 0 || remaining_steps == 0 {
             return false;
@@ -936,7 +990,10 @@ impl LayeredCombatWitnessSession {
         if used_work == 0 && used_steps == 0 {
             return false;
         }
-        active.generation_work = active.generation_work.saturating_add(used_work);
+        if used_work > 0 && !worker.counted_expanded {
+            worker.counted_expanded = true;
+            self.counters.expanded_parents = self.counters.expanded_parents.saturating_add(1);
+        }
         self.counters.generation_work = self.counters.generation_work.saturating_add(used_work);
         self.counters.engine_steps = self.counters.engine_steps.saturating_add(used_steps);
 
@@ -1011,12 +1068,26 @@ impl LayeredCombatWitnessSession {
                         }
                         break;
                     }
+                    if active
+                        .emitted_exact_state_hashes
+                        .contains(&candidate.exact_state_hash)
+                    {
+                        self.counters.duplicate_next_turn_states =
+                            self.counters.duplicate_next_turn_states.saturating_add(1);
+                        continue;
+                    }
                     match active
                         .next_by_hash
                         .entry(candidate.exact_state_hash.clone())
                     {
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             entry.insert(candidate);
+                            *active
+                                .completed_by_service_view
+                                .entry(actual_view)
+                                .or_default() += 1;
+                            self.counters.unique_next_turn_states =
+                                self.counters.unique_next_turn_states.saturating_add(1);
                         }
                         std::collections::hash_map::Entry::Occupied(mut entry) => {
                             self.counters.duplicate_next_turn_states =
@@ -1033,65 +1104,71 @@ impl LayeredCombatWitnessSession {
         true
     }
 
-    fn finish_active_layer(&mut self) {
+    fn suspend_active_layer(&mut self) {
         let Some(active) = self.active_layer.take() else {
             return;
         };
-        let expanded_parents = active
-            .workers
-            .iter()
-            .filter(|worker| worker.generator.counters().generation_work > 0)
-            .count();
-        let truncated_parents = active
-            .workers
-            .iter()
-            .filter(|worker| !worker.generator.is_finished())
-            .count();
-        self.counters.expanded_parents = self
-            .counters
-            .expanded_parents
-            .saturating_add(expanded_parents);
-        self.counters.truncated_parents = self
-            .counters
-            .truncated_parents
-            .saturating_add(truncated_parents);
-        for worker in &active.workers {
+        enqueue_widening(&mut self.widening_agenda, active, &mut self.next_cohort_id);
+    }
+
+    fn release_active_window(&mut self) {
+        let Some(mut active) = self.active_layer.take() else {
+            return;
+        };
+        for worker in &mut active.workers {
+            let gaps = worker.generator.gaps();
             self.generation_gaps
-                .extend_from_slice(worker.generator.gaps());
+                .extend_from_slice(&gaps[worker.reported_gap_count.min(gaps.len())..]);
+            worker.reported_gap_count = gaps.len();
+            if !worker.generator.is_finished() && !worker.counted_truncated {
+                worker.counted_truncated = true;
+                self.counters.truncated_parents = self.counters.truncated_parents.saturating_add(1);
+            }
         }
         let parent_work = active
             .workers
             .iter()
-            .map(|worker| LayeredCombatParentWorkReport {
-                exact_state_hash: worker.parent.exact_state_hash.clone(),
-                generation_work: worker.generator.counters().generation_work,
-                completed_turn_options: worker.generator.total_completed_options(),
-                finished: worker.generator.is_finished(),
+            .map(|worker| {
+                let generation_work = worker.generator.counters().generation_work;
+                LayeredCombatParentWorkReport {
+                    exact_state_hash: worker.parent.exact_state_hash.clone(),
+                    generation_work,
+                    completed_turn_options: worker.generator.total_completed_options(),
+                    finished: worker.generator.is_finished(),
+                }
             })
             .collect::<Vec<_>>();
-        let unique_next = active.next_by_hash.len();
-        self.counters.unique_next_turn_states = self
-            .counters
-            .unique_next_turn_states
-            .saturating_add(unique_next);
-        let ranked_candidates = rank_multi_view(
-            active.next_by_hash.into_values().collect(),
+        let (mut ranked_candidates, portfolio_width) = rank_multi_view(
+            active
+                .next_by_hash
+                .drain()
+                .map(|(_, state)| state)
+                .collect(),
             self.config,
             self.policy.as_ref(),
         );
         let window_width = self.config.beam_width.max(1);
-        let emitted_windows = ranked_candidates.len().div_ceil(window_width);
+        let published_width = portfolio_width.max(1).min(window_width);
+        let deferred = if ranked_candidates.len() > published_width {
+            ranked_candidates.split_off(published_width)
+        } else {
+            Vec::new()
+        };
+        active.next_by_hash = deferred
+            .into_iter()
+            .map(|state| (state.exact_state_hash.clone(), state))
+            .collect();
         let retained_exact_state_hashes = ranked_candidates
             .iter()
-            .take(window_width)
             .map(|state| state.exact_state_hash.clone())
             .collect::<Vec<_>>();
+        active
+            .emitted_exact_state_hashes
+            .extend(retained_exact_state_hashes.iter().cloned());
         let retained_next_turn_states = retained_exact_state_hashes.len();
-        for (window_index, states) in ranked_candidates
-            .chunks(window_width)
-            .map(<[BeamState]>::to_vec)
-            .enumerate()
-        {
+        let emitted_windows = usize::from(!ranked_candidates.is_empty());
+        if !ranked_candidates.is_empty() {
+            let window_index = active.emitted_windows;
             let window_discrepancy = active.window_discrepancy.saturating_add(window_index);
             self.counters.maximum_window_discrepancy = self
                 .counters
@@ -1103,21 +1180,25 @@ impl LayeredCombatWitnessSession {
             enqueue_cohort(
                 &mut self.agenda,
                 BeamCohort {
-                    states,
+                    states: ranked_candidates,
                     relative_turn_depth: active.relative_turn_depth.saturating_add(1),
                     window_discrepancy,
                     source_window_index: window_index,
                 },
                 &mut self.next_cohort_id,
             );
+            active.emitted_windows = active.emitted_windows.saturating_add(1);
+            active.published_service_supply = active.completed_by_service_view.clone();
         }
         self.layers.push(LayeredCombatLayerReport {
             relative_turn_depth: active.relative_turn_depth,
-            window_discrepancy: active.window_discrepancy,
+            window_discrepancy: active
+                .window_discrepancy
+                .saturating_add(active.emitted_windows.saturating_sub(emitted_windows)),
             source_window_index: active.source_window_index,
             player_turn: active.player_turn,
             parent_states: active.parent_states,
-            parent_exact_state_hashes: active.parent_exact_state_hashes,
+            parent_exact_state_hashes: active.parent_exact_state_hashes.clone(),
             parent_work,
             expanded_parents: self
                 .counters
@@ -1131,7 +1212,10 @@ impl LayeredCombatWitnessSession {
                 .counters
                 .completed_turn_options
                 .saturating_sub(active.layer_before.completed_turn_options),
-            unique_next_turn_states: unique_next,
+            unique_next_turn_states: self
+                .counters
+                .unique_next_turn_states
+                .saturating_sub(active.layer_before.unique_next_turn_states),
             duplicate_next_turn_states: self
                 .counters
                 .duplicate_next_turn_states
@@ -1145,6 +1229,14 @@ impl LayeredCombatWitnessSession {
             emitted_windows,
         });
         self.counters.completed_layers = self.counters.completed_layers.saturating_add(1);
+        active.layer_before = self.counters.clone();
+        let unfinished = active
+            .workers
+            .iter()
+            .any(|worker| !worker.generator.is_finished());
+        if unfinished || !active.next_by_hash.is_empty() {
+            enqueue_widening(&mut self.widening_agenda, active, &mut self.next_cohort_id);
+        }
     }
 
     fn snapshot(&self, status: LayeredCombatWitnessStatus) -> LayeredCombatWitnessReport {
@@ -1158,7 +1250,9 @@ impl LayeredCombatWitnessSession {
                     .map(|worker| worker.parent.clone())
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(|| best_frontier(&self.agenda, &self.depth_limited));
+            .unwrap_or_else(|| {
+                best_frontier(&self.agenda, &self.widening_agenda, &self.depth_limited)
+            });
         report(
             status,
             self.counters.clone(),
@@ -2095,40 +2189,205 @@ mod candidate_race_priority_tests {
     }
 }
 
-type CohortAgenda = BTreeMap<(usize, usize, usize, usize), BeamCohort>;
+type LayeredAgendaKey = (usize, Reverse<usize>, usize);
+type CohortAgenda = BTreeMap<LayeredAgendaKey, BeamCohort>;
+type WideningAgenda = BTreeMap<LayeredAgendaKey, ActiveLayer>;
+const DEPTH_FIRST_SERVICES_PER_COVERAGE_SERVICE: usize = 7;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LayeredAgendaSelection {
+    Cohort(LayeredAgendaKey),
+    Widening(LayeredAgendaKey),
+}
+
+fn layered_agenda_key(
+    relative_turn_depth: usize,
+    window_discrepancy: usize,
+    agenda_id: usize,
+) -> LayeredAgendaKey {
+    (window_discrepancy, Reverse(relative_turn_depth), agenda_id)
+}
 
 fn enqueue_cohort(agenda: &mut CohortAgenda, cohort: BeamCohort, next_cohort_id: &mut usize) {
-    let key = (
-        cohort
-            .relative_turn_depth
-            .saturating_add(cohort.window_discrepancy),
-        cohort.window_discrepancy,
+    let key = layered_agenda_key(
         cohort.relative_turn_depth,
+        cohort.window_discrepancy,
         *next_cohort_id,
     );
     *next_cohort_id = next_cohort_id.saturating_add(1);
     agenda.insert(key, cohort);
 }
 
-fn best_frontier(agenda: &CohortAgenda, depth_limited: &[BeamCohort]) -> Vec<BeamState> {
-    agenda
+fn enqueue_widening(
+    agenda: &mut WideningAgenda,
+    expansion: ActiveLayer,
+    next_cohort_id: &mut usize,
+) {
+    let next_window_discrepancy = expansion
+        .window_discrepancy
+        .saturating_add(expansion.emitted_windows);
+    let key = layered_agenda_key(
+        expansion.relative_turn_depth,
+        next_window_discrepancy,
+        *next_cohort_id,
+    );
+    *next_cohort_id = next_cohort_id.saturating_add(1);
+    agenda.insert(key, expansion);
+}
+
+/// Selects between two complementary views over the same live work.
+///
+/// The ordinary view follows the lowest-discrepancy portfolio and deepens it
+/// first. Periodic coverage service uses the old diagonal order so a suspended
+/// widening request cannot remain hidden behind an indefinitely growing
+/// discrepancy-zero subtree. Both views remove the same agenda item; this is
+/// one search frontier, not two competing copies of the search.
+fn select_layered_agenda_item(
+    agenda: &CohortAgenda,
+    widening_agenda: &WideningAgenda,
+    service_count: usize,
+) -> Option<LayeredAgendaSelection> {
+    let coverage_period = DEPTH_FIRST_SERVICES_PER_COVERAGE_SERVICE.saturating_add(1);
+    let use_coverage_view = service_count.saturating_add(1) % coverage_period == 0;
+    if !use_coverage_view {
+        return match (agenda.first_key_value(), widening_agenda.first_key_value()) {
+            (Some((cohort_key, _)), Some((widening_key, _))) => {
+                if cohort_key <= widening_key {
+                    Some(LayeredAgendaSelection::Cohort(*cohort_key))
+                } else {
+                    Some(LayeredAgendaSelection::Widening(*widening_key))
+                }
+            }
+            (Some((cohort_key, _)), None) => Some(LayeredAgendaSelection::Cohort(*cohort_key)),
+            (None, Some((widening_key, _))) => {
+                Some(LayeredAgendaSelection::Widening(*widening_key))
+            }
+            (None, None) => None,
+        };
+    }
+
+    let mut best = None::<((usize, usize, usize, usize, u8), LayeredAgendaSelection)>;
+    for (key, cohort) in agenda {
+        let coverage_key = (
+            cohort
+                .relative_turn_depth
+                .saturating_add(cohort.window_discrepancy),
+            cohort.window_discrepancy,
+            cohort.relative_turn_depth,
+            key.2,
+            0,
+        );
+        if best
+            .as_ref()
+            .is_none_or(|(incumbent, _)| coverage_key < *incumbent)
+        {
+            best = Some((coverage_key, LayeredAgendaSelection::Cohort(*key)));
+        }
+    }
+    for (key, expansion) in widening_agenda {
+        let pending_discrepancy = key.0;
+        let coverage_key = (
+            expansion
+                .relative_turn_depth
+                .saturating_add(pending_discrepancy),
+            pending_discrepancy,
+            expansion.relative_turn_depth,
+            key.2,
+            1,
+        );
+        if best
+            .as_ref()
+            .is_none_or(|(incumbent, _)| coverage_key < *incumbent)
+        {
+            best = Some((coverage_key, LayeredAgendaSelection::Widening(*key)));
+        }
+    }
+    best.map(|(_, selection)| selection)
+}
+
+#[cfg(test)]
+mod layered_agenda_priority_tests {
+    use std::cmp::Reverse;
+
+    use super::{
+        enqueue_cohort, select_layered_agenda_item, BeamCohort, CohortAgenda,
+        LayeredAgendaSelection, WideningAgenda, DEPTH_FIRST_SERVICES_PER_COVERAGE_SERVICE,
+    };
+
+    fn cohort(relative_turn_depth: usize, window_discrepancy: usize) -> BeamCohort {
+        BeamCohort {
+            states: Vec::new(),
+            relative_turn_depth,
+            window_discrepancy,
+            source_window_index: window_discrepancy,
+        }
+    }
+
+    #[test]
+    fn depth_first_view_exploits_before_coverage_recovers_a_shallower_window() {
+        let mut agenda = CohortAgenda::new();
+        let widening = WideningAgenda::new();
+        let mut next_id = 0;
+        enqueue_cohort(&mut agenda, cohort(10, 0), &mut next_id);
+        enqueue_cohort(&mut agenda, cohort(0, 1), &mut next_id);
+
+        assert_eq!(
+            select_layered_agenda_item(&agenda, &widening, 0),
+            Some(LayeredAgendaSelection::Cohort((0, Reverse(10), 0)))
+        );
+        assert_eq!(
+            select_layered_agenda_item(
+                &agenda,
+                &widening,
+                DEPTH_FIRST_SERVICES_PER_COVERAGE_SERVICE,
+            ),
+            Some(LayeredAgendaSelection::Cohort((1, Reverse(0), 1)))
+        );
+    }
+}
+
+fn best_frontier(
+    agenda: &CohortAgenda,
+    widening_agenda: &WideningAgenda,
+    depth_limited: &[BeamCohort],
+) -> Vec<BeamState> {
+    let cohort = agenda
         .first_key_value()
-        .map(|(_, cohort)| cohort.states.clone())
-        .or_else(|| {
-            depth_limited
+        .map(|(key, cohort)| (key, cohort.states.clone()));
+    let widening = widening_agenda.first_key_value().map(|(key, expansion)| {
+        (
+            key,
+            expansion
+                .workers
                 .iter()
-                .min_by_key(|cohort| {
-                    (
-                        cohort
-                            .relative_turn_depth
-                            .saturating_add(cohort.window_discrepancy),
-                        cohort.window_discrepancy,
-                        cohort.relative_turn_depth,
-                    )
-                })
-                .map(|cohort| cohort.states.clone())
-        })
-        .unwrap_or_default()
+                .map(|worker| worker.parent.clone())
+                .collect::<Vec<_>>(),
+        )
+    });
+    match (cohort, widening) {
+        (Some((cohort_key, states)), Some((widening_key, widening_states))) => {
+            if cohort_key <= widening_key {
+                Some(states)
+            } else {
+                Some(widening_states)
+            }
+        }
+        (Some((_, states)), None) => Some(states),
+        (None, Some((_, states))) => Some(states),
+        (None, None) => None,
+    }
+    .or_else(|| {
+        depth_limited
+            .iter()
+            .min_by_key(|cohort| {
+                (
+                    cohort.window_discrepancy,
+                    Reverse(cohort.relative_turn_depth),
+                )
+            })
+            .map(|cohort| cohort.states.clone())
+    })
+    .unwrap_or_default()
 }
 
 fn select_layer_worker(
@@ -2224,11 +2483,104 @@ fn layer_worker_anchor_cost(worker: &LayerWorker) -> f64 {
     total_negative_log_policy + (total_depth as f64).ln() + service_debt.ln()
 }
 
+/// Returns true once semantic service has supplied a publishable portfolio.
+///
+/// This deliberately makes no claim that a guide's early proposals are a
+/// complete top-k set. Guides are acquisition hints, not admissible bounds.
+/// The initial portfolio waits for every live view so raw generator arrival
+/// order cannot define the search. Later portfolios are asynchronous: any
+/// view that acquires a fresh batch may publish, so one slow guide cannot hide
+/// a newly discovered anchor or another guide improvement.
+fn proposal_portfolio_has_service_supply(active: &ActiveLayer, retained_per_view: usize) -> bool {
+    if active.next_by_hash.is_empty() {
+        return false;
+    }
+    let supplies = active
+        .service_views
+        .iter()
+        .map(|view| {
+            let view_is_live = active.workers.iter().any(|worker| match *view {
+                LayerServiceView::Anchor => worker
+                    .generator
+                    .best_retained_path_bound_snapshot()
+                    .is_some(),
+                LayerServiceView::Guide(lane) => worker
+                    .generator
+                    .best_retained_guide_promise_snapshot(lane)
+                    .is_some(),
+            });
+            (
+                view_is_live,
+                active
+                    .completed_by_service_view
+                    .get(view)
+                    .copied()
+                    .unwrap_or_default(),
+                active
+                    .published_service_supply
+                    .get(view)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    proposal_supply_is_ready(active.emitted_windows, retained_per_view, &supplies)
+}
+
+fn proposal_supply_is_ready(
+    emitted_windows: usize,
+    retained_per_view: usize,
+    supplies: &[(bool, usize, usize)],
+) -> bool {
+    let live_view_count = supplies.iter().filter(|(is_live, _, _)| *is_live).count();
+    let ready_view_count = supplies
+        .iter()
+        .filter(|(is_live, completed, published)| {
+            *is_live && completed.saturating_sub(*published) >= retained_per_view
+        })
+        .count();
+    if emitted_windows == 0 {
+        live_view_count > 0 && ready_view_count == live_view_count
+    } else {
+        ready_view_count > 0
+    }
+}
+
+#[cfg(test)]
+mod proposal_supply_tests {
+    use super::proposal_supply_is_ready;
+
+    #[test]
+    fn bootstrap_is_synchronous_but_later_supply_is_asynchronous() {
+        assert!(!proposal_supply_is_ready(
+            0,
+            2,
+            &[(true, 2, 0), (true, 1, 0)]
+        ));
+        assert!(proposal_supply_is_ready(
+            0,
+            2,
+            &[(true, 2, 0), (true, 2, 0)]
+        ));
+
+        assert!(proposal_supply_is_ready(
+            1,
+            2,
+            &[(true, 4, 2), (true, 2, 2)]
+        ));
+        assert!(!proposal_supply_is_ready(
+            1,
+            2,
+            &[(true, 3, 2), (true, 2, 2)]
+        ));
+    }
+}
+
 fn rank_multi_view(
     candidates: Vec<BeamState>,
     config: LayeredCombatWitnessConfig,
     policy: &dyn super::policy::CombatActionPolicy,
-) -> Vec<BeamState> {
+) -> (Vec<BeamState>, usize) {
     let first_window_width = config.beam_width.max(1).min(candidates.len());
     let per_view = config.retained_per_view.max(1);
     let mut views = Vec::<Vec<usize>>::new();
@@ -2272,16 +2624,7 @@ fn rank_multi_view(
             break;
         }
     }
-    if selected.len() < first_window_width {
-        for index in policy_view.iter().copied() {
-            if seen.insert(index) {
-                selected.push(index);
-                if selected.len() == first_window_width {
-                    break;
-                }
-            }
-        }
-    }
+    let portfolio_width = selected.len();
 
     let remaining_view_depth = views.iter().map(Vec::len).max().unwrap_or_default();
     for rank in 0..remaining_view_depth {
@@ -2302,10 +2645,13 @@ fn rank_multi_view(
 
     debug_assert_eq!(selected.len(), candidates.len());
 
-    selected
-        .into_iter()
-        .map(|index| candidates[index].clone())
-        .collect()
+    (
+        selected
+            .into_iter()
+            .map(|index| candidates[index].clone())
+            .collect(),
+        portfolio_width,
+    )
 }
 
 fn compare_policy(left: &BeamState, right: &BeamState) -> std::cmp::Ordering {

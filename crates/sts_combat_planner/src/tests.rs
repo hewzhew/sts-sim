@@ -460,9 +460,6 @@ fn layered_search_keeps_a_complete_turn_sibling_until_the_next_layer() {
             generator: config(),
             beam_width: 4,
             retained_per_view: 2,
-            minimum_generation_work_per_layer: 16,
-            maximum_generation_work_per_layer: 64,
-            candidate_pool_multiplier: 2,
             generation_quantum_work: 4,
             max_turn_layers: 4,
         },
@@ -510,9 +507,6 @@ fn layered_search_replays_a_composed_exact_suffix_from_its_own_root() {
             generator: config(),
             beam_width: 4,
             retained_per_view: 2,
-            minimum_generation_work_per_layer: 16,
-            maximum_generation_work_per_layer: 64,
-            candidate_pool_multiplier: 2,
             generation_quantum_work: 4,
             max_turn_layers: 1,
         },
@@ -559,9 +553,6 @@ fn layered_search_recovers_a_winning_sibling_from_the_next_beam_window() {
             generator: config(),
             beam_width: 1,
             retained_per_view: 1,
-            minimum_generation_work_per_layer: 16,
-            maximum_generation_work_per_layer: 64,
-            candidate_pool_multiplier: 2,
             generation_quantum_work: 4,
             max_turn_layers: 4,
         },
@@ -583,14 +574,11 @@ fn layered_search_recovers_a_winning_sibling_from_the_next_beam_window() {
 }
 
 #[test]
-fn layered_session_resumes_mid_layer_without_repaying_generation_work() {
+fn layered_session_resumes_after_a_lazy_window_without_repaying_generation_work() {
     let layered_config = LayeredCombatWitnessConfig {
         generator: config(),
         beam_width: 1,
         retained_per_view: 1,
-        minimum_generation_work_per_layer: 16,
-        maximum_generation_work_per_layer: 64,
-        candidate_pool_multiplier: 2,
         generation_quantum_work: 4,
         max_turn_layers: 4,
     };
@@ -625,7 +613,14 @@ fn layered_session_resumes_mid_layer_without_repaying_generation_work() {
         LayeredCombatWitnessStatus::Partial(LayeredCombatWitnessInterruption::GenerationWorkBudget)
     );
     assert_eq!(first.counters.generation_work, 4);
-    assert_eq!(first.counters.completed_layers, 0);
+    assert_eq!(
+        first.counters.completed_layers, 0,
+        "a raw first arrival is not published before every live service view contributes"
+    );
+    assert!(
+        !session.deferred_windows().is_empty(),
+        "diagnostics must expose complete candidates waiting inside suspended widening"
+    );
 
     let resumed = session.advance(
         LayeredCombatWitnessQuantum {
@@ -649,9 +644,6 @@ fn candidate_continuation_race_resumes_multiple_candidates_until_one_wins() {
         generator: config(),
         beam_width: 1,
         retained_per_view: 1,
-        minimum_generation_work_per_layer: 16,
-        maximum_generation_work_per_layer: 64,
-        candidate_pool_multiplier: 2,
         generation_quantum_work: 4,
         max_turn_layers: 1,
     };
@@ -722,9 +714,6 @@ fn deferred_window_continuation_shares_one_candidate_pool_across_parents() {
         generator: config(),
         beam_width: 1,
         retained_per_view: 1,
-        minimum_generation_work_per_layer: 16,
-        maximum_generation_work_per_layer: 64,
-        candidate_pool_multiplier: 2,
         generation_quantum_work: 4,
         max_turn_layers: 1,
     };
@@ -792,9 +781,6 @@ fn candidate_race_preserves_parent_local_deferred_windows_and_prefixes() {
         generator: config(),
         beam_width: 1,
         retained_per_view: 1,
-        minimum_generation_work_per_layer: 16,
-        maximum_generation_work_per_layer: 64,
-        candidate_pool_multiplier: 2,
         generation_quantum_work: 4,
         max_turn_layers: 1,
     };
@@ -917,9 +903,6 @@ fn lineage_portfolio_recurses_at_turn_boundaries_and_replays_the_winner() {
         generator: config(),
         beam_width: 1,
         retained_per_view: 1,
-        minimum_generation_work_per_layer: 16,
-        maximum_generation_work_per_layer: 64,
-        candidate_pool_multiplier: 2,
         generation_quantum_work: 4,
         max_turn_layers: 1,
     };
@@ -2591,9 +2574,6 @@ fn solved_suffix_fold_proves_each_predecessor_without_corridor_action_guidance()
                 generator: config(),
                 beam_width: 8,
                 retained_per_view: 4,
-                minimum_generation_work_per_layer: 0,
-                maximum_generation_work_per_layer: 64,
-                candidate_pool_multiplier: usize::MAX,
                 generation_quantum_work: 4,
                 max_turn_layers: 1,
             },

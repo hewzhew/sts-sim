@@ -25,16 +25,16 @@ use sts_combat_planner::{
     CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
     DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioEntryReport,
-    LayeredCombatLineagePortfolioSession, LayeredCombatSolvedSuffixIndex,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
-    LocalTurnGraphWitnessSession, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
-    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
-    SharedCombatActionPolicy, SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction,
-    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
-    UniformCombatActionPolicy,
+    LayeredCombatFrontierState, LayeredCombatLineagePortfolioConfig,
+    LayeredCombatLineagePortfolioEntryReport, LayeredCombatLineagePortfolioSession,
+    LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessSession, LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessConfig,
+    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
+    PolicyDiscrepancyTurnMacroConfig, SharedCombatActionPolicy, SolvedSuffixFoldConfig,
+    SolvedSuffixFoldStatus, TurnOptionAction, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig, TurnOptionGeneratorSession, UniformCombatActionPolicy,
 };
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
@@ -430,8 +430,13 @@ enum Command {
     CombatCaseLayered {
         #[arg(long)]
         case: PathBuf,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "guidance_bundle")]
         action_imitation_artifact: Option<PathBuf>,
+        /// Optional immutable action-policy plus turn-boundary value package.
+        /// This lab control lets the layered search test learned guidance
+        /// without changing legality, exact-state ownership, or terminal truth.
+        #[arg(long, conflicts_with = "action_imitation_artifact")]
+        guidance_bundle: Option<PathBuf>,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 5_000)]
@@ -442,16 +447,6 @@ enum Command {
         beam_width: usize,
         #[arg(long, default_value_t = 6)]
         retained_per_view: usize,
-        /// Minimum shared generator work before one turn layer may close.
-        #[arg(long, default_value_t = 640)]
-        minimum_generation_work_per_layer: usize,
-        /// Hard shared generator-work ceiling for one turn layer.
-        #[arg(long, default_value_t = 8_192)]
-        maximum_generation_work_per_layer: usize,
-        /// Close a sufficiently worked layer when it has this many beam-widths
-        /// of exact next-turn candidates.
-        #[arg(long, default_value_t = 8)]
-        candidate_pool_multiplier: usize,
         #[arg(long, default_value_t = 8)]
         generation_quantum_work: usize,
         #[arg(long, default_value_t = 32)]
@@ -588,12 +583,10 @@ enum Command {
         beam_width: usize,
         #[arg(long, default_value_t = 6)]
         retained_per_view: usize,
-        #[arg(long, default_value_t = 640)]
-        minimum_generation_work_per_layer: usize,
+        /// Total generator work available while acquiring the selected source
+        /// window. Window publication itself is demand-driven.
         #[arg(long, default_value_t = 8_192)]
-        maximum_generation_work_per_layer: usize,
-        #[arg(long, default_value_t = 8)]
-        candidate_pool_multiplier: usize,
+        source_generation_work: usize,
         #[arg(long, default_value_t = 8)]
         generation_quantum_work: usize,
         #[arg(long, default_value_t = 3)]
@@ -2870,14 +2863,12 @@ fn main() -> Result<(), String> {
         Command::CombatCaseLayered {
             case,
             action_imitation_artifact,
+            guidance_bundle,
             max_nodes,
             wall_ms,
             max_engine_steps_per_transition,
             beam_width,
             retained_per_view,
-            minimum_generation_work_per_layer,
-            maximum_generation_work_per_layer,
-            candidate_pool_multiplier,
             generation_quantum_work,
             max_turn_layers,
             watch_exact_state_hash,
@@ -2896,19 +2887,21 @@ fn main() -> Result<(), String> {
                 },
                 beam_width,
                 retained_per_view,
-                minimum_generation_work_per_layer,
-                maximum_generation_work_per_layer,
-                candidate_pool_multiplier,
                 generation_quantum_work,
                 max_turn_layers,
             };
-            let policy = action_imitation_artifact
-                .as_deref()
-                .map(|path| {
-                    load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
-                })
-                .transpose()?
-                .unwrap_or_else(existing_combat_knowledge_policy_v1);
+            let policy = if let Some(path) = guidance_bundle.as_deref() {
+                CombatGuidanceBundleV1::load(path)?.policy(existing_combat_knowledge_policy_v1())?
+            } else {
+                action_imitation_artifact
+                    .as_deref()
+                    .map(|path| {
+                        load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+                    })
+                    .transpose()?
+                    .unwrap_or_else(existing_combat_knowledge_policy_v1)
+            };
+            let diagnostic_policy = policy.clone();
             let mut session = LayeredCombatWitnessSession::with_policy(root, config, policy);
             let report = session.advance(
                 LayeredCombatWitnessQuantum {
@@ -2919,32 +2912,29 @@ fn main() -> Result<(), String> {
                 },
                 &EngineCombatStepper,
             );
-            let watched_states = session
-                .deferred_windows()
-                .into_iter()
-                .flat_map(|window| {
-                    let watch_exact_state_hash = &watch_exact_state_hash;
-                    window
-                        .candidates
-                        .into_iter()
-                        .enumerate()
-                        .filter(move |(_, candidate)| {
-                            watch_exact_state_hash.contains(&candidate.exact_state_hash)
-                        })
-                        .map(move |(candidate_index, candidate)| {
-                            json!({
-                                "exact_state_hash": candidate.exact_state_hash,
-                                "relative_turn_depth": window.relative_turn_depth,
-                                "window_discrepancy": window.window_discrepancy,
-                                "source_window_index": window.source_window_index,
-                                "candidate_index": candidate_index,
-                                "action_count": candidate.actions.len(),
-                                "negative_log_policy": candidate.negative_log_policy,
-                                "guides": existing_combat_guide_diagnostics(&candidate.position),
-                            })
-                        })
-                })
-                .collect::<Vec<_>>();
+            let mut watched_states = Vec::new();
+            for window in session.deferred_windows() {
+                for (candidate_index, candidate) in window.candidates.iter().enumerate() {
+                    if !watch_exact_state_hash.contains(&candidate.exact_state_hash) {
+                        continue;
+                    }
+                    watched_states.push(json!({
+                        "exact_state_hash": candidate.exact_state_hash,
+                        "relative_turn_depth": window.relative_turn_depth,
+                        "window_discrepancy": window.window_discrepancy,
+                        "source_window_index": window.source_window_index,
+                        "candidate_index": candidate_index,
+                        "action_count": candidate.actions.len(),
+                        "negative_log_policy": candidate.negative_log_policy,
+                        "view_ranks": layered_candidate_view_ranks(
+                            &window.candidates,
+                            candidate_index,
+                            diagnostic_policy.as_ref(),
+                        ),
+                        "guides": existing_combat_guide_diagnostics(&candidate.position),
+                    }));
+                }
+            }
             if let (Some(path), Some(witness)) =
                 (export_witness_actions.as_ref(), report.witness.as_ref())
             {
@@ -3017,15 +3007,13 @@ fn main() -> Result<(), String> {
                     "scheduler": "recoverable_turn_synchronous_multi_view_beam",
                     "v2_donor_enabled": false,
                     "action_imitation_artifact": action_imitation_artifact,
+                    "guidance_bundle": guidance_bundle,
                 },
                 "status": format!("{:?}", report.status),
                 "elapsed_ms": command_started.elapsed().as_millis(),
                 "config": {
                     "beam_width": beam_width,
                     "retained_per_view": retained_per_view,
-                    "minimum_generation_work_per_layer": minimum_generation_work_per_layer,
-                    "maximum_generation_work_per_layer": maximum_generation_work_per_layer,
-                    "candidate_pool_multiplier": candidate_pool_multiplier,
                     "generation_quantum_work": generation_quantum_work,
                     "max_turn_layers": max_turn_layers,
                 },
@@ -3105,11 +3093,6 @@ fn main() -> Result<(), String> {
                         },
                         beam_width: beam_width.max(1),
                         retained_per_view: retained_per_view.max(1),
-                        // A fold succeeds only when generation naturally
-                        // reaches the already-proven exact successor.
-                        minimum_generation_work_per_layer: 0,
-                        maximum_generation_work_per_layer: max_generation_work_per_fold.max(1),
-                        candidate_pool_multiplier: usize::MAX,
                         generation_quantum_work: generation_quantum_work.max(1),
                         max_turn_layers: 1,
                     },
@@ -3199,9 +3182,7 @@ fn main() -> Result<(), String> {
             max_engine_steps_per_transition,
             beam_width,
             retained_per_view,
-            minimum_generation_work_per_layer,
-            maximum_generation_work_per_layer,
-            candidate_pool_multiplier,
+            source_generation_work,
             generation_quantum_work,
             continuation_turn_layers,
             continuation_service_quantum_work,
@@ -3240,9 +3221,6 @@ fn main() -> Result<(), String> {
                 },
                 beam_width,
                 retained_per_view,
-                minimum_generation_work_per_layer,
-                maximum_generation_work_per_layer,
-                candidate_pool_multiplier,
                 generation_quantum_work,
                 max_turn_layers: 1,
             };
@@ -3254,8 +3232,8 @@ fn main() -> Result<(), String> {
             );
             let source_report = source.advance(
                 LayeredCombatWitnessQuantum {
-                    additional_generation_work: maximum_generation_work_per_layer.max(1),
-                    additional_engine_steps: maximum_generation_work_per_layer
+                    additional_generation_work: source_generation_work.max(1),
+                    additional_engine_steps: source_generation_work
                         .max(1)
                         .saturating_mul(max_engine_steps_per_transition.max(1)),
                     deadline: Some(deadline),
@@ -7319,6 +7297,64 @@ fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
         10_002 => "typed_corridor_control",
         _ => "policy_defined",
     }
+}
+
+fn layered_candidate_view_ranks(
+    candidates: &[LayeredCombatFrontierState],
+    target_index: usize,
+    policy: &dyn CombatActionPolicy,
+) -> Value {
+    let Some(target) = candidates.get(target_index) else {
+        return Value::Null;
+    };
+    let policy_cost = |candidate: &LayeredCombatFrontierState| {
+        candidate.negative_log_policy + (candidate.actions.len().max(1) as f64).ln()
+    };
+    let target_policy_cost = policy_cost(target);
+    let anchor_rank = candidates
+        .iter()
+        .filter(|candidate| {
+            policy_cost(candidate)
+                .total_cmp(&target_policy_cost)
+                .then_with(|| candidate.exact_state_hash.cmp(&target.exact_state_hash))
+                .is_lt()
+        })
+        .count()
+        .saturating_add(1);
+    let target_guides = policy.state_guides(&target.position);
+    let guide_ranks = target_guides
+        .iter()
+        .map(|target_guide| {
+            let ordinal_rank = candidates
+                .iter()
+                .filter(|candidate| {
+                    let candidate_guide = policy
+                        .state_guides(&candidate.position)
+                        .into_iter()
+                        .find(|guide| guide.lane == target_guide.lane);
+                    candidate_guide.is_some_and(|candidate_guide| {
+                        candidate_guide
+                            .rank
+                            .cmp(&target_guide.rank)
+                            .then_with(|| target_policy_cost.total_cmp(&policy_cost(candidate)))
+                            .then_with(|| target.exact_state_hash.cmp(&candidate.exact_state_hash))
+                            .is_gt()
+                    })
+                })
+                .count()
+                .saturating_add(1);
+            json!({
+                "lane_id": target_guide.lane.value(),
+                "lane": oracle_lab_guide_lane_label(target_guide.lane.value()),
+                "ordinal_rank": ordinal_rank,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "candidate_count": candidates.len(),
+        "anchor_rank": anchor_rank,
+        "guide_ranks": guide_ranks,
+    })
 }
 
 fn existing_combat_guide_diagnostics(
