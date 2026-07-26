@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use std::os::windows::process::CommandExt;
 
 use clap::{Parser, Subcommand};
+use fs2::FileExt;
 use oracle_lab_protocol::{
     call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
 };
@@ -232,6 +233,9 @@ fn run() -> Result<(), String> {
 }
 
 fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String> {
+    let _mutation_guard = live_command_mutates(&command)
+        .then(|| LiveMutationGuard::acquire(endpoint))
+        .transpose()?;
     match command {
         LiveCommand::Status { node, limit } => {
             let result = live_call(endpoint, OracleAnalysisServiceCommandV1::Status { node })?;
@@ -409,6 +413,56 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             )?;
             print_json(&compact_root_action_report(&diagnostic))
         }
+    }
+}
+
+fn live_command_mutates(command: &LiveCommand) -> bool {
+    matches!(
+        command,
+        LiveCommand::Advance { .. }
+            | LiveCommand::Choose { .. }
+            | LiveCommand::Focus { .. }
+            | LiveCommand::Owner { .. }
+            | LiveCommand::Run { .. }
+            | LiveCommand::Accept
+            | LiveCommand::Escape
+            | LiveCommand::Restart
+            | LiveCommand::Save
+            | LiveCommand::Shutdown
+    )
+}
+
+struct LiveMutationGuard {
+    file: fs::File,
+}
+
+impl LiveMutationGuard {
+    fn acquire(endpoint: &Path) -> Result<Self, String> {
+        let path = endpoint.with_extension("mutation.lock");
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&path)
+            .map_err(|error| {
+                format!(
+                    "failed to open resident mutation lock {}: {error}",
+                    path.display()
+                )
+            })?;
+        file.try_lock_exclusive().map_err(|error| {
+            format!(
+                "another typed mutating command is already active for this resident session (lock {}): {error}",
+                path.display()
+            )
+        })?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for LiveMutationGuard {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
     }
 }
 
@@ -1705,6 +1759,29 @@ fn print_json<T: Serialize>(value: &T) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn typed_mutations_hold_one_process_scoped_session_lease() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let endpoint = std::env::temp_dir().join(format!(
+            "sts-oracle-client-lock-{}-{nonce}.endpoint.json",
+            std::process::id()
+        ));
+        let lock_path = endpoint.with_extension("mutation.lock");
+
+        let first = LiveMutationGuard::acquire(&endpoint).expect("first mutation lease");
+        let error = LiveMutationGuard::acquire(&endpoint)
+            .err()
+            .expect("overlapping mutation must be rejected");
+        assert!(error.contains("another typed mutating command"));
+        drop(first);
+        let second = LiveMutationGuard::acquire(&endpoint).expect("lease released with process");
+        drop(second);
+        let _ = fs::remove_file(lock_path);
+    }
 
     #[test]
     fn typed_live_status_parses_without_loading_heavy_commands() {
