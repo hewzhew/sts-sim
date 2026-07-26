@@ -46,6 +46,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         "combat_case_local_graph.rs",
         "combat_plan_diagnostics.rs",
         "depth_beam_audits.rs",
+        "oracle_seed_panel.rs",
         "policy_discrepancy_search.rs",
         "turn_audits.rs",
         "turn_membership_audit.rs",
@@ -61,6 +62,22 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
             path.display()
         );
     }
+}
+
+#[test]
+fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
+    let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
+        .expect("read thin oracle client");
+    let runtime = std::fs::read_to_string("src/runtime/branch/oracle_autonomous_run.rs")
+        .expect("read autonomous run owner");
+    assert!(
+        !client.contains("fn run_live_to_stop"),
+        "the thin oracle client must not regain the autonomous run loop"
+    );
+    assert!(
+        runtime.contains("pub fn run_oracle_analysis_to_stop_v1"),
+        "the runtime must retain one reusable autonomous run owner"
+    );
 }
 
 #[test]

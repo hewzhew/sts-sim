@@ -58,8 +58,10 @@ continuation examples, combat search drivers, and verification.
 
 | Binary | Purpose |
 | --- | --- |
-| `branch_tiny` | lightweight run runner for owner coverage, run capsules, frontier continuation, and combat-case capture |
-| `branch_panel` | Rust seed-panel scheduler for smoke/drain runs across several seeds |
+| `oracle_lab` | canonical heavyweight oracle workspace, exact witness verification, and resumable consecutive seed panels |
+| `oracle_lab_service` | resident owner/search runtime for one exact workspace |
+| `oracle_lab_client` | lightweight typed client for repeated resident inspection and mutation |
+| `branch_tiny` / `branch_panel` | retained owner-audit/capsule diagnostics; not the current production oracle mainline |
 | `combat_case_review` | diagnostic review ladder for saved combat cases |
 | `combat_search_v2_driver` | fixed combat search from start specs, captures, or benchmark suites |
 | `rl_dataset_export` | offline decision-sample export for imitation/RL experiments |

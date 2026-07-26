@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use blake2::{Blake2s256, Digest};
 use serde::Serialize;
@@ -19,6 +19,10 @@ use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1};
 
 use super::{
+    oracle_autonomous_run::{
+        apply_owner_steps, elapsed_millis, run_oracle_analysis_to_stop_v1,
+        OracleAutonomousRunConfigV1,
+    },
     oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
 };
 
@@ -206,7 +210,8 @@ impl OracleAnalysisServiceState {
                 false,
             );
         }
-        let command = match execute_command(&mut self.workspace, request.command) {
+        let execute_started = Instant::now();
+        let mut command = match execute_command(&mut self.workspace, request.command) {
             Ok(command) => command,
             Err(error) => {
                 return (
@@ -221,10 +226,13 @@ impl OracleAnalysisServiceState {
                 );
             }
         };
+        let execute_elapsed_ms = elapsed_millis(execute_started);
         if command.mutated {
             self.revision = self.revision.saturating_add(1);
         }
+        let mut autosave_elapsed_ms = 0;
         if command.mutated || command.save_requested || command.shutdown {
+            let autosave_started = Instant::now();
             if let Err(error) =
                 save_oracle_analysis_workspace_v1(&self.workspace_path, &self.workspace)
             {
@@ -241,7 +249,18 @@ impl OracleAnalysisServiceState {
                     false,
                 );
             }
+            autosave_elapsed_ms = elapsed_millis(autosave_started);
             self.saved_revision = self.revision;
+        }
+        if let Some(result) = command.result.as_object_mut() {
+            result.insert(
+                "service_timing".to_string(),
+                json!({
+                    "execute_ms": execute_elapsed_ms,
+                    "autosave_ms": autosave_elapsed_ms,
+                    "total_ms": execute_elapsed_ms.saturating_add(autosave_elapsed_ms),
+                }),
+            );
         }
         let event = if command.shutdown {
             "shutdown"
@@ -302,7 +321,7 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "campfire_policy_audit", "view", "tree", "try",
-                    "focus", "choose", "owner", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
+                    "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
                 ],
@@ -396,62 +415,50 @@ fn execute_command(
             (node_summary(&view), true, false, false)
         }
         OracleAnalysisServiceCommandV1::Owner { steps } => {
-            if steps == 0 {
-                return Err("oracle owner steps must be positive".to_string());
-            }
-
-            let mut applied = Vec::new();
-            let mut stopped = "step_limit".to_string();
-            for _ in 0..steps {
-                let current = workspace.view()?;
-                let matching = current
-                    .choices
-                    .iter()
-                    .filter(|choice| choice.owner_rank == 0)
-                    .collect::<Vec<_>>();
-                let [choice] = matching.as_slice() else {
-                    stopped = if current.choices.is_empty() {
-                        "no_choices".to_string()
-                    } else {
-                        format!("rank_zero_choice_count={}", matching.len())
-                    };
-                    break;
-                };
-                let parent_node_id = current.node_id;
-                let candidate_id = choice.candidate_id.clone();
-                let label = choice.label.clone();
-                let choice_ref = choice.choice_ref.clone();
-                let next = match workspace.try_choice(&choice_ref) {
-                    Ok(next) => next,
-                    Err(error) => {
-                        stopped = format!("choice_execution_error={error}");
-                        break;
-                    }
-                };
-                if next.node_id == parent_node_id {
-                    stopped = format!("choice_made_no_progress={label}");
-                    break;
-                }
-                applied.push(json!({
-                    "node": parent_node_id,
-                    "candidate_id": candidate_id,
-                    "label": label,
-                }));
-            }
+            let batch = apply_owner_steps(workspace, steps)?;
             let status = node_summary(&workspace.view()?);
             (
                 json!({
                     "requested_steps": steps,
-                    "applied_count": applied.len(),
-                    "applied": applied,
-                    "stopped": stopped,
+                    "applied_count": batch.applied_count,
+                    "applied": batch.applied,
+                    "stopped": batch.stopped,
                     "status": status,
                 }),
-                !applied.is_empty(),
+                batch.applied_count > 0,
                 false,
                 false,
             )
         }
+        OracleAnalysisServiceCommandV1::Run {
+            hallway_wall_ms,
+            elite_wall_ms,
+            boss_wall_ms,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            max_boundaries,
+            run_wall_ms,
+            export_continuation,
+        } => (
+            run_oracle_analysis_to_stop_v1(
+                workspace,
+                &OracleAutonomousRunConfigV1 {
+                    hallway_wall_ms,
+                    elite_wall_ms,
+                    boss_wall_ms,
+                    max_quanta,
+                    quantum_nodes,
+                    quantum_ms,
+                    max_boundaries,
+                    run_wall_ms,
+                    export_continuation,
+                },
+            )?,
+            true,
+            false,
+            false,
+        ),
         OracleAnalysisServiceCommandV1::ChoosePath {
             node,
             candidate_ids,

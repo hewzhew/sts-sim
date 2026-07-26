@@ -15,6 +15,7 @@ mod combat_case_local_graph;
 mod combat_plan_diagnostics;
 mod depth_beam_audits;
 mod exact_combat_evidence;
+mod oracle_seed_panel;
 mod policy_discrepancy_search;
 mod run_witness_suite;
 mod turn_audits;
@@ -37,6 +38,7 @@ use combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use combat_case_local_graph::CombatCaseLocalGraphArgs;
 use combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
+use oracle_seed_panel::OracleSeedPanelArgs;
 use policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
 use run_witness_suite::RunWitnessSuiteArgs;
 use serde::{Deserialize, Serialize};
@@ -129,6 +131,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Run consecutive A0 oracle seeds with durable per-seed reports and resumable stops.
+    SeedPanel(OracleSeedPanelArgs),
     /// Start a new A0-style oracle analysis workspace at Neow.
     New {
         #[arg(long)]
@@ -1259,6 +1263,7 @@ fn main() -> Result<(), String> {
     let cli = Cli::parse();
     validate_canonical_launch(cli.canonical_oracle)?;
     match cli.command {
+        Command::SeedPanel(args) => print_json(&oracle_seed_panel::run(args)?),
         Command::New {
             seed,
             ascension,

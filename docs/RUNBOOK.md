@@ -235,9 +235,10 @@ The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
 target selection, before it can spend tens of seconds linking an artifact that
 the runtime profile guard would later refuse to execute.
 
-For a production-owner run, create and start one exact F0 workspace, then let
-the lightweight resident client own every remaining owner/search/accept
-boundary:
+For a production-owner run, create and start one exact F0 workspace. The thin
+client sends one typed `run` transaction; the resident runtime owns the
+owner/search/accept loop in memory and saves once at the terminal or explicit
+stop boundary:
 
 ```powershell
 cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/cases/seed009.workspace.json
@@ -253,6 +254,29 @@ switch algorithms, or select a historical donor. At terminal victory it
 replays the complete committed journal from the canonical seed state inside
 the resident service, exports the exact continuation when requested, and
 returns `victory_verified`.
+
+For a consecutive multi-seed panel, do not launch resident services from a
+PowerShell loop. Use the single-process panel owner so each finished seed drops
+all search memory before the next seed, writes its report immediately, and
+retains a full workspace only for a real stop:
+
+```powershell
+cargo oracle-lab seed-panel `
+  --seed-start 20260713006 `
+  --count 100 `
+  --ascension 0 `
+  --output-dir .oracle-lab/panels/a0-100 `
+  --run-wall-ms 120000
+```
+
+Victories keep a compact report and exact replayable continuation under
+`reports/` and `witnesses/`. Budget or correctness stops keep a resumable
+workspace under `incomplete/`. Re-running the same command skips verified
+victories and stable exhausted stops; only wall/boundary interruptions resume
+automatically. Use `--retry-stopped` to re-enter a deterministic stop after
+deliberately changing its allowance, or `--force` to start the selected seeds
+from F0 again. `panel.summary.json` records the source commit, dirty state,
+budgets, per-seed outcome, and artifact paths after every completed seed.
 
 Resident endpoints, immutable service images, and new local case artifacts
 live below the ignored `.oracle-lab/` state root. They are deliberately outside

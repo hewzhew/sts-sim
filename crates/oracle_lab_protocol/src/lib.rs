@@ -92,6 +92,26 @@ pub enum OracleAnalysisServiceCommandV1 {
     Owner {
         steps: u8,
     },
+    Run {
+        #[serde(default = "default_hallway_wall_ms")]
+        hallway_wall_ms: u64,
+        #[serde(default = "default_elite_wall_ms")]
+        elite_wall_ms: u64,
+        #[serde(default = "default_boss_wall_ms")]
+        boss_wall_ms: u64,
+        #[serde(default = "default_run_max_quanta")]
+        max_quanta: usize,
+        #[serde(default = "default_run_quantum_nodes")]
+        quantum_nodes: usize,
+        #[serde(default = "default_run_quantum_ms")]
+        quantum_ms: u64,
+        #[serde(default = "default_run_max_boundaries")]
+        max_boundaries: usize,
+        #[serde(default)]
+        run_wall_ms: Option<u64>,
+        #[serde(default)]
+        export_continuation: Option<PathBuf>,
+    },
     ChoosePath {
         node: usize,
         candidate_ids: Vec<String>,
@@ -260,6 +280,27 @@ const fn default_quantum_ms() -> u64 {
 }
 const fn default_journal_tail() -> usize {
     32
+}
+const fn default_hallway_wall_ms() -> u64 {
+    5_000
+}
+const fn default_elite_wall_ms() -> u64 {
+    15_000
+}
+const fn default_boss_wall_ms() -> u64 {
+    30_000
+}
+const fn default_run_max_quanta() -> usize {
+    100_000
+}
+const fn default_run_quantum_nodes() -> usize {
+    4_096
+}
+const fn default_run_quantum_ms() -> u64 {
+    100
+}
+const fn default_run_max_boundaries() -> usize {
+    256
 }
 
 #[cfg(test)]
@@ -444,5 +485,27 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn autonomous_run_has_stable_service_side_defaults() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "run",
+        }))
+        .expect("parse autonomous run command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::Run {
+                hallway_wall_ms: 5_000,
+                elite_wall_ms: 15_000,
+                boss_wall_ms: 30_000,
+                max_quanta: 100_000,
+                quantum_nodes: 4_096,
+                quantum_ms: 100,
+                max_boundaries: 256,
+                run_wall_ms: None,
+                export_continuation: None,
+            }
+        ));
     }
 }
