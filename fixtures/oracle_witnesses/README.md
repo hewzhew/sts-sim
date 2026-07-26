@@ -4,12 +4,12 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
-## Current five-seed regression suite
+## Current six-seed regression suite
 
-`a0_seed006_010_current.manifest.json` is the authoritative fast regression
-set for the current seed006--010 milestone. It pins the expected terminal
-fingerprint and compact replay facts for five complete, seed-initialized A0
-runs. One process verifies all four journals:
+`a0_seed006_011_current.manifest.json` is the authoritative fast regression
+set for the current seed006--011 milestone. It pins the expected terminal
+fingerprint and compact replay facts for six complete, seed-initialized A0
+runs. One process verifies all six journals:
 
 ```text
 cargo test-run-witnesses
@@ -389,3 +389,25 @@ complete F0-to-F48 exact victory:
   `35C2E8F626128AFA2532F530D751E4CC156A13CF5386812D1ED38B2424DB4829`;
   compact replay report
   `F77B67D70D9C2A0755FDA5E52C3EB9FEE33DCD510ABDE0E95F0EE56BC9F8446F`.
+
+## seed 20260713011, A0, Time Eater
+
+- `seed20260713011_a0_full_run.continuation.json` began at F0 with the
+  production Neow choice `Remove a card` and removed a Strike.
+- The exact line has two rank-one strategic corrections. At F1 it chose
+  Armaments over Searing Blow; at F36 it spent 237 saved gold by visiting the
+  shop instead of another hallway. The shop owner then bought Sever Soul,
+  Entrench, and Seeing Red.
+- The corrected line entered Time Eater at 66/66 HP. Production search found a
+  42-action exact victory in 1.43 seconds and ended at 11/66 HP.
+- Fresh replay verifies 203 journal entries, 180 decisions, 23 combat
+  resolutions, 661 combat actions, terminal victory at F48, and final
+  fingerprint
+  `0790316bc36f3b0333d5d4c4afba81e64808ba75ebe0ae60b1f7b0ff8736f067`.
+- A current-policy audit reports 178 rank-zero agreements and two rank-one
+  divergences, with no choice absent from the owner surface. Combat provenance
+  is 4 mature-policy proposals plus 19 search witnesses.
+- SHA-256: full-run continuation
+  `E6673AE9292DB8245D22EE51E9F287819DABABE7E55F1BF5EC38F5925A3775BB`;
+  compact replay report
+  `6581C35ED15BCBB7AA0FA3222713C514B44665692FABAB90B75115BA0F16B950`.
