@@ -1111,17 +1111,39 @@ fn ghosts_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     let max_hp_after = run_state
         .max_hp
         .saturating_sub(((run_state.max_hp as f32) * 0.5).ceil() as i32);
-    let supported = has_ghosts_support(run_state);
-    if max_hp_after < 30 && !supported {
+    let projected_current_hp = run_state.current_hp.min(max_hp_after);
+    let budget = event_resource_budget_for(run_state);
+    let avoids_immediate_hp_clamp = projected_current_hp == run_state.current_hp;
+    let preserves_route_floor = max_hp_after >= budget.hp.route_break_floor
+        && projected_current_hp >= budget.hp.route_break_floor;
+    let preserves_route_reserve =
+        max_hp_after >= budget.hp.reserve_floor && projected_current_hp >= budget.hp.reserve_floor;
+    if !preserves_route_floor {
         return option_index(1);
     }
+
+    let deficit = assess_deck_strategic_deficit_summary(
+        &run_state.master_deck,
+        RunStrategicFacts::from_run_state(run_state),
+    );
+    let repairs_mitigation_gap = matches!(
+        deficit.block_or_mitigation,
+        StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+    );
+    let supported = has_ghosts_conversion_support(run_state);
+    let cost_is_supported = preserves_route_reserve
+        || (avoids_immediate_hp_clamp && (repairs_mitigation_gap || supported));
+    if !cost_is_supported {
+        return option_index(1);
+    }
+
     if run_state.ascension_level >= 15 {
-        if supported {
+        if repairs_mitigation_gap && supported {
             option_index(0)
         } else {
             option_index(1)
         }
-    } else if max_hp_after >= 35 || supported {
+    } else if repairs_mitigation_gap || supported {
         option_index(0)
     } else {
         option_index(1)
@@ -1214,12 +1236,13 @@ fn has_curse_mitigation_or_synergy(run_state: &RunState) -> bool {
         || has_relic(run_state, RelicId::DarkstonePeriapt)
 }
 
-fn has_ghosts_support(run_state: &RunState) -> bool {
+fn has_ghosts_conversion_support(run_state: &RunState) -> bool {
     has_relic(run_state, RelicId::ToxicEgg)
-        || has_card(run_state, CardId::Corruption)
-        || has_card(run_state, CardId::FeelNoPain)
-        || has_card(run_state, CardId::DarkEmbrace)
+        || has_relic(run_state, RelicId::TungstenRod)
+        || has_relic(run_state, RelicId::StrangeSpoon)
         || has_card(run_state, CardId::Feed)
+        || has_card(run_state, CardId::FeelNoPain)
+        || (has_card(run_state, CardId::Corruption) && has_card(run_state, CardId::DarkEmbrace))
 }
 
 fn has_card(run_state: &RunState, card_id: CardId) -> bool {
@@ -1598,6 +1621,165 @@ mod tests {
         assert_eq!(
             woman_in_blue_choice(&run_state),
             EventOwnerOptionSelector::Effect(EventEffect::ObtainPotion { count: 3 })
+        );
+    }
+
+    #[test]
+    fn ghosts_declines_when_existing_mitigation_makes_half_max_hp_an_unneeded_trade() {
+        let mut run_state = event_run(EventId::Ghosts, 62, 85, 82);
+        run_state.act_num = 2;
+        run_state.floor_num = 30;
+        run_state.relics = [
+            RelicId::BurningBlood,
+            RelicId::CeramicFish,
+            RelicId::MealTicket,
+            RelicId::Ectoplasm,
+            RelicId::ArtOfWar,
+        ]
+        .into_iter()
+        .map(RelicState::new)
+        .collect();
+        run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Blind,
+            CardId::ThunderClap,
+            CardId::TwinStrike,
+            CardId::BurningPact,
+            CardId::BurningPact,
+            CardId::Immolate,
+            CardId::DarkEmbrace,
+            CardId::ShrugItOff,
+            CardId::ShrugItOff,
+            CardId::Uppercut,
+            CardId::Inflame,
+            CardId::Entrench,
+            CardId::Impervious,
+            CardId::Whirlwind,
+            CardId::TrueGrit,
+            CardId::PommelStrike,
+            CardId::Disarm,
+            CardId::Intimidate,
+            CardId::Reaper,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| CombatCard::new(id, index as u32))
+        .collect();
+
+        let deficit = assess_deck_strategic_deficit_summary(
+            &run_state.master_deck,
+            RunStrategicFacts::from_run_state(&run_state),
+        );
+        assert!(
+            matches!(
+                deficit.block_or_mitigation,
+                StrategicDeficitLevel::Adequate | StrategicDeficitLevel::Surplus
+            ),
+            "the regression deck must already have a real mitigation package: {deficit:?}"
+        );
+        assert_eq!(
+            ghosts_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(1)
+        );
+    }
+
+    #[test]
+    fn ghosts_still_accepts_as_a_real_mitigation_repair() {
+        let mut run_state = event_run(EventId::Ghosts, 72, 80, 0);
+        run_state.act_num = 2;
+        run_state.floor_num = 24;
+        run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Clash,
+            CardId::WildStrike,
+            CardId::TwinStrike,
+            CardId::HeavyBlade,
+            CardId::SwordBoomerang,
+            CardId::Flex,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| CombatCard::new(id, index as u32))
+        .collect();
+
+        let deficit = assess_deck_strategic_deficit_summary(
+            &run_state.master_deck,
+            RunStrategicFacts::from_run_state(&run_state),
+        );
+        assert!(
+            matches!(
+                deficit.block_or_mitigation,
+                StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+            ),
+            "the negative control must actually lack mitigation: {deficit:?}"
+        );
+        assert_eq!(
+            ghosts_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(0)
+        );
+    }
+
+    #[test]
+    fn ghosts_keeps_a_low_hp_exhaust_supported_line_when_max_hp_loss_does_not_clamp_hp() {
+        let mut run_state = event_run(EventId::Ghosts, 34, 80, 224);
+        run_state.act_num = 2;
+        run_state.floor_num = 19;
+        run_state.relics = [
+            RelicId::BurningBlood,
+            RelicId::PaperFrog,
+            RelicId::IncenseBurner,
+            RelicId::Ectoplasm,
+        ]
+        .into_iter()
+        .map(RelicState::new)
+        .collect();
+        run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Brutality,
+            CardId::FeelNoPain,
+            CardId::WildStrike,
+            CardId::FlameBarrier,
+            CardId::ShrugItOff,
+            CardId::Blind,
+            CardId::Cleave,
+            CardId::Armaments,
+            CardId::Disarm,
+            CardId::Cleave,
+            CardId::DemonForm,
+            CardId::FlameBarrier,
+            CardId::BattleTrance,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| CombatCard::new(id, index as u32))
+        .collect();
+
+        assert_eq!(run_state.current_hp.min(run_state.max_hp / 2), 34);
+        assert_eq!(
+            ghosts_choice(&run_state),
+            EventOwnerOptionSelector::OptionIndex(0)
         );
     }
 }

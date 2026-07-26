@@ -4,12 +4,12 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
-## Current eight-seed regression suite
+## Current nine-seed regression suite
 
-`a0_seed006_013_current.manifest.json` is the authoritative fast regression
-set for the current seed006--013 milestone. It pins the expected terminal
-fingerprint and compact replay facts for eight complete, seed-initialized A0
-runs. One process verifies all eight journals:
+`a0_seed006_014_current.manifest.json` is the authoritative fast regression
+set for the current seed006--014 milestone. It pins the expected terminal
+fingerprint and compact replay facts for nine complete, seed-initialized A0
+runs. One process verifies all nine journals:
 
 ```text
 cargo test-run-witnesses
@@ -26,7 +26,7 @@ cargo audit-run-witnesses
 The exact replay layer currently completes in a few seconds on the development
 machine; replay plus owner audit remains a lightweight second layer.
 The suite manifest SHA-256 is
-`F354EB8F7BF9D1E0828AE0A99007129912ECE62FCBE7CCE38C55F0A5EA32DABA`.
+`7092876AAD683564FFE1114A71D69ECCEA8B8B4F0AE35EB07649C11C1D1319AC`.
 
 ## seed 20260713006, A0, Awakened One
 
@@ -439,3 +439,19 @@ complete F0-to-F48 exact victory:
   combat provenance of 10 mature-policy proposals plus 18 search witnesses.
 - SHA-256: full-run continuation
   `E0FCD6859CF61523D318D0C9A7EC5A4A3C09A1A5D002C615A6E1D5BC530961C8`.
+
+## seed 20260713014, A0, Time Eater
+
+- `seed20260713014_a0_full_run.continuation.json` is an autonomous F0-to-F48
+  production run. At the Act 2 Ghosts event, the owner declines five
+  Apparitions because the deck already has a substantial mitigation package
+  and losing half its maximum HP does not repair a strategic deficit.
+- The line enters Champ at 62/85 HP, wins at 12 HP, receives the A0 act
+  transition heal, and later defeats Time Eater at 12/74 HP.
+- Fresh replay verifies 198 journal entries, 169 decisions, 29 combat
+  resolutions, 845 combat actions, and final fingerprint
+  `a0c494cde4c352f5804d93ba6ecba2af04bc9d546c97f1a35dc6126cc2b4bdbb`.
+- A current-policy audit reports 169 rank-zero agreements, no divergence, and
+  no candidate absent from the owner surface.
+- SHA-256: full-run continuation
+  `6B2CB1041C56539FE45017018265E899D6E4467EDD20A5A97C47863F80713909`.
