@@ -16,7 +16,11 @@ use sts_combat_planner::{
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
     TurnOptionGeneratorConfig,
 };
-use sts_core::sim::combat::{CombatPosition, EngineCombatStepper};
+use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_core::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
+use sts_core::state::core::{ClientInput, EngineState};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -26,6 +30,15 @@ use sts_core::sim::combat::{CombatPosition, EngineCombatStepper};
 struct Cli {
     #[arg(long)]
     case: PathBuf,
+    /// Replay an exact action file and report search membership/work for each
+    /// resulting player-turn boundary.
+    #[arg(long)]
+    watch_actions: Option<PathBuf>,
+    /// Replay `--watch-actions` to this player turn and use that exact state
+    /// as the search root. The remaining actions stay available as the watched
+    /// suffix corridor.
+    #[arg(long, requires = "watch_actions")]
+    start_at_player_turn: Option<u32>,
     #[arg(long)]
     typed_plan_guide: bool,
     #[arg(long)]
@@ -85,9 +98,31 @@ fn run(args: Cli) -> Result<(), String> {
             loaded.schema
         ));
     }
+    let watch_actions = args
+        .watch_actions
+        .as_ref()
+        .map(|path| read_watch_actions(path))
+        .transpose()?;
+    let (search_position, watch_action_start) = if let Some(target_turn) = args.start_at_player_turn
+    {
+        replay_to_player_turn(
+            &loaded.position,
+            watch_actions
+                .as_deref()
+                .expect("clap requires watch actions for a reroot"),
+            target_turn,
+        )?
+    } else {
+        (loaded.position.clone(), 0)
+    };
+    let watch_corridor = watch_actions
+        .as_deref()
+        .map(|actions| replay_watch_corridor(&search_position, &actions[watch_action_start..]))
+        .transpose()?;
 
     let setup_started = Instant::now();
-    let root = CombatDecisionRoot::new(loaded.position)
+    let search_root_player_turn = search_position.combat.turn.turn_count;
+    let root = CombatDecisionRoot::new(search_position)
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
@@ -137,6 +172,31 @@ fn run(args: Cli) -> Result<(), String> {
         &EngineCombatStepper,
     );
     let search_elapsed_ns = elapsed_nanos(search_started);
+    let root_action_families = session.root_action_families();
+    let watch_corridor = watch_corridor.map(|corridor| {
+        let hashes = corridor
+            .iter()
+            .map(|(_, exact_state_hash)| exact_state_hash.clone())
+            .collect::<Vec<_>>();
+        corridor
+            .into_iter()
+            .enumerate()
+            .map(|(index, (player_turn, exact_state_hash))| {
+                let snapshot = session.state_snapshot_by_exact_hash(&exact_state_hash);
+                let incoming_edge = (index > 0).then(|| {
+                    let parent_hash = &hashes[index - 1];
+                    session.edge_snapshot_by_exact_hashes(parent_hash, &exact_state_hash)
+                });
+                json!({
+                    "player_turn": player_turn,
+                    "exact_state_hash": exact_state_hash,
+                    "present": snapshot.is_some(),
+                    "snapshot": snapshot,
+                    "incoming_edge": incoming_edge.flatten(),
+                })
+            })
+            .collect::<Vec<_>>()
+    });
 
     if args.expect_witness && report.witness.is_none() {
         return Err("combat contract failed: no replay-verified witness".to_owned());
@@ -172,6 +232,7 @@ fn run(args: Cli) -> Result<(), String> {
         "status": if args.expect_witness { "passed" } else { "completed" },
         "runner": "lightweight-combat-contract",
         "case": args.case,
+        "search_root_player_turn": search_root_player_turn,
         "elapsed_ms": started.elapsed().as_millis(),
         "final_hp": witness.map(|witness| {
             witness.final_position.combat.entities.player.current_hp
@@ -197,6 +258,8 @@ fn run(args: Cli) -> Result<(), String> {
             "duplicate_exact_successors": report.counters.duplicate_exact_successors,
             "duplicate_successor_edges": report.counters.duplicate_successor_edges,
         },
+        "root_action_families": root_action_families,
+        "watch_corridor": watch_corridor,
         "performance_ns": {
             "selection": report.performance_timing.selection_elapsed_ns,
             "generation": report.performance_timing.generation_elapsed_ns,
@@ -212,6 +275,7 @@ fn run(args: Cli) -> Result<(), String> {
         "plan_suffix": policy_line_report.as_ref().map(|line| json!({
             "proposed_turns": line.proposed_turns,
             "chosen_action_transitions": line.chosen_action_transitions,
+            "proposed_actions": line.proposed_actions,
             "rejected_preview_transitions": line.rejected_preview_transitions,
             "deferred_actions": line.deferred_actions,
             "policy_line_engine_steps": line.engine_steps,
@@ -242,6 +306,94 @@ fn run(args: Cli) -> Result<(), String> {
         serde_json::to_string_pretty(&output).map_err(|error| error.to_string())?
     );
     Ok(())
+}
+
+fn read_watch_actions(path: &PathBuf) -> Result<Vec<ClientInput>, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|error| format!("cannot read watch actions '{}': {error}", path.display()))?;
+    serde_json::from_slice::<Vec<ClientInput>>(&bytes)
+        .map_err(|error| format!("cannot parse watch actions '{}': {error}", path.display()))
+}
+
+fn replay_to_player_turn(
+    root: &CombatPosition,
+    actions: &[ClientInput],
+    target_turn: u32,
+) -> Result<(CombatPosition, usize), String> {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    if position.combat.turn.turn_count == target_turn
+        && matches!(position.engine, EngineState::CombatPlayerTurn)
+    {
+        return Ok((position, 0));
+    }
+    for (index, action) in actions.iter().cloned().enumerate() {
+        let step = apply_watch_action(&stepper, &position, action, index)?;
+        position = step;
+        if matches!(position.engine, EngineState::CombatPlayerTurn)
+            && position.combat.turn.turn_count == target_turn
+        {
+            return Ok((position, index.saturating_add(1)));
+        }
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+    Err(format!(
+        "watch replay never reached player turn {target_turn}"
+    ))
+}
+
+fn replay_watch_corridor(
+    root: &CombatPosition,
+    actions: &[ClientInput],
+) -> Result<Vec<(u32, String)>, String> {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut last_turn = position.combat.turn.turn_count;
+    let mut corridor = vec![(
+        last_turn,
+        combat_exact_state_hash_v1(&position.engine, &position.combat),
+    )];
+    for (index, action) in actions.iter().cloned().enumerate() {
+        position = apply_watch_action(&stepper, &position, action, index)?;
+        if matches!(position.engine, EngineState::CombatPlayerTurn)
+            && position.combat.turn.turn_count > last_turn
+        {
+            last_turn = position.combat.turn.turn_count;
+            corridor.push((
+                last_turn,
+                combat_exact_state_hash_v1(&position.engine, &position.combat),
+            ));
+        }
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+    Ok(corridor)
+}
+
+fn apply_watch_action(
+    stepper: &EngineCombatStepper,
+    position: &CombatPosition,
+    action: ClientInput,
+    index: usize,
+) -> Result<CombatPosition, String> {
+    let step = stepper.apply_to_stable(
+        position,
+        action,
+        CombatStepLimits {
+            max_engine_steps: 1_000,
+            deadline: None,
+        },
+    );
+    if step.truncated || step.timed_out {
+        return Err(format!(
+            "watch replay stopped at action {index}: truncated={} timed_out={}",
+            step.truncated, step.timed_out
+        ));
+    }
+    Ok(step.position)
 }
 
 fn elapsed_nanos(started: Instant) -> u64 {

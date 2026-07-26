@@ -9,8 +9,9 @@ use std::time::Instant;
 use serde::Serialize;
 use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
-    combat_plan_projection_v1, combat_plan_transition_annotation_v1, CombatPlanActionTimingV1,
-    CombatPlanProjectionV1, CombatPlanTransitionAnnotationV1,
+    combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
+    combat_plan_transition_annotation_v1, CombatPlanActionTimingV1, CombatPlanProjectionV1,
+    CombatPlanTransitionAnnotationV1,
 };
 use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
@@ -20,7 +21,7 @@ use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
     normalized_probabilities, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
     CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
-    SharedCombatLookaheadEvaluator, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+    SharedCombatLookaheadEvaluator,
 };
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
@@ -228,6 +229,7 @@ pub struct LocalTurnGraphSuffixProbeAttempt {
 pub struct LocalTurnGraphPolicyLineReport {
     pub proposed_turns: usize,
     pub chosen_action_transitions: usize,
+    pub proposed_actions: Vec<ClientInput>,
     pub rejected_preview_transitions: usize,
     pub deferred_actions: usize,
     pub engine_steps: usize,
@@ -756,15 +758,34 @@ impl LocalTurnGraphWitnessSession {
                             member_weights,
                             self.config.generator.uniform_exploration_ppm,
                         );
-                        let member_index = member_probabilities
+                        let mut ranked_member_indices = (0..members.len()).collect::<Vec<_>>();
+                        ranked_member_indices.sort_by(|left, right| {
+                            member_probabilities[*right]
+                                .total_cmp(&member_probabilities[*left])
+                                .then_with(|| left.cmp(right))
+                        });
+                        let member_index = ranked_member_indices
                             .iter()
-                            .enumerate()
-                            .max_by(|(left_index, left), (right_index, right)| {
-                                left.total_cmp(right)
-                                    .then_with(|| right_index.cmp(left_index))
+                            .copied()
+                            .find(|member_index| {
+                                let timing = combat_plan_selection_member_timing_v1(
+                                    &position,
+                                    family,
+                                    &members[*member_index],
+                                );
+                                if matches!(timing, CombatPlanActionTimingV1::Defer(_)) {
+                                    report.rejected_preview_transitions =
+                                        report.rejected_preview_transitions.saturating_add(1);
+                                    report.deferred_actions =
+                                        report.deferred_actions.saturating_add(1);
+                                    false
+                                } else {
+                                    true
+                                }
                             })
-                            .map(|(index, _)| index)
-                            .expect("non-empty singleton selection member surface");
+                            // A mandatory choice remains executable even if
+                            // every member consumes a reserved plan asset.
+                            .unwrap_or(ranked_member_indices[0]);
                         let input = members[member_index].clone();
                         let step = stepper.apply_to_stable(
                             &position,
@@ -864,6 +885,7 @@ impl LocalTurnGraphWitnessSession {
                 };
                 report.chosen_action_transitions =
                     report.chosen_action_transitions.saturating_add(1);
+                report.proposed_actions.push(selected_input.clone());
 
                 negative_log_policy -= selected_probability.max(f64::MIN_POSITIVE).ln();
                 let action_identity_started = Instant::now();
@@ -2691,11 +2713,11 @@ mod tests {
     }
 
     #[test]
-    fn typed_plan_guide_is_progressive_without_changing_other_cheap_guides() {
+    fn only_the_configured_expensive_guide_is_progressive() {
         let lookahead = CombatGuideLaneId::new(91);
         let ordinary = CombatGuideLaneId::new(92);
 
-        assert!(guide_uses_progressive_service(
+        assert!(!guide_uses_progressive_service(
             COMBAT_PLAN_STATE_GUIDE_LANE_V1,
             Some(lookahead)
         ));

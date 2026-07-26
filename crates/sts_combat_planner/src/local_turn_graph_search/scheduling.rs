@@ -48,11 +48,11 @@ pub(super) fn guide_uses_progressive_service(
     lane: CombatGuideLaneId,
     configured_progressive_lane: Option<CombatGuideLaneId>,
 ) -> bool {
-    // Expensive lookahead and typed encounter plans are both approximate
-    // views over exact successors. They may focus service, but neither may
-    // silently turn its current top-ranked child into the only child that can
-    // ever be tested.
-    configured_progressive_lane == Some(lane) || lane == COMBAT_PLAN_STATE_GUIDE_LANE_V1
+    // Progressive widening belongs to the explicitly configured expensive
+    // acquisition lane. Cheap semantic guides exploit their current best
+    // exact successor; anchor service and the other independent guide lanes
+    // retain global exploration.
+    configured_progressive_lane == Some(lane)
 }
 
 pub(super) fn select_pending_lookahead_work(

@@ -13,7 +13,11 @@ use sts_core::content::monsters::EnemyId;
 use sts_core::content::powers::PowerId;
 use sts_core::runtime::combat::{CombatCard, CombatState, MonsterEntity};
 use sts_core::sim::combat::{combat_terminal, CombatPosition, CombatTerminal};
+use sts_core::sim::combat_action_surface::{
+    CombatSelectionActionFamilyV2, CombatSelectionReasonV2,
+};
 use sts_core::sim::combat_projection::project_monster_move_preview_in_combat;
+use sts_core::state::core::{ClientInput, HandSelectReason};
 
 pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
 
@@ -53,6 +57,7 @@ pub enum CombatPlanMilestoneV1 {
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanActionDeferralV1 {
     PreserveFiniteSkillConversionUntilUntaxedWindow,
+    PreserveUndeployedPlanAsset,
 }
 
 /// Plan-owned timing class for one exact action successor.
@@ -121,6 +126,12 @@ pub struct CombatPlanResourcesV1 {
     pub undeployed_power_cards: u16,
     pub remaining_skill_fuel: u16,
     pub finite_skill_conversion: FiniteSkillConversionStateV1,
+    /// Persistent Strength gained at later turn starts.
+    ///
+    /// This is an exact realized resource, not the value of a power card in
+    /// hand.  Awakened One's reactive Strength tax must therefore be compared
+    /// with the durable scaling which has actually been established.
+    pub durable_strength_growth: i32,
     pub exhaust_draw_active: bool,
     pub exhaust_block_active: bool,
     pub status_draw_active: bool,
@@ -269,6 +280,7 @@ pub fn combat_plan_state_guide_rank_v1(
             vec![
                 -(remaining_adds as i32),
                 reserved_conversion_rank(plan.resources.finite_skill_conversion),
+                plan.resources.durable_strength_growth,
                 -plan.envelope.awakened_strength,
                 plan.resources.remaining_skill_fuel as i32,
                 plan.envelope.visible_damage_margin,
@@ -283,6 +295,7 @@ pub fn combat_plan_state_guide_rank_v1(
             -plan.envelope.first_phase_hp_with_block.unwrap_or_default(),
             plan.envelope.visible_damage_margin,
             reserved_conversion_rank(plan.resources.finite_skill_conversion),
+            plan.resources.durable_strength_growth,
             plan.resources.remaining_skill_fuel as i32,
             -plan.envelope.awakened_strength,
             plan.envelope
@@ -295,6 +308,7 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.resources.status_draw_active as i32,
             plan.resources.exhaust_draw_active as i32,
             plan.resources.exhaust_block_active as i32,
+            plan.resources.durable_strength_growth,
             -(plan.resources.undeployed_power_cards as i32),
             plan.resources.remaining_skill_fuel as i32,
             plan.envelope
@@ -311,6 +325,7 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.resources.exhaust_draw_active as i32,
             plan.resources.exhaust_block_active as i32,
             plan.resources.status_draw_active as i32,
+            plan.resources.durable_strength_growth,
             plan.resources.remaining_skill_fuel as i32,
             -(plan.envelope.live_status_cards as i32),
         ],
@@ -323,6 +338,7 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.resources.exhaust_draw_active as i32,
             plan.resources.exhaust_block_active as i32,
             plan.resources.status_draw_active as i32,
+            plan.resources.durable_strength_growth,
             plan.resources.remaining_skill_fuel as i32,
             -(plan.envelope.live_status_cards as i32),
         ],
@@ -544,6 +560,46 @@ pub fn combat_plan_action_timing_v1(
     }
 }
 
+/// Classifies one member of a structured selection before it is executed.
+///
+/// Forced exhaust choices are a separate semantic boundary from ordinary
+/// card plays: the selected card disappears without realizing its effect.
+/// The Awakened One plan therefore defers exhausting an undeployed asset that
+/// still supplies one of its explicit resources. This remains an ordering
+/// preference; if every legal member is deferred, the caller must still pick
+/// one and preserve exact legality.
+pub fn combat_plan_selection_member_timing_v1(
+    position: &CombatPosition,
+    family: &CombatSelectionActionFamilyV2,
+    member: &ClientInput,
+) -> CombatPlanActionTimingV1 {
+    if !matches!(
+        family.reason,
+        CombatSelectionReasonV2::Hand(HandSelectReason::Exhaust)
+    ) {
+        return CombatPlanActionTimingV1::Neutral;
+    }
+    let Some(plan) = awakened_one_combat_plan_v1(position) else {
+        return CombatPlanActionTimingV1::Neutral;
+    };
+    let ClientInput::SubmitSelection(resolution) = member else {
+        return CombatPlanActionTimingV1::Neutral;
+    };
+    let selected = resolution.selected_card_uuids();
+    let consumes_plan_asset = position
+        .combat
+        .zones
+        .hand
+        .iter()
+        .filter(|card| selected.contains(&card.uuid))
+        .any(|card| undeployed_card_supplies_plan_resource(card, &plan.resources));
+    if consumes_plan_asset {
+        CombatPlanActionTimingV1::Defer(CombatPlanActionDeferralV1::PreserveUndeployedPlanAsset)
+    } else {
+        CombatPlanActionTimingV1::Neutral
+    }
+}
+
 /// Reports whether the current plan has a resource whose exact deployment
 /// timing can distinguish `PreferNow` from otherwise neutral legal actions.
 ///
@@ -559,6 +615,22 @@ pub fn combat_plan_has_timed_action_preference_v1(position: &CombatPosition) -> 
                     | CombatPlanStageV1::SurviveSecondPhaseOpening
             )
     })
+}
+
+fn undeployed_card_supplies_plan_resource(
+    card: &CombatCard,
+    resources: &CombatPlanResourcesV1,
+) -> bool {
+    match card.id {
+        CardId::Corruption => {
+            resources.finite_skill_conversion == FiniteSkillConversionStateV1::Available
+        }
+        CardId::DemonForm => resources.durable_strength_growth == 0,
+        CardId::DarkEmbrace => !resources.exhaust_draw_active,
+        CardId::FeelNoPain => !resources.exhaust_block_active,
+        CardId::Evolve => !resources.status_draw_active,
+        _ => false,
+    }
 }
 
 fn awakened_one(combat: &CombatState) -> Option<&MonsterEntity> {
@@ -614,6 +686,12 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
             get_card_definition(card.id).card_type == CardType::Skill
         }),
         finite_skill_conversion,
+        durable_strength_growth: sts_core::content::powers::store::power_amount(
+            combat,
+            player,
+            PowerId::DemonForm,
+        )
+        .max(0),
         exhaust_draw_active: sts_core::content::powers::store::has_power(
             combat,
             player,
@@ -774,7 +852,8 @@ mod tests {
     use super::*;
     use sts_core::content::powers::store;
     use sts_core::runtime::combat::{Power, PowerPayload};
-    use sts_core::state::core::EngineState;
+    use sts_core::state::core::{EngineState, PendingChoice};
+    use sts_core::state::selection::{SelectionResolution, SelectionScope};
     use sts_core::test_support::{blank_test_combat, test_monster};
 
     fn power(power_type: PowerId, amount: i32) -> Power {
@@ -912,6 +991,49 @@ mod tests {
         assert_eq!(
             combat_plan_action_deferral_v1(&before, &after),
             Some(CombatPlanActionDeferralV1::PreserveFiniteSkillConversionUntilUntaxedWindow)
+        );
+    }
+
+    #[test]
+    fn forced_exhaust_preserves_an_undeployed_plan_asset_when_an_alternative_exists() {
+        let mut position = awakened_position(2);
+        position.combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 11),
+            CombatCard::new(CardId::Strike, 12),
+        ];
+        position.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+            candidate_uuids: vec![11, 12],
+            min_cards: 1,
+            max_cards: 1,
+            can_cancel: false,
+            reason: HandSelectReason::Exhaust,
+        });
+        let surface = sts_core::sim::combat_action_surface::combat_legal_action_surface_v2(
+            &position.engine,
+            &position.combat,
+        );
+        let family = surface
+            .selection_families
+            .first()
+            .expect("forced exhaust family");
+        let exhaust_demon = ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+            SelectionScope::Hand,
+            [11],
+        ));
+        let exhaust_strike = ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+            SelectionScope::Hand,
+            [12],
+        ));
+
+        assert_eq!(
+            combat_plan_selection_member_timing_v1(&position, family, &exhaust_demon),
+            CombatPlanActionTimingV1::Defer(
+                CombatPlanActionDeferralV1::PreserveUndeployedPlanAsset
+            )
+        );
+        assert_eq!(
+            combat_plan_selection_member_timing_v1(&position, family, &exhaust_strike),
+            CombatPlanActionTimingV1::Neutral
         );
     }
 
@@ -1299,5 +1421,30 @@ mod tests {
         let taxed_rank = combat_plan_state_guide_rank_v1(&taxed).expect("taxed rank");
 
         assert!(untaxed_rank.components() > taxed_rank.components());
+    }
+
+    #[test]
+    fn realized_durable_scaling_is_not_misread_as_only_reactive_power_tax() {
+        let unscaled = awakened_position(2);
+        let mut scaled = unscaled.clone();
+        store::set_powers_for(&mut scaled.combat, 0, vec![power(PowerId::DemonForm, 3)]);
+        store::set_powers_for(
+            &mut scaled.combat,
+            10,
+            vec![power(PowerId::Curiosity, 1), power(PowerId::Strength, 1)],
+        );
+
+        let unscaled_plan = awakened_one_combat_plan_v1(&unscaled).expect("unscaled plan");
+        let scaled_plan = awakened_one_combat_plan_v1(&scaled).expect("scaled plan");
+        assert_eq!(unscaled_plan.resources.durable_strength_growth, 0);
+        assert_eq!(scaled_plan.resources.durable_strength_growth, 3);
+
+        let unscaled_rank =
+            combat_plan_state_guide_rank_v1(&unscaled).expect("unscaled guide rank");
+        let scaled_rank = combat_plan_state_guide_rank_v1(&scaled).expect("scaled guide rank");
+        assert!(
+            scaled_rank.components() > unscaled_rank.components(),
+            "realized persistent scaling must be visible before the reactive-tax tie break"
+        );
     }
 }

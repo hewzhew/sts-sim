@@ -5,13 +5,13 @@ const MIN_USABLE_WALL_ALLOWANCE: Duration = Duration::from_millis(1);
 
 use serde::{Deserialize, Serialize};
 use sts_combat_planner::{
-    CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
-    OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
-    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
-    PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig, TurnOptionAction,
-    TurnOptionGeneratorConfig,
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphRootActionFamilySnapshot,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
+    LocalTurnGraphWitnessStatus, OracleCombatDeepStateSnapshot, OracleCombatWitness,
+    OracleCombatWitnessDiscoverySource, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessStateProgressSnapshot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
+    PolicyDiscrepancySession, PolicyDiscrepancyStatus, PolicyDiscrepancyTurnMacroConfig,
+    TurnOptionAction, TurnOptionGeneratorConfig,
 };
 
 use super::combat_line_executor::apply_oracle_combat_witness;
@@ -231,6 +231,7 @@ impl OracleRunCombatWorkV1 {
         } else {
             policy
         };
+        let policy = combat_plan_state_guide_policy_v1(policy);
         let local_search = LocalTurnGraphWitnessSession::with_policy(
             root.clone(),
             LocalTurnGraphWitnessConfig {
