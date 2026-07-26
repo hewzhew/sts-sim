@@ -1,13 +1,21 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
+use crate::ai::card_component_signal_v1::{
+    evaluate_card_component_signals_v1, CardComponentSignalContextV1, CardComponentSignalKindV1,
+    CardComponentSignalReportV1,
+};
 use crate::ai::card_semantics_v1::{
-    card_reward_semantic_profile_v1, CardRewardPickDependencyV1, CardRewardSemanticProfileV1,
+    card_access_evidence_v1, card_reward_semantic_profile_v1, CardAccessEvidenceV1,
+    CardAccessLeverageV1, CardRewardPickDependencyV1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
+use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, DeckStartupProfileV1};
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, threat_relevant_capability_improvements_v1,
-    StrategyPackageIdV2, StrategyPlanSupportV1, StrategyThreatSourceV1,
+    StrategyCapabilityCoverageV1, StrategyCapabilityKindV1, StrategyPackageIdV2,
+    StrategyPlanSupportV1, StrategyThreatSourceV1,
 };
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
@@ -23,6 +31,7 @@ pub enum CardRewardPolicyBandV1 {
     ResolvePendingBoundary,
     ImmediateResource,
     CloseThreatGap,
+    AmplifyStrategicAccess,
     ImproveRequiredCapability,
     EstablishStrategicAsset,
     PreserveDeckQuality,
@@ -37,6 +46,8 @@ pub enum CardRewardPolicyAcquisitionV1 {
         upgrades: u8,
         copies_before: usize,
         semantics: CardRewardSemanticProfileV1,
+        access: Option<CardAccessEvidenceV1>,
+        component_signals: CardComponentSignalReportV1,
     },
     SingingBowl,
     Skip,
@@ -53,8 +64,9 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_unsupported_mechanics: bool,
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
-    pub access_saturated: bool,
+    pub access_conflict_or_redundancy: bool,
     pub improves_threat_relevant_capability: bool,
+    pub amplifies_existing_answers: bool,
     /// Support for the route resource required by an upgrade-investment card.
     ///
     /// `None` means the candidate has no such dependency.  Keeping this typed
@@ -86,6 +98,9 @@ pub fn exact_card_reward_policy_decision_v1(
     validate_same_candidate_surface(&exact, legal)?;
     let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
     let upgrade_sink_support = strategy.support(StrategyPackageIdV2::UpgradeSink);
+    let formation_needs = strategy.formation_summary().needs;
+    let startup = deck_startup_profile_v1(&session.run_state);
+    let block_plan = block_plan_profile_v1(&session.run_state);
     let mut evidence = exact
         .actions
         .iter()
@@ -103,6 +118,9 @@ pub fn exact_card_reward_policy_decision_v1(
                 action,
                 surface_index,
                 upgrade_sink_support,
+                &formation_needs,
+                &startup,
+                &block_plan,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -176,6 +194,9 @@ fn card_reward_action_evidence_v1(
     action: &ExactRunPolicyActionSuccessorV1,
     surface_index: usize,
     upgrade_sink_support: StrategyPlanSupportV1,
+    formation_needs: &[crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1],
+    startup: &DeckStartupProfileV1,
+    block_plan: &BlockPlanProfileV1,
 ) -> Result<CardRewardPolicyActionEvidenceV1, String> {
     let candidate_key = action.candidate_key.clone().ok_or_else(|| {
         format!(
@@ -183,7 +204,7 @@ fn card_reward_action_evidence_v1(
             action.candidate_id
         )
     })?;
-    let acquisition = acquisition_v1(parent, &candidate_key)?;
+    let acquisition = acquisition_v1(parent, &candidate_key, formation_needs, startup, block_plan)?;
     let delta = run_policy_state_delta_v1(&decision.before, &action.after);
     let introduces_unsupported_mechanics = matches!(
         &acquisition,
@@ -211,15 +232,33 @@ fn card_reward_action_evidence_v1(
             && delta.resolved_formation_needs.is_empty()
             && delta.added_formation_strengths.is_empty()
     );
-    let access_saturated = matches!(
+    let access_conflict_or_redundancy = matches!(
         &acquisition,
-        CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+        CardRewardPolicyAcquisitionV1::Card {
+            semantics,
+            access,
+            component_signals,
+            ..
+        }
             if !semantics.roles.is_empty()
                 && semantics.roles.iter().all(|role| is_access_role(*role))
-                && decision.before.deck.draw_sources
-                    .saturating_add(decision.before.deck.energy_sources) >= 3
-                && delta.capability_improvements.is_empty()
-                && delta.resolved_formation_needs.is_empty()
+                && (component_signals
+                    .debt_signals
+                    .contains(&CardComponentSignalKindV1::DuplicateNoDrawAccessDebt)
+                    || (access.is_none()
+                        && decision.before.deck.draw_sources
+                            .saturating_add(decision.before.deck.energy_sources)
+                            >= 3
+                        && delta.capability_improvements.is_empty()
+                        && delta.resolved_formation_needs.is_empty())
+                    || (access.is_some_and(|access| {
+                        access.leverage == CardAccessLeverageV1::Incremental
+                    })
+                        && decision.before.deck.draw_sources
+                            .saturating_add(decision.before.deck.energy_sources)
+                            >= 3
+                        && delta.capability_improvements.is_empty()
+                        && delta.resolved_formation_needs.is_empty()))
     );
     let improves_threat_relevant_capability = !threat_relevant_capability_improvements_v1(
         &decision.before.threats,
@@ -235,14 +274,17 @@ fn card_reward_action_evidence_v1(
                 .contains(&CardRewardPickDependencyV1::RouteUpgradeDensity)
     )
     .then_some(upgrade_sink_support);
+    let amplifies_existing_answers =
+        access_amplifies_existing_answers(&decision.before, &acquisition);
     let base_band = card_reward_band_v1(
         &acquisition,
         &delta,
         introduces_unsupported_mechanics,
         introduces_undigested_status_burden,
         duplicate_low_marginal,
-        access_saturated,
+        access_conflict_or_redundancy,
         improves_threat_relevant_capability,
+        amplifies_existing_answers,
     );
     let band = apply_upgrade_investment_gate_v1(base_band, upgrade_investment_support);
 
@@ -255,8 +297,9 @@ fn card_reward_action_evidence_v1(
         introduces_unsupported_mechanics,
         introduces_undigested_status_burden,
         duplicate_low_marginal,
-        access_saturated,
+        access_conflict_or_redundancy,
         improves_threat_relevant_capability,
+        amplifies_existing_answers,
         upgrade_investment_support,
         surface_index,
     })
@@ -280,19 +323,35 @@ fn apply_upgrade_investment_gate_v1(
 fn acquisition_v1(
     parent: &RunControlSession,
     key: &DecisionCandidateKey,
+    formation_needs: &[crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1],
+    startup: &DeckStartupProfileV1,
+    block_plan: &BlockPlanProfileV1,
 ) -> Result<CardRewardPolicyAcquisitionV1, String> {
     Ok(match key {
         DecisionCandidateKey::CardRewardPick { card, upgrades, .. } => {
+            let reward = RewardCard::new(*card, *upgrades);
+            let semantics = card_reward_semantic_profile_v1(&reward);
+            let copies_before = parent
+                .run_state
+                .master_deck
+                .iter()
+                .filter(|owned| owned.id == *card)
+                .count();
             CardRewardPolicyAcquisitionV1::Card {
                 card: *card,
                 upgrades: *upgrades,
-                copies_before: parent
-                    .run_state
-                    .master_deck
-                    .iter()
-                    .filter(|owned| owned.id == *card)
-                    .count(),
-                semantics: card_reward_semantic_profile_v1(&RewardCard::new(*card, *upgrades)),
+                copies_before,
+                access: card_access_evidence_v1(&reward),
+                component_signals: evaluate_card_component_signals_v1(
+                    &CardComponentSignalContextV1 {
+                        same_card_count: copies_before,
+                        formation_needs: formation_needs.to_vec(),
+                        startup: startup.clone(),
+                        block_plan: block_plan.clone(),
+                    },
+                    &semantics,
+                ),
+                semantics,
             }
         }
         DecisionCandidateKey::CardRewardSingingBowl { .. } => {
@@ -314,8 +373,9 @@ fn card_reward_band_v1(
     unsupported: bool,
     status_burden: bool,
     duplicate_low_marginal: bool,
-    access_saturated: bool,
+    access_conflict_or_redundancy: bool,
     improves_threat_relevant_capability: bool,
+    amplifies_existing_answers: bool,
 ) -> CardRewardPolicyBandV1 {
     match acquisition {
         CardRewardPolicyAcquisitionV1::OpenReward => CardRewardPolicyBandV1::ResolvePendingBoundary,
@@ -327,10 +387,16 @@ fn card_reward_band_v1(
         CardRewardPolicyAcquisitionV1::SingingBowl => CardRewardPolicyBandV1::PreserveDeckQuality,
         CardRewardPolicyAcquisitionV1::Skip => CardRewardPolicyBandV1::PreserveDeckQuality,
         CardRewardPolicyAcquisitionV1::Card { semantics, .. } => {
-            if status_burden || unsupported || duplicate_low_marginal || access_saturated {
+            if status_burden
+                || unsupported
+                || duplicate_low_marginal
+                || access_conflict_or_redundancy
+            {
                 CardRewardPolicyBandV1::Liability
             } else if !delta.closed_threat_gaps.is_empty() {
                 CardRewardPolicyBandV1::CloseThreatGap
+            } else if amplifies_existing_answers {
+                CardRewardPolicyBandV1::AmplifyStrategicAccess
             } else if improves_threat_relevant_capability {
                 CardRewardPolicyBandV1::ImproveRequiredCapability
             } else if !delta.resolved_formation_needs.is_empty()
@@ -346,6 +412,47 @@ fn card_reward_band_v1(
             }
         }
     }
+}
+
+fn access_amplifies_existing_answers(
+    before: &super::RunPolicyStateEvidenceV1,
+    acquisition: &CardRewardPolicyAcquisitionV1,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card {
+        copies_before,
+        access:
+            Some(CardAccessEvidenceV1 {
+                leverage: CardAccessLeverageV1::EfficientBurst,
+                ..
+            }),
+        component_signals,
+        ..
+    } = acquisition
+    else {
+        return false;
+    };
+    if *copies_before > 0
+        || !component_signals
+            .positive_signals
+            .contains(&CardComponentSignalKindV1::DrawEnergyAccess)
+        || !component_signals.debt_signals.is_empty()
+    {
+        return false;
+    }
+
+    !before.formation.strengths.is_empty()
+        || before
+            .threat_coverage
+            .capabilities
+            .iter()
+            .any(|capability| {
+                capability.capability != StrategyCapabilityKindV1::DrawEnergyConsistency
+                    && matches!(
+                        capability.coverage,
+                        StrategyCapabilityCoverageV1::Supported
+                            | StrategyCapabilityCoverageV1::Strong
+                    )
+            })
 }
 
 fn is_access_role(role: CardRewardSemanticRoleV1) -> bool {
@@ -494,6 +601,188 @@ mod tests {
             .iter()
             .position(|candidate| predicate(&candidate.candidate_key))
             .expect("candidate position")
+    }
+
+    fn card_evidence(
+        decision: &ExactCardRewardPolicyDecisionV1,
+        card: CardId,
+    ) -> &CardRewardPolicyActionEvidenceV1 {
+        decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::CardRewardPick {
+                        card: candidate_card,
+                        ..
+                    } if candidate_card == card
+                )
+            })
+            .expect("card evidence")
+    }
+
+    #[test]
+    fn efficient_access_amplifies_existing_answers_before_marginal_frontload() {
+        let mut session = reward_session(&[(CardId::RecklessCharge, 0), (CardId::BattleTrance, 0)]);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 20;
+        session.run_state.boss_key = Some(EncounterId::Automaton);
+        session.run_state.current_hp = 76;
+        session.run_state.max_hp = 80;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::TrueGrit, 1),
+            (CardId::SwordBoomerang, 0),
+            (CardId::Clash, 0),
+            (CardId::Uppercut, 1),
+            (CardId::Corruption, 0),
+            (CardId::BurningPact, 0),
+            (CardId::SeverSoul, 0),
+            (CardId::Offering, 0),
+            (CardId::Intimidate, 0),
+            (CardId::Headbutt, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let battle_trance = card_evidence(&decision, CardId::BattleTrance);
+        assert!(battle_trance.amplifies_existing_answers);
+        assert_eq!(
+            battle_trance.band,
+            CardRewardPolicyBandV1::AmplifyStrategicAccess
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::BattleTrance,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::RecklessCharge,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn urgent_frontload_gap_still_precedes_access_amplification() {
+        let mut session = reward_session(&[(CardId::WildStrike, 0), (CardId::BattleTrance, 0)]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 1;
+        session.run_state.boss_key = Some(EncounterId::TheGuardian);
+        session.run_state.current_hp = 80;
+        session.run_state.max_hp = 80;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+
+        let decision = decision(&session);
+        assert_eq!(
+            card_evidence(&decision, CardId::WildStrike).band,
+            CardRewardPolicyBandV1::CloseThreatGap
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::WildStrike,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::BattleTrance,
+                    ..
+                }
+            )),
+            "evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn duplicate_no_draw_and_snecko_debt_block_clean_access_amplification() {
+        let mut duplicate = reward_session(&[(CardId::BattleTrance, 0)]);
+        duplicate.run_state.master_deck.extend(
+            [CardId::Uppercut, CardId::BattleTrance]
+                .into_iter()
+                .enumerate()
+                .map(|(index, card)| CombatCard::new(card, index as u32)),
+        );
+        let duplicate_decision = decision(&duplicate);
+        let duplicate_access = card_evidence(&duplicate_decision, CardId::BattleTrance);
+        assert!(!duplicate_access.amplifies_existing_answers);
+        assert!(matches!(
+            &duplicate_access.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .debt_signals
+                .contains(&CardComponentSignalKindV1::DuplicateNoDrawAccessDebt)
+        ));
+
+        let mut snecko = reward_session(&[(CardId::Offering, 0)]);
+        snecko
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::SneckoEye));
+        snecko.run_state.master_deck = [
+            CardId::BattleTrance,
+            CardId::ShrugItOff,
+            CardId::PommelStrike,
+            CardId::SpotWeakness,
+            CardId::Inflame,
+            CardId::FeelNoPain,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+        let snecko_decision = decision(&snecko);
+        let offering = card_evidence(&snecko_decision, CardId::Offering);
+        assert!(!offering.amplifies_existing_answers);
+        assert!(matches!(
+            &offering.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .debt_signals
+                .contains(&CardComponentSignalKindV1::SneckoEnergyDiscountDebt)
+        ));
     }
 
     #[test]

@@ -31,11 +31,11 @@
         "decisions": 181,
         "forced_transitions": 0,
         "combat_resolutions": 27,
-        "combat_actions": 484,
-        "final_fingerprint": "77e03b3c2107b332fc75e444c2a6f138bcfca816fb35f5ffc4a963c9af1b5ef4",
+        "combat_actions": 472,
+        "final_fingerprint": "85fb802d4cc22d1c6e76c0b96183d39c7570abd7b3fdcaa5cca38e389fdcb495",
         "act": 3,
         "floor": 48,
-        "current_hp": 9,
+        "current_hp": 7,
         "max_hp": 80,
         "engine_state": "GameOver(Victory)"
       }
@@ -46,16 +46,16 @@
       "expected": {
         "seed": 20260713008,
         "ascension": 0,
-        "journal_entries": 204,
-        "decisions": 180,
+        "journal_entries": 206,
+        "decisions": 181,
         "forced_transitions": 0,
-        "combat_resolutions": 24,
-        "combat_actions": 759,
-        "final_fingerprint": "2b46444d0869565cf323d07ae9eb7e8501b65c72413f90450aff99fe126a11cd",
+        "combat_resolutions": 25,
+        "combat_actions": 836,
+        "final_fingerprint": "dccddc3193d825e7eabd895a279fb3531c618f1b43e8f8f7fe691878633342f6",
         "act": 3,
         "floor": 48,
-        "current_hp": 9,
-        "max_hp": 96,
+        "current_hp": 19,
+        "max_hp": 93,
         "engine_state": "GameOver(Victory)"
       }
     },
@@ -183,11 +183,11 @@
         "decisions": 191,
         "forced_transitions": 0,
         "combat_resolutions": 24,
-        "combat_actions": 613,
-        "final_fingerprint": "a308176f8c2395467ee6ba2f6be8bb9d2afa3cf33e4d16a42bae21ebed2bac9f",
+        "combat_actions": 624,
+        "final_fingerprint": "0e2d406c783557df4c4cdc3327f79e085baedcf7f8c8b2d5d2bee97d79176813",
         "act": 3,
         "floor": 48,
-        "current_hp": 7,
+        "current_hp": 9,
         "max_hp": 83,
         "engine_state": "GameOver(Victory)"
       }

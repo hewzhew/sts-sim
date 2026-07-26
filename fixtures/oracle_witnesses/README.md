@@ -46,18 +46,20 @@ The suite manifest SHA-256 is
 ## seed 20260713007, A0, Awakened One
 
 - `seed20260713007_a0_autonomous_full_run.continuation.json` preserves the
-  current revalidated F0-to-F48 victory.
+  current revalidated F0-to-F48 victory. At A3F42 the production reward owner
+  takes Battle Trance+ instead of preserving the earlier Corruption choice;
+  later owners freely replan from the resulting exact state.
 - Independent replay verifies 208 journal entries, 181 decisions, 27 combat
-  resolutions, 484 combat actions, terminal victory at 9/80 HP, and final
+  resolutions, 472 combat actions, terminal victory at 7/80 HP, and final
   fingerprint
-  `77e03b3c2107b332fc75e444c2a6f138bcfca816fb35f5ffc4a963c9af1b5ef4`.
-- A current-policy audit reports 179 rank-zero agreements and two rank-one
+  `85fb802d4cc22d1c6e76c0b96183d39c7570abd7b3fdcaa5cca38e389fdcb495`.
+- A current-policy audit reports 177 rank-zero agreements and four rank-one
   historical choices, with no action absent from the owner surface. Combat
   provenance is 4 mature-policy proposals plus 23 search witnesses.
 - SHA-256: autonomous full-run continuation
-  `FDF5D649896E5BADE02E7EE9CC818F978DC36A82D5C696895841ABE5B2A004A1`;
+  `9692289AF3E4EF77CC7E38099BFDD32CDC71AC24B9AE8A6A97FBC2BEF427E50E`;
   compact replay report
-  `8D8F83458954CFB3F6D64D6421570B97FEA5E4740DA62CC864C0034C2C109AB7`.
+  `B0660137528CCB20294196BD1C5061DCDACBDB30E79E6D39B266C8ECAFE9F64E`.
 
 A later capability-migration run preserves a distinct, explicitly
 non-autonomous result:
@@ -257,12 +259,14 @@ fixture or its future state hashes.
 - `seed20260713008_a0_donu_deca.combat-case.json` preserves the exact combat
   root. The layered root witness ends with 12/93 HP.
 - `seed20260713008_a0_full_run.continuation.json` contains the complete
-  current seed-initialized journal. Exact replay verifies 204 journal entries,
-  180 decisions, 24 combat resolutions, 759 combat actions, terminal victory
-  at 9/96 HP, and final fingerprint
-  `2b46444d0869565cf323d07ae9eb7e8501b65c72413f90450aff99fe126a11cd`.
-- A current-policy audit reports 180 rank-zero agreements, no divergence, and
-  combat provenance of 6 mature-policy proposals plus 18 search witnesses.
+  current seed-initialized journal. At A1F14 the production reward owner takes
+  Battle Trance instead of the earlier Cleave, then freely replans the rest of
+  the run. Exact replay verifies 206 journal entries, 181 decisions, 25 combat
+  resolutions, 836 combat actions, terminal victory at 19/93 HP, and final
+  fingerprint
+  `dccddc3193d825e7eabd895a279fb3531c618f1b43e8f8f7fe691878633342f6`.
+- A current-policy audit reports 181 rank-zero agreements, no divergence, and
+  combat provenance of 9 mature-policy proposals plus 16 search witnesses.
 - SHA-256: combat case
   `47F6BA08C540150BABD186F9959AD7EC27D8CC87FBD69A52BC037ECAFDF3C58C`;
   T3 suffix
@@ -270,9 +274,9 @@ fixture or its future state hashes.
   layered root witness
   `F6DD35F49AE31DCC723F07CF575F73F9F0C9CCFBE5E4565944641A4B0E63427D`;
   full-run continuation
-  `82277CB531895202A6AC20F45586FA0C1994A73952E6148B29460FE6E5850D59`;
+  `DF7FF171A6BF23E234773009BE3E39A69F44DF0D5AB3ED20512DF282B6AD475C`;
   compact replay report
-  `B491492FF6E8A0DDCDC18E8FA7F1DB628098242CB913F1E36DC411A82122907F`.
+  `03C14310EC6545FC3DF8A0D90AC5D2987971586BDF7E625A420B3069719AC759`.
 
 A second full-run witness records the typed reward-semantics repair:
 
@@ -464,14 +468,16 @@ complete F0-to-F48 exact victory:
   can expose several already-owned answers and therefore precedes a marginal
   Supported-to-Strong frontload increase.
 - At the Act 2 floor 20 shop this makes Battle Trance precede Reckless Charge;
-  all later owners freely replan from the resulting states. Card-reward policy
-  remains unchanged: a broader access promotion changed unrelated historical
-  choices and was rejected rather than retained.
+  all later owners freely replan from the resulting states. The same typed
+  access semantics now also applies to rewards: at A3F38 Master of Strategy
+  precedes skip because it exposes several already-owned answers without
+  consuming energy. This is contextual access leverage, not a card-specific
+  fixed bonus.
 - Fresh replay verifies 215 journal entries, 191 decisions, 24 combat
-  resolutions, 613 combat actions, and final fingerprint
-  `a308176f8c2395467ee6ba2f6be8bb9d2afa3cf33e4d16a42bae21ebed2bac9f`.
+  resolutions, 624 combat actions, and final fingerprint
+  `0e2d406c783557df4c4cdc3327f79e085baedcf7f8c8b2d5d2bee97d79176813`.
 - A current-policy audit reports 191 rank-zero agreements, no divergence, and
   no candidate absent from the owner surface. The final Time Eater victory
-  leaves 7/83 HP.
+  leaves 9/83 HP.
 - SHA-256: full-run continuation
-  `9681A4B09ADD1FC95A38D21653E55A9F100F420DC5252982081D7E2BA4AA930E`.
+  `507F67D7565F55B37A0FB046CB89204E3BDB715F0EB1F1D212799159FA7837EA`.
