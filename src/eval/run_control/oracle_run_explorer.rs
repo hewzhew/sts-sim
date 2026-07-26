@@ -344,6 +344,11 @@ impl OracleRunCombatBudgetsV1 {
                 },
             );
         }
+        if stage == 0 && self.uses_potion_conserving_primary(session, &options) {
+            options.potion_policy =
+                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
+            options.max_potions_used = Some(0);
+        }
         scale_combat_options(options, self.stage_divisor(stage))
     }
 
@@ -355,8 +360,34 @@ impl OracleRunCombatBudgetsV1 {
         }
     }
 
-    fn has_later_stage(&self, stage: u8) -> bool {
-        stage == 0 && self.initial_divisor > 1
+    fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
+        stage == 0
+            && (self.initial_divisor > 1
+                || self
+                    .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1)))
+    }
+
+    fn uses_potion_conserving_primary(
+        &self,
+        session: &RunControlSession,
+        options: &RunControlSearchCombatOptions,
+    ) -> bool {
+        if self.quality_policy != OracleRunCombatQualityPolicyV1::StrategicRun
+            || options.max_potions_used.is_some()
+            || options.potion_policy.is_some()
+        {
+            return false;
+        }
+        session.active_combat.as_ref().is_some_and(|active| {
+            !active.combat_state.meta.is_boss_fight
+                && active
+                    .combat_state
+                    .entities
+                    .potions
+                    .iter()
+                    .flatten()
+                    .any(|potion| potion.can_use)
+        })
     }
 }
 
@@ -1766,10 +1797,25 @@ pub fn drive_oracle_run_explorer_v1(
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
                     let stage = pending.stage;
-                    let prior_work = budget
-                        .combat
-                        .has_later_stage(stage)
-                        .then(|| pending.work.checkpoint());
+                    let has_later_stage = explorer
+                        .branches
+                        .iter()
+                        .find(|branch| branch.branch_id == pending.branch_id)
+                        .is_some_and(|branch| {
+                            budget.combat.has_later_stage(&branch.session, stage)
+                        });
+                    let prior_work = has_later_stage.then(|| pending.work.checkpoint());
+                    if has_later_stage
+                        && pending.work.has_verified_witness()
+                        && !pending.work.has_quality_satisfying_witness()
+                    {
+                        explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
+                            branch_id: pending.branch_id,
+                            stage: stage.saturating_add(1),
+                            prior_work: prior_work.expect("later stage preserves prior work"),
+                        });
+                        continue;
+                    }
                     let finished = explorer.finish_combat(pending, deadline)?;
                     match finished {
                         FinishedOracleCombatV1::Resolved(branch_id) => {
@@ -2395,6 +2441,52 @@ mod tests {
             Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0)),
             "an already-damaged run with combat healing should search for a net-zero line"
         );
+    }
+
+    #[test]
+    fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
+        let options = RunControlSearchCombatOptions {
+            max_nodes: Some(101),
+            wall_ms: Some(101),
+            ..RunControlSearchCombatOptions::default()
+        };
+        let budgets = OracleRunCombatBudgetsV1 {
+            hallway: options.clone(),
+            elite: options.clone(),
+            boss: options,
+            quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+            initial_divisor: 1,
+            guidance_bundle: None,
+        };
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::BlockPotion,
+            7,
+        ))];
+        session.active_combat = Some(crate::state::core::ActiveCombat::new(
+            crate::state::core::EngineState::CombatPlayerTurn,
+            combat,
+            crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+                room_type: crate::state::map::node::RoomType::MonsterRoom,
+            }),
+        ));
+
+        let primary = budgets.for_session_stage(&session, 0);
+        assert_eq!(primary.max_potions_used, Some(0));
+        assert_eq!(
+            primary.potion_policy,
+            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
+        );
+        assert!(budgets.has_later_stage(&session, 0));
+
+        let rescue = budgets.for_session_stage(&session, 1);
+        assert_ne!(rescue.max_potions_used, Some(0));
+        assert_ne!(
+            rescue.potion_policy,
+            Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never)
+        );
+        assert!(!budgets.has_later_stage(&session, 1));
     }
 
     #[test]

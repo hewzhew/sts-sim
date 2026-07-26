@@ -665,7 +665,44 @@ pub(super) fn elapsed_nanos_u64(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
-pub(super) fn witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {
+pub(super) fn witness_potion_expenditures(witness: &OracleCombatWitness) -> u32 {
+    witness
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.input,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            )
+        })
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+pub(super) fn witness_within_potion_budget(
+    witness: &OracleCombatWitness,
+    max_potions_used: Option<u32>,
+) -> bool {
+    max_potions_used.is_none_or(|limit| witness_potion_expenditures(witness) <= limit)
+}
+
+pub(super) fn witness_better_with_potion_budget(
+    left: &OracleCombatWitness,
+    right: &OracleCombatWitness,
+    max_potions_used: Option<u32>,
+) -> bool {
+    witness_within_potion_budget(left, max_potions_used)
+        .cmp(&witness_within_potion_budget(right, max_potions_used))
+        .then_with(|| witness_quality_order(left, right))
+        .then_with(|| witness_potion_expenditures(right).cmp(&witness_potion_expenditures(left)))
+        == std::cmp::Ordering::Greater
+}
+
+fn witness_quality_order(
+    left: &OracleCombatWitness,
+    right: &OracleCombatWitness,
+) -> std::cmp::Ordering {
     left.final_position
         .combat
         .entities
@@ -678,7 +715,6 @@ pub(super) fn witness_better(left: &OracleCombatWitness, right: &OracleCombatWit
                 .negative_log_policy
                 .total_cmp(&left.negative_log_policy)
         })
-        == std::cmp::Ordering::Greater
 }
 
 pub(super) fn local_deep_state_snapshot(
@@ -706,5 +742,50 @@ pub(super) fn local_deep_state_snapshot(
         discard_pile_size: combat.zones.discard_pile.len(),
         exhaust_pile_size: combat.zones.exhaust_pile.len(),
         path_atomic_depth,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_core::state::core::EngineState;
+
+    fn witness(final_hp: i32, uses_potion: bool) -> OracleCombatWitness {
+        let mut combat = sts_core::test_support::blank_test_combat();
+        combat.entities.player.current_hp = final_hp;
+        OracleCombatWitness {
+            actions: uses_potion
+                .then(|| TurnOptionAction {
+                    input: ClientInput::UsePotion {
+                        potion_index: 0,
+                        target: None,
+                    },
+                    expected_successor_hash: "test".into(),
+                    engine_steps: 1,
+                })
+                .into_iter()
+                .collect(),
+            final_position: CombatPosition::new(EngineState::CombatPlayerTurn, combat),
+            negative_log_policy: 1.0,
+            replay_engine_steps: 1,
+            discovery_source: OracleCombatWitnessDiscoverySource::PlannerSearch,
+        }
+    }
+
+    #[test]
+    fn potion_budget_is_a_constraint_without_globally_overriding_hp_quality() {
+        let high_hp_potion = witness(50, true);
+        let low_hp_clean = witness(20, false);
+
+        assert!(witness_better_with_potion_budget(
+            &high_hp_potion,
+            &low_hp_clean,
+            None
+        ));
+        assert!(witness_better_with_potion_budget(
+            &low_hp_clean,
+            &high_hp_potion,
+            Some(0)
+        ));
     }
 }

@@ -116,6 +116,11 @@ pub struct TurnOptionGeneratorConfig {
     /// Probability mass reserved for uniform exploration after expert weights
     /// are normalized. One million means a fully uniform policy.
     pub uniform_exploration_ppm: u32,
+    /// Whether potion-spending inputs belong to this generator's legal search
+    /// surface. Use and discard both consume a run resource. This is used only
+    /// for an explicit zero-potion resource phase; ordinary search keeps the
+    /// complete legal surface.
+    pub allow_potion_expenditure: bool,
 }
 
 impl Default for TurnOptionGeneratorConfig {
@@ -123,6 +128,7 @@ impl Default for TurnOptionGeneratorConfig {
         Self {
             max_engine_steps_per_transition: 512,
             uniform_exploration_ppm: 50_000,
+            allow_potion_expenditure: true,
         }
     }
 }

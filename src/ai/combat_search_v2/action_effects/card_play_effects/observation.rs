@@ -21,6 +21,7 @@ pub(super) struct DirectCardPlayEffectAccumulator {
     pub(super) shackled_targets: BTreeSet<usize>,
     pub(super) player_strength_gain: i32,
     pub(super) player_lose_strength: i32,
+    pub(super) player_intangible_gain: i32,
     pub(super) player_hp_loss: i32,
     pub(super) player_energy_gain: i32,
     pub(super) declared_draw_cards: i32,
@@ -145,6 +146,9 @@ fn observe_apply_power(
         }
         PowerId::LoseStrength if target == 0 && amount > 0 => {
             direct.player_lose_strength = direct.player_lose_strength.saturating_add(amount);
+        }
+        PowerId::IntangiblePlayer if target == 0 && amount > 0 => {
+            direct.player_intangible_gain = direct.player_intangible_gain.saturating_add(amount);
         }
         PowerId::Strength if target != 0 && amount < 0 => {
             *direct

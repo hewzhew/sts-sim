@@ -20,6 +20,13 @@ pub(super) fn combat_pressure_value(combat: &CombatState) -> CombatPressureValue
 pub(super) fn visible_incoming_damage(combat: &CombatState) -> i32 {
     let player_intangible =
         combat.get_power(combat.entities.player.id, PowerId::IntangiblePlayer) > 0;
+    visible_incoming_damage_with_player_intangible(combat, player_intangible)
+}
+
+pub(super) fn visible_incoming_damage_with_player_intangible(
+    combat: &CombatState,
+    player_intangible: bool,
+) -> i32 {
     combat
         .entities
         .monsters

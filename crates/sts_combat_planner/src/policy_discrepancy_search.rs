@@ -50,6 +50,9 @@ pub struct PolicyDiscrepancyConfig {
     pub uniform_exploration_ppm: u32,
     pub max_greedy_actions_per_dive: usize,
     pub turn_macro: Option<PolicyDiscrepancyTurnMacroConfig>,
+    /// Maximum potion resources expended by a terminal witness. Use and
+    /// discard both count; over-budget wins do not terminate search.
+    pub max_potions_used: Option<u32>,
 }
 
 impl Default for PolicyDiscrepancyConfig {
@@ -59,6 +62,7 @@ impl Default for PolicyDiscrepancyConfig {
             uniform_exploration_ppm: 10_000,
             max_greedy_actions_per_dive: 128,
             turn_macro: None,
+            max_potions_used: None,
         }
     }
 }
@@ -753,7 +757,15 @@ impl PolicyDiscrepancySession {
         stepper: &dyn CombatStepper,
         position: &CombatPosition,
     ) -> (Vec<ConcreteCandidate>, Vec<LazyFamily>) {
-        let surface = stepper.legal_action_surface(position);
+        let mut surface = stepper.legal_action_surface(position);
+        if self.config.max_potions_used == Some(0) {
+            surface.atomic_actions.retain(|input| {
+                !matches!(
+                    input,
+                    ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                )
+            });
+        }
         let choices = surface
             .atomic_actions
             .iter()
@@ -843,6 +855,24 @@ impl PolicyDiscrepancySession {
 
     fn finish_witness(&mut self, stepper: &dyn CombatStepper, seed: &DiveSeed) {
         let actions = seed.trace.actions();
+        let potion_expenditures = actions
+            .iter()
+            .filter(|action| {
+                matches!(
+                    action.input,
+                    ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                )
+            })
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX);
+        if self
+            .config
+            .max_potions_used
+            .is_some_and(|limit| potion_expenditures > limit)
+        {
+            return;
+        }
         match replay_atomic_actions(
             stepper,
             &self.root,

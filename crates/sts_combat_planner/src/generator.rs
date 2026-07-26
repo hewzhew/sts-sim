@@ -1295,7 +1295,15 @@ impl TurnOptionGeneratorSession {
             return;
         }
 
-        let surface = stepper.legal_action_surface(&partial.position);
+        let mut surface = stepper.legal_action_surface(&partial.position);
+        if !self.config.allow_potion_expenditure {
+            surface.atomic_actions.retain(|input| {
+                !matches!(
+                    input,
+                    ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                )
+            });
+        }
         let surface_is_empty =
             surface.atomic_actions.is_empty() && surface.selection_families.is_empty();
         let policy_choices = surface

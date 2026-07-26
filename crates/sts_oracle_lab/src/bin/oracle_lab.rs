@@ -3160,6 +3160,9 @@ fn plan_transition_parts(
         CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl(transition) => {
             ("awakened_one_phase_control", transition)
         }
+        CombatPlanTransitionAnnotationV1::DonuAndDecaGrowthControl(transition) => {
+            ("donu_and_deca_growth_control", transition)
+        }
     }
 }
 

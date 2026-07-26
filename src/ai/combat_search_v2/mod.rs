@@ -127,7 +127,7 @@ use pending_choice_profile::{
     summarize_pending_choice, PendingChoiceDiagnosticsCollector, PendingChoiceProfile,
 };
 use phase_profile::{combat_search_phase_profile, combat_search_phase_profile_report};
-use pressure_value::visible_incoming_damage;
+use pressure_value::{visible_incoming_damage, visible_incoming_damage_with_player_intangible};
 use rollout_action_selector::{choose_rollout_action, filtered_rollout_legal_actions};
 use rollout_cache::RolloutCache;
 

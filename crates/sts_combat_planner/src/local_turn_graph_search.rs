@@ -64,6 +64,13 @@ pub struct LocalTurnGraphWitnessConfig {
     pub lookahead_work_per_evaluation: usize,
     pub max_turn_depth: usize,
     pub satisfaction: OracleCombatWitnessSatisfaction,
+    /// Maximum number of potion resources expended by an accepted witness.
+    ///
+    /// This is a run-resource contract, not an action prior: potion lines
+    /// remain searchable, but each use or discard consumes one unit. An
+    /// over-budget terminal cannot satisfy the caller or displace an otherwise
+    /// acceptable incumbent.
+    pub max_potions_used: Option<u32>,
 }
 
 impl Default for LocalTurnGraphWitnessConfig {
@@ -78,6 +85,7 @@ impl Default for LocalTurnGraphWitnessConfig {
             lookahead_work_per_evaluation: 24,
             max_turn_depth: 32,
             satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+            max_potions_used: None,
         }
     }
 }
@@ -596,14 +604,7 @@ impl LocalTurnGraphWitnessSession {
             .used
             .engine_steps
             .saturating_add(witness.replay_engine_steps);
-        let replace = self
-            .witness
-            .as_ref()
-            .is_none_or(|current| witness_better(&witness, current));
-        if replace {
-            self.witness = Some(witness);
-        }
-        Ok(replace)
+        Ok(self.remember_witness(witness))
     }
 
     /// Materializes one bounded, exact policy mainline as ordinary graph
@@ -956,13 +957,7 @@ impl LocalTurnGraphWitnessSession {
                         stepper,
                     )
                     .map_err(|error| format!("policy-line terminal replay failed: {error:?}"))?;
-                    if self
-                        .witness
-                        .as_ref()
-                        .is_none_or(|current| witness_better(&witness, current))
-                    {
-                        self.witness = Some(witness);
-                    }
+                    self.remember_witness(witness);
                     report.reached_terminal_win = true;
                     break;
                 }
@@ -1145,13 +1140,7 @@ impl LocalTurnGraphWitnessSession {
         {
             return Err("restored local-turn-graph witness is not terminal victory".to_string());
         }
-        if self
-            .witness
-            .as_ref()
-            .is_none_or(|current| witness_better(&witness, current))
-        {
-            self.witness = Some(witness);
-        }
+        self.remember_witness(witness);
         Ok(())
     }
 
@@ -2332,13 +2321,7 @@ impl LocalTurnGraphWitnessSession {
                         stepper,
                     ) {
                         Ok(witness) => {
-                            if self
-                                .witness
-                                .as_ref()
-                                .is_none_or(|current| witness_better(&witness, current))
-                            {
-                                self.witness = Some(witness);
-                            }
+                            self.remember_witness(witness);
                         }
                         Err(error) => self.replay_failure = Some(error),
                     }
@@ -2367,6 +2350,9 @@ impl LocalTurnGraphWitnessSession {
         let Some(witness) = self.witness.as_ref() else {
             return false;
         };
+        if !witness_within_potion_budget(witness, self.config.max_potions_used) {
+            return false;
+        }
         match self.config.satisfaction {
             OracleCombatWitnessSatisfaction::FirstWitness => true,
             OracleCombatWitnessSatisfaction::HpLossAtMost(limit) => {
@@ -2376,6 +2362,16 @@ impl LocalTurnGraphWitnessSession {
             }
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion => false,
         }
+    }
+
+    fn remember_witness(&mut self, witness: OracleCombatWitness) -> bool {
+        let replace = self.witness.as_ref().is_none_or(|current| {
+            witness_better_with_potion_budget(&witness, current, self.config.max_potions_used)
+        });
+        if replace {
+            self.witness = Some(witness);
+        }
+        replace
     }
 
     fn accept_successor(

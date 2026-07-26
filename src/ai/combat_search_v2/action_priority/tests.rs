@@ -152,6 +152,68 @@ fn weak_without_a_visible_attack_is_not_promoted_to_immediate_mitigation() {
 }
 
 #[test]
+fn apparition_under_visible_attack_is_ranked_by_prevented_damage() {
+    let mut combat = blank_test_combat();
+    combat.turn.energy = 3;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Apparition, 10),
+        CombatCard::new(CardId::Armaments, 11),
+    ];
+    add_visible_attacker(&mut combat);
+
+    let apparition = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    let armaments = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(apparition.role, ActionOrderingRole::SustainedMitigation);
+    assert_eq!(apparition.effects.direct.visible_attack_mitigation_hint, 18);
+    assert!(
+        apparition > armaments,
+        "apparition={apparition:?} armaments={armaments:?}"
+    );
+}
+
+#[test]
+fn apparition_without_visible_attack_is_not_unconditionally_promoted() {
+    let mut combat = blank_test_combat();
+    combat.zones.hand = vec![CombatCard::new(CardId::Apparition, 10)];
+    let mut cultist = test_monster(EnemyId::Cultist);
+    cultist.id = 1;
+    combat.entities.monsters = vec![cultist];
+
+    let apparition = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+
+    assert_eq!(apparition.effects.direct.visible_attack_mitigation_hint, 0);
+    assert_ne!(apparition.role, ActionOrderingRole::SustainedMitigation);
+}
+
+#[test]
 fn draw_and_energy_gain_are_ranked_as_immediate_action_supply() {
     let mut combat = blank_test_combat();
     combat.turn.energy = 3;

@@ -6,6 +6,7 @@ mod attack_retaliation_observation;
 mod monster_signals;
 mod observation;
 mod reactive_observation;
+use super::super::{visible_incoming_damage, visible_incoming_damage_with_player_intangible};
 use monster_signals::{
     is_living_monster_id, monster_attack_relevance, visible_strength_down_mitigation_hint,
     visible_strength_gain_pressure_hint, visible_weak_mitigation_hint,
@@ -117,6 +118,17 @@ fn card_play_facts_from_accumulator(
             .direct
             .visible_attack_mitigation_hint
             .saturating_add(visible_weak_mitigation_hint(combat, target, amount));
+    }
+    if accumulator.direct.player_intangible_gain > 0
+        && combat.get_power(combat.entities.player.id, PowerId::IntangiblePlayer) <= 0
+    {
+        let mitigation = visible_incoming_damage(combat)
+            .saturating_sub(visible_incoming_damage_with_player_intangible(combat, true))
+            .max(0);
+        facts.direct.visible_attack_mitigation_hint = facts
+            .direct
+            .visible_attack_mitigation_hint
+            .saturating_add(mitigation);
     }
 
     facts

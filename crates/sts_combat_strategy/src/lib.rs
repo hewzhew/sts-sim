@@ -25,6 +25,7 @@ pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanIdV1 {
     AwakenedOnePhaseControl,
+    DonuAndDecaGrowthControl,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -34,6 +35,7 @@ pub enum CombatPlanStageV1 {
     PrepareFirstPhaseCommit,
     ExploitTransitionWindow,
     SurviveSecondPhaseOpening,
+    EliminateTeamGrowthSource,
     ConvertToLethal,
 }
 
@@ -44,6 +46,7 @@ pub enum CombatPlanMilestoneV1 {
     UntaxedTransitionWindowReached,
     TransitionWindowClosed,
     SecondPhaseOpeningSurvived,
+    TeamGrowthSourceEliminated,
     EncounterDefeated,
 }
 
@@ -117,6 +120,13 @@ pub enum CombatPlanObligationV1 {
     DeployHeldSetupInUntaxedWindow {
         undeployed_power_cards: u16,
     },
+    ExposeAttackMitigationTarget {
+        protected_attackers: u8,
+    },
+    EliminateTeamGrowthSource {
+        remaining_hp_with_block: i32,
+    },
+    EstablishDurableScaling,
     SurviveSecondPhaseOpening,
     ConvertPreparedEngineToLethal,
 }
@@ -135,6 +145,12 @@ pub struct CombatPlanResourcesV1 {
     pub exhaust_draw_active: bool,
     pub exhaust_block_active: bool,
     pub status_draw_active: bool,
+    /// Live, unexhausted cards which can reduce enemy Strength.
+    #[serde(default)]
+    pub remaining_strength_reduction: u16,
+    /// Living enemies whose Artifact has already been removed.
+    #[serde(default)]
+    pub exposed_enemy_count: u8,
 }
 
 /// Exact, directly observed facts relevant to the current plan stage.
@@ -152,6 +168,12 @@ pub struct CombatPlanStateEnvelopeV1 {
     pub first_phase_hp_with_block: Option<i32>,
     pub awakened_strength: i32,
     pub live_status_cards: u16,
+    /// HP plus Block on the encounter plan's current focus target.
+    #[serde(default)]
+    pub priority_target_hp_with_block: Option<i32>,
+    /// Sum of realized Strength across living enemies.
+    #[serde(default)]
+    pub enemy_team_strength: i32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -188,6 +210,22 @@ pub enum CombatPlanTransitionEventV1 {
     StatusDrawChanged {
         before: bool,
         after: bool,
+    },
+    StrengthReductionSupplyChanged {
+        before: u16,
+        after: u16,
+    },
+    ExposedEnemyCountChanged {
+        before: u8,
+        after: u8,
+    },
+    PriorityTargetHpWithBlockChanged {
+        before: Option<i32>,
+        after: Option<i32>,
+    },
+    EnemyTeamStrengthChanged {
+        before: i32,
+        after: i32,
     },
 }
 
@@ -231,12 +269,14 @@ pub struct CombatPlanTransitionV1 {
 #[serde(rename_all = "snake_case", tag = "plan", content = "transition")]
 pub enum CombatPlanTransitionAnnotationV1 {
     AwakenedOnePhaseControl(CombatPlanTransitionV1),
+    DonuAndDecaGrowthControl(CombatPlanTransitionV1),
 }
 
 impl CombatPlanTransitionAnnotationV1 {
     pub fn completed_milestones(&self) -> &[CombatPlanMilestoneV1] {
         match self {
-            Self::AwakenedOnePhaseControl(transition) => &transition.completed_milestones,
+            Self::AwakenedOnePhaseControl(transition)
+            | Self::DonuAndDecaGrowthControl(transition) => &transition.completed_milestones,
         }
     }
 }
@@ -250,8 +290,13 @@ pub fn combat_plan_transition_annotation_v1(
     before: &CombatPosition,
     after: &CombatPosition,
 ) -> Option<CombatPlanTransitionAnnotationV1> {
-    awakened_one_plan_transition_v1(before, after)
-        .map(CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl)
+    if awakened_one_combat_plan_v1(before).is_some() {
+        awakened_one_plan_transition_v1(before, after)
+            .map(CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl)
+    } else {
+        donu_and_deca_plan_transition_v1(before, after)
+            .map(CombatPlanTransitionAnnotationV1::DonuAndDecaGrowthControl)
+    }
 }
 
 /// Dispatches an exact state to the combat plan that owns the encounter.
@@ -259,7 +304,7 @@ pub fn combat_plan_transition_annotation_v1(
 /// The projection is read-only and does not imply that a plan stage is
 /// reachable, desirable, or solved.
 pub fn combat_plan_projection_v1(position: &CombatPosition) -> Option<CombatPlanProjectionV1> {
-    awakened_one_combat_plan_v1(position)
+    awakened_one_combat_plan_v1(position).or_else(|| donu_and_deca_combat_plan_v1(position))
 }
 
 /// Returns the encounter plan's independent state-guidance view.
@@ -329,6 +374,26 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.resources.remaining_skill_fuel as i32,
             -(plan.envelope.live_status_cards as i32),
         ],
+        CombatPlanStageV1::EliminateTeamGrowthSource => {
+            let mitigation_ready = plan.resources.remaining_strength_reduction == 0
+                || plan.resources.exposed_enemy_count > 0;
+            vec![
+                i32::from(plan.envelope.visible_damage_margin >= 0),
+                i32::from(mitigation_ready),
+                plan.resources.durable_strength_growth,
+                -plan
+                    .envelope
+                    .priority_target_hp_with_block
+                    .unwrap_or_default(),
+                -plan.envelope.enemy_team_strength,
+                plan.envelope.visible_damage_margin,
+                plan.envelope
+                    .player_hp
+                    .saturating_add(plan.envelope.player_block),
+                plan.resources.remaining_skill_fuel as i32,
+                -(plan.envelope.live_status_cards as i32),
+            ]
+        }
         CombatPlanStageV1::ConvertToLethal => vec![
             plan.envelope.visible_damage_margin,
             plan.envelope
@@ -366,7 +431,14 @@ pub fn awakened_one_combat_plan_v1(position: &CombatPosition) -> Option<CombatPl
         .count()
         .min(u8::MAX as usize) as u8;
     let resources = combat_plan_resources_v1(combat);
-    let envelope = combat_plan_state_envelope_v1(combat, awakened);
+    let mut envelope = combat_plan_state_envelope_v1(combat);
+    envelope.first_phase_hp_with_block = awakened.awakened_one.form1.then_some(
+        awakened
+            .current_hp
+            .max(0)
+            .saturating_add(awakened.block.max(0)),
+    );
+    envelope.awakened_strength = combat.get_power(awakened.id, PowerId::Strength);
     let stage = awakened_one_stage(awakened, living_cultists);
     let (next_milestone, primary) = match stage {
         CombatPlanStageV1::RemoveEscalatingAdds => (
@@ -393,6 +465,9 @@ pub fn awakened_one_combat_plan_v1(position: &CombatPosition) -> Option<CombatPl
             CombatPlanMilestoneV1::EncounterDefeated,
             CombatPlanObligationV1::ConvertPreparedEngineToLethal,
         ),
+        CombatPlanStageV1::EliminateTeamGrowthSource => {
+            unreachable!("Awakened One plan cannot enter Donu's growth-control stage")
+        }
     };
 
     let mut supporting = Vec::new();
@@ -424,6 +499,97 @@ pub fn awakened_one_combat_plan_v1(position: &CombatPosition) -> Option<CombatPl
     Some(CombatPlanProjectionV1 {
         schema: COMBAT_PLAN_SCHEMA_V1.to_owned(),
         plan: CombatPlanIdV1::AwakenedOnePhaseControl,
+        stage,
+        next_milestone,
+        primary,
+        supporting,
+        resources,
+        envelope,
+    })
+}
+
+/// Projects Donu and Deca into a growth-source control plan.
+///
+/// Donu owns the repeating team-wide Strength clock.  The projection therefore
+/// keeps exact survival independent while exposing three encounter facts to a
+/// dedicated guide lane: whether a live Strength-reduction card has an
+/// Artifact-free target, whether durable player scaling has been established,
+/// and how much HP remains on Donu.  It does not force a target or prune Deca
+/// lines.
+pub fn donu_and_deca_combat_plan_v1(position: &CombatPosition) -> Option<CombatPlanProjectionV1> {
+    if combat_terminal(&position.engine, &position.combat) != CombatTerminal::Unresolved {
+        return None;
+    }
+    let combat = &position.combat;
+    let donu = combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| enemy_id(monster) == Some(EnemyId::Donu) && !monster.is_escaped)?;
+    let deca = combat
+        .entities
+        .monsters
+        .iter()
+        .find(|monster| enemy_id(monster) == Some(EnemyId::Deca) && !monster.is_escaped)?;
+    if !donu.is_alive_for_action() && !deca.is_alive_for_action() {
+        return None;
+    }
+
+    let resources = combat_plan_resources_v1(combat);
+    let mut envelope = combat_plan_state_envelope_v1(combat);
+    envelope.priority_target_hp_with_block = donu
+        .is_alive_for_action()
+        .then_some(donu.current_hp.max(0).saturating_add(donu.block.max(0)));
+    let stage = if donu.is_alive_for_action() {
+        CombatPlanStageV1::EliminateTeamGrowthSource
+    } else {
+        CombatPlanStageV1::ConvertToLethal
+    };
+    let (next_milestone, primary) = match stage {
+        CombatPlanStageV1::EliminateTeamGrowthSource => (
+            CombatPlanMilestoneV1::TeamGrowthSourceEliminated,
+            CombatPlanObligationV1::EliminateTeamGrowthSource {
+                remaining_hp_with_block: envelope.priority_target_hp_with_block.unwrap_or_default(),
+            },
+        ),
+        CombatPlanStageV1::ConvertToLethal => (
+            CombatPlanMilestoneV1::EncounterDefeated,
+            CombatPlanObligationV1::ConvertPreparedEngineToLethal,
+        ),
+        _ => unreachable!("Donu and Deca plan uses only its two owned stages"),
+    };
+
+    let mut supporting = Vec::new();
+    if resources.remaining_strength_reduction > 0 && resources.exposed_enemy_count == 0 {
+        let protected_attackers = combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.is_alive_for_action()
+                    && matches!(enemy_id(monster), Some(EnemyId::Donu | EnemyId::Deca))
+                    && combat.get_power(monster.id, PowerId::Artifact) > 0
+            })
+            .count()
+            .min(u8::MAX as usize) as u8;
+        supporting.push(CombatPlanObligationV1::ExposeAttackMitigationTarget {
+            protected_attackers,
+        });
+    }
+    if resources.durable_strength_growth == 0
+        && live_cards(combat).any(|card| card.id == CardId::DemonForm)
+    {
+        supporting.push(CombatPlanObligationV1::EstablishDurableScaling);
+    }
+    if envelope.live_status_cards > 0 && !resources.status_draw_active {
+        supporting.push(CombatPlanObligationV1::ManageLiveStatusBurden {
+            live_status_cards: envelope.live_status_cards,
+        });
+    }
+
+    Some(CombatPlanProjectionV1 {
+        schema: COMBAT_PLAN_SCHEMA_V1.to_owned(),
+        plan: CombatPlanIdV1::DonuAndDecaGrowthControl,
         stage,
         next_milestone,
         primary,
@@ -494,6 +660,53 @@ pub fn awakened_one_plan_transition_v1(
         resources_after,
         envelope_before: before_plan.envelope,
         envelope_after,
+    })
+}
+
+pub fn donu_and_deca_plan_transition_v1(
+    before: &CombatPosition,
+    after: &CombatPosition,
+) -> Option<CombatPlanTransitionV1> {
+    let before_plan = donu_and_deca_combat_plan_v1(before)?;
+    if combat_terminal(&after.engine, &after.combat) == CombatTerminal::Win {
+        return Some(CombatPlanTransitionV1 {
+            schema: COMBAT_PLAN_SCHEMA_V1.to_owned(),
+            plan: before_plan.plan,
+            before_stage: before_plan.stage,
+            after_stage: None,
+            completed_milestones: vec![CombatPlanMilestoneV1::EncounterDefeated],
+            events: Vec::new(),
+            resources_before: before_plan.resources,
+            resources_after: None,
+            envelope_before: before_plan.envelope,
+            envelope_after: None,
+        });
+    }
+
+    let after_plan = donu_and_deca_combat_plan_v1(after);
+    let mut completed_milestones = Vec::new();
+    if before_plan.stage == CombatPlanStageV1::EliminateTeamGrowthSource
+        && after_plan
+            .as_ref()
+            .is_some_and(|plan| plan.stage == CombatPlanStageV1::ConvertToLethal)
+    {
+        completed_milestones.push(CombatPlanMilestoneV1::TeamGrowthSourceEliminated);
+    }
+    let events = after_plan
+        .as_ref()
+        .map(|after_plan| combat_plan_transition_events_v1(&before_plan, after_plan))
+        .unwrap_or_default();
+    Some(CombatPlanTransitionV1 {
+        schema: COMBAT_PLAN_SCHEMA_V1.to_owned(),
+        plan: before_plan.plan,
+        before_stage: before_plan.stage,
+        after_stage: after_plan.as_ref().map(|plan| plan.stage),
+        completed_milestones,
+        events,
+        resources_before: before_plan.resources,
+        resources_after: after_plan.as_ref().map(|plan| plan.resources),
+        envelope_before: before_plan.envelope,
+        envelope_after: after_plan.as_ref().map(|plan| plan.envelope),
     })
 }
 
@@ -663,6 +876,7 @@ const fn stage_ordinal(stage: CombatPlanStageV1) -> u8 {
         CombatPlanStageV1::PrepareFirstPhaseCommit => 1,
         CombatPlanStageV1::ExploitTransitionWindow => 2,
         CombatPlanStageV1::SurviveSecondPhaseOpening => 3,
+        CombatPlanStageV1::EliminateTeamGrowthSource => 0,
         CombatPlanStageV1::ConvertToLethal => 4,
     }
 }
@@ -707,13 +921,23 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
             player,
             PowerId::Evolve,
         ),
+        remaining_strength_reduction: count_live_cards(combat, |card| {
+            matches!(card.id, CardId::Disarm | CardId::DarkShackles)
+        }),
+        exposed_enemy_count: combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| {
+                monster.is_alive_for_action()
+                    && combat.get_power(monster.id, PowerId::Artifact) <= 0
+            })
+            .count()
+            .min(u8::MAX as usize) as u8,
     }
 }
 
-fn combat_plan_state_envelope_v1(
-    combat: &CombatState,
-    awakened: &MonsterEntity,
-) -> CombatPlanStateEnvelopeV1 {
+fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelopeV1 {
     let player = combat.entities.player.id;
     let player_intangible = combat.get_power(player, PowerId::IntangiblePlayer) > 0;
     let visible_incoming_damage = combat
@@ -741,16 +965,19 @@ fn combat_plan_state_envelope_v1(
             .saturating_add(combat.entities.player.block)
             .saturating_sub(visible_incoming_damage),
         current_energy: combat.turn.energy,
-        first_phase_hp_with_block: awakened.awakened_one.form1.then_some(
-            awakened
-                .current_hp
-                .max(0)
-                .saturating_add(awakened.block.max(0)),
-        ),
-        awakened_strength: combat.get_power(awakened.id, PowerId::Strength),
+        first_phase_hp_with_block: None,
+        awakened_strength: 0,
         live_status_cards: count_live_cards(combat, |card| {
             get_card_definition(card.id).card_type == CardType::Status
         }),
+        priority_target_hp_with_block: None,
+        enemy_team_strength: combat
+            .entities
+            .monsters
+            .iter()
+            .filter(|monster| monster.is_alive_for_action())
+            .map(|monster| combat.get_power(monster.id, PowerId::Strength).max(0))
+            .sum(),
     }
 }
 
@@ -805,6 +1032,36 @@ fn combat_plan_transition_events_v1(
         events.push(CombatPlanTransitionEventV1::StatusDrawChanged {
             before: before.resources.status_draw_active,
             after: after.resources.status_draw_active,
+        });
+    }
+    if before.resources.remaining_strength_reduction != after.resources.remaining_strength_reduction
+    {
+        events.push(
+            CombatPlanTransitionEventV1::StrengthReductionSupplyChanged {
+                before: before.resources.remaining_strength_reduction,
+                after: after.resources.remaining_strength_reduction,
+            },
+        );
+    }
+    if before.resources.exposed_enemy_count != after.resources.exposed_enemy_count {
+        events.push(CombatPlanTransitionEventV1::ExposedEnemyCountChanged {
+            before: before.resources.exposed_enemy_count,
+            after: after.resources.exposed_enemy_count,
+        });
+    }
+    if before.envelope.priority_target_hp_with_block != after.envelope.priority_target_hp_with_block
+    {
+        events.push(
+            CombatPlanTransitionEventV1::PriorityTargetHpWithBlockChanged {
+                before: before.envelope.priority_target_hp_with_block,
+                after: after.envelope.priority_target_hp_with_block,
+            },
+        );
+    }
+    if before.envelope.enemy_team_strength != after.envelope.enemy_team_strength {
+        events.push(CombatPlanTransitionEventV1::EnemyTeamStrengthChanged {
+            before: before.envelope.enemy_team_strength,
+            after: after.envelope.enemy_team_strength,
         });
     }
     events
@@ -881,6 +1138,102 @@ mod tests {
         }
         store::set_powers_for(&mut combat, 10, vec![power(PowerId::Curiosity, 1)]);
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    fn donu_deca_position() -> CombatPosition {
+        let mut combat = blank_test_combat();
+        let mut deca = test_monster(EnemyId::Deca);
+        deca.id = 10;
+        deca.slot = 0;
+        let mut donu = test_monster(EnemyId::Donu);
+        donu.id = 11;
+        donu.slot = 1;
+        combat.entities.monsters = vec![deca, donu];
+        store::set_powers_for(&mut combat, 10, vec![power(PowerId::Artifact, 2)]);
+        store::set_powers_for(&mut combat, 11, vec![power(PowerId::Artifact, 2)]);
+        CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    #[test]
+    fn donu_and_deca_plan_exposes_growth_control_without_forcing_a_target() {
+        let mut position = donu_deca_position();
+        position.combat.zones.hand = vec![
+            CombatCard::new(CardId::Disarm, 1),
+            CombatCard::new(CardId::DemonForm, 2),
+        ];
+
+        let plan = donu_and_deca_combat_plan_v1(&position).expect("Donu and Deca plan");
+
+        assert_eq!(plan.plan, CombatPlanIdV1::DonuAndDecaGrowthControl);
+        assert_eq!(plan.stage, CombatPlanStageV1::EliminateTeamGrowthSource);
+        assert_eq!(
+            plan.next_milestone,
+            CombatPlanMilestoneV1::TeamGrowthSourceEliminated
+        );
+        assert!(plan
+            .supporting
+            .contains(&CombatPlanObligationV1::ExposeAttackMitigationTarget {
+                protected_attackers: 2
+            }));
+        assert!(plan
+            .supporting
+            .contains(&CombatPlanObligationV1::EstablishDurableScaling));
+    }
+
+    #[test]
+    fn donu_plan_guide_prefers_equal_progress_on_the_growth_source() {
+        let base = donu_deca_position();
+        let mut damaged_deca = base.clone();
+        damaged_deca.combat.entities.monsters[0].current_hp -= 20;
+        let mut damaged_donu = base;
+        damaged_donu.combat.entities.monsters[1].current_hp -= 20;
+
+        let deca_rank = combat_plan_state_guide_rank_v1(&damaged_deca).expect("Deca-damage rank");
+        let donu_rank = combat_plan_state_guide_rank_v1(&damaged_donu).expect("Donu-damage rank");
+
+        assert!(donu_rank.components() > deca_rank.components());
+    }
+
+    #[test]
+    fn mitigation_exposure_matters_only_while_strength_reduction_remains() {
+        let mut protected = donu_deca_position();
+        protected.combat.zones.hand = vec![CombatCard::new(CardId::Disarm, 1)];
+        let mut exposed = protected.clone();
+        store::set_powers_for(&mut exposed.combat, 10, Vec::new());
+
+        let protected_rank = combat_plan_state_guide_rank_v1(&protected).expect("protected rank");
+        let exposed_rank = combat_plan_state_guide_rank_v1(&exposed).expect("exposed rank");
+        assert!(exposed_rank.components() > protected_rank.components());
+
+        protected.combat.zones.hand.clear();
+        exposed.combat.zones.hand.clear();
+        let protected_without_reduction =
+            combat_plan_state_guide_rank_v1(&protected).expect("protected no-reduction rank");
+        let exposed_without_reduction =
+            combat_plan_state_guide_rank_v1(&exposed).expect("exposed no-reduction rank");
+        assert_eq!(
+            protected_without_reduction.components(),
+            exposed_without_reduction.components()
+        );
+    }
+
+    #[test]
+    fn killing_donu_completes_the_growth_source_milestone() {
+        let before = donu_deca_position();
+        let mut after = before.clone();
+        after.combat.entities.monsters[1].current_hp = 0;
+
+        let transition =
+            donu_and_deca_plan_transition_v1(&before, &after).expect("Donu transition");
+
+        assert_eq!(
+            transition.completed_milestones,
+            vec![CombatPlanMilestoneV1::TeamGrowthSourceEliminated]
+        );
+        assert_eq!(
+            transition.after_stage,
+            Some(CombatPlanStageV1::ConvertToLethal)
+        );
     }
 
     #[test]

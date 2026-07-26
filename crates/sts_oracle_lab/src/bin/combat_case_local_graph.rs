@@ -93,6 +93,10 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// first-win or best-HP search.
     #[arg(long, conflicts_with = "improve_incumbent")]
     max_hp_loss: Option<u32>,
+    /// Require the accepted exact witness to use at most this many potions.
+    /// A zero limit also removes potion-use inputs during generation.
+    #[arg(long)]
+    max_potions_used: Option<u32>,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
     #[arg(long, default_value_t = 4)]
@@ -157,6 +161,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         wall_ms,
         improve_incumbent,
         max_hp_loss,
+        max_potions_used,
         max_engine_steps_per_transition,
         generation_quantum_work,
         max_turn_depth,
@@ -199,6 +204,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
             max_engine_steps_per_transition,
+            allow_potion_expenditure: max_potions_used != Some(0),
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work,
@@ -212,6 +218,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         lookahead_work_per_evaluation: 24,
         max_turn_depth,
         satisfaction,
+        max_potions_used,
     };
     let policy = if let Some(path) = guidance_bundle.as_deref() {
         CombatGuidanceBundleV1::load(path)?.policy(existing_combat_knowledge_policy_v1())?

@@ -73,6 +73,7 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
             proposals_per_view: turn_macro_proposals_per_view,
             ..PolicyDiscrepancyTurnMacroConfig::default()
         }),
+        max_potions_used: None,
     };
     let trajectory_audit = if audit_actions.is_empty() {
         None

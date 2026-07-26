@@ -94,6 +94,7 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
     let boundary_config = TurnOptionGeneratorConfig {
         max_engine_steps_per_transition,
         uniform_exploration_ppm,
+        ..TurnOptionGeneratorConfig::default()
     };
     let suffix_config = AtomicLevinWitnessConfig {
         max_engine_steps_per_transition,

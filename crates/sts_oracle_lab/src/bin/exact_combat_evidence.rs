@@ -122,6 +122,7 @@ pub(crate) fn evaluate_nonterminal_position(
         lookahead_work_per_evaluation: 24,
         max_turn_depth: 32,
         satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        max_potions_used: None,
     };
     let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
         root,

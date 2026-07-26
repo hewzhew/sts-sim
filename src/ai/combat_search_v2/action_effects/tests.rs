@@ -1,9 +1,10 @@
 use super::*;
+use crate::ai::combat_search_v2::visible_incoming_damage;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
-use crate::test_support::{blank_test_combat, test_monster};
+use crate::test_support::{blank_test_combat, planned_monster, test_monster};
 
 #[test]
 fn disarm_reports_persistent_enemy_strength_down_without_card_id_special_case() {
@@ -46,6 +47,47 @@ fn direct_block_facts_follow_card_actions_not_dexterity_mutation_fields() {
 
     assert_eq!(disarm.direct.player_block, 0);
     assert_eq!(defend.direct.player_block, 11);
+}
+
+#[test]
+fn intangible_gain_reports_exact_visible_attack_mitigation() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![planned_monster(EnemyId::TimeEater, 2)];
+
+    let apparition =
+        card_play_effect_facts(&combat, &CombatCard::new(CardId::Apparition, 12), None);
+
+    assert_eq!(visible_incoming_damage(&combat), 21);
+    assert_eq!(
+        apparition.direct.visible_attack_mitigation_hint, 18,
+        "three visible hits are reduced from 21 total damage to 3"
+    );
+}
+
+#[test]
+fn intangible_gain_without_visible_attack_has_no_immediate_mitigation_claim() {
+    let mut combat = blank_test_combat();
+    let mut cultist = test_monster(EnemyId::Cultist);
+    cultist.id = 1;
+    combat.entities.monsters = vec![cultist];
+
+    let apparition =
+        card_play_effect_facts(&combat, &CombatCard::new(CardId::Apparition, 12), None);
+
+    assert_eq!(apparition.direct.visible_attack_mitigation_hint, 0);
+}
+
+#[test]
+fn additional_intangible_does_not_claim_the_same_visible_mitigation_twice() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![planned_monster(EnemyId::TimeEater, 2)];
+    insert_power(&mut combat, 0, PowerId::IntangiblePlayer, 1);
+
+    let apparition =
+        card_play_effect_facts(&combat, &CombatCard::new(CardId::Apparition, 12), None);
+
+    assert_eq!(visible_incoming_damage(&combat), 3);
+    assert_eq!(apparition.direct.visible_attack_mitigation_hint, 0);
 }
 
 #[test]

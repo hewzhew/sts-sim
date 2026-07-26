@@ -2316,6 +2316,39 @@ fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
 }
 
 #[test]
+fn explicit_zero_potion_generator_phase_removes_potion_expenditure_inputs() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let monster = sts_core::test_support::planned_monster(EnemyId::JawWorm, 1);
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 7))];
+    combat.zones.hand.clear();
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .unwrap();
+    let stepper = EngineCombatStepper;
+    let mut session = TurnOptionGeneratorSession::new(
+        root,
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+            allow_potion_expenditure: false,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    let report = session.advance(&stepper, CombatPlanningQuantum::deterministic(1_000, 8_192));
+    assert_eq!(report.status, TurnOptionGenerationStatus::Complete);
+    assert!(
+        session
+            .completed_options()
+            .iter()
+            .all(|option| option.actions().iter().all(|action| !matches!(
+                action.input,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            ))),
+        "a zero-potion phase must not generate potion use or discard lines"
+    );
+}
+
+#[test]
 fn witness_search_records_only_gap_free_exhaustive_one_turn_loss() {
     let stepper = TinyTurnStepper::losing();
     let expected_hash = root().exact_state_hash().to_owned();

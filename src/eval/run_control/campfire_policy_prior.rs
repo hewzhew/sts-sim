@@ -9,6 +9,10 @@ use crate::ai::deck_mutation_compiler_v1::{
 use crate::ai::deck_repair_profile_v1::{
     deck_repair_profile_from_upgrade_plan_v1, DeckRepairUpgradePriorityV1,
 };
+use crate::ai::route_window_facts::{
+    build_route_window_facts, RouteWindowFactsConfig, RouteWindowModality, RouteWindowPredicate,
+    RouteWindowSubject,
+};
 use crate::ai::upgrade_planner_v1::{
     plan_upgrades_v1, UpgradeDebtKindV1, UpgradeDebtSeverityV1, UpgradeRoleV1, UpgradeVerdictV1,
 };
@@ -95,6 +99,7 @@ pub struct ExactCampfirePolicyDecisionV1 {
 pub struct CampfireRecoveryContextV1 {
     pub boss_nodes_remaining: Option<usize>,
     pub rest_heal_capacity: i32,
+    pub known_combat_before_next_campfire: RouteWindowModality,
 }
 
 struct CampfirePolicyContextV1 {
@@ -322,9 +327,44 @@ fn campfire_recovery_context_v1(parent: &RunControlSession) -> CampfireRecoveryC
         .then_some(parent.run_state.map.current_y)
         .filter(|current_y| (0..=14).contains(current_y))
         .map(|current_y| 15_usize.saturating_sub(current_y as usize));
+    let map_cursor_available = parent.run_state.map.current_y == -1
+        || (parent.run_state.map.current_y >= 0
+            && parent.run_state.map.current_x >= 0
+            && parent
+                .run_state
+                .map
+                .graph
+                .get(parent.run_state.map.current_y as usize)
+                .and_then(|row| row.get(parent.run_state.map.current_x as usize))
+                .is_some());
+    let known_combat_before_next_campfire = map_cursor_available
+        .then(|| {
+            build_route_window_facts(
+                &parent.run_state,
+                RouteWindowFactsConfig {
+                    horizon_nodes: boss_nodes_remaining.unwrap_or(5).max(1),
+                    ..RouteWindowFactsConfig::default()
+                },
+            )
+        })
+        .and_then(|route_facts| {
+            route_facts
+                .facts
+                .into_iter()
+                .find(|fact| {
+                    fact.predicate
+                        == (RouteWindowPredicate::OccursBefore {
+                            subject: RouteWindowSubject::KnownCombat,
+                            before: RouteWindowSubject::Campfire,
+                        })
+                })
+                .map(|fact| fact.modality)
+        })
+        .unwrap_or(RouteWindowModality::Unknown);
     CampfireRecoveryContextV1 {
         boss_nodes_remaining,
         rest_heal_capacity: empty_hp.current_hp.max(0),
+        known_combat_before_next_campfire,
     }
 }
 
@@ -509,9 +549,10 @@ fn campfire_policy_band_v1(
             CampfirePolicyBandV1::ImmediateSurvival
         }
         CampfirePolicyActionV1::Rest { hp_gain }
-            if recovery
+            if (recovery
                 .boss_nodes_remaining
                 .is_some_and(|nodes| nodes <= 3)
+                || recovery.known_combat_before_next_campfire == RouteWindowModality::Must)
                 && recovery.rest_heal_capacity > 0
                 && hp_gain.saturating_mul(4) >= recovery.rest_heal_capacity.saturating_mul(3) =>
         {
@@ -673,6 +714,8 @@ mod tests {
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
     use crate::runtime::combat::CombatCard;
     use crate::state::core::EngineState;
+    use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
+    use crate::state::map::state::MapState;
 
     fn policy_candidates<'a>(
         surface: &'a super::super::DecisionSurface,
@@ -703,6 +746,28 @@ mod tests {
             .map(|(index, card)| CombatCard::new(*card, 10_000 + index as u32))
             .collect();
         session
+    }
+
+    fn map_node(x: i32, y: i32, room_type: RoomType) -> MapRoomNode {
+        let mut node = MapRoomNode::new(x, y);
+        node.class = Some(room_type);
+        node
+    }
+
+    fn set_linear_map(session: &mut RunControlSession, rooms: &[RoomType]) {
+        let mut graph = rooms
+            .iter()
+            .enumerate()
+            .map(|(y, room_type)| vec![map_node(0, y as i32, *room_type)])
+            .collect::<Vec<_>>();
+        for y in 0..graph.len().saturating_sub(1) {
+            graph[y][0]
+                .edges
+                .insert(MapEdge::new(0, y as i32, 0, y as i32 + 1));
+        }
+        session.run_state.map = MapState::new(graph);
+        session.run_state.map.current_x = 0;
+        session.run_state.map.current_y = 0;
     }
 
     #[test]
@@ -775,6 +840,64 @@ mod tests {
         let legal = policy_candidates(&surface);
         let decision =
             exact_campfire_policy_decision_v1(&healthy, &legal).expect("healthy boss campfire");
+        assert_ne!(decision.prior.entries[0].candidate_id, "rest");
+    }
+
+    #[test]
+    fn forced_combat_before_next_campfire_promotes_efficient_recovery() {
+        let mut session = campfire_session(&[CardId::Apparition, CardId::Cleave]);
+        session.run_state.current_hp = 26;
+        session.run_state.max_hp = 50;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        set_linear_map(
+            &mut session,
+            &[
+                RoomType::RestRoom,
+                RoomType::MonsterRoom,
+                RoomType::RestRoom,
+            ],
+        );
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_campfire_policy_decision_v1(&session, &legal).expect("forced combat recovery");
+
+        assert_eq!(
+            decision.recovery.known_combat_before_next_campfire,
+            RouteWindowModality::Must
+        );
+        assert_eq!(decision.prior.entries[0].candidate_id, "rest");
+        assert_eq!(
+            decision.evidence[0].band,
+            CampfirePolicyBandV1::PrepareBossSurvival
+        );
+    }
+
+    #[test]
+    fn recovery_before_combat_does_not_displace_reliability_upgrade() {
+        let mut session = campfire_session(&[CardId::Apparition, CardId::Cleave]);
+        session.run_state.current_hp = 26;
+        session.run_state.max_hp = 50;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        set_linear_map(
+            &mut session,
+            &[
+                RoomType::RestRoom,
+                RoomType::RestRoom,
+                RoomType::MonsterRoom,
+            ],
+        );
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_campfire_policy_decision_v1(&session, &legal).expect("recovery-first route");
+
+        assert_eq!(
+            decision.recovery.known_combat_before_next_campfire,
+            RouteWindowModality::Cannot
+        );
         assert_ne!(decision.prior.entries[0].candidate_id, "rest");
     }
 

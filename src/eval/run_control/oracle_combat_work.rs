@@ -36,6 +36,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     remaining_work: usize,
     remaining_engine_steps: usize,
     max_transition_steps: usize,
+    max_potions_used: Option<u32>,
     satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
@@ -237,6 +238,7 @@ impl OracleRunCombatWorkV1 {
             LocalTurnGraphWitnessConfig {
                 generator: TurnOptionGeneratorConfig {
                     max_engine_steps_per_transition: max_transition_steps,
+                    allow_potion_expenditure: prepared.config.max_potions_used != Some(0),
                     ..TurnOptionGeneratorConfig::default()
                 },
                 generation_quantum_work: 4,
@@ -247,6 +249,7 @@ impl OracleRunCombatWorkV1 {
                 lookahead_work_per_evaluation: 24,
                 max_turn_depth: 32,
                 satisfaction: planner_satisfaction,
+                max_potions_used: prepared.config.max_potions_used,
             },
             policy.clone(),
         );
@@ -259,6 +262,7 @@ impl OracleRunCombatWorkV1 {
                     proposals_per_view: 8,
                     ..PolicyDiscrepancyTurnMacroConfig::default()
                 }),
+                max_potions_used: prepared.config.max_potions_used,
                 ..PolicyDiscrepancyConfig::default()
             },
             policy,
@@ -273,6 +277,7 @@ impl OracleRunCombatWorkV1 {
             remaining_work: max_work,
             remaining_engine_steps: max_work.saturating_mul(max_transition_steps),
             max_transition_steps,
+            max_potions_used: prepared.config.max_potions_used,
             satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
@@ -407,6 +412,11 @@ impl OracleRunCombatWorkV1 {
         }) else {
             return;
         };
+        if !combat_witness_within_potion_budget(&proposal, self.max_potions_used) {
+            self.policy_witness_proposal_rejections =
+                self.policy_witness_proposal_rejections.saturating_add(1);
+            return;
+        }
         self.policy_witness_proposals = self.policy_witness_proposals.saturating_add(1);
         let replay_steps = proposal.replay_engine_steps;
         self.policy_witness_replay_engine_steps = self
@@ -694,6 +704,12 @@ impl OracleRunCombatWorkV1 {
         self.best_witness().is_some()
     }
 
+    pub(super) fn has_quality_satisfying_witness(&self) -> bool {
+        self.best_witness().is_some_and(|witness| {
+            combat_witness_satisfies(self.satisfaction, &self.start, witness)
+        })
+    }
+
     /// Replays an analyst-supplied exact action sequence from this job's
     /// unchanged combat root and installs it only when every action is legal
     /// and the simulator reaches a terminal victory. This is an explicit
@@ -753,6 +769,13 @@ impl OracleRunCombatWorkV1 {
             replay_engine_steps,
             discovery_source: OracleCombatWitnessDiscoverySource::RestoredExactActions,
         };
+        if !combat_witness_within_potion_budget(&witness, self.max_potions_used) {
+            return Err(format!(
+                "oracle combat witness uses {} potion(s), exceeding configured limit {:?}",
+                combat_witness_potion_expenditures(&witness),
+                self.max_potions_used
+            ));
+        }
         self.local_search.restore_verified_witness(witness)?;
         self.witness_source = CombatAutomationTrajectorySource::OracleExactActions;
         Ok(())
@@ -784,6 +807,7 @@ impl OracleRunCombatWorkV1 {
         ]
         .into_iter()
         .flatten()
+        .filter(|witness| combat_witness_within_potion_budget(witness, self.max_potions_used))
         .reduce(|best, candidate| {
             if combat_witness_better(candidate, best) {
                 candidate
@@ -951,6 +975,7 @@ struct CombatWitnessQualityV1 {
     persistent_adjusted_hp: i32,
     final_hp: i32,
     persistent_run_value: i32,
+    potions_used: u32,
     action_count: usize,
     negative_log_policy: f64,
 }
@@ -963,6 +988,7 @@ fn combat_witness_quality(witness: &OracleCombatWitness) -> CombatWitnessQuality
         persistent_adjusted_hp: final_hp.saturating_add(persistent_run_value),
         final_hp,
         persistent_run_value,
+        potions_used: combat_witness_potion_expenditures(witness),
         action_count: witness.actions.len(),
         negative_log_policy: witness.negative_log_policy,
     }
@@ -976,6 +1002,7 @@ fn combat_witness_quality_better(
         .cmp(&right.persistent_adjusted_hp)
         .then_with(|| left.final_hp.cmp(&right.final_hp))
         .then_with(|| left.persistent_run_value.cmp(&right.persistent_run_value))
+        .then_with(|| right.potions_used.cmp(&left.potions_used))
         .then_with(|| right.action_count.cmp(&left.action_count))
         .then_with(|| {
             right
@@ -994,7 +1021,9 @@ fn combat_witness_acceptance_improved(
         (Some(before), Some(after)) => {
             after.persistent_adjusted_hp > before.persistent_adjusted_hp
                 || (after.persistent_adjusted_hp == before.persistent_adjusted_hp
-                    && after.final_hp > before.final_hp)
+                    && (after.final_hp > before.final_hp
+                        || (after.final_hp == before.final_hp
+                            && after.potions_used < before.potions_used)))
         }
         _ => false,
     }
@@ -1002,6 +1031,28 @@ fn combat_witness_acceptance_improved(
 
 fn combat_witness_better(left: &OracleCombatWitness, right: &OracleCombatWitness) -> bool {
     combat_witness_quality_better(combat_witness_quality(left), combat_witness_quality(right))
+}
+
+fn combat_witness_potion_expenditures(witness: &OracleCombatWitness) -> u32 {
+    witness
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.input,
+                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+            )
+        })
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+fn combat_witness_within_potion_budget(
+    witness: &OracleCombatWitness,
+    max_potions_used: Option<u32>,
+) -> bool {
+    max_potions_used.is_none_or(|limit| combat_witness_potion_expenditures(witness) <= limit)
 }
 
 fn combat_witness_satisfies(
@@ -1089,6 +1140,41 @@ mod tests {
         combat.entities.monsters[0].current_hp = 1;
         combat.entities.monsters[0].max_hp = 1;
         session
+    }
+
+    #[test]
+    fn exact_restored_witness_cannot_bypass_zero_potion_contract() {
+        let mut session = one_strike_win_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        let target = combat.entities.monsters[0].id;
+        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            7,
+        ))];
+        let mut work = OracleRunCombatWorkV1::new_with_guidance(
+            &session,
+            RunControlSearchCombatOptions {
+                max_nodes: Some(16),
+                max_potions_used: Some(0),
+                satisfaction: Some(
+                    crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+                ),
+                ..RunControlSearchCombatOptions::default()
+            },
+            None,
+        )
+        .expect("zero-potion portfolio should accept an active combat");
+
+        let error = work
+            .verify_and_restore_action_witness(&[ClientInput::UsePotion {
+                potion_index: 0,
+                target: Some(target),
+            }])
+            .expect_err("an exact potion win must not bypass the configured resource contract");
+        assert!(error.contains("exceeding configured limit"));
+        assert!(work
+            .best_witness()
+            .is_none_or(|witness| { combat_witness_potion_expenditures(witness) == 0 }));
     }
 
     #[test]
@@ -1352,6 +1438,7 @@ mod tests {
             persistent_adjusted_hp: 128,
             final_hp: 56,
             persistent_run_value: 72,
+            potions_used: 0,
             action_count: 33,
             negative_log_policy: 33.0,
         };
@@ -1359,6 +1446,7 @@ mod tests {
             persistent_adjusted_hp: 128,
             final_hp: 56,
             persistent_run_value: 72,
+            potions_used: 0,
             action_count: 30,
             negative_log_policy: 5.0,
         };
@@ -1379,6 +1467,7 @@ mod tests {
             persistent_adjusted_hp: 85,
             final_hp: 13,
             persistent_run_value: 72,
+            potions_used: 0,
             action_count: 30,
             negative_log_policy: 3.0,
         };
@@ -1386,6 +1475,7 @@ mod tests {
             persistent_adjusted_hp: 87,
             final_hp: 11,
             persistent_run_value: 76,
+            potions_used: 0,
             action_count: 31,
             negative_log_policy: 4.0,
         };
@@ -1393,6 +1483,7 @@ mod tests {
             persistent_adjusted_hp: 81,
             final_hp: 5,
             persistent_run_value: 76,
+            potions_used: 0,
             action_count: 29,
             negative_log_policy: 2.0,
         };
