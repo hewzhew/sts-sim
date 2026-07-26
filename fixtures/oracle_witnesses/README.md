@@ -4,44 +4,60 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
+## Current four-seed regression suite
+
+`a0_seed006_009_current.manifest.json` is the authoritative fast regression
+set for the current seed006--009 milestone. It pins the expected terminal
+fingerprint and compact replay facts for four complete, seed-initialized A0
+runs. One process verifies all four journals:
+
+```text
+cargo test-run-witnesses
+```
+
+The optional read-only owner audit replays the same witnesses and compares
+their strategic decisions with the current owner. Policy disagreement remains
+diagnostic: it cannot invalidate an exact terminal witness.
+
+```text
+cargo audit-run-witnesses
+```
+
+The exact replay layer currently completes in roughly two seconds on the
+development machine; replay plus owner audit takes roughly three seconds.
+The suite manifest SHA-256 is
+`FBA8E8D18663425980B3F3F50C2273E2B3AA7735BBA9965235A32EC3CCF0519E`.
+
 ## seed 20260713006, A0, Awakened One
 
 - `seed20260713006_a0_autonomous_full_run.continuation.json` began in a new F0
-  workspace and used the current production owner and combat portfolio through
-  the Act 3 boss. It did not import a historical continuation, accept manual
-  combat actions, load a trained artifact, or use a V2 donor.
-- The run entered Awakened One at 49/80 HP. Production search found an
-  88-action witness in 23.919 seconds and won at 22/80 HP.
-- A current-policy audit reports 196 rank-zero agreements, zero nonzero-rank
-  choices, zero choices absent from the owner surface, and total discrepancy
-  zero. The remaining six decisions do not expose owner preferences.
-- Fresh import and replay verify seed 20260713006, A0, 226 journal entries,
-  202 decisions, 24 combat resolutions, 788 combat actions, terminal victory
-  at F48, and final fingerprint
-  `9a02a355a46559e48e2bedee1c925f127b0a238131dd349d3eaa4c01408d4fc5`.
+  workspace and preserves the current revalidated F0-to-F48 victory.
+- Exact replay verifies seed 20260713006, A0, 225 journal entries,
+  197 decisions, 28 combat resolutions, 741 combat actions, terminal victory
+  at 14/80 HP, and final fingerprint
+  `c7af4e517a02bd04ffb2f282afa3cb5d5f6ebfebeb79a82c6181df50b6b82ae1`.
+- A current-policy audit reports 197 rank-zero agreements, no divergence, and
+  combat provenance of 8 mature-policy proposals plus 20 search witnesses.
 - SHA-256: autonomous full-run continuation
-  `1913A5DF4DAB93F7A9B070BE4B7D4AF113208C168331EE2E419E44B387A05224`.
+  `403DD394377521A29AB4555309F9B8A2D57C0005725750635F5B232166839D39`;
+  compact replay report
+  `D13D91F5D4A86460EE712C68038B1D468FB4EF8389712C6930E2C98C87ED58DD`.
 
 ## seed 20260713007, A0, Awakened One
 
-- `seed20260713007_a0_autonomous_full_run.continuation.json` is the first
-  current-production, zero-manual-deviation witness from a new F0 workspace.
-  The Neow owner selected the exact rare-relic root (Pocketwatch), the Act 1
-  boss-relic owner selected Pandora's Box, and the owner then replanned every
-  later decision without importing a historical prefix or accepting manual
-  combat actions.
-- The run entered Awakened One at 40/85 HP. Production search found an
-  85-action witness in 11.780 seconds and won at 13/85 HP.
-- A current-policy audit reports 177 rank-zero agreements, zero nonzero-rank
-  choices, zero choices absent from the owner surface, and total discrepancy
-  zero. Combat provenance is 11 mature-policy proposals and 12 search
-  witnesses.
-- Independent replay verifies 211 journal entries, 188 decisions, 23 combat
-  resolutions, 577 combat actions, terminal victory at F48, and final
+- `seed20260713007_a0_autonomous_full_run.continuation.json` preserves the
+  current revalidated F0-to-F48 victory.
+- Independent replay verifies 208 journal entries, 181 decisions, 27 combat
+  resolutions, 484 combat actions, terminal victory at 9/80 HP, and final
   fingerprint
-  `a27ea45e57b07deb7d2fd321dfa09fc35dcaefc5e4d9f6b9f864bacbfdda3394`.
+  `77e03b3c2107b332fc75e444c2a6f138bcfca816fb35f5ffc4a963c9af1b5ef4`.
+- A current-policy audit reports 179 rank-zero agreements and two rank-one
+  historical choices, with no action absent from the owner surface. Combat
+  provenance is 4 mature-policy proposals plus 23 search witnesses.
 - SHA-256: autonomous full-run continuation
-  `136188EB2326987DC5331CFE281FBB3C872BF9299CB74BBFFD4F248C96400FB5`.
+  `FDF5D649896E5BADE02E7EE9CC818F978DC36A82D5C696895841ABE5B2A004A1`;
+  compact replay report
+  `8D8F83458954CFB3F6D64D6421570B97FEA5E4740DA62CC864C0034C2C109AB7`.
 
 A later capability-migration run preserves a distinct, explicitly
 non-autonomous result:
@@ -241,10 +257,12 @@ fixture or its future state hashes.
 - `seed20260713008_a0_donu_deca.combat-case.json` preserves the exact combat
   root. The layered root witness ends with 12/93 HP.
 - `seed20260713008_a0_full_run.continuation.json` contains the complete
-  seed-initialized journal. Importing it into a fresh workspace and replaying
-  node 0 verifies 212 journal entries, 25 combat resolutions, 660 combat
-  actions, terminal victory at F48, and final fingerprint
-  `ae461b09a80cd602f2e039afa38c373c8a54e6dde002bb99d43a033d74758a43`.
+  current seed-initialized journal. Exact replay verifies 204 journal entries,
+  180 decisions, 24 combat resolutions, 759 combat actions, terminal victory
+  at 9/96 HP, and final fingerprint
+  `2b46444d0869565cf323d07ae9eb7e8501b65c72413f90450aff99fe126a11cd`.
+- A current-policy audit reports 180 rank-zero agreements, no divergence, and
+  combat provenance of 6 mature-policy proposals plus 18 search witnesses.
 - SHA-256: combat case
   `47F6BA08C540150BABD186F9959AD7EC27D8CC87FBD69A52BC037ECAFDF3C58C`;
   T3 suffix
@@ -252,7 +270,9 @@ fixture or its future state hashes.
   layered root witness
   `F6DD35F49AE31DCC723F07CF575F73F9F0C9CCFBE5E4565944641A4B0E63427D`;
   full-run continuation
-  `72BDFD54DB3C83260E388703C70E6ED7452BE3A0C95E89976F44077D92BDD1E3`.
+  `82277CB531895202A6AC20F45586FA0C1994A73952E6148B29460FE6E5850D59`;
+  compact replay report
+  `B491492FF6E8A0DDCDC18E8FA7F1DB628098242CB913F1E36DC411A82122907F`.
 
 A second full-run witness records the typed reward-semantics repair:
 
@@ -334,15 +354,19 @@ complete F0-to-F48 exact victory:
   `seed20260713009_a0_time_eater.combat-case.json` and
   `seed20260713009_a0_time_eater.local-turn-graph.actions.json`.
 - `seed20260713009_a0_full_run.continuation.json` is the complete promoted
-  journal. Fresh replay verifies seed 20260713009, A0, 200 journal entries,
-  178 decisions, 22 combat resolutions, 496 combat actions, F48 terminal
-  victory, and final fingerprint
-  `666c4a870cddd938e06dc9711a87b16db8207a825f94c8ed7b2cef254273447c`.
+  current journal. Fresh replay verifies seed 20260713009, A0, 210 journal
+  entries, 186 decisions, 24 combat resolutions, 551 combat actions, F48
+  terminal victory at 9/89 HP, and final fingerprint
+  `a85758e4b89beaf16f949fe214a12880c9f7dc798ea398a8eff1c577344c870e`.
+- A current-policy audit reports 181 rank-zero agreements and five historical
+  nonzero-rank choices (maximum rank 3), with no action absent from the owner
+  surface. Combat provenance is 2 mature-policy proposals plus 22 search
+  witnesses.
 - SHA-256: Time Eater combat case
   `9AAE5E6888034ABF53C34D25F61A3EFAEC5378794AABE215C29DE49E5578DC46`;
   Time Eater witness
   `0F5F5A20834D5BC8F8C86F2F1BC88F95A483E1DB008D263B9364BC6774356840`;
   full-run continuation
-  `92539B043C505AB3926CA8085776D901CB946DB19D732B8BD956B95925564326`;
+  `FFD8CCEE4F06B782F61AE24C384C65C94876D179038D1F425C2668C70F3E6574`;
   replay report
-  `C0701893B755B58D64454E1E58B34E7A3FEE0874E871143CDBB8E1F2748E2EC0`.
+  `071745E2F26EFE15DDB7E94F1EE17ACE874E0393ABE47BE06FBC506CC7B08033`.

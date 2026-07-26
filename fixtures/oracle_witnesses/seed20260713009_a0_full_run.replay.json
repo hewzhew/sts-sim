@@ -1,21 +1,21 @@
 {
-  "node_id": 211,
+  "node_id": 219,
   "report": {
     "act": 3,
     "ascension": 0,
-    "combat_actions": 496,
-    "combat_resolutions": 22,
-    "current_hp": 7,
-    "decisions": 178,
+    "combat_actions": 551,
+    "combat_resolutions": 24,
+    "current_hp": 9,
+    "decisions": 186,
     "engine_state": "GameOver(Victory)",
-    "final_fingerprint": "666c4a870cddd938e06dc9711a87b16db8207a825f94c8ed7b2cef254273447c",
+    "final_fingerprint": "a85758e4b89beaf16f949fe214a12880c9f7dc798ea398a8eff1c577344c870e",
     "floor": 48,
     "forced_transitions": 0,
-    "journal_entries": 200,
-    "max_hp": 72,
+    "journal_entries": 210,
+    "max_hp": 89,
     "seed": 20260713009
   },
   "schema_name": "ExactOracleRunWitnessReplayV1",
   "schema_version": 1,
-  "workspace": "target\\oracle-cases\\seed009-current.workspace.json"
+  "workspace": "target\\oracle-cases\\seed009-current-f0.workspace.json"
 }

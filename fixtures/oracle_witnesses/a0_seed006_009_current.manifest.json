@@ -1,0 +1,82 @@
+{
+  "schema_name": "OracleRunWitnessSuiteManifestV1",
+  "schema_version": 1,
+  "witnesses": [
+    {
+      "id": "seed006-current-f0-act3-victory",
+      "continuation": "seed20260713006_a0_autonomous_full_run.continuation.json",
+      "expected": {
+        "seed": 20260713006,
+        "ascension": 0,
+        "journal_entries": 225,
+        "decisions": 197,
+        "forced_transitions": 0,
+        "combat_resolutions": 28,
+        "combat_actions": 741,
+        "final_fingerprint": "c7af4e517a02bd04ffb2f282afa3cb5d5f6ebfebeb79a82c6181df50b6b82ae1",
+        "act": 3,
+        "floor": 48,
+        "current_hp": 14,
+        "max_hp": 80,
+        "engine_state": "GameOver(Victory)"
+      }
+    },
+    {
+      "id": "seed007-current-f0-act3-victory",
+      "continuation": "seed20260713007_a0_autonomous_full_run.continuation.json",
+      "expected": {
+        "seed": 20260713007,
+        "ascension": 0,
+        "journal_entries": 208,
+        "decisions": 181,
+        "forced_transitions": 0,
+        "combat_resolutions": 27,
+        "combat_actions": 484,
+        "final_fingerprint": "77e03b3c2107b332fc75e444c2a6f138bcfca816fb35f5ffc4a963c9af1b5ef4",
+        "act": 3,
+        "floor": 48,
+        "current_hp": 9,
+        "max_hp": 80,
+        "engine_state": "GameOver(Victory)"
+      }
+    },
+    {
+      "id": "seed008-current-f0-act3-victory",
+      "continuation": "seed20260713008_a0_full_run.continuation.json",
+      "expected": {
+        "seed": 20260713008,
+        "ascension": 0,
+        "journal_entries": 204,
+        "decisions": 180,
+        "forced_transitions": 0,
+        "combat_resolutions": 24,
+        "combat_actions": 759,
+        "final_fingerprint": "2b46444d0869565cf323d07ae9eb7e8501b65c72413f90450aff99fe126a11cd",
+        "act": 3,
+        "floor": 48,
+        "current_hp": 9,
+        "max_hp": 96,
+        "engine_state": "GameOver(Victory)"
+      }
+    },
+    {
+      "id": "seed009-current-f0-act3-victory",
+      "continuation": "seed20260713009_a0_full_run.continuation.json",
+      "expected": {
+        "seed": 20260713009,
+        "ascension": 0,
+        "journal_entries": 210,
+        "decisions": 186,
+        "forced_transitions": 0,
+        "combat_resolutions": 24,
+        "combat_actions": 551,
+        "final_fingerprint": "a85758e4b89beaf16f949fe214a12880c9f7dc798ea398a8eff1c577344c870e",
+        "act": 3,
+        "floor": 48,
+        "current_hp": 9,
+        "max_hp": 89,
+        "engine_state": "GameOver(Victory)"
+      }
+    }
+  ]
+}

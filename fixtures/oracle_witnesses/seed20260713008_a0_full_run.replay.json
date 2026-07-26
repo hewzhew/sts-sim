@@ -1,21 +1,21 @@
 {
-  "node_id": 0,
+  "node_id": 258,
   "report": {
     "act": 3,
     "ascension": 0,
-    "combat_actions": 660,
-    "combat_resolutions": 25,
-    "current_hp": 12,
-    "decisions": 183,
+    "combat_actions": 759,
+    "combat_resolutions": 24,
+    "current_hp": 9,
+    "decisions": 180,
     "engine_state": "GameOver(Victory)",
-    "final_fingerprint": "ae461b09a80cd602f2e039afa38c373c8a54e6dde002bb99d43a033d74758a43",
+    "final_fingerprint": "2b46444d0869565cf323d07ae9eb7e8501b65c72413f90450aff99fe126a11cd",
     "floor": 48,
-    "forced_transitions": 4,
-    "journal_entries": 212,
-    "max_hp": 93,
+    "forced_transitions": 0,
+    "journal_entries": 204,
+    "max_hp": 96,
     "seed": 20260713008
   },
   "schema_name": "ExactOracleRunWitnessReplayV1",
   "schema_version": 1,
-  "workspace": "imported from fixtures\\oracle_witnesses\\seed20260713008_a0_full_run.continuation.json"
+  "workspace": ".oracle-lab\\cases\\seed008-owner-fixed-fresh.workspace.json"
 }
