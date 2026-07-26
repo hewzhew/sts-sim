@@ -3,6 +3,9 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
+use crate::ai::noncombat_strategy_v1::{
+    build_run_strategy_snapshot_from_run_state_v2, StrategyPackageIdV2, StrategyPlanSupportV1,
+};
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, RouteWindowCoverageKind, RouteWindowFactsConfig,
     RouteWindowPath, RouteWindowPathFamily,
@@ -26,6 +29,7 @@ pub enum RoutePolicyBandV1 {
     ForcedBoss,
     CriticalRecovery,
     RecoveryOption,
+    LiquidityConversion,
     FlexibleGrowth,
     Ordinary,
     ForcedPressure,
@@ -53,7 +57,7 @@ pub struct RoutePolicyContextV1 {
     pub gold: i32,
     pub critical_recovery: bool,
     pub recovery_pressure: bool,
-    pub shop_conversion_ready: bool,
+    pub shop_conversion_support: StrategyPlanSupportV1,
     pub pending_rewards_only_unclaimable_potions: bool,
 }
 
@@ -285,13 +289,14 @@ fn is_route_key(key: &DecisionCandidateKey) -> bool {
 fn route_policy_context_v1(session: &RunControlSession) -> RoutePolicyContextV1 {
     let current_hp = session.run_state.current_hp.max(0);
     let max_hp = session.run_state.max_hp.max(0);
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
     RoutePolicyContextV1 {
         current_hp,
         max_hp,
         gold: session.run_state.gold,
         critical_recovery: max_hp > 0 && current_hp.saturating_mul(3) <= max_hp,
         recovery_pressure: max_hp > 0 && current_hp.saturating_mul(2) <= max_hp,
-        shop_conversion_ready: session.run_state.gold >= 150,
+        shop_conversion_support: strategy.support(StrategyPackageIdV2::GoldPlan),
         pending_rewards_only_unclaimable_potions:
             map_overlay_pending_rewards_only_unclaimable_potions(session),
     }
@@ -524,6 +529,9 @@ fn route_policy_band_v1(
     if context.recovery_pressure && path.some_path_recovers_before_damage() {
         return RoutePolicyBandV1::RecoveryOption;
     }
+    if *room_type == Some(RoomType::ShopRoom) && shop_conversion_is_supported(context) {
+        return RoutePolicyBandV1::LiquidityConversion;
+    }
     if path.min_elites == 0
         && (path.optional_elite()
             || path.max_campfires > path.min_campfires
@@ -535,6 +543,13 @@ fn route_policy_band_v1(
         return RoutePolicyBandV1::ForcedPressure;
     }
     RoutePolicyBandV1::Ordinary
+}
+
+fn shop_conversion_is_supported(context: RoutePolicyContextV1) -> bool {
+    matches!(
+        context.shop_conversion_support,
+        StrategyPlanSupportV1::Plausible | StrategyPlanSupportV1::Strong
+    )
 }
 
 fn compare_route_evidence(
@@ -586,7 +601,7 @@ fn compare_route_actions(
         return survival;
     }
 
-    let shop = if context.shop_conversion_ready {
+    let shop = if shop_conversion_is_supported(context) {
         right_path
             .min_shops
             .cmp(&left_path.min_shops)
@@ -656,6 +671,27 @@ mod tests {
         ]);
         session.run_state.current_hp = 10;
         session.run_state.max_hp = 80;
+        session.engine_state = EngineState::MapNavigation;
+        session
+    }
+
+    fn shop_or_hallway_session(gold: i32) -> RunControlSession {
+        let mut shop = node(0, 0, RoomType::ShopRoom);
+        shop.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut hallway = node(1, 0, RoomType::MonsterRoom);
+        hallway.edges.insert(MapEdge::new(1, 0, 1, 1));
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.event_state = None;
+        session.run_state.map = MapState::new(vec![
+            vec![shop, hallway],
+            vec![
+                node(0, 1, RoomType::MonsterRoom),
+                node(1, 1, RoomType::MonsterRoom),
+            ],
+        ]);
+        session.run_state.current_hp = 80;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = gold;
         session.engine_state = EngineState::MapNavigation;
         session
     }
@@ -747,7 +783,7 @@ mod tests {
                     gold: 0,
                     critical_recovery: false,
                     recovery_pressure: false,
-                    shop_conversion_ready: false,
+                    shop_conversion_support: StrategyPlanSupportV1::Blocked,
                     pending_rewards_only_unclaimable_potions: false,
                 }
             ),
@@ -785,5 +821,58 @@ mod tests {
             decision.evidence.last().map(|evidence| evidence.band),
             Some(RoutePolicyBandV1::AbandonUnclaimableRewards)
         );
+    }
+
+    #[test]
+    fn funded_shop_is_a_real_liquidity_conversion_not_ordinary_path_noise() {
+        let session = shop_or_hallway_session(237);
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_route_policy_decision_v1(&session, &legal).expect("exact route decision");
+
+        assert_eq!(
+            decision.context.shop_conversion_support,
+            StrategyPlanSupportV1::Strong
+        );
+        assert!(matches!(
+            decision.evidence.first(),
+            Some(RoutePolicyActionEvidenceV1 {
+                action: RoutePolicyActionV1::Select {
+                    room_type: Some(RoomType::ShopRoom),
+                    ..
+                },
+                band: RoutePolicyBandV1::LiquidityConversion,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn unfunded_shop_does_not_receive_liquidity_conversion_priority() {
+        let session = shop_or_hallway_session(0);
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_route_policy_decision_v1(&session, &legal).expect("exact route decision");
+        let shop = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.action,
+                    RoutePolicyActionV1::Select {
+                        room_type: Some(RoomType::ShopRoom),
+                        ..
+                    }
+                )
+            })
+            .expect("shop route");
+
+        assert_eq!(
+            decision.context.shop_conversion_support,
+            StrategyPlanSupportV1::Blocked
+        );
+        assert_ne!(shop.band, RoutePolicyBandV1::LiquidityConversion);
     }
 }

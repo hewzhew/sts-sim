@@ -938,6 +938,12 @@ fn woman_in_blue_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
         return action(EventActionKind::Leave);
     }
+    // Woman in Blue still charges gold when Sozu prevents the potion reward.
+    // This is therefore not merely a full-belt capacity question: every paid
+    // option is an exact resource loss with no obtainable benefit.
+    if has_relic(run_state, RelicId::Sozu) {
+        return action(EventActionKind::Leave);
+    }
     let empty_slots = run_state
         .potions
         .iter()
@@ -1571,6 +1577,27 @@ mod tests {
         assert_eq!(
             face_trader_choice(&low_hp),
             EventOwnerOptionSelector::OptionIndex(2)
+        );
+    }
+
+    #[test]
+    fn woman_in_blue_never_buys_potions_blocked_by_sozu() {
+        let mut run_state = event_run(EventId::WomanInBlue, 70, 80, 300);
+        run_state.relics.push(RelicState::new(RelicId::Sozu));
+
+        assert_eq!(
+            woman_in_blue_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Leave)
+        );
+    }
+
+    #[test]
+    fn woman_in_blue_still_buys_for_real_empty_slots_without_sozu() {
+        let run_state = event_run(EventId::WomanInBlue, 70, 80, 300);
+
+        assert_eq!(
+            woman_in_blue_choice(&run_state),
+            EventOwnerOptionSelector::Effect(EventEffect::ObtainPotion { count: 3 })
         );
     }
 }

@@ -2,10 +2,12 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use crate::ai::card_semantics_v1::{
-    card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+    card_reward_semantic_profile_v1, CardRewardPickDependencyV1, CardRewardSemanticProfileV1,
+    CardRewardSemanticRoleV1,
 };
 use crate::ai::noncombat_strategy_v1::{
-    threat_relevant_capability_improvements_v1, StrategyThreatSourceV1,
+    build_run_strategy_snapshot_from_run_state_v2, threat_relevant_capability_improvements_v1,
+    StrategyPackageIdV2, StrategyPlanSupportV1, StrategyThreatSourceV1,
 };
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
@@ -53,6 +55,12 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub duplicate_low_marginal: bool,
     pub access_saturated: bool,
     pub improves_threat_relevant_capability: bool,
+    /// Support for the route resource required by an upgrade-investment card.
+    ///
+    /// `None` means the candidate has no such dependency.  Keeping this typed
+    /// and visible prevents an immediate-damage delta from silently erasing an
+    /// unfunded long-term commitment.
+    pub upgrade_investment_support: Option<StrategyPlanSupportV1>,
     surface_index: usize,
 }
 
@@ -76,6 +84,8 @@ pub fn exact_card_reward_policy_decision_v1(
 ) -> Result<ExactCardRewardPolicyDecisionV1, String> {
     let exact = exact_run_policy_decision_v1(session)?;
     validate_same_candidate_surface(&exact, legal)?;
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+    let upgrade_sink_support = strategy.support(StrategyPackageIdV2::UpgradeSink);
     let mut evidence = exact
         .actions
         .iter()
@@ -87,7 +97,13 @@ pub fn exact_card_reward_policy_decision_v1(
         })
         .enumerate()
         .map(|(surface_index, action)| {
-            card_reward_action_evidence_v1(session, &exact, action, surface_index)
+            card_reward_action_evidence_v1(
+                session,
+                &exact,
+                action,
+                surface_index,
+                upgrade_sink_support,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     evidence.sort_by(compare_card_reward_evidence);
@@ -159,6 +175,7 @@ fn card_reward_action_evidence_v1(
     decision: &ExactRunPolicyDecisionV1,
     action: &ExactRunPolicyActionSuccessorV1,
     surface_index: usize,
+    upgrade_sink_support: StrategyPlanSupportV1,
 ) -> Result<CardRewardPolicyActionEvidenceV1, String> {
     let candidate_key = action.candidate_key.clone().ok_or_else(|| {
         format!(
@@ -210,7 +227,15 @@ fn card_reward_action_evidence_v1(
         &action.after.threat_coverage,
     )
     .is_empty();
-    let band = card_reward_band_v1(
+    let upgrade_investment_support = matches!(
+        &acquisition,
+        CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+            if semantics
+                .dependencies
+                .contains(&CardRewardPickDependencyV1::RouteUpgradeDensity)
+    )
+    .then_some(upgrade_sink_support);
+    let base_band = card_reward_band_v1(
         &acquisition,
         &delta,
         introduces_unsupported_mechanics,
@@ -219,6 +244,7 @@ fn card_reward_action_evidence_v1(
         access_saturated,
         improves_threat_relevant_capability,
     );
+    let band = apply_upgrade_investment_gate_v1(base_band, upgrade_investment_support);
 
     Ok(CardRewardPolicyActionEvidenceV1 {
         candidate_id: action.candidate_id.clone(),
@@ -231,8 +257,24 @@ fn card_reward_action_evidence_v1(
         duplicate_low_marginal,
         access_saturated,
         improves_threat_relevant_capability,
+        upgrade_investment_support,
         surface_index,
     })
+}
+
+fn apply_upgrade_investment_gate_v1(
+    base_band: CardRewardPolicyBandV1,
+    support: Option<StrategyPlanSupportV1>,
+) -> CardRewardPolicyBandV1 {
+    match support {
+        None | Some(StrategyPlanSupportV1::Strong) => base_band,
+        Some(StrategyPlanSupportV1::Plausible) => {
+            base_band.max(CardRewardPolicyBandV1::SpeculativeAddition)
+        }
+        Some(StrategyPlanSupportV1::Weak | StrategyPlanSupportV1::Blocked) => {
+            CardRewardPolicyBandV1::Liability
+        }
+    }
 }
 
 fn acquisition_v1(
@@ -647,6 +689,64 @@ mod tests {
                 DecisionCandidateKey::CardRewardSkip { .. }
             )),
             "a durable mitigation answer for the known Champ must remain independently admissible"
+        );
+    }
+
+    #[test]
+    fn unfunded_upgrade_investment_does_not_masquerade_as_immediate_work() {
+        let session = reward_session(&[(CardId::SearingBlow, 0), (CardId::Armaments, 0)]);
+        let decision = decision(&session);
+        let searing = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::CardRewardPick {
+                        card: CardId::SearingBlow,
+                        ..
+                    }
+                )
+            })
+            .expect("Searing Blow evidence");
+
+        assert_eq!(
+            searing.upgrade_investment_support,
+            Some(StrategyPlanSupportV1::Blocked)
+        );
+        assert_eq!(searing.band, CardRewardPolicyBandV1::Liability);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Armaments,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::SearingBlow,
+                    ..
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn funded_upgrade_investment_keeps_its_underlying_policy_band() {
+        assert_eq!(
+            apply_upgrade_investment_gate_v1(
+                CardRewardPolicyBandV1::CloseThreatGap,
+                Some(StrategyPlanSupportV1::Strong),
+            ),
+            CardRewardPolicyBandV1::CloseThreatGap
+        );
+        assert_eq!(
+            apply_upgrade_investment_gate_v1(
+                CardRewardPolicyBandV1::CloseThreatGap,
+                Some(StrategyPlanSupportV1::Plausible),
+            ),
+            CardRewardPolicyBandV1::SpeculativeAddition
         );
     }
 }
