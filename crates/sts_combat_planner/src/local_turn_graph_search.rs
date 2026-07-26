@@ -241,6 +241,8 @@ pub struct LocalTurnGraphPolicyLineReport {
     pub suffix_probe_completed_turn_options: usize,
     pub suffix_probe_applied_action_transitions: usize,
     pub suffix_probe_unique_successor_states: usize,
+    pub suffix_probe_exact_nodes: usize,
+    pub suffix_probe_exact_edges: usize,
     pub suffix_probe_performance_timing: LocalTurnGraphPerformanceTiming,
     pub suffix_probe_setup_elapsed_ns: u64,
     pub suffix_probe_advance_elapsed_ns: u64,
@@ -1041,6 +1043,12 @@ impl LocalTurnGraphWitnessSession {
         report.suffix_probe_unique_successor_states = report
             .suffix_probe_unique_successor_states
             .saturating_add(suffix_report.counters.unique_successor_states);
+        report.suffix_probe_exact_nodes = report
+            .suffix_probe_exact_nodes
+            .saturating_add(suffix_report.counters.exact_nodes);
+        report.suffix_probe_exact_edges = report
+            .suffix_probe_exact_edges
+            .saturating_add(suffix_report.counters.exact_edges);
         report
             .suffix_probe_performance_timing
             .accumulate(suffix_report.performance_timing);

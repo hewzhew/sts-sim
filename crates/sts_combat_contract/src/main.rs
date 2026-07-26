@@ -229,6 +229,8 @@ fn run(args: Cli) -> Result<(), String> {
             "completed_turn_options": line.suffix_probe_completed_turn_options,
             "applied_action_transitions": line.suffix_probe_applied_action_transitions,
             "unique_successor_states": line.suffix_probe_unique_successor_states,
+            "exact_nodes": line.suffix_probe_exact_nodes,
+            "exact_edges": line.suffix_probe_exact_edges,
             "performance_ns": line.suffix_probe_performance_timing,
             "setup_elapsed_ns": line.suffix_probe_setup_elapsed_ns,
             "advance_elapsed_ns": line.suffix_probe_advance_elapsed_ns,
