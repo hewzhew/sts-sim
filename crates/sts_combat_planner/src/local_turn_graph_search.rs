@@ -455,13 +455,13 @@ impl LocalTurnGraphWitnessSession {
             boundary_service_views_from_guides(&root_guides, root_lookahead_pending_lane);
         let root_lookahead_acquisition_views =
             lookahead_acquisition_views_from_guides(&root_guides, root_lookahead_pending_lane);
-        let root_generation_service_views =
-            generation_service_views(policy.as_ref(), root.position());
         // Expensive lookahead evaluates exact player-turn boundaries. Atomic
         // partial states remain the generator's private proposal mechanism;
         // evaluating them here would reintroduce an independent inner search.
         let generator =
             TurnOptionGeneratorSession::with_policy(root.clone(), config.generator, policy.clone());
+        let root_generation_service_views =
+            generation_service_views_from_lanes(generator.retained_guide_lanes());
         Self {
             original_root,
             config,
@@ -2268,14 +2268,14 @@ impl LocalTurnGraphWitnessSession {
                 boundary_service_views_from_guides(&guides, lookahead_pending_lane);
             let lookahead_acquisition_views =
                 lookahead_acquisition_views_from_guides(&guides, lookahead_pending_lane);
-            let generation_service_views =
-                generation_service_views(self.policy.as_ref(), root.position());
             let node_id = self.nodes.len();
             let generator = TurnOptionGeneratorSession::with_policy(
                 root.clone(),
                 self.config.generator,
                 self.policy.clone(),
             );
+            let generation_service_views =
+                generation_service_views_from_lanes(generator.retained_guide_lanes());
             self.nodes.push(GraphNode {
                 generator,
                 diagnostic_parent: Some((parent_id, self.nodes[parent_id].children.len())),

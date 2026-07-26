@@ -603,15 +603,10 @@ pub(super) fn lookahead_acquisition_views_from_guides(
         .collect()
 }
 
-pub(super) fn generation_service_views(
-    policy: &dyn crate::policy::CombatActionPolicy,
-    position: &CombatPosition,
+pub(super) fn generation_service_views_from_lanes(
+    lanes: impl IntoIterator<Item = CombatGuideLaneId>,
 ) -> Vec<LocalServiceView> {
-    let lanes = policy
-        .turn_generation_guides(position)
-        .into_iter()
-        .map(|guide| guide.lane)
-        .collect::<BTreeSet<_>>();
+    let lanes = lanes.into_iter().collect::<BTreeSet<_>>();
     std::iter::once(LocalServiceView::Anchor)
         .chain(lanes.into_iter().map(LocalServiceView::Guide))
         .collect()
