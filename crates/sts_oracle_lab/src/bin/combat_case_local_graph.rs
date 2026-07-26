@@ -535,6 +535,9 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             } else {
                 compact_combat_trace(deepest_survival_trace.as_ref())
             };
+        let plan_transition_portfolio = plan_transition_annotations
+            .then(|| combat_plan_transition_portfolio_v1(&session))
+            .unwrap_or(Value::Null);
         return print_json(&json!({
             "schema_name": "LocalTurnGraphCombatTraceV1",
             "schema_version": 1,
@@ -555,6 +558,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             },
             "root_action_families": root_action_families,
             "plan_compatible_policy_line": policy_line_report,
+            "plan_transition_annotations": plan_transition_annotations,
+            "plan_transition_portfolio": plan_transition_portfolio,
             "deepest": {
                 "progress_state": progress.deepest_progress_state,
                 "progress_node": deepest_progress_node,

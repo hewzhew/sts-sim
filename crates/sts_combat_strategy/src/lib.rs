@@ -19,12 +19,17 @@ use sts_core::sim::combat_action_surface::{
 use sts_core::sim::combat_projection::project_monster_move_preview_in_combat;
 use sts_core::state::core::{ClientInput, HandSelectReason};
 
+mod champ;
+
+pub use champ::{champ_combat_plan_v1, champ_plan_transition_v1};
+
 pub const COMBAT_PLAN_SCHEMA_V1: &str = "typed-combat-plan/v1";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatPlanIdV1 {
     AwakenedOnePhaseControl,
+    ChampPhaseControl,
     DonuAndDecaGrowthControl,
 }
 
@@ -35,6 +40,9 @@ pub enum CombatPlanStageV1 {
     PrepareFirstPhaseCommit,
     ExploitTransitionWindow,
     SurviveSecondPhaseOpening,
+    PrepareThresholdCommit,
+    AwaitDebuffCleanse,
+    SurviveExecuteWindow,
     EliminateTeamGrowthSource,
     ConvertToLethal,
 }
@@ -46,6 +54,9 @@ pub enum CombatPlanMilestoneV1 {
     UntaxedTransitionWindowReached,
     TransitionWindowClosed,
     SecondPhaseOpeningSurvived,
+    ThresholdCommitted,
+    DebuffCleanseCompleted,
+    ExecuteWindowSurvived,
     TeamGrowthSourceEliminated,
     EncounterDefeated,
 }
@@ -113,6 +124,12 @@ pub enum CombatPlanObligationV1 {
         remaining_skills: u16,
         conversion: FiniteSkillConversionStateV1,
     },
+    PreservePostCleanseStrengthReduction {
+        remaining_sources: u16,
+    },
+    PreserveExecuteSurvivalResources {
+        remaining_sources: u16,
+    },
     ManageLiveStatusBurden {
         live_status_cards: u16,
     },
@@ -128,6 +145,7 @@ pub enum CombatPlanObligationV1 {
     },
     EstablishDurableScaling,
     SurviveSecondPhaseOpening,
+    SurviveExecuteWindow,
     ConvertPreparedEngineToLethal,
 }
 
@@ -148,6 +166,9 @@ pub struct CombatPlanResourcesV1 {
     /// Live, unexhausted cards which can reduce enemy Strength.
     #[serde(default)]
     pub remaining_strength_reduction: u16,
+    /// Live Apparition cards which can cover a later forced attack window.
+    #[serde(default)]
+    pub remaining_intangible_sources: u16,
     /// Living enemies whose Artifact has already been removed.
     #[serde(default)]
     pub exposed_enemy_count: u8,
@@ -162,6 +183,9 @@ pub struct CombatPlanResourcesV1 {
 pub struct CombatPlanStateEnvelopeV1 {
     pub player_hp: i32,
     pub player_block: i32,
+    /// Exact turns of player Intangible already realized in combat state.
+    #[serde(default)]
+    pub player_intangible_turns: i32,
     pub visible_incoming_damage: i32,
     pub visible_damage_margin: i32,
     pub current_energy: u8,
@@ -171,6 +195,9 @@ pub struct CombatPlanStateEnvelopeV1 {
     /// HP plus Block on the encounter plan's current focus target.
     #[serde(default)]
     pub priority_target_hp_with_block: Option<i32>,
+    /// Exact damage required to cross the encounter's next phase threshold.
+    #[serde(default)]
+    pub phase_transition_damage_remaining: Option<i32>,
     /// Sum of realized Strength across living enemies.
     #[serde(default)]
     pub enemy_team_strength: i32,
@@ -186,6 +213,14 @@ pub enum CombatPlanTransitionEventV1 {
     VisibleDamageMarginChanged {
         before: i32,
         after: i32,
+    },
+    PlayerIntangibleChanged {
+        before: i32,
+        after: i32,
+    },
+    PhaseTransitionDamageRemainingChanged {
+        before: Option<i32>,
+        after: Option<i32>,
     },
     ReactiveStrengthChanged {
         before: i32,
@@ -212,6 +247,10 @@ pub enum CombatPlanTransitionEventV1 {
         after: bool,
     },
     StrengthReductionSupplyChanged {
+        before: u16,
+        after: u16,
+    },
+    PhaseSurvivalSupplyChanged {
         before: u16,
         after: u16,
     },
@@ -269,6 +308,7 @@ pub struct CombatPlanTransitionV1 {
 #[serde(rename_all = "snake_case", tag = "plan", content = "transition")]
 pub enum CombatPlanTransitionAnnotationV1 {
     AwakenedOnePhaseControl(CombatPlanTransitionV1),
+    ChampPhaseControl(CombatPlanTransitionV1),
     DonuAndDecaGrowthControl(CombatPlanTransitionV1),
 }
 
@@ -276,6 +316,7 @@ impl CombatPlanTransitionAnnotationV1 {
     pub fn completed_milestones(&self) -> &[CombatPlanMilestoneV1] {
         match self {
             Self::AwakenedOnePhaseControl(transition)
+            | Self::ChampPhaseControl(transition)
             | Self::DonuAndDecaGrowthControl(transition) => &transition.completed_milestones,
         }
     }
@@ -293,6 +334,9 @@ pub fn combat_plan_transition_annotation_v1(
     if awakened_one_combat_plan_v1(before).is_some() {
         awakened_one_plan_transition_v1(before, after)
             .map(CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl)
+    } else if champ_combat_plan_v1(before).is_some() {
+        champ_plan_transition_v1(before, after)
+            .map(CombatPlanTransitionAnnotationV1::ChampPhaseControl)
     } else {
         donu_and_deca_plan_transition_v1(before, after)
             .map(CombatPlanTransitionAnnotationV1::DonuAndDecaGrowthControl)
@@ -304,7 +348,9 @@ pub fn combat_plan_transition_annotation_v1(
 /// The projection is read-only and does not imply that a plan stage is
 /// reachable, desirable, or solved.
 pub fn combat_plan_projection_v1(position: &CombatPosition) -> Option<CombatPlanProjectionV1> {
-    awakened_one_combat_plan_v1(position).or_else(|| donu_and_deca_combat_plan_v1(position))
+    awakened_one_combat_plan_v1(position)
+        .or_else(|| champ_combat_plan_v1(position))
+        .or_else(|| donu_and_deca_combat_plan_v1(position))
 }
 
 /// Returns the encounter plan's independent state-guidance view.
@@ -316,6 +362,9 @@ pub fn combat_plan_state_guide_rank_v1(
     position: &CombatPosition,
 ) -> Option<CombatPlanStateGuideRankV1> {
     let plan = combat_plan_projection_v1(position)?;
+    if plan.plan == CombatPlanIdV1::ChampPhaseControl {
+        return None;
+    }
     let components = match plan.stage {
         CombatPlanStageV1::RemoveEscalatingAdds => {
             let remaining_adds = match plan.primary {
@@ -374,6 +423,11 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.resources.remaining_skill_fuel as i32,
             -(plan.envelope.live_status_cards as i32),
         ],
+        CombatPlanStageV1::PrepareThresholdCommit
+        | CombatPlanStageV1::AwaitDebuffCleanse
+        | CombatPlanStageV1::SurviveExecuteWindow => {
+            unreachable!("Champ plans are diagnostic-only and do not own production guidance")
+        }
         CombatPlanStageV1::EliminateTeamGrowthSource => {
             let mitigation_ready = plan.resources.remaining_strength_reduction == 0
                 || plan.resources.exposed_enemy_count > 0;
@@ -467,6 +521,11 @@ pub fn awakened_one_combat_plan_v1(position: &CombatPosition) -> Option<CombatPl
         ),
         CombatPlanStageV1::EliminateTeamGrowthSource => {
             unreachable!("Awakened One plan cannot enter Donu's growth-control stage")
+        }
+        CombatPlanStageV1::PrepareThresholdCommit
+        | CombatPlanStageV1::AwaitDebuffCleanse
+        | CombatPlanStageV1::SurviveExecuteWindow => {
+            unreachable!("Awakened One plan cannot enter Champ's threshold-control stages")
         }
     };
 
@@ -876,6 +935,9 @@ const fn stage_ordinal(stage: CombatPlanStageV1) -> u8 {
         CombatPlanStageV1::PrepareFirstPhaseCommit => 1,
         CombatPlanStageV1::ExploitTransitionWindow => 2,
         CombatPlanStageV1::SurviveSecondPhaseOpening => 3,
+        CombatPlanStageV1::PrepareThresholdCommit => 0,
+        CombatPlanStageV1::AwaitDebuffCleanse => 1,
+        CombatPlanStageV1::SurviveExecuteWindow => 2,
         CombatPlanStageV1::EliminateTeamGrowthSource => 0,
         CombatPlanStageV1::ConvertToLethal => 4,
     }
@@ -924,6 +986,9 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
         remaining_strength_reduction: count_live_cards(combat, |card| {
             matches!(card.id, CardId::Disarm | CardId::DarkShackles)
         }),
+        remaining_intangible_sources: count_live_cards(combat, |card| {
+            card.id == CardId::Apparition
+        }),
         exposed_enemy_count: combat
             .entities
             .monsters
@@ -939,7 +1004,8 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
 
 fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelopeV1 {
     let player = combat.entities.player.id;
-    let player_intangible = combat.get_power(player, PowerId::IntangiblePlayer) > 0;
+    let player_intangible_turns = combat.get_power(player, PowerId::IntangiblePlayer).max(0);
+    let player_intangible = player_intangible_turns > 0;
     let visible_incoming_damage = combat
         .entities
         .monsters
@@ -957,6 +1023,7 @@ fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelop
     CombatPlanStateEnvelopeV1 {
         player_hp: combat.entities.player.current_hp,
         player_block: combat.entities.player.block,
+        player_intangible_turns,
         visible_incoming_damage,
         visible_damage_margin: combat
             .entities
@@ -971,6 +1038,7 @@ fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelop
             get_card_definition(card.id).card_type == CardType::Status
         }),
         priority_target_hp_with_block: None,
+        phase_transition_damage_remaining: None,
         enemy_team_strength: combat
             .entities
             .monsters
@@ -997,6 +1065,22 @@ fn combat_plan_transition_events_v1(
             before: before.envelope.visible_damage_margin,
             after: after.envelope.visible_damage_margin,
         });
+    }
+    if before.envelope.player_intangible_turns != after.envelope.player_intangible_turns {
+        events.push(CombatPlanTransitionEventV1::PlayerIntangibleChanged {
+            before: before.envelope.player_intangible_turns,
+            after: after.envelope.player_intangible_turns,
+        });
+    }
+    if before.envelope.phase_transition_damage_remaining
+        != after.envelope.phase_transition_damage_remaining
+    {
+        events.push(
+            CombatPlanTransitionEventV1::PhaseTransitionDamageRemainingChanged {
+                before: before.envelope.phase_transition_damage_remaining,
+                after: after.envelope.phase_transition_damage_remaining,
+            },
+        );
     }
     if before.envelope.awakened_strength != after.envelope.awakened_strength {
         events.push(CombatPlanTransitionEventV1::ReactiveStrengthChanged {
@@ -1042,6 +1126,13 @@ fn combat_plan_transition_events_v1(
                 after: after.resources.remaining_strength_reduction,
             },
         );
+    }
+    if before.resources.remaining_intangible_sources != after.resources.remaining_intangible_sources
+    {
+        events.push(CombatPlanTransitionEventV1::PhaseSurvivalSupplyChanged {
+            before: before.resources.remaining_intangible_sources,
+            after: after.resources.remaining_intangible_sources,
+        });
     }
     if before.resources.exposed_enemy_count != after.resources.exposed_enemy_count {
         events.push(CombatPlanTransitionEventV1::ExposedEnemyCountChanged {

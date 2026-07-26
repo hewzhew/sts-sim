@@ -3107,10 +3107,22 @@ struct CombatPlanTransitionServiceAggregateV1 {
     total_successor_visits: usize,
     minimum_negative_log_policy: Option<f64>,
     minimum_action_count: Option<usize>,
+    maximum_player_hp_before: Option<i32>,
+    maximum_player_hp_after: Option<i32>,
+    maximum_visible_damage_margin_after: Option<i32>,
+    maximum_player_intangible_before: Option<i32>,
+    maximum_player_intangible_after: Option<i32>,
+    maximum_strength_reduction_before: Option<u16>,
+    maximum_strength_reduction_after: Option<u16>,
+    maximum_intangible_sources_before: Option<u16>,
+    maximum_intangible_sources_after: Option<u16>,
+    minimum_priority_target_hp_after: Option<i32>,
+    minimum_phase_transition_damage_after: Option<i32>,
 }
 
 impl CombatPlanTransitionServiceAggregateV1 {
     fn observe(&mut self, edge: &LocalTurnGraphPlanTransitionEdgeSnapshot) {
+        let (_, transition) = plan_transition_parts(&edge.plan_transition_annotation);
         self.generated_edges = self.generated_edges.saturating_add(1);
         if edge.edge_visits > 0 {
             self.edge_served_edges = self.edge_served_edges.saturating_add(1);
@@ -3143,6 +3155,72 @@ impl CombatPlanTransitionServiceAggregateV1 {
             self.minimum_action_count
                 .map_or(edge.action_count, |current| current.min(edge.action_count)),
         );
+        self.maximum_player_hp_before = Some(
+            self.maximum_player_hp_before
+                .map_or(transition.envelope_before.player_hp, |current| {
+                    current.max(transition.envelope_before.player_hp)
+                }),
+        );
+        self.maximum_player_intangible_before = Some(self.maximum_player_intangible_before.map_or(
+            transition.envelope_before.player_intangible_turns,
+            |current| current.max(transition.envelope_before.player_intangible_turns),
+        ));
+        self.maximum_strength_reduction_before =
+            Some(self.maximum_strength_reduction_before.map_or(
+                transition.resources_before.remaining_strength_reduction,
+                |current| current.max(transition.resources_before.remaining_strength_reduction),
+            ));
+        self.maximum_intangible_sources_before =
+            Some(self.maximum_intangible_sources_before.map_or(
+                transition.resources_before.remaining_intangible_sources,
+                |current| current.max(transition.resources_before.remaining_intangible_sources),
+            ));
+        if let Some(envelope) = transition.envelope_after {
+            self.maximum_player_hp_after = Some(
+                self.maximum_player_hp_after
+                    .map_or(envelope.player_hp, |current| {
+                        current.max(envelope.player_hp)
+                    }),
+            );
+            self.maximum_visible_damage_margin_after = Some(
+                self.maximum_visible_damage_margin_after
+                    .map_or(envelope.visible_damage_margin, |current| {
+                        current.max(envelope.visible_damage_margin)
+                    }),
+            );
+            self.maximum_player_intangible_after = Some(
+                self.maximum_player_intangible_after
+                    .map_or(envelope.player_intangible_turns, |current| {
+                        current.max(envelope.player_intangible_turns)
+                    }),
+            );
+            if let Some(target_hp) = envelope.priority_target_hp_with_block {
+                self.minimum_priority_target_hp_after = Some(
+                    self.minimum_priority_target_hp_after
+                        .map_or(target_hp, |current| current.min(target_hp)),
+                );
+            }
+            if let Some(damage) = envelope.phase_transition_damage_remaining {
+                self.minimum_phase_transition_damage_after = Some(
+                    self.minimum_phase_transition_damage_after
+                        .map_or(damage, |current| current.min(damage)),
+                );
+            }
+        }
+        if let Some(resources) = transition.resources_after {
+            self.maximum_strength_reduction_after = Some(
+                self.maximum_strength_reduction_after
+                    .map_or(resources.remaining_strength_reduction, |current| {
+                        current.max(resources.remaining_strength_reduction)
+                    }),
+            );
+            self.maximum_intangible_sources_after = Some(
+                self.maximum_intangible_sources_after
+                    .map_or(resources.remaining_intangible_sources, |current| {
+                        current.max(resources.remaining_intangible_sources)
+                    }),
+            );
+        }
     }
 }
 
@@ -3159,6 +3237,9 @@ fn plan_transition_parts(
     match annotation {
         CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl(transition) => {
             ("awakened_one_phase_control", transition)
+        }
+        CombatPlanTransitionAnnotationV1::ChampPhaseControl(transition) => {
+            ("champ_phase_control", transition)
         }
         CombatPlanTransitionAnnotationV1::DonuAndDecaGrowthControl(transition) => {
             ("donu_and_deca_growth_control", transition)
