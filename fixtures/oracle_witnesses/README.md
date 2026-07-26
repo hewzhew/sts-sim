@@ -4,12 +4,12 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
-## Current six-seed regression suite
+## Current eight-seed regression suite
 
-`a0_seed006_012_current.manifest.json` is the authoritative fast regression
-set for the current seed006--012 milestone. It pins the expected terminal
-fingerprint and compact replay facts for six complete, seed-initialized A0
-runs. One process verifies all six journals:
+`a0_seed006_013_current.manifest.json` is the authoritative fast regression
+set for the current seed006--013 milestone. It pins the expected terminal
+fingerprint and compact replay facts for eight complete, seed-initialized A0
+runs. One process verifies all eight journals:
 
 ```text
 cargo test-run-witnesses
@@ -26,7 +26,7 @@ cargo audit-run-witnesses
 The exact replay layer currently completes in a few seconds on the development
 machine; replay plus owner audit remains a lightweight second layer.
 The suite manifest SHA-256 is
-`D2D585992F25E848F557F8E748A210471E750AD0468BB5B09DB04F34F58B62DC`.
+`F354EB8F7BF9D1E0828AE0A99007129912ECE62FCBE7CCE38C55F0A5EA32DABA`.
 
 ## seed 20260713006, A0, Awakened One
 
@@ -411,3 +411,31 @@ complete F0-to-F48 exact victory:
   `E6673AE9292DB8245D22EE51E9F287819DABABE7E55F1BF5EC38F5925A3775BB`;
   compact replay report
   `6581C35ED15BCBB7AA0FA3222713C514B44665692FABAB90B75115BA0F16B950`.
+
+## seed 20260713012, A0, Donu and Deca
+
+- `seed20260713012_a0_full_run.continuation.json` is an autonomous F0-to-F48
+  production run. It preserves potions through ordinary combats unless the
+  exact rescue stage needs them, and uses route-aware Rest decisions before
+  the Act 3 boss.
+- Fresh replay verifies 187 journal entries, 163 decisions, 24 combat
+  resolutions, 648 combat actions, terminal victory at 7/53 HP, and final
+  fingerprint
+  `3ae0896c8e9535550889244776d2daa2a209ee09737d251961d4bdc268de3161`.
+- A current-policy audit reports 163 rank-zero agreements, no divergence, and
+  combat provenance of 4 mature-policy proposals plus 20 search witnesses.
+- SHA-256: full-run continuation
+  `F9C9AE7836856047C98DFCF2B3AA67D9E14098E236D93B0C1B41B90BB91537BC`.
+
+## seed 20260713013, A0, Time Eater
+
+- `seed20260713013_a0_full_run.continuation.json` is an autonomous F0-to-F48
+  production run. Neow supplied Offering; the run completed 28 combats and
+  defeated Time Eater at 26/81 HP.
+- Fresh replay verifies 214 journal entries, 186 decisions, 28 combat
+  resolutions, 597 combat actions, and final fingerprint
+  `5ae5f788481b9013ff3fe9f57a18dda20c9eba325f3971aefc0767ee0dfd1132`.
+- A current-policy audit reports 186 rank-zero agreements, no divergence, and
+  combat provenance of 10 mature-policy proposals plus 18 search witnesses.
+- SHA-256: full-run continuation
+  `E0FCD6859CF61523D318D0C9A7EC5A4A3C09A1A5D002C615A6E1D5BC530961C8`.
