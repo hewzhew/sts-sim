@@ -4,7 +4,8 @@ use std::time::Instant;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sts_core::ai::combat_state_key::{
-    combat_exact_state_hash_v1, combat_exact_state_key_hash_v1, CombatExactStateKey,
+    combat_exact_state_hash_v1, combat_exact_state_key, combat_exact_state_key_hash_v1,
+    CombatExactStateKey,
 };
 use sts_core::engine::core::is_smoke_escape_stable_boundary;
 use sts_core::sim::combat::{CombatPosition, CombatTerminal};
@@ -13,7 +14,7 @@ use sts_core::state::core::{ClientInput, EngineState};
 #[derive(Clone, Debug)]
 pub struct CombatDecisionRoot {
     position: CombatPosition,
-    exact_state_hash: String,
+    exact_state_identity: ReplaySuccessorHash,
     turn_count: u32,
 }
 
@@ -26,21 +27,21 @@ pub enum CombatDecisionRootError {
 impl CombatDecisionRoot {
     pub fn new(position: CombatPosition) -> Result<Self, CombatDecisionRootError> {
         Self::validate(&position)?;
-        let exact_state_hash = exact_hash(&position);
+        let exact_key = Arc::new(combat_exact_state_key(&position.engine, &position.combat));
         Ok(Self {
-            exact_state_hash,
+            exact_state_identity: ReplaySuccessorHash::from_exact_key(exact_key),
             turn_count: position.combat.turn.turn_count,
             position,
         })
     }
 
-    pub(crate) fn with_exact_state_hash(
+    pub(crate) fn with_exact_state_identity(
         position: CombatPosition,
-        exact_state_hash: String,
+        exact_state_identity: ReplaySuccessorHash,
     ) -> Result<Self, CombatDecisionRootError> {
         Self::validate(&position)?;
         Ok(Self {
-            exact_state_hash,
+            exact_state_identity,
             turn_count: position.combat.turn.turn_count,
             position,
         })
@@ -63,7 +64,11 @@ impl CombatDecisionRoot {
     }
 
     pub fn exact_state_hash(&self) -> &str {
-        &self.exact_state_hash
+        self.exact_state_identity.as_str()
+    }
+
+    pub(crate) fn exact_state_key(&self) -> Option<&Arc<CombatExactStateKey>> {
+        self.exact_state_identity.exact_key()
     }
 
     pub fn turn_count(&self) -> u32 {
@@ -148,6 +153,10 @@ impl ReplaySuccessorHash {
                 .map(|key| combat_exact_state_key_hash_v1(key))
                 .expect("a deferred replay hash retains its exact key")
         })
+    }
+
+    pub(crate) fn exact_key(&self) -> Option<&Arc<CombatExactStateKey>> {
+        self.exact_key.as_ref()
     }
 }
 
@@ -274,6 +283,10 @@ impl CompleteTurnOption {
 
     pub fn exact_successor_hash(&self) -> &str {
         self.exact_successor_hash.as_str()
+    }
+
+    pub(crate) fn exact_successor_identity(&self) -> &ReplaySuccessorHash {
+        &self.exact_successor_hash
     }
 
     pub fn exact_successor(&self) -> &CombatPosition {

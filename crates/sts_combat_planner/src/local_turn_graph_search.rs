@@ -3,6 +3,7 @@ mod scheduling;
 use scheduling::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde::Serialize;
@@ -11,6 +12,7 @@ use sts_combat_strategy::{
     combat_plan_projection_v1, combat_plan_transition_annotation_v1, CombatPlanActionTimingV1,
     CombatPlanProjectionV1, CombatPlanTransitionAnnotationV1,
 };
+use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::ClientInput;
 
@@ -439,7 +441,7 @@ pub struct LocalTurnGraphWitnessSession {
     collect_plan_transition_annotations: bool,
     lookahead_lane: Option<CombatGuideLaneId>,
     nodes: Vec<GraphNode>,
-    nodes_by_hash: HashMap<String, usize>,
+    nodes_by_exact_key: HashMap<Arc<CombatExactStateKey>, usize>,
     used: LocalTurnGraphWitnessCounters,
     performance_timing: LocalTurnGraphPerformanceTiming,
     granted_selections: usize,
@@ -494,7 +496,10 @@ impl LocalTurnGraphWitnessSession {
         lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     ) -> Self {
         let original_root = root.position().clone();
-        let root_hash = root.exact_state_hash().to_owned();
+        let root_exact_key = root
+            .exact_state_key()
+            .expect("a newly constructed combat root retains its exact key")
+            .clone();
         let (root_guides, root_lookahead_pending_lane) = guides_with_pending_lookahead(
             policy.as_ref(),
             lookahead_evaluator.as_deref(),
@@ -541,7 +546,7 @@ impl LocalTurnGraphWitnessSession {
                 synced_gaps: 0,
                 exhausted: false,
             }],
-            nodes_by_hash: HashMap::from([(root_hash, 0)]),
+            nodes_by_exact_key: HashMap::from([(root_exact_key, 0)]),
             used: LocalTurnGraphWitnessCounters {
                 exact_nodes: 1,
                 ..LocalTurnGraphWitnessCounters::default()
@@ -967,9 +972,7 @@ impl LocalTurnGraphWitnessSession {
                         break 'turns;
                     }
                     let successor_admission_started = Instant::now();
-                    let successor_hash = option.exact_successor_hash().to_owned();
-                    self.accept_successor(node_id, &path, option);
-                    let Some(&successor_id) = self.nodes_by_hash.get(&successor_hash) else {
+                    let Some(successor_id) = self.accept_successor(node_id, &path, option) else {
                         return Err("policy-line successor was not admitted".to_owned());
                     };
                     let Some(edge_index) = self.nodes[node_id]
@@ -1384,11 +1387,17 @@ impl LocalTurnGraphWitnessSession {
         self.snapshot(status)
     }
 
+    fn node_id_by_exact_hash(&self, exact_state_hash: &str) -> Option<usize> {
+        self.nodes
+            .iter()
+            .position(|node| node.generator.root().exact_state_hash() == exact_state_hash)
+    }
+
     pub fn state_snapshot_by_exact_hash(
         &self,
         exact_state_hash: &str,
     ) -> Option<LocalTurnGraphStateSnapshot> {
-        let node_id = *self.nodes_by_hash.get(exact_state_hash)?;
+        let node_id = self.node_id_by_exact_hash(exact_state_hash)?;
         let node = &self.nodes[node_id];
         let counters = node.generator.counters();
         let retained_guide_promises = node
@@ -1448,8 +1457,8 @@ impl LocalTurnGraphWitnessSession {
         parent_exact_state_hash: &str,
         successor_exact_state_hash: &str,
     ) -> Option<LocalTurnGraphEdgeSnapshot> {
-        let parent_id = *self.nodes_by_hash.get(parent_exact_state_hash)?;
-        let successor_id = *self.nodes_by_hash.get(successor_exact_state_hash)?;
+        let parent_id = self.node_id_by_exact_hash(parent_exact_state_hash)?;
+        let successor_id = self.node_id_by_exact_hash(successor_exact_state_hash)?;
         let parent = &self.nodes[parent_id];
         let edge = parent
             .children
@@ -1551,10 +1560,11 @@ impl LocalTurnGraphWitnessSession {
     }
 
     pub fn plan_transition_edge_snapshots(&self) -> Vec<LocalTurnGraphPlanTransitionEdgeSnapshot> {
-        let mut exact_hashes = vec![None; self.nodes.len()];
-        for (hash, node_id) in &self.nodes_by_hash {
-            exact_hashes[*node_id] = Some(hash.as_str());
-        }
+        let exact_hashes = self
+            .nodes
+            .iter()
+            .map(|node| node.generator.root().exact_state_hash())
+            .collect::<Vec<_>>();
         let mut snapshots = self
             .nodes
             .iter()
@@ -1565,8 +1575,8 @@ impl LocalTurnGraphWitnessSession {
                     let plan_transition_annotation =
                         edge.plan_transition_annotation.as_ref()?.clone();
                     Some(LocalTurnGraphPlanTransitionEdgeSnapshot {
-                        parent_exact_state_hash: exact_hashes[parent_id]?.to_owned(),
-                        successor_exact_state_hash: exact_hashes[edge.successor]?.to_owned(),
+                        parent_exact_state_hash: exact_hashes[parent_id].to_owned(),
+                        successor_exact_state_hash: exact_hashes[edge.successor].to_owned(),
                         parent_relative_turn_depth: parent.relative_turn_depth,
                         action_count: edge.actions.len(),
                         negative_log_policy: edge.negative_log_policy,
@@ -2319,7 +2329,7 @@ impl LocalTurnGraphWitnessSession {
                 }
                 CompleteTurnOptionBoundary::Escape => {}
                 CompleteTurnOptionBoundary::NextPlayerTurn => {
-                    self.accept_successor(node_id, path, option);
+                    let _ = self.accept_successor(node_id, path, option);
                 }
             }
         }
@@ -2351,23 +2361,29 @@ impl LocalTurnGraphWitnessSession {
         parent_id: usize,
         path: &[(usize, usize)],
         option: CompleteTurnOption,
-    ) {
+    ) -> Option<usize> {
         let relative_turn_depth = self.nodes[parent_id].relative_turn_depth.saturating_add(1);
         if relative_turn_depth > self.config.max_turn_depth {
             self.used.depth_limited_successors =
                 self.used.depth_limited_successors.saturating_add(1);
-            return;
+            return None;
         }
 
-        let successor_hash = option.exact_successor_hash().to_owned();
-        let successor = if let Some(existing) = self.nodes_by_hash.get(&successor_hash) {
+        let successor_identity = option.exact_successor_identity().clone();
+        let successor_exact_key = successor_identity.exact_key().cloned().unwrap_or_else(|| {
+            Arc::new(combat_exact_state_key(
+                &option.exact_successor().engine,
+                &option.exact_successor().combat,
+            ))
+        });
+        let successor = if let Some(existing) = self.nodes_by_exact_key.get(&successor_exact_key) {
             *existing
         } else {
-            let Ok(root) = CombatDecisionRoot::with_exact_state_hash(
+            let Ok(root) = CombatDecisionRoot::with_exact_state_identity(
                 option.exact_successor().clone(),
-                successor_hash.clone(),
+                successor_identity,
             ) else {
-                return;
+                return None;
             };
             let (guides, lookahead_pending_lane) = guides_with_pending_lookahead(
                 self.policy.as_ref(),
@@ -2409,7 +2425,7 @@ impl LocalTurnGraphWitnessSession {
                 synced_gaps: 0,
                 exhausted: false,
             });
-            self.nodes_by_hash.insert(successor_hash, node_id);
+            self.nodes_by_exact_key.insert(successor_exact_key, node_id);
             self.used.exact_nodes = self.nodes.len();
             self.used.maximum_turn_depth = self.used.maximum_turn_depth.max(relative_turn_depth);
             node_id
@@ -2480,6 +2496,7 @@ impl LocalTurnGraphWitnessSession {
             edge_index
         };
         self.backup_guides_along_path(path, parent_id, edge_index, &successor_backed_guides);
+        Some(successor)
     }
 
     fn backup_guides_along_path(
