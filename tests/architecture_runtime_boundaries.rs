@@ -23,6 +23,47 @@ fn contains_rust_identifier(source: &str, identifier: &str) -> bool {
 }
 
 #[test]
+fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
+    const FRONTEND_LIMIT: u64 = 144 * 1024;
+    const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;
+
+    let frontend = std::path::Path::new("crates/sts_oracle_lab/src/bin/oracle_lab.rs");
+    let frontend_bytes = std::fs::metadata(frontend)
+        .expect("read oracle_lab frontend metadata")
+        .len();
+    assert!(
+        frontend_bytes <= FRONTEND_LIMIT,
+        "oracle_lab.rs grew to {frontend_bytes} bytes; move cohesive command families into modules before extending the frontend"
+    );
+
+    for module in [
+        "atomic_policy_searches.rs",
+        "combat_case_atomic_turn_portfolio.rs",
+        "combat_case_fold_solved_suffix.rs",
+        "combat_case_layered.rs",
+        "combat_case_layered_window_race.rs",
+        "combat_case_legacy_global.rs",
+        "combat_case_local_graph.rs",
+        "combat_plan_diagnostics.rs",
+        "depth_beam_audits.rs",
+        "policy_discrepancy_search.rs",
+        "turn_audits.rs",
+        "turn_membership_audit.rs",
+        "v2_capability_audit.rs",
+    ] {
+        let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
+        let bytes = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("read {} metadata: {error}", path.display()))
+            .len();
+        assert!(
+            bytes <= COMMAND_MODULE_LIMIT,
+            "{} grew to {bytes} bytes; split its independent responsibilities instead of creating another command monolith",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner_audit runtime module");
