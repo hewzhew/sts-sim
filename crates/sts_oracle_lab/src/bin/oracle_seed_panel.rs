@@ -17,8 +17,12 @@ pub struct OracleSeedPanelArgs {
     /// First exact game seed in the consecutive panel.
     #[arg(long)]
     seed_start: u64,
-    /// Number of consecutive seeds to run.
-    #[arg(long, value_parser = clap::value_parser!(u16).range(1..=1000))]
+    /// Number of consecutive seeds in the resumable panel.
+    #[arg(
+        long,
+        default_value_t = 10,
+        value_parser = clap::value_parser!(u16).range(1..=1000)
+    )]
     count: u16,
     #[arg(long, default_value_t = 0)]
     ascension: u8,
@@ -26,8 +30,15 @@ pub struct OracleSeedPanelArgs {
     #[arg(long)]
     output_dir: PathBuf,
     /// Total wall allowance for one seed. A stopped seed remains resumable.
-    #[arg(long, default_value_t = 120_000)]
+    #[arg(long, default_value_t = 30_000)]
     run_wall_ms: u64,
+    /// Total wall allowance for this invocation. Zero disables the cap.
+    ///
+    /// A capped invocation exits successfully after publishing its partial
+    /// summary. Re-running the same command skips durable results and resumes
+    /// only interrupted seeds.
+    #[arg(long, default_value_t = 600_000)]
+    invocation_wall_ms: u64,
     #[arg(long, default_value_t = 250_000)]
     hallway_nodes: usize,
     #[arg(long, default_value_t = 5_000)]
@@ -63,7 +74,12 @@ struct PanelSeedSummaryV1 {
     status: String,
     reason: Option<String>,
     resumed: bool,
+    /// Time spent inside the autonomous run loop.
     elapsed_ms: u64,
+    /// End-to-end time for this seed, including workspace load and persistence.
+    total_elapsed_ms: u64,
+    /// Non-run overhead, principally workspace load and durable persistence.
+    persistence_elapsed_ms: u64,
     act: Option<u64>,
     floor: Option<i64>,
     current_hp: Option<i64>,
@@ -92,6 +108,9 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
     let panel_started = Instant::now();
     let mut seeds = Vec::with_capacity(usize::from(args.count));
     for offset in 0..u64::from(args.count) {
+        if invocation_wall_budget_reached(&args, panel_started) {
+            break;
+        }
         let seed = args
             .seed_start
             .checked_add(offset)
@@ -114,6 +133,7 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
             }
         }
 
+        let seed_total_started = Instant::now();
         let resumed = !args.force && workspace_path.is_file();
         let mut workspace = if resumed {
             let workspace = load_oracle_analysis_workspace_v1(&workspace_path)?;
@@ -149,13 +169,13 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 quantum_nodes: args.quantum_nodes,
                 quantum_ms: args.quantum_ms,
                 max_boundaries: args.max_boundaries,
-                run_wall_ms: Some(args.run_wall_ms),
+                run_wall_ms: Some(current_seed_wall_ms(&args, panel_started)),
                 export_continuation: Some(continuation_path.clone()),
             },
         );
         let elapsed_ms = elapsed_millis(seed_started);
 
-        let summary = match run_result {
+        let mut summary = match run_result {
             Ok(report) => {
                 write_json(&report_path, &report)?;
                 let status = report
@@ -203,6 +223,8 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     reason: None,
                     resumed,
                     elapsed_ms,
+                    total_elapsed_ms: elapsed_ms,
+                    persistence_elapsed_ms: 0,
                     act: None,
                     floor: None,
                     current_hp: None,
@@ -219,19 +241,25 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 }
             }
         };
+        summary.total_elapsed_ms = elapsed_millis(seed_total_started);
+        summary.persistence_elapsed_ms =
+            summary.total_elapsed_ms.saturating_sub(summary.elapsed_ms);
         eprintln!(
-            "seed {}: {} at A{}F{} in {} ms",
+            "seed {}: {} at A{}F{} in {} ms run / {} ms total",
             summary.seed,
             summary.status,
             summary.act.unwrap_or(0),
             summary.floor.unwrap_or(0),
-            summary.elapsed_ms
+            summary.elapsed_ms,
+            summary.total_elapsed_ms,
         );
         seeds.push(summary);
         write_panel_summary(&args, &source, &seeds, panel_started, &args.output_dir)?;
     }
 
-    panel_summary(&args, &source, &seeds, panel_started)
+    let summary = panel_summary(&args, &source, &seeds, panel_started)?;
+    write_json(&args.output_dir.join("panel.summary.json"), &summary)?;
+    Ok(summary)
 }
 
 fn validate_args(args: &OracleSeedPanelArgs) -> Result<(), String> {
@@ -330,6 +358,8 @@ fn summary_from_report(
             .map(str::to_string),
         resumed,
         elapsed_ms,
+        total_elapsed_ms: elapsed_ms,
+        persistence_elapsed_ms: 0,
         act: final_node
             .and_then(|value| value.get("act"))
             .and_then(Value::as_u64),
@@ -366,15 +396,24 @@ fn panel_summary(
         .count();
     let stopped = seeds.iter().filter(|seed| seed.status == "stopped").count();
     let errors = seeds.iter().filter(|seed| seed.status == "error").count();
+    let requested = usize::from(args.count);
+    let complete = seeds.len() == requested;
     Ok(json!({
         "schema_name": "OracleSeedPanelReportV1",
         "schema_version": 1,
+        "status": if complete { "complete" } else { "interrupted" },
+        "reason": if complete {
+            Value::Null
+        } else {
+            Value::String("invocation_wall_budget".to_string())
+        },
         "seed_start": args.seed_start,
         "count": args.count,
         "ascension": args.ascension,
         "source": source,
         "budgets": {
             "run_wall_ms": args.run_wall_ms,
+            "invocation_wall_ms": args.invocation_wall_ms,
             "hallway_nodes": args.hallway_nodes,
             "hallway_ms": args.hallway_ms,
             "elite_nodes": args.elite_nodes,
@@ -388,11 +427,27 @@ fn panel_summary(
         },
         "elapsed_ms": elapsed_millis(started),
         "completed": seeds.len(),
+        "remaining": requested.saturating_sub(seeds.len()),
         "victories": victories,
         "stopped": stopped,
         "errors": errors,
         "seeds": seeds,
     }))
+}
+
+fn invocation_wall_budget_reached(args: &OracleSeedPanelArgs, started: Instant) -> bool {
+    args.invocation_wall_ms != 0 && elapsed_millis(started) >= args.invocation_wall_ms
+}
+
+fn current_seed_wall_ms(args: &OracleSeedPanelArgs, started: Instant) -> u64 {
+    if args.invocation_wall_ms == 0 {
+        return args.run_wall_ms;
+    }
+    args.run_wall_ms.min(
+        args.invocation_wall_ms
+            .saturating_sub(elapsed_millis(started))
+            .max(1),
+    )
 }
 
 fn write_panel_summary(
@@ -464,4 +519,63 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
 
 fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use clap::Parser;
+
+    use super::{current_seed_wall_ms, invocation_wall_budget_reached, OracleSeedPanelArgs};
+
+    #[derive(Debug, Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        panel: OracleSeedPanelArgs,
+    }
+
+    fn parse_defaults() -> OracleSeedPanelArgs {
+        TestCli::try_parse_from([
+            "seed-panel-test",
+            "--seed-start",
+            "20260713006",
+            "--output-dir",
+            "panel-output",
+        ])
+        .expect("safe panel defaults parse")
+        .panel
+    }
+
+    #[test]
+    fn daily_panel_defaults_are_small_and_bounded() {
+        let args = parse_defaults();
+
+        assert_eq!(args.count, 10);
+        assert_eq!(args.run_wall_ms, 30_000);
+        assert_eq!(args.invocation_wall_ms, 600_000);
+        assert_eq!(args.output_dir, PathBuf::from("panel-output"));
+    }
+
+    #[test]
+    fn invocation_budget_caps_the_current_seed_allowance() {
+        let mut args = parse_defaults();
+        args.invocation_wall_ms = 60_000;
+        let started = Instant::now() - Duration::from_secs(31);
+
+        assert!(!invocation_wall_budget_reached(&args, started));
+        assert!(current_seed_wall_ms(&args, started) <= 29_000);
+        assert!(current_seed_wall_ms(&args, started) < args.run_wall_ms);
+    }
+
+    #[test]
+    fn zero_invocation_budget_disables_the_cap() {
+        let mut args = parse_defaults();
+        args.invocation_wall_ms = 0;
+        let started = Instant::now() - Duration::from_secs(60);
+
+        assert!(!invocation_wall_budget_reached(&args, started));
+        assert_eq!(current_seed_wall_ms(&args, started), args.run_wall_ms);
+    }
 }

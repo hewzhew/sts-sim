@@ -263,11 +263,15 @@ retains a full workspace only for a real stop:
 ```powershell
 cargo oracle-lab seed-panel `
   --seed-start 20260713006 `
-  --count 100 `
   --ascension 0 `
-  --output-dir .oracle-lab/panels/a0-100 `
-  --run-wall-ms 120000
+  --output-dir .oracle-lab/panels/a0-10
 ```
+
+The safe daily default is 10 consecutive seeds, 30 seconds of total run work
+per seed, and at most 10 minutes for one process invocation. A deliberately
+larger `--count` remains resumable but still stops at that invocation cap.
+Pass `--invocation-wall-ms 0` only for an explicitly monitored uninterrupted
+run, or raise the cap to a known bound.
 
 Victories keep a compact report and exact replayable continuation under
 `reports/` and `witnesses/`. Budget or correctness stops keep a resumable
@@ -276,7 +280,10 @@ victories and stable exhausted stops; only wall/boundary interruptions resume
 automatically. Use `--retry-stopped` to re-enter a deterministic stop after
 deliberately changing its allowance, or `--force` to start the selected seeds
 from F0 again. `panel.summary.json` records the source commit, dirty state,
-budgets, per-seed outcome, and artifact paths after every completed seed.
+budgets, per-seed outcome, remaining count, separate run/total/persistence
+timings, and artifact paths after every completed seed. A top-level
+`interrupted / invocation_wall_budget` result is a successful durable slice,
+not a seed failure.
 
 Resident endpoints, immutable service images, and new local case artifacts
 live below the ignored `.oracle-lab/` state root. They are deliberately outside

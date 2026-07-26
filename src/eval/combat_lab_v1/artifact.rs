@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -569,11 +569,9 @@ fn journal_digest(bytes: &[u8]) -> String {
 }
 
 pub(crate) fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> Result<(), String> {
-    let bytes = serde_json::to_vec(value)
-        .map_err(|error| format!("failed to serialize '{}': {error}", destination.display()))?;
     let temporary = unique_sibling_temporary_path(destination);
     let result = (|| {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary)
@@ -583,19 +581,26 @@ pub(crate) fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> 
                     temporary.display()
                 )
             })?;
-        file.write_all(&bytes).map_err(|error| {
+        let mut writer = BufWriter::new(file);
+        serde_json::to_writer(&mut writer, value).map_err(|error| {
             format!(
-                "failed to write temporary artifact '{}': {error}",
+                "failed to serialize temporary artifact '{}': {error}",
                 temporary.display()
             )
         })?;
-        file.sync_all().map_err(|error| {
+        writer.flush().map_err(|error| {
+            format!(
+                "failed to flush temporary artifact '{}': {error}",
+                temporary.display()
+            )
+        })?;
+        writer.get_ref().sync_all().map_err(|error| {
             format!(
                 "failed to sync temporary artifact '{}': {error}",
                 temporary.display()
             )
         })?;
-        drop(file);
+        drop(writer);
         replace_file(&temporary, destination)
     })();
     if result.is_err() {
