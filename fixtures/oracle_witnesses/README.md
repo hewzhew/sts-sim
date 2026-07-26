@@ -80,6 +80,32 @@ non-autonomous result:
   donor witness
   `54784E55606ECDBF54C1ADE3E2CC18AC2DE42FF1EEDFD69B4F3C7B975814F70E`.
 
+The strategy-to-search handoff has a separate deterministic regression:
+
+- `seed20260713007_a0_awakened_one_managed_t4.combat-case.json` is the exact
+  37/85 HP player-turn-4 state reached by the managed phase-control line.
+- The typed plan-compatible mainline advances without branching while its
+  strategic stage is unchanged. Immediately before its first exact option
+  would cross a typed plan milestone, one bounded local-turn-graph suffix
+  search is rerooted at the pre-milestone state.
+- With a 5,000-work suffix allowance this performs one probe, consumes 3,317
+  generation work, and independently produces the checked-in 57-action,
+  17-HP witness. The combined prefix and suffix are replayed exactly from the
+  unchanged T4 root; neither a V2 donor nor corridor actions participate.
+- `oracle_lab combat-case` exposes `--expect-witness`,
+  `--expect-min-final-hp`, and `--expect-max-plan-suffix-work` so this
+  capability and its deterministic work ceiling can be checked directly.
+- The compact regression command is:
+
+  ```text
+  ol.cmd combat-case --case fixtures/oracle_witnesses/seed20260713007_a0_awakened_one_managed_t4.combat-case.json --typed-plan-guide --plan-compatible-policy-line --plan-compatible-suffix-work 5000 --expect-witness --expect-min-final-hp 17 --expect-max-plan-suffix-work 3317 --contract-only
+  ```
+
+- SHA-256: managed T4 case
+  `FC38B4BC64D74AACE177155754B3E1427AF3D6ECED46191FBB0CC9B96342FCE7`;
+  independently generated witness
+  `B726D3F9125FB889052978BC60711A487112EFEBFCAB69DA2F1DB79E01791A35`.
+
 A multi-trajectory accumulation control keeps that boundary explicit:
 
 - `combat_guidance_boss_corpus_v1.manifest.json` names six verified Boss
