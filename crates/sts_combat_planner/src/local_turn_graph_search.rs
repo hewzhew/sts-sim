@@ -229,6 +229,12 @@ pub struct LocalTurnGraphPolicyLineReport {
     pub rejected_preview_transitions: usize,
     pub deferred_actions: usize,
     pub engine_steps: usize,
+    pub legal_surface_elapsed_ns: u64,
+    pub policy_ranking_elapsed_ns: u64,
+    pub transition_preview_elapsed_ns: u64,
+    pub action_identity_elapsed_ns: u64,
+    pub plan_annotation_elapsed_ns: u64,
+    pub successor_admission_elapsed_ns: u64,
     pub suffix_probe_attempts: usize,
     pub suffix_probe_generation_work: usize,
     pub suffix_probe_engine_steps: usize,
@@ -236,6 +242,9 @@ pub struct LocalTurnGraphPolicyLineReport {
     pub suffix_probe_applied_action_transitions: usize,
     pub suffix_probe_unique_successor_states: usize,
     pub suffix_probe_performance_timing: LocalTurnGraphPerformanceTiming,
+    pub suffix_probe_setup_elapsed_ns: u64,
+    pub suffix_probe_advance_elapsed_ns: u64,
+    pub suffix_probe_replay_elapsed_ns: u64,
     pub suffix_probe_witness_found: bool,
     pub suffix_probe_details: Vec<LocalTurnGraphSuffixProbeAttempt>,
     pub reached_terminal_win: bool,
@@ -650,7 +659,11 @@ impl LocalTurnGraphWitnessSession {
                 break;
             }
             let segment_root = self.nodes[node_id].generator.root().position().clone();
+            let segment_identity_started = Instant::now();
             let segment_root_hash = exact_hash(&segment_root);
+            report.action_identity_elapsed_ns = report
+                .action_identity_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(segment_identity_started));
             let root_turn = segment_root.combat.turn.turn_count;
             let mut position = segment_root.clone();
             let mut actions = Vec::<TurnOptionAction>::new();
@@ -660,7 +673,12 @@ impl LocalTurnGraphWitnessSession {
                 if stepper.terminal(&position) != CombatTerminal::Unresolved {
                     break;
                 }
+                let legal_surface_started = Instant::now();
                 let surface = stepper.legal_action_surface(&position);
+                report.legal_surface_elapsed_ns = report
+                    .legal_surface_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(legal_surface_started));
+                let policy_ranking_started = Instant::now();
                 let choices = surface
                     .atomic_actions
                     .iter()
@@ -692,7 +710,11 @@ impl LocalTurnGraphWitnessSession {
                 let mut selected = None;
                 let mut first_neutral = None;
                 let seek_timed_preference = combat_plan_has_timed_action_preference_v1(&position);
+                report.policy_ranking_elapsed_ns = report
+                    .policy_ranking_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(policy_ranking_started));
                 let mut blocked_by_structured_family = false;
+                let transition_preview_started = Instant::now();
                 for candidate_index in ranked_indices {
                     if candidate_index >= surface.atomic_actions.len() {
                         let family = &surface.selection_families
@@ -824,6 +846,9 @@ impl LocalTurnGraphWitnessSession {
                         }
                     }
                 }
+                report.transition_preview_elapsed_ns = report
+                    .transition_preview_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(transition_preview_started));
                 if selected.is_none() && !blocked_by_structured_family {
                     selected = first_neutral;
                 }
@@ -834,11 +859,15 @@ impl LocalTurnGraphWitnessSession {
                     report.chosen_action_transitions.saturating_add(1);
 
                 negative_log_policy -= selected_probability.max(f64::MIN_POSITIVE).ln();
+                let action_identity_started = Instant::now();
                 actions.push(TurnOptionAction {
                     input: selected_input,
                     expected_successor_hash: exact_hash(&selected_step.position).into(),
                     engine_steps: selected_step.engine_steps,
                 });
+                report.action_identity_elapsed_ns = report
+                    .action_identity_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(action_identity_started));
                 total_actions = total_actions.saturating_add(1);
                 position = selected_step.position;
 
@@ -914,11 +943,15 @@ impl LocalTurnGraphWitnessSession {
                 }
                 CompleteTurnOptionBoundary::Escape => break,
                 CompleteTurnOptionBoundary::NextPlayerTurn => {
+                    let plan_annotation_started = Instant::now();
                     let crosses_plan_milestone = combat_plan_transition_annotation_v1(
                         &segment_root,
                         option.exact_successor(),
                     )
                     .is_some_and(|annotation| !annotation.completed_milestones().is_empty());
+                    report.plan_annotation_elapsed_ns = report
+                        .plan_annotation_elapsed_ns
+                        .saturating_add(elapsed_nanos_u64(plan_annotation_started));
                     if suffix_generation_work > 0
                         && crosses_plan_milestone
                         && self.offer_exact_suffix_probe(
@@ -931,6 +964,7 @@ impl LocalTurnGraphWitnessSession {
                     {
                         break 'turns;
                     }
+                    let successor_admission_started = Instant::now();
                     let successor_hash = option.exact_successor_hash().to_owned();
                     self.accept_successor(node_id, &path, option);
                     let Some(&successor_id) = self.nodes_by_hash.get(&successor_hash) else {
@@ -945,6 +979,9 @@ impl LocalTurnGraphWitnessSession {
                     };
                     path.push((node_id, edge_index));
                     node_id = successor_id;
+                    report.successor_admission_elapsed_ns = report
+                        .successor_admission_elapsed_ns
+                        .saturating_add(elapsed_nanos_u64(successor_admission_started));
                 }
             }
         }
@@ -960,6 +997,7 @@ impl LocalTurnGraphWitnessSession {
         stepper: &dyn CombatStepper,
         report: &mut LocalTurnGraphPolicyLineReport,
     ) -> Result<bool, String> {
+        let suffix_setup_started = Instant::now();
         let root = CombatDecisionRoot::new(self.nodes[node_id].generator.root().position().clone())
             .map_err(|error| format!("suffix probe root is not a decision boundary: {error:?}"))?;
         let mut suffix = LocalTurnGraphWitnessSession::with_policy(
@@ -970,6 +1008,10 @@ impl LocalTurnGraphWitnessSession {
             },
             self.policy.clone(),
         );
+        report.suffix_probe_setup_elapsed_ns = report
+            .suffix_probe_setup_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(suffix_setup_started));
+        let suffix_advance_started = Instant::now();
         let suffix_report = suffix.advance(
             LocalTurnGraphWitnessQuantum {
                 additional_selections: suffix_generation_work.max(1),
@@ -980,6 +1022,9 @@ impl LocalTurnGraphWitnessSession {
             },
             stepper,
         );
+        report.suffix_probe_advance_elapsed_ns = report
+            .suffix_probe_advance_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(suffix_advance_started));
         report.suffix_probe_attempts = report.suffix_probe_attempts.saturating_add(1);
         report.suffix_probe_generation_work = report
             .suffix_probe_generation_work
@@ -1027,6 +1072,7 @@ impl LocalTurnGraphWitnessSession {
         let Some(suffix_witness) = suffix_report.witness else {
             return Ok(false);
         };
+        let suffix_replay_started = Instant::now();
         let (mut actions, _) = self.path_actions(path);
         actions.extend(suffix_witness.actions);
         let final_hp_hint = suffix_witness
@@ -1044,6 +1090,9 @@ impl LocalTurnGraphWitnessSession {
                 stepper,
             )
             .map_err(|error| format!("combined suffix witness replay failed: {error:?}"))?;
+        report.suffix_probe_replay_elapsed_ns = report
+            .suffix_probe_replay_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(suffix_replay_started));
         report.suffix_probe_witness_found = accepted || self.witness.is_some();
         report.reached_terminal_win = report.suffix_probe_witness_found;
         Ok(report.suffix_probe_witness_found)
@@ -2306,7 +2355,10 @@ impl LocalTurnGraphWitnessSession {
         let successor = if let Some(existing) = self.nodes_by_hash.get(&successor_hash) {
             *existing
         } else {
-            let Ok(root) = CombatDecisionRoot::new(option.exact_successor().clone()) else {
+            let Ok(root) = CombatDecisionRoot::with_exact_state_hash(
+                option.exact_successor().clone(),
+                successor_hash.clone(),
+            ) else {
                 return;
             };
             let (guides, lookahead_pending_lane) = guides_with_pending_lookahead(

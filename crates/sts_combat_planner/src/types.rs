@@ -25,6 +25,28 @@ pub enum CombatDecisionRootError {
 
 impl CombatDecisionRoot {
     pub fn new(position: CombatPosition) -> Result<Self, CombatDecisionRootError> {
+        Self::validate(&position)?;
+        let exact_state_hash = exact_hash(&position);
+        Ok(Self {
+            exact_state_hash,
+            turn_count: position.combat.turn.turn_count,
+            position,
+        })
+    }
+
+    pub(crate) fn with_exact_state_hash(
+        position: CombatPosition,
+        exact_state_hash: String,
+    ) -> Result<Self, CombatDecisionRootError> {
+        Self::validate(&position)?;
+        Ok(Self {
+            exact_state_hash,
+            turn_count: position.combat.turn.turn_count,
+            position,
+        })
+    }
+
+    fn validate(position: &CombatPosition) -> Result<(), CombatDecisionRootError> {
         if !matches!(position.engine, EngineState::CombatPlayerTurn) {
             return Err(CombatDecisionRootError::NotStablePlayerTurn);
         }
@@ -33,11 +55,7 @@ impl CombatDecisionRoot {
         {
             return Err(CombatDecisionRootError::AlreadyTerminal);
         }
-        Ok(Self {
-            exact_state_hash: exact_hash(&position),
-            turn_count: position.combat.turn.turn_count,
-            position,
-        })
+        Ok(())
     }
 
     pub fn position(&self) -> &CombatPosition {

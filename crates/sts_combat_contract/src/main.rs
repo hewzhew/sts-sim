@@ -67,14 +67,18 @@ fn main() {
 
 fn run(args: Cli) -> Result<(), String> {
     let started = Instant::now();
+    let read_started = Instant::now();
     let bytes = std::fs::read(&args.case)
         .map_err(|error| format!("cannot read combat case '{}': {error}", args.case.display()))?;
+    let read_elapsed_ns = elapsed_nanos(read_started);
+    let parse_started = Instant::now();
     let loaded: CombatCaseRoot = serde_json::from_slice(&bytes).map_err(|error| {
         format!(
             "cannot parse combat case '{}': {error}",
             args.case.display()
         )
     })?;
+    let parse_elapsed_ns = elapsed_nanos(parse_started);
     if loaded.schema != "combat_case" && loaded.schema != "combat_gap_case" {
         return Err(format!(
             "expected combat_case or combat_gap_case, got {}",
@@ -82,6 +86,7 @@ fn run(args: Cli) -> Result<(), String> {
         ));
     }
 
+    let setup_started = Instant::now();
     let root = CombatDecisionRoot::new(loaded.position)
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let config = LocalTurnGraphWitnessConfig {
@@ -105,6 +110,8 @@ fn run(args: Cli) -> Result<(), String> {
         policy
     };
     let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
+    let setup_elapsed_ns = elapsed_nanos(setup_started);
+    let policy_line_started = Instant::now();
     let policy_line_report = args
         .plan_compatible_policy_line
         .then(|| {
@@ -116,6 +123,8 @@ fn run(args: Cli) -> Result<(), String> {
             )
         })
         .transpose()?;
+    let policy_line_elapsed_ns = elapsed_nanos(policy_line_started);
+    let search_started = Instant::now();
     let report = session.advance(
         LocalTurnGraphWitnessQuantum {
             additional_selections: args.max_selections,
@@ -127,6 +136,7 @@ fn run(args: Cli) -> Result<(), String> {
         },
         &EngineCombatStepper,
     );
+    let search_elapsed_ns = elapsed_nanos(search_started);
 
     if args.expect_witness && report.witness.is_none() {
         return Err("combat contract failed: no replay-verified witness".to_owned());
@@ -167,6 +177,13 @@ fn run(args: Cli) -> Result<(), String> {
             witness.final_position.combat.entities.player.current_hp
         }),
         "witness_actions": witness.map(|witness| witness.actions.len()),
+        "phase_ns": {
+            "read_case": read_elapsed_ns,
+            "parse_case": parse_elapsed_ns,
+            "setup": setup_elapsed_ns,
+            "policy_line": policy_line_elapsed_ns,
+            "main_search": search_elapsed_ns,
+        },
         "search_counters": {
             "selections": report.counters.selections,
             "node_visits": report.counters.node_visits,
@@ -193,6 +210,19 @@ fn run(args: Cli) -> Result<(), String> {
             "transition_publish": report.performance_timing.transition_publish_elapsed_ns,
         },
         "plan_suffix": policy_line_report.as_ref().map(|line| json!({
+            "proposed_turns": line.proposed_turns,
+            "chosen_action_transitions": line.chosen_action_transitions,
+            "rejected_preview_transitions": line.rejected_preview_transitions,
+            "deferred_actions": line.deferred_actions,
+            "policy_line_engine_steps": line.engine_steps,
+            "policy_line_performance_ns": {
+                "legal_surface": line.legal_surface_elapsed_ns,
+                "policy_ranking": line.policy_ranking_elapsed_ns,
+                "transition_preview": line.transition_preview_elapsed_ns,
+                "action_identity": line.action_identity_elapsed_ns,
+                "plan_annotation": line.plan_annotation_elapsed_ns,
+                "successor_admission": line.successor_admission_elapsed_ns,
+            },
             "attempts": line.suffix_probe_attempts,
             "generation_work": line.suffix_probe_generation_work,
             "engine_steps": line.suffix_probe_engine_steps,
@@ -200,6 +230,9 @@ fn run(args: Cli) -> Result<(), String> {
             "applied_action_transitions": line.suffix_probe_applied_action_transitions,
             "unique_successor_states": line.suffix_probe_unique_successor_states,
             "performance_ns": line.suffix_probe_performance_timing,
+            "setup_elapsed_ns": line.suffix_probe_setup_elapsed_ns,
+            "advance_elapsed_ns": line.suffix_probe_advance_elapsed_ns,
+            "replay_elapsed_ns": line.suffix_probe_replay_elapsed_ns,
         })),
     });
     println!(
@@ -207,4 +240,8 @@ fn run(args: Cli) -> Result<(), String> {
         serde_json::to_string_pretty(&output).map_err(|error| error.to_string())?
     );
     Ok(())
+}
+
+fn elapsed_nanos(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
