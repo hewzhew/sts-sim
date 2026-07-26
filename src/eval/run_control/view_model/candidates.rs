@@ -379,6 +379,13 @@ fn reward_candidates(
                 Some("leave any unclaimed boss-combat rewards behind"),
                 ClientInput::Proceed,
             )
+        } else if session.run_state.pending_boss_act_transition {
+            (
+                "skip",
+                "Proceed to next Act".to_string(),
+                Some("leave any unclaimed boss-relic rewards behind"),
+                ClientInput::Proceed,
+            )
         } else {
             (
                 "skip",
@@ -1259,6 +1266,34 @@ mod tests {
             .expect("boss rewards must expose a proceed action even when a potion is unclaimed");
 
         assert_eq!(proceed.label, "Proceed to boss relic");
+        assert_eq!(
+            proceed.action.executable_input(),
+            Some(ClientInput::Proceed)
+        );
+    }
+
+    #[test]
+    fn boss_relic_reward_with_full_potion_belt_proceeds_to_next_act() {
+        let mut session = RunControlSession::new(Default::default());
+        session.run_state.pending_boss_act_transition = true;
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::Elixir, 10)),
+            Some(Potion::new(PotionId::FairyPotion, 20)),
+            Some(Potion::new(PotionId::GamblersBrew, 30)),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::RegenPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let candidates = decision_candidates(&session);
+        let proceed = candidates
+            .iter()
+            .find(|candidate| candidate.id == "skip")
+            .expect("boss relic rewards must permit leaving an unclaimable potion behind");
+
+        assert_eq!(proceed.label, "Proceed to next Act");
         assert_eq!(
             proceed.action.executable_input(),
             Some(ClientInput::Proceed)

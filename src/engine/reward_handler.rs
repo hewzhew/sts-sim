@@ -87,10 +87,13 @@ fn reward_exit_state(
     reward_state: &RewardState,
     overlay_return_state: Option<EngineState>,
 ) -> EngineState {
-    if overlay_return_state.is_none() && run_state.pending_boss_reward {
-        // Leaving the post-boss combat reward screen discards any unclaimed
-        // rewards and opens the boss chest. It must not create a map overlay:
-        // there is no map decision between the boss and its relic reward.
+    if overlay_return_state.is_none()
+        && (run_state.pending_boss_reward || run_state.pending_boss_act_transition)
+    {
+        // Leaving either post-boss reward surface discards any unclaimed
+        // rewards and advances its pending transition. Neither surface may
+        // open a map overlay: no map decision exists before the boss chest or
+        // between the boss relic and the next act.
         return post_reward_state(run_state);
     }
     overlay_return_state
@@ -406,6 +409,49 @@ mod tests {
         assert!(matches!(next, EngineState::BossRelicSelect(_)));
         assert!(!run_state.pending_boss_reward);
         assert!(run_state.potions.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn leaving_unclaimed_boss_relic_rewards_advances_the_act() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.pending_boss_act_transition = true;
+        run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::BlockPotion,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::EnergyPotion,
+                2,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::DexterityPotion,
+                3,
+            )),
+        ];
+        let mut reward_state = RewardState::new();
+        reward_state.items = vec![RewardItem::Potion {
+            potion_id: PotionId::RegenPotion,
+        }];
+
+        let next = handle(
+            &mut run_state,
+            &mut reward_state,
+            Some(ClientInput::Proceed),
+        )
+        .expect("leaving a boss relic reward should advance to the next act");
+
+        assert!(matches!(next, EngineState::MapNavigation));
+        assert_eq!(run_state.act_num, 2);
+        assert!(!run_state.pending_boss_act_transition);
+        assert!(
+            run_state
+                .potions
+                .iter()
+                .flatten()
+                .all(|potion| potion.id != PotionId::RegenPotion),
+            "the unclaimed Tiny House potion must be left behind"
+        );
     }
 
     #[test]
