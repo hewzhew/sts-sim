@@ -29,6 +29,7 @@ struct PartialTurnOption {
     trace: Option<Arc<PendingActionTrace>>,
     atomic_depth: usize,
     negative_log_policy: f64,
+    potion_expenditures: u32,
     lookahead_guide: Option<CombatStateGuide>,
 }
 
@@ -194,11 +195,17 @@ struct IndexedExactStateKey {
     // semantics or the durable v1 hashes written to witnesses.
     structural_hash: u64,
     key: Arc<CombatExactStateKey>,
+    /// Finite caller-owned resources are part of constrained search identity.
+    /// Without a finite potion contract, `None` preserves ordinary exact-state
+    /// transposition.
+    potion_expenditures: Option<u32>,
 }
 
 impl PartialEq for IndexedExactStateKey {
     fn eq(&self, other: &Self) -> bool {
-        self.structural_hash == other.structural_hash && self.key == other.key
+        self.structural_hash == other.structural_hash
+            && self.key == other.key
+            && self.potion_expenditures == other.potion_expenditures
     }
 }
 
@@ -207,20 +214,22 @@ impl Eq for IndexedExactStateKey {}
 impl Hash for IndexedExactStateKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.structural_hash.hash(state);
+        self.potion_expenditures.hash(state);
     }
 }
 
 impl IndexedExactStateKey {
-    fn new(key: CombatExactStateKey) -> Self {
-        Self::from_arc(Arc::new(key))
+    fn new(key: CombatExactStateKey, potion_expenditures: Option<u32>) -> Self {
+        Self::from_arc(Arc::new(key), potion_expenditures)
     }
 
-    fn from_arc(key: Arc<CombatExactStateKey>) -> Self {
+    fn from_arc(key: Arc<CombatExactStateKey>, potion_expenditures: Option<u32>) -> Self {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         Self {
             structural_hash: hasher.finish(),
             key,
+            potion_expenditures,
         }
     }
 }
@@ -361,6 +370,13 @@ impl PartialOrd for GeneratorQueueEntry {
 pub struct TurnOptionGeneratorSession {
     root: CombatDecisionRoot,
     config: TurnOptionGeneratorConfig,
+    /// Maximum potion uses/discards allowed inside this generated turn.
+    ///
+    /// The run-level graph supplies the remaining combat allowance at each
+    /// exact turn boundary. Enforcing it here prevents an over-budget potion
+    /// prefix from consuming the complete-turn search before a legal line is
+    /// ever released.
+    max_potion_expenditures: Option<u32>,
     policy: SharedCombatActionPolicy,
     work: Vec<Option<GeneratorWork>>,
     anchor_frontier: BinaryHeap<GeneratorQueueEntry>,
@@ -420,7 +436,16 @@ impl TurnOptionGeneratorSession {
         config: TurnOptionGeneratorConfig,
         policy: SharedCombatActionPolicy,
     ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, None)
+        Self::with_optional_lookahead(root, config, policy, None, None)
+    }
+
+    pub(crate) fn with_policy_and_potion_limit(
+        root: CombatDecisionRoot,
+        config: TurnOptionGeneratorConfig,
+        policy: SharedCombatActionPolicy,
+        max_potion_expenditures: Option<u32>,
+    ) -> Self {
+        Self::with_optional_lookahead(root, config, policy, None, max_potion_expenditures)
     }
 
     pub fn with_policy_and_lookahead(
@@ -429,7 +454,7 @@ impl TurnOptionGeneratorSession {
         policy: SharedCombatActionPolicy,
         lookahead_evaluator: SharedCombatLookaheadEvaluator,
     ) -> Self {
-        Self::with_optional_lookahead(root, config, policy, Some(lookahead_evaluator))
+        Self::with_optional_lookahead(root, config, policy, Some(lookahead_evaluator), None)
     }
 
     fn with_optional_lookahead(
@@ -437,20 +462,31 @@ impl TurnOptionGeneratorSession {
         config: TurnOptionGeneratorConfig,
         policy: SharedCombatActionPolicy,
         lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
+        max_potion_expenditures: Option<u32>,
     ) -> Self {
+        let max_potion_expenditures = if config.allow_potion_expenditure {
+            max_potion_expenditures
+        } else {
+            Some(0)
+        };
         let mut seen = HashSet::new();
         let root_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
-        seen.insert(IndexedExactStateKey::new(root_key));
+        seen.insert(IndexedExactStateKey::new(
+            root_key,
+            max_potion_expenditures.map(|_| 0),
+        ));
         let root_work = GeneratorWork::Expand(PartialTurnOption {
             position: root.position().clone(),
             trace: None,
             atomic_depth: 0,
             negative_log_policy: 0.0,
+            potion_expenditures: 0,
             lookahead_guide: None,
         });
         let mut session = Self {
             root,
             config,
+            max_potion_expenditures,
             policy,
             work: Vec::new(),
             anchor_frontier: BinaryHeap::new(),
@@ -500,7 +536,7 @@ impl TurnOptionGeneratorSession {
     /// consumed.  It does not change retention or scheduling.
     pub fn has_seen_exact_position(&self, position: &CombatPosition) -> bool {
         let key = combat_exact_state_key(&position.engine, &position.combat);
-        self.seen.contains(&IndexedExactStateKey::new(key))
+        self.seen.iter().any(|seen| *seen.key == key)
     }
 
     /// Counts still-live generator work rooted at one exact partial-turn
@@ -1200,7 +1236,15 @@ impl TurnOptionGeneratorSession {
         let identity_started = Instant::now();
         let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
         let successor_key = Arc::new(key);
-        let indexed_key = IndexedExactStateKey::from_arc(successor_key.clone());
+        let successor_potion_expenditures = action
+            .parent
+            .potion_expenditures
+            .saturating_add(u32::from(is_potion_expenditure(&action.input)));
+        let indexed_key = IndexedExactStateKey::from_arc(
+            successor_key.clone(),
+            self.max_potion_expenditures
+                .map(|_| successor_potion_expenditures),
+        );
         self.transition_identity_elapsed_ns = self
             .transition_identity_elapsed_ns
             .saturating_add(elapsed_nanos_u64(identity_started));
@@ -1223,6 +1267,7 @@ impl TurnOptionGeneratorSession {
                 })),
                 atomic_depth: action.atomic_depth,
                 negative_log_policy: action.negative_log_policy,
+                potion_expenditures: successor_potion_expenditures,
                 lookahead_guide: None,
             };
             let terminal = stepper.terminal(&partial.position);
@@ -1296,13 +1341,13 @@ impl TurnOptionGeneratorSession {
         }
 
         let mut surface = stepper.legal_action_surface(&partial.position);
-        if !self.config.allow_potion_expenditure {
-            surface.atomic_actions.retain(|input| {
-                !matches!(
-                    input,
-                    ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
-                )
-            });
+        if self
+            .max_potion_expenditures
+            .is_some_and(|limit| partial.potion_expenditures >= limit)
+        {
+            surface
+                .atomic_actions
+                .retain(|input| !is_potion_expenditure(input));
         }
         let surface_is_empty =
             surface.atomic_actions.is_empty() && surface.selection_families.is_empty();
@@ -1546,6 +1591,13 @@ impl TurnOptionGeneratorSession {
         });
         self.guided_frontiers.len() - 1
     }
+}
+
+fn is_potion_expenditure(input: &ClientInput) -> bool {
+    matches!(
+        input,
+        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+    )
 }
 
 fn deadline_reached(deadline: Option<Instant>) -> bool {
@@ -1895,5 +1947,20 @@ mod priority_tests {
         );
         assert!(session.work[guide_head].is_none());
         assert!(session.work[newcomer].is_some());
+    }
+
+    #[test]
+    fn finite_potion_allowance_is_part_of_generator_transposition_identity() {
+        let root = test_root();
+        let exact = combat_exact_state_key(&root.position().engine, &root.position().combat);
+        let without_spend = IndexedExactStateKey::new(exact.clone(), Some(0));
+        let after_one_spend = IndexedExactStateKey::new(exact, Some(1));
+
+        assert_ne!(without_spend, after_one_spend);
+        assert_eq!(
+            HashSet::from([without_spend, after_one_spend]).len(),
+            2,
+            "equal simulator states with different remaining finite resources cannot transpose"
+        );
     }
 }

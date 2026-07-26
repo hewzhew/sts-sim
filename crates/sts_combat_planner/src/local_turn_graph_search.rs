@@ -1,5 +1,9 @@
+mod config;
+mod potion_budget;
 mod scheduling;
 
+pub use config::LocalTurnGraphWitnessConfig;
+use potion_budget::*;
 use scheduling::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -13,7 +17,7 @@ use sts_combat_strategy::{
     combat_plan_transition_annotation_v1, CombatPlanActionTimingV1, CombatPlanProjectionV1,
     CombatPlanTransitionAnnotationV1,
 };
-use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
+use sts_core::ai::combat_state_key::combat_exact_state_key;
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::ClientInput;
 
@@ -27,7 +31,6 @@ use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
     CompleteTurnOptionBoundary, TurnOptionAction, TurnOptionGenerationGap,
-    TurnOptionGeneratorConfig,
 };
 use super::witness_search::{
     OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
@@ -35,60 +38,6 @@ use super::witness_search::{
     OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
 };
 use super::TurnOptionGeneratorSession;
-
-/// Resumable search over a shared graph of exact player-turn boundaries.
-///
-/// Complete-turn generation remains lazy, but Widen and Deepen are decided at
-/// the node that owns the alternatives. A deep path therefore does not have
-/// to compete against every shallower generator in one global queue.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LocalTurnGraphWitnessConfig {
-    pub generator: TurnOptionGeneratorConfig,
-    /// One deterministic service unit for a selected node's resumable turn
-    /// generator. This controls preemption granularity, not search quality.
-    pub generation_quantum_work: usize,
-    /// Coherent generator service after an exact boundary has earned backed
-    /// exploitation. It remains preemptible at the graph level while avoiding
-    /// repeated four-work drips on the selected expensive edge.
-    pub backed_generation_quantum_work: usize,
-    /// Deterministic work reserved for the first expansion of a selected exact
-    /// turn-boundary node. Later resumptions return to the small quantum.
-    pub initial_expansion_work: usize,
-    /// Root-only discovery batch. Root proposals gate every deeper path, so
-    /// they receive a wider but still bounded first expansion.
-    pub root_initial_expansion_work: usize,
-    /// Maximum number of exact states that may receive an optional expensive
-    /// lookahead evaluation during this session.
-    pub lookahead_max_evaluations: usize,
-    /// Maximum deterministic evaluator work charged to one exact state.
-    pub lookahead_work_per_evaluation: usize,
-    pub max_turn_depth: usize,
-    pub satisfaction: OracleCombatWitnessSatisfaction,
-    /// Maximum number of potion resources expended by an accepted witness.
-    ///
-    /// This is a run-resource contract, not an action prior: potion lines
-    /// remain searchable, but each use or discard consumes one unit. An
-    /// over-budget terminal cannot satisfy the caller or displace an otherwise
-    /// acceptable incumbent.
-    pub max_potions_used: Option<u32>,
-}
-
-impl Default for LocalTurnGraphWitnessConfig {
-    fn default() -> Self {
-        Self {
-            generator: TurnOptionGeneratorConfig::default(),
-            generation_quantum_work: 4,
-            backed_generation_quantum_work: 256,
-            initial_expansion_work: 64,
-            root_initial_expansion_work: 2_048,
-            lookahead_max_evaluations: 384,
-            lookahead_work_per_evaluation: 24,
-            max_turn_depth: 32,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-            max_potions_used: None,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct LocalTurnGraphWitnessQuantum {
@@ -378,6 +327,10 @@ struct LocalRootActionFamilyAccumulator {
 
 struct GraphNode {
     generator: TurnOptionGeneratorSession,
+    /// Potion resources already expended on the retained path to this exact
+    /// boundary. It is part of constrained search identity whenever the
+    /// caller supplied a finite combat budget.
+    potion_expenditures: u32,
     /// One exact incoming path retained for diagnostics only. Search ownership
     /// and scheduling continue to use the shared exact node.
     diagnostic_parent: Option<(usize, usize)>,
@@ -451,7 +404,7 @@ pub struct LocalTurnGraphWitnessSession {
     collect_plan_transition_annotations: bool,
     lookahead_lane: Option<CombatGuideLaneId>,
     nodes: Vec<GraphNode>,
-    nodes_by_exact_key: HashMap<Arc<CombatExactStateKey>, usize>,
+    nodes_by_exact_key: HashMap<ConstrainedExactStateKey, usize>,
     used: LocalTurnGraphWitnessCounters,
     performance_timing: LocalTurnGraphPerformanceTiming,
     granted_selections: usize,
@@ -523,8 +476,13 @@ impl LocalTurnGraphWitnessSession {
         // Expensive lookahead evaluates exact player-turn boundaries. Atomic
         // partial states remain the generator's private proposal mechanism;
         // evaluating them here would reintroduce an independent inner search.
-        let generator =
-            TurnOptionGeneratorSession::with_policy(root.clone(), config.generator, policy.clone());
+        let generator = turn_generator_for_potion_budget(
+            root.clone(),
+            config.generator,
+            policy.clone(),
+            config.max_potions_used,
+            0,
+        );
         let root_generation_service_views =
             generation_service_views_from_lanes(generator.retained_guide_lanes());
         Self {
@@ -536,6 +494,7 @@ impl LocalTurnGraphWitnessSession {
             lookahead_lane: root_lookahead_pending_lane,
             nodes: vec![GraphNode {
                 generator,
+                potion_expenditures: 0,
                 diagnostic_parent: None,
                 relative_turn_depth: 0,
                 visits: 0,
@@ -556,7 +515,10 @@ impl LocalTurnGraphWitnessSession {
                 synced_gaps: 0,
                 exhausted: false,
             }],
-            nodes_by_exact_key: HashMap::from([(root_exact_key, 0)]),
+            nodes_by_exact_key: HashMap::from([(
+                ConstrainedExactStateKey::new(root_exact_key, config.max_potions_used, 0),
+                0,
+            )]),
             used: LocalTurnGraphWitnessCounters {
                 exact_nodes: 1,
                 ..LocalTurnGraphWitnessCounters::default()
@@ -2394,7 +2356,24 @@ impl LocalTurnGraphWitnessSession {
                 &option.exact_successor().combat,
             ))
         });
-        let successor = if let Some(existing) = self.nodes_by_exact_key.get(&successor_exact_key) {
+        let successor_potion_expenditures = self.nodes[parent_id]
+            .potion_expenditures
+            .saturating_add(actions_potion_expenditures(option.actions()));
+        if self
+            .config
+            .max_potions_used
+            .is_some_and(|limit| successor_potion_expenditures > limit)
+        {
+            return None;
+        }
+        let constrained_successor_key = ConstrainedExactStateKey::new(
+            successor_exact_key,
+            self.config.max_potions_used,
+            successor_potion_expenditures,
+        );
+        let successor = if let Some(existing) =
+            self.nodes_by_exact_key.get(&constrained_successor_key)
+        {
             *existing
         } else {
             let Ok(root) = CombatDecisionRoot::with_exact_state_identity(
@@ -2414,15 +2393,18 @@ impl LocalTurnGraphWitnessSession {
             let lookahead_acquisition_views =
                 lookahead_acquisition_views_from_guides(&guides, lookahead_pending_lane);
             let node_id = self.nodes.len();
-            let generator = TurnOptionGeneratorSession::with_policy(
+            let generator = turn_generator_for_potion_budget(
                 root.clone(),
                 self.config.generator,
                 self.policy.clone(),
+                self.config.max_potions_used,
+                successor_potion_expenditures,
             );
             let generation_service_views =
                 generation_service_views_from_lanes(generator.retained_guide_lanes());
             self.nodes.push(GraphNode {
                 generator,
+                potion_expenditures: successor_potion_expenditures,
                 diagnostic_parent: Some((parent_id, self.nodes[parent_id].children.len())),
                 relative_turn_depth,
                 visits: 0,
@@ -2443,7 +2425,8 @@ impl LocalTurnGraphWitnessSession {
                 synced_gaps: 0,
                 exhausted: false,
             });
-            self.nodes_by_exact_key.insert(successor_exact_key, node_id);
+            self.nodes_by_exact_key
+                .insert(constrained_successor_key, node_id);
             self.used.exact_nodes = self.nodes.len();
             self.used.maximum_turn_depth = self.used.maximum_turn_depth.max(relative_turn_depth);
             node_id

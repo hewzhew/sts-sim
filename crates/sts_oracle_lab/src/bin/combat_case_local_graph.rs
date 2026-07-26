@@ -93,8 +93,9 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// first-win or best-HP search.
     #[arg(long, conflicts_with = "improve_incumbent")]
     max_hp_loss: Option<u32>,
-    /// Require the accepted exact witness to use at most this many potions.
-    /// A zero limit also removes potion-use inputs during generation.
+    /// Require the exact search to expend at most this many potion resources.
+    /// Every finite limit is enforced during generation, not only when a
+    /// terminal witness is accepted.
     #[arg(long)]
     max_potions_used: Option<u32>,
     #[arg(long, default_value_t = 250)]

@@ -2421,6 +2421,60 @@ fn explicit_zero_potion_generator_phase_removes_potion_expenditure_inputs() {
 }
 
 #[test]
+fn finite_potion_generator_limit_prunes_over_budget_prefixes() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let monster = sts_core::test_support::planned_monster(EnemyId::TheGuardian, 1);
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::EnergyPotion, 7)),
+        Some(Potion::new(PotionId::EnergyPotion, 8)),
+    ];
+    combat.zones.hand.clear();
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .unwrap();
+    let stepper = EngineCombatStepper;
+    let mut session = TurnOptionGeneratorSession::with_policy_and_potion_limit(
+        root,
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+            ..TurnOptionGeneratorConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+        Some(1),
+    );
+
+    let report = session.advance(
+        &stepper,
+        CombatPlanningQuantum::deterministic(4_000, 32_768),
+    );
+    assert_eq!(report.status, TurnOptionGenerationStatus::Complete);
+    let potion_expenditures = session
+        .completed_options()
+        .iter()
+        .map(|option| {
+            option
+                .actions()
+                .iter()
+                .filter(|action| {
+                    matches!(
+                        action.input,
+                        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+                    )
+                })
+                .count()
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        potion_expenditures.iter().any(|count| *count == 1),
+        "the finite allowance must retain legal one-potion turn lines"
+    );
+    assert!(
+        potion_expenditures.iter().all(|count| *count <= 1),
+        "the generator must not spend work completing over-budget turn lines"
+    );
+}
+
+#[test]
 fn witness_search_records_only_gap_free_exhaustive_one_turn_loss() {
     let stepper = TinyTurnStepper::losing();
     let expected_hash = root().exact_state_hash().to_owned();
