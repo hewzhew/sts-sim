@@ -16,6 +16,7 @@ mod combat_plan_diagnostics;
 mod depth_beam_audits;
 mod exact_combat_evidence;
 mod policy_discrepancy_search;
+mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
 mod v2_capability_audit;
@@ -37,6 +38,7 @@ use combat_case_local_graph::CombatCaseLocalGraphArgs;
 use combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
 use policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
+use run_witness_suite::RunWitnessSuiteArgs;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
@@ -196,6 +198,14 @@ enum Command {
         /// completion summary.
         #[arg(long)]
         details: bool,
+    },
+    /// Replay a versioned set of exact F0-to-Act-3 witnesses in one process.
+    ///
+    /// The optional owner audit is diagnostic only: historical policy
+    /// divergence cannot invalidate an otherwise exact terminal witness.
+    VerifyRunWitnessSuite {
+        #[command(flatten)]
+        args: RunWitnessSuiteArgs,
     },
     /// Replace one historical combat trajectory with another exact trajectory
     /// and emit a continuation only if the full run still replays exactly.
@@ -1404,6 +1414,9 @@ fn main() -> Result<(), String> {
                 "node_id": node,
                 "report": report,
             }))
+        }
+        Command::VerifyRunWitnessSuite { args } => {
+            print_json(&run_witness_suite::verify_run_witness_suite(args)?)
         }
         Command::SpliceCombatWitness {
             workspace,

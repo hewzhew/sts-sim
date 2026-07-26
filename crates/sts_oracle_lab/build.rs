@@ -14,6 +14,14 @@ fn main() {
         .and_then(|path| path.parent())
         .expect("oracle lab package lives below <repository>/crates")
         .to_path_buf();
+    // The runtime freshness guard also treats the canonical Cargo aliases as
+    // part of the executable contract. Cargo must therefore rerun this build
+    // script when that config changes; otherwise the guard can demand a
+    // rebuild that Cargo incorrectly considers unnecessary.
+    println!(
+        "cargo:rerun-if-changed={}",
+        repository_root.join(".cargo/config.toml").display()
+    );
     println!(
         "cargo:rustc-env=STS_REPOSITORY_ROOT={}",
         repository_root.display()

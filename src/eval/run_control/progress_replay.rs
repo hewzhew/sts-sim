@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::combat_line_executor::drawn_cards_from_action_result;
 use super::combat_line_trace::{
@@ -12,7 +12,7 @@ use super::{
     RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
 };
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ExactRunProgressReplayReportV1 {
     pub seed: u64,
     pub ascension: u8,
