@@ -449,6 +449,78 @@ fn root() -> CombatDecisionRoot {
     CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
 }
 
+#[test]
+fn combat_root_accepts_a_stable_pre_turn_selection_boundary() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    combat.entities.monsters = vec![sts_core::test_support::planned_monster(EnemyId::JawWorm, 1)];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 22),
+    ];
+    let engine = EngineState::PendingChoice(PendingChoice::HandSelect {
+        candidate_uuids: vec![11, 22],
+        min_cards: 0,
+        max_cards: 2,
+        can_cancel: true,
+        reason: HandSelectReason::GamblingChip,
+    });
+    let turn_count = combat.turn.turn_count;
+
+    let root = CombatDecisionRoot::new(CombatPosition::new(engine, combat))
+        .expect("Gambling Chip is a stable combat input boundary");
+
+    assert_eq!(root.turn_count(), turn_count);
+    assert!(matches!(
+        root.position().engine,
+        EngineState::PendingChoice(PendingChoice::HandSelect {
+            reason: HandSelectReason::GamblingChip,
+            ..
+        })
+    ));
+
+    let mut generator = TurnOptionGeneratorSession::new(
+        root,
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+    let report = generator.advance(
+        &EngineCombatStepper,
+        CombatPlanningQuantum::deterministic(1_000, 8_192),
+    );
+    assert_eq!(
+        report.status,
+        TurnOptionGenerationStatus::Complete,
+        "{report:#?}"
+    );
+    let first_inputs = generator
+        .completed_options()
+        .iter()
+        .filter_map(|option| option.actions().first())
+        .map(|action| action.input.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        generator.completed_options().iter().all(|option| {
+            option.boundary() == CompleteTurnOptionBoundary::NextPlayerTurn
+                && option
+                    .actions()
+                    .first()
+                    .is_some_and(|action| {
+                        matches!(
+                            action.input,
+                            ClientInput::Cancel | ClientInput::SubmitSelection(_)
+                        )
+                    })
+        }),
+        "every generated turn must resolve Gambling Chip before playing the combat turn: {first_inputs:?}"
+    );
+    assert!(
+        generator.completed_options().len() >= 4,
+        "all legal discard subsets must remain visible to combat planning"
+    );
+}
+
 fn awakened_root() -> CombatDecisionRoot {
     let mut combat = sts_core::test_support::blank_test_combat();
     let mut awakened = sts_core::test_support::test_monster(EnemyId::AwakenedOne);

@@ -48,7 +48,10 @@ impl CombatDecisionRoot {
     }
 
     fn validate(position: &CombatPosition) -> Result<(), CombatDecisionRootError> {
-        if !matches!(position.engine, EngineState::CombatPlayerTurn) {
+        if !matches!(
+            position.engine,
+            EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+        ) {
             return Err(CombatDecisionRootError::NotStablePlayerTurn);
         }
         if sts_core::sim::combat::combat_terminal(&position.engine, &position.combat)

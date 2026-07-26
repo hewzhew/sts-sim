@@ -72,7 +72,9 @@ impl MapState {
 
         // WingBoots flight: allow any valid node on a row the current node can
         // already reach vertically. Java compares only the target row to each
-        // outgoing edge's dstY; it does not allow skipping multiple rows.
+        // outgoing edge's dstY, but DungeonMapScreen only exposes map nodes
+        // with outgoing edges. Rust represents the final campfire row without
+        // explicit boss edges, so an incoming edge is its visibility proof.
         if has_flight
             && self.current_y >= 0
             && (self.current_y as usize) < self.graph.len()
@@ -83,9 +85,9 @@ impl MapState {
         {
             let current_node = &self.graph[self.current_y as usize][self.current_x as usize];
             let target_node = &self.graph[target_y as usize][target_x as usize];
-            if current_node.edges.iter().any(|edge| edge.dst_y == target_y)
-                && (!target_node.edges.is_empty() || target_node.class.is_some())
-            {
+            let target_is_visible = !target_node.edges.is_empty()
+                || (target_y == 14 && !target_node.parents.is_empty());
+            if current_node.edges.iter().any(|edge| edge.dst_y == target_y) && target_is_visible {
                 return true;
             }
         }
@@ -183,13 +185,14 @@ mod tests {
     fn wing_boots_matches_java_next_row_only_semantics() {
         let mut start = node(0, 0, Some(RoomType::MonsterRoom));
         start.edges.insert(MapEdge::new(0, 0, 0, 1));
+        let mut normal_target = node(0, 1, Some(RoomType::MonsterRoom));
+        normal_target.edges.insert(MapEdge::new(0, 1, 0, 2));
+        let mut winged_target = node(1, 1, Some(RoomType::ShopRoom));
+        winged_target.edges.insert(MapEdge::new(1, 1, 1, 2));
 
         let graph = vec![
             vec![start, node(1, 0, None)],
-            vec![
-                node(0, 1, Some(RoomType::MonsterRoom)),
-                node(1, 1, Some(RoomType::ShopRoom)),
-            ],
+            vec![normal_target, winged_target],
             vec![
                 node(0, 2, Some(RoomType::RestRoom)),
                 node(1, 2, Some(RoomType::MonsterRoom)),
@@ -208,6 +211,39 @@ mod tests {
         assert!(
             !map.can_travel_to(0, 2, true),
             "Java Winged Greaves does not skip arbitrary future rows"
+        );
+    }
+
+    #[test]
+    fn wing_boots_cannot_land_on_an_invisible_map_placeholder() {
+        let mut start = node(0, 7, Some(RoomType::MonsterRoom));
+        start.edges.insert(MapEdge::new(0, 7, 3, 8));
+        let mut visible_chest = node(3, 8, Some(RoomType::TreasureRoom));
+        visible_chest.edges.insert(MapEdge::new(3, 8, 3, 9));
+        let graph = vec![
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![start],
+            vec![
+                node(0, 8, Some(RoomType::TreasureRoom)),
+                node(1, 8, Some(RoomType::TreasureRoom)),
+                node(2, 8, Some(RoomType::TreasureRoom)),
+                visible_chest,
+            ],
+        ];
+        let mut map = MapState::new(graph);
+        map.current_x = 0;
+        map.current_y = 7;
+
+        assert!(map.can_travel_to(3, 8, false));
+        assert!(
+            !map.can_travel_to(0, 8, true),
+            "Java only offers nodes present in DungeonMapScreen.visibleMapNodes"
         );
     }
 

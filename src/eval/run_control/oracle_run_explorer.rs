@@ -1972,13 +1972,47 @@ fn apply_decision_policy(
     work: &mut [LazyOracleRunDecisionV1],
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<(), String> {
+    let mut group_by_candidate_id = BTreeMap::<String, usize>::new();
+    let mut grouped_work_indices = Vec::<(String, Vec<usize>)>::new();
+    for (index, candidate) in work.iter().enumerate() {
+        if let Some(group_index) = group_by_candidate_id.get(&candidate.candidate_id).copied() {
+            grouped_work_indices[group_index].1.push(index);
+        } else {
+            let group_index = grouped_work_indices.len();
+            group_by_candidate_id.insert(candidate.candidate_id.clone(), group_index);
+            grouped_work_indices.push((candidate.candidate_id.clone(), vec![index]));
+        }
+    }
+    for (_, indices) in grouped_work_indices
+        .iter()
+        .filter(|(_, indices)| indices.len() > 1)
+    {
+        if !indices.iter().all(|index| {
+            matches!(
+                work[*index].action,
+                RunDecisionAction::Input(ClientInput::SubmitSelection(_))
+            )
+        }) {
+            return Err(format!(
+                "exact decision surface duplicated non-parameterized candidate '{}'",
+                work[indices[0]].candidate_id
+            ));
+        }
+    }
+
     let prior = {
-        let legal = work
+        // A parameterized public command such as `select` may bind many exact
+        // selection actions. The policy owns mass for the public command, not
+        // a fictitious duplicate command for every bound action.
+        let legal = grouped_work_indices
             .iter()
-            .map(|candidate| RunPolicyCandidateV1 {
-                candidate_id: &candidate.candidate_id,
-                label: &candidate.label,
-                action: &candidate.action,
+            .map(|(_, indices)| {
+                let candidate = &work[indices[0]];
+                RunPolicyCandidateV1 {
+                    candidate_id: &candidate.candidate_id,
+                    label: &candidate.label,
+                    action: &candidate.action,
+                }
             })
             .collect::<Vec<_>>();
         let prior = match decision_prior {
@@ -1989,20 +2023,30 @@ fn apply_decision_policy(
         prior
     };
 
-    let work_indices = work
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| (candidate.candidate_id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    for (rank, entry) in prior.entries.into_iter().enumerate() {
-        let index = work_indices
+    let mut expanded_rank = 0u64;
+    for entry in prior.entries {
+        let group_index = group_by_candidate_id
             .get(&entry.candidate_id)
             .copied()
             .expect("validated policy prior must reference one legal candidate");
-        work[index].path_negative_log_policy =
-            branch.path_negative_log_policy - entry.probability.ln();
-        work[index].path_discrepancy = branch.path_discrepancy.saturating_add(rank as u64);
-        work[index].path_depth = branch.path_depth.saturating_add(1);
+        let indices = grouped_work_indices
+            .get(group_index)
+            .map(|(_, indices)| indices)
+            .expect("validated policy group index must exist");
+        let probability = entry.probability / indices.len() as f64;
+        for index in indices {
+            work[*index].path_negative_log_policy =
+                branch.path_negative_log_policy - probability.ln();
+            work[*index].path_discrepancy = branch.path_discrepancy.saturating_add(expanded_rank);
+            work[*index].path_depth = branch.path_depth.saturating_add(1);
+            expanded_rank = expanded_rank.saturating_add(1);
+        }
+    }
+    if expanded_rank != work.len() as u64 {
+        return Err(format!(
+            "run policy expanded {expanded_rank} actions for {} legal bound actions",
+            work.len()
+        ));
     }
     Ok(())
 }
@@ -2267,6 +2311,53 @@ mod tests {
             parent_floor: 0,
             combat_edge_probe: None,
         }
+    }
+
+    #[test]
+    fn parameterized_run_selection_splits_one_public_policy_mass_across_exact_actions() {
+        let mut branch = test_branch(0, None);
+        branch.boundary = OracleRunBoundaryV1::RunChoice;
+        branch.session.run_state.master_deck = (0..3)
+            .map(|uuid| {
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, uuid)
+            })
+            .collect();
+        branch.session.engine_state =
+            EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+                min_choices: 2,
+                max_choices: 2,
+                reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
+                source: crate::state::selection::DomainEventSource::Selection(
+                    crate::state::core::RunPendingChoiceReason::PurgeNonBottled.into(),
+                ),
+                return_state: Box::new(EngineState::MapNavigation),
+            });
+
+        let work = decision_work_for_branch(&branch, None)
+            .expect("one public select command may bind several exact combinations");
+
+        assert_eq!(work.len(), 3);
+        assert!(work
+            .iter()
+            .all(|candidate| candidate.candidate_id == "select"));
+        assert_eq!(
+            work.iter()
+                .map(|candidate| candidate.stable_work_key.as_str())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            3
+        );
+        let probability_sum = work
+            .iter()
+            .map(|candidate| (-candidate.path_negative_log_policy).exp())
+            .sum::<f64>();
+        assert!((probability_sum - 1.0).abs() < 1.0e-9);
+        assert_eq!(
+            work.iter()
+                .map(|candidate| candidate.path_discrepancy)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
     }
 
     #[test]
