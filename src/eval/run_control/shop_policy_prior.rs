@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -10,6 +10,9 @@ use crate::ai::card_semantics_v1::{
     PotionAcquisitionTraitV1, RelicAcquisitionTraitV1,
 };
 use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
+use crate::ai::deck_mutation_compiler_v1::{
+    deck_removal_target_snapshots_v1, DeckMutationTargetLossTierV1,
+};
 use crate::ai::noncombat_strategy_v1::{
     StrategyCapabilityKindV1, StrategyDeckFormationNeedV1, StrategyPackageIdV2,
 };
@@ -104,6 +107,7 @@ pub struct ShopPolicyActionEvidenceV1 {
     pub upgrade_scope_after: Option<CombatUpgradeScopeV1>,
     pub introduces_status_burden: bool,
     pub redundant_upgrade_access: bool,
+    pub purge_target_loss: Option<DeckMutationTargetLossTierV1>,
     surface_index: usize,
 }
 
@@ -137,6 +141,7 @@ pub struct ShopPolicyAuditCandidateV1 {
     pub upgrade_scope_after: Option<String>,
     pub introduces_status_burden: bool,
     pub redundant_upgrade_access: bool,
+    pub purge_target_loss: Option<String>,
     pub surface_index: usize,
     pub prior_probability: f64,
 }
@@ -226,6 +231,7 @@ impl ExactShopPolicyDecisionV1 {
                         .map(|value| format!("{value:?}")),
                     introduces_status_burden: evidence.introduces_status_burden,
                     redundant_upgrade_access: evidence.redundant_upgrade_access,
+                    purge_target_loss: evidence.purge_target_loss.map(|value| format!("{value:?}")),
                     surface_index: evidence.surface_index,
                     prior_probability,
                 })
@@ -264,12 +270,16 @@ pub fn exact_shop_policy_decision_v1(
 
     let exact = exact_run_policy_decision_v1(session)?;
     validate_same_candidate_surface(&exact, legal)?;
+    let purge_target_losses = deck_removal_target_snapshots_v1(&session.run_state)
+        .into_iter()
+        .map(|snapshot| (snapshot.deck_index, snapshot.target_loss.tier))
+        .collect::<BTreeMap<_, _>>();
     let mut evidence = exact
         .actions
         .iter()
         .enumerate()
         .map(|(surface_index, action)| {
-            shop_action_evidence_v1(session, &exact, action, surface_index)
+            shop_action_evidence_v1(session, &exact, action, surface_index, &purge_target_losses)
         })
         .collect::<Result<Vec<_>, _>>()?;
     evidence.sort_by(compare_shop_evidence);
@@ -315,6 +325,7 @@ fn shop_action_evidence_v1(
     decision: &ExactRunPolicyDecisionV1,
     action: &ExactRunPolicyActionSuccessorV1,
     surface_index: usize,
+    purge_target_losses: &BTreeMap<usize, DeckMutationTargetLossTierV1>,
 ) -> Result<ShopPolicyActionEvidenceV1, String> {
     let candidate_key = action
         .candidate_key
@@ -346,6 +357,12 @@ fn shop_action_evidence_v1(
         }
     ) && upgrade_scope_before.is_some()
         && upgrade_scope_after == upgrade_scope_before;
+    let purge_target_loss = match &candidate_key {
+        DecisionCandidateKey::ShopPurgeCard { deck_index, .. } => {
+            purge_target_losses.get(deck_index).copied()
+        }
+        _ => None,
+    };
     let followup = followup_v1(&action.exact.session.engine_state);
     let gold_spent = decision
         .before
@@ -380,6 +397,7 @@ fn shop_action_evidence_v1(
         upgrade_scope_after,
         introduces_status_burden,
         redundant_upgrade_access,
+        purge_target_loss,
     );
 
     Ok(ShopPolicyActionEvidenceV1 {
@@ -401,6 +419,7 @@ fn shop_action_evidence_v1(
         upgrade_scope_after,
         introduces_status_burden,
         redundant_upgrade_access,
+        purge_target_loss,
         surface_index,
     })
 }
@@ -567,6 +586,7 @@ fn shop_policy_band_v1(
     upgrade_scope_after: Option<CombatUpgradeScopeV1>,
     introduces_status_burden: bool,
     redundant_upgrade_access: bool,
+    purge_target_loss: Option<DeckMutationTargetLossTierV1>,
 ) -> ShopPolicyBandV1 {
     if matches!(acquisition, ShopPolicyAcquisitionV1::OpenRewards) {
         return ShopPolicyBandV1::ResolvePendingBoundary;
@@ -580,8 +600,19 @@ fn shop_policy_band_v1(
     if !capability_improvements.is_empty() || !matched_consumable_capabilities.is_empty() {
         return ShopPolicyBandV1::ImproveRequiredCapability;
     }
-    if matches!(acquisition, ShopPolicyAcquisitionV1::Purge { .. }) && deck_size_delta < 0 {
-        return ShopPolicyBandV1::DeckRepair;
+    if matches!(acquisition, ShopPolicyAcquisitionV1::Purge { .. }) {
+        return if deck_size_delta < 0
+            && matches!(
+                purge_target_loss,
+                Some(
+                    DeckMutationTargetLossTierV1::LowValue
+                        | DeckMutationTargetLossTierV1::RedundantFunctional
+                )
+            ) {
+            ShopPolicyBandV1::DeckRepair
+        } else {
+            ShopPolicyBandV1::Liability
+        };
     }
     if introduces_status_burden || redundant_upgrade_access {
         return ShopPolicyBandV1::Liability;
@@ -673,8 +704,8 @@ fn compare_shop_evidence(
     left: &ShopPolicyActionEvidenceV1,
     right: &ShopPolicyActionEvidenceV1,
 ) -> Ordering {
-    left.band
-        .cmp(&right.band)
+    shop_band_priority(left.band)
+        .cmp(&shop_band_priority(right.band))
         .then_with(|| {
             right
                 .closed_threat_gaps
@@ -701,8 +732,28 @@ fn compare_shop_evidence(
                 .len()
                 .cmp(&left.added_formation_strengths.len())
         })
+        .then_with(|| match (left.purge_target_loss, right.purge_target_loss) {
+            (Some(left), Some(right)) => left.cmp(&right),
+            _ => Ordering::Equal,
+        })
         .then_with(|| left.gold_spent.cmp(&right.gold_spent))
         .then_with(|| left.surface_index.cmp(&right.surface_index))
+}
+
+const fn shop_band_priority(band: ShopPolicyBandV1) -> u8 {
+    match band {
+        ShopPolicyBandV1::ResolvePendingBoundary => 0,
+        ShopPolicyBandV1::ImmediateSurvival => 1,
+        ShopPolicyBandV1::CloseThreatGap => 2,
+        ShopPolicyBandV1::ImproveRequiredCapability => 3,
+        // Both are durable deck improvements. Their exact evidence and
+        // opportunity cost must compare before the owner commits all gold to
+        // one category merely because it was represented by a different verb.
+        ShopPolicyBandV1::DeckRepair | ShopPolicyBandV1::EstablishStrategicAsset => 4,
+        ShopPolicyBandV1::PreserveResources => 5,
+        ShopPolicyBandV1::SpeculativePurchase => 6,
+        ShopPolicyBandV1::Liability => 7,
+    }
 }
 
 #[cfg(test)]
@@ -952,5 +1003,126 @@ mod tests {
         assert_eq!(orrery.followup, ShopPolicyFollowupV1::Reward);
         assert_eq!(orrery.band, ShopPolicyBandV1::EstablishStrategicAsset);
         assert_eq!(decision.prior.entries[0].candidate_id, orrery.candidate_id);
+    }
+
+    #[test]
+    fn strategic_shop_pair_competes_with_only_genuine_low_loss_repair() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 128;
+        let upgraded = |card, uuid| {
+            let mut card = CombatCard::new(card, uuid);
+            card.upgrades = 1;
+            card
+        };
+        session.run_state.master_deck = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Strike, 2),
+            CombatCard::new(CardId::Defend, 3),
+            CombatCard::new(CardId::Defend, 4),
+            CombatCard::new(CardId::Bash, 5),
+            upgraded(CardId::FeelNoPain, 6),
+            upgraded(CardId::FeelNoPain, 7),
+            upgraded(CardId::BurningPact, 8),
+            upgraded(CardId::TrueGrit, 9),
+            upgraded(CardId::FireBreathing, 10),
+            upgraded(CardId::WildStrike, 11),
+            upgraded(CardId::Whirlwind, 12),
+        ];
+        let mut shop = ShopState::new();
+        shop.purge_cost = 125;
+        shop.cards.extend([
+            ShopCard {
+                card_id: CardId::DarkEmbrace,
+                upgrades: 1,
+                price: 37,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::Disarm,
+                upgrades: 0,
+                price: 79,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ]);
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&session, &legal).expect("paired shop policy");
+
+        assert!(matches!(
+            decision.evidence[0].acquisition,
+            ShopPolicyAcquisitionV1::Card {
+                card: CardId::Disarm,
+                ..
+            }
+        ));
+        assert!(matches!(
+            decision.evidence[1].acquisition,
+            ShopPolicyAcquisitionV1::Card {
+                card: CardId::DarkEmbrace,
+                ..
+            }
+        ));
+        let strike_purge = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopPurgeCard { deck_index: 0, .. }
+                )
+            })
+            .expect("starter Strike purge");
+        assert_eq!(strike_purge.band, ShopPolicyBandV1::DeckRepair);
+        assert_eq!(
+            strike_purge.purge_target_loss,
+            Some(DeckMutationTargetLossTierV1::LowValue)
+        );
+        let feel_no_pain_purge = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopPurgeCard {
+                        card: CardId::FeelNoPain,
+                        ..
+                    }
+                )
+            })
+            .expect("Feel No Pain purge");
+        assert_eq!(feel_no_pain_purge.band, ShopPolicyBandV1::Liability);
+
+        let after_disarm = decision
+            .exact
+            .actions
+            .iter()
+            .find(|action| {
+                matches!(
+                    action.candidate_key,
+                    Some(DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::Disarm,
+                        ..
+                    })
+                )
+            })
+            .expect("Disarm successor")
+            .exact
+            .session
+            .clone();
+        let next_surface = build_decision_surface(&after_disarm);
+        let next_legal = policy_candidates(&next_surface);
+        let next_decision =
+            exact_shop_policy_decision_v1(&after_disarm, &next_legal).expect("post-Disarm policy");
+        assert!(matches!(
+            next_decision.evidence[0].acquisition,
+            ShopPolicyAcquisitionV1::Card {
+                card: CardId::DarkEmbrace,
+                ..
+            }
+        ));
     }
 }
