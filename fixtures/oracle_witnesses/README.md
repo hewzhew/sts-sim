@@ -92,13 +92,13 @@ The strategy-to-search handoff has a separate deterministic regression:
   generation work, and independently produces the checked-in 57-action,
   17-HP witness. The combined prefix and suffix are replayed exactly from the
   unchanged T4 root; neither a V2 donor nor corridor actions participate.
-- `oracle_lab combat-case` exposes `--expect-witness`,
+- The lightweight `combat_contract` runner exposes `--expect-witness`,
   `--expect-min-final-hp`, and `--expect-max-plan-suffix-work` so this
   capability and its deterministic work ceiling can be checked directly.
 - The compact regression command is:
 
   ```text
-  ol.cmd combat-case --case fixtures/oracle_witnesses/seed20260713007_a0_awakened_one_managed_t4.combat-case.json --typed-plan-guide --plan-compatible-policy-line --plan-compatible-suffix-work 5000 --expect-witness --expect-min-final-hp 17 --expect-max-plan-suffix-work 3317 --contract-only
+  ol-contract.cmd --case fixtures/oracle_witnesses/seed20260713007_a0_awakened_one_managed_t4.combat-case.json --typed-plan-guide --plan-compatible-policy-line --plan-compatible-suffix-work 5000 --expect-witness --expect-min-final-hp 17 --expect-max-plan-suffix-work 3317
   ```
 
 - SHA-256: managed T4 case

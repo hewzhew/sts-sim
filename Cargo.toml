@@ -16,6 +16,8 @@ members = [
     "crates/sts_oracle_runtime",
     "crates/oracle_lab_protocol",
     "crates/sts_combat_legacy",
+    "crates/sts_combat_knowledge",
+    "crates/sts_combat_contract",
     "crates/sts_combat_planner",
     "crates/sts_combat_strategy",
     "crates/sts_simulator_control",
@@ -66,6 +68,10 @@ opt-level = 0
 codegen-units = 256
 
 [profile.release.package.sts_oracle_runtime]
+opt-level = 0
+codegen-units = 256
+
+[profile.release.package.sts_combat_contract]
 opt-level = 0
 codegen-units = 256
 

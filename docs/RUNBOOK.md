@@ -203,6 +203,10 @@ The workspace has several deliberate production compilation units:
 - `sts_combat_strategy`, `sts_combat_planner`, and `sts_combat_legacy` isolate
   typed combat knowledge, the current exact planner, and the retained legacy
   capability surface;
+- `sts_combat_knowledge` owns the shared tactical priors consumed by both
+  run-control and exact combat tools;
+- `sts_combat_contract` is the narrow, replay-verified Boss-regression runner;
+  it intentionally excludes the run explorer, routes, shops, and continuations;
 - `sts_oracle_runtime` owns evaluation, run-control, and `runtime::branch`;
 - `sts_oracle_lab` owns heavyweight offline and resident command hosts;
 - `oracle_lab_client` owns the lightweight repeated-command surface;
@@ -221,6 +225,10 @@ Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
 profile and target directory are not valid operational entrypoints.
+Use `.\ol-contract.cmd` for the maintained exact-combat contracts. It compiles
+only simulator/core combat, the planner, shared tactical knowledge, and its
+thin runner; a planner edit therefore does not invalidate or link the full
+oracle run explorer.
 The heavy `oracle_lab` and `oracle_lab_service` targets require the internal
 `canonical-oracle-artifacts` feature. This is intentional: an ad-hoc
 `cargo build -p sts_oracle_lab --bin oracle_lab` is rejected during Cargo
@@ -260,6 +268,14 @@ client took 1.31 seconds. These numbers verify the invalidation boundary; they
 are not performance assertions for CI. Use `release-final` only when the
 fully-optimized deployment artifact is specifically required. Further package
 splits require a new measured source-invalidation boundary.
+
+The exact-combat contract has a still narrower measured boundary. On the same
+Windows checkout, an actual source edit in `sts_combat_planner` followed by the
+managed-T4 contract rebuilt and ran in 3.85 seconds; the exact search itself
+took 0.38 seconds. The former heavyweight route spent about 20.8 seconds
+end-to-end after the same class of planner invalidation. These figures are
+local observations, not CI thresholds; the enforced architectural fact is
+that `sts_combat_contract` does not depend on `sts_oracle_runtime`.
 
 Splitting one Rust source file into modules improves ownership and review
 scope, but it does not create a new compilation unit: every module of one

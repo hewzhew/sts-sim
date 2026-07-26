@@ -323,6 +323,27 @@ name = "sts_architecture_checks"
 version = "0.1.0"
 
 [[package]]
+name = "sts_combat_contract"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "sts_combat_knowledge",
+ "sts_combat_planner",
+ "sts_simulator",
+]
+
+[[package]]
+name = "sts_combat_knowledge"
+version = "0.1.0"
+dependencies = [
+ "sts_combat_legacy",
+ "sts_combat_planner",
+ "sts_simulator",
+]
+
+[[package]]
 name = "sts_combat_legacy"
 version = "0.1.0"
 dependencies = [
@@ -373,6 +394,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "sts_combat_knowledge",
  "sts_combat_legacy",
  "sts_combat_planner",
  "sts_simulator",

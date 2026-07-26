@@ -109,6 +109,55 @@ fn resident_oracle_state_stays_outside_cargo_target() {
 }
 
 #[test]
+fn generated_oracle_cases_stay_outside_cargo_target() {
+    let mut sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut sources);
+    collect_rust_sources(std::path::Path::new("crates"), &mut sources);
+
+    for path in sources {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        assert!(
+            !source.contains("target/oracle-cases")
+                && !source.contains(r"target\oracle-cases"),
+            "{} must not make Cargo's target directory the durable home for generated oracle cases; use the ignored .oracle-lab root",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn exact_combat_contract_stays_outside_the_run_explorer_compilation_unit() {
+    let contract_manifest =
+        std::fs::read_to_string("crates/sts_combat_contract/Cargo.toml")
+            .expect("read combat contract manifest");
+    let knowledge_manifest =
+        std::fs::read_to_string("crates/sts_combat_knowledge/Cargo.toml")
+            .expect("read combat knowledge manifest");
+    let runtime_policy =
+        std::fs::read_to_string("src/eval/run_control/oracle_combat_policy.rs")
+            .expect("read runtime combat policy adapter");
+
+    for (label, manifest) in [
+        ("combat contract", contract_manifest.as_str()),
+        ("combat knowledge", knowledge_manifest.as_str()),
+    ] {
+        assert!(
+            !manifest.contains("sts_oracle_runtime"),
+            "{label} must not pull routes, shops, continuations, or the run explorer into exact-combat iteration"
+        );
+    }
+    assert!(
+        runtime_policy.contains("pub use sts_combat_knowledge"),
+        "run control and the lightweight contract must share one tactical-knowledge implementation"
+    );
+    assert!(
+        !runtime_policy.contains("impl CombatActionPolicy for ExistingCombatKnowledgePolicy"),
+        "run control must not grow a second copy of the shared tactical policy"
+    );
+}
+
+#[test]
 fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner_audit runtime module");
