@@ -25,6 +25,7 @@ use super::types::{
 };
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
+const MAX_MULTI_OPTIONS_FOR_INSPECTION: usize = 64;
 const PREMIUM_DUPLICATE_TARGET_PRIORITY: i32 = 760;
 const POLICY_PREFERRED_UPGRADE_PRIORITY_THRESHOLD: i32 = 180;
 
@@ -344,12 +345,19 @@ fn plan_candidates(
         return candidates;
     }
 
+    if matches!(output, DeckMutationCompilerOutputV1::ExecuteOne) {
+        return greedy_multi_candidate(choice, targets)
+            .into_iter()
+            .collect();
+    }
+
     compressed_multi_candidates(
         choice,
         targets,
         match output {
             DeckMutationCompilerOutputV1::BranchTopK { max_active } => max_active,
-            _ => usize::MAX,
+            DeckMutationCompilerOutputV1::Inspect => MAX_MULTI_OPTIONS_FOR_INSPECTION,
+            DeckMutationCompilerOutputV1::ExecuteOne => unreachable!("handled above"),
         },
     )
     .unwrap_or_else(|| {

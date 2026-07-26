@@ -510,6 +510,27 @@ fn bottle_compiler_keeps_best_bad_target_branchable_when_no_clean_target_exists(
         .any(|risk| risk.contains("opening-hand debt")));
 }
 
+#[test]
+fn execute_one_multi_selection_never_materializes_the_combination_domain() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.master_deck = (0..60)
+        .map(|uuid| {
+            let mut card = CombatCard::new(CardId::Strike, uuid);
+            card.upgrades = uuid as u8;
+            card
+        })
+        .collect();
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice(RunPendingChoiceReason::TransformUpgraded, 3),
+        DeckMutationCompilerRequestV1::committed_forced_execute_one(),
+    );
+
+    assert_eq!(decision.candidate_plans.len(), 1);
+    assert_eq!(decision.selected_plan.unwrap().step.deck_indices.len(), 3);
+}
+
 fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState {
     RunPendingChoiceState {
         min_choices: count,

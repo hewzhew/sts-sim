@@ -22,7 +22,7 @@ use super::oracle_combat_work::{
     OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkProgressV1, OracleRunCombatWorkV1,
 };
 use super::oracle_run_explorer::{
-    decision_work_for_branch, seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
+    seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
     OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatBudgetsV1,
     OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
     OracleRunReplayStepV1, OracleRunWorkKindV1,
@@ -774,7 +774,12 @@ impl OracleAnalysisSessionV1 {
         ) {
             Vec::new()
         } else {
-            decision_work_for_branch(branch, self.decision_prior)?
+            self.explorer
+                .pending_decisions
+                .iter()
+                .filter(|work| work.parent_branch_id == branch.branch_id)
+                .cloned()
+                .collect()
         };
         choices.sort_by(|left, right| {
             left.path_discrepancy
@@ -979,17 +984,24 @@ impl OracleAnalysisSessionV1 {
     pub fn try_choice(&mut self, requested_ref: &str) -> Result<usize, String> {
         let (parent_node_id, _) = parse_choice_ref(requested_ref)?;
         let parent = self.require_branch(parent_node_id)?;
-        let work = decision_work_for_branch(parent, self.decision_prior)?
-            .into_iter()
+        let work = self
+            .explorer
+            .pending_decisions
+            .iter()
+            .filter(|work| work.parent_branch_id == parent.branch_id)
             .find(|work| choice_ref(work) == requested_ref)
+            .cloned()
             .ok_or_else(|| {
                 format!("choice reference is stale or is not legal at node {parent_node_id}")
             })?;
         let label = work.label.clone();
-        self.explorer.remove_pending_decision(&work.stable_work_key);
+        self.explorer
+            .note_explicit_decision_service(&work.stable_work_key)?;
         let child_node_id = self
             .explorer
             .materialize_explicit_decision(work, self.decision_annotation)?;
+        self.explorer
+            .register_explicit_decisions_for_branch(child_node_id, self.decision_prior)?;
         let edge_id = self.record_edge(
             parent_node_id,
             child_node_id,
@@ -1258,6 +1270,8 @@ impl OracleAnalysisSessionV1 {
             .explorer
             .materialize_explicit_combat(source_node_id, work)?;
         if let Some(child_node_id) = child_node_id {
+            self.explorer
+                .register_explicit_decisions_for_branch(child_node_id, self.decision_prior)?;
             let child = self.require_branch(child_node_id)?;
             let edge_id = self.record_edge(
                 source_node_id,

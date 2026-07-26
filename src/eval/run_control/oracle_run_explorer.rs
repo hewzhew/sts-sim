@@ -4,11 +4,16 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::deck_mutation_compiler_v1::{
+    compile_deck_mutation_decision_v1, DeckMutationCommitmentModeV1, DeckMutationCompilerOutputV1,
+    DeckMutationCompilerRequestV1,
+};
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::state::core::{ClientInput, EngineState, RunResult};
 use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
+use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
     build_decision_surface, positive_ranked_run_policy_prior_v1, DecisionCandidateKey,
     NeowOracleExpansionV1, RunControlCombatSearchQuantum, RunControlCombatSearchRejection,
@@ -73,6 +78,27 @@ pub struct LazyOracleRunDecisionV1 {
     pub parent_floor: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combat_edge_probe: Option<OracleRunCombatEdgeProbeV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LazyOracleRunSelectionFamilyV1 {
+    pub family_key: String,
+    pub parent_branch_id: usize,
+    pub parent_state_fingerprint: String,
+    pub neow_root_candidate_id: String,
+    pub kind: OracleRunWorkKindV1,
+    pub candidate_id: String,
+    pub label: String,
+    pub path_negative_log_policy: f64,
+    pub path_discrepancy: u64,
+    pub path_depth: u64,
+    pub parent_act: u8,
+    pub parent_floor: i32,
+    pub public_probability: f64,
+    cursor: LazyUnorderedSelectionCursorV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outstanding_work_key: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -152,6 +178,8 @@ pub struct OracleRunExplorerCheckpointV1 {
     pub next_branch_id: usize,
     pub branches: Vec<OracleRunBranchCheckpointV1>,
     pub pending_decisions: Vec<LazyOracleRunDecisionV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_selection_families: Vec<LazyOracleRunSelectionFamilyV1>,
     /// Legacy checkpoints only recorded the exact combat state and therefore
     /// had to restart search with a fresh allowance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -464,6 +492,7 @@ pub struct OracleRunExplorerV1 {
     pub combat_search_restarts: usize,
     pending_combats: VecDeque<PendingOracleCombatV1>,
     deferred_combats: VecDeque<DeferredOracleCombatV1>,
+    pending_selection_families: VecDeque<LazyOracleRunSelectionFamilyV1>,
     last_served_neow_root: Option<String>,
     next_branch_id: usize,
     state_index: BTreeMap<String, usize>,
@@ -515,6 +544,7 @@ impl OracleRunExplorerV1 {
             combat_search_restarts: 0,
             pending_combats: VecDeque::new(),
             deferred_combats: VecDeque::new(),
+            pending_selection_families: VecDeque::new(),
             last_served_neow_root: None,
             next_branch_id: 0,
             state_index: BTreeMap::new(),
@@ -581,6 +611,11 @@ impl OracleRunExplorerV1 {
             .iter()
             .map(|decision| decision.parent_branch_id)
             .collect::<BTreeSet<_>>();
+        live_branch_ids.extend(
+            self.pending_selection_families
+                .iter()
+                .map(|family| family.parent_branch_id),
+        );
         if let Some(branch_id) = active_combat_branch_id {
             live_branch_ids.insert(branch_id);
         }
@@ -688,6 +723,7 @@ impl OracleRunExplorerV1 {
             next_branch_id: self.next_branch_id,
             branches,
             pending_decisions: self.pending_decisions.iter().cloned().collect(),
+            pending_selection_families: self.pending_selection_families.iter().cloned().collect(),
             active_combat_branch_id: None,
             active_combat,
             deferred_combats: self
@@ -1008,12 +1044,69 @@ impl OracleRunExplorerV1 {
             .iter()
             .find(|branch| branch.branch_id == branch_id)
             .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
-        let mut work = decision_work_for_branch(branch, decision_prior)?;
-        work.retain(|item| {
+        let mut supply = decision_supply_for_branch(branch, decision_prior)?;
+        supply.decisions.retain(|item| {
             self.registered_work_keys
                 .insert(item.stable_work_key.clone())
         });
-        self.pending_decisions.extend(work);
+        self.pending_decisions.extend(supply.decisions);
+        if let Some(family) = supply.selection_family {
+            if self.registered_work_keys.insert(family.family_key.clone()) {
+                self.pending_selection_families.push_back(family);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn register_explicit_decisions_for_branch(
+        &mut self,
+        branch_id: usize,
+        decision_prior: Option<RunPolicyPriorFnV1>,
+    ) -> Result<(), String> {
+        let boundary = self
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == branch_id)
+            .map(|branch| branch.boundary)
+            .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
+        match boundary {
+            OracleRunBoundaryV1::Combat
+            | OracleRunBoundaryV1::TerminalVictory
+            | OracleRunBoundaryV1::TerminalDefeat => Ok(()),
+            _ => self.register_decision_work(branch_id, decision_prior),
+        }
+    }
+
+    fn release_next_selection_member(&mut self, completed_work_key: &str) -> Result<(), String> {
+        let Some(index) = self
+            .pending_selection_families
+            .iter()
+            .position(|family| family.outstanding_work_key.as_deref() == Some(completed_work_key))
+        else {
+            return Ok(());
+        };
+        let mut family = self
+            .pending_selection_families
+            .remove(index)
+            .expect("located selection family must remain present");
+        family.outstanding_work_key = None;
+        let Some(action) = selection_family_next_action(&mut family) else {
+            return Ok(());
+        };
+        let decision = selection_family_decision(&mut family, action)?;
+        if !self
+            .registered_work_keys
+            .insert(decision.stable_work_key.clone())
+        {
+            return Err(format!(
+                "selection family '{}' emitted duplicate exact work '{}'",
+                family.family_key, decision.stable_work_key
+            ));
+        }
+        self.pending_decisions.push_back(decision);
+        if !family.cursor.is_exhausted() {
+            self.pending_selection_families.push_back(family);
+        }
         Ok(())
     }
 
@@ -1180,14 +1273,15 @@ impl OracleRunExplorerV1 {
             })
     }
 
-    pub(super) fn remove_pending_decision(&mut self, stable_work_key: &str) {
-        if let Some(index) = self
-            .pending_decisions
-            .iter()
-            .position(|decision| decision.stable_work_key == stable_work_key)
-        {
-            self.pending_decisions.remove(index);
-        }
+    pub(super) fn note_explicit_decision_service(
+        &mut self,
+        stable_work_key: &str,
+    ) -> Result<(), String> {
+        // Analysis variations do not consume the parent's legal choices.
+        // For a parameterized selection, explicitly trying the currently
+        // exposed member only widens the immutable parent by one more exact
+        // member. Production scheduling removes serviced work separately.
+        self.release_next_selection_member(stable_work_key)
     }
 
     pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, OracleRunCombatWorkV1)> {
@@ -1434,7 +1528,8 @@ pub fn seed_oracle_run_explorer_v1(
             .iter()
             .find(|branch| branch.branch_id == branch_id)
             .ok_or_else(|| format!("missing oracle root branch {branch_id}"))?;
-        for work in decision_work_for_branch(branch, decision_prior)? {
+        let supply = decision_supply_for_branch(branch, decision_prior)?;
+        for work in supply.decisions {
             if explorer
                 .registered_work_keys
                 .insert(work.stable_work_key.clone())
@@ -1444,6 +1539,18 @@ pub fn seed_oracle_run_explorer_v1(
                     .or_default()
                     .push_back(work);
             }
+        }
+        if let Some(family) = supply.selection_family {
+            if !explorer
+                .registered_work_keys
+                .insert(family.family_key.clone())
+            {
+                return Err(format!(
+                    "oracle root selection family '{}' was registered twice",
+                    family.family_key
+                ));
+            }
+            explorer.pending_selection_families.push_back(family);
         }
     }
     loop {
@@ -1505,6 +1612,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         next_branch_id,
         branches,
         pending_decisions,
+        pending_selection_families,
         active_combat_branch_id,
         active_combat,
         deferred_combats,
@@ -1597,6 +1705,57 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         {
             explorer.pending_decisions.push_back(decision);
         }
+    }
+    for family in pending_selection_families {
+        let parent = explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == family.parent_branch_id)
+            .ok_or_else(|| {
+                format!(
+                    "oracle frontier selection family references missing branch {}",
+                    family.parent_branch_id
+                )
+            })?;
+        if !legacy_state_fingerprints && parent.state_fingerprint != family.parent_state_fingerprint
+        {
+            return Err(format!(
+                "oracle frontier selection family parent fingerprint changed for branch {}",
+                family.parent_branch_id
+            ));
+        }
+        if family.cursor.is_exhausted() {
+            return Err(format!(
+                "oracle frontier selection family '{}' persisted after exhaustion",
+                family.family_key
+            ));
+        }
+        let Some(outstanding_work_key) = family.outstanding_work_key.as_deref() else {
+            return Err(format!(
+                "oracle frontier selection family '{}' has no outstanding exact member",
+                family.family_key
+            ));
+        };
+        if !explorer
+            .pending_decisions
+            .iter()
+            .any(|decision| decision.stable_work_key == outstanding_work_key)
+        {
+            return Err(format!(
+                "oracle frontier selection family '{}' lost outstanding member '{}'",
+                family.family_key, outstanding_work_key
+            ));
+        }
+        if !explorer
+            .registered_work_keys
+            .insert(family.family_key.clone())
+        {
+            return Err(format!(
+                "oracle frontier duplicated selection family '{}'",
+                family.family_key
+            ));
+        }
+        explorer.pending_selection_families.push_back(family);
     }
     if let (Some(legacy_branch_id), Some(active)) = (active_combat_branch_id, &active_combat) {
         if legacy_branch_id != active.branch_id {
@@ -1868,6 +2027,7 @@ pub fn drive_oracle_run_explorer_v1(
         work_items = work_items.saturating_add(1);
         match scheduled {
             ScheduledOracleRunWorkV1::Decision(decision) => {
+                explorer.release_next_selection_member(&decision.stable_work_key)?;
                 if let Some(branch_id) =
                     explorer.materialize_decision(decision, budget.decision_annotation)?
                 {
@@ -1927,36 +2087,51 @@ fn stable_oracle_work_key(
     })
 }
 
-pub(super) fn decision_work_for_branch(
+struct OracleRunDecisionSupplyV1 {
+    decisions: Vec<LazyOracleRunDecisionV1>,
+    selection_family: Option<LazyOracleRunSelectionFamilyV1>,
+}
+
+fn decision_supply_for_branch(
     branch: &OracleRunBranchV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
-) -> Result<Vec<LazyOracleRunDecisionV1>, String> {
+) -> Result<OracleRunDecisionSupplyV1, String> {
     let kind = work_kind(branch.boundary)?;
-    let mut work = if matches!(
+    let surface = build_decision_surface(&branch.session);
+    let has_symbolic_selection = matches!(
         branch.session.engine_state,
         EngineState::RunPendingChoice(_)
-    ) {
-        run_choice_work_for_branch(branch, kind)?
-    } else {
-        let surface = build_decision_surface(&branch.session);
-        let mut work = Vec::new();
-        for candidate in surface.view.candidates {
-            let Some(action) = candidate.action.executable_action() else {
-                continue;
-            };
-            if should_normalize_navigation_away(&branch.session, &action) {
-                continue;
-            }
-            work.push(lazy_decision(
-                branch,
-                kind,
-                candidate.id,
-                candidate.label,
-                action,
-            ));
+    ) && surface.view.candidates.iter().any(|candidate| {
+        matches!(
+            candidate.key,
+            Some(DecisionCandidateKey::SelectionSubmit { .. })
+        ) && candidate.action.executable_action().is_none()
+    });
+    if has_symbolic_selection {
+        let (decision, selection_family) =
+            run_choice_family_for_branch(branch, kind, &surface, decision_prior)?;
+        return Ok(OracleRunDecisionSupplyV1 {
+            decisions: vec![decision],
+            selection_family,
+        });
+    }
+
+    let mut work = Vec::new();
+    for candidate in surface.view.candidates {
+        let Some(action) = candidate.action.executable_action() else {
+            continue;
+        };
+        if should_normalize_navigation_away(&branch.session, &action) {
+            continue;
         }
-        work
-    };
+        work.push(lazy_decision(
+            branch,
+            kind,
+            candidate.id,
+            candidate.label,
+            action,
+        ));
+    }
     if work.is_empty() {
         return Err(format!(
             "oracle {:?} branch {} exposed no executable strategic action",
@@ -1964,7 +2139,10 @@ pub(super) fn decision_work_for_branch(
         ));
     }
     apply_decision_policy(branch, &mut work, decision_prior)?;
-    Ok(work)
+    Ok(OracleRunDecisionSupplyV1 {
+        decisions: work,
+        selection_family: None,
+    })
 }
 
 fn apply_decision_policy(
@@ -1972,47 +2150,13 @@ fn apply_decision_policy(
     work: &mut [LazyOracleRunDecisionV1],
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> Result<(), String> {
-    let mut group_by_candidate_id = BTreeMap::<String, usize>::new();
-    let mut grouped_work_indices = Vec::<(String, Vec<usize>)>::new();
-    for (index, candidate) in work.iter().enumerate() {
-        if let Some(group_index) = group_by_candidate_id.get(&candidate.candidate_id).copied() {
-            grouped_work_indices[group_index].1.push(index);
-        } else {
-            let group_index = grouped_work_indices.len();
-            group_by_candidate_id.insert(candidate.candidate_id.clone(), group_index);
-            grouped_work_indices.push((candidate.candidate_id.clone(), vec![index]));
-        }
-    }
-    for (_, indices) in grouped_work_indices
-        .iter()
-        .filter(|(_, indices)| indices.len() > 1)
-    {
-        if !indices.iter().all(|index| {
-            matches!(
-                work[*index].action,
-                RunDecisionAction::Input(ClientInput::SubmitSelection(_))
-            )
-        }) {
-            return Err(format!(
-                "exact decision surface duplicated non-parameterized candidate '{}'",
-                work[indices[0]].candidate_id
-            ));
-        }
-    }
-
     let prior = {
-        // A parameterized public command such as `select` may bind many exact
-        // selection actions. The policy owns mass for the public command, not
-        // a fictitious duplicate command for every bound action.
-        let legal = grouped_work_indices
+        let legal = work
             .iter()
-            .map(|(_, indices)| {
-                let candidate = &work[indices[0]];
-                RunPolicyCandidateV1 {
-                    candidate_id: &candidate.candidate_id,
-                    label: &candidate.label,
-                    action: &candidate.action,
-                }
+            .map(|candidate| RunPolicyCandidateV1 {
+                candidate_id: &candidate.candidate_id,
+                label: &candidate.label,
+                action: &candidate.action,
             })
             .collect::<Vec<_>>();
         let prior = match decision_prior {
@@ -2023,83 +2167,196 @@ fn apply_decision_policy(
         prior
     };
 
-    let mut expanded_rank = 0u64;
-    for entry in prior.entries {
-        let group_index = group_by_candidate_id
+    let work_indices = work
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| (candidate.candidate_id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    for (rank, entry) in prior.entries.into_iter().enumerate() {
+        let index = work_indices
             .get(&entry.candidate_id)
             .copied()
             .expect("validated policy prior must reference one legal candidate");
-        let indices = grouped_work_indices
-            .get(group_index)
-            .map(|(_, indices)| indices)
-            .expect("validated policy group index must exist");
-        let probability = entry.probability / indices.len() as f64;
-        for index in indices {
-            work[*index].path_negative_log_policy =
-                branch.path_negative_log_policy - probability.ln();
-            work[*index].path_discrepancy = branch.path_discrepancy.saturating_add(expanded_rank);
-            work[*index].path_depth = branch.path_depth.saturating_add(1);
-            expanded_rank = expanded_rank.saturating_add(1);
-        }
-    }
-    if expanded_rank != work.len() as u64 {
-        return Err(format!(
-            "run policy expanded {expanded_rank} actions for {} legal bound actions",
-            work.len()
-        ));
+        work[index].path_negative_log_policy =
+            branch.path_negative_log_policy - entry.probability.ln();
+        work[index].path_discrepancy = branch.path_discrepancy.saturating_add(rank as u64);
+        work[index].path_depth = branch.path_depth.saturating_add(1);
     }
     Ok(())
 }
 
-fn run_choice_work_for_branch(
+const RUN_SELECTION_PREFERRED_PREFIX: usize = 4;
+
+fn run_choice_family_for_branch(
     branch: &OracleRunBranchV1,
     kind: OracleRunWorkKindV1,
-) -> Result<Vec<LazyOracleRunDecisionV1>, String> {
+    surface: &super::DecisionSurface,
+    decision_prior: Option<RunPolicyPriorFnV1>,
+) -> Result<
+    (
+        LazyOracleRunDecisionV1,
+        Option<LazyOracleRunSelectionFamilyV1>,
+    ),
+    String,
+> {
     let EngineState::RunPendingChoice(choice) = &branch.session.engine_state else {
         unreachable!("run choice work requires RunPendingChoice")
     };
     let request = choice.selection_request(&branch.session.run_state);
-    let mut selections = Vec::new();
-    for count in choice.min_choices..=choice.max_choices.min(request.targets.len()) {
-        combinations(&request.targets, count, 0, &mut Vec::new(), &mut selections);
-    }
-    if selections.is_empty() && choice.min_choices == 0 {
-        selections.push(Vec::new());
-    }
-    let surface = build_decision_surface(&branch.session);
-    selections
-        .into_iter()
-        .map(|selected| {
-            let action =
-                RunDecisionAction::Input(ClientInput::SubmitSelection(SelectionResolution {
-                    scope: SelectionScope::Deck,
-                    selected,
-                }));
-            let candidate = surface
-                .view
-                .candidates
-                .iter()
-                .find(|candidate| candidate.action.executable_action().as_ref() == Some(&action))
-                .or_else(|| {
-                    surface.view.candidates.iter().find(|candidate| {
-                        matches!(
-                            candidate.key,
-                            Some(DecisionCandidateKey::SelectionSubmit { .. })
-                        )
-                    })
-                })
-                .ok_or_else(|| {
-                    "run choice has no bindable decision-surface candidate".to_string()
-                })?;
-            Ok(lazy_decision(
-                branch,
-                kind,
-                candidate.id.clone(),
-                candidate.label.clone(),
-                action,
-            ))
+    let candidate = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.key,
+                Some(DecisionCandidateKey::SelectionSubmit { .. })
+            )
         })
+        .ok_or_else(|| "run choice has no bindable decision-surface candidate".to_string())?;
+    let preferred = preferred_run_choice_selections(branch, choice);
+    let cursor = LazyUnorderedSelectionCursorV1::new(
+        request.targets,
+        choice.min_choices,
+        choice.max_choices,
+        preferred,
+    )?;
+    let total_count = cursor.total_count();
+    if total_count == 0 {
+        return Err("run choice parameterized family contains no legal selections".to_string());
+    }
+
+    let family_key = crate::eval::fingerprint::hash_serializable(&(
+        "oracle_run_selection_family_v1",
+        branch.state_fingerprint.as_str(),
+        candidate.id.as_str(),
+        choice.min_choices,
+        choice.max_choices,
+    ));
+    let mut family = LazyOracleRunSelectionFamilyV1 {
+        family_key,
+        parent_branch_id: branch.branch_id,
+        parent_state_fingerprint: branch.state_fingerprint.clone(),
+        neow_root_candidate_id: branch.neow_root_candidate_id.clone(),
+        kind,
+        candidate_id: candidate.id.clone(),
+        label: candidate.label.clone(),
+        path_negative_log_policy: branch.path_negative_log_policy,
+        path_discrepancy: branch.path_discrepancy,
+        path_depth: branch.path_depth.saturating_add(1),
+        parent_act: branch.session.run_state.act_num,
+        parent_floor: branch.session.run_state.floor_num,
+        public_probability: 1.0,
+        cursor,
+        outstanding_work_key: None,
+    };
+    let first_action = selection_family_next_action(&mut family)
+        .ok_or_else(|| "run choice selection cursor did not emit its first member".to_string())?;
+    let legal = [RunPolicyCandidateV1 {
+        candidate_id: &family.candidate_id,
+        label: &family.label,
+        action: &first_action,
+    }];
+    let prior = match decision_prior {
+        Some(policy) => policy(&branch.session, &legal)?,
+        None => positive_ranked_run_policy_prior_v1(&legal, std::iter::empty())?,
+    };
+    prior.validate_for(&legal)?;
+    family.public_probability = prior.entries[0].probability;
+    let first = selection_family_decision(&mut family, first_action)?;
+    let remaining_family = (!family.cursor.is_exhausted()).then_some(family);
+    Ok((first, remaining_family))
+}
+
+fn preferred_run_choice_selections(
+    branch: &OracleRunBranchV1,
+    choice: &crate::state::core::RunPendingChoiceState,
+) -> Vec<Vec<SelectionTargetRef>> {
+    let compiled = compile_deck_mutation_decision_v1(
+        &branch.session.run_state,
+        choice,
+        DeckMutationCompilerRequestV1 {
+            output: DeckMutationCompilerOutputV1::BranchTopK {
+                max_active: RUN_SELECTION_PREFERRED_PREFIX,
+            },
+            commitment: DeckMutationCommitmentModeV1::CommittedForced,
+        },
+    );
+    let mut seen = BTreeSet::new();
+    compiled
+        .selected_plan
+        .iter()
+        .chain(compiled.candidate_plans.iter())
+        .filter_map(|plan| {
+            let selected = plan
+                .step
+                .deck_indices
+                .iter()
+                .map(|index| {
+                    branch
+                        .session
+                        .run_state
+                        .master_deck
+                        .get(*index)
+                        .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let key = selected
+                .iter()
+                .map(|target| target.card_uuid())
+                .collect::<Vec<_>>();
+            seen.insert(key).then_some(selected)
+        })
+        .take(RUN_SELECTION_PREFERRED_PREFIX)
         .collect()
+}
+
+fn selection_family_next_action(
+    family: &mut LazyOracleRunSelectionFamilyV1,
+) -> Option<RunDecisionAction> {
+    family.cursor.next_member().map(|member| {
+        RunDecisionAction::Input(ClientInput::SubmitSelection(SelectionResolution {
+            scope: SelectionScope::Deck,
+            selected: member.selected,
+        }))
+    })
+}
+
+fn selection_family_decision(
+    family: &mut LazyOracleRunSelectionFamilyV1,
+    action: RunDecisionAction,
+) -> Result<LazyOracleRunDecisionV1, String> {
+    let exact_count = family.cursor.total_count() as f64;
+    let exact_probability = family.public_probability / exact_count;
+    if !exact_probability.is_finite() || exact_probability <= 0.0 {
+        return Err(format!(
+            "selection family '{}' produced invalid exact probability {exact_probability}",
+            family.family_key
+        ));
+    }
+    let rank = family.cursor.emitted_count().saturating_sub(1);
+    let stable_work_key = stable_oracle_work_key(
+        &family.parent_state_fingerprint,
+        &family.candidate_id,
+        &action,
+    );
+    family.outstanding_work_key = Some(stable_work_key.clone());
+    Ok(LazyOracleRunDecisionV1 {
+        parent_branch_id: family.parent_branch_id,
+        parent_state_fingerprint: family.parent_state_fingerprint.clone(),
+        neow_root_candidate_id: family.neow_root_candidate_id.clone(),
+        kind: family.kind,
+        candidate_id: family.candidate_id.clone(),
+        label: family.label.clone(),
+        action,
+        stable_work_key,
+        path_negative_log_policy: family.path_negative_log_policy - exact_probability.ln(),
+        path_discrepancy: family.path_discrepancy.saturating_add(rank),
+        path_depth: family.path_depth,
+        parent_act: family.parent_act,
+        parent_floor: family.parent_floor,
+        combat_edge_probe: None,
+    })
 }
 
 fn lazy_decision(
@@ -2198,28 +2455,6 @@ fn should_normalize_navigation_away(
     )
 }
 
-fn combinations(
-    targets: &[SelectionTargetRef],
-    count: usize,
-    start: usize,
-    current: &mut Vec<SelectionTargetRef>,
-    out: &mut Vec<Vec<SelectionTargetRef>>,
-) {
-    if current.len() == count {
-        out.push(current.clone());
-        return;
-    }
-    let remaining = count.saturating_sub(current.len());
-    if targets.len().saturating_sub(start) < remaining {
-        return;
-    }
-    for index in start..targets.len() {
-        current.push(targets[index]);
-        combinations(targets, count, index + 1, current, out);
-        current.pop();
-    }
-}
-
 const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM: &str = "blake2b_256_canonical_json_value_v1";
 
 pub(super) fn run_session_fingerprint_v1(session: &RunControlSession) -> String {
@@ -2314,7 +2549,7 @@ mod tests {
     }
 
     #[test]
-    fn parameterized_run_selection_splits_one_public_policy_mass_across_exact_actions() {
+    fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
         let mut branch = test_branch(0, None);
         branch.boundary = OracleRunBoundaryV1::RunChoice;
         branch.session.run_state.master_deck = (0..3)
@@ -2333,30 +2568,132 @@ mod tests {
                 return_state: Box::new(EngineState::MapNavigation),
             });
 
-        let work = decision_work_for_branch(&branch, None)
-            .expect("one public select command may bind several exact combinations");
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.accept_branch(branch);
+        explorer.register_decision_work(0, None).unwrap();
 
-        assert_eq!(work.len(), 3);
-        assert!(work
-            .iter()
-            .all(|candidate| candidate.candidate_id == "select"));
+        assert_eq!(explorer.pending_decisions.len(), 1);
+        assert_eq!(explorer.pending_selection_families.len(), 1);
         assert_eq!(
-            work.iter()
-                .map(|candidate| candidate.stable_work_key.as_str())
-                .collect::<BTreeSet<_>>()
-                .len(),
+            explorer.pending_selection_families[0].cursor.total_count(),
             3
         );
-        let probability_sum = work
-            .iter()
-            .map(|candidate| (-candidate.path_negative_log_policy).exp())
-            .sum::<f64>();
-        assert!((probability_sum - 1.0).abs() < 1.0e-9);
+        let mut emitted = Vec::new();
+        for expected_rank in 0..3 {
+            let work = explorer.take_best_decision().unwrap();
+            assert_eq!(work.candidate_id, "select");
+            assert_eq!(work.path_discrepancy, expected_rank);
+            assert!(((-work.path_negative_log_policy).exp() - 1.0 / 3.0).abs() < 1.0e-9);
+            emitted.push(work.stable_work_key.clone());
+            explorer
+                .release_next_selection_member(&work.stable_work_key)
+                .unwrap();
+            assert!(
+                explorer.pending_decisions.len() <= 1,
+                "the frontier must never contain the whole combination family"
+            );
+        }
+        assert_eq!(emitted.into_iter().collect::<BTreeSet<_>>().len(), 3);
+        assert!(explorer.pending_decisions.is_empty());
+        assert!(explorer.pending_selection_families.is_empty());
+    }
+
+    #[test]
+    fn analysis_selection_widens_without_mutating_parent_choices() {
+        let mut branch = test_branch(0, None);
+        branch.boundary = OracleRunBoundaryV1::RunChoice;
+        branch.session.run_state.master_deck = (0..3)
+            .map(|uuid| {
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, uuid)
+            })
+            .collect();
+        branch.session.engine_state =
+            EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+                min_choices: 2,
+                max_choices: 2,
+                reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
+                source: crate::state::selection::DomainEventSource::Selection(
+                    crate::state::core::RunPendingChoiceReason::PurgeNonBottled.into(),
+                ),
+                return_state: Box::new(EngineState::MapNavigation),
+            });
+
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.accept_branch(branch);
+        explorer.register_decision_work(0, None).unwrap();
+        let first = explorer.pending_decisions[0].stable_work_key.clone();
+
+        explorer.note_explicit_decision_service(&first).unwrap();
         assert_eq!(
-            work.iter()
-                .map(|candidate| candidate.path_discrepancy)
-                .collect::<Vec<_>>(),
-            vec![0, 1, 2]
+            explorer.pending_decisions.len(),
+            2,
+            "trying a variation must preserve the exact parent choice while exposing one sibling"
+        );
+        assert!(explorer
+            .pending_decisions
+            .iter()
+            .any(|decision| decision.stable_work_key == first));
+
+        explorer.note_explicit_decision_service(&first).unwrap();
+        assert_eq!(
+            explorer.pending_decisions.len(),
+            2,
+            "retrying an old member must not widen the family twice"
+        );
+    }
+
+    #[test]
+    fn parameterized_run_selection_cursor_survives_frontier_checkpoint() {
+        let mut branch = test_branch(0, None);
+        branch.boundary = OracleRunBoundaryV1::RunChoice;
+        branch.session.run_state.master_deck = (0..20)
+            .map(|uuid| {
+                crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, uuid)
+            })
+            .collect();
+        branch.session.engine_state =
+            EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+                min_choices: 3,
+                max_choices: 3,
+                reason: crate::state::core::RunPendingChoiceReason::TransformUpgraded,
+                source: crate::state::selection::DomainEventSource::Relic(
+                    crate::content::relics::RelicId::Astrolabe,
+                ),
+                return_state: Box::new(EngineState::MapNavigation),
+            });
+        branch.state_fingerprint = run_session_fingerprint_v1(&branch.session);
+
+        let mut explorer = OracleRunExplorerV1::empty();
+        explorer.accept_branch(branch);
+        explorer.register_decision_work(0, None).unwrap();
+        let checkpoint = explorer.frontier_checkpoint().unwrap().unwrap();
+
+        assert_eq!(checkpoint.pending_decisions.len(), 1);
+        assert_eq!(checkpoint.pending_selection_families.len(), 1);
+        let encoded = serde_json::to_vec(&checkpoint).unwrap();
+        assert!(
+            encoded.len() < 50_000,
+            "checkpoint must not contain all 1,140 Astrolabe combinations"
+        );
+        let decoded = serde_json::from_slice(&encoded).unwrap();
+        let mut restored = seed_oracle_run_explorer_from_checkpoint_v1(
+            decoded,
+            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+        )
+        .unwrap();
+        assert_eq!(restored.pending_decisions.len(), 1);
+        assert_eq!(restored.pending_selection_families.len(), 1);
+
+        let first = restored.take_best_decision().unwrap();
+        restored
+            .release_next_selection_member(&first.stable_work_key)
+            .unwrap();
+        assert_eq!(restored.pending_decisions.len(), 1);
+        assert_eq!(
+            restored.pending_selection_families[0]
+                .cursor
+                .emitted_count(),
+            2
         );
     }
 
