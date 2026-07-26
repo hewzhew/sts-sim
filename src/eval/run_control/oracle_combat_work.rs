@@ -732,7 +732,8 @@ impl OracleRunCombatWorkV1 {
                 expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
                     &result.position.engine,
                     &result.position.combat,
-                ),
+                )
+                .into(),
                 engine_steps: result.engine_steps,
             });
             position = result.position;

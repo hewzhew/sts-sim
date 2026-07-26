@@ -117,7 +117,7 @@ pub(crate) fn replay_turn_option_observed(
                 engine_steps,
             ));
         }
-        if exact_hash(&result.position) != action.expected_successor_hash {
+        if exact_hash(&result.position) != action.expected_successor_hash.as_str() {
             return Err(failure(
                 ReplayError::SuccessorMismatch { action_index },
                 engine_steps,

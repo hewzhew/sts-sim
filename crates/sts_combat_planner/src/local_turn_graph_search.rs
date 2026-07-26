@@ -145,7 +145,7 @@ pub struct LocalTurnGraphWitnessCounters {
 /// Wall-clock diagnostics kept outside deterministic search counters.
 ///
 /// Search budgets and equality contracts never read this structure.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct LocalTurnGraphPerformanceTiming {
     pub selection_elapsed_ns: u64,
     pub generation_elapsed_ns: u64,
@@ -157,6 +157,41 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
+}
+
+impl LocalTurnGraphPerformanceTiming {
+    fn accumulate(&mut self, other: Self) {
+        self.selection_elapsed_ns = self
+            .selection_elapsed_ns
+            .saturating_add(other.selection_elapsed_ns);
+        self.generation_elapsed_ns = self
+            .generation_elapsed_ns
+            .saturating_add(other.generation_elapsed_ns);
+        self.admission_elapsed_ns = self
+            .admission_elapsed_ns
+            .saturating_add(other.admission_elapsed_ns);
+        self.atomic_expand_elapsed_ns = self
+            .atomic_expand_elapsed_ns
+            .saturating_add(other.atomic_expand_elapsed_ns);
+        self.transition_simulation_elapsed_ns = self
+            .transition_simulation_elapsed_ns
+            .saturating_add(other.transition_simulation_elapsed_ns);
+        self.transition_identity_elapsed_ns = self
+            .transition_identity_elapsed_ns
+            .saturating_add(other.transition_identity_elapsed_ns);
+        self.transition_admission_elapsed_ns = self
+            .transition_admission_elapsed_ns
+            .saturating_add(other.transition_admission_elapsed_ns);
+        self.transition_trace_elapsed_ns = self
+            .transition_trace_elapsed_ns
+            .saturating_add(other.transition_trace_elapsed_ns);
+        self.transition_seen_elapsed_ns = self
+            .transition_seen_elapsed_ns
+            .saturating_add(other.transition_seen_elapsed_ns);
+        self.transition_publish_elapsed_ns = self
+            .transition_publish_elapsed_ns
+            .saturating_add(other.transition_publish_elapsed_ns);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -197,6 +232,10 @@ pub struct LocalTurnGraphPolicyLineReport {
     pub suffix_probe_attempts: usize,
     pub suffix_probe_generation_work: usize,
     pub suffix_probe_engine_steps: usize,
+    pub suffix_probe_completed_turn_options: usize,
+    pub suffix_probe_applied_action_transitions: usize,
+    pub suffix_probe_unique_successor_states: usize,
+    pub suffix_probe_performance_timing: LocalTurnGraphPerformanceTiming,
     pub suffix_probe_witness_found: bool,
     pub suffix_probe_details: Vec<LocalTurnGraphSuffixProbeAttempt>,
     pub reached_terminal_win: bool,
@@ -797,7 +836,7 @@ impl LocalTurnGraphWitnessSession {
                 negative_log_policy -= selected_probability.max(f64::MIN_POSITIVE).ln();
                 actions.push(TurnOptionAction {
                     input: selected_input,
-                    expected_successor_hash: exact_hash(&selected_step.position),
+                    expected_successor_hash: exact_hash(&selected_step.position).into(),
                     engine_steps: selected_step.engine_steps,
                 });
                 total_actions = total_actions.saturating_add(1);
@@ -948,6 +987,18 @@ impl LocalTurnGraphWitnessSession {
         report.suffix_probe_engine_steps = report
             .suffix_probe_engine_steps
             .saturating_add(suffix_report.counters.engine_steps);
+        report.suffix_probe_completed_turn_options = report
+            .suffix_probe_completed_turn_options
+            .saturating_add(suffix_report.counters.completed_turn_options);
+        report.suffix_probe_applied_action_transitions = report
+            .suffix_probe_applied_action_transitions
+            .saturating_add(suffix_report.counters.applied_action_transitions);
+        report.suffix_probe_unique_successor_states = report
+            .suffix_probe_unique_successor_states
+            .saturating_add(suffix_report.counters.unique_successor_states);
+        report
+            .suffix_probe_performance_timing
+            .accumulate(suffix_report.performance_timing);
         let witness_found = suffix_report.witness.is_some();
         let final_hp = suffix_report
             .witness

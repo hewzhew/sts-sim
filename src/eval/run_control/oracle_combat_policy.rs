@@ -344,7 +344,8 @@ fn materialize_policy_inputs(
             expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
                 &step.position.engine,
                 &step.position.combat,
-            ),
+            )
+            .into(),
             engine_steps: step.engine_steps,
         });
         position = step.position;

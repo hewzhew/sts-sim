@@ -62,7 +62,7 @@ fn apply_on_clone(
         match trial.current_active_combat_position() {
             Ok(position) => {
                 let actual = combat_exact_state_hash_v1(&position.engine, &position.combat);
-                if actual != action.expected_successor_hash {
+                if actual != action.expected_successor_hash.as_str() {
                     return Err(format!("live successor mismatch at action {index}"));
                 }
             }

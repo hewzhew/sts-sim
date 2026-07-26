@@ -108,9 +108,10 @@ pub use solved_suffix_fold::{
 };
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,
-    CompleteTurnOption, CompleteTurnOptionBoundary, GenerationInterruption, TurnOptionAction,
-    TurnOptionGenerationDiagnostics, TurnOptionGenerationGap, TurnOptionGenerationGapKind,
-    TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    CompleteTurnOption, CompleteTurnOptionBoundary, GenerationInterruption, ReplaySuccessorHash,
+    TurnOptionAction, TurnOptionGenerationDiagnostics, TurnOptionGenerationGap,
+    TurnOptionGenerationGapKind, TurnOptionGenerationReport, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig,
 };
 pub use witness_search::{
     OracleCombatDeepStateSnapshot, OracleCombatGuideQueueSnapshot, OracleCombatGuideRankSnapshot,

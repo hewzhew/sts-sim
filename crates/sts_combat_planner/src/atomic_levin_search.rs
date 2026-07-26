@@ -737,7 +737,7 @@ impl AtomicLevinWitnessSession {
         }
         let action = TurnOptionAction {
             input: work.input,
-            expected_successor_hash: successor_hash.clone(),
+            expected_successor_hash: successor_hash.clone().into(),
             engine_steps: result.engine_steps,
         };
         let trace = PathTrace::extend(work.parent.trace.clone(), action);
@@ -929,7 +929,7 @@ pub fn replay_atomic_actions(
         if result.truncated {
             return Err(AtomicLevinWitnessReplayError::TransitionStepLimit { action_index });
         }
-        if exact_hash(&result.position) != action.expected_successor_hash {
+        if exact_hash(&result.position) != action.expected_successor_hash.as_str() {
             return Err(AtomicLevinWitnessReplayError::SuccessorMismatch { action_index });
         }
         position = result.position;

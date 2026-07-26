@@ -1564,7 +1564,7 @@ impl OracleCombatWitnessSession {
                 self.pending_witness = None;
                 return Some(OracleCombatWitnessStatus::ReplayMismatch(error));
             }
-            if exact_hash(&result.position) != action.expected_successor_hash {
+            if exact_hash(&result.position) != action.expected_successor_hash.as_str() {
                 let error = OracleCombatWitnessReplayError::SuccessorMismatch {
                     action_index: replay.next_action,
                 };

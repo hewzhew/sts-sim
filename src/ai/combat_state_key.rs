@@ -158,10 +158,6 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
     }
 }
 
-fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
-    hex_lower(&debug_digest(value))
-}
-
 fn debug_digest<T: std::fmt::Debug>(value: &T) -> [u8; 32] {
     let mut hasher = Blake2b512::new();
     hasher.update(format!("{value:?}").as_bytes());

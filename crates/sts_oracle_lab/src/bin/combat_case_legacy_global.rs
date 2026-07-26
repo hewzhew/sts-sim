@@ -239,7 +239,8 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
                 sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
                     &step.position.engine,
                     &step.position.combat,
-                ),
+                )
+                .into(),
             engine_steps: step.engine_steps,
         });
         applied_prefix.push(input.clone());

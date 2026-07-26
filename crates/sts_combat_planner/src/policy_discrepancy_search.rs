@@ -718,7 +718,7 @@ impl PolicyDiscrepancySession {
         let successor_hash = exact_hash(&result.position);
         let action = TurnOptionAction {
             input,
-            expected_successor_hash: successor_hash,
+            expected_successor_hash: successor_hash.into(),
             engine_steps: result.engine_steps,
         };
         let trace = TraceNode::extend(trace, action);

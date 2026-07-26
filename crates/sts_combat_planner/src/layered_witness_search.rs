@@ -140,7 +140,7 @@ impl LayeredCombatSolvedSuffixIndex {
             }
             actions.push(TurnOptionAction {
                 input,
-                expected_successor_hash: exact_hash(&step.position),
+                expected_successor_hash: exact_hash(&step.position).into(),
                 engine_steps: step.engine_steps,
             });
             position = step.position;
@@ -2712,7 +2712,7 @@ fn replay_witness(
         if result.truncated || result.timed_out {
             return Err(OracleCombatWitnessReplayError::TransitionStepLimit { action_index });
         }
-        if exact_hash(&result.position) != action.expected_successor_hash {
+        if exact_hash(&result.position) != action.expected_successor_hash.as_str() {
             return Err(OracleCombatWitnessReplayError::SuccessorMismatch { action_index });
         }
         position = result.position;

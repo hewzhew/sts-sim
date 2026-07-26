@@ -2,12 +2,10 @@ use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Instant;
 
-use sts_core::ai::combat_state_key::{
-    combat_exact_state_key, combat_exact_state_key_hash_v1, CombatExactStateKey,
-};
+use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
 
@@ -19,9 +17,10 @@ use super::policy::{
 use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
     exact_hash, supported_boundary, CombatDecisionRoot, CombatPlanningCounters,
-    CombatPlanningQuantum, CompleteTurnOption, GenerationInterruption, TurnOptionAction,
-    TurnOptionGenerationDiagnostics, TurnOptionGenerationGap, TurnOptionGenerationGapKind,
-    TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    CombatPlanningQuantum, CompleteTurnOption, GenerationInterruption, ReplaySuccessorHash,
+    TurnOptionAction, TurnOptionGenerationDiagnostics, TurnOptionGenerationGap,
+    TurnOptionGenerationGapKind, TurnOptionGenerationReport, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig,
 };
 
 #[derive(Clone, Debug)]
@@ -41,7 +40,6 @@ struct PendingActionTrace {
     parent: Option<Arc<Self>>,
     input: ClientInput,
     successor_key: Arc<CombatExactStateKey>,
-    successor_hash: OnceLock<String>,
     engine_steps: usize,
     depth: usize,
 }
@@ -57,10 +55,9 @@ impl PartialTurnOption {
         while let Some(trace) = cursor {
             actions.push(TurnOptionAction {
                 input: trace.input.clone(),
-                expected_successor_hash: trace
-                    .successor_hash
-                    .get_or_init(|| combat_exact_state_key_hash_v1(&trace.successor_key))
-                    .clone(),
+                expected_successor_hash: ReplaySuccessorHash::from_exact_key(
+                    trace.successor_key.clone(),
+                ),
                 engine_steps: trace.engine_steps,
             });
             cursor = trace.parent.clone();
@@ -1221,7 +1218,6 @@ impl TurnOptionGeneratorSession {
                     parent: action.parent.trace.clone(),
                     input: action.input,
                     successor_key,
-                    successor_hash: OnceLock::new(),
                     engine_steps: result.engine_steps,
                     depth: action.parent.action_depth().saturating_add(1),
                 })),

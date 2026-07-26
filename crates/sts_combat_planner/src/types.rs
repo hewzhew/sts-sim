@@ -1,7 +1,11 @@
+use std::fmt;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
-use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sts_core::ai::combat_state_key::{
+    combat_exact_state_hash_v1, combat_exact_state_key_hash_v1, CombatExactStateKey,
+};
 use sts_core::engine::core::is_smoke_escape_stable_boundary;
 use sts_core::sim::combat::{CombatPosition, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
@@ -100,10 +104,93 @@ impl Default for TurnOptionGeneratorConfig {
     }
 }
 
+/// Stable replay identity for one exact action successor.
+///
+/// Search can retain the already-built typed key and defer its comparatively
+/// expensive durable debug digest until a replay or serialized artifact
+/// actually asks for it. Deserialized witnesses remain ordinary eager hashes.
+#[derive(Clone)]
+pub struct ReplaySuccessorHash {
+    cached: Arc<OnceLock<String>>,
+    exact_key: Option<Arc<CombatExactStateKey>>,
+}
+
+impl ReplaySuccessorHash {
+    pub(crate) fn from_exact_key(exact_key: Arc<CombatExactStateKey>) -> Self {
+        Self {
+            cached: Arc::new(OnceLock::new()),
+            exact_key: Some(exact_key),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.cached.get_or_init(|| {
+            self.exact_key
+                .as_ref()
+                .map(|key| combat_exact_state_key_hash_v1(key))
+                .expect("a deferred replay hash retains its exact key")
+        })
+    }
+}
+
+impl From<String> for ReplaySuccessorHash {
+    fn from(hash: String) -> Self {
+        let cached = OnceLock::new();
+        cached
+            .set(hash)
+            .expect("a fresh replay hash cache is empty");
+        Self {
+            cached: Arc::new(cached),
+            exact_key: None,
+        }
+    }
+}
+
+impl From<&str> for ReplaySuccessorHash {
+    fn from(hash: &str) -> Self {
+        hash.to_owned().into()
+    }
+}
+
+impl fmt::Debug for ReplaySuccessorHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("ReplaySuccessorHash")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl PartialEq for ReplaySuccessorHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for ReplaySuccessorHash {}
+
+impl Serialize for ReplaySuccessorHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ReplaySuccessorHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::from)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TurnOptionAction {
     pub input: ClientInput,
-    pub expected_successor_hash: String,
+    pub expected_successor_hash: ReplaySuccessorHash,
     pub engine_steps: usize,
 }
 
@@ -120,7 +207,7 @@ pub struct CompleteTurnOption {
     root_exact_state_hash: String,
     actions: Vec<TurnOptionAction>,
     boundary: CompleteTurnOptionBoundary,
-    exact_successor_hash: String,
+    exact_successor_hash: ReplaySuccessorHash,
     exact_successor: CombatPosition,
     engine_steps: usize,
     negative_log_policy: f64,
@@ -143,7 +230,7 @@ impl CompleteTurnOption {
         let exact_successor_hash = actions
             .last()
             .map(|action| action.expected_successor_hash.clone())
-            .unwrap_or_else(|| exact_hash(&exact_successor));
+            .unwrap_or_else(|| ReplaySuccessorHash::from(exact_hash(&exact_successor)));
         Self {
             root_exact_state_hash,
             exact_successor_hash,
@@ -168,7 +255,7 @@ impl CompleteTurnOption {
     }
 
     pub fn exact_successor_hash(&self) -> &str {
-        &self.exact_successor_hash
+        self.exact_successor_hash.as_str()
     }
 
     pub fn exact_successor(&self) -> &CombatPosition {

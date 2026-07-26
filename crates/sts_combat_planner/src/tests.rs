@@ -520,7 +520,7 @@ fn exact_actions(
             );
             let action = TurnOptionAction {
                 input,
-                expected_successor_hash: exact_hash(&result.position),
+                expected_successor_hash: exact_hash(&result.position).into(),
                 engine_steps: result.engine_steps,
             };
             position = result.position;
@@ -1383,7 +1383,7 @@ fn policy_witness_proposal_with_a_false_successor_is_rejected() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let decision_root = root();
     let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
-    actions[0].expected_successor_hash = "forged-successor".to_owned();
+    actions[0].expected_successor_hash = "forged-successor".into();
     let proposal = CombatPolicyWitnessProposal {
         actions,
         final_hp_hint: decision_root.position().combat.entities.player.current_hp,
@@ -1645,7 +1645,7 @@ fn local_turn_graph_rejects_a_policy_proposal_with_a_forged_successor() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let decision_root = root();
     let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
-    actions[0].expected_successor_hash = "forged-successor".to_owned();
+    actions[0].expected_successor_hash = "forged-successor".into();
     let mut session = LocalTurnGraphWitnessSession::with_policy(
         decision_root,
         LocalTurnGraphWitnessConfig {
@@ -1931,7 +1931,8 @@ fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() 
     let decision_root = root();
     let target_hash = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn])[0]
         .expected_successor_hash
-        .clone();
+        .as_str()
+        .to_owned();
     let mut session = OracleCombatWitnessSession::with_policy(
         decision_root,
         OracleCombatWitnessConfig {
@@ -2567,7 +2568,12 @@ fn atomic_levin_next_turn_horizon_streams_exact_boundaries_without_deepening_the
         vec![&PLAY, &ClientInput::EndTurn]
     );
     assert_eq!(
-        first.actions.last().unwrap().expected_successor_hash,
+        first
+            .actions
+            .last()
+            .unwrap()
+            .expected_successor_hash
+            .as_str(),
         exact_hash(&first.position)
     );
 

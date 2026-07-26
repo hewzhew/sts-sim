@@ -308,7 +308,7 @@ pub fn generate_depth_beam_turn_options(
                 let mut trace = parent.actions.clone();
                 trace.push(TurnOptionAction {
                     input: action.input,
-                    expected_successor_hash: exact_hash(&result.position),
+                    expected_successor_hash: exact_hash(&result.position).into(),
                     engine_steps: result.engine_steps,
                 });
                 let negative_log_policy =
@@ -669,7 +669,7 @@ fn replay_agenda_witness(
         );
         if result.truncated
             || result.timed_out
-            || exact_hash(&result.position) != action.expected_successor_hash
+            || exact_hash(&result.position) != action.expected_successor_hash.as_str()
         {
             return false;
         }
