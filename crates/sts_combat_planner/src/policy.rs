@@ -23,16 +23,16 @@ pub enum CombatPolicyChoice<'a> {
 /// only uses the rank in an explicitly non-authoritative guide queue. Higher
 /// components are preferred.
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct CombatStateGuideRank(Vec<i32>);
+pub struct CombatStateGuideRank(Arc<[i32]>);
 
 impl CombatStateGuideRank {
     pub fn new(components: impl Into<Vec<i32>>) -> Self {
-        Self(components.into())
+        Self(components.into().into())
     }
 
     /// Read-only diagnostic view of the policy-owned lexicographic rank.
     pub fn components(&self) -> &[i32] {
-        &self.0
+        self.0.as_ref()
     }
 }
 
