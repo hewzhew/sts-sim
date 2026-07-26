@@ -260,6 +260,15 @@ Cargo's `target/` tree so `cargo clean` cannot erase a live session or research
 checkpoint. Historical files below `target/oracle-cases/` remain readable but
 should not receive new output.
 
+`.\ol-live.cmd` always lets Cargo validate the lightweight client before
+execution; it never directly runs a possibly stale client binary. `live start`
+also compares an already-running endpoint's immutable service image with the
+current canonical host. A matching image is reused. A stale or legacy image is
+saved and shut down, then the same workspace is relaunched automatically with
+status `restarted_stale_runtime`. Exact run state and charged historical work
+survive this transition; an in-memory tactical frontier is deliberately
+restarted because it belongs to the old executable image.
+
 The command hosts in `sts_oracle_lab` are physically separate from the shared
 `sts_oracle_runtime` library. On one Windows machine, touching only
 `oracle_lab.rs` rebuilt in 1.62 seconds, touching only

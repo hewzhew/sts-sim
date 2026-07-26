@@ -1270,19 +1270,34 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
         ));
     }
     let endpoint_path = session_endpoint_path(session)?;
+    let mut executable = service_executable()?;
+    let mut restarted_stale_runtime = false;
+    let mut previous_executable = None;
     if let Some(endpoint) = active_endpoint(&endpoint_path) {
         ensure_endpoint_workspace(session, &endpoint, &workspace)?;
-        return print_json(&json!({
-            "session": session,
-            "status": "already_running",
-            "process_id": endpoint.process_id,
-            "workspace": endpoint.workspace,
-            "executable": endpoint.executable,
-            "endpoint": endpoint_path,
-        }));
+        if endpoint_uses_service_runtime(&endpoint, &executable) {
+            return print_json(&json!({
+                "session": session,
+                "status": "already_running",
+                "process_id": endpoint.process_id,
+                "workspace": endpoint.workspace,
+                "executable": endpoint.executable,
+                "endpoint": endpoint_path,
+            }));
+        }
+
+        restarted_stale_runtime = true;
+        previous_executable = endpoint.executable.clone();
+        shutdown_live_session(&endpoint_path).map_err(|error| {
+            format!(
+                "oracle session `{session}` uses a stale resident runtime and could not be saved before restart: {error}"
+            )
+        })?;
+        // Shutdown pruning keeps the retiring image while the process exits,
+        // so materialize the current immutable image again before launch.
+        executable = service_executable()?;
     }
 
-    let executable = service_executable()?;
     let mut command = ProcessCommand::new(&executable);
     command
         .current_dir(repository_root())
@@ -1309,10 +1324,15 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
             ensure_endpoint_workspace(session, &endpoint, &workspace)?;
             return print_json(&json!({
                 "session": session,
-                "status": "started",
+                "status": if restarted_stale_runtime {
+                    "restarted_stale_runtime"
+                } else {
+                    "started"
+                },
                 "process_id": endpoint.process_id,
                 "workspace": endpoint.workspace,
                 "executable": endpoint.executable,
+                "previous_executable": previous_executable,
                 "endpoint": endpoint_path,
             }));
         }
@@ -1342,6 +1362,16 @@ fn active_endpoint(endpoint_path: &Path) -> Option<OracleAnalysisServiceEndpoint
     }
     let bytes = fs::read(endpoint_path).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+fn endpoint_uses_service_runtime(
+    endpoint: &OracleAnalysisServiceEndpointV1,
+    current_runtime: &Path,
+) -> bool {
+    endpoint
+        .executable
+        .as_deref()
+        .is_some_and(|active| paths_refer_to_same_file(active, current_runtime))
 }
 
 fn ensure_endpoint_workspace(
@@ -2078,6 +2108,30 @@ D:\rust\src\bin\oracle_lab.rs:
         );
         assert!(!first.exists(), "unreferenced old image should be pruned");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn resident_reconnect_accepts_only_the_current_runtime_image() {
+        let current = PathBuf::from("oracle_lab_service-current.exe");
+        let endpoint = |executable| OracleAnalysisServiceEndpointV1 {
+            schema_name: "OracleAnalysisServiceEndpoint".to_string(),
+            schema_version: 1,
+            address: "127.0.0.1:1".parse().expect("loopback address"),
+            auth_token: "test".to_string(),
+            workspace: PathBuf::from("workspace.json"),
+            process_id: 7,
+            executable,
+        };
+
+        assert!(endpoint_uses_service_runtime(
+            &endpoint(Some(current.clone())),
+            &current
+        ));
+        assert!(!endpoint_uses_service_runtime(
+            &endpoint(Some(PathBuf::from("oracle_lab_service-old.exe"))),
+            &current
+        ));
+        assert!(!endpoint_uses_service_runtime(&endpoint(None), &current));
     }
 
     #[test]
