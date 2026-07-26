@@ -68,8 +68,13 @@ opt-level = 0
 codegen-units = 256
 
 [profile.release.package.sts_oracle_runtime]
-opt-level = 0
-codegen-units = 256
+# This crate owns the hot oracle run loop and combat-work orchestration, not
+# just a thin command shell.  Keeping it unoptimized made every exact search
+# pay for debug-grade state plumbing even though the simulator and planner
+# dependencies were already O3.  O2 recovers runtime throughput while keeping
+# incremental rebuilds substantially cheaper than the deployment profile.
+opt-level = 2
+codegen-units = 64
 
 [profile.release.package.sts_combat_contract]
 opt-level = 0
