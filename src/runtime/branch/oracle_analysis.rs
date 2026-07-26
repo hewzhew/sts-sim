@@ -10,11 +10,12 @@ use crate::eval::combat_case::{
 use crate::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use crate::eval::combat_lab_v1::atomic_write_json;
 use crate::eval::run_control::{
-    expand_oracle_neow_candidates_v1, ordered_oracle_neow_root_candidate_ids_v1,
-    seed_oracle_run_explorer_from_checkpoint_v1, seed_oracle_run_explorer_from_session_v1,
-    seed_oracle_run_explorer_v1, OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1,
-    OracleAnalysisNodeViewV1, OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1,
-    RunControlConfig, RunControlSession,
+    exact_audit_run_progress_journal_policy_v1, expand_oracle_neow_candidates_v1,
+    ordered_oracle_neow_root_candidate_ids_v1, seed_oracle_run_explorer_from_checkpoint_v1,
+    seed_oracle_run_explorer_from_session_v1, seed_oracle_run_explorer_v1, NeowOracleExpansionV1,
+    OracleAnalysisAdvanceReportV1, OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1,
+    OracleAnalysisSessionCheckpointV1, OracleAnalysisSessionV1, RunControlConfig,
+    RunControlSession, RunDecisionAction,
 };
 use crate::state::core::ClientInput;
 
@@ -71,17 +72,23 @@ impl OracleAnalysisWorkspaceV1 {
         )?;
         let expansion = expand_oracle_neow_candidates_v1(&session)
             .map_err(|error| format!("failed to materialize oracle Neow roots: {error}"))?;
+        let preferred_neow_replay = preferred_neow_replay_v1(
+            config.seed,
+            config.ascension,
+            &preferred_neow_roots,
+            &expansion,
+        )?;
         let explorer = seed_oracle_run_explorer_v1(
             expansion,
             Some(super::owner_audit::legacy_oracle_policy_prior_v1),
         )?;
-        let first_root = preferred_neow_roots
-            .iter()
-            .find_map(|candidate_id| {
+        let first_root = preferred_neow_replay
+            .as_ref()
+            .and_then(|preferred| {
                 explorer
                     .branches
                     .iter()
-                    .find(|branch| branch.neow_root_candidate_id == *candidate_id)
+                    .find(|branch| neow_replay_matches(&branch.replay, preferred))
                     .map(|branch| branch.branch_id)
             })
             .or_else(|| explorer.branches.first().map(|branch| branch.branch_id));
@@ -300,6 +307,63 @@ impl OracleAnalysisWorkspaceV1 {
     }
 }
 
+fn preferred_neow_replay_v1(
+    seed: u64,
+    ascension: u8,
+    preferred_roots: &[String],
+    expansion: &NeowOracleExpansionV1,
+) -> Result<Option<Vec<(String, RunDecisionAction)>>, String> {
+    let mut ranked = Vec::with_capacity(expansion.completed.len());
+    for (stable_index, candidate) in expansion.completed.iter().enumerate() {
+        let root_rank = preferred_roots
+            .iter()
+            .position(|candidate_id| candidate_id == &candidate.root_candidate_id)
+            .unwrap_or(usize::MAX);
+        let audit = exact_audit_run_progress_journal_policy_v1(
+            seed,
+            ascension,
+            &candidate.journal,
+            &candidate.session,
+            super::owner_audit::current_oracle_candidate_order_v1,
+        )
+        .map_err(|error| {
+            format!(
+                "failed to audit completed Neow candidate '{}': {error}",
+                candidate.root_label
+            )
+        })?;
+        ranked.push((
+            (
+                root_rank,
+                audit.choices_absent_from_owner_preferences,
+                audit.discrepancy_sum,
+                audit.max_owner_rank.unwrap_or(0),
+                stable_index,
+            ),
+            candidate
+                .replay
+                .iter()
+                .map(|step| (step.candidate_id.clone(), step.action.clone()))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    ranked.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(ranked.into_iter().next().map(|(_, replay)| replay))
+}
+
+fn neow_replay_matches(
+    actual: &[crate::eval::run_control::OracleRunReplayStepV1],
+    expected: &[(String, RunDecisionAction)],
+) -> bool {
+    actual.len() == expected.len()
+        && actual
+            .iter()
+            .zip(expected)
+            .all(|(actual, (candidate_id, action))| {
+                actual.candidate_id == *candidate_id && actual.action == *action
+            })
+}
+
 fn validate_combat_guidance(guidance: &Option<CombatGuidanceBundleV1>) -> Result<(), String> {
     guidance
         .as_ref()
@@ -453,5 +517,26 @@ mod tests {
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::Pocketwatch));
+    }
+
+    #[test]
+    fn seed014_starts_from_the_owner_preferred_nested_neow_reward() {
+        let workspace = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
+            seed: 20260713014,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        })
+        .expect("seed014 oracle workspace");
+        let view = workspace.view().expect("seed014 initial view");
+
+        assert!(view.neow_root_label.contains("colorless card"));
+        assert!(view
+            .deck
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::Blind));
+        assert!(!view
+            .deck
+            .iter()
+            .any(|card| card.id == crate::content::cards::CardId::JackOfAllTrades));
     }
 }
