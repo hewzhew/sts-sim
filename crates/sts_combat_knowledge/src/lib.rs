@@ -114,44 +114,22 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
     }
 
     fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        let guides = oracle_action_policy::oracle_combat_guide_bundle_v1(position);
         vec![
-            CombatStateGuide::new(
-                GUIDE_PROGRESS,
-                oracle_action_policy::oracle_combat_state_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_SURVIVAL,
-                oracle_action_policy::oracle_combat_survival_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_HORIZON,
-                oracle_action_policy::oracle_combat_horizon_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_SETUP,
-                oracle_action_policy::oracle_combat_setup_guide_components(position),
-            ),
+            CombatStateGuide::new(GUIDE_PROGRESS, guides.progress),
+            CombatStateGuide::new(GUIDE_SURVIVAL, guides.survival),
+            CombatStateGuide::new(GUIDE_HORIZON, guides.horizon),
+            CombatStateGuide::new(GUIDE_SETUP, guides.setup),
         ]
     }
 
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        let guides = oracle_action_policy::oracle_combat_guide_bundle_v1(position);
         vec![
-            CombatStateGuide::new(
-                GUIDE_PROGRESS,
-                oracle_action_policy::oracle_combat_state_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_SURVIVAL,
-                oracle_action_policy::oracle_combat_survival_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_TURN_DEPTH,
-                oracle_action_policy::oracle_combat_turn_generation_guide_components(position),
-            ),
-            CombatStateGuide::new(
-                GUIDE_SETUP,
-                oracle_action_policy::oracle_combat_setup_guide_components(position),
-            ),
+            CombatStateGuide::new(GUIDE_PROGRESS, guides.progress),
+            CombatStateGuide::new(GUIDE_SURVIVAL, guides.survival),
+            CombatStateGuide::new(GUIDE_TURN_DEPTH, guides.turn_generation),
+            CombatStateGuide::new(GUIDE_SETUP, guides.setup),
         ]
     }
 }

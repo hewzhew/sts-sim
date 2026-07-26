@@ -10,7 +10,9 @@ pub(super) use combat_eval::{
 #[cfg(test)]
 use facts::combat_search_core_value_facts;
 pub(super) use report::{combat_search_frontier_value_report, COMBAT_SEARCH_FRONTIER_VALUE_POLICY};
-pub(super) use state::{combat_search_state_value, CombatSearchStateValueV1};
+pub(super) use state::{
+    combat_search_state_value, combat_search_state_value_for_state, CombatSearchStateValueV1,
+};
 
 #[cfg(test)]
 mod tests;

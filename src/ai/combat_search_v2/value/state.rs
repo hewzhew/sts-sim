@@ -1,5 +1,7 @@
 use super::super::frontier::SearchNode;
 use super::facts::combat_search_core_value_facts;
+use crate::runtime::combat::CombatState;
+use crate::state::core::EngineState;
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -98,7 +100,14 @@ impl PartialOrd for CombatSearchStateValueV1 {
 pub(in crate::ai::combat_search_v2) fn combat_search_state_value(
     node: &SearchNode,
 ) -> CombatSearchStateValueV1 {
-    let facts = combat_search_core_value_facts(&node.engine, &node.combat);
+    combat_search_state_value_for_state(&node.engine, &node.combat)
+}
+
+pub(in crate::ai::combat_search_v2) fn combat_search_state_value_for_state(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> CombatSearchStateValueV1 {
+    let facts = combat_search_core_value_facts(engine, combat);
     CombatSearchStateValueV1 {
         fewer_living_enemies: -(facts
             .phase_profile
@@ -137,8 +146,8 @@ pub(in crate::ai::combat_search_v2) fn combat_search_state_value(
             .estimated_action_fanout as i32),
         survival_margin: facts.phase_profile.pressure.survival_margin,
         sustained_mitigation: facts.sustained_mitigation,
-        player_hp: node.combat.entities.player.current_hp,
-        player_block: node.combat.entities.player.block,
+        player_hp: combat.entities.player.current_hp,
+        player_block: combat.entities.player.block,
         hand_damage: facts.hand.damage,
         hand_block: facts.hand.block,
         hand_playable_cards: facts.hand.playable_cards,

@@ -14,12 +14,28 @@ use serde::Serialize;
 
 use super::action_ordering::{order_indexed_action_choices_with_plugins, IndexedActionChoice};
 use super::frontier::SearchNode;
-use super::value::combat_search_state_value;
+use super::value::combat_search_state_value_for_state;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleCombatRolloutGuideV1 {
     pub components: Vec<i32>,
     pub actions_simulated: usize,
+}
+
+/// One shared evaluation of the typed combat-state knowledge consumed by the
+/// planner's independent guide lanes.
+///
+/// Building the guides separately used to recompute the same phase profile,
+/// hand/draw facts, incoming pressure, and setup summary once per lane.  The
+/// planner normally asks for four lanes at a time, so expose the shared result
+/// without changing any lane's lexicographic coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleCombatGuideBundleV1 {
+    pub progress: Vec<i32>,
+    pub survival: Vec<i32>,
+    pub horizon: Vec<i32>,
+    pub turn_generation: Vec<i32>,
+    pub setup: Vec<i32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -273,12 +289,14 @@ fn oracle_action_ordering_plugins(
     }
 }
 
-/// Reuses the mature search's typed, lexicographic state knowledge without
-/// transferring ownership of its frontier or terminal claims. Components are
-/// ordered exactly as `CombatSearchStateValueV1::cmp` orders them.
-pub fn oracle_combat_state_guide_components(position: &CombatPosition) -> Vec<i32> {
-    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
-    let value = combat_search_state_value(&node);
+fn oracle_combat_state_value(position: &CombatPosition) -> super::value::CombatSearchStateValueV1 {
+    combat_search_state_value_for_state(&position.engine, &position.combat)
+}
+
+fn combat_state_guide_components(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> Vec<i32> {
     vec![
         value.fewer_living_enemies,
         encounter_priority_owner_progress(&position.combat),
@@ -309,13 +327,10 @@ pub fn oracle_combat_state_guide_components(position: &CombatPosition) -> Vec<i3
     ]
 }
 
-/// A separate non-authoritative view of the same typed state knowledge.
-/// Keeping survival independent from progress lets multi-heuristic search
-/// retain healthy setup lines without inventing a conversion rate between
-/// enemy progress and player HP.
-pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec<i32> {
-    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
-    let value = combat_search_state_value(&node);
+fn combat_survival_guide_components(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> Vec<i32> {
     vec![
         value.survival_margin,
         value.player_hp,
@@ -336,14 +351,10 @@ pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec
     ]
 }
 
-/// A non-authoritative long-horizon view for setup-heavy combats. Progress
-/// and survival guides can both prefer an earlier turn forever: the former
-/// because setup has not dealt damage yet, and the latter because later turns
-/// have usually paid some HP. Keeping horizon in its own queue gives those
-/// states service without calibrating turn depth against HP or enemy damage.
-pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<i32> {
-    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
-    let value = combat_search_state_value(&node);
+fn combat_horizon_guide_components(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+) -> Vec<i32> {
     vec![
         i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
         value.fewer_living_enemies,
@@ -356,17 +367,11 @@ pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<
     ]
 }
 
-/// A horizon view specifically for partial states inside one player turn.
-/// The ordinary horizon guide starts with `turn_count`, which is constant
-/// until EndTurn and therefore cannot help a lazy complete-turn generator
-/// expose longer setup sequences.  This view rewards realized action depth
-/// first, then persistent assets and concrete combat progress.  It owns only
-/// one guide lane; the anchor, progress, survival, and setup lanes remain
-/// independent.
-pub fn oracle_combat_turn_generation_guide_components(position: &CombatPosition) -> Vec<i32> {
-    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
-    let value = combat_search_state_value(&node);
-    let setup = player_setup_summary(&position.combat);
+fn combat_turn_generation_guide_components(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+    setup: PlayerSetupSummary,
+) -> Vec<i32> {
     vec![
         i32::from(position.combat.turn.counters.cards_played_this_turn),
         setup.exhaust_engine_connected,
@@ -385,16 +390,11 @@ pub fn oracle_combat_turn_generation_guide_components(position: &CombatPosition)
     ]
 }
 
-/// An independent view of persistent player setup. Damage-first and
-/// survival-first guides both undervalue a turn which spends energy putting
-/// powers in play: the enemy is still healthy and the immediate block may
-/// already have expired by the next player boundary. This lane recognizes
-/// the resulting exact state, rather than assigning bonuses to the actions
-/// which happened to create it.
-pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i32> {
-    let node = SearchNode::root(position.engine.clone(), position.combat.clone());
-    let value = combat_search_state_value(&node);
-    let setup = player_setup_summary(&position.combat);
+fn combat_setup_guide_components(
+    position: &CombatPosition,
+    value: &super::value::CombatSearchStateValueV1,
+    setup: PlayerSetupSummary,
+) -> Vec<i32> {
     vec![
         setup.exhaust_engine_connected,
         setup.status_access_engine_connected,
@@ -416,6 +416,73 @@ pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i3
         value.hand_damage,
         i32::try_from(position.combat.turn.turn_count).unwrap_or(i32::MAX),
     ]
+}
+
+/// Computes every independent guide lane from one shared state evaluation.
+pub fn oracle_combat_guide_bundle_v1(position: &CombatPosition) -> OracleCombatGuideBundleV1 {
+    let value = oracle_combat_state_value(position);
+    let setup = player_setup_summary(&position.combat);
+    OracleCombatGuideBundleV1 {
+        progress: combat_state_guide_components(position, &value),
+        survival: combat_survival_guide_components(position, &value),
+        horizon: combat_horizon_guide_components(position, &value),
+        turn_generation: combat_turn_generation_guide_components(position, &value, setup),
+        setup: combat_setup_guide_components(position, &value, setup),
+    }
+}
+
+/// Reuses the mature search's typed, lexicographic state knowledge without
+/// transferring ownership of its frontier or terminal claims. Components are
+/// ordered exactly as `CombatSearchStateValueV1::cmp` orders them.
+pub fn oracle_combat_state_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let value = oracle_combat_state_value(position);
+    combat_state_guide_components(position, &value)
+}
+
+/// A separate non-authoritative view of the same typed state knowledge.
+/// Keeping survival independent from progress lets multi-heuristic search
+/// retain healthy setup lines without inventing a conversion rate between
+/// enemy progress and player HP.
+pub fn oracle_combat_survival_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let value = oracle_combat_state_value(position);
+    combat_survival_guide_components(position, &value)
+}
+
+/// A non-authoritative long-horizon view for setup-heavy combats. Progress
+/// and survival guides can both prefer an earlier turn forever: the former
+/// because setup has not dealt damage yet, and the latter because later turns
+/// have usually paid some HP. Keeping horizon in its own queue gives those
+/// states service without calibrating turn depth against HP or enemy damage.
+pub fn oracle_combat_horizon_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let value = oracle_combat_state_value(position);
+    combat_horizon_guide_components(position, &value)
+}
+
+/// A horizon view specifically for partial states inside one player turn.
+/// The ordinary horizon guide starts with `turn_count`, which is constant
+/// until EndTurn and therefore cannot help a lazy complete-turn generator
+/// expose longer setup sequences.  This view rewards realized action depth
+/// first, then persistent assets and concrete combat progress.  It owns only
+/// one guide lane; the anchor, progress, survival, and setup lanes remain
+/// independent.
+pub fn oracle_combat_turn_generation_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let value = oracle_combat_state_value(position);
+    combat_turn_generation_guide_components(
+        position,
+        &value,
+        player_setup_summary(&position.combat),
+    )
+}
+
+/// An independent view of persistent player setup. Damage-first and
+/// survival-first guides both undervalue a turn which spends energy putting
+/// powers in play: the enemy is still healthy and the immediate block may
+/// already have expired by the next player boundary. This lane recognizes
+/// the resulting exact state, rather than assigning bonuses to the actions
+/// which happened to create it.
+pub fn oracle_combat_setup_guide_components(position: &CombatPosition) -> Vec<i32> {
+    let value = oracle_combat_state_value(position);
+    combat_setup_guide_components(position, &value, player_setup_summary(&position.combat))
 }
 
 /// Progress against an encounter member whose death removes a persistent
