@@ -3,6 +3,7 @@
 **/target/
 /target_codex*/
 /.worktrees/
+/.oracle-lab/
 
 # Python
 **/__pycache__/

@@ -442,10 +442,9 @@ fn shutdown_live_session(endpoint_path: &Path) -> Result<Value, String> {
         thread::sleep(Duration::from_millis(25));
     }
     if let Some(executable) = endpoint.and_then(|endpoint| endpoint.executable) {
-        let root = repository_root();
         prune_unreferenced_service_images(
-            &root.join("target").join("oracle-lab").join("hosts"),
-            &root.join("target").join("oracle-lab").join("sessions"),
+            &oracle_lab_state_root().join("hosts"),
+            &oracle_lab_state_root().join("sessions"),
             &executable,
         );
     }
@@ -1377,11 +1376,10 @@ fn service_executable() -> Result<PathBuf, String> {
 }
 
 fn materialize_service_runtime(canonical: &Path) -> Result<PathBuf, String> {
-    let root = repository_root();
     materialize_service_runtime_in(
         canonical,
-        &root.join("target").join("oracle-lab").join("hosts"),
-        &root.join("target").join("oracle-lab").join("sessions"),
+        &oracle_lab_state_root().join("hosts"),
+        &oracle_lab_state_root().join("sessions"),
     )
 }
 
@@ -1625,11 +1623,13 @@ fn resolve_endpoint_argument(
 
 fn session_endpoint_path(session: &str) -> Result<PathBuf, String> {
     validate_session_name(session)?;
-    Ok(repository_root()
-        .join("target")
-        .join("oracle-lab")
+    Ok(oracle_lab_state_root()
         .join("sessions")
         .join(format!("{session}.endpoint.json")))
+}
+
+fn oracle_lab_state_root() -> PathBuf {
+    repository_root().join(".oracle-lab")
 }
 
 fn validate_session_name(session: &str) -> Result<(), String> {

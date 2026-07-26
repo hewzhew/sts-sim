@@ -73,8 +73,7 @@ fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
         ));
     }
     let image_directory = repository_root()
-        .join("target")
-        .join("oracle-lab")
+        .join(".oracle-lab")
         .join("hosts")
         .canonicalize()
         .map_err(|error| format!("resident-host image directory is missing: {error}"))?;

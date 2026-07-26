@@ -197,11 +197,18 @@ primary rebuild fix is now the workspace boundary rather than a linker flag.
 
 ### Compilation Boundaries
 
-The workspace has two production compilation units:
+The workspace has several deliberate production compilation units:
 
 - `sts_simulator` owns the stable simulator/domain and lower policy layers;
-- `sts_simulator_control` owns combat search, evaluation, run-control,
-  `runtime::branch`, and all supported binaries.
+- `sts_combat_strategy`, `sts_combat_planner`, and `sts_combat_legacy` isolate
+  typed combat knowledge, the current exact planner, and the retained legacy
+  capability surface;
+- `sts_oracle_runtime` owns evaluation, run-control, and `runtime::branch`;
+- `sts_oracle_lab` owns heavyweight offline and resident command hosts;
+- `oracle_lab_client` owns the lightweight repeated-command surface;
+- `sts_simulator_control` is a compatibility facade for supported older
+  control binaries and integration tests, not the owner of another runtime
+  implementation.
 
 The root package deliberately keeps `autobins = false`, `autotests = false`,
 and remains the sole default member. Therefore bare `cargo test --lib` tests
@@ -225,9 +232,9 @@ the lightweight resident client own every remaining owner/search/accept
 boundary:
 
 ```powershell
-cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace target/oracle-cases/seed009.workspace.json
-.\target\release\oracle_lab_client.exe --canonical-oracle start --session seed009 --workspace target/oracle-cases/seed009.workspace.json
-.\target\release\oracle_lab_client.exe --canonical-oracle live --session seed009 run --export-continuation target/oracle-cases/seed009.victory.continuation.json
+cargo oracle-lab new --seed 20260713009 --ascension 0 --workspace .oracle-lab/cases/seed009.workspace.json
+.\ol-live.cmd start --session seed009 --workspace .oracle-lab/cases/seed009.workspace.json
+.\ol-live.cmd live --session seed009 run --export-continuation .oracle-lab/cases/seed009.victory.continuation.json
 ```
 
 `live run` uses the maintained 5/15/30-second hallway/elite/boss budgets. It
@@ -239,6 +246,12 @@ replays the complete committed journal from the canonical seed state inside
 the resident service, exports the exact continuation when requested, and
 returns `victory_verified`.
 
+Resident endpoints, immutable service images, and new local case artifacts
+live below the ignored `.oracle-lab/` state root. They are deliberately outside
+Cargo's `target/` tree so `cargo clean` cannot erase a live session or research
+checkpoint. Historical files below `target/oracle-cases/` remain readable but
+should not receive new output.
+
 The command hosts in `sts_oracle_lab` are physically separate from the shared
 `sts_oracle_runtime` library. On one Windows machine, touching only
 `oracle_lab.rs` rebuilt in 1.62 seconds, touching only
@@ -247,6 +260,12 @@ client took 1.31 seconds. These numbers verify the invalidation boundary; they
 are not performance assertions for CI. Use `release-final` only when the
 fully-optimized deployment artifact is specifically required. Further package
 splits require a new measured source-invalidation boundary.
+
+Splitting one Rust source file into modules improves ownership and review
+scope, but it does not create a new compilation unit: every module of one
+crate is still parsed and code-generated together. Claim a build-time
+improvement only after a measured crate-boundary change; do not infer one from
+smaller files.
 
 Do not configure a project-wide `sccache` wrapper for the canonical iterative
 build. A bounded Windows experiment restored the same empty target path in

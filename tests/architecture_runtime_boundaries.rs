@@ -64,6 +64,51 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 }
 
 #[test]
+fn local_turn_graph_keeps_scheduler_mechanics_in_a_bounded_module() {
+    let search = std::path::Path::new(
+        "crates/sts_combat_planner/src/local_turn_graph_search.rs",
+    );
+    let scheduling = std::path::Path::new(
+        "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
+    );
+    let search_bytes = std::fs::metadata(search)
+        .expect("read local-turn graph search metadata")
+        .len();
+    let scheduling_bytes = std::fs::metadata(scheduling)
+        .expect("read local-turn graph scheduling metadata")
+        .len();
+
+    assert!(
+        search_bytes <= 120 * 1024,
+        "local_turn_graph_search.rs grew to {search_bytes} bytes; keep service selection and scheduling mechanics in the dedicated child module"
+    );
+    assert!(
+        scheduling_bytes <= 32 * 1024,
+        "local-turn graph scheduling grew to {scheduling_bytes} bytes; split independent scheduler responsibilities before extending it"
+    );
+}
+
+#[test]
+fn resident_oracle_state_stays_outside_cargo_target() {
+    let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
+        .expect("read oracle_lab client source");
+    let service =
+        std::fs::read_to_string("crates/sts_oracle_lab/src/bin/oracle_lab_service.rs")
+            .expect("read oracle_lab service source");
+
+    for (label, source) in [("client", client.as_str()), ("service", service.as_str())] {
+        assert!(
+            !source.contains(r#".join("target").join("oracle-lab")"#),
+            "{label} must not place resident state below Cargo target"
+        );
+        assert!(
+            source.contains(r#".join(".oracle-lab")"#),
+            "{label} must resolve resident state through the ignored .oracle-lab root"
+        );
+    }
+}
+
+#[test]
 fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
         .expect("read owner_audit runtime module");
