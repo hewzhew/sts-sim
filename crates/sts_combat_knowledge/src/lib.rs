@@ -88,13 +88,16 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
         let atomic_inputs = choices
             .iter()
             .filter_map(|choice| match choice {
-                CombatPolicyChoice::Atomic(input) => Some((*input).clone()),
+                CombatPolicyChoice::Atomic(input) => Some(*input),
                 CombatPolicyChoice::StructuredSelection(_) => None,
             })
             .collect::<Vec<_>>();
         let mut atomic_weights =
-            oracle_action_policy::oracle_atomic_action_policy_weights(position, &atomic_inputs)
-                .into_iter();
+            oracle_action_policy::oracle_atomic_action_policy_weights_for_refs(
+                position,
+                &atomic_inputs,
+            )
+            .into_iter();
         choices
             .iter()
             .map(|choice| match choice {

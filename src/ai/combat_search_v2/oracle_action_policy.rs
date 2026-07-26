@@ -152,9 +152,29 @@ pub fn oracle_atomic_action_policy_weights(
     position: &CombatPosition,
     inputs: &[ClientInput],
 ) -> Vec<f64> {
+    oracle_atomic_action_policy_weights_from_iter(position, inputs.iter())
+}
+
+/// Borrowing counterpart used by planner adapters whose choices already hold
+/// references to exact inputs.  Keeping this separate from the owned-slice
+/// compatibility API avoids cloning every `ClientInput` merely to rank it.
+pub fn oracle_atomic_action_policy_weights_for_refs(
+    position: &CombatPosition,
+    inputs: &[&ClientInput],
+) -> Vec<f64> {
+    oracle_atomic_action_policy_weights_from_iter(position, inputs.iter().copied())
+}
+
+fn oracle_atomic_action_policy_weights_from_iter<'a, I>(
+    position: &CombatPosition,
+    inputs: I,
+) -> Vec<f64>
+where
+    I: Clone + ExactSizeIterator<Item = &'a ClientInput>,
+{
     let stepper = EngineCombatStepper;
     let choices = inputs
-        .iter()
+        .clone()
         .enumerate()
         .filter_map(|(original_action_id, input)| {
             stepper
