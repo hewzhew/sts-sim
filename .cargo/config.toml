@@ -31,5 +31,5 @@ ol-live = ["run", "--quiet", "--release", "-p", "oracle_lab_client", "--bin", "o
 # One-process exact regression over the current A0 seed006--009 victories.
 # The audit variant reports owner drift but deliberately does not turn policy
 # disagreement into replay failure.
-test-run-witnesses = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle", "verify-run-witness-suite", "--manifest", "fixtures/oracle_witnesses/a0_seed006_009_current.manifest.json"]
-audit-run-witnesses = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle", "verify-run-witness-suite", "--manifest", "fixtures/oracle_witnesses/a0_seed006_009_current.manifest.json", "--audit-policy"]
+test-run-witnesses = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle", "verify-run-witness-suite", "--manifest", "fixtures/oracle_witnesses/a0_seed006_010_current.manifest.json"]
+audit-run-witnesses = ["run", "--quiet", "--release", "-p", "sts_oracle_lab", "--features", "canonical-oracle-artifacts", "--bin", "oracle_lab", "--", "--canonical-oracle", "verify-run-witness-suite", "--manifest", "fixtures/oracle_witnesses/a0_seed006_010_current.manifest.json", "--audit-policy"]

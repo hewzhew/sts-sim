@@ -77,6 +77,25 @@
         "max_hp": 89,
         "engine_state": "GameOver(Victory)"
       }
+    },
+    {
+      "id": "seed010-current-f0-act3-victory",
+      "continuation": "seed20260713010_a0_full_run.continuation.json",
+      "expected": {
+        "seed": 20260713010,
+        "ascension": 0,
+        "journal_entries": 208,
+        "decisions": 182,
+        "forced_transitions": 0,
+        "combat_resolutions": 26,
+        "combat_actions": 755,
+        "final_fingerprint": "9210ff82c55eae324a2aebe6c7ad144028ebf277a4866227781922b2f7a13583",
+        "act": 3,
+        "floor": 48,
+        "current_hp": 17,
+        "max_hp": 100,
+        "engine_state": "GameOver(Victory)"
+      }
     }
   ]
 }

@@ -4,11 +4,11 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
-## Current four-seed regression suite
+## Current five-seed regression suite
 
-`a0_seed006_009_current.manifest.json` is the authoritative fast regression
-set for the current seed006--009 milestone. It pins the expected terminal
-fingerprint and compact replay facts for four complete, seed-initialized A0
+`a0_seed006_010_current.manifest.json` is the authoritative fast regression
+set for the current seed006--010 milestone. It pins the expected terminal
+fingerprint and compact replay facts for five complete, seed-initialized A0
 runs. One process verifies all four journals:
 
 ```text
@@ -23,10 +23,10 @@ diagnostic: it cannot invalidate an exact terminal witness.
 cargo audit-run-witnesses
 ```
 
-The exact replay layer currently completes in roughly two seconds on the
-development machine; replay plus owner audit takes roughly three seconds.
+The exact replay layer currently completes in a few seconds on the development
+machine; replay plus owner audit remains a lightweight second layer.
 The suite manifest SHA-256 is
-`FBA8E8D18663425980B3F3F50C2273E2B3AA7735BBA9965235A32EC3CCF0519E`.
+`D2D585992F25E848F557F8E748A210471E750AD0468BB5B09DB04F34F58B62DC`.
 
 ## seed 20260713006, A0, Awakened One
 
@@ -370,3 +370,22 @@ complete F0-to-F48 exact victory:
   `FFD8CCEE4F06B782F61AE24C384C65C94876D179038D1F425C2668C70F3E6574`;
   replay report
   `071745E2F26EFE15DDB7E94F1EE17ACE874E0393ABE47BE06FBC506CC7B08033`.
+
+## seed 20260713010, A0, Donu and Deca
+
+- `seed20260713010_a0_full_run.continuation.json` began at F0 with the
+  production Neow choice `Max HP +8` and used the resident production owner
+  and combat search through the Act 3 boss.
+- The run entered Donu and Deca at 100/100 HP after choosing Rest at F47.
+  Production search committed a 71-action exact victory and ended at
+  17/100 HP.
+- Fresh replay verifies 208 journal entries, 182 decisions, 26 combat
+  resolutions, 755 combat actions, terminal victory at F48, and final
+  fingerprint
+  `9210ff82c55eae324a2aebe6c7ad144028ebf277a4866227781922b2f7a13583`.
+- A current-policy audit reports 182 rank-zero agreements, no divergence, and
+  combat provenance entirely within the production portfolio.
+- SHA-256: full-run continuation
+  `35C2E8F626128AFA2532F530D751E4CC156A13CF5386812D1ED38B2424DB4829`;
+  compact replay report
+  `F77B67D70D9C2A0755FDA5E52C3EB9FEE33DCD510ABDE0E95F0EE56BC9F8446F`.
