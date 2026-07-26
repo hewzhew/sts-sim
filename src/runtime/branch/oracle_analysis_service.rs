@@ -302,7 +302,7 @@ fn execute_command(
             json!({
                 "commands": [
                     "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "campfire_policy_audit", "view", "tree", "try",
-                    "focus", "choose", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
+                    "focus", "choose", "owner", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
                 ],
@@ -394,6 +394,63 @@ fn execute_command(
             let choice_ref = choice.choice_ref.clone();
             let view = workspace.try_choice(&choice_ref)?;
             (node_summary(&view), true, false, false)
+        }
+        OracleAnalysisServiceCommandV1::Owner { steps } => {
+            if steps == 0 {
+                return Err("oracle owner steps must be positive".to_string());
+            }
+
+            let mut applied = Vec::new();
+            let mut stopped = "step_limit".to_string();
+            for _ in 0..steps {
+                let current = workspace.view()?;
+                let matching = current
+                    .choices
+                    .iter()
+                    .filter(|choice| choice.owner_rank == 0)
+                    .collect::<Vec<_>>();
+                let [choice] = matching.as_slice() else {
+                    stopped = if current.choices.is_empty() {
+                        "no_choices".to_string()
+                    } else {
+                        format!("rank_zero_choice_count={}", matching.len())
+                    };
+                    break;
+                };
+                let parent_node_id = current.node_id;
+                let candidate_id = choice.candidate_id.clone();
+                let label = choice.label.clone();
+                let choice_ref = choice.choice_ref.clone();
+                let next = match workspace.try_choice(&choice_ref) {
+                    Ok(next) => next,
+                    Err(error) => {
+                        stopped = format!("choice_execution_error={error}");
+                        break;
+                    }
+                };
+                if next.node_id == parent_node_id {
+                    stopped = format!("choice_made_no_progress={label}");
+                    break;
+                }
+                applied.push(json!({
+                    "node": parent_node_id,
+                    "candidate_id": candidate_id,
+                    "label": label,
+                }));
+            }
+            let status = node_summary(&workspace.view()?);
+            (
+                json!({
+                    "requested_steps": steps,
+                    "applied_count": applied.len(),
+                    "applied": applied,
+                    "stopped": stopped,
+                    "status": status,
+                }),
+                !applied.is_empty(),
+                false,
+                false,
+            )
         }
         OracleAnalysisServiceCommandV1::ChoosePath {
             node,

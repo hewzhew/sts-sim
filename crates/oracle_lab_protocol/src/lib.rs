@@ -89,6 +89,9 @@ pub enum OracleAnalysisServiceCommandV1 {
         node: usize,
         owner_rank: u64,
     },
+    Owner {
+        steps: u8,
+    },
     ChoosePath {
         node: usize,
         candidate_ids: Vec<String>,
@@ -422,5 +425,24 @@ mod tests {
             command,
             OracleAnalysisServiceCommandV1::VerifyRunWitness { node: None }
         ));
+    }
+
+    #[test]
+    fn owner_batch_requires_an_explicit_bounded_step_count() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "owner",
+            "steps": 64,
+        }))
+        .expect("parse owner batch command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::Owner { steps: 64 }
+        ));
+        assert!(
+            serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+                "command": "owner",
+            }))
+            .is_err()
+        );
     }
 }

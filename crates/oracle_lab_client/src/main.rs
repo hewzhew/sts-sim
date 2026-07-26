@@ -520,68 +520,7 @@ fn resolve_live_node(endpoint: &Path, node: Option<usize>) -> Result<usize, Stri
 }
 
 fn run_live_owner(endpoint: &Path, steps: u8) -> Result<Value, String> {
-    let mut node = live_call(
-        endpoint,
-        OracleAnalysisServiceCommandV1::Status { node: None },
-    )?;
-    let mut applied = Vec::new();
-    let mut stopped = "step_limit";
-    for _ in 0..steps {
-        let node_id = node
-            .get("node_id")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| "live owner status omitted node_id".to_string())?
-            as usize;
-        let owner_choices = node
-            .get("choices")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|choice| choice.get("owner_rank").and_then(Value::as_u64) == Some(0))
-            .collect::<Vec<_>>();
-        let [choice] = owner_choices.as_slice() else {
-            stopped = if owner_choices.is_empty() {
-                "no_owner_choice"
-            } else {
-                "ambiguous_owner_choice"
-            };
-            break;
-        };
-        let next = live_call(
-            endpoint,
-            OracleAnalysisServiceCommandV1::Choose {
-                node: node_id,
-                owner_rank: 0,
-            },
-        )?;
-        let next_node_id = next
-            .get("node_id")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| "live owner choice response omitted node_id".to_string())?
-            as usize;
-        if next_node_id == node_id {
-            return Err(format!(
-                "live owner choice '{}' at node {node_id} made no progress",
-                choice
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or("<unlabeled>")
-            ));
-        }
-        applied.push(json!({
-            "node": node_id,
-            "candidate_id": choice.get("candidate_id"),
-            "label": choice.get("label"),
-        }));
-        node = next;
-    }
-    Ok(json!({
-        "requested_steps": steps,
-        "applied_count": applied.len(),
-        "applied": applied,
-        "stopped": stopped,
-        "status": compact_live_node(&node, 8),
-    }))
+    live_call(endpoint, OracleAnalysisServiceCommandV1::Owner { steps })
 }
 
 struct LiveRunConfig {
