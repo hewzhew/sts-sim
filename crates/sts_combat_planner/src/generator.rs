@@ -1,11 +1,12 @@
 use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use sts_core::ai::combat_state_key::{
-    combat_exact_state_key, combat_exact_state_key_identity_v1, CombatExactStateKey,
+    combat_exact_state_key, combat_exact_state_key_hash_v1, CombatExactStateKey,
 };
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
@@ -26,10 +27,47 @@ use super::types::{
 #[derive(Clone, Debug)]
 struct PartialTurnOption {
     position: CombatPosition,
-    actions: Vec<TurnOptionAction>,
+    trace: Option<Arc<PendingActionTrace>>,
     atomic_depth: usize,
     negative_log_policy: f64,
     lookahead_guide: Option<CombatStateGuide>,
+}
+
+#[derive(Debug)]
+struct PendingActionTrace {
+    // Generator branches share exact prefixes. Durable replay hashes are
+    // materialized only when a complete segment is published, then cached on
+    // the shared prefix node so sibling segments never re-hash that state.
+    parent: Option<Arc<Self>>,
+    input: ClientInput,
+    successor_key: Arc<CombatExactStateKey>,
+    successor_hash: OnceLock<String>,
+    engine_steps: usize,
+    depth: usize,
+}
+
+impl PartialTurnOption {
+    fn action_depth(&self) -> usize {
+        self.trace.as_ref().map_or(0, |trace| trace.depth)
+    }
+
+    fn materialize_actions(&self) -> Vec<TurnOptionAction> {
+        let mut actions = Vec::with_capacity(self.action_depth());
+        let mut cursor = self.trace.clone();
+        while let Some(trace) = cursor {
+            actions.push(TurnOptionAction {
+                input: trace.input.clone(),
+                expected_successor_hash: trace
+                    .successor_hash
+                    .get_or_init(|| combat_exact_state_key_hash_v1(&trace.successor_key))
+                    .clone(),
+                engine_steps: trace.engine_steps,
+            });
+            cursor = trace.parent.clone();
+        }
+        actions.reverse();
+        actions
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -154,13 +192,16 @@ enum ActionTransitionStatus {
 
 #[derive(Clone, Debug)]
 struct IndexedExactStateKey {
-    digest: [u8; 32],
-    key: CombatExactStateKey,
+    // This hash is private to the in-memory transposition set. Equality still
+    // compares the complete typed key, so it cannot change exact-state
+    // semantics or the durable v1 hashes written to witnesses.
+    structural_hash: u64,
+    key: Arc<CombatExactStateKey>,
 }
 
 impl PartialEq for IndexedExactStateKey {
     fn eq(&self, other: &Self) -> bool {
-        self.digest == other.digest && self.key == other.key
+        self.structural_hash == other.structural_hash && self.key == other.key
     }
 }
 
@@ -168,7 +209,22 @@ impl Eq for IndexedExactStateKey {}
 
 impl Hash for IndexedExactStateKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.digest.hash(state);
+        self.structural_hash.hash(state);
+    }
+}
+
+impl IndexedExactStateKey {
+    fn new(key: CombatExactStateKey) -> Self {
+        Self::from_arc(Arc::new(key))
+    }
+
+    fn from_arc(key: Arc<CombatExactStateKey>) -> Self {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        Self {
+            structural_hash: hasher.finish(),
+            key,
+        }
     }
 }
 
@@ -387,14 +443,10 @@ impl TurnOptionGeneratorSession {
     ) -> Self {
         let mut seen = HashSet::new();
         let root_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
-        let (root_digest, _) = combat_exact_state_key_identity_v1(&root_key);
-        seen.insert(IndexedExactStateKey {
-            digest: root_digest,
-            key: root_key,
-        });
+        seen.insert(IndexedExactStateKey::new(root_key));
         let root_work = GeneratorWork::Expand(PartialTurnOption {
             position: root.position().clone(),
-            actions: Vec::new(),
+            trace: None,
             atomic_depth: 0,
             negative_log_policy: 0.0,
             lookahead_guide: None,
@@ -451,8 +503,7 @@ impl TurnOptionGeneratorSession {
     /// consumed.  It does not change retention or scheduling.
     pub fn has_seen_exact_position(&self, position: &CombatPosition) -> bool {
         let key = combat_exact_state_key(&position.engine, &position.combat);
-        let (digest, _) = combat_exact_state_key_identity_v1(&key);
-        self.seen.contains(&IndexedExactStateKey { digest, key })
+        self.seen.contains(&IndexedExactStateKey::new(key))
     }
 
     /// Counts still-live generator work rooted at one exact partial-turn
@@ -1151,22 +1202,12 @@ impl TurnOptionGeneratorSession {
         self.applied_action_transitions = self.applied_action_transitions.saturating_add(1);
         let identity_started = Instant::now();
         let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
-        let (digest, successor_hash) = combat_exact_state_key_identity_v1(&key);
-        let indexed_key = IndexedExactStateKey { digest, key };
+        let successor_key = Arc::new(key);
+        let indexed_key = IndexedExactStateKey::from_arc(successor_key.clone());
         self.transition_identity_elapsed_ns = self
             .transition_identity_elapsed_ns
             .saturating_add(elapsed_nanos_u64(identity_started));
         let admission_started = Instant::now();
-        let trace_started = Instant::now();
-        let mut actions = action.parent.actions.clone();
-        actions.push(TurnOptionAction {
-            input: action.input,
-            expected_successor_hash: successor_hash,
-            engine_steps: result.engine_steps,
-        });
-        self.transition_trace_elapsed_ns = self
-            .transition_trace_elapsed_ns
-            .saturating_add(elapsed_nanos_u64(trace_started));
         let seen_started = Instant::now();
         let unseen = self.seen.insert(indexed_key);
         self.transition_seen_elapsed_ns = self
@@ -1176,7 +1217,14 @@ impl TurnOptionGeneratorSession {
         if unseen {
             let partial = PartialTurnOption {
                 position: result.position,
-                actions,
+                trace: Some(Arc::new(PendingActionTrace {
+                    parent: action.parent.trace.clone(),
+                    input: action.input,
+                    successor_key,
+                    successor_hash: OnceLock::new(),
+                    engine_steps: result.engine_steps,
+                    depth: action.parent.action_depth().saturating_add(1),
+                })),
                 atomic_depth: action.atomic_depth,
                 negative_log_policy: action.negative_log_policy,
                 lookahead_guide: None,
@@ -1184,11 +1232,17 @@ impl TurnOptionGeneratorSession {
             let terminal = stepper.terminal(&partial.position);
             if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
                 // A stable atomic transition has already paid the simulator
-                // cost and reached a complete-turn boundary. Publish it now
-                // instead of routing it back through the partial-turn agenda.
+                // cost and reached the requested exact boundary. Publish it
+                // now instead of routing it back through the private atomic
+                // agenda.
+                let trace_started = Instant::now();
+                let actions = partial.materialize_actions();
+                self.transition_trace_elapsed_ns = self
+                    .transition_trace_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(trace_started));
                 self.publish_completed(CompleteTurnOption::new(
                     self.root.exact_state_hash().to_owned(),
-                    partial.actions,
+                    actions,
                     boundary,
                     partial.position,
                     partial.negative_log_policy,
@@ -1215,9 +1269,14 @@ impl TurnOptionGeneratorSession {
     fn expand(&mut self, stepper: &dyn CombatStepper, partial: PartialTurnOption) {
         let terminal = stepper.terminal(&partial.position);
         if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
+            let trace_started = Instant::now();
+            let actions = partial.materialize_actions();
+            self.transition_trace_elapsed_ns = self
+                .transition_trace_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(trace_started));
             self.publish_completed(CompleteTurnOption::new(
                 self.root.exact_state_hash().to_owned(),
-                partial.actions,
+                actions,
                 boundary,
                 partial.position,
                 partial.negative_log_policy,
@@ -1353,7 +1412,7 @@ impl TurnOptionGeneratorSession {
         self.gaps.push(TurnOptionGenerationGap {
             kind,
             exact_state_hash: exact_hash(&partial.position),
-            action_depth: partial.actions.len(),
+            action_depth: partial.action_depth(),
         });
     }
 

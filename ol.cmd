@@ -1,4 +1,7 @@
 @echo off
 setlocal
-"%~dp0target\release\oracle_lab.exe" --canonical-oracle %*
-exit /b %ERRORLEVEL%
+pushd "%~dp0"
+cargo ol %*
+set "status=%ERRORLEVEL%"
+popd
+exit /b %status%

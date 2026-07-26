@@ -337,6 +337,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sts_combat_strategy",
+ "sts_simulator",
+]
+
+[[package]]
+name = "sts_combat_strategy"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "sts_simulator",
 ]
 
@@ -349,6 +358,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sts_combat_planner",
+ "sts_combat_strategy",
  "sts_oracle_runtime",
 ]
 

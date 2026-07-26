@@ -75,15 +75,19 @@ pub use layered_witness_search::{
 };
 pub use local_turn_graph_search::{
     LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceSnapshot,
-    LocalTurnGraphRetainedGuidePromiseSnapshot, LocalTurnGraphRootActionFamilySnapshot,
-    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters,
+    LocalTurnGraphPlanAnnotationEnableError, LocalTurnGraphPlanTransitionEdgeSnapshot,
+    LocalTurnGraphPolicyLineReport, LocalTurnGraphRetainedGuidePromiseSnapshot,
+    LocalTurnGraphRootActionFamilySnapshot, LocalTurnGraphStateSnapshot,
+    LocalTurnGraphSuffixProbeAttempt, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessCounters,
     LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessReport,
     LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
 };
 pub use policy::{
-    CombatActionPolicy, CombatGuideLaneId, CombatLookaheadEvaluation, CombatLookaheadEvaluator,
+    combat_plan_state_guide_policy_v1, CombatActionPolicy, CombatGuideLaneId,
+    CombatLookaheadEvaluation, CombatLookaheadEvaluator, CombatPlanStateGuidePolicyV1,
     CombatPolicyChoice, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
     SharedCombatActionPolicy, SharedCombatLookaheadEvaluator, UniformCombatActionPolicy,
+    COMBAT_PLAN_STATE_GUIDE_LANE_V1,
 };
 pub use policy_discrepancy_search::{
     PolicyDiscrepancyConfig, PolicyDiscrepancyCounters, PolicyDiscrepancyInterruption,

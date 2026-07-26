@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use sts_core::content::cards::CardId;
 use sts_core::content::monsters::EnemyId;
 use sts_core::content::potions::{Potion, PotionId};
-use sts_core::runtime::combat::CombatCard;
+use sts_core::content::powers::PowerId;
+use sts_core::runtime::combat::{CombatCard, Power, PowerPayload};
 use sts_core::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper, CombatTerminal,
     EngineCombatStepper,
@@ -202,6 +203,8 @@ struct TinyTurnStepper {
     selection_size: Option<u8>,
     winning_selection_22: bool,
     duplicate_play_surface: bool,
+    opens_awakened_transition_window: bool,
+    activates_finite_skill_conversion: bool,
     lethal_from_turn: Option<u32>,
     terminal_loss: bool,
     calls: Arc<Mutex<Vec<ClientInput>>>,
@@ -214,6 +217,8 @@ impl TinyTurnStepper {
             selection_size: None,
             winning_selection_22: false,
             duplicate_play_surface: false,
+            opens_awakened_transition_window: false,
+            activates_finite_skill_conversion: false,
             lethal_from_turn: None,
             terminal_loss: false,
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -246,6 +251,13 @@ impl TinyTurnStepper {
     fn with_duplicate_play_surface() -> Self {
         Self {
             duplicate_play_surface: true,
+            ..Self::plain()
+        }
+    }
+
+    fn activating_finite_skill_conversion() -> Self {
+        Self {
+            activates_finite_skill_conversion: true,
             ..Self::plain()
         }
     }
@@ -350,6 +362,27 @@ impl CombatStepper for TinyTurnStepper {
                     next.combat.turn.energy = 0;
                     next.combat.turn.turn_start_draw_modifier +=
                         self.successor_salt.load(Ordering::SeqCst);
+                    if self.opens_awakened_transition_window {
+                        let awakened = &mut next.combat.entities.monsters[0];
+                        awakened.awakened_one.form1 = false;
+                        awakened.half_dead = true;
+                        awakened.current_hp = 0;
+                    }
+                    if self.activates_finite_skill_conversion {
+                        let player = next.combat.entities.player.id;
+                        sts_core::content::powers::store::set_powers_for(
+                            &mut next.combat,
+                            player,
+                            vec![Power {
+                                power_type: PowerId::Corruption,
+                                instance_id: None,
+                                amount: -1,
+                                extra_data: 0,
+                                payload: PowerPayload::None,
+                                just_applied: false,
+                            }],
+                        );
+                    }
                     if let Some(selection_size) = self.selection_size {
                         next.engine = EngineState::PendingChoice(PendingChoice::HandSelect {
                             candidate_uuids: vec![11, 22],
@@ -413,6 +446,51 @@ fn root() -> CombatDecisionRoot {
         CombatCard::new(CardId::Strike, 11),
         CombatCard::new(CardId::Defend, 22),
     ];
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
+fn awakened_root() -> CombatDecisionRoot {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let mut awakened = sts_core::test_support::test_monster(EnemyId::AwakenedOne);
+    awakened.id = 10;
+    awakened.slot = 0;
+    combat.entities.monsters = vec![awakened];
+    combat.turn.turn_count = 1;
+    combat.turn.energy = 1;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 11),
+        CombatCard::new(CardId::Defend, 22),
+    ];
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
+fn awakened_conversion_root() -> CombatDecisionRoot {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let mut awakened = sts_core::test_support::test_monster(EnemyId::AwakenedOne);
+    awakened.id = 10;
+    awakened.slot = 0;
+    combat.entities.monsters = vec![awakened];
+    combat.turn.turn_count = 1;
+    combat.turn.energy = 1;
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Corruption, 11),
+        CombatCard::new(CardId::Defend, 22),
+    ];
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
+fn threatened_awakened_conversion_root() -> CombatDecisionRoot {
+    let mut combat = awakened_conversion_root().position().combat.clone();
+    combat.entities.player.current_hp = 1;
+    combat.entities.monsters[0].set_planned_move_id(1);
+    CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
+}
+
+fn transition_window_conversion_root() -> CombatDecisionRoot {
+    let mut combat = awakened_conversion_root().position().combat.clone();
+    combat.entities.monsters[0].awakened_one.form1 = false;
+    combat.entities.monsters[0].half_dead = true;
+    combat.entities.monsters[0].current_hp = 0;
     CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat)).unwrap()
 }
 
@@ -1391,6 +1469,178 @@ fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
 }
 
 #[test]
+fn local_turn_graph_policy_line_defers_reserved_conversion_at_a_safe_phase_boundary() {
+    let stepper = TinyTurnStepper::activating_finite_skill_conversion();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        awakened_conversion_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line(1, 4, &stepper)
+        .expect("plan-compatible line");
+
+    assert_eq!(report.proposed_turns, 1);
+    assert_eq!(report.deferred_actions, 1);
+    assert_eq!(report.rejected_preview_transitions, 1);
+    assert_eq!(stepper.call_count(&PLAY), 1);
+    assert_eq!(stepper.call_count(&ClientInput::EndTurn), 1);
+    let families = session.root_action_families();
+    assert_eq!(families.len(), 1);
+    assert_eq!(families[0].first_action, ClientInput::EndTurn);
+}
+
+#[test]
+fn local_turn_graph_policy_line_does_not_end_before_an_emergency_conversion() {
+    let stepper = TinyTurnStepper::activating_finite_skill_conversion();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        threatened_awakened_conversion_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line(1, 1, &stepper)
+        .expect("plan-compatible line");
+
+    assert_eq!(report.deferred_actions, 0);
+    assert_eq!(stepper.call_count(&PLAY), 1);
+    assert_eq!(stepper.call_count(&ClientInput::EndTurn), 0);
+}
+
+#[test]
+fn local_turn_graph_policy_line_does_not_defer_a_phase_committing_action() {
+    let stepper = TinyTurnStepper {
+        activates_finite_skill_conversion: true,
+        opens_awakened_transition_window: true,
+        ..TinyTurnStepper::plain()
+    };
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        awakened_conversion_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line(1, 1, &stepper)
+        .expect("plan-compatible line");
+
+    assert_eq!(report.deferred_actions, 0);
+    assert_eq!(stepper.call_count(&PLAY), 1);
+    assert_eq!(stepper.call_count(&ClientInput::EndTurn), 0);
+}
+
+#[test]
+fn local_turn_graph_policy_line_deploys_conversion_in_the_untaxed_window() {
+    let stepper = TinyTurnStepper::activating_finite_skill_conversion();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        transition_window_conversion_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line(1, 4, &stepper)
+        .expect("plan-compatible line");
+
+    assert_eq!(report.proposed_turns, 1);
+    assert_eq!(report.deferred_actions, 0);
+    let families = session.root_action_families();
+    assert_eq!(families.len(), 1);
+    assert_eq!(families[0].first_action, PLAY);
+}
+
+#[test]
+fn local_turn_graph_policy_line_crosses_a_ranked_single_selection_transaction() {
+    let stepper = TinyTurnStepper::with_winning_single_selection();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        awakened_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferSelection22Policy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line(1, 4, &stepper)
+        .expect("plan-compatible line");
+
+    assert!(report.reached_terminal_win);
+    assert_eq!(report.chosen_action_transitions, 2);
+    assert_eq!(
+        stepper.call_count(&PLAY),
+        2,
+        "the proposed play and the authoritative witness replay each execute once"
+    );
+    assert!(session.witness().is_some());
+}
+
+#[test]
+fn local_turn_graph_policy_line_can_join_a_bounded_exact_suffix() {
+    let stepper = TinyTurnStepper {
+        opens_awakened_transition_window: true,
+        lethal_from_turn: Some(2),
+        ..TinyTurnStepper::plain()
+    };
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        awakened_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line_with_suffix_probes(1, 4, 256, &stepper)
+        .expect("plan-compatible line with suffix");
+
+    assert_eq!(report.proposed_turns, 1);
+    assert_eq!(report.suffix_probe_attempts, 1);
+    assert!(report.suffix_probe_generation_work > 0);
+    assert!(report.suffix_probe_witness_found);
+    assert!(report.reached_terminal_win);
+    assert!(session.witness().is_some());
+}
+
+#[test]
+fn local_turn_graph_policy_line_does_not_probe_an_unchanged_plan_stage() {
+    let stepper = TinyTurnStepper::lethal_after_current_turn();
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        awakened_root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferEndTurnPolicy),
+    );
+
+    let report = session
+        .offer_plan_compatible_policy_line_with_suffix_probes(1, 4, 256, &stepper)
+        .expect("plan-compatible line with suffix");
+
+    assert_eq!(report.proposed_turns, 1);
+    assert_eq!(report.suffix_probe_attempts, 0);
+    assert_eq!(report.suffix_probe_generation_work, 0);
+    assert!(!report.suffix_probe_witness_found);
+    assert!(!report.reached_terminal_win);
+}
+
+#[test]
 fn local_turn_graph_rejects_a_policy_proposal_with_a_forged_successor() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let decision_root = root();
@@ -1418,6 +1668,122 @@ fn local_turn_graph_rejects_a_policy_proposal_with_a_forged_successor() {
     );
     assert!(session.witness().is_none());
     assert_eq!(session.counters().policy_witness_proposals, 1);
+}
+
+#[test]
+fn local_turn_graph_plan_annotations_are_opt_in_and_read_only() {
+    let root = awakened_root();
+    let parent_hash = root.exact_state_hash().to_owned();
+    let successor_stepper = TinyTurnStepper::plain();
+    let direct_end_turn = successor_stepper.apply_to_stable(
+        root.position(),
+        ClientInput::EndTurn,
+        CombatStepLimits {
+            max_engine_steps: 4,
+            deadline: None,
+        },
+    );
+    let successor_hash = exact_hash(&direct_end_turn.position);
+    let search_config = LocalTurnGraphWitnessConfig {
+        generator: config(),
+        generation_quantum_work: 4,
+        backed_generation_quantum_work: 4,
+        initial_expansion_work: 16,
+        root_initial_expansion_work: 16,
+        lookahead_max_evaluations: 0,
+        max_turn_depth: 1,
+        satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+        ..LocalTurnGraphWitnessConfig::default()
+    };
+    let quantum = LocalTurnGraphWitnessQuantum {
+        additional_selections: 64,
+        additional_generation_work: 256,
+        additional_engine_steps: 1_024,
+        deadline: None,
+    };
+
+    let mut plain = LocalTurnGraphWitnessSession::with_policy(
+        root.clone(),
+        search_config,
+        Arc::new(PreferPlayPolicy),
+    );
+    let plain_report = plain.advance(quantum, &TinyTurnStepper::plain());
+    let plain_edge = plain
+        .edge_snapshot_by_exact_hashes(&parent_hash, &successor_hash)
+        .expect("the direct end-turn edge must be materialized");
+    assert_eq!(plain_edge.plan_transition_annotation, None);
+    assert_eq!(plain.counters().annotated_exact_edges, 0);
+
+    let mut annotated =
+        LocalTurnGraphWitnessSession::with_policy(root, search_config, Arc::new(PreferPlayPolicy));
+    annotated
+        .enable_plan_transition_annotations()
+        .expect("annotation collection must be enabled before graph construction");
+    let annotated_report = annotated.advance(quantum, &TinyTurnStepper::plain());
+    let annotated_edge = annotated
+        .edge_snapshot_by_exact_hashes(&parent_hash, &successor_hash)
+        .expect("the annotated direct end-turn edge must be materialized");
+    assert!(
+        annotated_edge.plan_transition_annotation.is_some(),
+        "an encounter-owned typed plan must annotate its exact edge"
+    );
+    assert!(annotated.counters().annotated_exact_edges > 0);
+    let plan_edges = annotated.plan_transition_edge_snapshots();
+    assert_eq!(plan_edges.len(), annotated.counters().annotated_exact_edges);
+    assert!(plan_edges.iter().any(|edge| {
+        edge.parent_exact_state_hash == parent_hash
+            && edge.successor_exact_state_hash == successor_hash
+            && edge.action_count == annotated_edge.actions.len()
+    }));
+    assert_eq!(
+        annotated.enable_plan_transition_annotations(),
+        Err(LocalTurnGraphPlanAnnotationEnableError::EdgesAlreadyMaterialized)
+    );
+
+    let mut plain_counters = plain.counters();
+    let mut annotated_counters = annotated.counters();
+    annotated_counters.annotated_exact_edges = 0;
+    plain_counters.annotated_exact_edges = 0;
+    assert_eq!(annotated_report.status, plain_report.status);
+    assert_eq!(annotated_counters, plain_counters);
+    assert_eq!(annotated_edge.actions, plain_edge.actions);
+    assert_eq!(
+        annotated_edge.negative_log_policy,
+        plain_edge.negative_log_policy
+    );
+}
+
+#[test]
+fn local_turn_graph_plan_annotations_leave_unowned_encounters_empty() {
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            initial_expansion_work: 16,
+            root_initial_expansion_work: 16,
+            lookahead_max_evaluations: 0,
+            max_turn_depth: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    session
+        .enable_plan_transition_annotations()
+        .expect("an empty graph can enable annotations");
+    session.advance(
+        LocalTurnGraphWitnessQuantum {
+            additional_selections: 64,
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &TinyTurnStepper::plain(),
+    );
+
+    assert!(session.counters().exact_edges > 0);
+    assert_eq!(session.counters().annotated_exact_edges, 0);
+    assert!(session.plan_transition_edge_snapshots().is_empty());
 }
 
 #[test]

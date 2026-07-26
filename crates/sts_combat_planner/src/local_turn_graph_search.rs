@@ -2,14 +2,21 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 use serde::Serialize;
+use sts_combat_strategy::{
+    combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
+    combat_plan_projection_v1, combat_plan_transition_annotation_v1, CombatPlanActionTimingV1,
+    CombatPlanProjectionV1, CombatPlanTransitionAnnotationV1,
+};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::ClientInput;
 
 use super::generator::TurnOptionGeneratorPreferredLane;
 use super::policy::{
-    CombatGuideLaneId, CombatPolicyWitnessProposal, CombatStateGuide, CombatStateGuideRank,
-    SharedCombatActionPolicy, SharedCombatLookaheadEvaluator,
+    normalized_probabilities, CombatGuideLaneId, CombatPolicyChoice, CombatPolicyWitnessProposal,
+    CombatStateGuide, CombatStateGuideRank, SharedCombatActionPolicy,
+    SharedCombatLookaheadEvaluator, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
 };
+use super::selection_transaction::SelectionTransactionCursor;
 use super::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
     CompleteTurnOptionBoundary, TurnOptionAction, TurnOptionGenerationGap,
@@ -93,6 +100,11 @@ pub enum LocalTurnGraphWitnessStatus {
     ReplayMismatch(OracleCombatWitnessReplayError),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LocalTurnGraphPlanAnnotationEnableError {
+    EdgesAlreadyMaterialized,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LocalTurnGraphWitnessCounters {
     pub selections: usize,
@@ -107,6 +119,9 @@ pub struct LocalTurnGraphWitnessCounters {
     pub engine_steps: usize,
     pub exact_nodes: usize,
     pub exact_edges: usize,
+    /// Newly materialized exact edges carrying read-only combat-plan facts.
+    /// This counter never participates in scheduling or stopping.
+    pub annotated_exact_edges: usize,
     pub completed_turn_options: usize,
     pub applied_action_transitions: usize,
     pub unique_successor_states: usize,
@@ -150,6 +165,37 @@ pub struct LocalTurnGraphWitnessReport {
     pub root_children: usize,
     pub generation_gaps: Vec<TurnOptionGenerationGap>,
     pub witness: Option<OracleCombatWitness>,
+}
+
+/// Exact work used to materialize one bounded policy mainline at player-turn
+/// boundaries before ordinary graph search.
+///
+/// A proposal is not a witness. It merely leaves replayable edges in the
+/// shared graph; terminal truth still comes from exact simulation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphSuffixProbeAttempt {
+    pub exact_state_hash: String,
+    pub player_turn: u32,
+    pub plan_projection: Option<CombatPlanProjectionV1>,
+    pub generation_work: usize,
+    pub engine_steps: usize,
+    pub witness_found: bool,
+    pub final_hp: Option<i32>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct LocalTurnGraphPolicyLineReport {
+    pub proposed_turns: usize,
+    pub chosen_action_transitions: usize,
+    pub rejected_preview_transitions: usize,
+    pub deferred_actions: usize,
+    pub engine_steps: usize,
+    pub suffix_probe_attempts: usize,
+    pub suffix_probe_generation_work: usize,
+    pub suffix_probe_engine_steps: usize,
+    pub suffix_probe_witness_found: bool,
+    pub suffix_probe_details: Vec<LocalTurnGraphSuffixProbeAttempt>,
+    pub reached_terminal_win: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -220,6 +266,7 @@ pub struct LocalTurnGraphEdgeSnapshot {
     pub parent_widen_anchor_visits: usize,
     pub actions: Vec<TurnOptionAction>,
     pub negative_log_policy: f64,
+    pub plan_transition_annotation: Option<CombatPlanTransitionAnnotationV1>,
     pub visits: usize,
     pub anchor_visits: usize,
     pub backed_visits: usize,
@@ -231,6 +278,26 @@ pub struct LocalTurnGraphEdgeSnapshot {
     pub successor_generated_options: usize,
     pub successor_children: usize,
     pub successor_exhausted: bool,
+}
+
+/// One exact graph edge carrying an encounter-owned plan annotation.
+///
+/// This diagnostic view deliberately exposes service facts without
+/// interpreting the annotation. Encounter semantics remain owned by the
+/// strategy crate and are never read by local-graph scheduling.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LocalTurnGraphPlanTransitionEdgeSnapshot {
+    pub parent_exact_state_hash: String,
+    pub successor_exact_state_hash: String,
+    pub parent_relative_turn_depth: usize,
+    pub action_count: usize,
+    pub negative_log_policy: f64,
+    pub plan_transition_annotation: CombatPlanTransitionAnnotationV1,
+    pub edge_visits: usize,
+    pub anchor_visits: usize,
+    pub guide_visits: usize,
+    pub backed_visits: usize,
+    pub successor_visits: usize,
 }
 
 #[derive(Clone)]
@@ -275,6 +342,7 @@ struct GraphEdge {
     successor: usize,
     actions: Vec<TurnOptionAction>,
     negative_log_policy: f64,
+    plan_transition_annotation: Option<CombatPlanTransitionAnnotationV1>,
     visits: usize,
     anchor_visits: usize,
     guide_visits: BTreeMap<CombatGuideLaneId, usize>,
@@ -314,6 +382,7 @@ pub struct LocalTurnGraphWitnessSession {
     config: LocalTurnGraphWitnessConfig,
     policy: SharedCombatActionPolicy,
     lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
+    collect_plan_transition_annotations: bool,
     lookahead_lane: Option<CombatGuideLaneId>,
     nodes: Vec<GraphNode>,
     nodes_by_hash: HashMap<String, usize>,
@@ -331,6 +400,20 @@ pub struct LocalTurnGraphWitnessSession {
 impl LocalTurnGraphWitnessSession {
     pub fn set_satisfaction(&mut self, satisfaction: OracleCombatWitnessSatisfaction) {
         self.config.satisfaction = satisfaction;
+    }
+
+    /// Enables read-only plan facts on subsequently materialized exact edges.
+    ///
+    /// Enabling after graph construction would leave a mixture of annotated
+    /// and unannotated edges, so the session rejects that ambiguous state.
+    pub fn enable_plan_transition_annotations(
+        &mut self,
+    ) -> Result<(), LocalTurnGraphPlanAnnotationEnableError> {
+        if self.used.exact_edges > 0 {
+            return Err(LocalTurnGraphPlanAnnotationEnableError::EdgesAlreadyMaterialized);
+        }
+        self.collect_plan_transition_annotations = true;
+        Ok(())
     }
 
     pub fn with_policy(
@@ -380,6 +463,7 @@ impl LocalTurnGraphWitnessSession {
             config,
             policy,
             lookahead_evaluator,
+            collect_plan_transition_annotations: false,
             lookahead_lane: root_lookahead_pending_lane,
             nodes: vec![GraphNode {
                 generator,
@@ -459,6 +543,455 @@ impl LocalTurnGraphWitnessSession {
             self.witness = Some(witness);
         }
         Ok(replace)
+    }
+
+    /// Materializes one bounded, exact policy mainline as ordinary graph
+    /// edges.
+    ///
+    /// At each stable action surface the existing action policy still selects
+    /// the greedy action. An encounter plan may reject a preview only when
+    /// exact before/after projections prove that it prematurely spends a
+    /// reserved resource. The next policy-ranked compatible action is tried;
+    /// EndTurn therefore wins naturally only when no better compatible play
+    /// remains. Every rejected action remains available to normal search.
+    ///
+    /// This is intentionally a single line, not another scheduler, beam, or
+    /// pruning rule. If the line loses or encounters an unsupported
+    /// structured choice, already materialized turn boundaries remain useful
+    /// and ordinary search continues unchanged.
+    pub fn offer_plan_compatible_policy_line(
+        &mut self,
+        max_turns: usize,
+        max_actions: usize,
+        stepper: &dyn CombatStepper,
+    ) -> Result<LocalTurnGraphPolicyLineReport, String> {
+        self.offer_plan_compatible_policy_line_with_suffix_probes(
+            max_turns,
+            max_actions,
+            0,
+            stepper,
+        )
+    }
+
+    /// Materializes the same exact policy line and, immediately before that
+    /// line would cross a typed combat-plan milestone, gives the current
+    /// exact state one bounded deterministic suffix search.
+    ///
+    /// This is a hierarchical laboratory control, not a second global
+    /// scheduler. The policy line cheaply carries the combat through states
+    /// where its plan stage is unchanged; exact branching is paid only at a
+    /// semantic handoff. A suffix can become authoritative only after its
+    /// actions are joined to the exact prefix and replayed from the unchanged
+    /// combat root.
+    pub fn offer_plan_compatible_policy_line_with_suffix_probes(
+        &mut self,
+        max_turns: usize,
+        max_actions: usize,
+        suffix_generation_work: usize,
+        stepper: &dyn CombatStepper,
+    ) -> Result<LocalTurnGraphPolicyLineReport, String> {
+        let mut report = LocalTurnGraphPolicyLineReport::default();
+        if max_turns == 0
+            || max_actions == 0
+            || combat_plan_projection_v1(&self.original_root).is_none()
+        {
+            return Ok(report);
+        }
+
+        let mut node_id = 0usize;
+        let mut path = Vec::<(usize, usize)>::new();
+        let mut total_actions = 0usize;
+
+        'turns: for _ in 0..max_turns {
+            if total_actions >= max_actions {
+                break;
+            }
+            let segment_root = self.nodes[node_id].generator.root().position().clone();
+            let segment_root_hash = exact_hash(&segment_root);
+            let root_turn = segment_root.combat.turn.turn_count;
+            let mut position = segment_root.clone();
+            let mut actions = Vec::<TurnOptionAction>::new();
+            let mut negative_log_policy = 0.0f64;
+
+            while total_actions < max_actions {
+                if stepper.terminal(&position) != CombatTerminal::Unresolved {
+                    break;
+                }
+                let surface = stepper.legal_action_surface(&position);
+                let choices = surface
+                    .atomic_actions
+                    .iter()
+                    .map(CombatPolicyChoice::Atomic)
+                    .chain(
+                        surface
+                            .selection_families
+                            .iter()
+                            .map(CombatPolicyChoice::StructuredSelection),
+                    )
+                    .collect::<Vec<_>>();
+                if choices.is_empty() {
+                    break;
+                }
+                let weights = self.policy.weights(&position, &choices);
+                let weights = (weights.len() == choices.len())
+                    .then_some(weights)
+                    .unwrap_or_else(|| vec![1.0; choices.len()]);
+                let probabilities = normalized_probabilities(
+                    weights,
+                    self.config.generator.uniform_exploration_ppm,
+                );
+                let mut ranked_indices = (0..choices.len()).collect::<Vec<_>>();
+                ranked_indices.sort_by(|left, right| {
+                    probabilities[*right]
+                        .total_cmp(&probabilities[*left])
+                        .then_with(|| left.cmp(right))
+                });
+                let mut selected = None;
+                let mut first_neutral = None;
+                let seek_timed_preference = combat_plan_has_timed_action_preference_v1(&position);
+                let mut blocked_by_structured_family = false;
+                for candidate_index in ranked_indices {
+                    if candidate_index >= surface.atomic_actions.len() {
+                        let family = &surface.selection_families
+                            [candidate_index - surface.atomic_actions.len()];
+                        // A mandatory singleton choice is still a small exact
+                        // action surface. Reuse the policy's member ordering
+                        // and materialize only its principal member. Variable
+                        // subsets remain lazy generator work: eagerly choosing
+                        // one here would hide the very combinatorial boundary
+                        // this proposer is meant to avoid.
+                        if family.declared_min != 1 || family.effective_max != 1 {
+                            blocked_by_structured_family = true;
+                            break;
+                        }
+                        let Ok(mut cursor) = SelectionTransactionCursor::new(family) else {
+                            blocked_by_structured_family = true;
+                            break;
+                        };
+                        let members =
+                            std::iter::from_fn(|| cursor.next_input()).collect::<Vec<_>>();
+                        if members.is_empty() {
+                            blocked_by_structured_family = true;
+                            break;
+                        }
+                        let member_weights = self
+                            .policy
+                            .structured_selection_member_weights(&position, family, &members);
+                        let member_weights = (member_weights.len() == members.len())
+                            .then_some(member_weights)
+                            .unwrap_or_else(|| vec![1.0; members.len()]);
+                        let member_probabilities = normalized_probabilities(
+                            member_weights,
+                            self.config.generator.uniform_exploration_ppm,
+                        );
+                        let member_index = member_probabilities
+                            .iter()
+                            .enumerate()
+                            .max_by(|(left_index, left), (right_index, right)| {
+                                left.total_cmp(right)
+                                    .then_with(|| right_index.cmp(left_index))
+                            })
+                            .map(|(index, _)| index)
+                            .expect("non-empty singleton selection member surface");
+                        let input = members[member_index].clone();
+                        let step = stepper.apply_to_stable(
+                            &position,
+                            input.clone(),
+                            CombatStepLimits {
+                                max_engine_steps: self
+                                    .config
+                                    .generator
+                                    .max_engine_steps_per_transition
+                                    .max(1),
+                                deadline: None,
+                            },
+                        );
+                        report.engine_steps = report.engine_steps.saturating_add(step.engine_steps);
+                        self.used.applied_action_transitions =
+                            self.used.applied_action_transitions.saturating_add(1);
+                        self.used.engine_steps =
+                            self.used.engine_steps.saturating_add(step.engine_steps);
+                        if step.truncated || step.timed_out {
+                            blocked_by_structured_family = true;
+                            break;
+                        }
+                        let probability =
+                            probabilities[candidate_index] * member_probabilities[member_index];
+                        match combat_plan_action_timing_v1(&position, &step.position) {
+                            CombatPlanActionTimingV1::PreferNow => {
+                                selected = Some((input, probability, step));
+                                break;
+                            }
+                            CombatPlanActionTimingV1::Neutral if seek_timed_preference => {
+                                first_neutral.get_or_insert((input, probability, step));
+                            }
+                            CombatPlanActionTimingV1::Neutral => {
+                                selected = Some((input, probability, step));
+                                break;
+                            }
+                            CombatPlanActionTimingV1::Defer(_) => {
+                                report.rejected_preview_transitions =
+                                    report.rejected_preview_transitions.saturating_add(1);
+                                report.deferred_actions = report.deferred_actions.saturating_add(1);
+                            }
+                        }
+                        continue;
+                    }
+                    let input = surface.atomic_actions[candidate_index].clone();
+                    let step = stepper.apply_to_stable(
+                        &position,
+                        input.clone(),
+                        CombatStepLimits {
+                            max_engine_steps: self
+                                .config
+                                .generator
+                                .max_engine_steps_per_transition
+                                .max(1),
+                            deadline: None,
+                        },
+                    );
+                    report.engine_steps = report.engine_steps.saturating_add(step.engine_steps);
+                    self.used.applied_action_transitions =
+                        self.used.applied_action_transitions.saturating_add(1);
+                    self.used.engine_steps =
+                        self.used.engine_steps.saturating_add(step.engine_steps);
+                    if step.truncated || step.timed_out {
+                        break;
+                    }
+                    match combat_plan_action_timing_v1(&position, &step.position) {
+                        CombatPlanActionTimingV1::PreferNow => {
+                            selected = Some((input, probabilities[candidate_index], step));
+                            break;
+                        }
+                        CombatPlanActionTimingV1::Neutral if seek_timed_preference => {
+                            first_neutral.get_or_insert((
+                                input,
+                                probabilities[candidate_index],
+                                step,
+                            ));
+                        }
+                        CombatPlanActionTimingV1::Neutral => {
+                            selected = Some((input, probabilities[candidate_index], step));
+                            break;
+                        }
+                        CombatPlanActionTimingV1::Defer(_) => {
+                            report.rejected_preview_transitions =
+                                report.rejected_preview_transitions.saturating_add(1);
+                            report.deferred_actions = report.deferred_actions.saturating_add(1);
+                        }
+                    }
+                }
+                if selected.is_none() && !blocked_by_structured_family {
+                    selected = first_neutral;
+                }
+                let Some((selected_input, selected_probability, selected_step)) = selected else {
+                    break;
+                };
+                report.chosen_action_transitions =
+                    report.chosen_action_transitions.saturating_add(1);
+
+                negative_log_policy -= selected_probability.max(f64::MIN_POSITIVE).ln();
+                actions.push(TurnOptionAction {
+                    input: selected_input,
+                    expected_successor_hash: exact_hash(&selected_step.position),
+                    engine_steps: selected_step.engine_steps,
+                });
+                total_actions = total_actions.saturating_add(1);
+                position = selected_step.position;
+
+                if stepper.terminal(&position) != CombatTerminal::Unresolved
+                    || (matches!(
+                        position.engine,
+                        sts_core::state::core::EngineState::CombatPlayerTurn
+                    ) && position.combat.turn.turn_count > root_turn)
+                {
+                    break;
+                }
+            }
+
+            if actions.is_empty() {
+                break;
+            }
+            let boundary = match stepper.terminal(&position) {
+                CombatTerminal::Win => CompleteTurnOptionBoundary::TerminalWin,
+                CombatTerminal::Loss => CompleteTurnOptionBoundary::TerminalLoss,
+                CombatTerminal::Unresolved if position.combat.runtime.combat_smoked => {
+                    CompleteTurnOptionBoundary::Escape
+                }
+                CombatTerminal::Unresolved
+                    if matches!(
+                        position.engine,
+                        sts_core::state::core::EngineState::CombatPlayerTurn
+                    ) && position.combat.turn.turn_count > root_turn =>
+                {
+                    CompleteTurnOptionBoundary::NextPlayerTurn
+                }
+                CombatTerminal::Unresolved => break,
+            };
+            let option = CompleteTurnOption::new(
+                segment_root_hash,
+                actions,
+                boundary,
+                position,
+                negative_log_policy,
+            );
+            if node_id == 0 {
+                self.record_root_option(&option);
+            }
+            self.nodes[node_id].generated_options =
+                self.nodes[node_id].generated_options.saturating_add(1);
+            self.used.completed_turn_options = self.used.completed_turn_options.saturating_add(1);
+            report.proposed_turns = report.proposed_turns.saturating_add(1);
+
+            match boundary {
+                CompleteTurnOptionBoundary::TerminalWin => {
+                    let (mut all_actions, prefix_negative_log_policy) = self.path_actions(&path);
+                    all_actions.extend_from_slice(option.actions());
+                    let witness = replay_witness(
+                        &self.original_root,
+                        &all_actions,
+                        prefix_negative_log_policy + option.negative_log_policy(),
+                        OracleCombatWitnessDiscoverySource::PlannerSearch,
+                        stepper,
+                    )
+                    .map_err(|error| format!("policy-line terminal replay failed: {error:?}"))?;
+                    if self
+                        .witness
+                        .as_ref()
+                        .is_none_or(|current| witness_better(&witness, current))
+                    {
+                        self.witness = Some(witness);
+                    }
+                    report.reached_terminal_win = true;
+                    break;
+                }
+                CompleteTurnOptionBoundary::TerminalLoss => {
+                    self.used.terminal_losses = self.used.terminal_losses.saturating_add(1);
+                    break;
+                }
+                CompleteTurnOptionBoundary::Escape => break,
+                CompleteTurnOptionBoundary::NextPlayerTurn => {
+                    let crosses_plan_milestone = combat_plan_transition_annotation_v1(
+                        &segment_root,
+                        option.exact_successor(),
+                    )
+                    .is_some_and(|annotation| !annotation.completed_milestones().is_empty());
+                    if suffix_generation_work > 0
+                        && crosses_plan_milestone
+                        && self.offer_exact_suffix_probe(
+                            node_id,
+                            &path,
+                            suffix_generation_work,
+                            stepper,
+                            &mut report,
+                        )?
+                    {
+                        break 'turns;
+                    }
+                    let successor_hash = option.exact_successor_hash().to_owned();
+                    self.accept_successor(node_id, &path, option);
+                    let Some(&successor_id) = self.nodes_by_hash.get(&successor_hash) else {
+                        return Err("policy-line successor was not admitted".to_owned());
+                    };
+                    let Some(edge_index) = self.nodes[node_id]
+                        .children
+                        .iter()
+                        .position(|edge| edge.successor == successor_id)
+                    else {
+                        return Err("policy-line successor edge was not admitted".to_owned());
+                    };
+                    path.push((node_id, edge_index));
+                    node_id = successor_id;
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn offer_exact_suffix_probe(
+        &mut self,
+        node_id: usize,
+        path: &[(usize, usize)],
+        suffix_generation_work: usize,
+        stepper: &dyn CombatStepper,
+        report: &mut LocalTurnGraphPolicyLineReport,
+    ) -> Result<bool, String> {
+        let root = CombatDecisionRoot::new(self.nodes[node_id].generator.root().position().clone())
+            .map_err(|error| format!("suffix probe root is not a decision boundary: {error:?}"))?;
+        let mut suffix = LocalTurnGraphWitnessSession::with_policy(
+            root,
+            LocalTurnGraphWitnessConfig {
+                satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+                ..self.config
+            },
+            self.policy.clone(),
+        );
+        let suffix_report = suffix.advance(
+            LocalTurnGraphWitnessQuantum {
+                additional_selections: suffix_generation_work.max(1),
+                additional_generation_work: suffix_generation_work,
+                additional_engine_steps: suffix_generation_work
+                    .saturating_mul(self.config.generator.max_engine_steps_per_transition.max(1)),
+                deadline: None,
+            },
+            stepper,
+        );
+        report.suffix_probe_attempts = report.suffix_probe_attempts.saturating_add(1);
+        report.suffix_probe_generation_work = report
+            .suffix_probe_generation_work
+            .saturating_add(suffix_report.counters.generation_work);
+        report.suffix_probe_engine_steps = report
+            .suffix_probe_engine_steps
+            .saturating_add(suffix_report.counters.engine_steps);
+        let witness_found = suffix_report.witness.is_some();
+        let final_hp = suffix_report
+            .witness
+            .as_ref()
+            .map(|witness| witness.final_position.combat.entities.player.current_hp);
+        report
+            .suffix_probe_details
+            .push(LocalTurnGraphSuffixProbeAttempt {
+                exact_state_hash: exact_hash(self.nodes[node_id].generator.root().position()),
+                player_turn: self.nodes[node_id]
+                    .generator
+                    .root()
+                    .position()
+                    .combat
+                    .turn
+                    .turn_count,
+                plan_projection: combat_plan_projection_v1(
+                    self.nodes[node_id].generator.root().position(),
+                ),
+                generation_work: suffix_report.counters.generation_work,
+                engine_steps: suffix_report.counters.engine_steps,
+                witness_found,
+                final_hp,
+            });
+
+        let Some(suffix_witness) = suffix_report.witness else {
+            return Ok(false);
+        };
+        let (mut actions, _) = self.path_actions(path);
+        actions.extend(suffix_witness.actions);
+        let final_hp_hint = suffix_witness
+            .final_position
+            .combat
+            .entities
+            .player
+            .current_hp;
+        let accepted = self
+            .offer_witness_proposal(
+                CombatPolicyWitnessProposal {
+                    actions,
+                    final_hp_hint,
+                },
+                stepper,
+            )
+            .map_err(|error| format!("combined suffix witness replay failed: {error:?}"))?;
+        report.suffix_probe_witness_found = accepted || self.witness.is_some();
+        report.reached_terminal_win = report.suffix_probe_witness_found;
+        Ok(report.suffix_probe_witness_found)
     }
 
     pub fn restore_verified_witness(&mut self, witness: OracleCombatWitness) -> Result<(), String> {
@@ -706,8 +1239,8 @@ impl LocalTurnGraphWitnessSession {
                     // can label a state and leave it with zero exact children,
                     // forcing the global scheduler to rediscover the same
                     // boundary before any real evidence exists.
-                    if lookahead_needs_exact_grounding(
-                        self.nodes[node_id].generated_options,
+                    if generator_needs_initial_grounding(
+                        self.nodes[node_id].generator.counters().generation_work,
                         self.nodes[node_id].generator.is_finished(),
                     ) && !self.widen(
                         node_id,
@@ -887,6 +1420,7 @@ impl LocalTurnGraphWitnessSession {
             parent_widen_anchor_visits: parent.widen_anchor_visits,
             actions: edge.actions.clone(),
             negative_log_policy: edge.negative_log_policy,
+            plan_transition_annotation: edge.plan_transition_annotation.clone(),
             visits: edge.visits,
             anchor_visits: edge.anchor_visits,
             backed_visits: edge.backed_visits,
@@ -902,6 +1436,51 @@ impl LocalTurnGraphWitnessSession {
             successor_children: successor.children.len(),
             successor_exhausted: successor.exhausted,
         })
+    }
+
+    pub fn plan_transition_edge_snapshots(&self) -> Vec<LocalTurnGraphPlanTransitionEdgeSnapshot> {
+        let mut exact_hashes = vec![None; self.nodes.len()];
+        for (hash, node_id) in &self.nodes_by_hash {
+            exact_hashes[*node_id] = Some(hash.as_str());
+        }
+        let mut snapshots = self
+            .nodes
+            .iter()
+            .enumerate()
+            .flat_map(|(parent_id, parent)| {
+                let exact_hashes = &exact_hashes;
+                parent.children.iter().filter_map(move |edge| {
+                    let plan_transition_annotation =
+                        edge.plan_transition_annotation.as_ref()?.clone();
+                    Some(LocalTurnGraphPlanTransitionEdgeSnapshot {
+                        parent_exact_state_hash: exact_hashes[parent_id]?.to_owned(),
+                        successor_exact_state_hash: exact_hashes[edge.successor]?.to_owned(),
+                        parent_relative_turn_depth: parent.relative_turn_depth,
+                        action_count: edge.actions.len(),
+                        negative_log_policy: edge.negative_log_policy,
+                        plan_transition_annotation,
+                        edge_visits: edge.visits,
+                        anchor_visits: edge.anchor_visits,
+                        guide_visits: edge.guide_visits.values().copied().sum(),
+                        backed_visits: edge.backed_visits,
+                        successor_visits: self.nodes[edge.successor].visits,
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| {
+            left.parent_relative_turn_depth
+                .cmp(&right.parent_relative_turn_depth)
+                .then_with(|| {
+                    left.parent_exact_state_hash
+                        .cmp(&right.parent_exact_state_hash)
+                })
+                .then_with(|| {
+                    left.successor_exact_state_hash
+                        .cmp(&right.successor_exact_state_hash)
+                })
+        });
+        snapshots
     }
 
     fn root_action_family_snapshot(
@@ -1054,6 +1633,24 @@ impl LocalTurnGraphWitnessSession {
 
             self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
             self.used.node_visits = self.used.node_visits.saturating_add(1);
+            let generator_counters = self.nodes[node_id].generator.counters();
+            if generator_needs_initial_grounding(
+                generator_counters.generation_work,
+                self.nodes[node_id].generator.is_finished(),
+            ) {
+                self.nodes[node_id].widen_anchor_visits =
+                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
+                return SelectedWork::Widen {
+                    node_id,
+                    path,
+                    view: LocalServiceView::Anchor,
+                    requested_work: if node_id == 0 {
+                        self.config.root_initial_expansion_work
+                    } else {
+                        self.config.initial_expansion_work
+                    },
+                };
+            }
             let requested_view = {
                 let node = &mut self.nodes[node_id];
                 select_path_service_view(
@@ -1179,6 +1776,24 @@ impl LocalTurnGraphWitnessSession {
 
             self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
             self.used.node_visits = self.used.node_visits.saturating_add(1);
+            let generator_counters = self.nodes[node_id].generator.counters();
+            if generator_needs_initial_grounding(
+                generator_counters.generation_work,
+                self.nodes[node_id].generator.is_finished(),
+            ) {
+                self.nodes[node_id].widen_anchor_visits =
+                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
+                return SelectedWork::Widen {
+                    node_id,
+                    path,
+                    view: LocalServiceView::Anchor,
+                    requested_work: if node_id == 0 {
+                        self.config.root_initial_expansion_work
+                    } else {
+                        self.config.initial_expansion_work
+                    },
+                };
+            }
 
             if node_id != 0
                 && self.nodes[node_id].lookahead_pending_lane.is_some()
@@ -1364,9 +1979,10 @@ impl LocalTurnGraphWitnessSession {
         let remaining_steps = self
             .granted_engine_steps
             .saturating_sub(self.used.engine_steps);
-        let requested_work = if node_id == 0 && self.nodes[node_id].generated_options == 0 {
+        let generator_work = self.nodes[node_id].generator.counters().generation_work;
+        let requested_work = if node_id == 0 && generator_work == 0 {
             self.config.root_initial_expansion_work
-        } else if self.nodes[node_id].generated_options == 0 {
+        } else if generator_work == 0 {
             self.config.initial_expansion_work.max(requested_work)
         } else {
             requested_work
@@ -1709,12 +2325,22 @@ impl LocalTurnGraphWitnessSession {
             }
             edge_index
         } else {
+            let plan_transition_annotation = self
+                .collect_plan_transition_annotations
+                .then(|| {
+                    combat_plan_transition_annotation_v1(
+                        self.nodes[parent_id].generator.root().position(),
+                        option.exact_successor(),
+                    )
+                })
+                .flatten();
             let parent = &mut self.nodes[parent_id];
             let edge_index = parent.children.len();
             parent.children.push(GraphEdge {
                 successor,
                 actions: option.actions().to_vec(),
                 negative_log_policy: option.negative_log_policy(),
+                plan_transition_annotation: plan_transition_annotation.clone(),
                 visits: 0,
                 anchor_visits: 0,
                 guide_visits: BTreeMap::new(),
@@ -1733,6 +2359,9 @@ impl LocalTurnGraphWitnessSession {
             }
             parent.exhausted = false;
             self.used.exact_edges = self.used.exact_edges.saturating_add(1);
+            if plan_transition_annotation.is_some() {
+                self.used.annotated_exact_edges = self.used.annotated_exact_edges.saturating_add(1);
+            }
             edge_index
         };
         self.backup_guides_along_path(path, parent_id, edge_index, &successor_backed_guides);
@@ -1853,9 +2482,20 @@ fn select_local_work(
             nodes,
             lane,
             allow_widen,
-            progressive_guide_lane == Some(lane),
+            guide_uses_progressive_service(lane, progressive_guide_lane),
         ),
     }
+}
+
+fn guide_uses_progressive_service(
+    lane: CombatGuideLaneId,
+    configured_progressive_lane: Option<CombatGuideLaneId>,
+) -> bool {
+    // Expensive lookahead and typed encounter plans are both approximate
+    // views over exact successors. They may focus service, but neither may
+    // silently turn its current top-ranked child into the only child that can
+    // ever be tested.
+    configured_progressive_lane == Some(lane) || lane == COMBAT_PLAN_STATE_GUIDE_LANE_V1
 }
 
 fn select_pending_lookahead_work(node: &GraphNode, nodes: &[GraphNode]) -> Option<LocalWorkChoice> {
@@ -2065,8 +2705,8 @@ fn backed_widen_quantum(node_id: usize, regular_work: usize, backed_work: usize)
     }
 }
 
-fn lookahead_needs_exact_grounding(generated_options: usize, generator_finished: bool) -> bool {
-    generated_options == 0 && !generator_finished
+fn generator_needs_initial_grounding(generation_work: usize, generator_finished: bool) -> bool {
+    generation_work == 0 && !generator_finished
 }
 
 fn progressive_rollout_width(total_service: usize) -> usize {
@@ -2500,19 +3140,22 @@ fn local_deep_state_snapshot(
 mod tests {
     use super::{
         backed_widen_due, backed_widen_quantum, boundary_service_views_from_guides,
-        guide_choice_order, guide_widen_service_due, local_path_service_cost,
-        lookahead_acquisition_views_from_guides, lookahead_needs_exact_grounding,
+        generator_needs_initial_grounding, guide_choice_order, guide_uses_progressive_service,
+        guide_widen_service_due, local_path_service_cost, lookahead_acquisition_views_from_guides,
         progressive_candidate_index, progressive_guide_width, progressive_rollout_width,
         round_robin_available_index, select_path_service_view, update_max_guide, update_max_rank,
         GraphEdge, LocalServiceView,
     };
-    use crate::policy::{CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank};
+    use crate::policy::{
+        CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+    };
 
     fn edge(negative_log_policy: f64, visits: usize) -> GraphEdge {
         GraphEdge {
             successor: 0,
             actions: Vec::new(),
             negative_log_policy,
+            plan_transition_annotation: None,
             visits,
             anchor_visits: visits,
             guide_visits: Default::default(),
@@ -2609,6 +3252,19 @@ mod tests {
     }
 
     #[test]
+    fn typed_plan_guide_is_progressive_without_changing_other_cheap_guides() {
+        let lookahead = CombatGuideLaneId::new(91);
+        let ordinary = CombatGuideLaneId::new(92);
+
+        assert!(guide_uses_progressive_service(
+            COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+            Some(lookahead)
+        ));
+        assert!(guide_uses_progressive_service(lookahead, Some(lookahead)));
+        assert!(!guide_uses_progressive_service(ordinary, Some(lookahead)));
+    }
+
+    #[test]
     fn one_tree_service_preserves_its_semantic_view_across_depth() {
         let available = [
             LocalServiceView::Anchor,
@@ -2674,10 +3330,10 @@ mod tests {
     }
 
     #[test]
-    fn evaluated_live_boundary_receives_one_exact_grounding_expansion() {
-        assert!(lookahead_needs_exact_grounding(0, false));
-        assert!(!lookahead_needs_exact_grounding(1, false));
-        assert!(!lookahead_needs_exact_grounding(0, true));
+    fn live_generator_receives_initial_grounding_even_if_an_external_edge_exists() {
+        assert!(generator_needs_initial_grounding(0, false));
+        assert!(!generator_needs_initial_grounding(1, false));
+        assert!(!generator_needs_initial_grounding(0, true));
     }
 
     #[test]

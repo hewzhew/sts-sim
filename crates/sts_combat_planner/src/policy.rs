@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use sts_combat_strategy::combat_plan_state_guide_rank_v1;
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use sts_core::state::core::ClientInput;
@@ -171,6 +172,65 @@ pub trait CombatActionPolicy: Send + Sync {
     }
 }
 
+/// Adds one plan-owned turn-boundary guide without changing action generation.
+///
+/// This is intentionally not a turn-generation guide: the plan may describe
+/// a desirable cross-turn state without knowing which mid-turn investment
+/// actions reach it. The wrapped action weights and partial-state guides remain
+/// byte-for-byte authoritative inside a single exact step.
+pub struct CombatPlanStateGuidePolicyV1 {
+    base: SharedCombatActionPolicy,
+}
+
+impl CombatPlanStateGuidePolicyV1 {
+    pub fn new(base: SharedCombatActionPolicy) -> Self {
+        Self { base }
+    }
+}
+
+impl CombatActionPolicy for CombatPlanStateGuidePolicyV1 {
+    fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &CombatPosition,
+        family: &CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
+    fn state_guide_rank(&self, position: &CombatPosition) -> Option<CombatStateGuideRank> {
+        self.base.state_guide_rank(position)
+    }
+
+    fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        let mut guides = self.base.state_guides(position);
+        if let Some(rank) = combat_plan_state_guide_rank_v1(position) {
+            guides.push(CombatStateGuide::new(
+                COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+                rank.components().to_vec(),
+            ));
+        }
+        guides
+    }
+
+    fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        self.base.turn_generation_guides(position)
+    }
+}
+
+pub fn combat_plan_state_guide_policy_v1(
+    base: SharedCombatActionPolicy,
+) -> SharedCombatActionPolicy {
+    Arc::new(CombatPlanStateGuidePolicyV1::new(base))
+}
+
+pub const COMBAT_PLAN_STATE_GUIDE_LANE_V1: CombatGuideLaneId = CombatGuideLaneId::new(0x4350_0001);
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UniformCombatActionPolicy;
 
@@ -218,6 +278,11 @@ pub(crate) fn normalized_probabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_core::content::cards::CardId;
+    use sts_core::content::monsters::EnemyId;
+    use sts_core::runtime::combat::CombatCard;
+    use sts_core::state::core::EngineState;
+    use sts_core::test_support::{blank_test_combat, test_monster};
 
     #[test]
     fn mixed_distribution_is_positive_and_normalized() {
@@ -231,5 +296,41 @@ mod tests {
     fn full_uniform_mix_ignores_expert_weight() {
         let distribution = normalized_probabilities([100.0, 1.0], 1_000_000);
         assert_eq!(distribution, vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn plan_state_guide_policy_does_not_reorder_mid_turn_actions() {
+        let mut combat = blank_test_combat();
+        let mut awakened = test_monster(EnemyId::AwakenedOne);
+        awakened.slot = 2;
+        combat.entities.monsters.push(awakened);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Corruption, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let corruption = ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        };
+        let defend = ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        };
+        let policy = combat_plan_state_guide_policy_v1(Arc::new(UniformCombatActionPolicy));
+
+        let weights = policy.weights(
+            &position,
+            &[
+                CombatPolicyChoice::Atomic(&corruption),
+                CombatPolicyChoice::Atomic(&defend),
+            ],
+        );
+
+        assert_eq!(weights, vec![1.0, 1.0]);
+        assert!(policy.turn_generation_guides(&position).is_empty());
+        let guides = policy.state_guides(&position);
+        assert_eq!(guides.len(), 1);
+        assert_eq!(guides[0].lane, COMBAT_PLAN_STATE_GUIDE_LANE_V1);
     }
 }

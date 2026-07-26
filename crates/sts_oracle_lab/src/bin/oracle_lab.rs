@@ -7,7 +7,7 @@ mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
 mod exact_combat_evidence;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,28 +17,35 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    fold_verified_suffix_through_turn_predecessors, generate_depth_beam_turn_options,
-    rank_layered_combat_lineage_parents, search_depth_beam_agenda_witness, AtomicLevinRerooting,
-    AtomicLevinWitnessConfig, AtomicLevinWitnessQuantum, AtomicLevinWitnessSession,
-    AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioQuantum,
-    AtomicTurnPortfolioSession, CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId,
-    CombatPlanningQuantum, CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank,
-    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
+    combat_plan_state_guide_policy_v1, fold_verified_suffix_through_turn_predecessors,
+    generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
+    search_depth_beam_agenda_witness, AtomicLevinRerooting, AtomicLevinWitnessConfig,
+    AtomicLevinWitnessQuantum, AtomicLevinWitnessSession, AtomicTurnPortfolioConfig,
+    AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession,
+    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum,
+    CombatPolicyChoice, CombatStateGuide, CombatStateGuideRank, DepthBeamAgendaBudget,
+    DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatFrontierState, LayeredCombatLineagePortfolioConfig,
     LayeredCombatLineagePortfolioEntryReport, LayeredCombatLineagePortfolioSession,
     LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
-    LayeredCombatWitnessSession, LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessConfig,
-    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum, PolicyDiscrepancySession,
-    PolicyDiscrepancyTurnMacroConfig, SharedCombatActionPolicy, SolvedSuffixFoldConfig,
-    SolvedSuffixFoldStatus, TurnOptionAction, TurnOptionGenerationStatus,
-    TurnOptionGeneratorConfig, TurnOptionGeneratorSession, UniformCombatActionPolicy,
+    LayeredCombatWitnessSession, LocalTurnGraphPlanTransitionEdgeSnapshot,
+    LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    LocalTurnGraphWitnessSession, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
+    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
+    SharedCombatActionPolicy, SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction,
+    TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    UniformCombatActionPolicy,
+};
+use sts_combat_strategy::{
+    awakened_one_combat_plan_v1, awakened_one_plan_transition_v1, CombatPlanTransitionAnnotationV1,
+    CombatPlanTransitionV1,
 };
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
 };
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
@@ -71,7 +78,9 @@ use sts_simulator::runtime::branch::{
     save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
     OracleRunContinuationV1,
 };
-use sts_simulator::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
+use sts_simulator::sim::combat::{
+    combat_terminal, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
 use sts_simulator::sim::combat_action::{combat_action_key, target_label};
 use sts_simulator::state::core::{ClientInput, EngineState};
 
@@ -336,6 +345,26 @@ enum Command {
         #[arg(long)]
         export_witness_actions: Option<PathBuf>,
     },
+    /// Annotate every finite atomic successor with read-only typed combat-plan
+    /// facts. This command does not search, rank, prune, or modify a policy.
+    CombatCasePlanAnnotations {
+        #[arg(long)]
+        case: PathBuf,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
+    /// Replay one exact action sequence and report typed combat-plan changes.
+    /// This is a read-only trace: actions are supplied by the caller, never
+    /// selected or ranked by this command.
+    CombatCasePlanTrace {
+        #[arg(long)]
+        case: PathBuf,
+        /// Repeat to compose several exact action segments in order.
+        #[arg(long, required = true)]
+        actions: Vec<PathBuf>,
+        #[arg(long, default_value_t = 250)]
+        max_engine_steps_per_transition: usize,
+    },
     /// Follow the action policy to terminal states and search complete
     /// trajectories by increasing weighted policy discrepancy.
     CombatCasePolicyDiscrepancy {
@@ -500,16 +529,47 @@ enum Command {
             conflicts_with = "value_prototype_artifact"
         )]
         guidance_bundle: Option<PathBuf>,
-        /// Diagnostic-only perfect-information control. Repeat to compose an
-        /// exact verified corridor without hand-splicing witness segments.
-        /// It changes guide order only; every action and terminal result is
-        /// still generated, executed, and replayed by the independent search.
-        #[arg(long)]
-        diagnostic_corridor_actions: Vec<PathBuf>,
         /// Replay one verified witness and observe each exact player-turn
         /// boundary without changing policy, guides, or search order.
         #[arg(long)]
         watch_corridor_actions: Vec<PathBuf>,
+        /// Attach encounter-owned, typed plan facts to newly materialized
+        /// exact turn-boundary edges. Diagnostic only: annotations are not
+        /// read by policy, scheduling, pruning, or witness authority.
+        #[arg(long)]
+        plan_transition_annotations: bool,
+        /// Opt-in lab control: add the encounter-owned typed combat-plan
+        /// state view as one independent guide lane. Action weights,
+        /// legality, exact-state identity and terminal truth remain unchanged.
+        #[arg(long, conflicts_with = "anchor_only")]
+        typed_plan_guide: bool,
+        /// Lab-only control: materialize one exact base-policy mainline at
+        /// player-turn boundaries. A typed encounter plan may defer a
+        /// prematurely resource-consuming action or prefer a precisely timed
+        /// action; all rejected alternatives remain searchable.
+        #[arg(long)]
+        plan_compatible_policy_line: bool,
+        /// Deterministic exact-search work granted immediately before the
+        /// plan-compatible line would cross a typed combat-plan milestone.
+        /// Zero disables suffix probes.
+        #[arg(long, default_value_t = 0, requires = "plan_compatible_policy_line")]
+        plan_compatible_suffix_work: usize,
+        /// Contract assertion: return a non-zero exit status unless an exact,
+        /// replay-verified combat witness is found.
+        #[arg(long)]
+        expect_witness: bool,
+        /// Contract assertion: require the verified witness to finish with at
+        /// least this much HP.
+        #[arg(long, requires = "expect_witness")]
+        expect_min_final_hp: Option<i32>,
+        /// Contract assertion: fail if all plan-compatible suffix probes
+        /// together consume more exact generation work than this allowance.
+        #[arg(long, requires = "plan_compatible_policy_line")]
+        expect_max_plan_suffix_work: Option<usize>,
+        /// Print only the compact contract result after all requested
+        /// assertions pass. This keeps repeat regression checks readable.
+        #[arg(long, requires = "expect_witness")]
+        contract_only: bool,
         #[arg(long, default_value_t = 250_000)]
         max_nodes: usize,
         #[arg(long, default_value_t = 1_000_000)]
@@ -2406,8 +2466,15 @@ fn main() -> Result<(), String> {
             action_imitation_artifact,
             value_prototype_artifact,
             guidance_bundle,
-            diagnostic_corridor_actions,
             watch_corridor_actions,
+            plan_transition_annotations,
+            typed_plan_guide,
+            plan_compatible_policy_line,
+            plan_compatible_suffix_work,
+            expect_witness,
+            expect_min_final_hp,
+            expect_max_plan_suffix_work,
+            contract_only,
             max_nodes,
             max_selections,
             wall_ms,
@@ -2486,20 +2553,15 @@ fn main() -> Result<(), String> {
                     policy
                 }
             };
-            let policy = if diagnostic_corridor_actions.is_empty() {
-                policy
-            } else {
-                let corridor = load_exact_turn_corridor(
-                    &case,
-                    &diagnostic_corridor_actions,
-                    max_engine_steps_per_transition,
-                )?;
-                exact_corridor_shadow_policy(policy, &corridor, ShadowCorridorGuide::Exact, true)
-            };
             let policy = if anchor_only {
                 anchor_only_policy(policy)
             } else if root_turn_anchor_only {
                 root_turn_anchor_only_policy(root_player_turn, policy)
+            } else {
+                policy
+            };
+            let policy = if typed_plan_guide {
+                combat_plan_state_guide_policy_v1(policy)
             } else {
                 policy
             };
@@ -2513,6 +2575,26 @@ fn main() -> Result<(), String> {
             } else {
                 LocalTurnGraphWitnessSession::with_policy(root, config, policy)
             };
+            if plan_transition_annotations {
+                session
+                    .enable_plan_transition_annotations()
+                    .map_err(|error| {
+                        format!(
+                            "cannot enable plan transition annotations after graph construction: \
+                             {error:?}"
+                        )
+                    })?;
+            }
+            let policy_line_report = plan_compatible_policy_line
+                .then(|| {
+                    session.offer_plan_compatible_policy_line_with_suffix_probes(
+                        max_turn_depth,
+                        256,
+                        plan_compatible_suffix_work,
+                        &EngineCombatStepper,
+                    )
+                })
+                .transpose()?;
             let search_started = Instant::now();
             let report = session.advance(
                 LocalTurnGraphWitnessQuantum {
@@ -2525,6 +2607,56 @@ fn main() -> Result<(), String> {
                 &EngineCombatStepper,
             );
             let search_elapsed_ms = search_started.elapsed().as_millis();
+            if expect_witness && report.witness.is_none() {
+                return Err("combat-case contract failed: no replay-verified witness".to_owned());
+            }
+            if let Some(expected_minimum) = expect_min_final_hp {
+                let actual = report
+                    .witness
+                    .as_ref()
+                    .map(|witness| witness.final_position.combat.entities.player.current_hp)
+                    .ok_or_else(|| {
+                        "combat-case contract failed: final HP requires a verified witness"
+                            .to_owned()
+                    })?;
+                if actual < expected_minimum {
+                    return Err(format!(
+                        "combat-case contract failed: final HP {actual} is below {expected_minimum}"
+                    ));
+                }
+            }
+            if let Some(expected_maximum) = expect_max_plan_suffix_work {
+                let actual = policy_line_report
+                    .as_ref()
+                    .map(|policy_line| policy_line.suffix_probe_generation_work)
+                    .unwrap_or_default();
+                if actual > expected_maximum {
+                    return Err(format!(
+                        "combat-case contract failed: plan suffix work {actual} exceeds \
+                         {expected_maximum}"
+                    ));
+                }
+            }
+            if contract_only {
+                let witness = report
+                    .witness
+                    .as_ref()
+                    .expect("clap requires --expect-witness");
+                return print_json(&json!({
+                    "schema_name": "CombatCaseContractResultV1",
+                    "schema_version": 1,
+                    "status": "passed",
+                    "case": case,
+                    "elapsed_ms": command_started.elapsed().as_millis(),
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "witness_actions": witness.actions.len(),
+                    "plan_suffix": policy_line_report.as_ref().map(|policy_line| json!({
+                        "attempts": policy_line.suffix_probe_attempts,
+                        "generation_work": policy_line.suffix_probe_generation_work,
+                        "engine_steps": policy_line.suffix_probe_engine_steps,
+                    })),
+                }));
+            }
             let performance_timing = json!({
                 "selection_elapsed_ns": report.performance_timing.selection_elapsed_ns,
                 "generation_elapsed_ns": report.performance_timing.generation_elapsed_ns,
@@ -2744,6 +2876,7 @@ fn main() -> Result<(), String> {
                         "applied_action_transitions": report.counters.applied_action_transitions,
                     },
                     "root_action_families": root_action_families,
+                    "plan_compatible_policy_line": policy_line_report,
                     "deepest": {
                         "progress_state": progress.deepest_progress_state,
                         "progress_node": deepest_progress_node,
@@ -2778,7 +2911,6 @@ fn main() -> Result<(), String> {
                 "action_imitation_artifact": action_imitation_artifact,
                 "value_prototype_artifact": value_prototype_artifact,
                 "guidance_bundle": guidance_bundle,
-                "diagnostic_corridor_actions": diagnostic_corridor_actions,
                 "watch_corridor_actions": watch_corridor_actions,
                 "satisfaction": format!("{satisfaction:?}"),
                 "scheduler": if anchor_only {
@@ -2803,6 +2935,7 @@ fn main() -> Result<(), String> {
                     "children": report.root_children,
                 },
                 "root_action_families": root_action_families,
+                "plan_compatible_policy_line": policy_line_report,
                 "counters": {
                     "selections": report.counters.selections,
                     "node_visits": report.counters.node_visits,
@@ -2853,9 +2986,22 @@ fn main() -> Result<(), String> {
                 "exported_deepest_progress_case": export_deepest_progress_case,
                 "exported_deepest_progress_actions": exported_deepest_progress_actions,
             });
+            let plan_transition_portfolio = plan_transition_annotations
+                .then(|| combat_plan_transition_portfolio_v1(&session))
+                .unwrap_or(Value::Null);
+            output["counters"]["annotated_exact_edges"] =
+                json!(report.counters.annotated_exact_edges);
             let output_object = output
                 .as_object_mut()
                 .expect("combat-case report must be a JSON object");
+            output_object.insert(
+                "plan_transition_annotations".to_string(),
+                json!(plan_transition_annotations),
+            );
+            output_object.insert(
+                "plan_transition_portfolio".to_string(),
+                plan_transition_portfolio,
+            );
             output_object.insert("search_elapsed_ms".to_string(), json!(search_elapsed_ms));
             output_object.insert("performance_timing".to_string(), performance_timing);
             print_json(&output)
@@ -3675,6 +3821,169 @@ fn main() -> Result<(), String> {
                     "replay_engine_steps": witness.replay_engine_steps,
                     "discovery_source": format!("{:?}", witness.discovery_source),
                 })),
+            }))
+        }
+        Command::CombatCasePlanAnnotations {
+            case,
+            max_engine_steps_per_transition,
+        } => {
+            let case_path = case.clone();
+            let loaded = load_combat_case(&case)?;
+            let position = loaded.position;
+            let stepper = EngineCombatStepper;
+            let surface = stepper.legal_action_surface(&position);
+            let root_plan = awakened_one_combat_plan_v1(&position);
+            let annotations = surface
+                .atomic_actions
+                .iter()
+                .map(|input| {
+                    let step = stepper.apply_to_stable(
+                        &position,
+                        input.clone(),
+                        CombatStepLimits {
+                            max_engine_steps: max_engine_steps_per_transition,
+                            deadline: None,
+                        },
+                    );
+                    let exact_successor_hash = (!step.truncated).then(|| {
+                        combat_exact_state_hash_v1(&step.position.engine, &step.position.combat)
+                    });
+                    let transition = (!step.truncated)
+                        .then(|| awakened_one_plan_transition_v1(&position, &step.position))
+                        .flatten();
+                    let successor_plan = (!step.truncated)
+                        .then(|| awakened_one_combat_plan_v1(&step.position))
+                        .flatten();
+                    json!({
+                        "label": combat_action_label(&position, input),
+                        "action_key": combat_action_key(&position.combat, input),
+                        "input": input,
+                        "engine_steps": step.engine_steps,
+                        "truncated": step.truncated,
+                        "timed_out": step.timed_out,
+                        "terminal": format!("{:?}", step.terminal),
+                        "exact_successor_hash": exact_successor_hash,
+                        "plan_transition": transition,
+                        "successor_plan": successor_plan,
+                    })
+                })
+                .collect::<Vec<_>>();
+            print_json(&json!({
+                "schema_name": "OracleCombatCasePlanAnnotationsV1",
+                "schema_version": 1,
+                "case": case_path,
+                "runtime": oracle_lab_runtime_identity(),
+                "contract": {
+                    "search": false,
+                    "policy_mutation": false,
+                    "ranking": false,
+                    "pruning": false,
+                    "terminal_truth": "exact_simulator_only",
+                },
+                "root_exact_state_hash": combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                ),
+                "root_plan": root_plan,
+                "surface": {
+                    "atomic_action_count": surface.atomic_actions.len(),
+                    "structured_family_count": surface.selection_families.len(),
+                    "complete": surface.selection_families.is_empty(),
+                    "structured_families_unannotated": !surface.selection_families.is_empty(),
+                },
+                "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                "annotations": annotations,
+            }))
+        }
+        Command::CombatCasePlanTrace {
+            case,
+            actions,
+            max_engine_steps_per_transition,
+        } => {
+            let case_path = case.clone();
+            let action_paths = actions.clone();
+            let loaded = load_combat_case(&case)?;
+            let inputs = load_combat_action_segments(&actions)?;
+            let input_count = inputs.len();
+            let stepper = EngineCombatStepper;
+            let mut position = loaded.position;
+            let root_exact_state_hash =
+                combat_exact_state_hash_v1(&position.engine, &position.combat);
+            let root_plan = awakened_one_combat_plan_v1(&position);
+            let mut trace = Vec::new();
+            let mut consumed_actions = 0_usize;
+
+            for (index, input) in inputs.into_iter().enumerate() {
+                let before_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+                let label = combat_action_label(&position, &input);
+                let action_key = combat_action_key(&position.combat, &input);
+                let step = stepper.apply_to_stable(
+                    &position,
+                    input.clone(),
+                    CombatStepLimits {
+                        max_engine_steps: max_engine_steps_per_transition,
+                        deadline: None,
+                    },
+                );
+                let transition = (!step.truncated)
+                    .then(|| awakened_one_plan_transition_v1(&position, &step.position))
+                    .flatten();
+                let successor_plan = (!step.truncated)
+                    .then(|| awakened_one_combat_plan_v1(&step.position))
+                    .flatten();
+                let after_hash = (!step.truncated).then(|| {
+                    combat_exact_state_hash_v1(&step.position.engine, &step.position.combat)
+                });
+                trace.push(json!({
+                    "action_index": index,
+                    "label": label,
+                    "action_key": action_key,
+                    "input": input,
+                    "before_exact_state_hash": before_hash,
+                    "after_exact_state_hash": after_hash,
+                    "engine_steps": step.engine_steps,
+                    "truncated": step.truncated,
+                    "timed_out": step.timed_out,
+                    "terminal": format!("{:?}", step.terminal),
+                    "plan_transition": transition,
+                    "successor_plan": successor_plan,
+                }));
+                consumed_actions = consumed_actions.saturating_add(1);
+                position = step.position;
+                if step.truncated || step.terminal != CombatTerminal::Unresolved {
+                    break;
+                }
+            }
+
+            let final_terminal = combat_terminal(&position.engine, &position.combat);
+            print_json(&json!({
+                "schema_name": "OracleCombatCasePlanTraceV1",
+                "schema_version": 1,
+                "case": case_path,
+                "actions": action_paths,
+                "runtime": oracle_lab_runtime_identity(),
+                "contract": {
+                    "search": false,
+                    "policy_mutation": false,
+                    "ranking": false,
+                    "pruning": false,
+                    "caller_supplied_actions": true,
+                    "terminal_truth": "exact_simulator_only",
+                },
+                "root_exact_state_hash": root_exact_state_hash,
+                "root_plan": root_plan,
+                "input_action_count": input_count,
+                "consumed_action_count": consumed_actions,
+                "unconsumed_action_count": input_count.saturating_sub(consumed_actions),
+                "final_exact_state_hash": combat_exact_state_hash_v1(
+                    &position.engine,
+                    &position.combat,
+                ),
+                "final_terminal": format!("{final_terminal:?}"),
+                "final_player_hp": position.combat.entities.player.current_hp,
+                "final_plan": awakened_one_combat_plan_v1(&position),
+                "max_engine_steps_per_transition": max_engine_steps_per_transition,
+                "trace": trace,
             }))
         }
         Command::CombatCaseAtomicLevin {
@@ -6524,56 +6833,15 @@ fn validate_source_freshness(executable: &Path) -> Result<(), String> {
             .and_then(|metadata| metadata.modified())
             .is_ok_and(|modified| modified > executable_modified)
     });
-    let fingerprint_path = executable.with_extension("source-fingerprint");
-    let executable_stamp = executable_stamp(executable)?;
-    let recorded = std::fs::read_to_string(&fingerprint_path)
-        .ok()
-        .and_then(|text| {
-            text.split_once('\n')
-                .map(|(stamp, digest)| (stamp.to_owned(), digest.trim().to_owned()))
-        });
     if let Some(stale) = stale {
-        let digest = source_content_fingerprint(&repository, &dependencies)?;
-        if !matches!(
-            recorded.as_ref(),
-            Some((stamp, recorded_digest))
-                if stamp == &executable_stamp && recorded_digest == &digest
-        ) {
-            return Err(format!(
-                "canonical oracle laboratory is stale: '{}' changed after '{}'; rebuild once with `cargo oracle-lab --help`",
-                stale.display(),
-                executable.display()
-            ));
-        }
-    } else if recorded.is_none_or(|(stamp, _)| stamp != executable_stamp) {
-        let digest = source_content_fingerprint(&repository, &dependencies)?;
-        std::fs::write(&fingerprint_path, format!("{executable_stamp}\n{digest}\n")).map_err(
-            |error| {
-                format!(
-                    "failed to persist canonical source identity '{}': {error}",
-                    fingerprint_path.display()
-                )
-            },
-        )?;
+        return Err(format!(
+            "canonical oracle laboratory is stale: '{}' changed after '{}'; rebuild once with \
+             `cargo oracle-lab --help`",
+            stale.display(),
+            executable.display()
+        ));
     }
     Ok(())
-}
-
-fn executable_stamp(executable: &Path) -> Result<String, String> {
-    let metadata = std::fs::metadata(executable).map_err(|error| {
-        format!(
-            "failed to inspect canonical oracle laboratory '{}': {error}",
-            executable.display()
-        )
-    })?;
-    let modified = metadata
-        .modified()
-        .and_then(|time| {
-            time.duration_since(std::time::UNIX_EPOCH)
-                .map_err(std::io::Error::other)
-        })
-        .map_err(|error| format!("failed to timestamp canonical artifact: {error}"))?;
-    Ok(format!("{}:{}", metadata.len(), modified.as_nanos()))
 }
 
 fn source_content_fingerprint(
@@ -7283,6 +7551,129 @@ fn compact_local_corridor_report(report: Option<&Value>) -> Value {
         "incoming_to_furthest": incoming_to_furthest,
         "furthest_reached": furthest_reached,
         "terminal_final_hp": report.get("terminal_final_hp"),
+    })
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+struct CombatPlanTransitionServiceAggregateV1 {
+    generated_edges: usize,
+    edge_served_edges: usize,
+    unserved_edges: usize,
+    successor_visited_edges: usize,
+    root_generated_edges: usize,
+    root_edge_served_edges: usize,
+    total_edge_visits: usize,
+    total_anchor_visits: usize,
+    total_guide_visits: usize,
+    total_backed_visits: usize,
+    total_successor_visits: usize,
+    minimum_negative_log_policy: Option<f64>,
+    minimum_action_count: Option<usize>,
+}
+
+impl CombatPlanTransitionServiceAggregateV1 {
+    fn observe(&mut self, edge: &LocalTurnGraphPlanTransitionEdgeSnapshot) {
+        self.generated_edges = self.generated_edges.saturating_add(1);
+        if edge.edge_visits > 0 {
+            self.edge_served_edges = self.edge_served_edges.saturating_add(1);
+        } else {
+            self.unserved_edges = self.unserved_edges.saturating_add(1);
+        }
+        if edge.successor_visits > 0 {
+            self.successor_visited_edges = self.successor_visited_edges.saturating_add(1);
+        }
+        if edge.parent_relative_turn_depth == 0 {
+            self.root_generated_edges = self.root_generated_edges.saturating_add(1);
+            if edge.edge_visits > 0 {
+                self.root_edge_served_edges = self.root_edge_served_edges.saturating_add(1);
+            }
+        }
+        self.total_edge_visits = self.total_edge_visits.saturating_add(edge.edge_visits);
+        self.total_anchor_visits = self.total_anchor_visits.saturating_add(edge.anchor_visits);
+        self.total_guide_visits = self.total_guide_visits.saturating_add(edge.guide_visits);
+        self.total_backed_visits = self.total_backed_visits.saturating_add(edge.backed_visits);
+        self.total_successor_visits = self
+            .total_successor_visits
+            .saturating_add(edge.successor_visits);
+        self.minimum_negative_log_policy = Some(
+            self.minimum_negative_log_policy
+                .map_or(edge.negative_log_policy, |current| {
+                    current.min(edge.negative_log_policy)
+                }),
+        );
+        self.minimum_action_count = Some(
+            self.minimum_action_count
+                .map_or(edge.action_count, |current| current.min(edge.action_count)),
+        );
+    }
+}
+
+fn serialized_plan_label<T: Serialize>(value: &T) -> String {
+    match serde_json::to_value(value).expect("typed plan labels must serialize") {
+        Value::String(label) => label,
+        other => other.to_string(),
+    }
+}
+
+fn plan_transition_parts(
+    annotation: &CombatPlanTransitionAnnotationV1,
+) -> (&'static str, &CombatPlanTransitionV1) {
+    match annotation {
+        CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl(transition) => {
+            ("awakened_one_phase_control", transition)
+        }
+    }
+}
+
+fn combat_plan_transition_portfolio_v1(session: &LocalTurnGraphWitnessSession) -> Value {
+    let edges = session.plan_transition_edge_snapshots();
+    let mut overall = CombatPlanTransitionServiceAggregateV1::default();
+    let mut plans = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut stage_transitions = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut completed_milestones =
+        BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut events = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+
+    for edge in &edges {
+        overall.observe(edge);
+        let (plan, transition) = plan_transition_parts(&edge.plan_transition_annotation);
+        plans.entry(plan.to_string()).or_default().observe(edge);
+        let before = serialized_plan_label(&transition.before_stage);
+        let after = transition
+            .after_stage
+            .as_ref()
+            .map(serialized_plan_label)
+            .unwrap_or_else(|| "terminal_or_unowned".to_string());
+        stage_transitions
+            .entry(format!("{before}->{after}"))
+            .or_default()
+            .observe(edge);
+        for milestone in &transition.completed_milestones {
+            completed_milestones
+                .entry(serialized_plan_label(milestone))
+                .or_default()
+                .observe(edge);
+        }
+        for event in &transition.events {
+            let event = serde_json::to_value(event).expect("typed plan events must serialize");
+            let kind = event
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown_event");
+            events.entry(kind.to_string()).or_default().observe(edge);
+        }
+    }
+
+    json!({
+        "schema_name": "CombatPlanTransitionPortfolioV1",
+        "schema_version": 1,
+        "authority": "diagnostic_only",
+        "changes_search_order": false,
+        "overall": overall,
+        "plans": plans,
+        "stage_transitions": stage_transitions,
+        "completed_milestones": completed_milestones,
+        "events": events,
     })
 }
 

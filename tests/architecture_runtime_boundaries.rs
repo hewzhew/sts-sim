@@ -16,6 +16,12 @@ fn collect_rust_sources(root: &std::path::Path, paths: &mut Vec<std::path::PathB
     }
 }
 
+fn contains_rust_identifier(source: &str, identifier: &str) -> bool {
+    source
+        .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .any(|token| token == identifier)
+}
+
 #[test]
 fn runtime_branch_does_not_path_import_branch_tiny_bin_modules() {
     let owner_audit = std::fs::read_to_string("src/runtime/branch/owner_audit.rs")
@@ -279,12 +285,84 @@ fn exact_combat_planner_core_does_not_import_legacy_policy_owners() {
             "SearchNode",
             "TurnPlanBucket",
             "CombatEvalV2",
-            "Rollout",
             "run_control",
         ] {
             assert!(
-                !source.contains(forbidden),
+                !contains_rust_identifier(&source, forbidden),
                 "new combat planner source '{}' must not import legacy policy owner `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+
+    let manifest = std::fs::read_to_string("crates/sts_combat_planner/Cargo.toml")
+        .expect("read exact combat planner manifest");
+    assert!(
+        !manifest.contains("sts_combat_legacy"),
+        "new combat planner must not depend on the legacy combat package"
+    );
+}
+
+#[test]
+fn typed_combat_strategy_facts_do_not_depend_on_or_leak_into_search_control() {
+    let strategy_manifest = std::fs::read_to_string("crates/sts_combat_strategy/Cargo.toml")
+        .expect("read typed combat strategy manifest");
+    for forbidden_dependency in [
+        "sts_combat_planner",
+        "sts_combat_legacy",
+        "sts_oracle_runtime",
+        "sts_simulator_control",
+    ] {
+        assert!(
+            !strategy_manifest.contains(forbidden_dependency),
+            "typed combat strategy facts must not depend on search/control crate `{forbidden_dependency}`"
+        );
+    }
+
+    let mut strategy_sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_combat_strategy/src"),
+        &mut strategy_sources,
+    );
+    for path in strategy_sources {
+        let source = std::fs::read_to_string(&path).expect("read typed combat strategy source");
+        for forbidden_owner in [
+            "CombatActionPolicy",
+            "CombatStateGuideRank",
+            "LocalTurnGraphWitnessSession",
+            "OracleCombatWitnessSatisfaction",
+            "RunControlSession",
+        ] {
+            assert!(
+                !contains_rust_identifier(&source, forbidden_owner),
+                "typed combat strategy source '{}' must not become search/control owner `{forbidden_owner}`",
+                path.display()
+            );
+        }
+    }
+
+    let mut planner_sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_combat_planner/src"),
+        &mut planner_sources,
+    );
+    for path in planner_sources {
+        if path.file_name().is_some_and(|name| name == "tests.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read exact combat planner source");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(&source);
+        for encounter_detail in [
+            "AwakenedOne",
+            "AwakenedOnePhaseControl",
+            "CombatPlanStageV1",
+            "CombatPlanMilestoneV1",
+            "CombatPlanObligationV1",
+            "Curiosity",
+        ] {
+            assert!(
+                !contains_rust_identifier(production, encounter_detail),
+                "exact combat planner source '{}' must carry generic annotations without interpreting encounter detail `{encounter_detail}`",
                 path.display()
             );
         }
@@ -348,9 +426,23 @@ fn visible_input_candidates_execute_as_atomic_decision_transactions() {
     assert!(executor.contains("execute_singing_bowl_card_reward_inner"));
     assert!(!executor.contains("transaction v1 currently supports ordinary input candidates only"));
 
-    let card_reward_executor = std::fs::read_to_string("src/eval/run_control/card_reward_auto.rs")
-        .expect("read card reward executor");
-    assert!(!card_reward_executor.contains("apply_singing_bowl_to_visible_card_reward_item"));
+    let retired_card_reward_executor = "src/eval/run_control/card_reward_auto.rs";
+    assert!(
+        !std::path::Path::new(retired_card_reward_executor).exists(),
+        "retired card-reward auto-policy stack must stay deleted"
+    );
+    let card_reward_policy =
+        std::fs::read_to_string("src/eval/run_control/card_reward_policy_prior.rs")
+            .expect("read exact card reward policy");
+    let card_reward_policy = card_reward_policy
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or(&card_reward_policy);
+    assert!(card_reward_policy.contains("DecisionCandidateKey::CardRewardSingingBowl"));
+    assert!(card_reward_policy.contains("positive_ranked_run_policy_prior_v1"));
+    for source in [executor.as_str(), card_reward_policy] {
+        assert!(!source.contains("apply_singing_bowl_to_visible_card_reward_item"));
+    }
 
     let progress_outcome = std::fs::read_to_string("src/eval/run_control/session.rs")
         .expect("read progress outcome contract");
@@ -394,9 +486,14 @@ fn visible_input_candidates_execute_as_atomic_decision_transactions() {
     assert!(bounded_driver.contains("CombatBoundary"));
     assert!(bounded_driver.contains("session.apply_progress_step(options.clone())"));
 
-    let route_executor = std::fs::read_to_string("src/eval/run_control/route_policy/apply.rs")
+    let retired_route_executor = "src/eval/run_control/route_policy/apply.rs";
+    assert!(
+        !std::path::Path::new(retired_route_executor).exists(),
+        "retired route executor must stay deleted"
+    );
+    let route_executor = std::fs::read_to_string("src/eval/run_control/route_policy/mod.rs")
         .expect("read route policy executor");
-    assert!(route_executor.contains("public_route_candidate_id(session, &input)"));
+    assert!(route_executor.contains("exact_route_policy_decision_v1(session, &legal)?"));
     assert!(route_executor.contains("execute_route_candidate_transaction"));
     assert!(!route_executor.contains("session.apply_input(input)"));
 
@@ -543,12 +640,30 @@ fn shop_execution_stays_single_step_and_boss_preview_bundles_stay_retired() {
         .split("#[cfg(test)]")
         .next()
         .unwrap_or(&shop_owner);
-    assert!(production.contains("compiled_rollout_plan(&compiled)?.steps.first().cloned()"));
-    assert!(production.contains("shop_plan_step_matches_choice"));
-    assert!(
-        !production.contains("for step in"),
-        "shop owner may execute only the freshly compiled plan head, never a stored step sequence"
-    );
+    assert!(production.contains("let mut choices = executable_choices(surface);"));
+    assert!(production.contains("exact_shop_policy_prior_v1(session, &legal)?"));
+    assert!(production.contains("choice.expansion = OwnerChoiceExpansion::AutoAllowed;"));
+    for forbidden_execution in [
+        "compiled_rollout_plan",
+        "shop_plan_step_matches_choice",
+        "apply_decision_action(",
+        "apply_input(",
+        "for step in",
+    ] {
+        assert!(
+            !production.contains(forbidden_execution),
+            "shop owner must rank the current exact surface without executing `{forbidden_execution}`"
+        );
+    }
+
+    let shop_policy = std::fs::read_to_string("src/eval/run_control/shop_policy_prior.rs")
+        .expect("read exact shop policy");
+    let shop_policy = shop_policy
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or(&shop_policy);
+    assert!(shop_policy.contains("validate_same_candidate_surface(&exact, legal)?"));
+    assert!(shop_policy.contains("exact.actions.len() != legal.len()"));
 }
 
 #[test]
@@ -964,10 +1079,10 @@ fn turn_option_observable_effect_uses_only_public_candidate_evidence() {
 }
 
 #[test]
-fn durable_upgrade_consumers_do_not_depend_on_rest_vs_smith() {
+fn durable_upgrade_consumers_use_plan_level_or_exact_state_facts() {
     for path in [
         "src/ai/random_upgrade_opportunity_v1.rs",
-        "src/ai/shop_policy_v1/policy.rs",
+        "src/eval/run_control/shop_policy_prior.rs",
     ] {
         let source = std::fs::read_to_string(path).expect("read durable upgrade consumer");
         assert!(
@@ -975,6 +1090,19 @@ fn durable_upgrade_consumers_do_not_depend_on_rest_vs_smith() {
             "durable upgrade consumer '{path}' must read the plan-level Smith debt fact"
         );
     }
+
+    let random_upgrade =
+        std::fs::read_to_string("src/ai/random_upgrade_opportunity_v1.rs")
+            .expect("read random upgrade evaluator");
+    assert!(random_upgrade.contains("upgrade_plan.best_smith_debt_paid"));
+
+    let shop_policy = std::fs::read_to_string("src/eval/run_control/shop_policy_prior.rs")
+        .expect("read exact shop policy");
+    assert!(shop_policy.contains("combat_upgrade_coverage.strongest_scope()"));
+    assert!(
+        !std::path::Path::new("src/ai/shop_policy_v1/policy.rs").exists(),
+        "retired score-based shop policy must stay deleted"
+    );
 }
 
 #[test]

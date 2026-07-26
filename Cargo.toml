@@ -17,6 +17,7 @@ members = [
     "crates/oracle_lab_protocol",
     "crates/sts_combat_legacy",
     "crates/sts_combat_planner",
+    "crates/sts_combat_strategy",
     "crates/sts_simulator_control",
     "tools/architecture_checks",
 ]
