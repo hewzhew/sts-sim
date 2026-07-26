@@ -6,8 +6,8 @@ must rediscover the line from every earlier prefix.
 
 ## Current six-seed regression suite
 
-`a0_seed006_011_current.manifest.json` is the authoritative fast regression
-set for the current seed006--011 milestone. It pins the expected terminal
+`a0_seed006_012_current.manifest.json` is the authoritative fast regression
+set for the current seed006--012 milestone. It pins the expected terminal
 fingerprint and compact replay facts for six complete, seed-initialized A0
 runs. One process verifies all six journals:
 
