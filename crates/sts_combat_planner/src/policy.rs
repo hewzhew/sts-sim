@@ -1,7 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use sts_combat_strategy::combat_plan_state_guide_rank_v1;
+use sts_combat_strategy::{
+    combat_plan_selection_member_timing_v1, combat_plan_state_guide_rank_v1,
+    CombatPlanActionTimingV1,
+};
 use sts_core::sim::combat::CombatPosition;
 use sts_core::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use sts_core::state::core::ClientInput;
@@ -199,8 +202,43 @@ impl CombatActionPolicy for CombatPlanStateGuidePolicyV1 {
         family: &CombatSelectionActionFamilyV2,
         members: &[ClientInput],
     ) -> Vec<f64> {
-        self.base
-            .structured_selection_member_weights(position, family, members)
+        let mut weights = self
+            .base
+            .structured_selection_member_weights(position, family, members);
+        if weights.len() != members.len() || members.is_empty() {
+            return weights;
+        }
+        let timings = members
+            .iter()
+            .map(|member| combat_plan_selection_member_timing_v1(position, family, member))
+            .collect::<Vec<_>>();
+        let has_compatible_member = timings
+            .iter()
+            .any(|timing| !matches!(timing, CombatPlanActionTimingV1::Defer(_)));
+        if !has_compatible_member {
+            return weights;
+        }
+        let compatible_floor = weights
+            .iter()
+            .zip(&timings)
+            .filter_map(|(weight, timing)| {
+                (!matches!(timing, CombatPlanActionTimingV1::Defer(_))
+                    && weight.is_finite()
+                    && *weight > 0.0)
+                    .then_some(*weight)
+            })
+            .min_by(f64::total_cmp)
+            .unwrap_or(1.0);
+        for (weight, timing) in weights.iter_mut().zip(timings) {
+            if matches!(timing, CombatPlanActionTimingV1::Defer(_)) {
+                // Categorical ordering only: every compatible member remains
+                // ahead of a member which destroys a plan-owned resource.
+                // The deferred member keeps positive mass and is never
+                // removed from exact search.
+                *weight = compatible_floor * 0.5;
+            }
+        }
+        weights
     }
 
     fn state_guide_rank(&self, position: &CombatPosition) -> Option<CombatStateGuideRank> {
@@ -281,7 +319,8 @@ mod tests {
     use sts_core::content::cards::CardId;
     use sts_core::content::monsters::EnemyId;
     use sts_core::runtime::combat::CombatCard;
-    use sts_core::state::core::EngineState;
+    use sts_core::state::core::{EngineState, HandSelectReason, PendingChoice};
+    use sts_core::state::selection::{SelectionResolution, SelectionScope};
     use sts_core::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -332,5 +371,52 @@ mod tests {
         let guides = policy.state_guides(&position);
         assert_eq!(guides.len(), 1);
         assert_eq!(guides[0].lane, COMBAT_PLAN_STATE_GUIDE_LANE_V1);
+    }
+
+    #[test]
+    fn plan_policy_orders_compatible_forced_exhaust_before_destroying_owned_resource() {
+        let mut combat = blank_test_combat();
+        let mut awakened = test_monster(EnemyId::AwakenedOne);
+        awakened.id = 10;
+        awakened.slot = 2;
+        combat.entities.monsters.push(awakened);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 31),
+            CombatCard::new(CardId::Strike, 32),
+        ];
+        let position = CombatPosition::new(
+            EngineState::PendingChoice(PendingChoice::HandSelect {
+                candidate_uuids: vec![31, 32],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: HandSelectReason::Exhaust,
+            }),
+            combat,
+        );
+        let surface = sts_core::sim::combat_action_surface::combat_legal_action_surface_v2(
+            &position.engine,
+            &position.combat,
+        );
+        let family = surface
+            .selection_families
+            .first()
+            .expect("forced exhaust family");
+        let members = vec![
+            ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                SelectionScope::Hand,
+                [31],
+            )),
+            ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                SelectionScope::Hand,
+                [32],
+            )),
+        ];
+        let policy = combat_plan_state_guide_policy_v1(Arc::new(UniformCombatActionPolicy));
+
+        let weights = policy.structured_selection_member_weights(&position, family, &members);
+
+        assert!(weights[1] > weights[0]);
+        assert!(weights[0] > 0.0);
     }
 }
