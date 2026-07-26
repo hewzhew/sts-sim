@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 use crate::ai::card_semantics_v1::{
-    card_reward_semantic_profile_v1, potion_acquisition_requirements_v1,
+    card_access_evidence_v1, card_reward_semantic_profile_v1, potion_acquisition_requirements_v1,
     potion_acquisition_traits_v1, relic_acquisition_requirements_v1, relic_acquisition_traits_v1,
-    AcquisitionRequirementV1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
-    PotionAcquisitionTraitV1, RelicAcquisitionTraitV1,
+    AcquisitionRequirementV1, CardAccessEvidenceV1, CardAccessLeverageV1,
+    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1, PotionAcquisitionTraitV1,
+    RelicAcquisitionTraitV1,
 };
 use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
 use crate::ai::deck_mutation_compiler_v1::{
@@ -38,6 +39,7 @@ pub enum ShopPolicyBandV1 {
     ResolvePendingBoundary,
     ImmediateSurvival,
     CloseThreatGap,
+    AmplifyStrategicAccess,
     ImproveRequiredCapability,
     DeckRepair,
     EstablishStrategicAsset,
@@ -63,6 +65,7 @@ pub enum ShopPolicyAcquisitionV1 {
         upgrades: u8,
         copies_before: usize,
         semantics: CardRewardSemanticProfileV1,
+        access: Option<CardAccessEvidenceV1>,
     },
     Relic {
         relic: RelicId,
@@ -441,6 +444,7 @@ fn acquisition_v1(
                 upgrades: *upgrades,
                 copies_before,
                 semantics: card_reward_semantic_profile_v1(&RewardCard::new(*card, *upgrades)),
+                access: card_access_evidence_v1(&RewardCard::new(*card, *upgrades)),
             }
         }
         DecisionCandidateKey::ShopBuyRelic { relic, .. } => {
@@ -597,6 +601,9 @@ fn shop_policy_band_v1(
     if !closed_threat_gaps.is_empty() {
         return ShopPolicyBandV1::CloseThreatGap;
     }
+    if first_copy_efficient_access(acquisition) {
+        return ShopPolicyBandV1::AmplifyStrategicAccess;
+    }
     if !capability_improvements.is_empty() || !matched_consumable_capabilities.is_empty() {
         return ShopPolicyBandV1::ImproveRequiredCapability;
     }
@@ -628,6 +635,20 @@ fn shop_policy_band_v1(
         return ShopPolicyBandV1::PreserveResources;
     }
     ShopPolicyBandV1::SpeculativePurchase
+}
+
+fn first_copy_efficient_access(acquisition: &ShopPolicyAcquisitionV1) -> bool {
+    matches!(
+        acquisition,
+        ShopPolicyAcquisitionV1::Card {
+            copies_before: 0,
+            access: Some(CardAccessEvidenceV1 {
+                leverage: CardAccessLeverageV1::EfficientBurst,
+                ..
+            }),
+            ..
+        }
+    )
 }
 
 fn strategic_acquisition_supported(
@@ -745,20 +766,22 @@ const fn shop_band_priority(band: ShopPolicyBandV1) -> u8 {
         ShopPolicyBandV1::ResolvePendingBoundary => 0,
         ShopPolicyBandV1::ImmediateSurvival => 1,
         ShopPolicyBandV1::CloseThreatGap => 2,
-        ShopPolicyBandV1::ImproveRequiredCapability => 3,
+        ShopPolicyBandV1::AmplifyStrategicAccess => 3,
+        ShopPolicyBandV1::ImproveRequiredCapability => 4,
         // Both are durable deck improvements. Their exact evidence and
         // opportunity cost must compare before the owner commits all gold to
         // one category merely because it was represented by a different verb.
-        ShopPolicyBandV1::DeckRepair | ShopPolicyBandV1::EstablishStrategicAsset => 4,
-        ShopPolicyBandV1::PreserveResources => 5,
-        ShopPolicyBandV1::SpeculativePurchase => 6,
-        ShopPolicyBandV1::Liability => 7,
+        ShopPolicyBandV1::DeckRepair | ShopPolicyBandV1::EstablishStrategicAsset => 5,
+        ShopPolicyBandV1::PreserveResources => 6,
+        ShopPolicyBandV1::SpeculativePurchase => 7,
+        ShopPolicyBandV1::Liability => 8,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::monsters::factory::EncounterId;
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
     use crate::runtime::combat::CombatCard;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
@@ -797,6 +820,106 @@ mod tests {
             })
             .expect("card evidence")
             .band
+    }
+
+    fn candidate_position(decision: &ExactShopPolicyDecisionV1, card: CardId) -> usize {
+        decision
+            .evidence
+            .iter()
+            .position(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: candidate_card,
+                        ..
+                    } if candidate_card == card
+                )
+            })
+            .expect("card position")
+    }
+
+    #[test]
+    fn efficient_first_copy_access_precedes_marginal_frontload_improvement() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 20;
+        session.run_state.boss_key = Some(EncounterId::Automaton);
+        session.run_state.current_hp = 76;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = 86;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::TrueGrit, 1),
+            (CardId::SwordBoomerang, 0),
+            (CardId::Clash, 0),
+            (CardId::Uppercut, 1),
+            (CardId::Corruption, 0),
+            (CardId::BurningPact, 0),
+            (CardId::SeverSoul, 0),
+            (CardId::Offering, 0),
+            (CardId::Intimidate, 0),
+            (CardId::Headbutt, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.cards.extend([
+            ShopCard {
+                card_id: CardId::RecklessCharge,
+                upgrades: 0,
+                price: 33,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::BattleTrance,
+                upgrades: 0,
+                price: 78,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ]);
+        session.engine_state = EngineState::Shop(shop.clone());
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_shop_policy_decision_v1(&session, &legal).expect("access shop policy");
+        assert_eq!(
+            candidate_band(&decision, CardId::BattleTrance),
+            ShopPolicyBandV1::AmplifyStrategicAccess
+        );
+        assert!(
+            candidate_position(&decision, CardId::BattleTrance)
+                < candidate_position(&decision, CardId::RecklessCharge),
+            "evidence={:#?}",
+            decision.evidence
+        );
+
+        session
+            .run_state
+            .master_deck
+            .push(CombatCard::new(CardId::BattleTrance, 30_000));
+        session.engine_state = EngineState::Shop(shop);
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let duplicate =
+            exact_shop_policy_decision_v1(&session, &legal).expect("duplicate access policy");
+        assert_ne!(
+            candidate_band(&duplicate, CardId::BattleTrance),
+            ShopPolicyBandV1::AmplifyStrategicAccess
+        );
     }
 
     #[test]

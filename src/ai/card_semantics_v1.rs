@@ -1,6 +1,7 @@
 use crate::content::cards::{CardId, CardRarity, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
+use crate::state::rewards::RewardCard;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -143,6 +144,46 @@ pub struct CardRewardDamageFactsV1 {
     pub damage_per_hit: i32,
     pub hit_count: i32,
     pub total_damage: i32,
+}
+
+/// Factual access leverage supplied by one card play.
+///
+/// This deliberately does not claim that an access card is always desirable.
+/// Owners still account for copies, liabilities, current gaps, and price.  The
+/// distinction exists because a zero-energy multi-card burst exposes several
+/// already-owned answers at once, while a one-card cantrip is only incremental
+/// access; counting both as one generic `draw_source` erases that difference.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardAccessLeverageV1 {
+    Incremental,
+    EfficientBurst,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CardAccessEvidenceV1 {
+    pub leverage: CardAccessLeverageV1,
+    pub draw_cards: i32,
+    pub energy_cost: i8,
+    pub applies_no_draw_debuff: bool,
+}
+
+pub fn card_access_evidence_v1(card: &RewardCard) -> Option<CardAccessEvidenceV1> {
+    let facts = card_reward_facts_v1(card);
+    if facts.draw_cards <= 0 {
+        return None;
+    }
+    let leverage = if facts.draw_cards >= 3 && facts.cost <= 0 {
+        CardAccessLeverageV1::EfficientBurst
+    } else {
+        CardAccessLeverageV1::Incremental
+    };
+    Some(CardAccessEvidenceV1 {
+        leverage,
+        draw_cards: facts.draw_cards,
+        energy_cost: facts.cost,
+        applies_no_draw_debuff: card_mechanics_profile_v1(card.id).applies_no_draw_debuff,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

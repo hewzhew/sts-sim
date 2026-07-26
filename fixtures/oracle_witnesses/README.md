@@ -4,12 +4,12 @@ These files preserve exact, simulator-validated action witnesses. They are
 evidence that a specific state is winnable, not a claim that bounded search
 must rediscover the line from every earlier prefix.
 
-## Current nine-seed regression suite
+## Current ten-seed regression suite
 
-`a0_seed006_014_current.manifest.json` is the authoritative fast regression
-set for the current seed006--014 milestone. It pins the expected terminal
-fingerprint and compact replay facts for nine complete, seed-initialized A0
-runs. One process verifies all nine journals:
+`a0_seed006_015_current.manifest.json` is the authoritative fast regression
+set for the current seed006--015 milestone. It pins the expected terminal
+fingerprint and compact replay facts for ten complete, seed-initialized A0
+runs. One process verifies all ten journals:
 
 ```text
 cargo test-run-witnesses
@@ -26,7 +26,7 @@ cargo audit-run-witnesses
 The exact replay layer currently completes in a few seconds on the development
 machine; replay plus owner audit remains a lightweight second layer.
 The suite manifest SHA-256 is
-`7092876AAD683564FFE1114A71D69ECCEA8B8B4F0AE35EB07649C11C1D1319AC`.
+`4B3C730B369BB1235208D1055CB3F7127B2C3235B7E0DBBBE8AC0B389DE8891C`.
 
 ## seed 20260713006, A0, Awakened One
 
@@ -455,3 +455,23 @@ complete F0-to-F48 exact victory:
   no candidate absent from the owner surface.
 - SHA-256: full-run continuation
   `6B2CB1041C56539FE45017018265E899D6E4467EDD20A5A97C47863F80713909`.
+
+## seed 20260713015, A0, Time Eater
+
+- `seed20260713015_a0_full_run.continuation.json` is an autonomous F0-to-F48
+  production run. The decisive upstream correction is typed and shop-scoped
+  rather than card-specific: a first-copy, zero-energy multi-card access burst
+  can expose several already-owned answers and therefore precedes a marginal
+  Supported-to-Strong frontload increase.
+- At the Act 2 floor 20 shop this makes Battle Trance precede Reckless Charge;
+  all later owners freely replan from the resulting states. Card-reward policy
+  remains unchanged: a broader access promotion changed unrelated historical
+  choices and was rejected rather than retained.
+- Fresh replay verifies 215 journal entries, 191 decisions, 24 combat
+  resolutions, 613 combat actions, and final fingerprint
+  `a308176f8c2395467ee6ba2f6be8bb9d2afa3cf33e4d16a42bae21ebed2bac9f`.
+- A current-policy audit reports 191 rank-zero agreements, no divergence, and
+  no candidate absent from the owner surface. The final Time Eater victory
+  leaves 7/83 HP.
+- SHA-256: full-run continuation
+  `9681A4B09ADD1FC95A38D21653E55A9F100F420DC5252982081D7E2BA4AA930E`.
