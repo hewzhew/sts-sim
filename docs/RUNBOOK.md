@@ -257,6 +257,19 @@ scope plus the executable and PDB, and refuses to run when any identity differs
 from that receipt. Rebuild without `-SkipBuild` after a source change; do not
 interpret a previously built experimental binary as the current checkout.
 
+Before changing state ownership or another cross-cutting hot path, run the
+small identity-locked combat panel:
+
+```powershell
+.\tools\perf\benchmark_combat_panel.ps1 -SkipBuild
+```
+
+It interleaves Hexaghost, Champ, Bronze Automaton, and Collector samples under
+the same 20,000-work contract. The cases cover a light state, a long combat, a
+large/expensive state, and a replay-verified witness. Timing is observational;
+deterministic counters and witness identity are checked against
+`combat_performance_panel.json` before a result is accepted.
+
 Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
