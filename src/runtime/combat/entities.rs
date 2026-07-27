@@ -209,19 +209,8 @@ impl Intent {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct MonsterEntity {
-    pub id: EntityId,
-    pub monster_type: MonsterId,
-    pub current_hp: i32,
-    pub max_hp: i32,
-    pub block: i32,
-    pub slot: u8,
-    pub is_dying: bool,
-    pub is_escaped: bool,
-    pub half_dead: bool,
-    pub move_state: MonsterMoveState,
-    pub logical_position: i32,
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct MonsterRuntimeBundle {
     pub hexaghost: HexaghostRuntimeState,
     pub louse: LouseRuntimeState,
     pub jaw_worm: JawWormRuntimeState,
@@ -263,6 +252,37 @@ pub struct MonsterEntity {
     pub snake_dagger: SnakeDaggerRuntimeState,
     pub lagavulin: LagavulinRuntimeState,
     pub guardian: GuardianRuntimeState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct MonsterEntity {
+    pub id: EntityId,
+    pub monster_type: MonsterId,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub slot: u8,
+    pub is_dying: bool,
+    pub is_escaped: bool,
+    pub half_dead: bool,
+    pub move_state: MonsterMoveState,
+    pub logical_position: i32,
+    #[serde(flatten)]
+    pub runtime: Arc<MonsterRuntimeBundle>,
+}
+
+impl Deref for MonsterEntity {
+    type Target = MonsterRuntimeBundle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.runtime
+    }
+}
+
+impl DerefMut for MonsterEntity {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.runtime)
+    }
 }
 
 impl MonsterEntity {

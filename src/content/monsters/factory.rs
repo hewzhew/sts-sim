@@ -1,4 +1,4 @@
-use crate::runtime::combat::{LouseRuntimeState, MonsterEntity, MonsterMoveState};
+use crate::runtime::combat::{MonsterEntity, MonsterMoveState};
 use crate::runtime::rng::StsRng;
 use serde::{Deserialize, Serialize};
 
@@ -125,50 +125,9 @@ pub fn build_encounter(
             half_dead: false,
             move_state: MonsterMoveState::default(),
             logical_position: slot as i32,
-            hexaghost: Default::default(),
-            louse: LouseRuntimeState {
-                bite_damage: louse_bite_damage,
-            },
-            jaw_worm: Default::default(),
-            thief: Default::default(),
-            byrd: Default::default(),
-            chosen: Default::default(),
-            snecko: Default::default(),
-            shelled_parasite: Default::default(),
-            bronze_automaton: Default::default(),
-            bronze_orb: Default::default(),
-            book_of_stabbing: Default::default(),
-            collector: Default::default(),
-            champ: Default::default(),
-            awakened_one: Default::default(),
-            corrupt_heart: Default::default(),
-            writhing_mass: Default::default(),
-            spiker: Default::default(),
-            spire_shield: Default::default(),
-            spire_spear: Default::default(),
-            slaver_red: Default::default(),
-            gremlin_leader: Default::default(),
-            gremlin_nob: Default::default(),
-            gremlin_wizard: Default::default(),
-            cultist: Default::default(),
-            sentry: Default::default(),
-            slime_boss: Default::default(),
-            large_slime: Default::default(),
-            spheric_guardian: Default::default(),
-            reptomancer: Default::default(),
-            darkling: Default::default(),
-            nemesis: Default::default(),
-            giant_head: Default::default(),
-            time_eater: Default::default(),
-            donu: Default::default(),
-            deca: Default::default(),
-            transient: Default::default(),
-            exploder: Default::default(),
-            maw: Default::default(),
-            snake_dagger: Default::default(),
-            lagavulin: Default::default(),
-            guardian: Default::default(),
+            runtime: Default::default(),
         };
+        monster.louse.bite_damage = louse_bite_damage;
 
         if enemy_id == EnemyId::Byrd {
             monster.byrd.first_move = true;
