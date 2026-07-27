@@ -1,4 +1,8 @@
 use super::combat_planning_view::oracle_lab_guide_lane_label;
+use super::combat_policy_controls::{
+    anchor_only_policy, exact_corridor_shadow_policy, load_action_imitation_policy,
+    value_prototype_shadow_policy,
+};
 use super::combat_replay_tools::replay_combat_path;
 use super::combat_trace_view::{combat_position_snapshot, compact_corridor_report};
 use super::*;

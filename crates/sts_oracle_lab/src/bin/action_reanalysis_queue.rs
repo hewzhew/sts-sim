@@ -137,7 +137,7 @@ pub(crate) fn build(args: ActionReanalysisQueueArgs) -> Result<Value, String> {
     }
 
     let demonstrations = load_combat_action_imitation_corpus(&args.manifest)?;
-    let policy = super::load_action_imitation_policy(
+    let policy = super::combat_policy_controls::load_action_imitation_policy(
         &args.action_imitation_artifact,
         existing_combat_knowledge_policy_v1(),
     )?;

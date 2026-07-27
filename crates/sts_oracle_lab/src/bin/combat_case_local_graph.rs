@@ -1,4 +1,7 @@
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
+use super::combat_policy_controls::{
+    anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
+};
 use super::combat_replay_tools::{
     export_descendant_combat_case, local_graph_state_snapshot_for_path, replay_combat_path,
 };

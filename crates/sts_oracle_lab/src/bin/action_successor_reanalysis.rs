@@ -150,7 +150,10 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         .action_imitation_artifact
         .as_deref()
         .map(|path| {
-            super::load_action_imitation_policy(path, existing_combat_knowledge_policy_v1())
+            super::combat_policy_controls::load_action_imitation_policy(
+                path,
+                existing_combat_knowledge_policy_v1(),
+            )
         })
         .transpose()?
         .unwrap_or_else(existing_combat_knowledge_policy_v1);

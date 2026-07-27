@@ -1,6 +1,7 @@
 use super::combat_planning_view::{
     existing_combat_guide_diagnostics, lineage_portfolio_entries_json,
 };
+use super::combat_policy_controls::load_layered_solved_suffix_index;
 use super::*;
 
 #[derive(Debug, Args)]
