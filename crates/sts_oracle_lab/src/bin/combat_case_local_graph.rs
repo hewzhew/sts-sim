@@ -390,6 +390,22 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             report.performance_timing.transition_seen_elapsed_ns,
         "transition_publish_elapsed_ns":
             report.performance_timing.transition_publish_elapsed_ns,
+        "admission_root_option_elapsed_ns":
+            report.performance_timing.admission_root_option_elapsed_ns,
+        "admission_witness_replay_elapsed_ns":
+            report.performance_timing.admission_witness_replay_elapsed_ns,
+        "successor_identity_elapsed_ns":
+            report.performance_timing.successor_identity_elapsed_ns,
+        "successor_lookup_elapsed_ns":
+            report.performance_timing.successor_lookup_elapsed_ns,
+        "successor_node_build_elapsed_ns":
+            report.performance_timing.successor_node_build_elapsed_ns,
+        "successor_edge_elapsed_ns":
+            report.performance_timing.successor_edge_elapsed_ns,
+        "successor_backup_elapsed_ns":
+            report.performance_timing.successor_backup_elapsed_ns,
+        "admission_refresh_elapsed_ns":
+            report.performance_timing.admission_refresh_elapsed_ns,
     });
     let progress = session.progress_snapshot();
     let root_action_families = session

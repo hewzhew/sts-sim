@@ -869,14 +869,20 @@ impl LocalTurnGraphWitnessSession {
 
         let admission_started = Instant::now();
         for option in options {
+            let root_option_started = Instant::now();
             if node_id == 0 {
                 self.record_root_option(&option);
             }
             self.nodes[node_id].generated_options =
                 self.nodes[node_id].generated_options.saturating_add(1);
             self.used.completed_turn_options = self.used.completed_turn_options.saturating_add(1);
+            self.performance_timing.admission_root_option_elapsed_ns = self
+                .performance_timing
+                .admission_root_option_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(root_option_started));
             match option.boundary() {
                 CompleteTurnOptionBoundary::TerminalWin => {
+                    let witness_replay_started = Instant::now();
                     let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
                     actions.extend_from_slice(option.actions());
                     match replay_witness(
@@ -891,7 +897,15 @@ impl LocalTurnGraphWitnessSession {
                         }
                         Err(error) => self.replay_failure = Some(error),
                     }
+                    self.performance_timing.admission_witness_replay_elapsed_ns = self
+                        .performance_timing
+                        .admission_witness_replay_elapsed_ns
+                        .saturating_add(elapsed_nanos_u64(witness_replay_started));
                     if self.witness_satisfies() {
+                        self.performance_timing.admission_elapsed_ns = self
+                            .performance_timing
+                            .admission_elapsed_ns
+                            .saturating_add(elapsed_nanos_u64(admission_started));
                         return true;
                     }
                 }
@@ -904,7 +918,12 @@ impl LocalTurnGraphWitnessSession {
                 }
             }
         }
+        let refresh_started = Instant::now();
         self.refresh_exhaustion(node_id);
+        self.performance_timing.admission_refresh_elapsed_ns = self
+            .performance_timing
+            .admission_refresh_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(refresh_started));
         self.performance_timing.admission_elapsed_ns = self
             .performance_timing
             .admission_elapsed_ns
@@ -925,6 +944,7 @@ impl LocalTurnGraphWitnessSession {
             return None;
         }
 
+        let successor_identity_started = Instant::now();
         let successor_identity = option.exact_successor_identity().clone();
         let successor_exact_key = successor_identity.exact_key().cloned().unwrap_or_else(|| {
             Arc::new(combat_exact_state_key(
@@ -935,6 +955,10 @@ impl LocalTurnGraphWitnessSession {
         let successor_potion_expenditures = self.nodes[parent_id]
             .potion_expenditures
             .saturating_add(actions_potion_expenditures(option.actions()));
+        self.performance_timing.successor_identity_elapsed_ns = self
+            .performance_timing
+            .successor_identity_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(successor_identity_started));
         if self
             .config
             .max_potions_used
@@ -947,15 +971,27 @@ impl LocalTurnGraphWitnessSession {
             self.config.max_potions_used,
             successor_potion_expenditures,
         );
-        let successor = if let Some(existing) =
-            self.nodes_by_exact_key.get(&constrained_successor_key)
-        {
-            *existing
+        let successor_lookup_started = Instant::now();
+        let existing = self
+            .nodes_by_exact_key
+            .get(&constrained_successor_key)
+            .copied();
+        self.performance_timing.successor_lookup_elapsed_ns = self
+            .performance_timing
+            .successor_lookup_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(successor_lookup_started));
+        let successor = if let Some(existing) = existing {
+            existing
         } else {
+            let successor_node_build_started = Instant::now();
             let Ok(root) = CombatDecisionRoot::with_exact_state_identity(
                 option.exact_successor().clone(),
                 successor_identity,
             ) else {
+                self.performance_timing.successor_node_build_elapsed_ns = self
+                    .performance_timing
+                    .successor_node_build_elapsed_ns
+                    .saturating_add(elapsed_nanos_u64(successor_node_build_started));
                 return None;
             };
             let (guides, lookahead_pending_lane) = guides_with_pending_lookahead(
@@ -1005,9 +1041,14 @@ impl LocalTurnGraphWitnessSession {
                 .insert(constrained_successor_key, node_id);
             self.used.exact_nodes = self.nodes.len();
             self.used.maximum_turn_depth = self.used.maximum_turn_depth.max(relative_turn_depth);
+            self.performance_timing.successor_node_build_elapsed_ns = self
+                .performance_timing
+                .successor_node_build_elapsed_ns
+                .saturating_add(elapsed_nanos_u64(successor_node_build_started));
             node_id
         };
 
+        let successor_edge_started = Instant::now();
         let successor_lanes = self.nodes[successor]
             .guides
             .iter()
@@ -1072,7 +1113,16 @@ impl LocalTurnGraphWitnessSession {
             }
             edge_index
         };
+        self.performance_timing.successor_edge_elapsed_ns = self
+            .performance_timing
+            .successor_edge_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(successor_edge_started));
+        let successor_backup_started = Instant::now();
         self.backup_guides_along_path(path, parent_id, edge_index, &successor_backed_guides);
+        self.performance_timing.successor_backup_elapsed_ns = self
+            .performance_timing
+            .successor_backup_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(successor_backup_started));
         Some(successor)
     }
 

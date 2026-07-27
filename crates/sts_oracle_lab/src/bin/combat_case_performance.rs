@@ -43,6 +43,18 @@ pub(super) fn local_graph_performance_profile(
         .saturating_add(timing.generation_elapsed_ns)
         .saturating_add(timing.admission_elapsed_ns);
     let outer_unattributed_ns = search_ns.saturating_sub(outer_accounted_ns);
+    let outer_admission_accounted_ns = timing
+        .admission_root_option_elapsed_ns
+        .saturating_add(timing.admission_witness_replay_elapsed_ns)
+        .saturating_add(timing.successor_identity_elapsed_ns)
+        .saturating_add(timing.successor_lookup_elapsed_ns)
+        .saturating_add(timing.successor_node_build_elapsed_ns)
+        .saturating_add(timing.successor_edge_elapsed_ns)
+        .saturating_add(timing.successor_backup_elapsed_ns)
+        .saturating_add(timing.admission_refresh_elapsed_ns);
+    let outer_admission_other_ns = timing
+        .admission_elapsed_ns
+        .saturating_sub(outer_admission_accounted_ns);
 
     // These four buckets are siblings inside generator time. The more
     // detailed seen/publish/trace counters below are nested inside transition
@@ -77,6 +89,44 @@ pub(super) fn local_graph_performance_profile(
             "admission": duration_share(timing.admission_elapsed_ns, search_ns),
             "unattributed": duration_share(outer_unattributed_ns, search_ns),
             "accounted_elapsed_ns": outer_accounted_ns,
+            "admission_breakdown": {
+                "root_option_accounting": duration_share(
+                    timing.admission_root_option_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "witness_replay": duration_share(
+                    timing.admission_witness_replay_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "successor_identity": duration_share(
+                    timing.successor_identity_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "successor_lookup": duration_share(
+                    timing.successor_lookup_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "successor_node_build": duration_share(
+                    timing.successor_node_build_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "successor_edge": duration_share(
+                    timing.successor_edge_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "successor_backup": duration_share(
+                    timing.successor_backup_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "refresh_exhaustion": duration_share(
+                    timing.admission_refresh_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "other": duration_share(
+                    outer_admission_other_ns,
+                    timing.admission_elapsed_ns,
+                ),
+            },
         },
         "generation": {
             "atomic_expand": duration_share(
@@ -124,6 +174,7 @@ pub(super) fn local_graph_performance_profile(
             "applied_action_transitions": transitions,
             "unique_successor_states": counters.unique_successor_states,
             "duplicate_exact_successors": counters.duplicate_exact_successors,
+            "duplicate_successor_edges": counters.duplicate_successor_edges,
             "completed_turn_options": counters.completed_turn_options,
             "exact_nodes": counters.exact_nodes,
             "exact_edges": counters.exact_edges,
@@ -135,6 +186,22 @@ pub(super) fn local_graph_performance_profile(
             ),
             "unique_successor_ratio": unique_ratio,
             "duplicate_successor_ratio": duplicate_ratio,
+            "ns_per_completed_turn_option": {
+                "outer_admission": nanos_per_item(
+                    timing.admission_elapsed_ns,
+                    counters.completed_turn_options,
+                ),
+                "successor_backup": nanos_per_item(
+                    timing.successor_backup_elapsed_ns,
+                    counters.completed_turn_options,
+                ),
+            },
+            "ns_per_new_exact_node": {
+                "node_build": nanos_per_item(
+                    timing.successor_node_build_elapsed_ns,
+                    counters.exact_nodes.saturating_sub(1),
+                ),
+            },
             "ns_per_applied_transition": {
                 "simulation": nanos_per_item(
                     timing.transition_simulation_elapsed_ns,
@@ -196,6 +263,10 @@ mod tests {
         let profile = local_graph_performance_profile(Duration::from_nanos(1_000), &report);
 
         assert_eq!(profile["outer"]["unattributed"]["elapsed_ns"], 100);
+        assert_eq!(
+            profile["outer"]["admission_breakdown"]["other"]["elapsed_ns"],
+            100
+        );
         assert_eq!(profile["generation"]["accounted_elapsed_ns"], 550);
         assert_eq!(profile["generation"]["unattributed"]["elapsed_ns"], 150);
         assert_eq!(

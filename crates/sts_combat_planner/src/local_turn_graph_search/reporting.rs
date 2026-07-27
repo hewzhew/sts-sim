@@ -85,6 +85,14 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
+    pub admission_root_option_elapsed_ns: u64,
+    pub admission_witness_replay_elapsed_ns: u64,
+    pub successor_identity_elapsed_ns: u64,
+    pub successor_lookup_elapsed_ns: u64,
+    pub successor_node_build_elapsed_ns: u64,
+    pub successor_edge_elapsed_ns: u64,
+    pub successor_backup_elapsed_ns: u64,
+    pub admission_refresh_elapsed_ns: u64,
 }
 
 impl LocalTurnGraphPerformanceTiming {
@@ -119,6 +127,30 @@ impl LocalTurnGraphPerformanceTiming {
         self.transition_publish_elapsed_ns = self
             .transition_publish_elapsed_ns
             .saturating_add(other.transition_publish_elapsed_ns);
+        self.admission_root_option_elapsed_ns = self
+            .admission_root_option_elapsed_ns
+            .saturating_add(other.admission_root_option_elapsed_ns);
+        self.admission_witness_replay_elapsed_ns = self
+            .admission_witness_replay_elapsed_ns
+            .saturating_add(other.admission_witness_replay_elapsed_ns);
+        self.successor_identity_elapsed_ns = self
+            .successor_identity_elapsed_ns
+            .saturating_add(other.successor_identity_elapsed_ns);
+        self.successor_lookup_elapsed_ns = self
+            .successor_lookup_elapsed_ns
+            .saturating_add(other.successor_lookup_elapsed_ns);
+        self.successor_node_build_elapsed_ns = self
+            .successor_node_build_elapsed_ns
+            .saturating_add(other.successor_node_build_elapsed_ns);
+        self.successor_edge_elapsed_ns = self
+            .successor_edge_elapsed_ns
+            .saturating_add(other.successor_edge_elapsed_ns);
+        self.successor_backup_elapsed_ns = self
+            .successor_backup_elapsed_ns
+            .saturating_add(other.successor_backup_elapsed_ns);
+        self.admission_refresh_elapsed_ns = self
+            .admission_refresh_elapsed_ns
+            .saturating_add(other.admission_refresh_elapsed_ns);
     }
 }
 
