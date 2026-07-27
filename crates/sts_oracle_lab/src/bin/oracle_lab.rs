@@ -17,6 +17,8 @@ mod combat_case_performance;
 mod combat_plan_diagnostics;
 mod depth_beam_audits;
 mod exact_combat_evidence;
+mod exact_turn_corridor;
+mod guidance_artifact_commands;
 mod oracle_seed_panel;
 mod policy_discrepancy_search;
 mod run_witness_commands;
@@ -36,7 +38,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use atomic_policy_searches::CombatCaseAtomicLevinArgs;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use combat_case_atomic_turn_portfolio::CombatCaseAtomicTurnPortfolioArgs;
 use combat_case_fold_solved_suffix::CombatCaseFoldSolvedSuffixArgs;
 use combat_case_layered::CombatCaseLayeredArgs;
@@ -45,10 +47,17 @@ use combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use combat_case_local_graph::CombatCaseLocalGraphArgs;
 use combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
+use exact_turn_corridor::{
+    load as load_exact_turn_corridor, load_action_segments as load_combat_action_segments,
+    load_corpus as load_combat_action_imitation_corpus,
+    typed_feature_components as typed_combat_feature_components, ExactTurnCorridor,
+    ShadowCorridorGuide,
+};
+use guidance_artifact_commands::{load_value_prototype, save_value_prototype};
 use oracle_seed_panel::OracleSeedPanelArgs;
 use policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
 use run_witness_suite::RunWitnessSuiteArgs;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, fold_verified_suffix_through_turn_predecessors,
@@ -70,7 +79,6 @@ use sts_combat_planner::{
     PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
     SharedCombatActionPolicy, SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionAction,
     TurnOptionGenerationStatus, TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
-    UniformCombatActionPolicy,
 };
 use sts_combat_strategy::{
     awakened_one_combat_plan_v1, awakened_one_plan_transition_v1, CombatPlanTransitionAnnotationV1,
@@ -82,17 +90,13 @@ use sts_oracle_runtime::ai::combat_search_v2::{
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::content::{cards, monsters::EnemyId};
 use sts_oracle_runtime::eval::combat_action_imitation::{
-    audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
-    root_player_turn_action_policy_v1,
-    train_combat_action_imitation_from_demonstrations_with_base_v1,
-    train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
-    CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
+    combat_action_imitation_policy_v1, root_player_turn_action_policy_v1,
+    CombatActionImitationArtifactV1,
 };
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case, CombatCase};
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
-    combat_value_prototype_policy_v1, combat_value_prototype_rank_v1,
-    typed_combat_value_features_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
-    GUIDE_LEARNED_BOUNDARY_VALUE,
+    combat_value_prototype_policy_v1, combat_value_prototype_rank_v1, CombatGuidanceBundleV1,
+    CombatValuePrototypeArtifactV1, GUIDE_LEARNED_BOUNDARY_VALUE,
 };
 use sts_oracle_runtime::eval::combat_search_v2::{
     run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
@@ -608,110 +612,6 @@ struct AdvanceOutput<T, U> {
     view: U,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
-enum ShadowCorridorGuide {
-    #[default]
-    Exact,
-    TypedFeature,
-}
-
-const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_NAME: &str = "CombatActionImitationCorpusManifestV1";
-const COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_VERSION: u32 = 1;
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CombatActionImitationCorpusManifestV1 {
-    schema_name: String,
-    schema_version: u32,
-    demonstrations: Vec<CombatActionImitationCorpusEntryV1>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CombatActionImitationCorpusEntryV1 {
-    id: String,
-    case: PathBuf,
-    actions: Vec<PathBuf>,
-}
-
-struct LoadedCombatActionImitationDemonstrationV1 {
-    id: String,
-    case_path: PathBuf,
-    action_paths: Vec<PathBuf>,
-    position: sts_oracle_runtime::sim::combat::CombatPosition,
-    actions: Vec<ClientInput>,
-}
-
-#[derive(Clone, Debug)]
-struct ExactTurnCorridor {
-    rank_by_exact_hash: HashMap<String, i32>,
-    atomic_rank_by_exact_hash: HashMap<String, i32>,
-    typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
-    positions_by_rank: Vec<sts_oracle_runtime::sim::combat::CombatPosition>,
-    transition_actions: Vec<Vec<ClientInput>>,
-    action_count: usize,
-    terminal_final_hp: i32,
-}
-
-impl ExactTurnCorridor {
-    fn membership_states(&self, search: &OracleCombatWitnessSession) -> Vec<Value> {
-        let mut memberships = search.compact_state_memberships_by_exact_hashes(
-            self.rank_by_exact_hash.keys().map(String::as_str),
-        );
-        let mut states = self
-            .rank_by_exact_hash
-            .iter()
-            .map(|(exact_hash, rank)| {
-                let membership = memberships
-                    .remove(exact_hash)
-                    .expect("bulk corridor membership includes every requested hash");
-                (*rank, membership)
-            })
-            .collect::<Vec<_>>();
-        states.sort_by_key(|(rank, _)| *rank);
-        states
-            .into_iter()
-            .map(|(rank, membership)| {
-                json!({
-                    "corridor_rank": rank,
-                    "membership": membership,
-                })
-            })
-            .collect()
-    }
-
-    fn report(&self, search: &OracleCombatWitnessSession, guide: ShadowCorridorGuide) -> Value {
-        json!({
-            "kind": match guide {
-                ShadowCorridorGuide::Exact => "exact_verified_turn_corridor_shadow",
-                ShadowCorridorGuide::TypedFeature => "typed_feature_corridor_shadow",
-            },
-            "authority": "guide_only",
-            "exact_turn_states": self.rank_by_exact_hash.len(),
-            "exact_atomic_prefix_states": self.atomic_rank_by_exact_hash.len(),
-            "typed_feature_targets": self.typed_target_by_turn.len(),
-            "typed_feature_count": self.typed_target_by_turn.values().next().map(|(_, features)| features.len()).unwrap_or_default(),
-            "action_count": self.action_count,
-            "terminal": "Win",
-            "terminal_final_hp": self.terminal_final_hp,
-            "states": self.membership_states(search),
-        })
-    }
-
-    fn diagnostic_report(&self, search: &OracleCombatWitnessSession) -> Value {
-        json!({
-            "kind": "exact_verified_turn_corridor_watch",
-            "authority": "diagnostic_only",
-            "changes_search_order": false,
-            "exact_turn_states": self.rank_by_exact_hash.len(),
-            "action_count": self.action_count,
-            "terminal": "Win",
-            "terminal_final_hp": self.terminal_final_hp,
-            "states": self.membership_states(search),
-        })
-    }
-}
-
 struct ExactCorridorShadowPolicy {
     base: SharedCombatActionPolicy,
     rank_by_exact_hash: Arc<HashMap<String, i32>>,
@@ -986,242 +886,6 @@ fn value_prototype_shadow_policy(
     })
 }
 
-fn load_value_prototype(path: &Path) -> Result<CombatValuePrototypeArtifactV1, String> {
-    CombatValuePrototypeArtifactV1::load(path)
-}
-
-fn save_value_prototype(
-    path: &PathBuf,
-    artifact: &CombatValuePrototypeArtifactV1,
-) -> Result<(), String> {
-    artifact.save(path)
-}
-
-fn value_prototype_from_corridor(
-    corridor: &ExactTurnCorridor,
-) -> Result<CombatValuePrototypeArtifactV1, String> {
-    CombatValuePrototypeArtifactV1::from_ranked_features(
-        "exact_terminal_win_demonstration",
-        corridor.action_count,
-        corridor.terminal_final_hp,
-        corridor
-            .typed_target_by_turn
-            .iter()
-            .map(|(player_turn, (value_rank, features))| {
-                (*player_turn, *value_rank, features.clone())
-            }),
-    )
-}
-
-fn value_prototype_from_corridors(
-    corridors: &[ExactTurnCorridor],
-) -> Result<CombatValuePrototypeArtifactV1, String> {
-    CombatValuePrototypeArtifactV1::from_ranked_feature_trajectories(
-        "exact_terminal_win_demonstration_corpus",
-        corridors.iter().map(|corridor| {
-            (
-                corridor.action_count,
-                corridor.terminal_final_hp,
-                corridor
-                    .typed_target_by_turn
-                    .iter()
-                    .map(|(player_turn, (value_rank, features))| {
-                        (*player_turn, *value_rank, features.clone())
-                    })
-                    .collect(),
-            )
-        }),
-    )
-}
-
-fn typed_combat_feature_components(
-    position: &sts_oracle_runtime::sim::combat::CombatPosition,
-) -> Vec<i32> {
-    typed_combat_value_features_v1(position)
-}
-
-fn load_exact_turn_corridor(
-    case_path: &PathBuf,
-    action_paths: &[PathBuf],
-    max_engine_steps_per_transition: usize,
-) -> Result<ExactTurnCorridor, String> {
-    let case = load_combat_case(case_path)?;
-    let actions = load_combat_action_segments(action_paths)?;
-    exact_turn_corridor_from_position_and_actions(
-        case.position,
-        actions,
-        max_engine_steps_per_transition,
-    )
-}
-
-fn exact_turn_corridor_from_position_and_actions(
-    mut position: sts_oracle_runtime::sim::combat::CombatPosition,
-    actions: Vec<ClientInput>,
-    max_engine_steps_per_transition: usize,
-) -> Result<ExactTurnCorridor, String> {
-    let stepper = EngineCombatStepper;
-    let mut rank_by_exact_hash = HashMap::new();
-    let mut atomic_rank_by_exact_hash = HashMap::new();
-    let mut typed_target_by_turn = HashMap::new();
-    let initial_exact_hash = sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-        &position.engine,
-        &position.combat,
-    );
-    rank_by_exact_hash.insert(initial_exact_hash.clone(), 0);
-    atomic_rank_by_exact_hash.insert(initial_exact_hash, 0);
-    typed_target_by_turn.insert(
-        position.combat.turn.turn_count,
-        (0, typed_combat_feature_components(&position)),
-    );
-    let mut next_turn_rank = 1i32;
-    let mut positions_by_rank = vec![position.clone()];
-    let mut transition_actions = Vec::new();
-    let mut current_transition_actions = Vec::new();
-    for (action_index, input) in actions.iter().enumerate() {
-        if stepper.choice_for_legal_input(&position, input).is_none() {
-            return Err(format!(
-                "shadow corridor action {action_index} is not legal at turn {}: {input:?}",
-                position.combat.turn.turn_count
-            ));
-        }
-        let previous_turn = position.combat.turn.turn_count;
-        current_transition_actions.push(input.clone());
-        let step = stepper.apply_to_stable(
-            &position,
-            input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if step.truncated {
-            return Err(format!(
-                "shadow corridor action {action_index} exceeded the engine-step limit"
-            ));
-        }
-        position = step.position;
-        atomic_rank_by_exact_hash.insert(
-            sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-                &position.engine,
-                &position.combat,
-            ),
-            i32::try_from(action_index.saturating_add(1)).unwrap_or(i32::MAX),
-        );
-        if step.terminal == sts_oracle_runtime::sim::combat::CombatTerminal::Unresolved
-            && position.combat.turn.turn_count != previous_turn
-        {
-            transition_actions.push(std::mem::take(&mut current_transition_actions));
-            positions_by_rank.push(position.clone());
-            rank_by_exact_hash.insert(
-                sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-                    &position.engine,
-                    &position.combat,
-                ),
-                next_turn_rank,
-            );
-            typed_target_by_turn.insert(
-                position.combat.turn.turn_count,
-                (next_turn_rank, typed_combat_feature_components(&position)),
-            );
-            next_turn_rank = next_turn_rank.saturating_add(1);
-        }
-    }
-    if stepper.terminal(&position) != sts_oracle_runtime::sim::combat::CombatTerminal::Win {
-        return Err("shadow corridor action list is not an exact terminal win".to_string());
-    }
-    if !current_transition_actions.is_empty() {
-        transition_actions.push(current_transition_actions);
-    }
-    if transition_actions.len() != positions_by_rank.len() {
-        return Err(format!(
-            "verified corridor has {} boundaries but {} outgoing turn segments",
-            positions_by_rank.len(),
-            transition_actions.len()
-        ));
-    }
-    Ok(ExactTurnCorridor {
-        rank_by_exact_hash,
-        atomic_rank_by_exact_hash,
-        typed_target_by_turn,
-        positions_by_rank,
-        transition_actions,
-        action_count: actions.len(),
-        terminal_final_hp: position.combat.entities.player.current_hp,
-    })
-}
-
-fn load_combat_action_segments(action_paths: &[PathBuf]) -> Result<Vec<ClientInput>, String> {
-    let mut actions = Vec::new();
-    for path in action_paths {
-        let mut segment = serde_json::from_slice::<Vec<ClientInput>>(
-            &std::fs::read(path).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| format!("invalid combat action segment {}: {error}", path.display()))?;
-        actions.append(&mut segment);
-    }
-    Ok(actions)
-}
-
-fn load_combat_action_imitation_corpus(
-    manifest_path: &Path,
-) -> Result<Vec<LoadedCombatActionImitationDemonstrationV1>, String> {
-    let manifest = serde_json::from_slice::<CombatActionImitationCorpusManifestV1>(
-        &std::fs::read(manifest_path).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("invalid action imitation corpus manifest: {error}"))?;
-    if manifest.schema_name != COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_NAME
-        || manifest.schema_version != COMBAT_ACTION_IMITATION_CORPUS_SCHEMA_VERSION
-    {
-        return Err("unsupported action imitation corpus manifest schema".to_string());
-    }
-    if manifest.demonstrations.is_empty() {
-        return Err("action imitation corpus manifest has no demonstrations".to_string());
-    }
-    let base = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-    let mut seen_ids = std::collections::HashSet::new();
-    manifest
-        .demonstrations
-        .into_iter()
-        .map(|entry| {
-            if entry.id.trim().is_empty() || !seen_ids.insert(entry.id.clone()) {
-                return Err(format!(
-                    "action imitation corpus demonstration id is empty or duplicated: {:?}",
-                    entry.id
-                ));
-            }
-            if entry.actions.is_empty() {
-                return Err(format!(
-                    "action imitation corpus demonstration {:?} has no action segments",
-                    entry.id
-                ));
-            }
-            let case_path = resolve_manifest_relative_path(base, &entry.case);
-            let action_paths = entry
-                .actions
-                .iter()
-                .map(|path| resolve_manifest_relative_path(base, path))
-                .collect::<Vec<_>>();
-            let case = load_combat_case(&case_path)?;
-            let actions = load_combat_action_segments(&action_paths)?;
-            Ok(LoadedCombatActionImitationDemonstrationV1 {
-                id: entry.id,
-                case_path,
-                action_paths,
-                position: case.position,
-                actions,
-            })
-        })
-        .collect()
-}
-
-fn resolve_manifest_relative_path(base: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.join(path)
-    }
-}
-
 fn load_layered_solved_suffix_index(
     case_path: Option<&PathBuf>,
     actions_path: Option<&PathBuf>,
@@ -1236,7 +900,7 @@ fn load_layered_solved_suffix_index(
         }
         return Ok(Arc::new(LayeredCombatSolvedSuffixIndex::default()));
     };
-    let corridor = load_exact_turn_corridor(
+    let corridor = exact_turn_corridor::load(
         case_path,
         std::slice::from_ref(actions_path),
         max_engine_steps_per_transition,
@@ -1391,187 +1055,52 @@ fn main() -> Result<(), String> {
             actions,
             output,
             max_engine_steps_per_transition,
-        } => {
-            let corridor =
-                load_exact_turn_corridor(&case, &actions, max_engine_steps_per_transition)?;
-            let artifact = value_prototype_from_corridor(&corridor)?;
-            save_value_prototype(&output, &artifact)?;
-            print_json(&json!({
-                "output": output,
-                "artifact": artifact.report(),
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::build_value_prototype(
+            &case,
+            &actions,
+            &output,
+            max_engine_steps_per_transition,
+        )?),
         Command::BuildValuePrototypeCorpus {
             manifest,
             output,
             max_engine_steps_per_transition,
-        } => {
-            let demonstrations = load_combat_action_imitation_corpus(&manifest)?;
-            let ids = demonstrations
-                .iter()
-                .map(|demonstration| demonstration.id.clone())
-                .collect::<Vec<_>>();
-            let corridors = demonstrations
-                .into_iter()
-                .map(|demonstration| {
-                    exact_turn_corridor_from_position_and_actions(
-                        demonstration.position,
-                        demonstration.actions,
-                        max_engine_steps_per_transition,
-                    )
-                    .map_err(|error| format!("demonstration {:?}: {error}", demonstration.id))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            let artifact = value_prototype_from_corridors(&corridors)?;
-            save_value_prototype(&output, &artifact)?;
-            print_json(&json!({
-                "output": output,
-                "manifest": manifest,
-                "demonstration_ids": ids,
-                "artifact": artifact.report(),
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::build_value_prototype_corpus(
+            &manifest,
+            &output,
+            max_engine_steps_per_transition,
+        )?),
         Command::BuildCombatGuidanceBundle {
             action_imitation_artifact,
             value_prototype_artifact,
             output,
-        } => {
-            let action = CombatActionImitationArtifactV1::load(&action_imitation_artifact)?;
-            let value = CombatValuePrototypeArtifactV1::load(&value_prototype_artifact)?;
-            let bundle = CombatGuidanceBundleV1::new(
-                "verified_exact_combat_witness_distillation",
-                action,
-                value,
-            )?;
-            bundle.save(&output)?;
-            print_json(&json!({
-                "output": output,
-                "schema_name": bundle.schema_name,
-                "schema_version": bundle.schema_version,
-                "training_authority": bundle.training_authority,
-                "action_source_trajectory_count": bundle.action_imitation.source_trajectory_count,
-                "action_source_action_count": bundle.action_imitation.source_action_count,
-                "value_source_trajectory_count": bundle.boundary_value.source_trajectory_count,
-                "value_source_action_count": bundle.boundary_value.source_action_count,
-                "runtime_reads_exact_hashes": false,
-                "runtime_reads_witness_actions": false,
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::build_guidance_bundle(
+            &action_imitation_artifact,
+            &value_prototype_artifact,
+            &output,
+        )?),
         Command::BuildActionImitation {
             case,
             actions,
             output,
             max_engine_steps_per_transition,
-        } => {
-            let loaded = load_combat_case(&case)?;
-            let actions = load_combat_action_segments(&actions)?;
-            let training_config = CombatActionImitationTrainingConfigV1 {
-                max_engine_steps_per_transition,
-                ..CombatActionImitationTrainingConfigV1::default()
-            };
-            let artifact =
-                train_combat_action_imitation_v1(&loaded.position, &actions, training_config)?;
-            let training_audit = audit_combat_action_imitation_v1(
-                &loaded.position,
-                &actions,
-                &artifact,
-                &UniformCombatActionPolicy,
-                training_config.max_structured_alternatives,
-                max_engine_steps_per_transition,
-            )?;
-            artifact.save(&output)?;
-            print_json(&json!({
-                "schema_name": "OracleCombatActionImitationBuildV1",
-                "schema_version": 1,
-                "case": case,
-                "output": output,
-                "artifact": artifact,
-                "training_audit": training_audit,
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::build_action_imitation(
+            &case,
+            &actions,
+            &output,
+            max_engine_steps_per_transition,
+        )?),
         Command::BuildActionImitationCorpus {
             manifest,
             output,
             residual_over_existing_policy,
             max_engine_steps_per_transition,
-        } => {
-            let demonstrations = load_combat_action_imitation_corpus(&manifest)?;
-            let training_config = CombatActionImitationTrainingConfigV1 {
-                max_engine_steps_per_transition,
-                base_weight_exponent: if residual_over_existing_policy {
-                    1.0
-                } else {
-                    0.0
-                },
-                ..CombatActionImitationTrainingConfigV1::default()
-            };
-            let base_policy: SharedCombatActionPolicy = if residual_over_existing_policy {
-                existing_combat_knowledge_policy_v1()
-            } else {
-                Arc::new(UniformCombatActionPolicy)
-            };
-            let borrowed = demonstrations
-                .iter()
-                .map(|demonstration| CombatActionImitationDemonstrationV1 {
-                    root: &demonstration.position,
-                    actions: &demonstration.actions,
-                })
-                .collect::<Vec<_>>();
-            let artifact = train_combat_action_imitation_from_demonstrations_with_base_v1(
-                &borrowed,
-                training_config,
-                base_policy.clone(),
-            )?;
-            let audits = demonstrations
-                .iter()
-                .map(|demonstration| {
-                    audit_combat_action_imitation_v1(
-                        &demonstration.position,
-                        &demonstration.actions,
-                        &artifact,
-                        base_policy.as_ref(),
-                        training_config.max_structured_alternatives,
-                        max_engine_steps_per_transition,
-                    )
-                    .map(|audit| {
-                        json!({
-                            "id": demonstration.id,
-                            "source_action_count": audit.source_action_count,
-                            "ranked_decision_count": audit.ranked_decision_count,
-                            "skipped_forced_decision_count": audit.skipped_forced_decision_count,
-                            "miss_count": audit.misses.len(),
-                        })
-                    })
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            artifact.save(&output)?;
-            print_json(&json!({
-                "schema_name": "OracleCombatActionImitationCorpusBuildV1",
-                "schema_version": 1,
-                "manifest": manifest,
-                "output": output,
-                "training_base": if residual_over_existing_policy {
-                    "existing_combat_knowledge_v1"
-                } else {
-                    "uniform"
-                },
-                "artifact": {
-                    "schema_name": artifact.schema_name,
-                    "schema_version": artifact.schema_version,
-                    "feature_schema": artifact.feature_schema,
-                    "runtime_compatibility_id": artifact.runtime_compatibility_id,
-                    "source_trajectory_count": artifact.source_trajectory_count,
-                    "source_action_count": artifact.source_action_count,
-                    "ranked_decision_count": artifact.ranked_decision_count,
-                    "pairwise_comparison_count": artifact.pairwise_comparison_count,
-                    "skipped_forced_decision_count": artifact.skipped_forced_decision_count,
-                    "training_top1_correct": artifact.training_top1_correct,
-                    "training_top1_total": artifact.training_top1_total,
-                    "coefficient_count": artifact.coefficients.len(),
-                },
-                "demonstrations": audits,
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::build_action_imitation_corpus(
+            &manifest,
+            &output,
+            residual_over_existing_policy,
+            max_engine_steps_per_transition,
+        )?),
         Command::BuildActionSuccessorCorpus { args } => {
             let report = action_successor_reanalysis::build(args)?;
             print_json(&report)
@@ -1593,28 +1122,12 @@ fn main() -> Result<(), String> {
             actions,
             artifact,
             max_engine_steps_per_transition,
-        } => {
-            let loaded = load_combat_case(&case)?;
-            let actions = load_combat_action_segments(&actions)?;
-            let artifact_value = CombatActionImitationArtifactV1::load(&artifact)?;
-            let base_policy = existing_combat_knowledge_policy_v1();
-            let audit = audit_combat_action_imitation_v1(
-                &loaded.position,
-                &actions,
-                &artifact_value,
-                base_policy.as_ref(),
-                CombatActionImitationTrainingConfigV1::default().max_structured_alternatives,
-                max_engine_steps_per_transition,
-            )?;
-            print_json(&json!({
-                "schema_name": "OracleCombatActionImitationAuditV1",
-                "schema_version": 1,
-                "case": case,
-                "artifact": artifact,
-                "artifact_source_trajectory_count": artifact_value.source_trajectory_count,
-                "audit": audit,
-            }))
-        }
+        } => print_json(&guidance_artifact_commands::audit_action_imitation(
+            &case,
+            &actions,
+            &artifact,
+            max_engine_steps_per_transition,
+        )?),
         Command::BuildBoundarySuccessorCorpus { args } => {
             let summary = boundary_successor_corpus::build(args)?;
             print_json(&summary)
