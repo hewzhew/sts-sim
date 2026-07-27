@@ -76,7 +76,7 @@ pub struct CardZones {
     pub draw_pile: CombatCardPile,
     pub hand: Vec<CombatCard>,
     pub discard_pile: Vec<CombatCard>,
-    pub exhaust_pile: Vec<CombatCard>,
+    pub exhaust_pile: CombatCardPile,
     pub limbo: Vec<CombatCard>,
     pub queued_cards: VecDeque<QueuedCardPlay>,
     pub card_uuid_counter: u32,

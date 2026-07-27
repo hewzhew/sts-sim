@@ -310,7 +310,7 @@ fn build_combat_for_case(case: &PendingCardContractCase) -> CombatState {
         .collect();
     combat.zones.draw_pile = (case.setup.draw_pile.clone()).into();
     combat.zones.discard_pile = case.setup.discard_pile.clone();
-    combat.zones.exhaust_pile = case.setup.exhaust_pile.clone();
+    combat.zones.exhaust_pile = (case.setup.exhaust_pile.clone()).into();
     combat.turn.energy = 3;
     combat
 }

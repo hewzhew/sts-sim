@@ -48,7 +48,7 @@ pub fn build_natural_combat_start(
             draw_pile: run_state.master_deck.clone().into(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
-            exhaust_pile: Vec::new(),
+            exhaust_pile: Vec::new().into(),
             limbo: Vec::new(),
             queued_cards: VecDeque::new(),
             card_uuid_counter: combat_card_uuid_counter,

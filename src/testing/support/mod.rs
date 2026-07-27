@@ -30,7 +30,7 @@ pub fn blank_test_combat() -> CombatState {
             draw_pile: vec![].into(),
             hand: vec![],
             discard_pile: vec![],
-            exhaust_pile: vec![],
+            exhaust_pile: vec![].into(),
             limbo: vec![],
             queued_cards: VecDeque::new(),
             card_uuid_counter: 0,

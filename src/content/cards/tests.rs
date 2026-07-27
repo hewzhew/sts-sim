@@ -5821,7 +5821,7 @@ fn gash_action_increases_current_and_visible_claw_cards_only() {
     let mut damaged_claw = CombatCard::new(CardId::Claw, 224);
     damaged_claw.base_damage_override = Some(10);
     state.zones.discard_pile = vec![damaged_claw];
-    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Claw, 225)];
+    state.zones.exhaust_pile = (vec![CombatCard::new(CardId::Claw, 225)]).into();
     state.zones.limbo = vec![CombatCard::new(CardId::Claw, 226)];
 
     crate::engine::action_handlers::execute_action(
@@ -11063,7 +11063,8 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     corruption_apply_state.zones.draw_pile =
         (vec![CombatCard::new(CardId::ShrugItOff, 911)]).into();
     corruption_apply_state.zones.discard_pile = vec![CombatCard::new(CardId::BurningPact, 912)];
-    corruption_apply_state.zones.exhaust_pile = vec![CombatCard::new(CardId::PowerThrough, 913)];
+    corruption_apply_state.zones.exhaust_pile =
+        (vec![CombatCard::new(CardId::PowerThrough, 913)]).into();
     corruption_apply_state.zones.limbo = vec![CombatCard::new(CardId::TrueGrit, 914)];
 
     crate::content::cards::ironclad::corruption::corruption_on_apply(&mut corruption_apply_state);
@@ -11236,7 +11237,7 @@ fn corruption_power_on_apply_modifies_skill_costs_in_java_piles() {
     ];
     state.zones.draw_pile = (vec![CombatCard::new(CardId::Armaments, 122)]).into();
     state.zones.discard_pile = vec![CombatCard::new(CardId::Disarm, 123)];
-    state.zones.exhaust_pile = vec![CombatCard::new(CardId::BurningPact, 124)];
+    state.zones.exhaust_pile = (vec![CombatCard::new(CardId::BurningPact, 124)]).into();
 
     crate::engine::action_handlers::powers::handle_apply_power(
         0,
@@ -11653,7 +11654,7 @@ fn ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods() {
         other => panic!("Feed+ should emit upgraded FeedAction, got {other:?}"),
     }
 
-    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Strike, 154)];
+    state.zones.exhaust_pile = (vec![CombatCard::new(CardId::Strike, 154)]).into();
     let exhume_actions = resolve_card_play(
         CardId::Exhume,
         &state,
@@ -11669,10 +11670,11 @@ fn ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods() {
         other => panic!("Exhume should auto-return sole non-Exhume exhaust card, got {other:?}"),
     }
 
-    state.zones.exhaust_pile = vec![
+    state.zones.exhaust_pile = (vec![
         CombatCard::new(CardId::Exhume, 156),
         CombatCard::new(CardId::Strike, 157),
-    ];
+    ])
+    .into();
     let mut exhume_plus = CombatCard::new(CardId::Exhume, 158);
     exhume_plus.upgrades = 1;
     let select_actions = resolve_card_play(CardId::Exhume, &state, &exhume_plus, None);
@@ -11702,7 +11704,7 @@ fn ironclad_exhaust_and_growth_runtime_actions_match_java_use_methods() {
     state.zones.hand = (0..10)
         .map(|offset| CombatCard::new(CardId::Defend, 170 + offset))
         .collect();
-    state.zones.exhaust_pile = vec![CombatCard::new(CardId::Strike, 181)];
+    state.zones.exhaust_pile = (vec![CombatCard::new(CardId::Strike, 181)]).into();
     let full_hand_actions = resolve_card_play(
         CardId::Exhume,
         &state,
@@ -11753,7 +11755,7 @@ fn evolve_exhume_feed_and_feel_no_pain_hooks_match_java_sources() {
     );
 
     let mut exhume_state = crate::test_support::blank_test_combat();
-    exhume_state.zones.exhaust_pile = vec![CombatCard::new(CardId::Defend, 192)];
+    exhume_state.zones.exhaust_pile = (vec![CombatCard::new(CardId::Defend, 192)]).into();
     crate::content::powers::store::set_powers_for(
         &mut exhume_state,
         0,
@@ -11895,7 +11897,7 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     dagger_normal.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 900)];
     dagger_normal.zones.draw_pile = (vec![CombatCard::new(CardId::RitualDagger, 900)]).into();
     dagger_normal.zones.discard_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
-    dagger_normal.zones.exhaust_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.exhaust_pile = (vec![CombatCard::new(CardId::RitualDagger, 900)]).into();
     dagger_normal.zones.limbo = vec![CombatCard::new(CardId::RitualDagger, 900)];
     crate::engine::action_handlers::damage::handle_ritual_dagger(
         44,
