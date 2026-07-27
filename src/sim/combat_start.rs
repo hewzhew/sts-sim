@@ -67,7 +67,10 @@ pub fn build_natural_combat_start(
     roll_initial_monster_plans(&mut combat);
 
     combat.reset_turn_energy_from_player();
-    rng::shuffle_with_random_long(&mut combat.zones.draw_pile, &mut combat.rng.shuffle_rng);
+    rng::shuffle_with_random_long(
+        combat.zones.draw_pile.as_mut_slice(),
+        &mut combat.rng.shuffle_rng,
+    );
     combat.apply_java_initialize_deck_order_after_shuffle();
     combat.queue_action_back(Action::PreBattleTrigger);
 

@@ -159,9 +159,13 @@ pub fn handle_remove_card_from_pile(
     from: crate::state::PileType,
     state: &mut CombatState,
 ) {
+    if from == crate::state::PileType::Draw {
+        state.zones.draw_pile.remove_by_uuid(card_uuid);
+        return;
+    }
     let source = match from {
         crate::state::PileType::Hand => &mut state.zones.hand,
-        crate::state::PileType::Draw => &mut state.zones.draw_pile,
+        crate::state::PileType::Draw => unreachable!("draw pile handled above"),
         crate::state::PileType::Discard => &mut state.zones.discard_pile,
         crate::state::PileType::Exhaust => &mut state.zones.exhaust_pile,
         crate::state::PileType::Limbo => &mut state.zones.limbo,

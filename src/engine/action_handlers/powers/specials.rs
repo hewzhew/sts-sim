@@ -1,6 +1,6 @@
 use crate::content::powers::{store, PowerId};
 use crate::runtime::action::Action;
-use crate::runtime::combat::CombatState;
+use crate::runtime::combat::{CombatCard, CombatState};
 pub fn handle_spot_weakness(target: usize, amount: i32, state: &mut CombatState) {
     let Some(target_monster) = state.entities.monsters.iter().find(|m| m.id == target) else {
         return;
@@ -242,10 +242,10 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     }
 
     let source_pile_draw = !state.zones.draw_pile.is_empty();
-    let source_pile = if source_pile_draw {
-        &state.zones.draw_pile
+    let source_pile: &[CombatCard] = if source_pile_draw {
+        state.zones.draw_pile.as_ref()
     } else {
-        &state.zones.discard_pile
+        state.zones.discard_pile.as_slice()
     };
 
     let rarities_to_check = [

@@ -87,7 +87,7 @@ impl CombatState {
     pub fn shuffle_discard_pile_into_draw_pile(&mut self) {
         self.zones.draw_pile.append(&mut self.zones.discard_pile);
         crate::runtime::rng::shuffle_with_random_long(
-            &mut self.zones.draw_pile,
+            self.zones.draw_pile.as_mut_slice(),
             &mut self.rng.shuffle_rng,
         );
         // Java draw-pile top is the end of CardGroup.group. Rust draw-pile top
@@ -143,7 +143,7 @@ impl CombatState {
         if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.limbo, uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.draw_pile, uuid) {
+        if let Some(c) = self.zones.draw_pile.remove_by_uuid(uuid) {
             return Some(c);
         }
         if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.discard_pile, uuid) {

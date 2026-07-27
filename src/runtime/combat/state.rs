@@ -73,10 +73,10 @@ impl DerefMut for CombatRng {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardZones {
-    pub draw_pile: CombatCardPile,
+    pub draw_pile: DrawPile,
     pub hand: Vec<CombatCard>,
     pub discard_pile: Vec<CombatCard>,
-    pub exhaust_pile: CombatCardPile,
+    pub exhaust_pile: SharedCardPile,
     pub limbo: Vec<CombatCard>,
     pub queued_cards: VecDeque<QueuedCardPlay>,
     pub card_uuid_counter: u32,
@@ -88,7 +88,7 @@ impl CardZones {
     /// Java addToTop/addToBottom/addToRandomSpot semantics must pass through
     /// these helpers instead of writing `draw_pile` indices directly.
     pub fn add_to_draw_pile_top(&mut self, card: CombatCard) {
-        self.draw_pile.insert(0, card);
+        self.draw_pile.push_top(card);
     }
 
     pub fn add_to_draw_pile_bottom(&mut self, card: CombatCard) {
@@ -96,11 +96,7 @@ impl CardZones {
     }
 
     pub fn draw_top_card(&mut self) -> Option<CombatCard> {
-        if self.draw_pile.is_empty() {
-            None
-        } else {
-            Some(self.draw_pile.remove(0))
-        }
+        self.draw_pile.draw_top()
     }
 
     pub fn add_to_draw_pile_random_spot_from_java_index(

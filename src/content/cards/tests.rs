@@ -8808,7 +8808,7 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
     );
     expected_discard.reverse();
     let mut expected_draw = expected_discard;
-    expected_draw.append(&mut shuffle_all_state.zones.draw_pile.clone());
+    expected_draw.extend(shuffle_all_state.zones.draw_pile.iter().cloned());
 
     crate::engine::action_handlers::execute_action(
         Action::ShuffleAllIntoDraw,
@@ -8849,7 +8849,7 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
     let mut expected_java_draw = shuffle_draw_state.zones.draw_pile.clone();
     expected_java_draw.reverse();
     crate::runtime::rng::shuffle_with_random_long(
-        &mut expected_java_draw,
+        expected_java_draw.as_mut_slice(),
         &mut expected_rng.shuffle_rng,
     );
     expected_java_draw.reverse();

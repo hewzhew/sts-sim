@@ -154,7 +154,13 @@ fn stable_scry_select_uses_card_state_and_uuid_fallback() {
         .push(CombatCard::new(CardId::Strike, 2));
 
     let mut variant = baseline.clone();
-    variant.zones.draw_pile[1].base_damage_mut = 13;
+    variant
+        .zones
+        .draw_pile
+        .iter_mut()
+        .nth(1)
+        .expect("second draw-pile card")
+        .base_damage_mut = 13;
 
     assert_ne!(
         stable_outcome_key(
