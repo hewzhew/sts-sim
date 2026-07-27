@@ -1,6 +1,20 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use clap::Args;
+use sts_combat_planner::{
+    CombatDecisionRoot, CombatPlanningQuantum, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
+use sts_oracle_runtime::state::core::ClientInput;
+
 use super::combat_policy_controls::anchor_only_policy;
 use super::combat_trace_view::target_atomic_policy_trace;
-use super::*;
+use super::exact_turn_corridor::load as load_exact_turn_corridor;
+use super::print_json;
 
 #[derive(Debug, Args)]
 pub(super) struct TurnMembershipArgs {
