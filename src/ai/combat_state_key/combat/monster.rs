@@ -22,7 +22,6 @@ fn monster_key(monster: &MonsterEntity) -> CombatMonsterKey {
         is_escaped: monster.is_escaped,
         half_dead: monster.half_dead,
         move_state: monster.move_state.clone(),
-        turn_plan: monster.turn_plan(),
         runtime: monster_runtime_key(monster),
     }
 }
