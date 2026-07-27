@@ -219,9 +219,14 @@ pub fn handle_lesson_learned(
                 .misc_rng
                 .random_range(0, possible.len() as i32 - 1) as usize;
             let deck_idx = possible[pick];
-            let master_deck = std::sync::Arc::make_mut(&mut state.meta.master_deck_snapshot);
-            let card_uuid = master_deck[deck_idx].uuid;
-            master_deck[deck_idx].upgrades += 1;
+            let card_uuid = state
+                .meta
+                .master_deck_snapshot
+                .with_cards_mut(|master_deck| {
+                    let card_uuid = master_deck[deck_idx].uuid;
+                    master_deck[deck_idx].upgrades += 1;
+                    card_uuid
+                });
             state
                 .meta
                 .meta_changes

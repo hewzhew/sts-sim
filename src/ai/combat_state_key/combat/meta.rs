@@ -1,7 +1,6 @@
 use crate::runtime::combat::{CombatState, MetaChange};
 
-use super::super::types::{CombatMetaChangeKey, CombatMetaKey};
-use super::cards::card_key;
+use super::super::types::{CombatMasterDeckKey, CombatMetaChangeKey, CombatMetaKey};
 
 pub(super) fn meta_key(combat: &CombatState) -> CombatMetaKey {
     let meta = &combat.meta;
@@ -10,7 +9,7 @@ pub(super) fn meta_key(combat: &CombatState) -> CombatMetaKey {
         player_class: meta.player_class.clone(),
         is_boss_fight: meta.is_boss_fight,
         is_elite_fight: meta.is_elite_fight,
-        master_deck_snapshot: meta.master_deck_snapshot.iter().map(card_key).collect(),
+        master_deck_snapshot: CombatMasterDeckKey::new(&meta.master_deck_snapshot),
         meta_changes: meta.meta_changes.iter().map(meta_change_key).collect(),
     }
 }

@@ -1,7 +1,6 @@
 use super::*;
 use crate::runtime::action::ActionInfo;
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 #[test]
 fn combat_clone_shares_master_deck_until_a_branch_mutates_it() {
@@ -9,16 +8,19 @@ fn combat_clone_shares_master_deck_until_a_branch_mutates_it() {
     original.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 7)].into();
 
     let mut branch = original.clone();
-    assert!(Arc::ptr_eq(
-        &original.meta.master_deck_snapshot,
-        &branch.meta.master_deck_snapshot
-    ));
+    assert!(original
+        .meta
+        .master_deck_snapshot
+        .shares_storage_with(&branch.meta.master_deck_snapshot));
 
-    Arc::make_mut(&mut branch.meta.master_deck_snapshot)[0].upgrades = 1;
-    assert!(!Arc::ptr_eq(
-        &original.meta.master_deck_snapshot,
-        &branch.meta.master_deck_snapshot
-    ));
+    branch
+        .meta
+        .master_deck_snapshot
+        .with_cards_mut(|cards| cards[0].upgrades = 1);
+    assert!(!original
+        .meta
+        .master_deck_snapshot
+        .shares_storage_with(&branch.meta.master_deck_snapshot));
     assert_eq!(original.meta.master_deck_snapshot[0].upgrades, 0);
     assert_eq!(branch.meta.master_deck_snapshot[0].upgrades, 1);
 }
@@ -27,12 +29,24 @@ fn combat_clone_shares_master_deck_until_a_branch_mutates_it() {
 fn shared_master_deck_keeps_the_existing_json_array_shape() {
     let mut combat = crate::test_support::blank_test_combat();
     combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Bash, 9)].into();
+    let exact_hash_before = crate::ai::combat_state_key::combat_exact_state_hash_v1(
+        &crate::state::EngineState::CombatPlayerTurn,
+        &combat,
+    );
 
     let json = serde_json::to_value(&combat).expect("combat state should serialize");
     assert!(json["meta"]["master_deck_snapshot"].is_array());
     let restored: CombatState =
         serde_json::from_value(json).expect("combat state should deserialize");
     assert_eq!(restored, combat);
+    assert_eq!(
+        crate::ai::combat_state_key::combat_exact_state_hash_v1(
+            &crate::state::EngineState::CombatPlayerTurn,
+            &restored,
+        ),
+        exact_hash_before,
+        "deserialization must rebuild the same cached deck identity"
+    );
 }
 
 #[test]

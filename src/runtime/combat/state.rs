@@ -1,6 +1,5 @@
 use super::*;
 use crate::state::DomainCardSnapshot;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum MetaChange {
@@ -26,13 +25,7 @@ pub struct CombatMeta {
     pub player_class: String,
     pub is_boss_fight: bool,
     pub is_elite_fight: bool,
-    /// Immutable-by-default deck image captured at combat start.
-    ///
-    /// Exact search clones a combat state for every atomic successor. Sharing
-    /// this normally stable slice avoids cloning the whole deck at every edge;
-    /// the rare in-combat mutation (for example Lesson Learned) uses
-    /// `Arc::make_mut` and therefore preserves branch isolation.
-    pub master_deck_snapshot: Arc<[CombatCard]>,
+    pub master_deck_snapshot: MasterDeckSnapshot,
     pub meta_changes: Vec<MetaChange>,
 }
 

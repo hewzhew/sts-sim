@@ -20,6 +20,7 @@ pub type CombatEntityMap<V> = HashMap<EntityId, V, FxBuildHasher>;
 mod card;
 mod combat_methods;
 mod entities;
+mod master_deck_snapshot;
 mod monster_runtime;
 mod orbs;
 mod power;
@@ -27,6 +28,7 @@ mod state;
 
 pub use card::*;
 pub use entities::*;
+pub use master_deck_snapshot::*;
 pub use monster_runtime::*;
 pub use orbs::*;
 pub use power::*;
