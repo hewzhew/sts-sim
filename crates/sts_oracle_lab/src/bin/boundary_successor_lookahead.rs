@@ -188,7 +188,7 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
                     .any(|watched| watched == option.exact_successor_hash()),
                 boundary: format!("{:?}", option.boundary()),
                 action_count: option.actions().len(),
-                action_labels: super::readable_turn_option_action_labels(
+                action_labels: super::combat_trace_view::readable_turn_option_action_labels(
                     &root_position,
                     option.actions(),
                     args.max_engine_steps_per_transition,

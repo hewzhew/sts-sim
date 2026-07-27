@@ -1,3 +1,4 @@
+use super::combat_trace_view::{combat_position_snapshot, compact_corridor_report};
 use super::*;
 
 #[derive(Debug, Args)]

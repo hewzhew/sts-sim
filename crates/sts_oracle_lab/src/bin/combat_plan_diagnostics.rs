@@ -1,3 +1,4 @@
+use super::combat_trace_view::combat_action_label;
 use super::*;
 
 #[derive(Debug, Args)]

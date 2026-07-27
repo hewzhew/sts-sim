@@ -1,3 +1,6 @@
+use super::combat_trace_view::{
+    combat_action_label, compact_combat_trace, compact_local_corridor_report,
+};
 use super::*;
 
 #[derive(Debug, Args)]

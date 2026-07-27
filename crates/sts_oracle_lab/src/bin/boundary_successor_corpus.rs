@@ -679,7 +679,7 @@ fn build_candidate(
     } else {
         evaluate_successor(option, config, solve_work_per_candidate)?
     };
-    let action_labels = super::readable_turn_option_action_labels(
+    let action_labels = super::combat_trace_view::readable_turn_option_action_labels(
         root_position,
         option.actions(),
         config.max_engine_steps_per_transition,

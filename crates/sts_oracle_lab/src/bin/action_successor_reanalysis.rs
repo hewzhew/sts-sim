@@ -23,12 +23,12 @@ use sts_oracle_runtime::sim::combat::{
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::{
     evaluate_unresolved_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
 };
 use super::{
-    combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_segments,
-    oracle_lab_runtime_identity,
+    existing_combat_knowledge_policy_v1, load_combat_action_segments, oracle_lab_runtime_identity,
 };
 
 const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";

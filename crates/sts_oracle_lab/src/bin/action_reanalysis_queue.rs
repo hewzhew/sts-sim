@@ -24,8 +24,9 @@ use sts_oracle_runtime::sim::combat::{
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_trace_view::combat_action_label;
 use super::{
-    combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus,
+    existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus,
     oracle_lab_runtime_identity,
 };
 

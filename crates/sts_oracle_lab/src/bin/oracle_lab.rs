@@ -15,6 +15,7 @@ mod combat_case_legacy_global;
 mod combat_case_local_graph;
 mod combat_case_performance;
 mod combat_plan_diagnostics;
+mod combat_trace_view;
 mod depth_beam_audits;
 mod exact_combat_evidence;
 mod exact_turn_corridor;
@@ -79,7 +80,6 @@ use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
 };
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
-use sts_oracle_runtime::content::{cards, monsters::EnemyId};
 use sts_oracle_runtime::eval::combat_action_imitation::{
     combat_action_imitation_policy_v1, root_player_turn_action_policy_v1,
     CombatActionImitationArtifactV1,
@@ -104,7 +104,7 @@ use sts_oracle_runtime::runtime::branch::{
 use sts_oracle_runtime::sim::combat::{
     combat_terminal, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
-use sts_oracle_runtime::sim::combat_action::{combat_action_key, target_label};
+use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 
 struct ExactCorridorShadowPolicy {
@@ -769,7 +769,7 @@ fn combat_policy_surface(
                 json!({
                     "rank": ordinal_rank,
                     "surface_index": surface_index,
-                    "action": combat_action_label(position, input),
+                    "action": combat_trace_view::combat_action_label(position, input),
                     "weight": weight,
                     "probability": probability,
                 }),
@@ -906,7 +906,7 @@ fn replay_combat_path(
     let mut terminal = stepper.terminal(&position);
 
     for (index, action) in actions.iter().enumerate() {
-        let action_key = combat_action_label(&position, &action.input);
+        let action_key = combat_trace_view::combat_action_label(&position, &action.input);
         if stepper
             .choice_for_legal_input(&position, &action.input)
             .is_none()
@@ -948,7 +948,7 @@ fn replay_combat_path(
                 "start_hp": turn_start_hp,
                 "start_policy": turn_start_policy,
                 "actions": turn_actions,
-                "end": combat_turn_snapshot(&position),
+                "end": combat_trace_view::combat_turn_snapshot(&position),
                 "terminal": format!("{terminal:?}"),
             }));
             turn_number = next_turn;
@@ -968,7 +968,7 @@ fn replay_combat_path(
             "start_hp": turn_start_hp,
             "start_policy": turn_start_policy,
             "actions": turn_actions,
-            "end": combat_turn_snapshot(&position),
+            "end": combat_trace_view::combat_turn_snapshot(&position),
             "terminal": format!("{terminal:?}"),
             "partial": true,
         }));
@@ -979,422 +979,6 @@ fn replay_combat_path(
         "turns": turns,
         "terminal": format!("{terminal:?}"),
     }))
-}
-
-fn combat_action_label(
-    position: &sts_oracle_runtime::sim::combat::CombatPosition,
-    input: &ClientInput,
-) -> String {
-    match input {
-        ClientInput::PlayCard { card_index, target } => position
-            .combat
-            .zones
-            .hand
-            .get(*card_index)
-            .map(|card| {
-                let target = compact_target_label(&position.combat, *target);
-                if target == "none" {
-                    format!("play {}", card_label(card))
-                } else {
-                    format!("play {} -> {target}", card_label(card))
-                }
-            })
-            .unwrap_or_else(|| combat_action_key(&position.combat, input)),
-        ClientInput::UsePotion {
-            potion_index,
-            target,
-        } => {
-            let potion = position
-                .combat
-                .entities
-                .potions
-                .get(*potion_index)
-                .and_then(Option::as_ref)
-                .map(|potion| format!("{:?}", potion.id))
-                .unwrap_or_else(|| format!("slot {potion_index}"));
-            let target = compact_target_label(&position.combat, *target);
-            if target == "none" {
-                format!("use {potion}")
-            } else {
-                format!("use {potion} -> {target}")
-            }
-        }
-        ClientInput::EndTurn => "end turn".to_string(),
-        ClientInput::SubmitSelection(resolution) => {
-            let selected = resolution
-                .selected_card_uuids()
-                .into_iter()
-                .map(|uuid| combat_card_uuid_label(&position.combat, uuid))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("select {selected}")
-        }
-        _ => combat_action_key(&position.combat, input),
-    }
-}
-
-fn readable_turn_option_action_labels(
-    root: &sts_oracle_runtime::sim::combat::CombatPosition,
-    actions: &[TurnOptionAction],
-    max_engine_steps_per_transition: usize,
-) -> Result<Vec<String>, String> {
-    let stepper = EngineCombatStepper;
-    let mut position = root.clone();
-    let mut labels = Vec::with_capacity(actions.len());
-    for action in actions {
-        labels.push(combat_action_label(&position, &action.input));
-        let step = stepper.apply_to_stable(
-            &position,
-            action.input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if step.truncated || step.timed_out {
-            return Err(
-                "generated option action could not be replayed while formatting".to_string(),
-            );
-        }
-        position = step.position;
-    }
-    Ok(labels)
-}
-
-fn target_atomic_policy_trace(
-    initial: &sts_oracle_runtime::sim::combat::CombatPosition,
-    target: &[ClientInput],
-    max_engine_steps_per_transition: usize,
-) -> Result<
-    (
-        Vec<Value>,
-        String,
-        Vec<sts_oracle_runtime::sim::combat::CombatPosition>,
-    ),
-    String,
-> {
-    const UNIFORM_EXPLORATION: f64 = 0.05;
-
-    let stepper = EngineCombatStepper;
-    let mut position = initial.clone();
-    let mut trace = Vec::with_capacity(target.len());
-    let mut prefix_positions = Vec::with_capacity(target.len());
-    for (step_index, input) in target.iter().enumerate() {
-        let legal = stepper.atomic_actions(&position);
-        let weights =
-            sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
-                &position,
-                &legal,
-            );
-        let target_index = legal.iter().position(|candidate| candidate == input);
-        let exact_input_is_legal =
-            target_index.is_some() || stepper.choice_for_legal_input(&position, input).is_some();
-        let (ordinal_rank, raw_weight, probability, negative_log_probability) = target_index
-            .and_then(|index| weights.get(index).copied().map(|weight| (index, weight)))
-            .map_or((None, None, None, None), |(_, weight)| {
-                let rank = 1 + weights
-                    .iter()
-                    .filter(|candidate| **candidate > weight)
-                    .count();
-                let total = weights.iter().sum::<f64>();
-                let uniform = 1.0 / weights.len().max(1) as f64;
-                let probability = ((1.0 - UNIFORM_EXPLORATION) * (weight / total)
-                    + UNIFORM_EXPLORATION * uniform)
-                    .max(f64::MIN_POSITIVE);
-                (
-                    Some(rank),
-                    Some(weight),
-                    Some(probability),
-                    Some(-probability.ln()),
-                )
-            });
-        trace.push(json!({
-            "step": step_index,
-            "turn": position.combat.turn.turn_count,
-            "action": combat_action_label(&position, input),
-            "legal_action_count": legal.len(),
-            "ordinal_rank": ordinal_rank,
-            "raw_weight": raw_weight,
-            "probability": probability,
-            "negative_log_probability": negative_log_probability,
-            "surface": if target_index.is_some() { "atomic" } else { "structured_selection" },
-        }));
-        if !exact_input_is_legal {
-            return Err(format!(
-                "target action {step_index} is not on the exact legal action surface: {input:?}"
-            ));
-        }
-        let result = stepper.apply_to_stable(
-            &position,
-            input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if result.truncated {
-            return Err(format!(
-                "target action {step_index} exceeded the exact transition limit"
-            ));
-        }
-        position = result.position;
-        prefix_positions.push(position.clone());
-    }
-    Ok((
-        trace,
-        sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-            &position.engine,
-            &position.combat,
-        ),
-        prefix_positions,
-    ))
-}
-
-fn compact_target_label(
-    combat: &sts_oracle_runtime::runtime::combat::CombatState,
-    target: Option<usize>,
-) -> String {
-    let Some(target) = target else {
-        return "none".to_string();
-    };
-    combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == target)
-        .map(|monster| {
-            let label = EnemyId::from_id(monster.monster_type)
-                .map(|enemy| enemy.get_name())
-                .unwrap_or("Unknown");
-            format!("{label}[{}]", monster.slot)
-        })
-        .unwrap_or_else(|| target_label(combat, Some(target)))
-}
-
-fn combat_card_uuid_label(
-    combat: &sts_oracle_runtime::runtime::combat::CombatState,
-    uuid: u32,
-) -> String {
-    combat
-        .zones
-        .hand
-        .iter()
-        .chain(&combat.zones.draw_pile)
-        .chain(&combat.zones.discard_pile)
-        .chain(&combat.zones.exhaust_pile)
-        .find(|card| card.uuid == uuid)
-        .map(card_label)
-        .unwrap_or_else(|| format!("card#{uuid}"))
-}
-
-fn combat_turn_snapshot(position: &sts_oracle_runtime::sim::combat::CombatPosition) -> Value {
-    let combat = &position.combat;
-    let player = &combat.entities.player;
-    json!({
-        "hp": player.current_hp,
-        "block": player.block,
-        "energy": combat.turn.energy,
-        "player_powers": combat_power_labels(combat, player.id),
-        "hand": combat.zones.hand.iter().map(card_label).collect::<Vec<_>>().join(" | "),
-        "piles": format!("draw {} / discard {} / exhaust {}", combat.zones.draw_pile.len(), combat.zones.discard_pile.len(), combat.zones.exhaust_pile.len()),
-        "monsters": combat.entities.monsters.iter().map(|monster| monster_state_label(combat, monster)).collect::<Vec<_>>(),
-    })
-}
-
-fn combat_position_snapshot(position: &sts_oracle_runtime::sim::combat::CombatPosition) -> Value {
-    let combat = &position.combat;
-    let player = &combat.entities.player;
-    json!({
-        "turn": combat.turn.turn_count,
-        "phase": format!("{:?}", combat.turn.current_phase),
-        "player": {
-            "hp": player.current_hp,
-            "max_hp": player.max_hp,
-            "block": player.block,
-            "energy": combat.turn.energy,
-            "powers": combat_power_labels(combat, player.id),
-        },
-        "hand": combat.zones.hand.iter().map(card_label).collect::<Vec<_>>().join(" | "),
-        "piles": format!("draw {} / discard {} / exhaust {}", combat.zones.draw_pile.len(), combat.zones.discard_pile.len(), combat.zones.exhaust_pile.len()),
-        "monsters": combat.entities.monsters.iter().map(|monster| monster_state_label(combat, monster)).collect::<Vec<_>>(),
-    })
-}
-
-fn combat_power_labels(
-    combat: &sts_oracle_runtime::runtime::combat::CombatState,
-    entity: sts_oracle_runtime::EntityId,
-) -> Vec<String> {
-    sts_oracle_runtime::content::powers::store::powers_for(combat, entity)
-        .unwrap_or_default()
-        .iter()
-        .map(|power| format!("{:?}:{}", power.power_type, power.amount))
-        .collect()
-}
-
-fn monster_state_label(
-    combat: &sts_oracle_runtime::runtime::combat::CombatState,
-    monster: &sts_oracle_runtime::runtime::combat::MonsterEntity,
-) -> String {
-    let label = EnemyId::from_id(monster.monster_type)
-        .map(|enemy| enemy.get_name())
-        .unwrap_or("Unknown");
-    if !monster.is_alive_for_action() {
-        return format!("{label}[{}] dead", monster.slot);
-    }
-    let intent = monster
-        .move_state
-        .planned_visible_spec
-        .as_ref()
-        .map(|intent| format!("{intent:?}"))
-        .unwrap_or_else(|| format!("move:{}", monster.planned_move_id()));
-    let powers = combat_power_labels(combat, monster.id);
-    let powers = if powers.is_empty() {
-        String::new()
-    } else {
-        format!(" powers=[{}]", powers.join(", "))
-    };
-    format!(
-        "{label}[{}] {}/{} block={} intent={intent}{powers}",
-        monster.slot, monster.current_hp, monster.max_hp, monster.block
-    )
-}
-
-fn card_label(card: &sts_oracle_runtime::runtime::combat::CombatCard) -> String {
-    let upgrade = if card.upgrades == 0 {
-        String::new()
-    } else {
-        format!("+{}", card.upgrades)
-    };
-    format!("{}{}", cards::java_id(card.id), upgrade)
-}
-
-fn compact_corridor_report(report: Option<&Value>) -> Value {
-    let Some(report) = report else {
-        return Value::Null;
-    };
-    let states = report
-        .get("states")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let reached = states
-        .iter()
-        .filter(|state| {
-            state
-                .get("membership")
-                .and_then(|membership| membership.get("accepted"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
-        .count();
-    let first_missing = states.iter().find(|state| {
-        let accepted = state
-            .get("membership")
-            .and_then(|membership| membership.get("accepted"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        !accepted
-    });
-    let furthest_accepted = states.iter().rev().find(|state| {
-        state
-            .get("membership")
-            .and_then(|membership| membership.get("accepted"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-    });
-    json!({
-        "kind": report.get("kind"),
-        "guide": report.get("guide"),
-        "authority": report.get("authority"),
-        "exact_turn_states": report.get("exact_turn_states"),
-        "accepted_turn_states": reached,
-        "first_missing_rank": first_missing
-            .and_then(|state| state.get("corridor_rank")),
-        "first_missing": first_missing,
-        "furthest_accepted": furthest_accepted,
-        "terminal": report.get("terminal"),
-        "terminal_final_hp": report.get("terminal_final_hp"),
-    })
-}
-
-fn compact_combat_trace(trace: Option<&Value>) -> Value {
-    let Some(trace) = trace else {
-        return Value::Null;
-    };
-    let turns = trace
-        .get("turns")
-        .and_then(Value::as_array)
-        .map(|turns| {
-            turns
-                .iter()
-                .map(|turn| {
-                    let end = turn.get("end");
-                    json!({
-                        "turn": turn.get("turn"),
-                        "action_range": turn.get("action_range"),
-                        "start_hp": turn.get("start_hp"),
-                        "actions": turn.get("actions"),
-                        "end": {
-                            "hp": end.and_then(|value| value.get("hp")),
-                            "block": end.and_then(|value| value.get("block")),
-                            "energy": end.and_then(|value| value.get("energy")),
-                            "hand": end.and_then(|value| value.get("hand")),
-                            "piles": end.and_then(|value| value.get("piles")),
-                            "player_powers": end.and_then(|value| value.get("player_powers")),
-                            "monsters": end.and_then(|value| value.get("monsters")),
-                        },
-                        "terminal": turn.get("terminal"),
-                        "partial": turn.get("partial"),
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    json!({
-        "action_count": trace.get("action_count"),
-        "turns": turns,
-        "terminal": trace.get("terminal"),
-    })
-}
-
-fn compact_local_corridor_report(report: Option<&Value>) -> Value {
-    let Some(report) = report else {
-        return Value::Null;
-    };
-    let states = report
-        .get("states")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let reached = states
-        .iter()
-        .filter(|state| state.get("state").is_some_and(|value| !value.is_null()))
-        .count();
-    let first_missing = states
-        .iter()
-        .find(|state| state.get("state").is_none_or(Value::is_null));
-    let furthest_reached_index = states
-        .iter()
-        .rposition(|state| state.get("state").is_some_and(|value| !value.is_null()));
-    let furthest_reached = furthest_reached_index.and_then(|index| states.get(index));
-    let incoming_to_furthest = furthest_reached_index
-        .and_then(|index| index.checked_sub(1))
-        .and_then(|index| states.get(index))
-        .and_then(|state| state.get("outgoing_to_next"))
-        .filter(|value| !value.is_null());
-    json!({
-        "authority": report.get("authority"),
-        "changes_search_order": report.get("changes_search_order"),
-        "action_count": report.get("action_count"),
-        "exact_turn_states": report.get("exact_turn_states"),
-        "reached_turn_states": reached,
-        "first_missing_rank": first_missing
-            .and_then(|state| state.get("corridor_rank")),
-        "first_missing": first_missing,
-        "incoming_to_furthest": incoming_to_furthest,
-        "furthest_reached": furthest_reached,
-        "terminal_final_hp": report.get("terminal_final_hp"),
-    })
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

@@ -103,7 +103,7 @@ fn durable_exact_identity_is_not_a_debug_or_layout_compatibility_view() {
 
 #[test]
 fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
-    const FRONTEND_LIMIT: u64 = 68 * 1024;
+    const FRONTEND_LIMIT: u64 = 52 * 1024;
     const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;
 
     let frontend = std::path::Path::new("crates/sts_oracle_lab/src/bin/oracle_lab.rs");
@@ -144,6 +144,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 
     for (module, limit) in [
         ("canonical_launch.rs", 12 * 1024),
+        ("combat_trace_view.rs", 20 * 1024),
         ("workspace_view.rs", 12 * 1024),
         ("run_witness_commands.rs", 16 * 1024),
         ("exact_turn_corridor.rs", 16 * 1024),

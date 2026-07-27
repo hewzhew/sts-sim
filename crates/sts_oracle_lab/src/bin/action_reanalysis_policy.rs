@@ -21,10 +21,9 @@ use sts_oracle_runtime::eval::combat_action_imitation::{
 use sts_oracle_runtime::sim::combat::CombatPosition;
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::ExactCombatEvidence;
-use super::{
-    combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus,
-};
+use super::{existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus};
 
 const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
 
