@@ -15,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
+use rustc_hash::FxBuildHasher;
 use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
     combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
@@ -132,7 +133,7 @@ pub struct LocalTurnGraphWitnessSession {
     collect_plan_transition_annotations: bool,
     lookahead_lane: Option<CombatGuideLaneId>,
     nodes: Vec<GraphNode>,
-    nodes_by_exact_key: HashMap<ConstrainedExactStateKey, usize>,
+    nodes_by_exact_key: HashMap<ConstrainedExactStateKey, usize, FxBuildHasher>,
     used: LocalTurnGraphWitnessCounters,
     performance_timing: LocalTurnGraphPerformanceTiming,
     granted_selections: usize,

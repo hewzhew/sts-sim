@@ -1,5 +1,7 @@
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use rustc_hash::FxHasher;
 use sts_core::ai::combat_state_key::CombatExactStateKey;
 use sts_core::state::core::ClientInput;
 
@@ -14,10 +16,21 @@ use super::{
 /// `None` preserves ordinary simulator-state transposition when no potion
 /// contract exists. Under a finite contract, equal simulator states reached
 /// with different spent allowances remain distinct.
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(super) struct ConstrainedExactStateKey {
+    /// Process-local bucket hash computed once when this search identity is
+    /// constructed. Equality still compares the complete typed key below, so
+    /// collisions cannot merge simulator states.
+    structural_hash: u64,
     exact: Arc<CombatExactStateKey>,
     potion_expenditures: Option<u32>,
+}
+
+impl Hash for ConstrainedExactStateKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.structural_hash.hash(state);
+        self.potion_expenditures.hash(state);
+    }
 }
 
 impl ConstrainedExactStateKey {
@@ -26,7 +39,10 @@ impl ConstrainedExactStateKey {
         finite_limit: Option<u32>,
         potion_expenditures: u32,
     ) -> Self {
+        let mut hasher = FxHasher::default();
+        exact.hash(&mut hasher);
         Self {
+            structural_hash: hasher.finish(),
             exact,
             potion_expenditures: finite_limit.map(|_| potion_expenditures),
         }

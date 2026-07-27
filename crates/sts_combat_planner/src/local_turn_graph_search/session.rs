@@ -69,6 +69,11 @@ impl LocalTurnGraphWitnessSession {
         );
         let root_generation_service_views =
             generation_service_views_from_lanes(generator.retained_guide_lanes());
+        let mut nodes_by_exact_key = HashMap::with_hasher(FxBuildHasher);
+        nodes_by_exact_key.insert(
+            ConstrainedExactStateKey::new(root_exact_key, config.max_potions_used, 0),
+            0,
+        );
         Self {
             original_root,
             config,
@@ -99,10 +104,7 @@ impl LocalTurnGraphWitnessSession {
                 synced_gaps: 0,
                 exhausted: false,
             }],
-            nodes_by_exact_key: HashMap::from([(
-                ConstrainedExactStateKey::new(root_exact_key, config.max_potions_used, 0),
-                0,
-            )]),
+            nodes_by_exact_key,
             used: LocalTurnGraphWitnessCounters {
                 exact_nodes: 1,
                 ..LocalTurnGraphWitnessCounters::default()

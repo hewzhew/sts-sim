@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Instant;
 
-use rustc_hash::FxHasher;
+use rustc_hash::{FxBuildHasher, FxHasher};
 use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
@@ -398,7 +398,7 @@ pub struct TurnOptionGeneratorSession {
     scheduled_round: VecDeque<(usize, usize)>,
     live_work_items: usize,
     next_sequence_id: u64,
-    seen: HashSet<IndexedExactStateKey>,
+    seen: HashSet<IndexedExactStateKey, FxBuildHasher>,
     completed: Vec<CompleteTurnOption>,
     total_completed_options: usize,
     gaps: Vec<TurnOptionGenerationGap>,
@@ -501,7 +501,7 @@ impl TurnOptionGeneratorSession {
         } else {
             Some(0)
         };
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::with_hasher(FxBuildHasher);
         let root_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
         seen.insert(IndexedExactStateKey::new(
             root_key,
