@@ -177,7 +177,7 @@ pub struct EntityState {
     pub player: PlayerEntity,
     pub monsters: Vec<MonsterEntity>,
     pub potions: Vec<Option<crate::content::potions::Potion>>,
-    pub power_db: HashMap<EntityId, Vec<Power>>,
+    pub power_db: CombatEntityMap<Vec<Power>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
@@ -224,7 +224,7 @@ pub struct CombatRuntimeHints {
     /// It is updated only by draw actions that explicitly opt into draw
     /// history because only Java follow-up actions should observe it.
     pub last_drawn_cards: Vec<DrawnCardRecord>,
-    pub monster_protocol: HashMap<EntityId, MonsterProtocolState>,
+    pub monster_protocol: CombatEntityMap<MonsterProtocolState>,
     /// Java `AbstractRoom.mugged` equivalent at combat scope.
     ///
     /// Set when a thief escapes after actually stealing gold. This is not used

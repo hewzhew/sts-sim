@@ -432,6 +432,7 @@ dependencies = [
  "blake2",
  "clap",
  "flate2",
+ "rustc-hash",
  "serde",
  "serde_json",
  "smallvec",

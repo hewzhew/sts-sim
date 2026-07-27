@@ -7,7 +7,7 @@ use crate::runtime::combat::{
     StanceId, TurnRuntime,
 };
 use crate::runtime::rng::RngPool;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 pub fn blank_test_combat() -> CombatState {
     CombatState {
@@ -53,7 +53,7 @@ pub fn blank_test_combat() -> CombatState {
             },
             monsters: vec![],
             potions: vec![],
-            power_db: HashMap::new(),
+            power_db: Default::default(),
         },
         engine: EngineRuntime::new(),
         rng: CombatRng::new(RngPool::new(123)),

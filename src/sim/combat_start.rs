@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::content::monsters::factory::{self, EncounterId};
 use crate::engine::core::{
@@ -57,7 +57,7 @@ pub fn build_natural_combat_start(
             player,
             monsters,
             potions: run_state.potions.clone(),
-            power_db: HashMap::new(),
+            power_db: Default::default(),
         },
         engine: EngineRuntime::new(),
         rng: CombatRng::new(run_state.rng_pool.clone()),
