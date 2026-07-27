@@ -26,6 +26,7 @@ mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
 mod v2_capability_audit;
+mod workspace_commands;
 mod workspace_view;
 
 use canonical_launch::{
@@ -105,11 +106,9 @@ use sts_oracle_runtime::eval::combat_search_v2::{
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
     ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
-    OracleAnalysisAdvanceRequestV1,
 };
 use sts_oracle_runtime::runtime::branch::{
-    load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
-    oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
+    load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
     OracleRunBudget, OracleRunConfig,
 };
 use sts_oracle_runtime::sim::combat::{
@@ -603,13 +602,6 @@ impl BudgetArgs {
             ..OracleRunBudget::default()
         }
     }
-}
-
-#[derive(Serialize)]
-#[serde(deny_unknown_fields)]
-struct AdvanceOutput<T, U> {
-    report: T,
-    view: U,
 }
 
 struct ExactCorridorShadowPolicy {
@@ -1155,175 +1147,55 @@ fn main() -> Result<(), String> {
         Command::TurnMembership(args) => turn_membership_audit::run(args),
         Command::V2CapabilityAudit(args) => v2_capability_audit::run(args),
         Command::View { workspace, node } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = if let Some(node) = node {
-                analysis.session.view_node(node)?
-            } else {
-                analysis.view()?
-            };
-            print_json(&view)
+            print_json(&workspace_commands::view(&workspace, node)?)
         }
         Command::Status {
             workspace,
             node,
             limit,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = workspace_view::selected(&analysis, node)?;
-            print_json(&workspace_view::compact_node(&view, limit))
-        }
+        } => print_json(&workspace_commands::status(&workspace, node, limit)?),
         Command::Choose {
             workspace,
             owner_rank,
             node,
-        } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            if let Some(expected) = node {
-                let actual = analysis.session.cursor_node_id();
-                if expected != actual {
-                    return Err(format!(
-                        "oracle choose expected cursor node {expected}, but current cursor is {actual}"
-                    ));
-                }
-            }
-            let current = analysis.view()?;
-            let matches = current
-                .choices
-                .iter()
-                .filter(|choice| choice.owner_rank == owner_rank)
-                .collect::<Vec<_>>();
-            let [choice] = matches.as_slice() else {
-                return Err(format!(
-                    "oracle node {} has {} choices with owner rank {owner_rank}; expected exactly one",
-                    current.node_id,
-                    matches.len()
-                ));
-            };
-            let view = analysis.try_choice(&choice.choice_ref.clone())?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&workspace_view::compact_node(&view, 8))
-        }
+        } => print_json(&workspace_commands::choose(&workspace, owner_rank, node)?),
         Command::Owner { workspace, steps } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let mut applied = Vec::new();
-            let mut stopped = "step_limit";
-            for _ in 0..steps {
-                let current = analysis.view()?;
-                let choices = current
-                    .choices
-                    .iter()
-                    .filter(|choice| choice.owner_rank == 0)
-                    .collect::<Vec<_>>();
-                let [choice] = choices.as_slice() else {
-                    stopped = if choices.is_empty() {
-                        "no_owner_choice"
-                    } else {
-                        "ambiguous_owner_choice"
-                    };
-                    break;
-                };
-                let candidate_id = choice.candidate_id.clone();
-                let label = choice.label.clone();
-                let choice_ref = choice.choice_ref.clone();
-                applied.push(json!({
-                    "node": current.node_id,
-                    "candidate_id": candidate_id,
-                    "label": label,
-                }));
-                analysis.try_choice(&choice_ref)?;
-            }
-            if !applied.is_empty() {
-                save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            }
-            print_json(&json!({
-                "requested_steps": steps,
-                "applied_count": applied.len(),
-                "applied": applied,
-                "stopped": stopped,
-                "status": workspace_view::compact_node(&analysis.view()?, 8),
-            }))
+            print_json(&workspace_commands::owner(&workspace, steps)?)
         }
         Command::Timeline {
             workspace,
             node,
             tail,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            if tail == 0 || tail > 500 {
-                return Err("timeline tail must be in 1..=500".to_string());
-            }
-            print_json(&workspace_view::compact_timeline(&analysis, node, tail)?)
-        }
+        } => print_json(&workspace_commands::timeline(&workspace, node, tail)?),
         Command::ExportCombatCase {
             workspace,
             node,
             output,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            let case = workspace_view::combat_case(&analysis, node)?;
-            save_combat_case(&output, &case)?;
-            print_json(&json!({
-                "node": node,
-                "output": output,
-                "combat": case.combat,
-            }))
-        }
+        } => print_json(&workspace_commands::export_combat_case(
+            &workspace, node, &output,
+        )?),
         Command::Combat {
             workspace,
             node,
             max_engine_steps_per_transition,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            print_json(&oracle_live_combat_diagnostic_v1(
-                &analysis,
-                node,
-                max_engine_steps_per_transition,
-            )?)
-        }
-        Command::Tree { workspace } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            print_json(&analysis.session.tree())
-        }
+        } => print_json(&workspace_commands::combat(
+            &workspace,
+            node,
+            max_engine_steps_per_transition,
+        )?),
+        Command::Tree { workspace } => print_json(&workspace_commands::tree(&workspace)?),
         Command::Try {
             workspace,
             choice_ref,
-        } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = analysis.try_choice(&choice_ref)?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
-        }
+        } => print_json(&workspace_commands::try_choice(&workspace, &choice_ref)?),
         Command::Focus { workspace, node } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            analysis.session.focus_node(node)?;
-            let view = analysis.view()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
+            print_json(&workspace_commands::focus(&workspace, node)?)
         }
         Command::Follow { workspace, edge } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            analysis.session.follow_edge(edge)?;
-            let view = analysis.view()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
+            print_json(&workspace_commands::follow(&workspace, edge)?)
         }
-        Command::Back { workspace } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            analysis.session.back()?;
-            let view = analysis.view()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
-        }
-        Command::Promote { workspace } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            analysis.session.promote_cursor();
-            let view = analysis.view()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
-        }
+        Command::Back { workspace } => print_json(&workspace_commands::back(&workspace)?),
+        Command::Promote { workspace } => print_json(&workspace_commands::promote(&workspace)?),
         Command::Advance {
             workspace,
             max_quanta,
@@ -1332,103 +1204,29 @@ fn main() -> Result<(), String> {
             wall_ms,
             improve_incumbent,
             detailed,
-        } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let (report, view) = analysis.advance(OracleAnalysisAdvanceRequestV1 {
-                max_quanta,
-                quantum_nodes,
-                quantum_ms: Some(quantum_ms),
-                wall_ms,
-                improve_incumbent,
-            })?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            if detailed {
-                print_json(&AdvanceOutput { report, view })
-            } else {
-                let combat = report.combat.as_ref().map(|combat| {
-                    json!({
-                        "generation_work": combat.generation_work,
-                        "current_search_generation_work": combat.current_search_generation_work,
-                        "exact_states": combat.exact_states,
-                        "completed_turn_options": combat.completed_turn_options,
-                        "retained_state_work": combat.retained_state_work,
-                        "max_player_turn": combat.max_player_turn,
-                        "incumbent_discovery_source": combat.incumbent_discovery_source,
-                        "incumbent_final_hp": combat.incumbent_final_hp,
-                        "incumbent_hp_loss": combat.incumbent_hp_loss,
-                        "incumbent_action_count": combat.incumbent_action_count,
-                        "last_status": combat.last_status,
-                    })
-                });
-                print_json(&json!({
-                    "schema_name": "OracleAnalysisAdvanceSummaryV1",
-                    "schema_version": 1,
-                    "source_node_id": report.source_node_id,
-                    "status": report.status,
-                    "quanta_served": report.quanta_served,
-                    "elapsed_ms": report.elapsed_ms,
-                    "combat": combat,
-                    "result": {
-                        "node": view.node_id,
-                        "boundary": view.boundary,
-                        "act": view.act,
-                        "floor": view.floor,
-                        "hp": view.current_hp,
-                        "max_hp": view.max_hp,
-                        "gold": view.gold,
-                        "choice_count": view.choices.len(),
-                        "child_count": view.children.len(),
-                    },
-                }))
-            }
-        }
+        } => print_json(&workspace_commands::advance(
+            &workspace,
+            max_quanta,
+            quantum_nodes,
+            quantum_ms,
+            wall_ms,
+            improve_incumbent,
+            detailed,
+        )?),
         Command::AcceptCombat { workspace } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = analysis.accept_combat_incumbent()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
+            print_json(&workspace_commands::accept_combat(&workspace)?)
         }
-        Command::AcceptCombatActions { workspace, actions } => {
-            let action_lists = actions
-                .iter()
-                .map(|path| {
-                    serde_json::from_slice::<Vec<ClientInput>>(
-                        &std::fs::read(path).map_err(|error| error.to_string())?,
-                    )
-                    .map_err(|error| {
-                        format!(
-                            "invalid combat witness action list '{}': {error}",
-                            path.display()
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let actions = action_lists.into_iter().flatten().collect::<Vec<_>>();
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = analysis.accept_combat_actions(&actions)?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
-        }
+        Command::AcceptCombatActions { workspace, actions } => print_json(
+            &workspace_commands::accept_combat_actions(&workspace, &actions)?,
+        ),
         Command::RestartCombat { workspace } => {
-            let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            analysis.session.restart_cursor_combat_search()?;
-            let view = analysis.view()?;
-            save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&view)
+            print_json(&workspace_commands::restart_combat(&workspace)?)
         }
         Command::History {
             workspace,
             node,
             journal,
-        } => {
-            let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            if journal {
-                print_json(&analysis.session.journal_entries(node)?)
-            } else {
-                print_json(&analysis.session.replay(node)?)
-            }
-        }
+        } => print_json(&workspace_commands::history(&workspace, node, journal)?),
     }
 }
 
