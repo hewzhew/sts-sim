@@ -1,3 +1,23 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use clap::Args;
+use serde_json::{json, Value};
+use sts_combat_planner::{
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
+    TurnOptionGeneratorConfig,
+};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_guidance_bundle::{
+    combat_value_prototype_policy_v1, CombatGuidanceBundleV1,
+};
+use sts_oracle_runtime::eval::run_control::{
+    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
+};
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
+
+use super::combat_case_performance;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::{
     anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
@@ -8,7 +28,9 @@ use super::combat_replay_tools::{
 use super::combat_trace_view::{
     combat_action_label, compact_combat_trace, compact_local_corridor_report,
 };
-use super::*;
+use super::exact_turn_corridor::load as load_exact_turn_corridor;
+use super::guidance_artifact_commands::load_value_prototype;
+use super::print_json;
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseLocalGraphArgs {

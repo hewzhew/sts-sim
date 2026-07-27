@@ -168,26 +168,18 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 }
 
 #[test]
-fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
-    for module in [
-        "atomic_policy_searches.rs",
-        "combat_case_atomic_turn_portfolio.rs",
-        "combat_case_fold_solved_suffix.rs",
-        "combat_case_layered.rs",
-        "combat_case_layered_window_race.rs",
-        "combat_plan_diagnostics.rs",
-        "depth_beam_audits.rs",
-        "policy_discrepancy_search.rs",
-        "turn_audits.rs",
-        "turn_membership_audit.rs",
-        "v2_capability_audit.rs",
-    ] {
-        let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
+fn oracle_command_modules_name_their_host_dependencies_explicitly() {
+    let mut sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_oracle_lab/src/bin"),
+        &mut sources,
+    );
+    for path in sources {
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         assert!(
-            !source.contains("use super::*;"),
-            "{} must name its oracle-lab host dependencies explicitly",
+            !source.lines().any(|line| line == "use super::*;"),
+            "{} must name its top-level oracle-lab host dependencies explicitly",
             path.display()
         );
     }

@@ -20,16 +20,18 @@ use sts_oracle_runtime::eval::combat_action_imitation::typed_combat_feature_comp
 use sts_oracle_runtime::eval::combat_state_features::{
     semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
 };
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
 };
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::{
     exact_combat_evidence::{
         evaluate_nonterminal_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
     },
-    existing_combat_knowledge_policy_v1, load_exact_turn_corridor, source_content_fingerprint,
+    source_content_fingerprint,
 };
 
 const MANIFEST_SCHEMA_V1: &str = "BoundarySuccessorCorpusManifestV1";

@@ -38,39 +38,13 @@ use canonical_launch::{
     runtime_identity as oracle_lab_runtime_identity, source_content_fingerprint,
 };
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
-
-use clap::Args;
-use exact_turn_corridor::{
-    load as load_exact_turn_corridor, load_action_segments as load_combat_action_segments,
-    load_corpus as load_combat_action_imitation_corpus,
-    typed_feature_components as typed_combat_feature_components, ShadowCorridorGuide,
-};
-use guidance_artifact_commands::{load_value_prototype, save_value_prototype};
 use oracle_cli::Command;
 use serde::Serialize;
-use serde_json::{json, Value};
-use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessConfig,
-    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    TurnOptionAction, TurnOptionGeneratorConfig,
-};
-use sts_oracle_runtime::eval::combat_case::load_combat_case;
-use sts_oracle_runtime::eval::combat_guidance_bundle::{
-    combat_value_prototype_policy_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
-};
-use sts_oracle_runtime::eval::run_control::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-    ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
-};
+use sts_oracle_runtime::eval::combat_guidance_bundle::CombatGuidanceBundleV1;
 use sts_oracle_runtime::runtime::branch::{
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
     OracleRunConfig,
 };
-use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
-use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 
 fn main() -> Result<(), String> {
     let (canonical_oracle, command) = oracle_cli::parse();

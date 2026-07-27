@@ -1,3 +1,22 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use clap::Args;
+use serde_json::json;
+use sts_combat_planner::{
+    CombatDecisionRoot, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, TurnOptionAction,
+    TurnOptionGeneratorConfig,
+};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_guidance_bundle::CombatValuePrototypeArtifactV1;
+use sts_oracle_runtime::eval::run_control::{
+    existing_combat_knowledge_policy_v1, ExistingCombatKnowledgeAdvisorAdvanceV1,
+    ExistingCombatKnowledgeAdvisorV1,
+};
+use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
+use sts_oracle_runtime::state::core::{ClientInput, EngineState};
+
 use super::combat_planning_view::oracle_lab_guide_lane_label;
 use super::combat_policy_controls::{
     anchor_only_policy, exact_corridor_shadow_policy, load_action_imitation_policy,
@@ -5,7 +24,12 @@ use super::combat_policy_controls::{
 };
 use super::combat_replay_tools::replay_combat_path;
 use super::combat_trace_view::{combat_position_snapshot, compact_corridor_report};
-use super::*;
+use super::exact_turn_corridor::{
+    load as load_exact_turn_corridor, typed_feature_components as typed_combat_feature_components,
+    ShadowCorridorGuide,
+};
+use super::guidance_artifact_commands::{load_value_prototype, save_value_prototype};
+use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseLegacyGlobalArgs {

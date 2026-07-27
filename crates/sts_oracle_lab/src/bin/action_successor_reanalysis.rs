@@ -17,6 +17,7 @@ use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -27,9 +28,8 @@ use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::{
     evaluate_unresolved_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
 };
-use super::{
-    existing_combat_knowledge_policy_v1, load_combat_action_segments, oracle_lab_runtime_identity,
-};
+use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
+use super::oracle_lab_runtime_identity;
 
 const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
 

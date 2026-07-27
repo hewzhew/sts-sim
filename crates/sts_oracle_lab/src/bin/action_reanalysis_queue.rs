@@ -18,6 +18,7 @@ use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::{
     concrete_combat_action_candidates_for_witness_v1, exact_witness_adjacent_accepted_indices_v1,
 };
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -25,10 +26,8 @@ use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_trace_view::combat_action_label;
-use super::{
-    existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus,
-    oracle_lab_runtime_identity,
-};
+use super::exact_turn_corridor::load_corpus as load_combat_action_imitation_corpus;
+use super::oracle_lab_runtime_identity;
 
 const QUEUE_SCHEMA: &str = "ActionReanalysisQueueV1";
 

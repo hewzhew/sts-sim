@@ -18,12 +18,13 @@ use sts_oracle_runtime::eval::combat_action_imitation::{
     CombatActionReanalysisCandidateV1, CombatActionReanalysisDecisionV1,
     CombatActionReanalysisEvidenceV1, CombatActionReanalysisTrainingConfigV1,
 };
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::CombatPosition;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::ExactCombatEvidence;
-use super::{existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus};
+use super::exact_turn_corridor::load_corpus as load_combat_action_imitation_corpus;
 
 const CORPUS_SCHEMA: &str = "ActionSuccessorReanalysisCorpusV1";
 
