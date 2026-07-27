@@ -1,5 +1,5 @@
-use sts_simulator::content::cards::java_id;
-use sts_simulator::runtime::combat::CombatState;
+use sts_oracle_runtime::content::cards::java_id;
+use sts_oracle_runtime::runtime::combat::CombatState;
 
 use super::types::{
     CardZoneAtStep, CardZoneLabel, KeyCardLifecycle, KeyCardLifecycleReport, TrackedKeyCard,

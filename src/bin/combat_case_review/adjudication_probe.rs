@@ -1,6 +1,6 @@
-use sts_simulator::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
-use sts_simulator::eval::combat_case::CombatCase;
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
+use sts_oracle_runtime::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::run_control::{
     adjudicate_combat_case_candidates_v1, adjudicate_combat_case_line_v1,
     probe_combat_case_persistent_burden_cutpoints_v1, CombatCaseAdjudicationProbeV1,
     CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
@@ -100,7 +100,7 @@ pub(super) fn run_adjudication_probe(
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::eval::run_control::CombatCaseAdjudicationProbeV1;
+    use sts_oracle_runtime::eval::run_control::CombatCaseAdjudicationProbeV1;
 
     #[test]
     fn enabled_probe_without_complete_line_is_typed() {

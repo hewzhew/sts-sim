@@ -20,7 +20,7 @@ members = [
     "crates/sts_combat_contract",
     "crates/sts_combat_planner",
     "crates/sts_combat_strategy",
-    "crates/sts_simulator_control",
+    "crates/sts_oracle_tools",
     "tools/architecture_checks",
 ]
 default-members = ["."]
@@ -55,12 +55,10 @@ incremental = true
 codegen-units = 64
 panic = "abort"
 
-# The control package is mostly orchestration and diagnostics. Its optimized
-# code generation dominated every planner edit (about 60s in a measured 71s
-# rebuild), while the hot simulator and planner remain separately compiled O3
-# dependencies. Keep the lab shell cheap to rebuild without weakening those
-# hot crates.
-[profile.release.package.sts_simulator_control]
+# The command tools are thin adapters over the separately compiled runtime.
+# Keep their code generation cheap without weakening the hot simulator,
+# planner, or runtime crates.
+[profile.release.package.sts_oracle_tools]
 opt-level = 0
 codegen-units = 256
 
@@ -100,7 +98,7 @@ incremental = false
 codegen-units = 1
 panic = "abort"
 
-[profile.release-final.package.sts_simulator_control]
+[profile.release-final.package.sts_oracle_tools]
 opt-level = 3
 codegen-units = 1
 

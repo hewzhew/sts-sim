@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
+use sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
 
 use super::super::search_types::SearchReview;
 use super::feedback::CombatSuccessFeedbackSource;

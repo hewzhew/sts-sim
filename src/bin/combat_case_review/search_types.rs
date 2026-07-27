@@ -1,11 +1,11 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchV2ActionPreview, CombatSearchV2DiagnosticsTurnPlan, SearchTerminalLabel,
 };
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
 };
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::state::core::ClientInput;
 
 #[path = "search_types/performance.rs"]
 mod performance;
@@ -103,7 +103,7 @@ pub(super) struct SearchDiagnosticProgressFacts {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
-    use sts_simulator::eval::run_control::{
+    use sts_oracle_runtime::eval::run_control::{
         CombatCaseCandidateAdjudicationCensusV1, CombatCasePersistentBurdenCutpointProbeV1,
         PersistentBurdenCutpointAggregateV1, PersistentBurdenCutpointConclusionV1,
         PERSISTENT_BURDEN_CUTPOINT_LIMIT_V1,

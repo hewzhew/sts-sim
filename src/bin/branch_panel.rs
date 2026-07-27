@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process;
 
 use clap::{Args as ClapArgs, Parser, Subcommand};
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     current_source_identity, default_branch_args, Args, BranchArtifactStore, PanelInspectConfig,
     PanelRunOptions, PanelSmokeRunner, PanelSummary, RunObjective, SourceIdentity,
 };
@@ -449,7 +449,7 @@ fn print_summary(label: &str, summary: &PanelSummary, path: &PathBuf) {
 mod tests {
     use std::path::PathBuf;
 
-    use sts_simulator::runtime::branch::{RunObjective, SourceIdentity};
+    use sts_oracle_runtime::runtime::branch::{RunObjective, SourceIdentity};
 
     use super::*;
 

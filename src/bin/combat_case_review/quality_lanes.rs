@@ -16,7 +16,7 @@ mod specs;
 #[path = "quality_lanes/types.rs"]
 mod types;
 
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 pub(crate) use quality::{combat_line_quality, compare_quality, witness_line_from_trajectory};
 pub(crate) use specs::quality_lane_specs;

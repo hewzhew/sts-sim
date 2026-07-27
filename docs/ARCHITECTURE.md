@@ -17,23 +17,23 @@ continued, replayed, compared, or learned from, it needs typed identity first.
 
 ## Cargo Package Boundary
 
-The production workspace has one compile-time dependency direction:
+The maintained oracle command path has one compile-time dependency direction:
 
 ```text
-sts_simulator_control -> sts_simulator
+sts_oracle_tools -> sts_oracle_runtime -> sts_simulator
 ```
 
 `sts_simulator` owns game content, state, engine transitions, simulation, and
-stable lower policy layers. `sts_simulator_control` owns combat search,
-evaluation, run-control, branch scheduling/artifacts, and the supported
-binaries. The control package may consume explicit core APIs; core must never
-import control modules.
+stable lower policy layers. `sts_oracle_runtime` owns combat search,
+evaluation, run-control, and branch scheduling/artifacts. `sts_oracle_tools`
+contains only supported command adapters and cross-layer integration
+contracts; it has no library facade and owns no policy semantics. Lower layers
+must never import the command host.
 
-Some control modules still live physically below the historical root `src/`
-tree and are attached to the control package with `#[path]`. That is a source
-layout migration detail, not permission for a reverse dependency or duplicate
-module owner. Move those files mechanically only when the package boundary and
-artifact paths remain unchanged.
+Some runtime modules and command sources still live physically below the
+historical root `src/` tree and are attached from their Cargo owners with
+explicit paths. That is a source-layout migration detail, not permission for a
+reverse dependency or duplicate module owner.
 
 Use `cargo test-core` and `cargo test-control` for their respective unit-test
 harnesses, `cargo architecture` for dependency-free source-boundary checks,

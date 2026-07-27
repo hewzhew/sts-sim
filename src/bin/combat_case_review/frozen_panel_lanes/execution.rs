@@ -1,5 +1,5 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchRolloutPluginId;
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::ai::combat_search_v2::CombatSearchRolloutPluginId;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::super::focus::review_focus;
 use super::super::key_card_lifecycle::key_card_lifecycle;

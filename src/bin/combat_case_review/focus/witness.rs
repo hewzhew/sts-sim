@@ -1,4 +1,6 @@
-use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, CombatSearchV2WitnessLine};
+use sts_oracle_runtime::ai::combat_search_v2::{
+    CombatSearchV2ActionPreview, CombatSearchV2WitnessLine,
+};
 
 use super::types::CombatReviewFocus;
 

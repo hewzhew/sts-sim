@@ -1,9 +1,9 @@
-use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
-use sts_simulator::content::cards::CardId;
-use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::sim::combat::CombatPosition;
-use sts_simulator::state::core::{ClientInput, EngineState};
-use sts_simulator::test_support::{blank_test_combat, test_monster};
+use sts_oracle_runtime::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::runtime::combat::CombatCard;
+use sts_oracle_runtime::sim::combat::CombatPosition;
+use sts_oracle_runtime::state::core::{ClientInput, EngineState};
+use sts_oracle_runtime::test_support::{blank_test_combat, test_monster};
 
 use super::super::focus::CombatReviewFocus;
 use super::super::search_types::SearchDiagnosticProgressFacts;
@@ -50,7 +50,7 @@ fn records_played_triggered_scaling_card_from_focus_replay() {
     combat.meta.master_deck_snapshot = vec![demon_form.clone()].into();
     combat.zones.hand = vec![demon_form];
     combat.entities.monsters = vec![test_monster(
-        sts_simulator::content::monsters::EnemyId::Cultist,
+        sts_oracle_runtime::content::monsters::EnemyId::Cultist,
     )];
     let input = ClientInput::PlayCard {
         card_index: 0,

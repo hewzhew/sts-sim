@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+use sts_oracle_runtime::ai::combat_search_v2::SearchTerminalLabel;
 
 use super::types::BossLineReview;
 

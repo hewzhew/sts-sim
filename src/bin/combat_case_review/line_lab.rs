@@ -1,8 +1,8 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
     CombatSearchV2Config, CombatSearchV2TrajectoryReport,
 };
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 use super::search_runner::review_all_potions_profile;

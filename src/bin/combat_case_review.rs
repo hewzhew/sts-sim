@@ -47,7 +47,7 @@ mod strategic_feedback;
 use args::Args;
 use options::ReviewOptions;
 use review_pipeline::build_review;
-use sts_simulator::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();

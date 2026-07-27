@@ -1,4 +1,4 @@
-use sts_simulator::sim::combat::CombatPosition;
+use sts_oracle_runtime::sim::combat::CombatPosition;
 
 use super::focus::CombatReviewFocus;
 

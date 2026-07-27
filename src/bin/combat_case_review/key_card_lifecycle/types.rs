@@ -1,6 +1,6 @@
 use serde::Serialize;
-use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::runtime::combat::CombatCard;
+use sts_oracle_runtime::state::core::ClientInput;
 
 #[derive(Serialize)]
 pub(crate) struct KeyCardLifecycleReport {

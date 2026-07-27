@@ -7,10 +7,10 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     OracleAnalysisAdvanceRequestV1, OracleAnalysisAdvanceStatusV1, OracleCombatSearchResumeKindV1,
 };
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     call_oracle_analysis_tcp_v1, load_oracle_analysis_workspace_v1,
     load_oracle_run_continuation_v1, serve_oracle_analysis_jsonl_v1, serve_oracle_analysis_tcp_v1,
     OracleAnalysisServiceResponseV1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
@@ -203,7 +203,7 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
 
     for _ in 0..32 {
         let view = workspace.view().expect("analysis view");
-        if view.boundary == sts_simulator::eval::run_control::OracleRunBoundaryV1::Combat {
+        if view.boundary == sts_oracle_runtime::eval::run_control::OracleRunBoundaryV1::Combat {
             break;
         }
         let choice_ref = view
@@ -218,7 +218,7 @@ fn analysis_workspace_either_resumes_or_materializes_a_verified_combat_witness()
     }
     assert_eq!(
         workspace.view().expect("combat view").boundary,
-        sts_simulator::eval::run_control::OracleRunBoundaryV1::Combat
+        sts_oracle_runtime::eval::run_control::OracleRunBoundaryV1::Combat
     );
 
     let request = OracleAnalysisAdvanceRequestV1 {

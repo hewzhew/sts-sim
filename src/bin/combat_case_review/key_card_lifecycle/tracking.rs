@@ -1,5 +1,5 @@
-use sts_simulator::runtime::combat::CombatState;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::runtime::combat::CombatState;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::targets::key_card_targets;
 use super::types::{CardZoneAtStep, CardZoneLabel, KeyCardPlay, TrackedKeyCard};

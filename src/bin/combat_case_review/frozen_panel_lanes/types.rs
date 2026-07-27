@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchActionPriorPluginId, CombatSearchProfile, CombatSearchV2ChildRolloutPolicy,
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
@@ -79,7 +79,7 @@ pub(crate) struct FrozenPanelLaneSpec {
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::ai::combat_search_v2::{
+    use sts_oracle_runtime::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
         CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
         CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,

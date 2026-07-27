@@ -2,17 +2,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser};
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     explain_combat_search_v2_initial_decision, CombatSearchV2ChildRolloutPolicy,
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
-use sts_simulator::eval::campfire_threat_panel::{
+use sts_oracle_runtime::eval::campfire_threat_panel::{
     run_campfire_threat_panel_v1, CampfireThreatPanelRunRequestV1,
 };
-use sts_simulator::eval::combat_capture::load_combat_capture_v2;
-use sts_simulator::eval::combat_case::load_combat_case;
-use sts_simulator::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
-use sts_simulator::eval::combat_search_v2::{
+use sts_oracle_runtime::eval::combat_capture::load_combat_capture_v2;
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_lab_v1::{run_combat_lab_v1, CombatLabRunRequestV1};
+use sts_oracle_runtime::eval::combat_search_v2::{
     compare_combat_search_v2_rollout_policies, compare_combat_search_v2_turn_plan_policies,
     load_combat_root_action_prior_hints_jsonl_v0, load_combat_search_v2_benchmark,
     load_combat_search_v2_snapshot, load_combat_search_v2_start,
@@ -22,7 +22,7 @@ use sts_simulator::eval::combat_search_v2::{
     run_combat_search_v2_loaded_start, run_combat_turn_plan_guidance_lab_benchmark_v1,
     run_combat_turn_plan_guidance_lab_v1, CombatSearchV2LoadedStart, CombatSearchV2RunOptions,
 };
-use sts_simulator::eval::fingerprint::{combat_state_fingerprint_v2, StateFingerprintV2};
+use sts_oracle_runtime::eval::fingerprint::{combat_state_fingerprint_v2, StateFingerprintV2};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -398,7 +398,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         Some(value) => parse_max_hp_loss(value)?,
         None => None,
     }
-    .map(sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost);
+    .map(sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost);
 
     let (potion_policy, high_stakes_semantic_potions) = match args.potion_policy {
         Some(DriverPotionPolicy::Search(policy)) => (Some(policy), false),

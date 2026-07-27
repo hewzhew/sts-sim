@@ -6,7 +6,7 @@ use super::combat_line_executor::drawn_cards_from_action_result;
 use super::combat_line_trace::{
     combat_automation_opportunity_state_v1, combat_automation_step_state_v1,
 };
-use super::oracle_run_explorer::run_session_fingerprint_v1;
+use super::oracle_run_explorer::run_session_fingerprint_v2;
 use super::{
     RunCombatResolutionBoundaryV1, RunCombatResolutionV1, RunControlConfig, RunControlSession,
     RunDecisionBoundaryV1, RunDecisionTransactionV1, RunProgressJournalV1, RunProgressStepV1,
@@ -298,8 +298,8 @@ where
         )?;
     }
 
-    let final_fingerprint = run_session_fingerprint_v1(&session);
-    let expected_fingerprint = run_session_fingerprint_v1(expected_final);
+    let final_fingerprint = run_session_fingerprint_v2(&session);
+    let expected_fingerprint = run_session_fingerprint_v2(expected_final);
     if final_fingerprint != expected_fingerprint {
         return Err(format!(
             "journal replay final fingerprint mismatch: expected {expected_fingerprint}, got {final_fingerprint}"

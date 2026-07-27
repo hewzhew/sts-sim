@@ -142,7 +142,7 @@ def executable_command(path: Path) -> list[str]:
         "run",
         "--quiet",
         "-p",
-        "sts_simulator_control",
+        "sts_oracle_tools",
         "--bin",
         "combat_case_review",
         "--",

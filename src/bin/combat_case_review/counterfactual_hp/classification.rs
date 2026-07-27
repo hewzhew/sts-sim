@@ -1,4 +1,4 @@
-use sts_simulator::sim::combat::CombatTerminal;
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 
 use super::types::{CounterfactualHpClassification, CounterfactualHpLevel};
 

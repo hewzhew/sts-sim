@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde::Serialize;
 use serde_json::{json, Value};
-use sts_simulator::content::cards::{
+use sts_oracle_runtime::content::cards::{
     get_card_definition, CardId, CardRarity, CardTag, CardTarget, CardType,
 };
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     build_planner_capture_coverage_report, build_planner_capture_dataset, load_session_trace_v1,
     SESSION_TRACE_SCHEMA_NAME,
 };

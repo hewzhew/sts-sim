@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::state::core::ClientInput;
 
 #[derive(Serialize)]
 pub(crate) struct ChampPhaseAudit {

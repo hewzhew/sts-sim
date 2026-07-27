@@ -1220,7 +1220,7 @@ impl OracleRunExplorerV1 {
             transaction.trace_annotations.push(annotation);
         }
         let forced_steps = settle_oracle_forced_transitions(&mut session)?;
-        let successor_fingerprint = run_session_fingerprint_v1(&session);
+        let successor_fingerprint = run_session_fingerprint_v2(&session);
         if successor_fingerprint == parent.state_fingerprint {
             return Err(format!(
                 "oracle decision '{}' ({}) produced no state change at branch {}; \
@@ -1439,7 +1439,7 @@ impl OracleRunExplorerV1 {
             parent_branch_id: Some(parent.branch_id),
             neow_root_candidate_id: parent.neow_root_candidate_id,
             neow_root_label: parent.neow_root_label,
-            state_fingerprint: run_session_fingerprint_v1(&session),
+            state_fingerprint: run_session_fingerprint_v2(&session),
             boundary: classify_run_boundary(&session),
             path_negative_log_policy: parent.path_negative_log_policy,
             path_discrepancy: parent.path_discrepancy,
@@ -1499,7 +1499,7 @@ pub fn seed_oracle_run_explorer_v1(
             parent_branch_id: None,
             neow_root_candidate_id: candidate.root_candidate_id,
             neow_root_label: candidate.root_label,
-            state_fingerprint: run_session_fingerprint_v1(&session),
+            state_fingerprint: run_session_fingerprint_v2(&session),
             boundary: classify_run_boundary(&session),
             path_negative_log_policy: root_negative_log_policy,
             path_discrepancy: 0,
@@ -1587,7 +1587,7 @@ pub fn seed_oracle_run_explorer_from_session_v1(
         parent_branch_id: None,
         neow_root_candidate_id: "continued-exact-state".to_string(),
         neow_root_label: "continued exact state".to_string(),
-        state_fingerprint: run_session_fingerprint_v1(&session),
+        state_fingerprint: run_session_fingerprint_v2(&session),
         boundary: classify_run_boundary(&session),
         path_negative_log_policy: 0.0,
         path_discrepancy: 0,
@@ -1621,14 +1621,15 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
         last_served_neow_root,
         unresolved_combats,
     } = checkpoint;
-    let legacy_state_fingerprints = state_fingerprint_algorithm.is_none();
-    if let Some(algorithm) = state_fingerprint_algorithm.as_deref() {
-        if algorithm != ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM {
+    let migrate_state_fingerprints = match state_fingerprint_algorithm.as_deref() {
+        None | Some(ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM_V1) => true,
+        Some(ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM) => false,
+        Some(algorithm) => {
             return Err(format!(
                 "unsupported oracle run state fingerprint algorithm '{algorithm}'"
             ));
         }
-    }
+    };
     let mut explorer = OracleRunExplorerV1::empty();
     explorer.next_branch_id = next_branch_id;
     explorer.combat_search_restarts = combat_search_restarts;
@@ -1637,8 +1638,8 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
     for saved in branches {
         let journal = restore_frontier_journal(saved.journal, saved.journal_tip, &journal_nodes)?;
         let session = saved.session.into_session()?;
-        let actual_fingerprint = run_session_fingerprint_v1(&session);
-        if !legacy_state_fingerprints && actual_fingerprint != saved.state_fingerprint {
+        let actual_fingerprint = run_session_fingerprint_v2(&session);
+        if !migrate_state_fingerprints && actual_fingerprint != saved.state_fingerprint {
             return Err(format!(
                 "oracle frontier branch {} fingerprint changed while restoring",
                 saved.branch_id
@@ -1670,6 +1671,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
             .max()
             .unwrap_or(0),
     );
+    let mut migrated_work_keys = BTreeMap::new();
     for mut decision in pending_decisions {
         let parent = explorer
             .branches
@@ -1681,7 +1683,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
                     decision.parent_branch_id
                 )
             })?;
-        if !legacy_state_fingerprints
+        if !migrate_state_fingerprints
             && parent.state_fingerprint != decision.parent_state_fingerprint
         {
             return Err(format!(
@@ -1689,13 +1691,15 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
                 decision.parent_branch_id
             ));
         }
-        if legacy_state_fingerprints {
+        if migrate_state_fingerprints {
+            let old_work_key = decision.stable_work_key.clone();
             decision.parent_state_fingerprint = parent.state_fingerprint.clone();
             decision.stable_work_key = stable_oracle_work_key(
                 &decision.parent_state_fingerprint,
                 &decision.candidate_id,
                 &decision.action,
             );
+            migrated_work_keys.insert(old_work_key, decision.stable_work_key.clone());
         }
         decision.parent_act = parent.session.run_state.act_num;
         decision.parent_floor = parent.session.run_state.floor_num;
@@ -1706,7 +1710,7 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
             explorer.pending_decisions.push_back(decision);
         }
     }
-    for family in pending_selection_families {
+    for mut family in pending_selection_families {
         let parent = explorer
             .branches
             .iter()
@@ -1717,7 +1721,8 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
                     family.parent_branch_id
                 )
             })?;
-        if !legacy_state_fingerprints && parent.state_fingerprint != family.parent_state_fingerprint
+        if !migrate_state_fingerprints
+            && parent.state_fingerprint != family.parent_state_fingerprint
         {
             return Err(format!(
                 "oracle frontier selection family parent fingerprint changed for branch {}",
@@ -1729,6 +1734,21 @@ pub fn seed_oracle_run_explorer_from_checkpoint_v1(
                 "oracle frontier selection family '{}' persisted after exhaustion",
                 family.family_key
             ));
+        }
+        if migrate_state_fingerprints {
+            family.parent_state_fingerprint = parent.state_fingerprint.clone();
+            let (min_count, max_count) = family.cursor.selection_bounds();
+            family.family_key = selection_family_work_key(
+                &family.parent_state_fingerprint,
+                &family.candidate_id,
+                min_count,
+                max_count,
+            );
+            family.outstanding_work_key = family
+                .outstanding_work_key
+                .as_ref()
+                .and_then(|key| migrated_work_keys.get(key))
+                .cloned();
         }
         let Some(outstanding_work_key) = family.outstanding_work_key.as_deref() else {
             return Err(format!(
@@ -2087,6 +2107,21 @@ fn stable_oracle_work_key(
     })
 }
 
+fn selection_family_work_key(
+    parent_state_fingerprint: &str,
+    candidate_id: &str,
+    min_count: usize,
+    max_count: usize,
+) -> String {
+    crate::eval::fingerprint::hash_serializable(&(
+        "oracle_run_selection_family_v1",
+        parent_state_fingerprint,
+        candidate_id,
+        min_count,
+        max_count,
+    ))
+}
+
 struct OracleRunDecisionSupplyV1 {
     decisions: Vec<LazyOracleRunDecisionV1>,
     selection_family: Option<LazyOracleRunSelectionFamilyV1>,
@@ -2226,13 +2261,12 @@ fn run_choice_family_for_branch(
         return Err("run choice parameterized family contains no legal selections".to_string());
     }
 
-    let family_key = crate::eval::fingerprint::hash_serializable(&(
-        "oracle_run_selection_family_v1",
-        branch.state_fingerprint.as_str(),
-        candidate.id.as_str(),
+    let family_key = selection_family_work_key(
+        &branch.state_fingerprint,
+        &candidate.id,
         choice.min_choices,
         choice.max_choices,
-    ));
+    );
     let mut family = LazyOracleRunSelectionFamilyV1 {
         family_key,
         parent_branch_id: branch.branch_id,
@@ -2455,9 +2489,10 @@ fn should_normalize_navigation_away(
     )
 }
 
-const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM: &str = "blake2b_256_canonical_json_value_v1";
+const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM_V1: &str = "blake2b_256_canonical_json_value_v1";
+const ORACLE_RUN_STATE_FINGERPRINT_ALGORITHM: &str = "blake2b_256_canonical_run_checkpoint_v2";
 
-pub(super) fn run_session_fingerprint_v1(session: &RunControlSession) -> String {
+pub(super) fn run_session_fingerprint_v2(session: &RunControlSession) -> String {
     let mut normalized = session.clone();
     normalized.decision_step = 0;
     normalized.run_state.emitted_events.clear();
@@ -2661,7 +2696,7 @@ mod tests {
                 ),
                 return_state: Box::new(EngineState::MapNavigation),
             });
-        branch.state_fingerprint = run_session_fingerprint_v1(&branch.session);
+        branch.state_fingerprint = run_session_fingerprint_v2(&branch.session);
 
         let mut explorer = OracleRunExplorerV1::empty();
         explorer.accept_branch(branch);
@@ -2736,7 +2771,7 @@ mod tests {
                 parent_branch_id: None,
                 neow_root_candidate_id: "test_root".to_string(),
                 neow_root_label: "test root".to_string(),
-                state_fingerprint: run_session_fingerprint_v1(&session),
+                state_fingerprint: run_session_fingerprint_v2(&session),
                 boundary: OracleRunBoundaryV1::Combat,
                 path_negative_log_policy: 0.0,
                 path_discrepancy: 0,
@@ -3151,7 +3186,7 @@ mod tests {
                     .map(|input| (candidate, input.clone()))
             })
             .expect("one executable initial candidate");
-        let fingerprint = run_session_fingerprint_v1(&session);
+        let fingerprint = run_session_fingerprint_v2(&session);
         let parent = OracleRunBranchV1 {
             branch_id: 0,
             parent_branch_id: None,
@@ -3426,7 +3461,7 @@ mod tests {
             parent_branch_id: None,
             neow_root_candidate_id: "test_root".to_string(),
             neow_root_label: "test root".to_string(),
-            state_fingerprint: run_session_fingerprint_v1(&session),
+            state_fingerprint: run_session_fingerprint_v2(&session),
             boundary: OracleRunBoundaryV1::Combat,
             path_negative_log_policy: 0.0,
             path_discrepancy: 0,

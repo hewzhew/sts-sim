@@ -1,8 +1,8 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     run_combat_turn_pool_opening_report_v0, CombatTurnPoolOpeningReport,
 };
-use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::content::monsters::EnemyId;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 use super::search_runner::review_all_potions_profile;

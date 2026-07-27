@@ -1,5 +1,5 @@
-use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::super::classification::CombatGapReviewClassification;
 use super::super::search_types::SearchDiagnosticProgressFacts;

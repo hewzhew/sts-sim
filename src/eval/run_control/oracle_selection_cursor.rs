@@ -31,6 +31,10 @@ pub(super) struct LazyUnorderedSelectionMemberV1 {
 }
 
 impl LazyUnorderedSelectionCursorV1 {
+    pub(super) fn selection_bounds(&self) -> (usize, usize) {
+        (self.min_count, self.max_count)
+    }
+
     pub(super) fn new(
         targets: Vec<SelectionTargetRef>,
         min_count: usize,

@@ -1,9 +1,9 @@
-use sts_simulator::ai::analysis::card_semantics::{
+use sts_oracle_runtime::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CombatEvent, InstalledRule, Mechanic, PlayEffect,
     TriggeredEffect,
 };
-use sts_simulator::content::cards::CardId;
-use sts_simulator::runtime::combat::CombatState;
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::runtime::combat::CombatState;
 
 use super::types::{KeyCardReason, KeyCardTarget};
 

@@ -1,12 +1,12 @@
 use std::collections::HashSet;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     run_combat_mechanism_horizon_probe_v1, CombatMechanismHorizonProbeConfigV1,
 };
-use sts_simulator::ai::noncombat_strategy_v1::StrategyCapabilityKindV1;
-use sts_simulator::content::cards::CardId;
-use sts_simulator::content::monsters::factory::EncounterId;
-use sts_simulator::content::potions::{Potion, PotionId};
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::ai::noncombat_strategy_v1::StrategyCapabilityKindV1;
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::content::monsters::factory::EncounterId;
+use sts_oracle_runtime::content::potions::{Potion, PotionId};
+use sts_oracle_runtime::eval::run_control::{
     run_strategic_checkpoint_probe_decomposition_v1, run_strategic_encounter_probe_suite_v1,
     run_strategic_encounter_probes_v1, run_strategic_mechanism_probes_v1,
     run_strategic_probe_calibration_v1, strategic_encounter_probe_plan_v1,
@@ -21,9 +21,9 @@ use sts_simulator::eval::run_control::{
     StrategicProbeShadowFidelityV1, StrategicProbeShadowOrderKeyV1,
     STRATEGIC_ENCOUNTER_PROBE_SCHEMA_VERSION,
 };
-use sts_simulator::sim::combat_start::build_natural_combat_start;
-use sts_simulator::state::map::node::RoomType;
-use sts_simulator::state::run::RunState;
+use sts_oracle_runtime::sim::combat_start::build_natural_combat_start;
+use sts_oracle_runtime::state::map::node::RoomType;
+use sts_oracle_runtime::state::run::RunState;
 
 #[test]
 fn act_two_battery_keeps_distinct_elite_tests_and_uses_the_visible_boss() {

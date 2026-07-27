@@ -1,4 +1,4 @@
-use sts_simulator::runtime::branch::OwnerAuditRuntime;
+use sts_oracle_runtime::runtime::branch::OwnerAuditRuntime;
 
 fn main() {
     if let Err(err) = OwnerAuditRuntime::run_cli() {

@@ -4,9 +4,10 @@
 in `src/ai`, `src/eval`, `src/testing`, `src/state`, or another library module.
 One-off experiments should not grow long-lived binaries here.
 
-All binaries are Cargo targets of `sts_simulator_control`, even while their
-physical source paths remain under `src/bin`. Run or build them with
-`-p sts_simulator_control`.
+These binaries are Cargo targets of the library-free `sts_oracle_tools`
+command package, even while their physical source paths remain under
+`src/bin`. Run or build them with `-p sts_oracle_tools`; semantic code belongs
+in `sts_oracle_runtime` or a lower crate.
 
 Use [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md) for command examples. This
 file only records binary ownership and boundaries.
@@ -20,6 +21,7 @@ file only records binary ownership and boundaries.
 | `combat_case_review` | Review ladder for saved `CombatCase` artifacts from branch-tiny combat gaps; CLI owns IO, `combat_case_review/review_pipeline.rs` owns probe orchestration. |
 | `combat_search_v2_driver` | Whole-combat search from start specs and captures, benchmark suites, the resumable Combat Laboratory V1, and the offline Campfire Threat Panel. |
 | `rl_dataset_export` | Offline decision-sample export for imitation/RL experiments, including typed planner capture datasets and coverage reports from `SessionTraceV1`; exported behavior is not truth. |
+| `oracle_run` | Bounded exact run explorer and continuation adapter over the runtime-owned oracle-run API. |
 
 ## Ownership Rules
 

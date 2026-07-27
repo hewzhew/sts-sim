@@ -1,4 +1,4 @@
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::key_card_lifecycle::key_card_lifecycle;
 use super::strategic_feedback::combat_strategic_feedback;

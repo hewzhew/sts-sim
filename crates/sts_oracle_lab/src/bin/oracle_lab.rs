@@ -2370,7 +2370,6 @@ fn validate_source_freshness(executable: &Path) -> Result<(), String> {
         repository.join("Cargo.lock"),
         repository.join(".cargo/config.toml"),
         repository.join("crates/sts_combat_planner/Cargo.toml"),
-        repository.join("crates/sts_simulator_control/Cargo.toml"),
     ]);
     let stale = dependencies.iter().find(|dependency| {
         std::fs::metadata(dependency)

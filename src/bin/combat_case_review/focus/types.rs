@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sts_simulator::sim::combat::CombatTerminal;
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 
 use super::super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
 

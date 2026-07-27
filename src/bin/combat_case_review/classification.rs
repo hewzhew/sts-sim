@@ -1,6 +1,6 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
-use sts_simulator::eval::run_control::CombatSearchTraceSummary;
+use sts_oracle_runtime::ai::combat_search_v2::SearchTerminalLabel;
+use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
 
 use super::focus::CombatReviewFocus;
 use super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
@@ -109,7 +109,7 @@ fn rollout_pct(review: &SearchReview) -> f64 {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use sts_simulator::eval::run_control::CombatSearchTraceSummary;
+    use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
 
     use super::*;
 

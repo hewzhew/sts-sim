@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use sts_simulator::eval::combat_case::save_combat_case;
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::combat_case::save_combat_case;
+use sts_oracle_runtime::eval::run_control::{
     run_strategic_checkpoint_probe_decomposition_v1, run_strategic_encounter_probes_v1,
     run_strategic_mechanism_probes_v1, run_strategic_probe_calibration_v1,
     strategic_encounter_probe_plan_v1, strategic_mechanism_probe_plan_v1,
@@ -10,7 +10,7 @@ use sts_simulator::eval::run_control::{
     StrategicEncounterProbeHpBasisV1, StrategicEncounterProbePotionUseV1, StrategicProbeFidelityV1,
     StrategicProbeShadowFidelityV1,
 };
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     load_oracle_run_continuation_v1, run_oracle_run, run_oracle_run_from_continuation,
     save_oracle_run_continuation_v1, OracleRunBudget, OracleRunConfig,
 };

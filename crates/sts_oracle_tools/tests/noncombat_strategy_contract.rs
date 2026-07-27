@@ -1,10 +1,10 @@
-use sts_simulator::ai::noncombat_strategy_v1::{
+use sts_oracle_runtime::ai::noncombat_strategy_v1::{
     threat_coverage_from_run_state_v1, StrategyThreatProfileV1, StrategyThreatSourceRecordV1,
     StrategyThreatSourceV1, StrategyThreatTagV1,
 };
-use sts_simulator::content::cards::CardId;
-use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::run::RunState;
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::runtime::combat::CombatCard;
+use sts_oracle_runtime::state::run::RunState;
 
 fn one_threat(
     source: StrategyThreatSourceV1,

@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{CombatLineLabReport, SearchTerminalLabel};
+use sts_oracle_runtime::ai::combat_search_v2::{CombatLineLabReport, SearchTerminalLabel};
 
 use super::super::search_types::SearchReview;
 use super::line_tags::line_quality_tags;

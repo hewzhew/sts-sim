@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchProfile, CombatSearchV2Config, CombatSearchV2RootActionPrior,
 };
 
@@ -39,7 +39,7 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
 
-    use sts_simulator::ai::combat_search_v2::{
+    use sts_oracle_runtime::ai::combat_search_v2::{
         CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
         CombatSearchBudgetSpec, CombatSearchEngineProfile, CombatSearchPluginStack,
         CombatSearchProfile, CombatSearchV2Config, CombatSearchV2RolloutPolicy,

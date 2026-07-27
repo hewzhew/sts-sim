@@ -84,7 +84,7 @@ def review_command(case_path: Path, review_path: Path, args: argparse.Namespace)
         "run",
         "--quiet",
         "-p",
-        "sts_simulator_control",
+        "sts_oracle_tools",
         "--bin",
         "combat_case_review",
         "--",

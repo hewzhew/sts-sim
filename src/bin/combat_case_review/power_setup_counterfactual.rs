@@ -1,18 +1,18 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     replay_combat_search_witness_line_v0, run_combat_turn_pool_opening_report_v0,
     CombatSearchV2Config, CombatSearchV2WitnessReplay, CombatTurnPoolOpeningReport,
     SearchTerminalLabel,
 };
-use sts_simulator::content::cards::{self, CardId, CardType};
-use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::content::powers::{store, PowerId};
-use sts_simulator::eval::combat_case::CombatCase;
-use sts_simulator::runtime::combat::{CardPileView, CombatCard, CombatState, Power};
-use sts_simulator::sim::combat::{
+use sts_oracle_runtime::content::cards::{self, CardId, CardType};
+use sts_oracle_runtime::content::monsters::EnemyId;
+use sts_oracle_runtime::content::powers::{store, PowerId};
+use sts_oracle_runtime::eval::combat_case::CombatCase;
+use sts_oracle_runtime::runtime::combat::{CardPileView, CombatCard, CombatState, Power};
+use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::options::ReviewOptions;
 use super::quality_lanes::witness_line_from_trajectory;
@@ -220,7 +220,7 @@ fn existential_search_config(
     // calibration needlessly expensive.
     let _ = initial_hp;
     config.satisfaction =
-        sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin;
+        sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin;
     config
 }
 
@@ -238,7 +238,7 @@ fn transform_case(
     }
     if !matches!(
         original.position.engine,
-        sts_simulator::state::core::EngineState::CombatPlayerTurn
+        sts_oracle_runtime::state::core::EngineState::CombatPlayerTurn
     ) {
         return Err("power setup counterfactual requires a player-turn combat root".to_string());
     }
@@ -423,14 +423,14 @@ fn setup_snapshot(combat: &CombatState, applied_cards: Vec<PowerSetupCard>) -> P
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::ai::combat_search_v2::CombatSearchV2Config;
-    use sts_simulator::content::cards::CardId;
-    use sts_simulator::content::monsters::EnemyId;
-    use sts_simulator::content::powers::{store, PowerId};
-    use sts_simulator::runtime::combat::{CombatCard, Power, PowerPayload};
-    use sts_simulator::sim::combat::CombatPosition;
-    use sts_simulator::state::core::EngineState;
-    use sts_simulator::test_support::{blank_test_combat, test_monster};
+    use sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Config;
+    use sts_oracle_runtime::content::cards::CardId;
+    use sts_oracle_runtime::content::monsters::EnemyId;
+    use sts_oracle_runtime::content::powers::{store, PowerId};
+    use sts_oracle_runtime::runtime::combat::{CombatCard, Power, PowerPayload};
+    use sts_oracle_runtime::sim::combat::CombatPosition;
+    use sts_oracle_runtime::state::core::EngineState;
+    use sts_oracle_runtime::test_support::{blank_test_combat, test_monster};
 
     use super::{
         collect_power_cards, existential_search_config, free_play_power, restore_monster_powers,
@@ -469,7 +469,7 @@ mod tests {
 
         assert_eq!(
             config.satisfaction,
-            sts_simulator::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
+            sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin
         );
     }
 

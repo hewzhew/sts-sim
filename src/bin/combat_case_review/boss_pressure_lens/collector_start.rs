@@ -1,6 +1,6 @@
-use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::runtime::combat::{CombatState, MonsterEntity};
-use sts_simulator::sim::combat_projection::monster_preview_total_damage_in_combat;
+use sts_oracle_runtime::content::monsters::EnemyId;
+use sts_oracle_runtime::runtime::combat::{CombatState, MonsterEntity};
+use sts_oracle_runtime::sim::combat_projection::monster_preview_total_damage_in_combat;
 
 use super::types::CollectorStartSignals;
 

@@ -1,10 +1,10 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId,
     CombatSearchAttemptPolicy, CombatSearchBudgetSpec, CombatSearchEngineProfile,
     CombatSearchPluginStack, CombatSearchProfile, CombatSearchRolloutPluginId,
     CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
 };
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 use super::search_review::search_review;

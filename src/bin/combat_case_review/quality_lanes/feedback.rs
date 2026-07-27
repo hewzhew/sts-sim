@@ -1,7 +1,7 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     compile_combat_search_witness_prior_v0, CombatSearchV2WitnessLine,
 };
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::super::search_intervention::ReviewSearchIntervention;
 use super::super::search_runner::run_config_search;

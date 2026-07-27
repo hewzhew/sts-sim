@@ -1,4 +1,4 @@
-use sts_simulator::runtime::combat::CombatState;
+use sts_oracle_runtime::runtime::combat::CombatState;
 
 use super::types::CardZoneLabel;
 

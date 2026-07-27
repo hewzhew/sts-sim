@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
-use sts_simulator::ai::boss_matchup::{
+use sts_oracle_runtime::ai::boss_matchup::{
     awakened_one_evidence_frame, awakened_one_evidence_frame_from_deck,
     boss_matchup_static_conclusion_from_risk_tags, boss_matchup_static_risk_summary_v0,
     is_awakened_one_case, BossMatchupEvidenceClaim, BossMatchupEvidenceFrame,
 };
-use sts_simulator::content::cards::CardId;
-use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::eval::combat_case::{CombatCase, CombatCasePathStep};
-use sts_simulator::runtime::combat::{CombatCard, CombatState};
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::content::monsters::EnemyId;
+use sts_oracle_runtime::eval::combat_case::{CombatCase, CombatCasePathStep};
+use sts_oracle_runtime::runtime::combat::{CombatCard, CombatState};
 
 use super::counterfactual_hp::CounterfactualHpProbe;
 

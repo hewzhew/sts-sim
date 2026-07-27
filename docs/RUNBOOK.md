@@ -13,13 +13,13 @@ Run one seed:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run -p sts_simulator_control --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
+cargo run -p sts_oracle_tools --bin branch_tiny -- --seed 1552225673 --ascension 0 --max-branches 1 --wall-ms 60000
 ```
 
 Run a small panel:
 
 ```powershell
-cargo run -p sts_simulator_control --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
+cargo run -p sts_oracle_tools --bin branch_panel -- panel smoke --seeds 1552225671 1552225672 1552225673 1552225674 1552225675 --capsule-root tools/artifacts/panels/current --max-branches 1 --slice-ms 60000
 ```
 
 Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
@@ -27,7 +27,7 @@ Use the panel to classify blockers. Do not treat one seed as a strategy verdict.
 For bounded continuation, use `drain`:
 
 ```powershell
-cargo run -p sts_simulator_control --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
+cargo run -p sts_oracle_tools --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
 ```
 
 The retired `tools/gap_panel.py` compatibility wrapper has been removed. Use
@@ -39,7 +39,7 @@ When a capsule soft-stops with a frontier, continue from the capsule instead of
 rerunning from Neow:
 
 ```powershell
-cargo run -p sts_simulator_control --bin branch_tiny -- --continue-capsule <capsule-dir>
+cargo run -p sts_oracle_tools --bin branch_tiny -- --continue-capsule <capsule-dir>
 ```
 
 Continuation may inherit relevant run-contract values such as `wall_ms` from
@@ -51,7 +51,7 @@ contract.
 For saved combat gaps, start from the case:
 
 ```powershell
-cargo run -p sts_simulator_control --bin combat_case_review -- --case <case.json> --ladder
+cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --ladder
 ```
 
 Review output is diagnostic. It does not mutate runner policy and does not
@@ -63,7 +63,7 @@ Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark
 suites:
 
 ```powershell
-cargo run -p sts_simulator_control --release --bin combat_search_v2_driver -- --start-spec <path>
+cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --start-spec <path>
 ```
 
 Common investigation switches include:
@@ -86,7 +86,7 @@ new binary or a live run-control component. Run the maintained seed006-derived
 Reptomancer `8 x 2` pilot with:
 
 ```powershell
-cargo run -p sts_simulator_control --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
+cargo run -p sts_oracle_tools --bin combat_search_v2_driver -- --lab-spec fixtures/combat_lab/seed006_reptomancer_8x2.lab.json --lab-output artifacts/runs/combat-lab-seed006-pilot --lab-samples 8
 ```
 
 Rerun the same command and output directory to resume without repeating journaled
@@ -133,7 +133,7 @@ recorded search result rather than measuring scheduler noise twice.
 Run the reconstructed seed006 pre-Transient pilot with:
 
 ```powershell
-cargo run -p sts_simulator_control --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
+cargo run -p sts_oracle_tools --release --bin combat_search_v2_driver -- --threat-panel-spec fixtures/campfire_threat_panel/seed006_pre_transient_reconstructed.panel.json --threat-panel-output artifacts/runs/campfire-threat-panel-seed006-pilot --threat-panel-samples 1
 ```
 
 The fixture is explicitly reconstructed from recorded public deck/resources;
@@ -169,7 +169,7 @@ atomic run-job journal. A rebuildable dataset and coverage report can still be
 exported from an existing typed trace under `artifacts/runs` with:
 
 ```powershell
-cargo run -p sts_simulator_control --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
+cargo run -p sts_oracle_tools --bin rl_dataset_export -- --input artifacts/runs/example/trace.json --out artifacts/runs/example/planner-dataset.json --planner-coverage-out artifacts/runs/example/planner-coverage.json
 ```
 
 The coverage report measures representation and linkage only. It does not rank
@@ -187,7 +187,7 @@ cargo test-core
 cargo test-control
 cargo architecture
 cargo check --workspace --release --all-targets
-cargo build -p sts_simulator_control --release --bin combat_search_v2_driver
+cargo build -p sts_oracle_tools --release --bin combat_search_v2_driver
 git diff --check
 ```
 
@@ -210,8 +210,8 @@ The workspace has several deliberate production compilation units:
 - `sts_oracle_runtime` owns evaluation, run-control, and `runtime::branch`;
 - `sts_oracle_lab` owns heavyweight offline and resident command hosts;
 - `oracle_lab_client` owns the lightweight repeated-command surface;
-- `sts_simulator_control` is a compatibility facade for supported older
-  control binaries and integration tests, not the owner of another runtime
+- `sts_oracle_tools` is the thin Cargo host for maintained command adapters and
+  their cross-layer integration contracts; it has no library facade or policy
   implementation.
 
 The root package deliberately keeps `autobins = false`, `autotests = false`,

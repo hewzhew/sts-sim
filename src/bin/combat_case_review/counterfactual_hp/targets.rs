@@ -1,4 +1,4 @@
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 pub(super) fn combat_case_with_player_hp(case: &CombatCase, hp: i32) -> CombatCase {
     let mut case = case.clone();

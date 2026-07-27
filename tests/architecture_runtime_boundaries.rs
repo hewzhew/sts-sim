@@ -601,7 +601,7 @@ fn typed_combat_strategy_facts_do_not_depend_on_or_leak_into_search_control() {
         "sts_combat_planner",
         "sts_combat_legacy",
         "sts_oracle_runtime",
-        "sts_simulator_control",
+        "sts_oracle_tools",
     ] {
         assert!(
             !strategy_manifest.contains(forbidden_dependency),
@@ -656,6 +656,51 @@ fn typed_combat_strategy_facts_do_not_depend_on_or_leak_into_search_control() {
                 path.display()
             );
         }
+    }
+}
+
+#[test]
+fn oracle_tools_are_a_library_free_command_host_over_the_runtime() {
+    let manifest = std::fs::read_to_string("crates/sts_oracle_tools/Cargo.toml")
+        .expect("read oracle tools manifest");
+    assert!(
+        manifest.contains("name = \"sts_oracle_tools\"")
+            && manifest.contains("sts_oracle_runtime ="),
+        "oracle tools must identify the command host and depend directly on the runtime"
+    );
+    for forbidden in [
+        "[lib]",
+        "build =",
+        "sts_core =",
+        "sts_combat_legacy =",
+        "sts_combat_planner =",
+    ] {
+        assert!(
+            !manifest.contains(forbidden),
+            "oracle tools must not restore command-host ownership through `{forbidden}`"
+        );
+    }
+    for retired_facade in [
+        "crates/sts_oracle_tools/src/lib.rs",
+        "crates/sts_oracle_tools/src/ai.rs",
+        "crates/sts_oracle_tools/src/runtime.rs",
+        "crates/sts_oracle_tools/build.rs",
+    ] {
+        assert!(
+            !std::path::Path::new(retired_facade).exists(),
+            "retired oracle-tools facade file '{retired_facade}' must not return"
+        );
+    }
+
+    let mut command_sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src/bin"), &mut command_sources);
+    for path in command_sources {
+        let source = std::fs::read_to_string(&path).expect("read oracle command source");
+        assert!(
+            !source.contains("sts_simulator::"),
+            "oracle command source '{}' must name sts_oracle_runtime directly",
+            path.display()
+        );
     }
 }
 

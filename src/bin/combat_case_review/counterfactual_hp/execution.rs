@@ -1,5 +1,5 @@
-use sts_simulator::ai::combat_search_v2::replay_combat_search_witness_line_v0;
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::ai::combat_search_v2::replay_combat_search_witness_line_v0;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::super::options::ReviewOptions;
 use super::super::quality_lanes::{

@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use sts_simulator::eval::combat_guidance_bundle::CombatValuePrototypeArtifactV1;
-use sts_simulator::eval::run_control::OracleRunBoundaryV1;
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::eval::combat_guidance_bundle::CombatValuePrototypeArtifactV1;
+use sts_oracle_runtime::eval::run_control::OracleRunBoundaryV1;
+use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceArtifactV1,
     OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
 };
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::state::core::ClientInput;
 
 const SEED: u64 = 20_260_713_006;
 

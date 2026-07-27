@@ -1,6 +1,6 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::CombatSearchV2WitnessLine;
-use sts_simulator::sim::combat::CombatTerminal;
+use sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2WitnessLine;
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 
 use super::super::quality_lanes::CombatLineQuality;
 use super::super::search_types::{SearchDiagnosticProgressFacts, SearchReview};

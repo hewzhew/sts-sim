@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId, CombatSearchAttemptPolicy,
     CombatSearchBudgetSpec, CombatSearchChildRolloutPluginId, CombatSearchEngineProfile,
     CombatSearchPhaseGuardPluginId, CombatSearchPluginStack, CombatSearchPotionPlugin,
@@ -144,7 +144,7 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sts_simulator::ai::combat_search_v2::CombatSearchV2RolloutPolicy;
+    use sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2RolloutPolicy;
 
     #[test]
     fn quality_objective_does_not_change_lane_plugins() {

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchExpansionPluginId, CombatSearchRolloutPluginId, CombatSearchTurnPlanPluginId,
 };
 

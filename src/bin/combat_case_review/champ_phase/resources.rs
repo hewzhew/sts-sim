@@ -1,7 +1,7 @@
-use sts_simulator::content::cards::CardId;
-use sts_simulator::content::potions::PotionId;
-use sts_simulator::sim::combat::CombatPosition;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::content::cards::CardId;
+use sts_oracle_runtime::content::potions::PotionId;
+use sts_oracle_runtime::sim::combat::CombatPosition;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::types::ChampResourceTiming;
 

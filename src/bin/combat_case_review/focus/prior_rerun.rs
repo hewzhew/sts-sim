@@ -1,8 +1,8 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     compile_combat_search_witness_prior_v0, CombatSearchV2PotionPolicy, CombatSearchV2WitnessReplay,
 };
-use sts_simulator::eval::combat_case::CombatCase;
-use sts_simulator::sim::combat::CombatTerminal;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
+use sts_oracle_runtime::sim::combat::CombatTerminal;
 
 use super::super::options::ReviewOptions;
 use super::super::search_intervention::ReviewSearchIntervention;

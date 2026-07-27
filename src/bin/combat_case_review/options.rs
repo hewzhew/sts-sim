@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchChildRolloutPluginId, CombatSearchExpansionPluginId, CombatSearchRolloutPluginId,
     CombatSearchTurnPlanPluginId,
 };

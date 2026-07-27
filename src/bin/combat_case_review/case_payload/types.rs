@@ -1,15 +1,17 @@
 use serde::Serialize;
-use sts_simulator::ai::boss_matchup::BossMatchupAcquisitionPressureV0;
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::boss_matchup::BossMatchupAcquisitionPressureV0;
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2WitnessReplay,
     CombatTurnPoolOpeningReport,
 };
-use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
-use sts_simulator::eval::combat_case::{
+use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
+use sts_oracle_runtime::eval::combat_case::{
     CombatCaseCardSummary, CombatCaseCombatSummary, CombatCaseGap, CombatCasePathStep,
     CombatCaseRunSummary, CombatCaseSource,
 };
-use sts_simulator::eval::run_control::{CombatCaseAdjudicationProbeV1, CombatSearchTraceSummary};
+use sts_oracle_runtime::eval::run_control::{
+    CombatCaseAdjudicationProbeV1, CombatSearchTraceSummary,
+};
 
 use super::super::awakened_one_evidence::{
     AwakenedOneFailureEvidenceFrame, AwakenedOnePathAuditV0, StaticBossMatchupAuditV0,

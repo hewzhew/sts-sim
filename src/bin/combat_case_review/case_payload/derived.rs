@@ -1,10 +1,10 @@
-use sts_simulator::ai::strategy::deck_strategic_deficit::{
+use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit, DeckStrategicDeficit,
 };
-use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
-use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardType};
-use sts_simulator::content::relics::{energy_master_delta, RelicId};
-use sts_simulator::eval::combat_case::{
+use sts_oracle_runtime::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use sts_oracle_runtime::content::cards::{get_card_definition, is_starter_basic, CardType};
+use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
+use sts_oracle_runtime::eval::combat_case::{
     card_summary, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
 

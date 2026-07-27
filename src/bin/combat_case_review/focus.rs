@@ -14,8 +14,10 @@ pub(super) use witness::focus_witness_line;
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
-    use sts_simulator::state::core::ClientInput;
+    use sts_oracle_runtime::ai::combat_search_v2::{
+        CombatSearchV2ActionPreview, SearchTerminalLabel,
+    };
+    use sts_oracle_runtime::state::core::ClientInput;
 
     use super::super::search_types::SearchDiagnosticProgressFacts;
     use super::ranking::{focus_reason, progress_is_better_focus};

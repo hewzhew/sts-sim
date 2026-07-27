@@ -1,6 +1,6 @@
-use sts_simulator::content::monsters::EnemyId;
-use sts_simulator::content::powers::{store::power_amount, PowerId};
-use sts_simulator::runtime::combat::{CombatState, MonsterEntity};
+use sts_oracle_runtime::content::monsters::EnemyId;
+use sts_oracle_runtime::content::powers::{store::power_amount, PowerId};
+use sts_oracle_runtime::runtime::combat::{CombatState, MonsterEntity};
 
 use super::types::ChampPhaseSnapshot;
 

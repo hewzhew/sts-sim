@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, CombatSearchV2Report};
+use sts_oracle_runtime::ai::combat_search_v2::{CombatSearchV2ActionPreview, CombatSearchV2Report};
 
 use super::super::search_types::SearchDiagnosticProgressFacts;
 

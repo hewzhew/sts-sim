@@ -1,4 +1,4 @@
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 

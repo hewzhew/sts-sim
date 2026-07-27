@@ -1,4 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchActionPriorPluginId, CombatSearchProfile, CombatSearchRolloutPluginId,
 };
 
@@ -33,7 +33,7 @@ pub(crate) fn frozen_panel_lane_specs() -> [FrozenPanelLaneSpec; 2] {
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::ai::combat_search_v2::CombatSearchActionPriorPluginId;
+    use sts_oracle_runtime::ai::combat_search_v2::CombatSearchActionPriorPluginId;
 
     use super::frozen_panel_lane_specs;
 

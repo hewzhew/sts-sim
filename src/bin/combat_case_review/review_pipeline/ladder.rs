@@ -1,7 +1,7 @@
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchProfile, CombatSearchV2Report, CombatSearchV2TrajectoryReport,
 };
-use sts_simulator::eval::combat_case::CombatCase;
+use sts_oracle_runtime::eval::combat_case::CombatCase;
 
 use super::super::adjudication_probe::ReviewAdjudicationRun;
 use super::super::options::ReviewOptions;
@@ -19,7 +19,7 @@ pub(super) struct ReviewLadderRun {
 struct LadderProfileRun {
     source_review: &'static str,
     review: SearchReview,
-    config: sts_simulator::ai::combat_search_v2::CombatSearchV2Config,
+    config: sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Config,
     report: CombatSearchV2Report,
 }
 

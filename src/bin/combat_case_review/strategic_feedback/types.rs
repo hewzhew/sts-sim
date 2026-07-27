@@ -1,6 +1,6 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
-use sts_simulator::ai::strategy::deck_strategic_deficit::{
+use sts_oracle_runtime::ai::combat_search_v2::SearchTerminalLabel;
+use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::{
     StrategicBurdenLevel, StrategicDeficitLevel,
 };
 
