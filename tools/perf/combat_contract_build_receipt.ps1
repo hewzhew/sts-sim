@@ -195,3 +195,28 @@ function Assert-StsCombatContractBuildReceipt(
     }
     return $Receipt
 }
+
+function Get-StsCombatContractBuildReceiptStatus(
+    [string] $RepoRoot,
+    [string] $Executable,
+    [string] $ReceiptPath = ""
+) {
+    try {
+        $Receipt = Assert-StsCombatContractBuildReceipt `
+            $RepoRoot `
+            $Executable `
+            $ReceiptPath
+        return [pscustomobject]@{
+            valid = $true
+            receipt = $Receipt
+            reason = $null
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            valid = $false
+            receipt = $null
+            reason = $_.Exception.Message
+        }
+    }
+}

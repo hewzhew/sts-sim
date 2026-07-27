@@ -17,7 +17,12 @@ param(
     [int] $IterationsPerCase = 3,
     [ValidateRange(0, 10)]
     [int] $WarmupIterations = 1,
+    [ValidateSet("Auto", "Prepare", "Measure")]
+    [string] $Phase = "Auto",
+    [ValidateRange(0, 3600)]
+    [int] $MeasurementBudgetSeconds = 45,
     [switch] $ProfileTransitionCloneCost,
+    # Backward-compatible alias for -Phase Measure.
     [switch] $SkipBuild,
     [switch] $AsJson
 )
@@ -143,19 +148,44 @@ if ($PanelDefinition.schema_name -ne "StsCombatPerformancePanelV1" -or
 
 Push-Location $RepoRoot
 try {
-    if (-not $SkipBuild) {
+    if ($SkipBuild) {
+        if ($Phase -ne "Auto") {
+            throw "-SkipBuild cannot be combined with -Phase; use -Phase Measure"
+        }
+        $Phase = "Measure"
+    }
+    $Executable = Join-Path $RepoRoot "target\profiling\combat_contract.exe"
+    $BuildStatus = Get-StsCombatContractBuildReceiptStatus $RepoRoot $Executable
+    if ($Phase -eq "Measure" -and -not $BuildStatus.valid) {
+        throw "combat panel is not prepared: $($BuildStatus.reason); run once with -Phase Prepare"
+    }
+    if ($Phase -eq "Prepare" -or ($Phase -eq "Auto" -and -not $BuildStatus.valid)) {
         & cargo build --locked --profile profiling -p sts_combat_contract --bin combat_contract
         if ($LASTEXITCODE -ne 0) {
             throw "combat panel profiling build failed"
         }
+        $BuildReceipt = Write-StsCombatContractBuildReceipt $RepoRoot $Executable
+        $Preparation = [ordered]@{
+            schema_name = "CombatPerformancePanelPreparationV1"
+            schema_version = 1
+            prepared = $true
+            measurement_ran = $false
+            requested_phase = $Phase
+            previous_receipt_valid = [bool] $BuildStatus.valid
+            previous_receipt_problem = $BuildStatus.reason
+            build_source_fingerprint = $BuildReceipt.source_fingerprint
+            executable_sha256 = $BuildReceipt.executable_sha256
+            next_command = ".\tools\perf\benchmark_combat_panel.ps1 -Phase Measure"
+        }
+        if ($AsJson) {
+            $Preparation | ConvertTo-Json -Depth 10
+        }
+        else {
+            [pscustomobject] $Preparation | Format-List
+        }
+        return
     }
-    $Executable = Join-Path $RepoRoot "target\profiling\combat_contract.exe"
-    $BuildReceipt = if ($SkipBuild) {
-        Assert-StsCombatContractBuildReceipt $RepoRoot $Executable
-    }
-    else {
-        Write-StsCombatContractBuildReceipt $RepoRoot $Executable
-    }
+    $BuildReceipt = $BuildStatus.receipt
 
     $Cases = @($PanelDefinition.cases | ForEach-Object {
             $Definition = $_
@@ -176,6 +206,17 @@ try {
                 simulation_ns = [Collections.Generic.List[double]]::new()
                 identity_ns = [Collections.Generic.List[double]]::new()
                 key_build_ns = [Collections.Generic.List[double]]::new()
+                key_engine_ns = [Collections.Generic.List[double]]::new()
+                key_turn_ns = [Collections.Generic.List[double]]::new()
+                key_meta_ns = [Collections.Generic.List[double]]::new()
+                key_zones_ns = [Collections.Generic.List[double]]::new()
+                key_monsters_ns = [Collections.Generic.List[double]]::new()
+                key_powers_ns = [Collections.Generic.List[double]]::new()
+                key_potions_ns = [Collections.Generic.List[double]]::new()
+                key_queue_ns = [Collections.Generic.List[double]]::new()
+                key_runtime_ns = [Collections.Generic.List[double]]::new()
+                key_rng_ns = [Collections.Generic.List[double]]::new()
+                key_player_ns = [Collections.Generic.List[double]]::new()
                 publish_ns = [Collections.Generic.List[double]]::new()
                 engine_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_clone_ns = [Collections.Generic.List[double]]::new()
@@ -220,8 +261,17 @@ try {
             Assert-CombatPanelIdentity $Case.definition $Run.report
         }
     }
-    for ($Batch = 0; $Batch -lt $Batches; $Batch++) {
+    $MeasurementStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $CompletedIterationsPerCase = 0
+    $StoppedForBudget = $false
+    :BatchLoop for ($Batch = 0; $Batch -lt $Batches; $Batch++) {
         for ($Iteration = 0; $Iteration -lt $IterationsPerCase; $Iteration++) {
+            if ($CompletedIterationsPerCase -gt 0 -and
+                $MeasurementBudgetSeconds -gt 0 -and
+                $MeasurementStopwatch.Elapsed.TotalSeconds -ge $MeasurementBudgetSeconds) {
+                $StoppedForBudget = $true
+                break BatchLoop
+            }
             foreach ($Case in $Cases) {
                 $Run = Invoke-CombatPanelCase $Executable $Case.path $ProfileTransitionCloneCost
                 Assert-CombatPanelIdentity $Case.definition $Run.report
@@ -230,6 +280,18 @@ try {
                 $Case.simulation_ns.Add($Run.report.ns_per_applied_transition.simulation)
                 $Case.identity_ns.Add($Run.report.ns_per_applied_transition.identity)
                 $Case.key_build_ns.Add($Run.report.ns_per_applied_transition.key_build)
+                $KeyComponents = $Run.report.ns_per_applied_transition.key_build_components
+                $Case.key_engine_ns.Add($KeyComponents.engine)
+                $Case.key_turn_ns.Add($KeyComponents.turn)
+                $Case.key_meta_ns.Add($KeyComponents.meta)
+                $Case.key_zones_ns.Add($KeyComponents.zones)
+                $Case.key_monsters_ns.Add($KeyComponents.monsters)
+                $Case.key_powers_ns.Add($KeyComponents.powers)
+                $Case.key_potions_ns.Add($KeyComponents.potions)
+                $Case.key_queue_ns.Add($KeyComponents.queue)
+                $Case.key_runtime_ns.Add($KeyComponents.runtime)
+                $Case.key_rng_ns.Add($KeyComponents.rng)
+                $Case.key_player_ns.Add($KeyComponents.player)
                 $Case.publish_ns.Add($Run.report.ns_per_applied_transition.publish)
                 if ($ProfileTransitionCloneCost) {
                     $Profile = $Run.report.transition_clone_profile
@@ -279,7 +341,12 @@ try {
                     $Case.max_monster_protocol.Add($Lengths.max_monster_protocol)
                 }
             }
+            $CompletedIterationsPerCase++
         }
+    }
+    $MeasurementStopwatch.Stop()
+    if ($CompletedIterationsPerCase -eq 0) {
+        throw "measurement budget ended before one complete panel iteration"
     }
 
     $Rows = @($Cases | ForEach-Object {
@@ -290,6 +357,19 @@ try {
                 simulation_ns = [math]::Round((Get-Median $_.simulation_ns), 1)
                 identity_ns = [math]::Round((Get-Median $_.identity_ns), 1)
                 key_build_ns = [math]::Round((Get-Median $_.key_build_ns), 1)
+                key_build_components_ns = [ordered]@{
+                    engine = [math]::Round((Get-Median $_.key_engine_ns), 1)
+                    turn = [math]::Round((Get-Median $_.key_turn_ns), 1)
+                    meta = [math]::Round((Get-Median $_.key_meta_ns), 1)
+                    zones = [math]::Round((Get-Median $_.key_zones_ns), 1)
+                    monsters = [math]::Round((Get-Median $_.key_monsters_ns), 1)
+                    powers = [math]::Round((Get-Median $_.key_powers_ns), 1)
+                    potions = [math]::Round((Get-Median $_.key_potions_ns), 1)
+                    queue = [math]::Round((Get-Median $_.key_queue_ns), 1)
+                    runtime = [math]::Round((Get-Median $_.key_runtime_ns), 1)
+                    rng = [math]::Round((Get-Median $_.key_rng_ns), 1)
+                    player = [math]::Round((Get-Median $_.key_player_ns), 1)
+                }
                 publish_ns = [math]::Round((Get-Median $_.publish_ns), 1)
                 engine_clone_ns = if ($ProfileTransitionCloneCost) {
                     [math]::Round((Get-Median $_.engine_clone_ns), 1)
@@ -370,6 +450,11 @@ try {
         batches = $Batches
         iterations_per_case = $IterationsPerCase
         warmup_iterations = $WarmupIterations
+        requested_iterations_per_case = $Batches * $IterationsPerCase
+        completed_iterations_per_case = $CompletedIterationsPerCase
+        measurement_budget_seconds = $MeasurementBudgetSeconds
+        measurement_elapsed_seconds = [math]::Round($MeasurementStopwatch.Elapsed.TotalSeconds, 3)
+        stopped_for_measurement_budget = $StoppedForBudget
         transition_clone_profile_enabled = [bool] $ProfileTransitionCloneCost
         profiled_type_size_bytes = $ProfiledTypeSizes
         cases = $Rows

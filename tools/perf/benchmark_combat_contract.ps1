@@ -23,6 +23,11 @@ param(
     [int] $IterationsPerBatch = 8,
     [ValidateRange(0, 20)]
     [int] $WarmupIterations = 1,
+    [ValidateSet("Auto", "Prepare", "Measure")]
+    [string] $Phase = "Auto",
+    [ValidateRange(0, 3600)]
+    [int] $MeasurementBudgetSeconds = 45,
+    # Backward-compatible alias for -Phase Measure.
     [switch] $SkipBuild,
     [switch] $AsJson
 )
@@ -107,23 +112,44 @@ if (-not (Test-Path -LiteralPath $CasePath -PathType Leaf)) {
 
 Push-Location $RepoRoot
 try {
-    if (-not $SkipBuild) {
+    if ($SkipBuild) {
+        if ($Phase -ne "Auto") {
+            throw "-SkipBuild cannot be combined with -Phase; use -Phase Measure"
+        }
+        $Phase = "Measure"
+    }
+    $Executable = Join-Path $RepoRoot "target\profiling\combat_contract.exe"
+    $BuildStatus = Get-StsCombatContractBuildReceiptStatus $RepoRoot $Executable
+    if ($Phase -eq "Measure" -and -not $BuildStatus.valid) {
+        throw "combat contract benchmark is not prepared: $($BuildStatus.reason); run once with -Phase Prepare"
+    }
+    if ($Phase -eq "Prepare" -or ($Phase -eq "Auto" -and -not $BuildStatus.valid)) {
         & cargo build --locked --profile profiling -p sts_combat_contract --bin combat_contract
         if ($LASTEXITCODE -ne 0) {
             throw "combat contract profiling build failed"
         }
+        $BuildReceipt = Write-StsCombatContractBuildReceipt $RepoRoot $Executable
+        $Preparation = [ordered]@{
+            schema_name = "CombatContractBenchmarkPreparationV1"
+            schema_version = 1
+            prepared = $true
+            measurement_ran = $false
+            requested_phase = $Phase
+            previous_receipt_valid = [bool] $BuildStatus.valid
+            previous_receipt_problem = $BuildStatus.reason
+            build_source_fingerprint = $BuildReceipt.source_fingerprint
+            executable_sha256 = $BuildReceipt.executable_sha256
+            next_command = ".\tools\perf\benchmark_combat_contract.ps1 -Phase Measure"
+        }
+        if ($AsJson) {
+            $Preparation | ConvertTo-Json -Depth 10
+        }
+        else {
+            [pscustomobject] $Preparation | Format-List
+        }
+        return
     }
-
-    $Executable = Join-Path $RepoRoot "target\profiling\combat_contract.exe"
-    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
-        throw "combat contract is missing at '$Executable'; rerun without -SkipBuild"
-    }
-    $BuildReceipt = if ($SkipBuild) {
-        Assert-StsCombatContractBuildReceipt $RepoRoot $Executable
-    }
-    else {
-        Write-StsCombatContractBuildReceipt $RepoRoot $Executable
-    }
+    $BuildReceipt = $BuildStatus.receipt
     $WorkloadArguments = Get-StsCombatContractWorkloadArguments $CasePath
 
     $ExpectedIdentity = $null
@@ -137,6 +163,8 @@ try {
     }
 
     $BatchMilliseconds = [Collections.Generic.List[double]]::new()
+    $BatchIterationCounts = [Collections.Generic.List[int]]::new()
+    $IterationMilliseconds = [Collections.Generic.List[double]]::new()
     $SearchMilliseconds = [Collections.Generic.List[double]]::new()
     $TransitionMetricNames = @(
         "simulation",
@@ -150,11 +178,24 @@ try {
     foreach ($MetricName in $TransitionMetricNames) {
         $TransitionMetricSamples[$MetricName] = [Collections.Generic.List[double]]::new()
     }
-    for ($Batch = 1; $Batch -le $Batches; $Batch++) {
+    $MeasurementStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $CompletedIterations = 0
+    $StoppedForBudget = $false
+    :BatchLoop for ($Batch = 1; $Batch -le $Batches; $Batch++) {
         $BatchElapsedMilliseconds = 0.0
+        $BatchCompletedIterations = 0
         for ($Iteration = 1; $Iteration -le $IterationsPerBatch; $Iteration++) {
+            if ($CompletedIterations -gt 0 -and
+                $MeasurementBudgetSeconds -gt 0 -and
+                $MeasurementStopwatch.Elapsed.TotalSeconds -ge $MeasurementBudgetSeconds) {
+                $StoppedForBudget = $true
+                break BatchLoop
+            }
             $Run = Invoke-CombatContract $Executable $WorkloadArguments
             $BatchElapsedMilliseconds += $Run.elapsed_milliseconds
+            $IterationMilliseconds.Add($Run.elapsed_milliseconds)
+            $CompletedIterations++
+            $BatchCompletedIterations++
             $LastReport = $Run.report
             $SearchMilliseconds.Add($LastReport.search_elapsed_ns / 1000000.0)
             foreach ($MetricName in $TransitionMetricNames) {
@@ -173,6 +214,16 @@ try {
             }
         }
         $BatchMilliseconds.Add($BatchElapsedMilliseconds)
+        $BatchIterationCounts.Add($BatchCompletedIterations)
+    }
+    if ($BatchCompletedIterations -gt 0 -and
+        ($BatchIterationCounts.Count -eq 0 -or $BatchIterationCounts[-1] -ne $BatchCompletedIterations)) {
+        $BatchMilliseconds.Add($BatchElapsedMilliseconds)
+        $BatchIterationCounts.Add($BatchCompletedIterations)
+    }
+    $MeasurementStopwatch.Stop()
+    if ($CompletedIterations -eq 0) {
+        throw "measurement budget ended before one benchmark iteration"
     }
 
     $MedianBatchMilliseconds = Get-Median $BatchMilliseconds
@@ -197,9 +248,15 @@ try {
         batches = $Batches
         iterations_per_batch = $IterationsPerBatch
         warmup_iterations = $WarmupIterations
+        requested_iterations = $Batches * $IterationsPerBatch
+        completed_iterations = $CompletedIterations
+        measurement_budget_seconds = $MeasurementBudgetSeconds
+        measurement_elapsed_seconds = [math]::Round($MeasurementStopwatch.Elapsed.TotalSeconds, 3)
+        stopped_for_measurement_budget = $StoppedForBudget
         batch_milliseconds = @($BatchMilliseconds)
+        batch_iteration_counts = @($BatchIterationCounts)
         median_batch_milliseconds = $MedianBatchMilliseconds
-        median_iteration_milliseconds = $MedianBatchMilliseconds / $IterationsPerBatch
+        median_iteration_milliseconds = Get-Median $IterationMilliseconds
         median_search_milliseconds = $MedianSearchMilliseconds
         median_ns_per_applied_transition = $MedianTransitionMetrics
         identity = $ExpectedIdentity
