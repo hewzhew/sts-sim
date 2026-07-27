@@ -1,5 +1,19 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use clap::Args;
+use serde_json::json;
+use sts_combat_planner::{
+    CombatDecisionRoot, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
+    PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
+};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
+
 use super::combat_policy_controls::load_action_imitation_policy;
-use super::*;
+use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
+use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePolicyDiscrepancyArgs {

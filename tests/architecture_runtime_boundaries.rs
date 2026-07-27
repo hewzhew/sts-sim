@@ -172,7 +172,9 @@ fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
     for module in [
         "atomic_policy_searches.rs",
         "combat_case_fold_solved_suffix.rs",
+        "combat_case_layered.rs",
         "combat_plan_diagnostics.rs",
+        "policy_discrepancy_search.rs",
         "v2_capability_audit.rs",
     ] {
         let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);

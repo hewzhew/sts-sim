@@ -64,9 +64,8 @@ use sts_combat_planner::{
     LayeredCombatWitnessSession, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
     LocalTurnGraphWitnessSession, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
-    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
-    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
-    TurnOptionGeneratorSession,
+    PolicyDiscrepancyTurnMacroConfig, TurnOptionAction, TurnOptionGenerationStatus,
+    TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
 use sts_oracle_runtime::eval::combat_action_imitation::root_player_turn_action_policy_v1;
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
