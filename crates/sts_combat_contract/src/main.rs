@@ -105,10 +105,17 @@ struct TransitionCloneProfile {
     combat_entities_clone_elapsed_ns: u64,
     combat_zone_component_elapsed_ns: [u64; 6],
     combat_entity_component_elapsed_ns: [u64; 4],
+    combat_runtime_component_elapsed_ns: [u64; 7],
     combat_engine_clone_elapsed_ns: u64,
     combat_rng_clone_elapsed_ns: u64,
     combat_runtime_clone_elapsed_ns: u64,
     execution_elapsed_ns: u64,
+    emitted_event_items: usize,
+    max_emitted_event_items: usize,
+    engine_diagnostic_items: usize,
+    max_engine_diagnostic_items: usize,
+    monster_protocol_items: usize,
+    max_monster_protocol_items: usize,
 }
 
 #[derive(Debug, Default)]
@@ -157,6 +164,25 @@ impl CombatStepper for ProfiledEngineCombatStepper {
 
         let (step, timing) = apply_combat_input_to_stable_profiled_v1(position, input, limits);
         profile.samples = profile.samples.saturating_add(1);
+        let emitted_event_items = position.combat.runtime.emitted_events.len();
+        profile.emitted_event_items = profile
+            .emitted_event_items
+            .saturating_add(emitted_event_items);
+        profile.max_emitted_event_items = profile.max_emitted_event_items.max(emitted_event_items);
+        let engine_diagnostic_items = position.combat.runtime.engine_diagnostics.len();
+        profile.engine_diagnostic_items = profile
+            .engine_diagnostic_items
+            .saturating_add(engine_diagnostic_items);
+        profile.max_engine_diagnostic_items = profile
+            .max_engine_diagnostic_items
+            .max(engine_diagnostic_items);
+        let monster_protocol_items = position.combat.runtime.monster_protocol.len();
+        profile.monster_protocol_items = profile
+            .monster_protocol_items
+            .saturating_add(monster_protocol_items);
+        profile.max_monster_protocol_items = profile
+            .max_monster_protocol_items
+            .max(monster_protocol_items);
         profile.engine_clone_elapsed_ns = profile
             .engine_clone_elapsed_ns
             .saturating_add(timing.engine_clone_elapsed_ns);
@@ -179,6 +205,13 @@ impl CombatStepper for ProfiledEngineCombatStepper {
             .combat_zone_component_elapsed_ns
             .iter_mut()
             .zip(timing.combat_zone_component_elapsed_ns)
+        {
+            *total = total.saturating_add(sample);
+        }
+        for (total, sample) in profile
+            .combat_runtime_component_elapsed_ns
+            .iter_mut()
+            .zip(timing.combat_runtime_component_elapsed_ns)
         {
             *total = total.saturating_add(sample);
         }
@@ -394,6 +427,14 @@ fn run(args: Cli) -> Result<(), String> {
                 "sample_interval": TRANSITION_CLONE_PROFILE_INTERVAL,
                 "transition_calls": profile.calls,
                 "samples": profile.samples,
+                "sampled_collection_lengths": {
+                    "mean_emitted_events": (profile.samples > 0).then(|| profile.emitted_event_items as f64 / profile.samples as f64),
+                    "max_emitted_events": profile.max_emitted_event_items,
+                    "mean_engine_diagnostics": (profile.samples > 0).then(|| profile.engine_diagnostic_items as f64 / profile.samples as f64),
+                    "max_engine_diagnostics": profile.max_engine_diagnostic_items,
+                    "mean_monster_protocol": (profile.samples > 0).then(|| profile.monster_protocol_items as f64 / profile.samples as f64),
+                    "max_monster_protocol": profile.max_monster_protocol_items,
+                },
                 "type_size_bytes": {
                     "combat_state": std::mem::size_of::<sts_core::runtime::combat::CombatState>(),
                     "card_zones": std::mem::size_of::<sts_core::runtime::combat::CardZones>(),
@@ -434,6 +475,15 @@ fn run(args: Cli) -> Result<(), String> {
                         "monsters": per_sample(profile.combat_entity_component_elapsed_ns[1]),
                         "potions": per_sample(profile.combat_entity_component_elapsed_ns[2]),
                         "power_db": per_sample(profile.combat_entity_component_elapsed_ns[3]),
+                    },
+                    "runtime_components": {
+                        "card_queue": per_sample(profile.combat_runtime_component_elapsed_ns[0]),
+                        "colorless_pool": per_sample(profile.combat_runtime_component_elapsed_ns[1]),
+                        "emitted_events": per_sample(profile.combat_runtime_component_elapsed_ns[2]),
+                        "engine_diagnostics": per_sample(profile.combat_runtime_component_elapsed_ns[3]),
+                        "pending_rewards": per_sample(profile.combat_runtime_component_elapsed_ns[4]),
+                        "last_drawn_cards": per_sample(profile.combat_runtime_component_elapsed_ns[5]),
+                        "monster_protocol": per_sample(profile.combat_runtime_component_elapsed_ns[6]),
                     },
                     "execution": per_sample(profile.execution_elapsed_ns),
                 },

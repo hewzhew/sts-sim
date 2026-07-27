@@ -197,6 +197,19 @@ try {
                 entity_monsters_clone_ns = [Collections.Generic.List[double]]::new()
                 entity_potions_clone_ns = [Collections.Generic.List[double]]::new()
                 entity_power_db_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_card_queue_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_colorless_pool_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_emitted_events_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_engine_diagnostics_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_pending_rewards_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_last_drawn_cards_clone_ns = [Collections.Generic.List[double]]::new()
+                runtime_monster_protocol_clone_ns = [Collections.Generic.List[double]]::new()
+                mean_emitted_events = [Collections.Generic.List[double]]::new()
+                max_emitted_events = [Collections.Generic.List[double]]::new()
+                mean_engine_diagnostics = [Collections.Generic.List[double]]::new()
+                max_engine_diagnostics = [Collections.Generic.List[double]]::new()
+                mean_monster_protocol = [Collections.Generic.List[double]]::new()
+                max_monster_protocol = [Collections.Generic.List[double]]::new()
             }
         })
     $ProfiledTypeSizes = $null
@@ -249,6 +262,21 @@ try {
                     $Case.entity_monsters_clone_ns.Add($EntityComponents.monsters)
                     $Case.entity_potions_clone_ns.Add($EntityComponents.potions)
                     $Case.entity_power_db_clone_ns.Add($EntityComponents.power_db)
+                    $RuntimeComponents = $Profile.mean_ns_per_sample.runtime_components
+                    $Case.runtime_card_queue_clone_ns.Add($RuntimeComponents.card_queue)
+                    $Case.runtime_colorless_pool_clone_ns.Add($RuntimeComponents.colorless_pool)
+                    $Case.runtime_emitted_events_clone_ns.Add($RuntimeComponents.emitted_events)
+                    $Case.runtime_engine_diagnostics_clone_ns.Add($RuntimeComponents.engine_diagnostics)
+                    $Case.runtime_pending_rewards_clone_ns.Add($RuntimeComponents.pending_rewards)
+                    $Case.runtime_last_drawn_cards_clone_ns.Add($RuntimeComponents.last_drawn_cards)
+                    $Case.runtime_monster_protocol_clone_ns.Add($RuntimeComponents.monster_protocol)
+                    $Lengths = $Profile.sampled_collection_lengths
+                    $Case.mean_emitted_events.Add($Lengths.mean_emitted_events)
+                    $Case.max_emitted_events.Add($Lengths.max_emitted_events)
+                    $Case.mean_engine_diagnostics.Add($Lengths.mean_engine_diagnostics)
+                    $Case.max_engine_diagnostics.Add($Lengths.max_engine_diagnostics)
+                    $Case.mean_monster_protocol.Add($Lengths.mean_monster_protocol)
+                    $Case.max_monster_protocol.Add($Lengths.max_monster_protocol)
                 }
             }
         }
@@ -299,6 +327,27 @@ try {
                         monsters = [math]::Round((Get-Median $_.entity_monsters_clone_ns), 1)
                         potions = [math]::Round((Get-Median $_.entity_potions_clone_ns), 1)
                         power_db = [math]::Round((Get-Median $_.entity_power_db_clone_ns), 1)
+                    }
+                } else { $null }
+                runtime_clone_components_ns = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        card_queue = [math]::Round((Get-Median $_.runtime_card_queue_clone_ns), 1)
+                        colorless_pool = [math]::Round((Get-Median $_.runtime_colorless_pool_clone_ns), 1)
+                        emitted_events = [math]::Round((Get-Median $_.runtime_emitted_events_clone_ns), 1)
+                        engine_diagnostics = [math]::Round((Get-Median $_.runtime_engine_diagnostics_clone_ns), 1)
+                        pending_rewards = [math]::Round((Get-Median $_.runtime_pending_rewards_clone_ns), 1)
+                        last_drawn_cards = [math]::Round((Get-Median $_.runtime_last_drawn_cards_clone_ns), 1)
+                        monster_protocol = [math]::Round((Get-Median $_.runtime_monster_protocol_clone_ns), 1)
+                    }
+                } else { $null }
+                sampled_collection_lengths = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        mean_emitted_events = [math]::Round((Get-Median $_.mean_emitted_events), 1)
+                        max_emitted_events = [math]::Round((Get-Median $_.max_emitted_events), 1)
+                        mean_engine_diagnostics = [math]::Round((Get-Median $_.mean_engine_diagnostics), 1)
+                        max_engine_diagnostics = [math]::Round((Get-Median $_.max_engine_diagnostics), 1)
+                        mean_monster_protocol = [math]::Round((Get-Median $_.mean_monster_protocol), 1)
+                        max_monster_protocol = [math]::Round((Get-Median $_.max_monster_protocol), 1)
                     }
                 } else { $null }
                 transitions = [int] $_.definition.expected.applied_action_transitions

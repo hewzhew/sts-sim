@@ -3,7 +3,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
-use crate::runtime::combat::{CardZones, CombatState, EntityState};
+use crate::runtime::combat::{CardZones, CombatRuntimeHints, CombatState, EntityState};
 use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_action_surface::CombatLegalActionSurfaceV2;
 use crate::state::core::{ClientInput, EngineState, RunResult};
@@ -61,6 +61,7 @@ pub struct CombatStepPerformanceTimingV1 {
     pub combat_entities_clone_elapsed_ns: u64,
     pub combat_zone_component_elapsed_ns: [u64; 6],
     pub combat_entity_component_elapsed_ns: [u64; 4],
+    pub combat_runtime_component_elapsed_ns: [u64; 7],
     pub combat_engine_clone_elapsed_ns: u64,
     pub combat_rng_clone_elapsed_ns: u64,
     pub combat_runtime_clone_elapsed_ns: u64,
@@ -255,7 +256,46 @@ pub fn apply_combat_input_to_stable_profiled_v1(
     let (combat_engine, combat_engine_clone_elapsed_ns) =
         clone_with_timing(&position.combat.engine);
     let (rng, combat_rng_clone_elapsed_ns) = clone_with_timing(&position.combat.rng);
-    let (runtime, combat_runtime_clone_elapsed_ns) = clone_with_timing(&position.combat.runtime);
+    let (card_queue, runtime_card_queue_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.card_queue);
+    let (colorless_combat_pool, runtime_colorless_pool_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.colorless_combat_pool);
+    let (emitted_events, runtime_emitted_events_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.emitted_events);
+    let (engine_diagnostics, runtime_engine_diagnostics_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.engine_diagnostics);
+    let (pending_rewards, runtime_pending_rewards_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.pending_rewards);
+    let (last_drawn_cards, runtime_last_drawn_cards_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.last_drawn_cards);
+    let (monster_protocol, runtime_monster_protocol_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.runtime.monster_protocol);
+    let combat_runtime_component_elapsed_ns = [
+        runtime_card_queue_clone_elapsed_ns,
+        runtime_colorless_pool_clone_elapsed_ns,
+        runtime_emitted_events_clone_elapsed_ns,
+        runtime_engine_diagnostics_clone_elapsed_ns,
+        runtime_pending_rewards_clone_elapsed_ns,
+        runtime_last_drawn_cards_clone_elapsed_ns,
+        runtime_monster_protocol_clone_elapsed_ns,
+    ];
+    let combat_runtime_clone_elapsed_ns = combat_runtime_component_elapsed_ns
+        .iter()
+        .copied()
+        .fold(0u64, u64::saturating_add);
+    let runtime = CombatRuntimeHints {
+        using_card: position.combat.runtime.using_card,
+        card_queue,
+        colorless_combat_pool,
+        emitted_events,
+        engine_diagnostics,
+        pending_rewards,
+        power_instance_counter: position.combat.runtime.power_instance_counter,
+        last_drawn_cards,
+        monster_protocol,
+        combat_mugged: position.combat.runtime.combat_mugged,
+        combat_smoked: position.combat.runtime.combat_smoked,
+    };
     let combat_clone_elapsed_ns = combat_meta_clone_elapsed_ns
         .saturating_add(combat_turn_clone_elapsed_ns)
         .saturating_add(combat_zones_clone_elapsed_ns)
@@ -288,6 +328,7 @@ pub fn apply_combat_input_to_stable_profiled_v1(
             combat_entities_clone_elapsed_ns,
             combat_zone_component_elapsed_ns,
             combat_entity_component_elapsed_ns,
+            combat_runtime_component_elapsed_ns,
             combat_engine_clone_elapsed_ns,
             combat_rng_clone_elapsed_ns,
             combat_runtime_clone_elapsed_ns,
