@@ -4,14 +4,14 @@ use super::super::types::{CombatCardKey, CombatQueuedCardKey, CombatTargetKey, C
 use super::cards::card_key;
 
 pub(super) fn zones_key(combat: &CombatState) -> CombatZonesKey {
-    CombatZonesKey {
-        card_uuid_counter: combat.zones.card_uuid_counter,
-        hand: zone_key(&combat.zones.hand),
-        draw: zone_key(&combat.zones.draw_pile),
-        discard: zone_key(&combat.zones.discard_pile),
-        exhaust: zone_key(&combat.zones.exhaust_pile),
-        limbo: zone_key(&combat.zones.limbo),
-        queued: combat
+    CombatZonesKey::new(
+        combat.zones.card_uuid_counter,
+        zone_keys(&combat.zones.hand),
+        zone_keys(&combat.zones.draw_pile),
+        zone_keys(&combat.zones.discard_pile),
+        zone_keys(&combat.zones.exhaust_pile),
+        zone_keys(&combat.zones.limbo),
+        combat
             .zones
             .queued_cards
             .iter()
@@ -27,11 +27,15 @@ pub(super) fn zones_key(combat: &CombatState) -> CombatZonesKey {
                 source: queued.source,
             })
             .collect(),
-    }
+    )
 }
 
-fn zone_key<'a>(cards: impl IntoIterator<Item = &'a CombatCard>) -> Vec<CombatCardKey> {
-    cards.into_iter().map(card_key).collect()
+fn zone_keys<'a, I>(cards: I) -> impl ExactSizeIterator<Item = CombatCardKey>
+where
+    I: IntoIterator<Item = &'a CombatCard>,
+    I::IntoIter: ExactSizeIterator,
+{
+    cards.into_iter().map(card_key)
 }
 
 pub(super) fn target_key(combat: &CombatState, target: Option<usize>) -> CombatTargetKey {
