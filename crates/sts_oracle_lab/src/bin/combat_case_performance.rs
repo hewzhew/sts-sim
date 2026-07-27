@@ -45,6 +45,7 @@ pub(super) fn local_graph_performance_profile(
     let outer_unattributed_ns = search_ns.saturating_sub(outer_accounted_ns);
     let outer_admission_accounted_ns = timing
         .admission_root_option_elapsed_ns
+        .saturating_add(timing.admission_witness_filter_elapsed_ns)
         .saturating_add(timing.admission_witness_replay_elapsed_ns)
         .saturating_add(timing.successor_identity_elapsed_ns)
         .saturating_add(timing.successor_lookup_elapsed_ns)
@@ -96,6 +97,10 @@ pub(super) fn local_graph_performance_profile(
                 ),
                 "witness_replay": duration_share(
                     timing.admission_witness_replay_elapsed_ns,
+                    timing.admission_elapsed_ns,
+                ),
+                "witness_filter": duration_share(
+                    timing.admission_witness_filter_elapsed_ns,
                     timing.admission_elapsed_ns,
                 ),
                 "successor_identity": duration_share(

@@ -692,29 +692,77 @@ pub(super) fn witness_better_with_potion_budget(
     right: &OracleCombatWitness,
     max_potions_used: Option<u32>,
 ) -> bool {
-    witness_within_potion_budget(left, max_potions_used)
-        .cmp(&witness_within_potion_budget(right, max_potions_used))
-        .then_with(|| witness_quality_order(left, right))
-        .then_with(|| witness_potion_expenditures(right).cmp(&witness_potion_expenditures(left)))
-        == std::cmp::Ordering::Greater
+    let left_potions = witness_potion_expenditures(left);
+    let right_potions = witness_potion_expenditures(right);
+    observable_witness_quality_order(
+        ObservableWitnessQuality {
+            within_budget: max_potions_used.is_none_or(|limit| left_potions <= limit),
+            final_hp: left.final_position.combat.entities.player.current_hp,
+            action_count: left.actions.len(),
+            negative_log_policy: left.negative_log_policy,
+            potion_expenditures: left_potions,
+        },
+        ObservableWitnessQuality {
+            within_budget: max_potions_used.is_none_or(|limit| right_potions <= limit),
+            final_hp: right.final_position.combat.entities.player.current_hp,
+            action_count: right.actions.len(),
+            negative_log_policy: right.negative_log_policy,
+            potion_expenditures: right_potions,
+        },
+    ) == std::cmp::Ordering::Greater
 }
 
-fn witness_quality_order(
-    left: &OracleCombatWitness,
-    right: &OracleCombatWitness,
+pub(super) fn terminal_candidate_could_improve_witness(
+    current: &OracleCombatWitness,
+    candidate_final_hp: i32,
+    candidate_action_count: usize,
+    candidate_negative_log_policy: f64,
+    candidate_potion_expenditures: u32,
+    max_potions_used: Option<u32>,
+) -> bool {
+    let current_potions = witness_potion_expenditures(current);
+    observable_witness_quality_order(
+        ObservableWitnessQuality {
+            within_budget: max_potions_used
+                .is_none_or(|limit| candidate_potion_expenditures <= limit),
+            final_hp: candidate_final_hp,
+            action_count: candidate_action_count,
+            negative_log_policy: candidate_negative_log_policy,
+            potion_expenditures: candidate_potion_expenditures,
+        },
+        ObservableWitnessQuality {
+            within_budget: max_potions_used.is_none_or(|limit| current_potions <= limit),
+            final_hp: current.final_position.combat.entities.player.current_hp,
+            action_count: current.actions.len(),
+            negative_log_policy: current.negative_log_policy,
+            potion_expenditures: current_potions,
+        },
+    ) == std::cmp::Ordering::Greater
+}
+
+#[derive(Clone, Copy)]
+struct ObservableWitnessQuality {
+    within_budget: bool,
+    final_hp: i32,
+    action_count: usize,
+    negative_log_policy: f64,
+    potion_expenditures: u32,
+}
+
+fn observable_witness_quality_order(
+    left: ObservableWitnessQuality,
+    right: ObservableWitnessQuality,
 ) -> std::cmp::Ordering {
-    left.final_position
-        .combat
-        .entities
-        .player
-        .current_hp
-        .cmp(&right.final_position.combat.entities.player.current_hp)
-        .then_with(|| right.actions.len().cmp(&left.actions.len()))
+    left.within_budget
+        .cmp(&right.within_budget)
+        .then_with(|| left.final_hp.cmp(&right.final_hp))
+        .then_with(|| right.action_count.cmp(&left.action_count))
         .then_with(|| {
             right
                 .negative_log_policy
                 .total_cmp(&left.negative_log_policy)
         })
+        .then_with(|| right.potion_expenditures.cmp(&left.potion_expenditures))
 }
 
 pub(super) fn local_deep_state_snapshot(
@@ -786,6 +834,32 @@ mod tests {
             &low_hp_clean,
             &high_hp_potion,
             Some(0)
+        ));
+    }
+
+    #[test]
+    fn terminal_candidate_filter_uses_the_same_complete_witness_order() {
+        let current = witness(50, false);
+
+        assert!(!terminal_candidate_could_improve_witness(
+            &current, 49, 0, 0.5, 0, None
+        ));
+        assert!(terminal_candidate_could_improve_witness(
+            &current, 51, 20, 20.0, 0, None
+        ));
+        assert!(terminal_candidate_could_improve_witness(
+            &current, 50, 0, 0.5, 0, None
+        ));
+        assert!(!terminal_candidate_could_improve_witness(
+            &current, 50, 0, 1.0, 0, None
+        ));
+        assert!(!terminal_candidate_could_improve_witness(
+            &current,
+            51,
+            0,
+            0.5,
+            1,
+            Some(0),
         ));
     }
 }

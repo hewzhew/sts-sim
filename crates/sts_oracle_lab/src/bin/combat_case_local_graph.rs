@@ -392,6 +392,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             report.performance_timing.transition_publish_elapsed_ns,
         "admission_root_option_elapsed_ns":
             report.performance_timing.admission_root_option_elapsed_ns,
+        "admission_witness_filter_elapsed_ns":
+            report.performance_timing.admission_witness_filter_elapsed_ns,
         "admission_witness_replay_elapsed_ns":
             report.performance_timing.admission_witness_replay_elapsed_ns,
         "successor_identity_elapsed_ns":

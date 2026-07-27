@@ -884,15 +884,37 @@ impl LocalTurnGraphWitnessSession {
                 CompleteTurnOptionBoundary::TerminalWin => {
                     self.used.terminal_win_options =
                         self.used.terminal_win_options.saturating_add(1);
+                    let witness_filter_started = Instant::now();
+                    let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
+                    actions.extend_from_slice(option.actions());
+                    let negative_log_policy =
+                        prefix_negative_log_policy + option.negative_log_policy();
+                    let candidate_is_dominated = self.witness.as_ref().is_some_and(|current| {
+                        !terminal_candidate_could_improve_witness(
+                            current,
+                            option.exact_successor().combat.entities.player.current_hp,
+                            actions.len(),
+                            negative_log_policy,
+                            actions_potion_expenditures(&actions),
+                            self.config.max_potions_used,
+                        )
+                    });
+                    self.performance_timing.admission_witness_filter_elapsed_ns = self
+                        .performance_timing
+                        .admission_witness_filter_elapsed_ns
+                        .saturating_add(elapsed_nanos_u64(witness_filter_started));
+                    if candidate_is_dominated {
+                        self.used.witness_replay_dominated_skips =
+                            self.used.witness_replay_dominated_skips.saturating_add(1);
+                        continue;
+                    }
                     self.used.witness_replay_attempts =
                         self.used.witness_replay_attempts.saturating_add(1);
                     let witness_replay_started = Instant::now();
-                    let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
-                    actions.extend_from_slice(option.actions());
                     let improved = match replay_witness(
                         &self.original_root,
                         &actions,
-                        prefix_negative_log_policy + option.negative_log_policy(),
+                        negative_log_policy,
                         OracleCombatWitnessDiscoverySource::PlannerSearch,
                         stepper,
                     ) {

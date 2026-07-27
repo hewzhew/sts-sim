@@ -95,6 +95,7 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
     pub admission_root_option_elapsed_ns: u64,
+    pub admission_witness_filter_elapsed_ns: u64,
     pub admission_witness_replay_elapsed_ns: u64,
     pub successor_identity_elapsed_ns: u64,
     pub successor_lookup_elapsed_ns: u64,
@@ -139,6 +140,9 @@ impl LocalTurnGraphPerformanceTiming {
         self.admission_root_option_elapsed_ns = self
             .admission_root_option_elapsed_ns
             .saturating_add(other.admission_root_option_elapsed_ns);
+        self.admission_witness_filter_elapsed_ns = self
+            .admission_witness_filter_elapsed_ns
+            .saturating_add(other.admission_witness_filter_elapsed_ns);
         self.admission_witness_replay_elapsed_ns = self
             .admission_witness_replay_elapsed_ns
             .saturating_add(other.admission_witness_replay_elapsed_ns);
