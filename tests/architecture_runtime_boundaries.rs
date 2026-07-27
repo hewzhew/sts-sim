@@ -83,7 +83,11 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 #[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
-    const MODULES: [(&str, u64); 4] = [
+    const MODULES: [(&str, u64); 6] = [
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/diagnostics.rs",
+            24 * 1024,
+        ),
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
             32 * 1024,
@@ -100,15 +104,25 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
             "crates/sts_combat_planner/src/local_turn_graph_search/tests.rs",
             16 * 1024,
         ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/session.rs",
+            16 * 1024,
+        ),
     ];
 
     let source = std::fs::read_to_string(ROOT).expect("read local-turn graph search source");
     let root_bytes = source.len() as u64;
     assert!(
-        root_bytes <= 96 * 1024,
+        root_bytes <= 64 * 1024,
         "local_turn_graph_search.rs grew to {root_bytes} bytes; keep the root focused on graph state and orchestration"
     );
-    for module in ["scheduling", "policy_line", "reporting"] {
+    for module in [
+        "diagnostics",
+        "scheduling",
+        "policy_line",
+        "reporting",
+        "session",
+    ] {
         assert!(
             source.contains(&format!("mod {module};")),
             "the local-turn graph root must retain the {module} responsibility boundary"
@@ -125,6 +139,14 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     assert!(
         !source.contains("pub fn offer_plan_compatible_policy_line_with_suffix_probes"),
         "policy-line materialization belongs in policy_line.rs, not the orchestration root"
+    );
+    assert!(
+        !source.contains("pub fn progress_snapshot"),
+        "read-only graph inspection belongs in diagnostics.rs, not the orchestration root"
+    );
+    assert!(
+        !source.contains("pub fn with_policy_and_lookahead"),
+        "session construction and witness ingress belong in session.rs, not the orchestration root"
     );
     assert!(
         !source.contains("#[test]"),
