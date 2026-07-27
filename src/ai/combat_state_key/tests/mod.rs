@@ -28,3 +28,25 @@ fn profiled_exact_key_is_identical_to_the_production_builder() {
 
     assert_eq!(profiled, ordinary);
 }
+
+#[test]
+fn packed_relic_bus_key_preserves_the_exact_v1_diagnostic_identity() {
+    let mut combat = blank_test_combat();
+    combat
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::PenNib,
+        ));
+    combat
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::Calipers,
+        ));
+
+    assert_eq!(
+        super::combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat),
+        "5eeb64232a5fb2895acd515892e9ab8fb5be0871f939a193fa7f996229d42410"
+    );
+}

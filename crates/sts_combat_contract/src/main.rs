@@ -18,7 +18,7 @@ use sts_combat_planner::{
     TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 use sts_core::ai::combat_state_key::{
-    combat_exact_state_hash_v1, combat_exact_state_key_profiled_v1,
+    combat_exact_state_hash_v1, combat_exact_state_key_profiled_v1, CombatExactStateKey,
 };
 use sts_core::sim::combat::{
     apply_combat_input_to_stable_profiled_v1, CombatPosition, CombatStepLimits, CombatStepResult,
@@ -461,6 +461,7 @@ fn run(args: Cli) -> Result<(), String> {
                     "max_monster_protocol": profile.max_monster_protocol_items,
                 },
                 "type_size_bytes": {
+                    "combat_exact_state_key": std::mem::size_of::<CombatExactStateKey>(),
                     "combat_state": std::mem::size_of::<sts_core::runtime::combat::CombatState>(),
                     "card_zones": std::mem::size_of::<sts_core::runtime::combat::CardZones>(),
                     "combat_card": std::mem::size_of::<sts_core::runtime::combat::CombatCard>(),
