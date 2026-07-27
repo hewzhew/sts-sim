@@ -30,6 +30,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "combat_contract_workload.ps1")
+. (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 
 function Get-ContractIdentity($Report) {
     return [ordered]@{
@@ -117,6 +118,12 @@ try {
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         throw "combat contract is missing at '$Executable'; rerun without -SkipBuild"
     }
+    $BuildReceipt = if ($SkipBuild) {
+        Assert-StsCombatContractBuildReceipt $RepoRoot $Executable
+    }
+    else {
+        Write-StsCombatContractBuildReceipt $RepoRoot $Executable
+    }
     $WorkloadArguments = Get-StsCombatContractWorkloadArguments $CasePath
 
     $ExpectedIdentity = $null
@@ -181,6 +188,11 @@ try {
         schema_version = 1
         git_commit = $GitCommit
         git_dirty = $GitDirty
+        build_git_commit = $BuildReceipt.git_commit
+        build_git_dirty = $BuildReceipt.git_dirty
+        build_source_fingerprint = $BuildReceipt.source_fingerprint
+        executable_sha256 = $BuildReceipt.executable_sha256
+        pdb_sha256 = $BuildReceipt.pdb_sha256
         case = $CasePath
         batches = $Batches
         iterations_per_batch = $IterationsPerBatch
@@ -199,6 +211,8 @@ try {
         [pscustomobject]@{
             commit = $GitCommit.Substring(0, [Math]::Min(8, $GitCommit.Length))
             dirty = $GitDirty
+            build_source = $BuildReceipt.source_fingerprint.Substring(0, 12)
+            executable = $BuildReceipt.executable_sha256.Substring(0, 12)
             batches = "$Batches x $IterationsPerBatch"
             batch_ms = (@($BatchMilliseconds | ForEach-Object { [Math]::Round($_, 2) }) -join ", ")
             median_process_ms = [Math]::Round($Result.median_iteration_milliseconds, 2)

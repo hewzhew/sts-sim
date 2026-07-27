@@ -35,6 +35,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "combat_contract_workload.ps1")
+. (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 . (Join-Path $PSScriptRoot "native_symbol_cache.ps1")
 
 function Test-IsAdministrator {
@@ -137,6 +138,10 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
     }
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         throw "symbolized combat contract is missing at '$Executable'"
+    }
+    $ActualExecutableHash = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash
+    if ($ActualExecutableHash -ne [string] $Request.executable_sha256) {
+        throw "profiling executable changed after the request was validated"
     }
     if (-not (Test-Path -LiteralPath $WprProfilePath -PathType Leaf)) {
         throw "STS combat WPR profile is missing at '$WprProfilePath'"
@@ -276,6 +281,11 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
         wpr_instance = $InstanceName
         git_commit = [string] $Request.git_commit
         git_dirty = [bool] $Request.git_dirty
+        build_git_commit = [string] $Request.build_git_commit
+        build_git_dirty = [bool] $Request.build_git_dirty
+        build_source_fingerprint = [string] $Request.build_source_fingerprint
+        executable_sha256 = [string] $Request.executable_sha256
+        pdb_sha256 = [string] $Request.pdb_sha256
         symbol_key = [string] $Request.symbol_key
         cached_pdb = [string] $Request.cached_pdb
         capture_succeeded = ($null -eq $CaptureError -and $null -eq $StopError)
@@ -331,6 +341,12 @@ try {
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         throw "symbolized combat contract is missing at '$Executable'; rerun without -SkipBuild"
     }
+    $BuildReceipt = if ($SkipBuild) {
+        Assert-StsCombatContractBuildReceipt $RepoRoot $Executable
+    }
+    else {
+        Write-StsCombatContractBuildReceipt $RepoRoot $Executable
+    }
 
     # Cache this exact build's PDB before another build can replace it. PerfView
     # otherwise asks its GUI-backed PDB matcher to inspect the adjacent file;
@@ -368,6 +384,11 @@ try {
         metadata_path = $MetadataPath
         git_commit = $GitCommit
         git_dirty = $GitDirty
+        build_git_commit = $BuildReceipt.git_commit
+        build_git_dirty = $BuildReceipt.git_dirty
+        build_source_fingerprint = $BuildReceipt.source_fingerprint
+        executable_sha256 = $BuildReceipt.executable_sha256
+        pdb_sha256 = $BuildReceipt.pdb_sha256
         symbol_key = $PublishedSymbols.identity.symbol_key
         cached_pdb = $PublishedSymbols.cached
     }

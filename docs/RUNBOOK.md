@@ -251,6 +251,12 @@ process-wall timing, and rejects any iteration whose exact counters or witness
 differ. Both tools source `combat_contract_workload.ps1`, so their workload
 cannot silently drift apart.
 
+Both tools also write a content-addressed build receipt beside the profiling
+executable. `-SkipBuild` hashes the combat runner's complete Rust/Cargo source
+scope plus the executable and PDB, and refuses to run when any identity differs
+from that receipt. Rebuild without `-SkipBuild` after a source change; do not
+interpret a previously built experimental binary as the current checkout.
+
 Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
