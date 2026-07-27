@@ -299,18 +299,11 @@ pub(super) fn update_max_rank(
 }
 
 pub(super) fn update_max_guide(
-    current: &mut BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
+    current: &mut GuideRankMap,
     lane: CombatGuideLaneId,
     candidate: &CombatStateGuideRank,
 ) -> bool {
-    if current
-        .get(&lane)
-        .is_some_and(|existing| existing >= candidate)
-    {
-        return false;
-    }
-    current.insert(lane, candidate.clone());
-    true
+    current.update_max(lane, candidate)
 }
 
 pub(super) fn select_guide_work(
@@ -552,13 +545,8 @@ pub(super) fn guides_with_pending_lookahead(
     (guides, pending_lane)
 }
 
-pub(super) fn guide_rank_map(
-    guides: &[CombatStateGuide],
-) -> BTreeMap<CombatGuideLaneId, CombatStateGuideRank> {
-    guides
-        .iter()
-        .map(|guide| (guide.lane, guide.rank.clone()))
-        .collect()
+pub(super) fn guide_rank_map(guides: &[CombatStateGuide]) -> GuideRankMap {
+    GuideRankMap::from_guides(guides)
 }
 
 pub(super) fn boundary_service_views_from_guides(

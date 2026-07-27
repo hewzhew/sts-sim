@@ -4,7 +4,7 @@ use super::{
     guide_widen_service_due, local_path_service_cost, lookahead_acquisition_views_from_guides,
     progressive_candidate_index, progressive_guide_width, progressive_rollout_width,
     round_robin_available_index, select_path_service_view, update_max_guide, update_max_rank,
-    GraphEdge, LocalServiceView,
+    GraphEdge, GuideRankMap, LocalServiceView,
 };
 use crate::policy::{
     CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank, COMBAT_PLAN_STATE_GUIDE_LANE_V1,
@@ -164,7 +164,7 @@ fn semantic_guide_backup_is_monotone_per_lane() {
     let weak = CombatStateGuideRank::new(vec![1, 2]);
     let strong = CombatStateGuideRank::new(vec![1, 3]);
     let weaker_later = CombatStateGuideRank::new(vec![1, 1]);
-    let mut backed = std::collections::BTreeMap::new();
+    let mut backed = GuideRankMap::default();
 
     assert!(update_max_guide(&mut backed, lane, &weak));
     assert!(update_max_guide(&mut backed, lane, &strong));

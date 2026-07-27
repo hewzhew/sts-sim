@@ -382,6 +382,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "smallvec",
  "sts_combat_strategy",
  "sts_simulator",
 ]

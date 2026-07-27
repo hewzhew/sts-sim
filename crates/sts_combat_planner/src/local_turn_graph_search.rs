@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use rustc_hash::FxBuildHasher;
+use smallvec::SmallVec;
 use sts_combat_strategy::{
     combat_plan_action_timing_v1, combat_plan_has_timed_action_preference_v1,
     combat_plan_projection_v1, combat_plan_selection_member_timing_v1,
@@ -54,6 +55,50 @@ struct LocalRootActionFamilyAccumulator {
     escapes: usize,
 }
 
+/// Guide policies currently expose only a handful of fixed semantic lanes.
+/// A tree map made every exact node and edge allocate a separate tree node,
+/// while all lookups still touched only this tiny set. Keep the same exact
+/// lane/rank association in a contiguous inline table; lane order has no
+/// search authority and updates remain exact.
+#[derive(Clone, Default)]
+struct GuideRankMap(SmallVec<[(CombatGuideLaneId, CombatStateGuideRank); 4]>);
+
+impl GuideRankMap {
+    fn from_guides(guides: &[CombatStateGuide]) -> Self {
+        let mut ranks = Self::default();
+        for guide in guides {
+            ranks.update_max(guide.lane, &guide.rank);
+        }
+        ranks
+    }
+
+    fn get(&self, lane: &CombatGuideLaneId) -> Option<&CombatStateGuideRank> {
+        self.0
+            .iter()
+            .find_map(|(candidate, rank)| (candidate == lane).then_some(rank))
+    }
+
+    fn update_max(&mut self, lane: CombatGuideLaneId, candidate: &CombatStateGuideRank) -> bool {
+        if let Some((_, existing)) = self
+            .0
+            .iter_mut()
+            .find(|(candidate_lane, _)| *candidate_lane == lane)
+        {
+            if *existing >= *candidate {
+                return false;
+            }
+            *existing = candidate.clone();
+            return true;
+        }
+        self.0.push((lane, candidate.clone()));
+        true
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &(CombatGuideLaneId, CombatStateGuideRank)> {
+        self.0.iter()
+    }
+}
+
 struct GraphNode {
     generator: TurnOptionGeneratorSession,
     /// Potion resources already expended on the retained path to this exact
@@ -78,7 +123,7 @@ struct GraphNode {
     widen_guide_visits: BTreeMap<CombatGuideLaneId, usize>,
     lookahead_pending_lane: Option<CombatGuideLaneId>,
     /// Best exact descendant observed for each cheap semantic guide.
-    backed_guides: BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
+    backed_guides: GuideRankMap,
     /// Best bounded rollout value observed at this exact boundary. This is
     /// search guidance only; terminal authority still belongs to exact replay.
     backed_lookahead_rank: Option<CombatStateGuideRank>,
@@ -95,7 +140,7 @@ struct GraphEdge {
     anchor_visits: usize,
     guide_visits: BTreeMap<CombatGuideLaneId, usize>,
     /// Best exact descendant observed through this edge for each cheap guide.
-    backed_guides: BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
+    backed_guides: GuideRankMap,
     /// Best evaluated descendant reached through this exact edge.
     backed_lookahead_rank: Option<CombatStateGuideRank>,
     backed_visits: usize,
@@ -1238,14 +1283,14 @@ impl LocalTurnGraphWitnessSession {
         path: &[(usize, usize)],
         parent_id: usize,
         edge_index: usize,
-        guides: &BTreeMap<CombatGuideLaneId, CombatStateGuideRank>,
+        guides: &GuideRankMap,
     ) {
         for (node_id, selected_edge) in path
             .iter()
             .copied()
             .chain(std::iter::once((parent_id, edge_index)))
         {
-            for (lane, rank) in guides {
+            for (lane, rank) in guides.iter() {
                 update_max_guide(
                     &mut self.nodes[node_id].children[selected_edge].backed_guides,
                     *lane,
