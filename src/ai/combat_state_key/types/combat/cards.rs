@@ -1,5 +1,6 @@
 use crate::content::cards::CardId;
 use crate::runtime::combat::QueuedCardSource;
+use smallvec::SmallVec;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatZonesKey {
@@ -25,7 +26,7 @@ pub(crate) struct CombatCardKey {
     pub(crate) base_damage_mut: i32,
     pub(crate) base_block_mut: i32,
     pub(crate) base_magic_num_mut: i32,
-    pub(crate) multi_damage: Vec<i32>,
+    pub(crate) multi_damage: SmallVec<[i32; 5]>,
     pub(crate) exhaust_override: Option<bool>,
     pub(crate) retain_override: Option<bool>,
     pub(crate) free_to_play_once: bool,

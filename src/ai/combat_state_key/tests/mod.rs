@@ -10,6 +10,7 @@ use crate::state::core::PendingChoice;
 use crate::state::EngineState;
 use crate::test_support::{blank_test_combat, planned_monster};
 
+mod cards;
 mod dominance;
 mod monster;
 mod pending_choice;
