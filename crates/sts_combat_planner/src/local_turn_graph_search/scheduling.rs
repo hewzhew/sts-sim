@@ -393,21 +393,13 @@ pub(super) fn select_guide_work(
         }
     }
 
-    let edge_ranks = node
+    let best_edge = node
         .children
         .iter()
-        .map(|edge| {
-            (!nodes[edge.successor].exhausted)
-                .then(|| backed_guide_rank(edge, &nodes[edge.successor], lane).cloned())
-                .flatten()
-        })
-        .collect::<Vec<_>>();
-    let best_edge = edge_ranks
-        .iter()
         .enumerate()
-        .filter_map(|(edge_index, rank)| {
-            let rank = rank.as_ref()?;
-            let edge = &node.children[edge_index];
+        .filter(|(_, edge)| !nodes[edge.successor].exhausted)
+        .filter_map(|(edge_index, edge)| {
+            let rank = backed_guide_rank(edge, &nodes[edge.successor], lane)?;
             Some((
                 rank,
                 local_path_base(edge.actions.len(), edge.negative_log_policy),
@@ -423,8 +415,7 @@ pub(super) fn select_guide_work(
             guide_choice_order(
                 left.0, left.1, left.2, left.3, right.0, right.1, right.2, right.3,
             )
-        })
-        .map(|(rank, anchor, visits, successor, edge)| (rank, anchor, visits, successor, edge));
+        });
     let retained_promise = allow_widen
         .then(|| node.generator.best_retained_guide_promise_snapshot(lane))
         .flatten();
