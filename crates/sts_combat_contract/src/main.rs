@@ -4,6 +4,7 @@
 //! continuations, and resident-workspace state. It is the fast compilation
 //! boundary for replay-verified tactical contracts.
 
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -18,7 +19,8 @@ use sts_combat_planner::{
 };
 use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
 use sts_core::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+    apply_combat_input_to_stable_profiled_v1, CombatPosition, CombatStepLimits, CombatStepResult,
+    CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 use sts_core::state::core::{ClientInput, EngineState};
 
@@ -70,6 +72,11 @@ struct Cli {
     /// Emit only the compact performance and witness payload.
     #[arg(long)]
     performance_only: bool,
+    /// Sparsely profile EngineState clone, CombatState clone, and execution.
+    /// This is diagnostic-only and deliberately adds no clocks to the normal
+    /// production stepper.
+    #[arg(long)]
+    profile_transition_clone_cost: bool,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
     #[arg(long, default_value_t = 4)]
@@ -82,6 +89,109 @@ struct Cli {
 struct CombatCaseRoot {
     schema: String,
     position: CombatPosition,
+}
+
+const TRANSITION_CLONE_PROFILE_INTERVAL: usize = 16;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct TransitionCloneProfile {
+    calls: usize,
+    samples: usize,
+    engine_clone_elapsed_ns: u64,
+    combat_clone_elapsed_ns: u64,
+    combat_meta_clone_elapsed_ns: u64,
+    combat_turn_clone_elapsed_ns: u64,
+    combat_zones_clone_elapsed_ns: u64,
+    combat_entities_clone_elapsed_ns: u64,
+    combat_engine_clone_elapsed_ns: u64,
+    combat_rng_clone_elapsed_ns: u64,
+    combat_runtime_clone_elapsed_ns: u64,
+    execution_elapsed_ns: u64,
+}
+
+#[derive(Debug, Default)]
+struct ProfiledEngineCombatStepper {
+    profile: Cell<TransitionCloneProfile>,
+}
+
+impl ProfiledEngineCombatStepper {
+    fn snapshot(&self) -> TransitionCloneProfile {
+        self.profile.get()
+    }
+}
+
+impl CombatStepper for ProfiledEngineCombatStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        EngineCombatStepper.atomic_actions(position)
+    }
+
+    fn legal_action_surface(
+        &self,
+        position: &CombatPosition,
+    ) -> sts_core::sim::combat_action_surface::CombatLegalActionSurfaceV2 {
+        EngineCombatStepper.legal_action_surface(position)
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        EngineCombatStepper.supports_canonical_pending_choice_actions()
+    }
+
+    fn is_legal_action(&self, position: &CombatPosition, input: &ClientInput) -> bool {
+        EngineCombatStepper.is_legal_action(position, input)
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        limits: CombatStepLimits,
+    ) -> CombatStepResult {
+        let mut profile = self.profile.get();
+        profile.calls = profile.calls.saturating_add(1);
+        if profile.calls % TRANSITION_CLONE_PROFILE_INTERVAL != 0 {
+            self.profile.set(profile);
+            return EngineCombatStepper.apply_to_stable(position, input, limits);
+        }
+
+        let (step, timing) = apply_combat_input_to_stable_profiled_v1(position, input, limits);
+        profile.samples = profile.samples.saturating_add(1);
+        profile.engine_clone_elapsed_ns = profile
+            .engine_clone_elapsed_ns
+            .saturating_add(timing.engine_clone_elapsed_ns);
+        profile.combat_clone_elapsed_ns = profile
+            .combat_clone_elapsed_ns
+            .saturating_add(timing.combat_clone_elapsed_ns);
+        profile.combat_meta_clone_elapsed_ns = profile
+            .combat_meta_clone_elapsed_ns
+            .saturating_add(timing.combat_meta_clone_elapsed_ns);
+        profile.combat_turn_clone_elapsed_ns = profile
+            .combat_turn_clone_elapsed_ns
+            .saturating_add(timing.combat_turn_clone_elapsed_ns);
+        profile.combat_zones_clone_elapsed_ns = profile
+            .combat_zones_clone_elapsed_ns
+            .saturating_add(timing.combat_zones_clone_elapsed_ns);
+        profile.combat_entities_clone_elapsed_ns = profile
+            .combat_entities_clone_elapsed_ns
+            .saturating_add(timing.combat_entities_clone_elapsed_ns);
+        profile.combat_engine_clone_elapsed_ns = profile
+            .combat_engine_clone_elapsed_ns
+            .saturating_add(timing.combat_engine_clone_elapsed_ns);
+        profile.combat_rng_clone_elapsed_ns = profile
+            .combat_rng_clone_elapsed_ns
+            .saturating_add(timing.combat_rng_clone_elapsed_ns);
+        profile.combat_runtime_clone_elapsed_ns = profile
+            .combat_runtime_clone_elapsed_ns
+            .saturating_add(timing.combat_runtime_clone_elapsed_ns);
+        profile.execution_elapsed_ns = profile
+            .execution_elapsed_ns
+            .saturating_add(timing.execution_elapsed_ns);
+        self.profile.set(profile);
+        step
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        EngineCombatStepper.terminal(position)
+    }
 }
 
 fn main() {
@@ -166,6 +276,13 @@ fn run(args: Cli) -> Result<(), String> {
         policy
     };
     let mut session = LocalTurnGraphWitnessSession::with_policy(root, config, policy);
+    let profiled_stepper = ProfiledEngineCombatStepper::default();
+    let engine_stepper = EngineCombatStepper;
+    let search_stepper: &dyn CombatStepper = if args.profile_transition_clone_cost {
+        &profiled_stepper
+    } else {
+        &engine_stepper
+    };
     let setup_elapsed_ns = elapsed_nanos(setup_started);
     let policy_line_started = Instant::now();
     let policy_line_report = args
@@ -190,7 +307,7 @@ fn run(args: Cli) -> Result<(), String> {
                 .saturating_mul(args.max_engine_steps_per_transition),
             deadline: Some(Instant::now() + Duration::from_millis(args.wall_ms)),
         },
-        &EngineCombatStepper,
+        search_stepper,
     );
     let search_elapsed_ns = elapsed_nanos(search_started);
     let root_action_families = session.root_action_families();
@@ -252,11 +369,42 @@ fn run(args: Cli) -> Result<(), String> {
         let timing = report.performance_timing;
         let per_transition =
             |elapsed_ns: u64| (transitions > 0).then(|| elapsed_ns as f64 / transitions as f64);
+        let clone_profile = args.profile_transition_clone_cost.then(|| {
+            let profile = profiled_stepper.snapshot();
+            let per_sample = |elapsed_ns: u64| {
+                (profile.samples > 0).then(|| elapsed_ns as f64 / profile.samples as f64)
+            };
+            json!({
+                "sample_interval": TRANSITION_CLONE_PROFILE_INTERVAL,
+                "transition_calls": profile.calls,
+                "samples": profile.samples,
+                "total_elapsed_ns": {
+                    "engine_clone": profile.engine_clone_elapsed_ns,
+                    "combat_clone": profile.combat_clone_elapsed_ns,
+                    "execution": profile.execution_elapsed_ns,
+                },
+                "mean_ns_per_sample": {
+                    "engine_clone": per_sample(profile.engine_clone_elapsed_ns),
+                    "combat_clone": per_sample(profile.combat_clone_elapsed_ns),
+                    "combat_clone_components": {
+                        "meta": per_sample(profile.combat_meta_clone_elapsed_ns),
+                        "turn": per_sample(profile.combat_turn_clone_elapsed_ns),
+                        "zones": per_sample(profile.combat_zones_clone_elapsed_ns),
+                        "entities": per_sample(profile.combat_entities_clone_elapsed_ns),
+                        "engine": per_sample(profile.combat_engine_clone_elapsed_ns),
+                        "rng": per_sample(profile.combat_rng_clone_elapsed_ns),
+                        "runtime": per_sample(profile.combat_runtime_clone_elapsed_ns),
+                    },
+                    "execution": per_sample(profile.execution_elapsed_ns),
+                },
+            })
+        });
         let output = json!({
             "schema_name": "CombatCasePerformanceProfileV1",
             "schema_version": 1,
             "runner": "lightweight-combat-contract",
             "detail_timing_sample_interval": DETAIL_TIMING_SAMPLE_INTERVAL,
+            "transition_clone_profile": clone_profile,
             "case": args.case,
             "search_elapsed_ns": search_elapsed_ns,
             "status": format!("{:?}", report.status),

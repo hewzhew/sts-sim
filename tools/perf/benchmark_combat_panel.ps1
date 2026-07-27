@@ -17,6 +17,7 @@ param(
     [int] $IterationsPerCase = 3,
     [ValidateRange(0, 10)]
     [int] $WarmupIterations = 1,
+    [switch] $ProfileTransitionCloneCost,
     [switch] $SkipBuild,
     [switch] $AsJson
 )
@@ -39,7 +40,8 @@ function Get-Median([double[]] $Values) {
 
 function Invoke-CombatPanelCase(
     [string] $Executable,
-    [string] $CasePath
+    [string] $CasePath,
+    [bool] $ProfileCloneCost
 ) {
     $Arguments = @(
         "--case", $CasePath,
@@ -51,6 +53,9 @@ function Invoke-CombatPanelCase(
         "--typed-plan-guide",
         "--performance-only"
     )
+    if ($ProfileCloneCost) {
+        $Arguments += "--profile-transition-clone-cost"
+    }
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
     $StartInfo.FileName = $Executable
     $StartInfo.UseShellExecute = $false
@@ -172,19 +177,29 @@ try {
                 identity_ns = [Collections.Generic.List[double]]::new()
                 key_build_ns = [Collections.Generic.List[double]]::new()
                 publish_ns = [Collections.Generic.List[double]]::new()
+                engine_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_clone_ns = [Collections.Generic.List[double]]::new()
+                transition_execution_ns = [Collections.Generic.List[double]]::new()
+                combat_meta_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_turn_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_zones_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_entities_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_engine_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_rng_clone_ns = [Collections.Generic.List[double]]::new()
+                combat_runtime_clone_ns = [Collections.Generic.List[double]]::new()
             }
         })
 
     for ($Warmup = 0; $Warmup -lt $WarmupIterations; $Warmup++) {
         foreach ($Case in $Cases) {
-            $Run = Invoke-CombatPanelCase $Executable $Case.path
+            $Run = Invoke-CombatPanelCase $Executable $Case.path $ProfileTransitionCloneCost
             Assert-CombatPanelIdentity $Case.definition $Run.report
         }
     }
     for ($Batch = 0; $Batch -lt $Batches; $Batch++) {
         for ($Iteration = 0; $Iteration -lt $IterationsPerCase; $Iteration++) {
             foreach ($Case in $Cases) {
-                $Run = Invoke-CombatPanelCase $Executable $Case.path
+                $Run = Invoke-CombatPanelCase $Executable $Case.path $ProfileTransitionCloneCost
                 Assert-CombatPanelIdentity $Case.definition $Run.report
                 $Case.process_ms.Add($Run.process_milliseconds)
                 $Case.search_ms.Add($Run.report.search_elapsed_ns / 1000000.0)
@@ -192,6 +207,23 @@ try {
                 $Case.identity_ns.Add($Run.report.ns_per_applied_transition.identity)
                 $Case.key_build_ns.Add($Run.report.ns_per_applied_transition.key_build)
                 $Case.publish_ns.Add($Run.report.ns_per_applied_transition.publish)
+                if ($ProfileTransitionCloneCost) {
+                    $Profile = $Run.report.transition_clone_profile
+                    if ($null -eq $Profile -or [int] $Profile.samples -le 0) {
+                        throw "combat panel clone profile was not populated for '$($Case.definition.name)'"
+                    }
+                    $Case.engine_clone_ns.Add($Profile.mean_ns_per_sample.engine_clone)
+                    $Case.combat_clone_ns.Add($Profile.mean_ns_per_sample.combat_clone)
+                    $Case.transition_execution_ns.Add($Profile.mean_ns_per_sample.execution)
+                    $Components = $Profile.mean_ns_per_sample.combat_clone_components
+                    $Case.combat_meta_clone_ns.Add($Components.meta)
+                    $Case.combat_turn_clone_ns.Add($Components.turn)
+                    $Case.combat_zones_clone_ns.Add($Components.zones)
+                    $Case.combat_entities_clone_ns.Add($Components.entities)
+                    $Case.combat_engine_clone_ns.Add($Components.engine)
+                    $Case.combat_rng_clone_ns.Add($Components.rng)
+                    $Case.combat_runtime_clone_ns.Add($Components.runtime)
+                }
             }
         }
     }
@@ -205,6 +237,26 @@ try {
                 identity_ns = [math]::Round((Get-Median $_.identity_ns), 1)
                 key_build_ns = [math]::Round((Get-Median $_.key_build_ns), 1)
                 publish_ns = [math]::Round((Get-Median $_.publish_ns), 1)
+                engine_clone_ns = if ($ProfileTransitionCloneCost) {
+                    [math]::Round((Get-Median $_.engine_clone_ns), 1)
+                } else { $null }
+                combat_clone_ns = if ($ProfileTransitionCloneCost) {
+                    [math]::Round((Get-Median $_.combat_clone_ns), 1)
+                } else { $null }
+                transition_execution_ns = if ($ProfileTransitionCloneCost) {
+                    [math]::Round((Get-Median $_.transition_execution_ns), 1)
+                } else { $null }
+                combat_clone_components_ns = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        meta = [math]::Round((Get-Median $_.combat_meta_clone_ns), 1)
+                        turn = [math]::Round((Get-Median $_.combat_turn_clone_ns), 1)
+                        zones = [math]::Round((Get-Median $_.combat_zones_clone_ns), 1)
+                        entities = [math]::Round((Get-Median $_.combat_entities_clone_ns), 1)
+                        engine = [math]::Round((Get-Median $_.combat_engine_clone_ns), 1)
+                        rng = [math]::Round((Get-Median $_.combat_rng_clone_ns), 1)
+                        runtime = [math]::Round((Get-Median $_.combat_runtime_clone_ns), 1)
+                    }
+                } else { $null }
                 transitions = [int] $_.definition.expected.applied_action_transitions
                 exact_nodes = [int] $_.definition.expected.exact_nodes
                 witness_hp = if ($null -eq $_.definition.expected.witness) {
@@ -225,6 +277,7 @@ try {
         batches = $Batches
         iterations_per_case = $IterationsPerCase
         warmup_iterations = $WarmupIterations
+        transition_clone_profile_enabled = [bool] $ProfileTransitionCloneCost
         cases = $Rows
     }
     if ($AsJson) {

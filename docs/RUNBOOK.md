@@ -270,6 +270,17 @@ large/expensive state, and a replay-verified witness. Timing is observational;
 deterministic counters and witness identity are checked against
 `combat_performance_panel.json` before a result is accepted.
 
+To diagnose transition ownership costs without putting clocks on the
+production stepper, run the same locked panel with sparse sampling:
+
+```powershell
+.\tools\perf\benchmark_combat_panel.ps1 -SkipBuild -ProfileTransitionCloneCost
+```
+
+The diagnostic samples one of every 16 applied transitions and reports
+`engine_clone_ns`, `combat_clone_ns`, and `transition_execution_ns`. Its wall
+time is instrumented; use the ordinary panel for performance acceptance.
+
 Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`

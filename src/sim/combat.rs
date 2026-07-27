@@ -51,6 +51,20 @@ pub struct CombatObservedStepResultV1 {
     pub drawn_cards: Vec<DomainCardSnapshot>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CombatStepPerformanceTimingV1 {
+    pub engine_clone_elapsed_ns: u64,
+    pub combat_clone_elapsed_ns: u64,
+    pub combat_meta_clone_elapsed_ns: u64,
+    pub combat_turn_clone_elapsed_ns: u64,
+    pub combat_zones_clone_elapsed_ns: u64,
+    pub combat_entities_clone_elapsed_ns: u64,
+    pub combat_engine_clone_elapsed_ns: u64,
+    pub combat_rng_clone_elapsed_ns: u64,
+    pub combat_runtime_clone_elapsed_ns: u64,
+    pub execution_elapsed_ns: u64,
+}
+
 pub trait CombatStepper {
     /// Returns the finite, explicitly materialized part of this boundary.
     ///
@@ -169,6 +183,63 @@ pub fn apply_combat_input_to_stable(
     apply_combat_input_to_stable_inner(position, input, limits, false).step
 }
 
+/// Profiles one transition without putting clocks or sampling branches on the
+/// production `EngineCombatStepper` path.
+pub fn apply_combat_input_to_stable_profiled_v1(
+    position: &CombatPosition,
+    input: ClientInput,
+    limits: CombatStepLimits,
+) -> (CombatStepResult, CombatStepPerformanceTimingV1) {
+    let engine_clone_started = Instant::now();
+    let engine = position.engine.clone();
+    let engine_clone_elapsed_ns = elapsed_nanos_saturated(engine_clone_started);
+
+    let (meta, combat_meta_clone_elapsed_ns) = clone_with_timing(&position.combat.meta);
+    let (turn, combat_turn_clone_elapsed_ns) = clone_with_timing(&position.combat.turn);
+    let (zones, combat_zones_clone_elapsed_ns) = clone_with_timing(&position.combat.zones);
+    let (entities, combat_entities_clone_elapsed_ns) = clone_with_timing(&position.combat.entities);
+    let (combat_engine, combat_engine_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.engine);
+    let (rng, combat_rng_clone_elapsed_ns) = clone_with_timing(&position.combat.rng);
+    let (runtime, combat_runtime_clone_elapsed_ns) = clone_with_timing(&position.combat.runtime);
+    let combat_clone_elapsed_ns = combat_meta_clone_elapsed_ns
+        .saturating_add(combat_turn_clone_elapsed_ns)
+        .saturating_add(combat_zones_clone_elapsed_ns)
+        .saturating_add(combat_entities_clone_elapsed_ns)
+        .saturating_add(combat_engine_clone_elapsed_ns)
+        .saturating_add(combat_rng_clone_elapsed_ns)
+        .saturating_add(combat_runtime_clone_elapsed_ns);
+    let combat = CombatState {
+        meta,
+        turn,
+        zones,
+        entities,
+        engine: combat_engine,
+        rng,
+        runtime,
+    };
+
+    let execution_started = Instant::now();
+    let step = apply_combat_input_to_stable_owned_inner(engine, combat, input, limits, false).step;
+    let execution_elapsed_ns = elapsed_nanos_saturated(execution_started);
+
+    (
+        step,
+        CombatStepPerformanceTimingV1 {
+            engine_clone_elapsed_ns,
+            combat_clone_elapsed_ns,
+            combat_meta_clone_elapsed_ns,
+            combat_turn_clone_elapsed_ns,
+            combat_zones_clone_elapsed_ns,
+            combat_entities_clone_elapsed_ns,
+            combat_engine_clone_elapsed_ns,
+            combat_rng_clone_elapsed_ns,
+            combat_runtime_clone_elapsed_ns,
+            execution_elapsed_ns,
+        },
+    )
+}
+
 pub fn apply_combat_input_to_stable_observed_v1(
     position: &CombatPosition,
     input: ClientInput,
@@ -194,8 +265,22 @@ fn apply_combat_input_to_stable_inner(
     limits: CombatStepLimits,
     observe_draws: bool,
 ) -> CombatStepResultInternal {
-    let mut engine = position.engine.clone();
-    let mut combat = position.combat.clone();
+    apply_combat_input_to_stable_owned_inner(
+        position.engine.clone(),
+        position.combat.clone(),
+        input,
+        limits,
+        observe_draws,
+    )
+}
+
+fn apply_combat_input_to_stable_owned_inner(
+    mut engine: EngineState,
+    mut combat: CombatState,
+    input: ClientInput,
+    limits: CombatStepLimits,
+    observe_draws: bool,
+) -> CombatStepResultInternal {
     combat.clear_card_draw_observation_events();
 
     if limits.deadline.is_some_and(|limit| Instant::now() >= limit) {
@@ -230,6 +315,16 @@ fn apply_combat_input_to_stable_inner(
         }
         normalize_player_turn_processing(&mut engine, &combat);
     }
+}
+
+fn elapsed_nanos_saturated(started: Instant) -> u64 {
+    started.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
+
+fn clone_with_timing<T: Clone>(value: &T) -> (T, u64) {
+    let started = Instant::now();
+    let cloned = value.clone();
+    (cloned, elapsed_nanos_saturated(started))
 }
 
 pub fn stable_boundary(engine: &EngineState, combat: &CombatState) -> bool {
@@ -432,6 +527,40 @@ mod tests {
         assert!(observed.drawn_cards.is_empty());
         assert!(observed.step.timed_out);
         assert_eq!(observed.step.engine_steps, 0);
+    }
+
+    #[test]
+    fn profiled_step_is_semantically_identical_to_the_production_step() {
+        let mut combat = blank_test_combat();
+        combat.entities.monsters = vec![test_monster(crate::content::monsters::EnemyId::JawWorm)];
+        combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
+        combat.zones.draw_pile = vec![
+            CombatCard::new(CardId::Defend, 20),
+            CombatCard::new(CardId::Strike, 21),
+            CombatCard::new(CardId::Bash, 22),
+        ];
+        let position = super::CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let limits = super::CombatStepLimits {
+            max_engine_steps: 20,
+            deadline: None,
+        };
+        let input = ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        };
+
+        let expected = super::apply_combat_input_to_stable(&position, input.clone(), limits);
+        let (actual, timing) =
+            super::apply_combat_input_to_stable_profiled_v1(&position, input, limits);
+
+        assert_eq!(actual.position, expected.position);
+        assert_eq!(actual.terminal, expected.terminal);
+        assert_eq!(actual.alive, expected.alive);
+        assert_eq!(actual.truncated, expected.truncated);
+        assert_eq!(actual.timed_out, expected.timed_out);
+        assert_eq!(actual.engine_steps, expected.engine_steps);
+        assert!(timing.combat_clone_elapsed_ns > 0);
+        assert!(timing.execution_elapsed_ns > 0);
     }
 
     #[test]
