@@ -1,0 +1,265 @@
+<#
+.SYNOPSIS
+Collects a short, symbolized WPR CPU trace for the canonical combat contract.
+
+.DESCRIPTION
+Build and preflight run happen without elevation. The script then launches a
+short-lived elevated copy of itself solely to own one uniquely named WPR
+recording and the repeated combat workload. It never cancels another WPR
+instance and stores all generated artifacts under the ignored `.profiles`
+directory.
+
+.EXAMPLE
+.\tools\perf\profile_combat_cpu.ps1
+
+.EXAMPLE
+.\tools\perf\profile_combat_cpu.ps1 -PrepareOnly
+Builds and validates the workload without starting WPR or requesting UAC.
+#>
+[CmdletBinding(PositionalBinding = $false)]
+param(
+    [string] $Case = ".oracle-lab\cases\seed022-a2f32-collector-full-hp.combat.json",
+    [ValidateRange(1, 200)]
+    [int] $Iterations = 24,
+    [switch] $SkipBuild,
+    [switch] $PrepareOnly,
+    [Parameter(DontShow = $true)]
+    [string] $ElevatedRequest
+)
+
+$ErrorActionPreference = "Stop"
+
+function Test-IsAdministrator {
+    $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $Principal = [Security.Principal.WindowsPrincipal] $Identity
+    return $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-WorkloadArguments([string] $CasePath) {
+    return @(
+        "--case", $CasePath,
+        "--max-nodes", "20000",
+        "--max-selections", "20000",
+        "--wall-ms", "5000",
+        "--max-potions-used", "2",
+        "--improve-incumbent",
+        "--typed-plan-guide",
+        "--expect-witness",
+        "--expect-min-final-hp", "70",
+        "--performance-only"
+    )
+}
+
+function Invoke-ElevatedCapture([string] $RequestPath) {
+    if (-not (Test-IsAdministrator)) {
+        throw "the WPR capture child did not receive an elevated Windows token"
+    }
+
+    $ScriptRepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $RepoRoot = [IO.Path]::GetFullPath($ScriptRepoRoot)
+    $ProfileRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot ".profiles"))
+    $RequestPath = [IO.Path]::GetFullPath($RequestPath)
+    if (-not $RequestPath.StartsWith($ProfileRoot + [IO.Path]::DirectorySeparatorChar,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "profiling request must remain below '$ProfileRoot'"
+    }
+
+    $Request = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
+    if ($Request.schema_name -ne "StsCombatCpuProfileRequestV1") {
+        throw "unsupported profiling request schema '$($Request.schema_name)'"
+    }
+
+    if ([IO.Path]::GetFullPath([string] $Request.repo_root) -ne $RepoRoot) {
+        throw "profiling request repository does not match this script"
+    }
+    $Executable = [IO.Path]::GetFullPath([string] $Request.executable)
+    $ExpectedExecutable = [IO.Path]::GetFullPath(
+        (Join-Path $RepoRoot "target\profiling\combat_contract.exe")
+    )
+    $CasePath = [IO.Path]::GetFullPath([string] $Request.case_path)
+    $TracePath = [IO.Path]::GetFullPath([string] $Request.trace_path)
+    $MetadataPath = [IO.Path]::GetFullPath([string] $Request.metadata_path)
+    $Iterations = [int] $Request.iterations
+
+    if ($Executable -ne $ExpectedExecutable) {
+        throw "profiling request may execute only '$ExpectedExecutable'"
+    }
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
+        throw "symbolized combat contract is missing at '$Executable'"
+    }
+    if (-not (Test-Path -LiteralPath $CasePath -PathType Leaf)) {
+        throw "combat case is missing at '$CasePath'"
+    }
+    foreach ($OutputPath in @($TracePath, $MetadataPath)) {
+        if (-not $OutputPath.StartsWith($ProfileRoot + [IO.Path]::DirectorySeparatorChar,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "profiling output must remain below '$ProfileRoot'"
+        }
+    }
+    if ($Iterations -lt 1 -or $Iterations -gt 200) {
+        throw "profiling iterations must be between 1 and 200"
+    }
+
+    New-Item -ItemType Directory -Path $ProfileRoot -Force | Out-Null
+    $InstanceName = "StsSimulatorCombatCpu-$PID"
+    $WorkloadArguments = Get-WorkloadArguments $CasePath
+    $RecordingStarted = $false
+    $CaptureError = $null
+    $StopError = $null
+    $StartedAt = [DateTimeOffset]::UtcNow
+
+    try {
+        $StartOutput = @(& wpr.exe -start CPU -filemode -instancename $InstanceName 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "WPR start failed: $($StartOutput -join [Environment]::NewLine)"
+        }
+        $RecordingStarted = $true
+
+        for ($Index = 1; $Index -le $Iterations; $Index++) {
+            & $Executable @WorkloadArguments *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "combat contract failed during profiled iteration $Index/$Iterations"
+            }
+        }
+    }
+    catch {
+        $CaptureError = $_
+    }
+    finally {
+        if ($RecordingStarted) {
+            $StopOutput = @(& wpr.exe -stop $TracePath `
+                    "sts_simulator symbolized combat CPU profile" `
+                    -compress -instancename $InstanceName 2>&1)
+            if ($LASTEXITCODE -ne 0) {
+                $StopError = "WPR stop failed: $($StopOutput -join [Environment]::NewLine)"
+                & wpr.exe -cancel -instancename $InstanceName *> $null
+            }
+        }
+    }
+
+    $Metadata = [ordered]@{
+        schema_name = "StsCombatCpuProfileV1"
+        schema_version = 1
+        recorded_at_utc = $StartedAt.ToString("O")
+        duration_ms = [math]::Round(
+            ([DateTimeOffset]::UtcNow - $StartedAt).TotalMilliseconds,
+            3
+        )
+        trace_path = $TracePath
+        case_path = $CasePath
+        executable = $Executable
+        iterations = $Iterations
+        wpr_profile = "CPU"
+        wpr_instance = $InstanceName
+        git_commit = [string] $Request.git_commit
+        git_dirty = [bool] $Request.git_dirty
+        capture_succeeded = ($null -eq $CaptureError -and $null -eq $StopError)
+        capture_error = if ($null -eq $CaptureError) { $null } else { $CaptureError.ToString() }
+        stop_error = $StopError
+    }
+    $Metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $MetadataPath -Encoding utf8
+
+    if ($null -ne $CaptureError) {
+        throw $CaptureError
+    }
+    if ($null -ne $StopError) {
+        throw $StopError
+    }
+
+    Write-Host "WPR CPU trace: $TracePath"
+    Write-Host "Profile metadata: $MetadataPath"
+}
+
+if ($ElevatedRequest) {
+    Invoke-ElevatedCapture ([IO.Path]::GetFullPath($ElevatedRequest))
+    exit 0
+}
+
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+$ProfileRoot = Join-Path $RepoRoot ".profiles"
+New-Item -ItemType Directory -Path $ProfileRoot -Force | Out-Null
+
+$CasePath = if ([IO.Path]::IsPathRooted($Case)) {
+    [IO.Path]::GetFullPath($Case)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $RepoRoot $Case))
+}
+if (-not (Test-Path -LiteralPath $CasePath -PathType Leaf)) {
+    throw "combat case is missing at '$CasePath'"
+}
+
+Push-Location $RepoRoot
+try {
+    if (-not $SkipBuild) {
+        & cargo build --locked --profile profiling -p sts_combat_contract --bin combat_contract
+        if ($LASTEXITCODE -ne 0) {
+            throw "symbolized combat contract build failed"
+        }
+    }
+
+    $Executable = Join-Path $RepoRoot "target\profiling\combat_contract.exe"
+    if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
+        throw "symbolized combat contract is missing at '$Executable'; rerun without -SkipBuild"
+    }
+
+    $WorkloadArguments = Get-WorkloadArguments $CasePath
+    & $Executable @WorkloadArguments *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "combat contract preflight failed; WPR was not started"
+    }
+
+    $GitCommit = (& git rev-parse HEAD).Trim()
+    $GitDirty = -not [string]::IsNullOrWhiteSpace((& git status --porcelain) -join "`n")
+    $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $ShortCommit = $GitCommit.Substring(0, [Math]::Min(8, $GitCommit.Length))
+    $BaseName = "combat-cpu-$Timestamp-$ShortCommit"
+    $TracePath = Join-Path $ProfileRoot "$BaseName.etl"
+    $MetadataPath = Join-Path $ProfileRoot "$BaseName.json"
+    $RequestPath = Join-Path $ProfileRoot ".$BaseName.request.json"
+
+    $Request = [ordered]@{
+        schema_name = "StsCombatCpuProfileRequestV1"
+        schema_version = 1
+        repo_root = $RepoRoot
+        executable = $Executable
+        case_path = $CasePath
+        iterations = $Iterations
+        trace_path = $TracePath
+        metadata_path = $MetadataPath
+        git_commit = $GitCommit
+        git_dirty = $GitDirty
+    }
+    $Request | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $RequestPath -Encoding utf8
+
+    Write-Host "symbolized profile workload is ready"
+    Write-Host "case: $CasePath"
+    Write-Host "iterations: $Iterations"
+    Write-Host "trace: $TracePath"
+    if ($PrepareOnly) {
+        Remove-Item -LiteralPath $RequestPath -Force
+        Write-Host "prepare-only: WPR was not started and no UAC request was made"
+        exit 0
+    }
+
+    $PowerShell = (Get-Process -Id $PID).Path
+    $QuotedScript = '"{0}"' -f $PSCommandPath
+    $QuotedRequest = '"{0}"' -f $RequestPath
+    $Child = Start-Process -FilePath $PowerShell -Verb RunAs -PassThru -Wait `
+        -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", $QuotedScript,
+            "-ElevatedRequest", $QuotedRequest
+        )
+    if ($Child.ExitCode -ne 0) {
+        throw "elevated profiling child failed with exit code $($Child.ExitCode)"
+    }
+    Write-Host "capture complete: $TracePath"
+}
+finally {
+    if ($RequestPath -and (Test-Path -LiteralPath $RequestPath)) {
+        Remove-Item -LiteralPath $RequestPath -Force
+    }
+    Pop-Location
+}

@@ -4,6 +4,7 @@
 /target_codex*/
 /.worktrees/
 /.oracle-lab/
+/.profiles/
 
 # Python
 **/__pycache__/

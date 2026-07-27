@@ -80,6 +80,14 @@ codegen-units = 64
 opt-level = 0
 codegen-units = 256
 
+# Symbolized optimized binaries for ETW/WPR sampling. Keeping this separate
+# from `release` avoids invalidating canonical artifacts or making ordinary
+# builds carry PDB generation cost.
+[profile.profiling]
+inherits = "release"
+debug = 1
+strip = "none"
+
 [profile.release-final]
 inherits = "release"
 opt-level = 3
