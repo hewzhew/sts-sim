@@ -57,6 +57,19 @@ struct Cli {
     max_selections: usize,
     #[arg(long, default_value_t = 5_000)]
     wall_ms: u64,
+    /// Continue after the first verified witness until the explicit budget is
+    /// exhausted, retaining the best exact witness found.
+    #[arg(long)]
+    improve_incumbent: bool,
+    /// Stop once a verified witness loses no more than this much HP.
+    #[arg(long, conflicts_with = "improve_incumbent")]
+    max_hp_loss: Option<u32>,
+    /// Permit at most this many potion uses or discards in the exact witness.
+    #[arg(long)]
+    max_potions_used: Option<u32>,
+    /// Emit only the compact performance and witness payload.
+    #[arg(long)]
+    performance_only: bool,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
     #[arg(long, default_value_t = 4)]
@@ -127,6 +140,7 @@ fn run(args: Cli) -> Result<(), String> {
     let config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
             max_engine_steps_per_transition: args.max_engine_steps_per_transition,
+            allow_potion_expenditure: args.max_potions_used != Some(0),
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work: args.generation_quantum_work,
@@ -136,7 +150,14 @@ fn run(args: Cli) -> Result<(), String> {
         lookahead_max_evaluations: args.max_nodes.saturating_div(24).max(1),
         lookahead_work_per_evaluation: 24,
         max_turn_depth: args.max_turn_depth,
-        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+        satisfaction: if args.improve_incumbent {
+            OracleCombatWitnessSatisfaction::BudgetOrExhaustion
+        } else if let Some(limit) = args.max_hp_loss {
+            OracleCombatWitnessSatisfaction::HpLossAtMost(limit)
+        } else {
+            OracleCombatWitnessSatisfaction::FirstWitness
+        },
+        max_potions_used: args.max_potions_used,
     };
     let policy = existing_combat_knowledge_policy_v1();
     let policy = if args.typed_plan_guide {
@@ -226,6 +247,64 @@ fn run(args: Cli) -> Result<(), String> {
     }
 
     let witness = report.witness.as_ref();
+    if args.performance_only {
+        let transitions = report.counters.applied_action_transitions;
+        let timing = report.performance_timing;
+        let per_transition =
+            |elapsed_ns: u64| (transitions > 0).then(|| elapsed_ns as f64 / transitions as f64);
+        let output = json!({
+            "schema_name": "CombatCasePerformanceProfileV1",
+            "schema_version": 1,
+            "runner": "lightweight-combat-contract",
+            "case": args.case,
+            "search_elapsed_ns": search_elapsed_ns,
+            "status": format!("{:?}", report.status),
+            "witness": witness.map(|witness| json!({
+                "final_hp": witness.final_position.combat.entities.player.current_hp,
+                "actions": witness.actions.len(),
+            })),
+            "counters": {
+                "selections": report.counters.selections,
+                "node_visits": report.counters.node_visits,
+                "generation_work": report.counters.generation_work,
+                "engine_steps": report.counters.engine_steps,
+                "exact_nodes": report.counters.exact_nodes,
+                "exact_edges": report.counters.exact_edges,
+                "completed_turn_options": report.counters.completed_turn_options,
+                "applied_action_transitions": transitions,
+                "unique_successor_states": report.counters.unique_successor_states,
+                "duplicate_exact_successors": report.counters.duplicate_exact_successors,
+                "duplicate_successor_edges": report.counters.duplicate_successor_edges,
+                "terminal_win_options": report.counters.terminal_win_options,
+                "witness_replay_attempts": report.counters.witness_replay_attempts,
+                "witness_replay_improvements": report.counters.witness_replay_improvements,
+                "witness_replay_dominated_skips": report.counters.witness_replay_dominated_skips,
+            },
+            "timing_ns": timing,
+            "ns_per_applied_transition": {
+                "simulation": per_transition(timing.transition_simulation_elapsed_ns),
+                "identity": per_transition(timing.transition_identity_elapsed_ns),
+                "key_build": per_transition(timing.transition_key_build_elapsed_ns),
+                "key_index": per_transition(timing.transition_key_index_elapsed_ns),
+                "seen_set": per_transition(timing.transition_seen_elapsed_ns),
+                "publish": per_transition(timing.transition_publish_elapsed_ns),
+                "publish_guide": per_transition(
+                    timing.transition_publish_guide_elapsed_ns,
+                ),
+                "publish_retain": per_transition(
+                    timing.transition_publish_retain_elapsed_ns,
+                ),
+                "publish_agenda": per_transition(
+                    timing.transition_publish_agenda_elapsed_ns,
+                ),
+            },
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).map_err(|error| error.to_string())?
+        );
+        return Ok(());
+    }
     let output = json!({
         "schema_name": "CombatCaseContractResultV1",
         "schema_version": 1,
@@ -267,10 +346,15 @@ fn run(args: Cli) -> Result<(), String> {
             "atomic_expand": report.performance_timing.atomic_expand_elapsed_ns,
             "transition_simulation": report.performance_timing.transition_simulation_elapsed_ns,
             "transition_identity": report.performance_timing.transition_identity_elapsed_ns,
+            "transition_key_build": report.performance_timing.transition_key_build_elapsed_ns,
+            "transition_key_index": report.performance_timing.transition_key_index_elapsed_ns,
             "transition_admission": report.performance_timing.transition_admission_elapsed_ns,
             "transition_trace": report.performance_timing.transition_trace_elapsed_ns,
             "transition_seen": report.performance_timing.transition_seen_elapsed_ns,
             "transition_publish": report.performance_timing.transition_publish_elapsed_ns,
+            "transition_publish_guide": report.performance_timing.transition_publish_guide_elapsed_ns,
+            "transition_publish_retain": report.performance_timing.transition_publish_retain_elapsed_ns,
+            "transition_publish_agenda": report.performance_timing.transition_publish_agenda_elapsed_ns,
         },
         "plan_suffix": policy_line_report.as_ref().map(|line| json!({
             "proposed_turns": line.proposed_turns,
