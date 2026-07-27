@@ -38,7 +38,6 @@ use canonical_launch::{
     runtime_identity as oracle_lab_runtime_identity, source_content_fingerprint,
 };
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -53,12 +52,10 @@ use oracle_cli::Command;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, generate_depth_beam_turn_options,
-    rank_layered_combat_lineage_parents, search_depth_beam_agenda_witness, AtomicLevinRerooting,
+    combat_plan_state_guide_policy_v1, rank_layered_combat_lineage_parents, AtomicLevinRerooting,
     AtomicLevinWitnessConfig, AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport,
-    AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession, CombatDecisionRoot, CombatGuideLaneId,
-    CombatPolicyChoice, DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget,
-    DepthBeamTurnConfig, LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
+    AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession, CombatDecisionRoot, CombatPolicyChoice,
+    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
     LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
@@ -66,11 +63,9 @@ use sts_combat_planner::{
     OracleCombatWitnessSession, PolicyDiscrepancyConfig, PolicyDiscrepancyTurnMacroConfig,
     TurnOptionAction, TurnOptionGeneratorConfig,
 };
-use sts_oracle_runtime::eval::combat_action_imitation::root_player_turn_action_policy_v1;
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
-    GUIDE_LEARNED_BOUNDARY_VALUE,
 };
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
