@@ -14,7 +14,7 @@ use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{CombatActionPolicy, CombatPolicyChoice};
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_simulator::eval::combat_action_imitation::{
     concrete_combat_action_candidates_for_witness_v1, exact_witness_adjacent_accepted_indices_v1,
 };
@@ -392,7 +392,7 @@ fn profile_decision(
         source_action_count,
         witness_progress: action_index as f64 / source_action_count.max(1) as f64,
         player_turn: position.combat.turn.turn_count,
-        exact_state_hash: combat_exact_state_hash_v1(&position.engine, &position.combat),
+        exact_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
         candidate_count: candidates.len(),
         accepted_action_count: accepted_indices.len(),
         accepted_policy_probability,

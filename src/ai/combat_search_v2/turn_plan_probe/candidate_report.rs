@@ -48,7 +48,7 @@ fn turn_plan_step_reports(plan: &TurnPlanV1) -> Vec<CombatSearchV2TurnPlanProbeS
                 step_index,
                 action: action.clone(),
                 action_facts: action_facts.clone(),
-                exact_state_hash_kind: "combat_exact_state_hash_v1",
+                exact_state_hash_kind: "combat_exact_state_hash_v2",
                 state_before_exact_state_hash: state.before_exact_state_hash.clone(),
                 state_after_exact_state_hash: state.after_exact_state_hash.clone(),
                 state_before: state.before.clone(),

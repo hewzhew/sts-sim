@@ -7,7 +7,7 @@ use sts_combat_planner::{
     TurnOptionGeneratorSession,
 };
 
-use crate::ai::combat_state_key::combat_exact_state_hash_v1;
+use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::sim::combat::EngineCombatStepper;
 
 use super::session::RunControlSession;
@@ -61,7 +61,7 @@ fn apply_on_clone(
         });
         match trial.current_active_combat_position() {
             Ok(position) => {
-                let actual = combat_exact_state_hash_v1(&position.engine, &position.combat);
+                let actual = combat_exact_state_hash_v2(&position.engine, &position.combat);
                 if actual != action.expected_successor_hash.as_str() {
                     return Err(format!("live successor mismatch at action {index}"));
                 }
@@ -74,7 +74,7 @@ fn apply_on_clone(
     match decision.selected_option.boundary() {
         CompleteTurnOptionBoundary::NextPlayerTurn => {
             let final_position = trial.current_active_combat_position()?;
-            let actual = combat_exact_state_hash_v1(&final_position.engine, &final_position.combat);
+            let actual = combat_exact_state_hash_v2(&final_position.engine, &final_position.combat);
             if actual != decision.selected_option.exact_successor_hash() {
                 return Err("live final successor does not match planner option".to_string());
             }
@@ -173,7 +173,7 @@ mod tests {
 
         assert_eq!(session.current_active_combat_position().unwrap(), before);
         assert_eq!(
-            combat_exact_state_hash_v1(
+            combat_exact_state_hash_v2(
                 &trial.current_active_combat_position().unwrap().engine,
                 &trial.current_active_combat_position().unwrap().combat,
             ),

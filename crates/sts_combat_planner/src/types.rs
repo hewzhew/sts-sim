@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sts_core::ai::combat_state_key::{
-    combat_exact_state_hash_v1, combat_exact_state_key, combat_exact_state_key_hash_v1,
+    combat_exact_state_hash_v2, combat_exact_state_key, combat_exact_state_key_hash_v2,
     CombatExactStateKey,
 };
 use sts_core::engine::core::is_smoke_escape_stable_boundary;
@@ -163,7 +163,7 @@ impl ReplaySuccessorHash {
         self.cached.get_or_init(|| {
             self.exact_key
                 .as_ref()
-                .map(|key| combat_exact_state_key_hash_v1(key))
+                .map(|key| combat_exact_state_key_hash_v2(key))
                 .expect("a deferred replay hash retains its exact key")
         })
     }
@@ -376,7 +376,7 @@ pub struct TurnOptionGenerationDiagnostics {
 }
 
 pub(crate) fn exact_hash(position: &CombatPosition) -> String {
-    combat_exact_state_hash_v1(&position.engine, &position.combat)
+    combat_exact_state_hash_v2(&position.engine, &position.combat)
 }
 
 pub(crate) fn supported_boundary(

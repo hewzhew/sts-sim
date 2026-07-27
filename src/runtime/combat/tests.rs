@@ -29,7 +29,7 @@ fn combat_clone_shares_master_deck_until_a_branch_mutates_it() {
 fn shared_master_deck_keeps_the_existing_json_array_shape() {
     let mut combat = crate::test_support::blank_test_combat();
     combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Bash, 9)].into();
-    let exact_hash_before = crate::ai::combat_state_key::combat_exact_state_hash_v1(
+    let exact_hash_before = crate::ai::combat_state_key::combat_exact_state_hash_v2(
         &crate::state::EngineState::CombatPlayerTurn,
         &combat,
     );
@@ -40,7 +40,7 @@ fn shared_master_deck_keeps_the_existing_json_array_shape() {
         serde_json::from_value(json).expect("combat state should deserialize");
     assert_eq!(restored, combat);
     assert_eq!(
-        crate::ai::combat_state_key::combat_exact_state_hash_v1(
+        crate::ai::combat_state_key::combat_exact_state_hash_v2(
             &crate::state::EngineState::CombatPlayerTurn,
             &restored,
         ),

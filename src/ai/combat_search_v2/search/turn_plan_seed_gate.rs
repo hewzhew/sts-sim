@@ -35,7 +35,7 @@ fn turn_plan_prior_has_current_state(node: &SearchNode, config: &CombatSearchV2C
     else {
         return false;
     };
-    let state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
+    let state_hash = combat_exact_state_hash_v2(&node.engine, &node.combat);
     prior.has_hints_for_state(&state_hash)
 }
 

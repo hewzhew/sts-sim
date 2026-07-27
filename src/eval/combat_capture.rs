@@ -245,6 +245,12 @@ pub fn validate_combat_capture_v2(capture: &CombatCaptureV2) -> Result<(), Strin
         return Err("combat capture artifact header does not match schema".to_string());
     }
     validate_capture_provenance(&capture.provenance)?;
+    if capture.integrity.fingerprint_algorithm != FINGERPRINT_ALGORITHM_DEBUG {
+        return Err(format!(
+            "unsupported combat capture fingerprint algorithm '{}'; expected '{}'; regenerate this artifact after the exact-combat identity V2 cutover",
+            capture.integrity.fingerprint_algorithm, FINGERPRINT_ALGORITHM_DEBUG
+        ));
+    }
     if !active_combat_capture_boundary(&capture.position.engine, &capture.position.combat) {
         return Err(
             "combat capture position is not an active stable combat decision boundary".to_string(),
@@ -498,6 +504,19 @@ mod tests {
             .expect_err("tampered fingerprint should be rejected");
 
         assert!(err.contains("fingerprints"));
+    }
+
+    #[test]
+    fn combat_capture_validation_rejects_exact_identity_v1_artifacts_explicitly() {
+        let position = jaw_worm_position();
+        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
+        capture.integrity.fingerprint_algorithm = "blake2b_256_of_typed_key_debug_v1".to_string();
+
+        let err = validate_combat_capture_v2(&capture)
+            .expect_err("V1 exact-identity artifacts must be regenerated");
+
+        assert!(err.contains("exact-combat identity V2 cutover"));
+        assert!(err.contains("regenerate"));
     }
 
     #[test]

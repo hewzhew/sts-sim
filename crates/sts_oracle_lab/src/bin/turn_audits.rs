@@ -146,7 +146,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
                             "timed_out": result.timed_out,
                             "engine_steps": result.engine_steps,
                             "terminal": format!("{:?}", result.terminal),
-                            "exact_successor_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                            "exact_successor_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                                 &result.position.engine,
                                 &result.position.combat,
                             ),
@@ -184,7 +184,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
         "schema_name": "OracleTurnActionAuditV1",
         "schema_version": 2,
         "through": through,
-        "position_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+        "position_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),

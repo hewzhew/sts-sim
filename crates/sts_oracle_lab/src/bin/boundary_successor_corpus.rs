@@ -519,7 +519,7 @@ fn build_group(
         verified_turn_actions,
         config.max_engine_steps_per_transition,
     )?;
-    let verified_successor_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+    let verified_successor_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
         &verified_successor.engine,
         &verified_successor.combat,
     );
@@ -586,7 +586,7 @@ fn build_group(
         source_actions: action_paths,
         boundary_rank,
         player_turn: root_position.combat.turn.turn_count,
-        root_exact_state_hash: sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+        root_exact_state_hash: sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
             &root_position.engine,
             &root_position.combat,
         ),

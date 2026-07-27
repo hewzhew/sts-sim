@@ -1,7 +1,6 @@
 use super::super::types::{
-    CombatDrawnCardKey, CombatIntentKey, CombatLegacyEmptyCardQueueKey,
-    CombatMonsterProtocolIdentityKey, CombatMonsterProtocolKey,
-    CombatMonsterProtocolObservationKey, CombatRuntimeHintsKey,
+    CombatDrawnCardKey, CombatIntentKey, CombatMonsterProtocolIdentityKey,
+    CombatMonsterProtocolKey, CombatMonsterProtocolObservationKey, CombatRuntimeHintsKey,
 };
 use crate::runtime::combat::{CombatState, DrawnCardRecord, Intent, MonsterProtocolState};
 
@@ -16,7 +15,6 @@ pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
 
     CombatRuntimeHintsKey {
         using_card: runtime.using_card,
-        card_queue: CombatLegacyEmptyCardQueueKey,
         colorless_combat_pool: runtime.colorless_combat_pool.clone(),
         pending_rewards: runtime
             .pending_rewards

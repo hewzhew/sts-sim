@@ -71,7 +71,7 @@ fn root_action_prior_reorders_equal_role_actions_without_pruning() {
         ),
     ];
     let favored_action_key = choices[1].action_key.clone();
-    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let exact_state_hash = combat_exact_state_hash_v2(&EngineState::CombatPlayerTurn, &combat);
     let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
         exact_state_hash,
         HashMap::from([(favored_action_key, 0.9)]),
@@ -128,7 +128,7 @@ fn root_action_prior_can_reorder_within_the_same_semantic_role() {
         ),
     ];
     let favored_action_key = choices[1].action_key.clone();
-    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let exact_state_hash = combat_exact_state_hash_v2(&EngineState::CombatPlayerTurn, &combat);
     let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
         exact_state_hash,
         HashMap::from([(favored_action_key, 0.9)]),
@@ -187,7 +187,7 @@ fn lethal_persistent_payoff_precedes_ordinary_lethal_even_when_prior_favors_ordi
         ),
     ];
     let favored_ordinary_action_key = choices[0].action_key.clone();
-    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let exact_state_hash = combat_exact_state_hash_v2(&EngineState::CombatPlayerTurn, &combat);
     let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
         exact_state_hash,
         HashMap::from([(favored_ordinary_action_key, 1.0)]),

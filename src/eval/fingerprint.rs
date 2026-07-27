@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_policy_v1::{combat_public_observation_v1, CombatPublicObservationV1};
 use crate::ai::combat_state_key::{
-    combat_exact_state_hash_v1, stable_dominance_bucket_key, stable_outcome_key,
+    combat_exact_state_hash_v2, stable_dominance_bucket_key, stable_outcome_key,
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
@@ -22,7 +22,10 @@ use crate::state::core::{ClientInput, EngineState};
 pub const FINGERPRINT_SCHEMA_NAME: &str = "StateFingerprintV2";
 pub const FINGERPRINT_SCHEMA_VERSION: u32 = 2;
 pub const FINGERPRINT_ALGORITHM_JSON: &str = "blake2b_256_canonical_json_v1";
-pub const FINGERPRINT_ALGORITHM_DEBUG: &str = "blake2b_256_of_typed_key_debug_v1";
+/// Typed-key debug fingerprints produced after the exact-combat identity V2
+/// cutover. V1 combat captures intentionally fail validation and must be
+/// regenerated from their source position.
+pub const FINGERPRINT_ALGORITHM_DEBUG: &str = "blake2b_256_of_typed_key_debug_v2";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -140,7 +143,7 @@ pub fn combat_fingerprint_bundle_v2(position: &CombatPosition) -> CombatFingerpr
         public_observation_hash: hash_serializable(&public_observation_input(position)),
         legal_input_language_hash: legal_action_surface.legal_input_language_digest.clone(),
         action_enumeration_domain_hash: legal_action_surface.enumeration_domain_digest.clone(),
-        exact_state_hash: combat_exact_state_hash_v1(&position.engine, &position.combat),
+        exact_state_hash: combat_exact_state_hash_v2(&position.engine, &position.combat),
         stable_outcome_hash: stable.as_ref().map(hash_debug),
         rng_boundary: rng_boundary_fingerprint_v2(&position.combat.rng.pool),
     };

@@ -199,7 +199,7 @@ fn submit_completed_prefix(
         .root_action_prior
         .as_ref()
         .filter(|prior| !prior.is_empty())
-        .map(|_| combat_exact_state_hash_v1(&node.engine, &node.combat));
+        .map(|_| combat_exact_state_hash_v2(&node.engine, &node.combat));
     let (mut turn_branching, mut turn_local_dominance) = initialize_node_child_observers(&node, 1);
     let outcome = expand_ordered_child(
         loop_state,

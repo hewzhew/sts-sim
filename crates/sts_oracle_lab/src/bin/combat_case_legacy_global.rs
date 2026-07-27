@@ -236,7 +236,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
         prefix_replay_actions.push(TurnOptionAction {
             input: input.clone(),
             expected_successor_hash:
-                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &step.position.engine,
                     &step.position.combat,
                 )
@@ -293,7 +293,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
                 "horizon": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&position),
                 "setup": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&position),
             },
-            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             ),
@@ -622,7 +622,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             },
             "prefix": {
                 "trace": prefix_trace,
-                "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &search_root_position.engine,
                     &search_root_position.combat,
                 ),
@@ -678,7 +678,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             "action_count": prefix.len(),
             "actions": prefix,
             "trace": prefix_trace,
-            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                 &search_root_position.engine,
                 &search_root_position.combat,
             ),

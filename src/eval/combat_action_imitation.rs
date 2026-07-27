@@ -11,7 +11,7 @@ use sts_combat_planner::{
 use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades as strategic_card_definition, PlayEffect, TriggeredEffect,
 };
-use crate::ai::combat_state_key::combat_exact_state_hash_v1;
+use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::content::cards::{get_card_definition, java_id, CardId};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::PowerId;
@@ -455,7 +455,7 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
     let mut source_terminal_final_hp = i32::MAX;
     let mut reanalysis_root_hashes = BTreeSet::new();
     for (source_index, decision) in reanalysis.iter().enumerate() {
-        let hash = combat_exact_state_hash_v1(&decision.root.engine, &decision.root.combat);
+        let hash = combat_exact_state_hash_v2(&decision.root.engine, &decision.root.combat);
         if !reanalysis_root_hashes.insert(hash) {
             return Err(format!(
                 "combat action reanalysis decision {source_index} duplicates an exact root"
@@ -486,7 +486,7 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
                     )
                 })?;
             if candidates.len() > 1 {
-                let exact_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+                let exact_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
                 if !reanalysis_root_hashes.contains(&exact_hash) {
                     let accepted_indices = exact_witness_adjacent_accepted_indices_v1(
                         &stepper,

@@ -78,8 +78,13 @@ pub fn combat_exact_state_key_profiled_v1(
     combat::combat_exact_runtime_key_profiled_v1(engine, combat)
 }
 
-pub fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
-    combat_exact_state_key_hash_v1(&combat_exact_state_key(engine, combat))
+/// Durable V2 identity for an exact combat state.
+///
+/// V2 deliberately removed the historical empty runtime-card-queue slot from
+/// the typed key. Persisted V1 hashes are therefore not interchangeable with
+/// this identity and must be regenerated from their source position.
+pub fn combat_exact_state_hash_v2(engine: &EngineState, combat: &CombatState) -> String {
+    combat_exact_state_key_hash_v2(&combat_exact_state_key(engine, combat))
 }
 
 /// Stable diagnostic hash for an already-materialized exact combat key.
@@ -87,8 +92,8 @@ pub fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) ->
 /// Search hot paths frequently need both the typed key for transposition and
 /// its durable string identity for replay evidence. Reusing the same key
 /// avoids rebuilding the full combat key twice without changing hash bytes.
-pub fn combat_exact_state_key_hash_v1(key: &CombatExactStateKey) -> String {
-    combat_exact_state_key_identity_v1(key).1
+pub fn combat_exact_state_key_hash_v2(key: &CombatExactStateKey) -> String {
+    combat_exact_state_key_identity_v2(key).1
 }
 
 /// Returns the binary digest and its durable lowercase-hex representation for
@@ -97,7 +102,7 @@ pub fn combat_exact_state_key_hash_v1(key: &CombatExactStateKey) -> String {
 /// The binary digest lets exact transposition tables choose a bucket without
 /// hashing the large typed key a second time. Callers must still compare the
 /// typed key inside equal-digest buckets; the digest alone is not equality.
-pub fn combat_exact_state_key_identity_v1(key: &CombatExactStateKey) -> ([u8; 32], String) {
+pub fn combat_exact_state_key_identity_v2(key: &CombatExactStateKey) -> ([u8; 32], String) {
     let digest = debug_digest(key);
     (digest, hex_lower(&digest))
 }

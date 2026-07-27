@@ -1,12 +1,8 @@
 use crate::content::cards::CardId;
-use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatRuntimeHintsKey {
     pub(crate) using_card: bool,
-    /// V1 exact-hash compatibility for the removed, never-written legacy
-    /// runtime card queue. Java cardQueue is owned by `CardZones::queued_cards`.
-    pub(crate) card_queue: CombatLegacyEmptyCardQueueKey,
     pub(crate) colorless_combat_pool: Vec<CardId>,
     pub(crate) pending_rewards: Vec<String>,
     pub(crate) power_instance_counter: u32,
@@ -14,47 +10,6 @@ pub(crate) struct CombatRuntimeHintsKey {
     pub(crate) monster_protocol: Vec<CombatMonsterProtocolKey>,
     pub(crate) combat_mugged: bool,
     pub(crate) combat_smoked: bool,
-}
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct CombatLegacyEmptyCardQueueKey;
-
-impl std::fmt::Debug for CombatLegacyEmptyCardQueueKey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_list().finish()
-    }
-}
-
-impl Hash for CombatLegacyEmptyCardQueueKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // The former empty Vec field hashed only its zero length. Preserve
-        // those bytes without retaining a runtime field.
-        0usize.hash(state);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::hash_map::DefaultHasher;
-
-    fn hash_of(value: &impl Hash) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        value.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    #[test]
-    fn legacy_empty_card_queue_key_preserves_v1_debug_and_hash_shape() {
-        let compatibility_key = CombatLegacyEmptyCardQueueKey;
-        let old_empty_queue = Vec::<u8>::new();
-
-        assert_eq!(
-            format!("{compatibility_key:?}"),
-            format!("{old_empty_queue:?}")
-        );
-        assert_eq!(hash_of(&compatibility_key), hash_of(&old_empty_queue));
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

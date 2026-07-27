@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::ai::combat_state_key::{
-    combat_dominance_diagnostic_parts_v1, combat_dominance_key, combat_exact_state_hash_v1,
+    combat_dominance_diagnostic_parts_v1, combat_dominance_key, combat_exact_state_hash_v2,
     combat_exact_state_key, CombatDominanceKey, CombatExactStateKey,
 };
 use crate::content::monsters::EnemyId;
@@ -233,7 +233,7 @@ pub use witness_guidance::{
 };
 
 pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
-    combat_exact_state_hash_v1(engine, combat)
+    combat_exact_state_hash_v2(engine, combat)
 }
 
 /// Runs the mature bounded no-potion tactical policy as a proposal donor.

@@ -122,7 +122,7 @@ fn enumerate_turn_plans_impl(
                 order_indexed_action_choices(&node.engine, &node.combat, equivalence.choices);
             let before_step_trace = config.capture_step_trace.then(|| {
                 (
-                    combat_exact_state_hash_v1(&node.engine, &node.combat),
+                    combat_exact_state_hash_v2(&node.engine, &node.combat),
                     summarize_state(&node.engine, &node.combat),
                 )
             });
@@ -158,7 +158,7 @@ fn enumerate_turn_plans_impl(
                     child_step_states.push(TurnPlanStepStateV1 {
                         before_exact_state_hash: before_exact_state_hash.clone(),
                         before: state_before.clone(),
-                        after_exact_state_hash: combat_exact_state_hash_v1(
+                        after_exact_state_hash: combat_exact_state_hash_v2(
                             &child.engine,
                             &child.combat,
                         ),
@@ -244,7 +244,7 @@ fn enumerate_turn_plans_impl(
         .turn_plan_prior
         .as_ref()
         .filter(|prior| !prior.is_empty())
-        .map(|_| combat_exact_state_hash_v1(&root.engine, &root.combat));
+        .map(|_| combat_exact_state_hash_v2(&root.engine, &root.combat));
     enumeration.turn_plan_prior_scored_plans = count_turn_plan_prior_scored_plans(
         &candidates,
         prior_state_hash.as_deref(),

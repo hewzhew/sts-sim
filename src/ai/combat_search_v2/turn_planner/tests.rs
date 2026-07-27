@@ -392,7 +392,7 @@ fn turn_planner_uses_combat_eval_to_rank_stable_progress_over_hp_stall() {
 #[test]
 fn turn_plan_prior_reorders_equal_eval_plans_without_pruning() {
     let root = test_node(test_combat_with_hand(2));
-    let root_hash = combat_exact_state_hash_v1(&root.engine, &root.combat);
+    let root_hash = combat_exact_state_hash_v2(&root.engine, &root.combat);
     let preferred_action_key = "combat/play_card/hand:1/card:Bash+0#11/target:monster_slot:0";
     let other_action_key = "combat/play_card/hand:0/card:Strike_R+0#10/target:monster_slot:0";
     let plans = enumerate_turn_plans(

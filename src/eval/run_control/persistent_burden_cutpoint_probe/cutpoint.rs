@@ -4,7 +4,7 @@ use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, CombatSearchV2Config, CombatSearchV2Report,
     CombatSearchV2TrajectoryReport,
 };
-use crate::ai::combat_state_key::combat_exact_state_hash_v1;
+use crate::ai::combat_state_key::combat_exact_state_hash_v2;
 use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use crate::state::core::ClientInput;
 
@@ -102,7 +102,7 @@ pub(super) fn cutpoint_identity(
     position: &CombatPosition,
 ) -> BurdenCutpointIdentity {
     let run = &session.run_state;
-    let combat_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+    let combat_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let rng_counters = [
         run.rng_pool.monster_rng.counter,
         run.rng_pool.event_rng.counter,

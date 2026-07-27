@@ -79,7 +79,7 @@ pub(super) fn order_indexed_action_choices_with_plugins(
     let exact_state_hash = plugins
         .root_action_prior
         .filter(|prior| !prior.is_empty())
-        .map(|_| combat_exact_state_hash_v1(engine, combat));
+        .map(|_| combat_exact_state_hash_v2(engine, combat));
     let mut entries = choices
         .into_iter()
         .map(|indexed| ActionOrderingEntry {

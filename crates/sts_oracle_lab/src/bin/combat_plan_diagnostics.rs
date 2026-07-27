@@ -32,7 +32,7 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
                 },
             );
             let exact_successor_hash = (!step.truncated)
-                .then(|| combat_exact_state_hash_v1(&step.position.engine, &step.position.combat));
+                .then(|| combat_exact_state_hash_v2(&step.position.engine, &step.position.combat));
             let transition = (!step.truncated)
                 .then(|| awakened_one_plan_transition_v1(&position, &step.position))
                 .flatten();
@@ -65,7 +65,7 @@ pub(super) fn run_annotations(args: CombatCasePlanAnnotationsArgs) -> Result<(),
             "pruning": false,
             "terminal_truth": "exact_simulator_only",
         },
-        "root_exact_state_hash": combat_exact_state_hash_v1(
+        "root_exact_state_hash": combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),
@@ -105,13 +105,13 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
     let input_count = inputs.len();
     let stepper = EngineCombatStepper;
     let mut position = loaded.position;
-    let root_exact_state_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+    let root_exact_state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
     let root_plan = awakened_one_combat_plan_v1(&position);
     let mut trace = Vec::new();
     let mut consumed_actions = 0_usize;
 
     for (index, input) in inputs.into_iter().enumerate() {
-        let before_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+        let before_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
         let label = combat_action_label(&position, &input);
         let action_key = combat_action_key(&position.combat, &input);
         let step = stepper.apply_to_stable(
@@ -129,7 +129,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
             .then(|| awakened_one_combat_plan_v1(&step.position))
             .flatten();
         let after_hash = (!step.truncated)
-            .then(|| combat_exact_state_hash_v1(&step.position.engine, &step.position.combat));
+            .then(|| combat_exact_state_hash_v2(&step.position.engine, &step.position.combat));
         trace.push(json!({
             "action_index": index,
             "label": label,
@@ -171,7 +171,7 @@ pub(super) fn run_trace(args: CombatCasePlanTraceArgs) -> Result<(), String> {
         "input_action_count": input_count,
         "consumed_action_count": consumed_actions,
         "unconsumed_action_count": input_count.saturating_sub(consumed_actions),
-        "final_exact_state_hash": combat_exact_state_hash_v1(
+        "final_exact_state_hash": combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),

@@ -746,7 +746,7 @@ impl OracleRunCombatWorkV1 {
             replay_engine_steps = replay_engine_steps.saturating_add(result.engine_steps);
             actions.push(TurnOptionAction {
                 input: input.clone(),
-                expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v1(
+                expected_successor_hash: crate::ai::combat_state_key::combat_exact_state_hash_v2(
                     &result.position.engine,
                     &result.position.combat,
                 )

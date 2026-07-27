@@ -18,7 +18,7 @@ use sts_combat_planner::{
     TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 use sts_core::ai::combat_state_key::{
-    combat_exact_state_hash_v1, combat_exact_state_key_profiled_v1, CombatExactStateKey,
+    combat_exact_state_hash_v2, combat_exact_state_key_profiled_v1, CombatExactStateKey,
 };
 use sts_core::sim::combat::{
     apply_combat_input_to_stable_profiled_v1, CombatPosition, CombatStepLimits, CombatStepResult,
@@ -728,7 +728,7 @@ fn replay_watch_corridor(
     let mut last_turn = position.combat.turn.turn_count;
     let mut corridor = vec![(
         last_turn,
-        combat_exact_state_hash_v1(&position.engine, &position.combat),
+        combat_exact_state_hash_v2(&position.engine, &position.combat),
     )];
     for (index, action) in actions.iter().cloned().enumerate() {
         position = apply_watch_action(&stepper, &position, action, index)?;
@@ -738,7 +738,7 @@ fn replay_watch_corridor(
             last_turn = position.combat.turn.turn_count;
             corridor.push((
                 last_turn,
-                combat_exact_state_hash_v1(&position.engine, &position.combat),
+                combat_exact_state_hash_v2(&position.engine, &position.combat),
             ));
         }
         if stepper.terminal(&position) != CombatTerminal::Unresolved {

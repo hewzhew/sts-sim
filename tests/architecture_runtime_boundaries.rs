@@ -30,6 +30,9 @@ fn java_card_queue_has_one_executable_rust_owner() {
         .expect("read combat queue operations");
     let boundary = std::fs::read_to_string("src/ai/combat_policy_v1/scenario/boundary.rs")
         .expect("read stable-boundary predicate");
+    let exact_runtime_key =
+        std::fs::read_to_string("src/ai/combat_state_key/types/combat/runtime.rs")
+            .expect("read exact runtime key");
 
     assert!(
         state.contains("pub queued_cards: VecDeque<QueuedCardPlay>"),
@@ -51,6 +54,11 @@ fn java_card_queue_has_one_executable_rust_owner() {
             "{path} must use the executable CardZones queue, not a ghost runtime hint"
         );
     }
+    assert!(
+        !exact_runtime_key.contains("card_queue")
+            && !exact_runtime_key.contains("CombatLegacyEmptyCardQueueKey"),
+        "exact identity V2 must not retain a historical empty card-queue placeholder"
+    );
 }
 
 #[test]

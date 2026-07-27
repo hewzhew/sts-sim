@@ -51,7 +51,7 @@ pub(super) fn run(args: V2CapabilityAuditArgs) -> Result<(), String> {
         .transpose()?
         .and_then(|corridor| corridor.positions_by_rank.get(1).cloned())
         .map(|position| {
-            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             )

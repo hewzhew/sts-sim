@@ -11,7 +11,7 @@ use crate::state::core::{ClientInput, EngineState};
 use crate::state::DomainCardSnapshot;
 
 use super::{
-    combat_exact_state_hash_v1, living_enemy_count, CombatSearchV2ActionPreview,
+    combat_exact_state_hash_v2, living_enemy_count, CombatSearchV2ActionPreview,
     CombatSearchV2RootActionPrior, SearchTerminalLabel,
 };
 
@@ -208,7 +208,7 @@ pub fn compile_combat_search_witness_prior_v0(
         if stepper.terminal(&position) != CombatTerminal::Unresolved {
             break;
         }
-        let state_hash = combat_exact_state_hash_v1(&position.engine, &position.combat);
+        let state_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
         let state_scores = scores_by_state.entry(state_hash).or_default();
         if state_scores.insert(action.action_key, 1.0).is_some() {
             duplicate_prior_hints = duplicate_prior_hints.saturating_add(1);

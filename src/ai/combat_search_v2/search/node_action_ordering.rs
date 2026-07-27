@@ -30,7 +30,7 @@ pub(super) fn order_node_actions(
     let action_prior_state_hash = plugins
         .root_action_prior
         .filter(|prior| !prior.is_empty())
-        .map(|_| combat_exact_state_hash_v1(&node.engine, &node.combat));
+        .map(|_| combat_exact_state_hash_v2(&node.engine, &node.combat));
     let ordered = order_indexed_action_choices_with_plugins(
         &node.engine,
         &node.combat,

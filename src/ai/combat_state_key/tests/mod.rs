@@ -30,7 +30,7 @@ fn profiled_exact_key_is_identical_to_the_production_builder() {
 }
 
 #[test]
-fn packed_relic_bus_key_preserves_the_exact_v1_diagnostic_identity() {
+fn packed_relic_bus_key_has_the_exact_v2_diagnostic_identity() {
     let mut combat = blank_test_combat();
     combat
         .entities
@@ -46,7 +46,7 @@ fn packed_relic_bus_key_preserves_the_exact_v1_diagnostic_identity() {
         ));
 
     assert_eq!(
-        super::combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat),
-        "5eeb64232a5fb2895acd515892e9ab8fb5be0871f939a193fa7f996229d42410"
+        super::combat_exact_state_hash_v2(&EngineState::CombatPlayerTurn, &combat),
+        "1152cd08bfffc5c0ffd6f41bafa25943a82da5a43783a31b6d3db687bb1ef3d2"
     );
 }

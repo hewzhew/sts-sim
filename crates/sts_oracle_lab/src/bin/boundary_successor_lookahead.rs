@@ -11,7 +11,7 @@ use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, TurnOptionGeneratorConfig,
     TurnOptionGeneratorSession,
 };
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::eval::combat_state_features::{
@@ -97,7 +97,7 @@ pub fn audit(args: BoundarySuccessorLookaheadArgs) -> Result<Value, String> {
     let loaded = load_combat_case(&args.case)?;
     let root_position = loaded.position;
     let root_exact_state_hash =
-        combat_exact_state_hash_v1(&root_position.engine, &root_position.combat);
+        combat_exact_state_hash_v2(&root_position.engine, &root_position.combat);
     let root = CombatDecisionRoot::new(root_position.clone())
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
     let mut generator = TurnOptionGeneratorSession::with_policy(

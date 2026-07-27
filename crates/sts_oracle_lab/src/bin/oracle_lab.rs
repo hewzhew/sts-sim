@@ -73,7 +73,7 @@ use sts_combat_strategy::{
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
 };
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_simulator::content::{cards, monsters::EnemyId};
 use sts_simulator::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
@@ -859,7 +859,7 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 );
@@ -896,7 +896,7 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 );
@@ -927,7 +927,7 @@ impl ExactCorridorShadowPolicy {
     ) -> CombatStateGuideRank {
         let shadow_rank = match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 );
@@ -1058,7 +1058,7 @@ fn exact_turn_corridor_from_position_and_actions(
     let mut rank_by_exact_hash = HashMap::new();
     let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
-    let initial_exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+    let initial_exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
         &position.engine,
         &position.combat,
     );
@@ -1096,7 +1096,7 @@ fn exact_turn_corridor_from_position_and_actions(
         }
         position = step.position;
         atomic_rank_by_exact_hash.insert(
-            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             ),
@@ -1108,7 +1108,7 @@ fn exact_turn_corridor_from_position_and_actions(
             transition_actions.push(std::mem::take(&mut current_transition_actions));
             positions_by_rank.push(position.clone());
             rank_by_exact_hash.insert(
-                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 ),
@@ -2551,7 +2551,7 @@ fn local_graph_state_snapshot_for_path(
     max_engine_steps_per_transition: usize,
 ) -> Result<Option<LocalTurnGraphStateSnapshot>, String> {
     let position = replay_descendant_position(root, actions, max_engine_steps_per_transition)?;
-    let exact_state_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+    let exact_state_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
         &position.engine,
         &position.combat,
     );
@@ -2843,7 +2843,7 @@ fn target_atomic_policy_trace(
     }
     Ok((
         trace,
-        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1(
+        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),

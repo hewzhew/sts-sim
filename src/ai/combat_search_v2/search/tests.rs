@@ -2411,7 +2411,7 @@ fn tactical_turn_plan_policy_seeds_exact_states_with_turn_plan_prior_hints() {
         !tactical_enemy_turn_plan_seed_gate(&node),
         "fixture should be an ordinary low-pressure fight"
     );
-    let state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
+    let state_hash = combat_exact_state_hash_v2(&node.engine, &node.combat);
     let config = CombatSearchV2Config {
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
         turn_plan_prior: Some(CombatSearchV2TurnPlanPrior::from_plan_scores([(

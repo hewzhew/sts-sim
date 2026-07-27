@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::CombatPolicyChoice;
 use sts_simulator::ai::combat_search_v2::oracle_search_witness_proposal_v1;
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_simulator::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
 use sts_simulator::eval::combat_case::load_combat_case;
 use sts_simulator::sim::combat::{
@@ -260,7 +260,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
         "source_case": args.case,
         "source_actions": args.actions,
         "through": args.through,
-        "root_exact_state_hash": combat_exact_state_hash_v1(
+        "root_exact_state_hash": combat_exact_state_hash_v2(
             &root_position.engine,
             &root_position.combat,
         ),
@@ -432,7 +432,7 @@ fn build_candidate(
         raw_policy_weight,
         policy_probability,
         transition_engine_steps: step.engine_steps,
-        exact_successor_hash: combat_exact_state_hash_v1(
+        exact_successor_hash: combat_exact_state_hash_v2(
             &step.position.engine,
             &step.position.combat,
         ),
