@@ -165,14 +165,14 @@ impl CombatState {
     }
 }
 
-// Queue-sensitive runtime helpers for Java cardQueue approximations.
+// Queue-sensitive runtime helpers for Java cardQueue semantics.
 impl CombatState {
     /// Best-effort approximation of Java's cardQueue membership for effects that
     /// should avoid already-queued cards (for example Mummified Hand).
     ///
-    /// We do not model AbstractDungeon.actionManager.cardQueue explicitly, but cards
-    /// already in limbo or already wrapped in queued play actions should not be treated
-    /// as normal in-hand candidates.
+    /// `zones.queued_cards` is the single Rust owner of Java
+    /// `AbstractDungeon.actionManager.cardQueue`. Cards already in limbo or
+    /// queued actions should not be treated as ordinary in-hand candidates.
     pub fn reserved_card_uuids_for_queue_sensitive_effects(&self) -> HashSet<u32> {
         let mut reserved = HashSet::new();
         for card in &self.zones.limbo {
@@ -180,9 +180,6 @@ impl CombatState {
         }
         for queued in &self.zones.queued_cards {
             reserved.insert(queued.card.uuid);
-        }
-        for queued in &self.runtime.card_queue {
-            reserved.insert(queued.card_uuid);
         }
         for action in &self.engine.action_queue {
             match action {

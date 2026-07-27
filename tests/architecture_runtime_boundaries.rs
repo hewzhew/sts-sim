@@ -23,6 +23,37 @@ fn contains_rust_identifier(source: &str, identifier: &str) -> bool {
 }
 
 #[test]
+fn java_card_queue_has_one_executable_rust_owner() {
+    let state = std::fs::read_to_string("src/runtime/combat/state.rs")
+        .expect("read combat state ownership model");
+    let methods = std::fs::read_to_string("src/runtime/combat/combat_methods.rs")
+        .expect("read combat queue operations");
+    let boundary = std::fs::read_to_string("src/ai/combat_policy_v1/scenario/boundary.rs")
+        .expect("read stable-boundary predicate");
+
+    assert!(
+        state.contains("pub queued_cards: VecDeque<QueuedCardPlay>"),
+        "CardZones must own the executable equivalent of Java GameActionManager.cardQueue"
+    );
+    assert!(
+        !state.contains("pub card_queue:"),
+        "CombatRuntimeHints must not restore a second, non-executable card queue"
+    );
+    for (path, source) in [
+        ("src/runtime/combat/combat_methods.rs", methods.as_str()),
+        (
+            "src/ai/combat_policy_v1/scenario/boundary.rs",
+            boundary.as_str(),
+        ),
+    ] {
+        assert!(
+            !source.contains("runtime.card_queue"),
+            "{path} must use the executable CardZones queue, not a ghost runtime hint"
+        );
+    }
+}
+
+#[test]
 fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
     const FRONTEND_LIMIT: u64 = 144 * 1024;
     const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;

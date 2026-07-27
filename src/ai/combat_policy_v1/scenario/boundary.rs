@@ -64,8 +64,5 @@ fn non_quiescent_player_turn_work(combat: &crate::runtime::combat::CombatState) 
     if combat.runtime.using_card {
         pending.push("using_card".to_string());
     }
-    if !combat.runtime.card_queue.is_empty() {
-        pending.push("runtime_card_queue".to_string());
-    }
     pending
 }

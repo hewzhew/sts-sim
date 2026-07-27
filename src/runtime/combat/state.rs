@@ -209,7 +209,6 @@ pub struct DrawnCardRecord {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CombatRuntimeHints {
     pub using_card: bool,
-    pub card_queue: Vec<QueuedCardHint>,
     pub colorless_combat_pool: Vec<CardId>,
     /// Output-only mailbox consumed by committed run execution.
     /// Speculative steps clear it at stable boundaries; it is not state identity.
@@ -235,19 +234,6 @@ pub struct CombatRuntimeHints {
     /// Set when Smoke Bomb ends combat. This changes reward-screen behavior:
     /// no normal combat rewards should be generated.
     pub combat_smoked: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct QueuedCardHint {
-    pub card_uuid: u32,
-    pub card_id: CardId,
-    pub target_monster_index: Option<usize>,
-    pub energy_on_use: i32,
-    pub ignore_energy_total: bool,
-    pub autoplay: bool,
-    pub random_target: bool,
-    pub is_end_turn_autoplay: bool,
-    pub purge_on_use: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -649,6 +635,33 @@ impl EngineRuntime {
 mod tests {
     use super::*;
     use crate::state::{DomainCardSnapshot, DomainEventSource};
+
+    #[test]
+    fn runtime_hints_accept_but_do_not_reemit_the_removed_legacy_card_queue() {
+        let expected = CombatRuntimeHints::default();
+        let mut old_json = serde_json::to_value(&expected).expect("serialize runtime hints");
+        old_json
+            .as_object_mut()
+            .expect("runtime hints serialize as an object")
+            .insert(
+                "card_queue".to_owned(),
+                serde_json::json!([{
+                    "card_uuid": 17,
+                    "target": 2,
+                    "energy_on_use": 3
+                }]),
+            );
+
+        let migrated: CombatRuntimeHints = serde_json::from_value(old_json)
+            .expect("read legacy runtime card queue as unknown data");
+
+        assert_eq!(migrated, expected);
+        let canonical = serde_json::to_value(migrated).expect("serialize migrated runtime hints");
+        assert!(
+            canonical.get("card_queue").is_none(),
+            "canonical runtime hints must not perpetuate the removed ghost queue"
+        );
+    }
 
     #[test]
     fn take_card_draw_observation_events_v1_preserves_non_draw_events() {

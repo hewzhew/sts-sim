@@ -107,7 +107,7 @@ struct TransitionCloneProfile {
     combat_entities_clone_elapsed_ns: u64,
     combat_zone_component_elapsed_ns: [u64; 6],
     combat_entity_component_elapsed_ns: [u64; 4],
-    combat_runtime_component_elapsed_ns: [u64; 7],
+    combat_runtime_component_elapsed_ns: [u64; 6],
     exact_key_build_component_elapsed_ns: [u64; 11],
     combat_engine_clone_elapsed_ns: u64,
     combat_rng_clone_elapsed_ns: u64,
@@ -502,13 +502,12 @@ fn run(args: Cli) -> Result<(), String> {
                         "power_db": per_sample(profile.combat_entity_component_elapsed_ns[3]),
                     },
                     "runtime_components": {
-                        "card_queue": per_sample(profile.combat_runtime_component_elapsed_ns[0]),
-                        "colorless_pool": per_sample(profile.combat_runtime_component_elapsed_ns[1]),
-                        "emitted_events": per_sample(profile.combat_runtime_component_elapsed_ns[2]),
-                        "engine_diagnostics": per_sample(profile.combat_runtime_component_elapsed_ns[3]),
-                        "pending_rewards": per_sample(profile.combat_runtime_component_elapsed_ns[4]),
-                        "last_drawn_cards": per_sample(profile.combat_runtime_component_elapsed_ns[5]),
-                        "monster_protocol": per_sample(profile.combat_runtime_component_elapsed_ns[6]),
+                        "colorless_pool": per_sample(profile.combat_runtime_component_elapsed_ns[0]),
+                        "emitted_events": per_sample(profile.combat_runtime_component_elapsed_ns[1]),
+                        "engine_diagnostics": per_sample(profile.combat_runtime_component_elapsed_ns[2]),
+                        "pending_rewards": per_sample(profile.combat_runtime_component_elapsed_ns[3]),
+                        "last_drawn_cards": per_sample(profile.combat_runtime_component_elapsed_ns[4]),
+                        "monster_protocol": per_sample(profile.combat_runtime_component_elapsed_ns[5]),
                     },
                     "key_build_components": {
                         "engine": per_sample(profile.exact_key_build_component_elapsed_ns[0]),
@@ -528,8 +527,8 @@ fn run(args: Cli) -> Result<(), String> {
             })
         });
         let output = json!({
-            "schema_name": "CombatCasePerformanceProfileV1",
-            "schema_version": 1,
+            "schema_name": "CombatCasePerformanceProfileV2",
+            "schema_version": 2,
             "runner": "lightweight-combat-contract",
             "detail_timing_sample_interval": DETAIL_TIMING_SAMPLE_INTERVAL,
             "transition_clone_profile": clone_profile,

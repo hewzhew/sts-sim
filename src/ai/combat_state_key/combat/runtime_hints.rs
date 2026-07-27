@@ -1,11 +1,9 @@
 use super::super::types::{
-    CombatDrawnCardKey, CombatIntentKey, CombatMonsterProtocolIdentityKey,
-    CombatMonsterProtocolKey, CombatMonsterProtocolObservationKey, CombatQueuedCardHintKey,
-    CombatRuntimeHintsKey,
+    CombatDrawnCardKey, CombatIntentKey, CombatLegacyEmptyCardQueueKey,
+    CombatMonsterProtocolIdentityKey, CombatMonsterProtocolKey,
+    CombatMonsterProtocolObservationKey, CombatRuntimeHintsKey,
 };
-use crate::runtime::combat::{
-    CombatState, DrawnCardRecord, Intent, MonsterProtocolState, QueuedCardHint,
-};
+use crate::runtime::combat::{CombatState, DrawnCardRecord, Intent, MonsterProtocolState};
 
 pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
     let runtime = &combat.runtime;
@@ -18,11 +16,7 @@ pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
 
     CombatRuntimeHintsKey {
         using_card: runtime.using_card,
-        card_queue: runtime
-            .card_queue
-            .iter()
-            .map(queued_card_hint_key)
-            .collect(),
+        card_queue: CombatLegacyEmptyCardQueueKey,
         colorless_combat_pool: runtime.colorless_combat_pool.clone(),
         pending_rewards: runtime
             .pending_rewards
@@ -91,20 +85,6 @@ fn intent_key(intent: &Intent) -> CombatIntentKey {
         Intent::Sleep => CombatIntentKey::Sleep,
         Intent::Stun => CombatIntentKey::Stun,
         Intent::Unknown => CombatIntentKey::Unknown,
-    }
-}
-
-fn queued_card_hint_key(hint: &QueuedCardHint) -> CombatQueuedCardHintKey {
-    CombatQueuedCardHintKey {
-        card_uuid: hint.card_uuid,
-        card_id: hint.card_id,
-        target_monster_index: hint.target_monster_index,
-        energy_on_use: hint.energy_on_use,
-        ignore_energy_total: hint.ignore_energy_total,
-        autoplay: hint.autoplay,
-        random_target: hint.random_target,
-        is_end_turn_autoplay: hint.is_end_turn_autoplay,
-        purge_on_use: hint.purge_on_use,
     }
 }
 

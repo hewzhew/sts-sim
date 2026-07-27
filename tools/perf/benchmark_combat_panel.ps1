@@ -92,6 +92,10 @@ function Invoke-CombatPanelCase(
     catch {
         throw "combat panel case did not return valid JSON`n$Raw"
     }
+    if ($Report.schema_name -ne "CombatCasePerformanceProfileV2" -or
+        [int] $Report.schema_version -ne 2) {
+        throw "combat panel case returned unsupported profile schema '$($Report.schema_name)' v$($Report.schema_version)"
+    }
     return [pscustomobject]@{
         report = $Report
         process_milliseconds = $Stopwatch.Elapsed.TotalMilliseconds
@@ -238,7 +242,6 @@ try {
                 entity_monsters_clone_ns = [Collections.Generic.List[double]]::new()
                 entity_potions_clone_ns = [Collections.Generic.List[double]]::new()
                 entity_power_db_clone_ns = [Collections.Generic.List[double]]::new()
-                runtime_card_queue_clone_ns = [Collections.Generic.List[double]]::new()
                 runtime_colorless_pool_clone_ns = [Collections.Generic.List[double]]::new()
                 runtime_emitted_events_clone_ns = [Collections.Generic.List[double]]::new()
                 runtime_engine_diagnostics_clone_ns = [Collections.Generic.List[double]]::new()
@@ -327,7 +330,6 @@ try {
                     $Case.entity_potions_clone_ns.Add($EntityComponents.potions)
                     $Case.entity_power_db_clone_ns.Add($EntityComponents.power_db)
                     $RuntimeComponents = $Profile.mean_ns_per_sample.runtime_components
-                    $Case.runtime_card_queue_clone_ns.Add($RuntimeComponents.card_queue)
                     $Case.runtime_colorless_pool_clone_ns.Add($RuntimeComponents.colorless_pool)
                     $Case.runtime_emitted_events_clone_ns.Add($RuntimeComponents.emitted_events)
                     $Case.runtime_engine_diagnostics_clone_ns.Add($RuntimeComponents.engine_diagnostics)
@@ -415,7 +417,6 @@ try {
                 } else { $null }
                 runtime_clone_components_ns = if ($ProfileTransitionCloneCost) {
                     [ordered]@{
-                        card_queue = [math]::Round((Get-Median $_.runtime_card_queue_clone_ns), 1)
                         colorless_pool = [math]::Round((Get-Median $_.runtime_colorless_pool_clone_ns), 1)
                         emitted_events = [math]::Round((Get-Median $_.runtime_emitted_events_clone_ns), 1)
                         engine_diagnostics = [math]::Round((Get-Median $_.runtime_engine_diagnostics_clone_ns), 1)
@@ -445,8 +446,8 @@ try {
             }
         })
     $Result = [ordered]@{
-        schema_name = "CombatPerformancePanelBenchmarkV1"
-        schema_version = 1
+        schema_name = "CombatPerformancePanelBenchmarkV2"
+        schema_version = 2
         git_commit = (& git rev-parse HEAD).Trim()
         git_dirty = -not [string]::IsNullOrWhiteSpace((& git status --porcelain) -join "`n")
         build_source_fingerprint = $BuildReceipt.source_fingerprint
