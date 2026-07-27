@@ -1573,11 +1573,12 @@ fn bottled_relic_uuid_counts_as_innate_during_combat_deck_initialization() {
     let mut bottle = RelicState::new(RelicId::BottledTornado);
     bottle.amount = 103;
     state.entities.player.add_relic(bottle);
-    state.zones.draw_pile = vec![
+    state.zones.draw_pile = (vec![
         CombatCard::new(CardId::Strike, 101),
         CombatCard::new(CardId::Defend, 102),
         CombatCard::new(CardId::Inflame, 103),
-    ];
+    ])
+    .into();
 
     state.apply_java_initialize_deck_order_after_shuffle();
 

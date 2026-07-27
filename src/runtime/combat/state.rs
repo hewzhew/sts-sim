@@ -73,7 +73,7 @@ impl DerefMut for CombatRng {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardZones {
-    pub draw_pile: Vec<CombatCard>,
+    pub draw_pile: CombatCardPile,
     pub hand: Vec<CombatCard>,
     pub discard_pile: Vec<CombatCard>,
     pub exhaust_pile: Vec<CombatCard>,

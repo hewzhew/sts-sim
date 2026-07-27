@@ -667,10 +667,11 @@ mod tests {
         let mut combat = combat_with_single_monster();
         let cards = vec![CardId::Strike; 64];
         let card_uuids = (1..=64).collect::<Vec<_>>();
-        combat.zones.draw_pile = card_uuids
+        combat.zones.draw_pile = (card_uuids
             .iter()
             .map(|uuid| CombatCard::new(CardId::Strike, *uuid))
-            .collect();
+            .collect())
+        .into();
 
         let surface = combat_legal_action_surface_fingerprint_v2(
             &EngineState::PendingChoice(PendingChoice::ScrySelect { cards, card_uuids }),
@@ -694,10 +695,11 @@ mod tests {
     #[test]
     fn legal_language_and_frozen_enumeration_domain_are_separate() {
         let mut combat = combat_with_single_monster();
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 1),
             CombatCard::new(CardId::Defend, 2),
-        ];
+        ])
+        .into();
         let first = combat_legal_action_surface_fingerprint_v2(
             &EngineState::PendingChoice(PendingChoice::ScrySelect {
                 cards: vec![CardId::Strike, CardId::Defend],
@@ -839,11 +841,12 @@ mod tests {
     #[test]
     fn public_observation_hash_ignores_draw_order_without_frozen_eye() {
         let mut first = combat_with_single_monster();
-        first.zones.draw_pile = vec![
+        first.zones.draw_pile = (vec![
             CombatCard::new(CardId::Bash, 1),
             CombatCard::new(CardId::Strike, 2),
             CombatCard::new(CardId::Defend, 3),
-        ];
+        ])
+        .into();
         let mut reordered = first.clone();
         reordered.zones.draw_pile.swap(0, 2);
 
@@ -861,11 +864,12 @@ mod tests {
             .entities
             .player
             .add_relic(RelicState::new(RelicId::FrozenEye));
-        first.zones.draw_pile = vec![
+        first.zones.draw_pile = (vec![
             CombatCard::new(CardId::Bash, 1),
             CombatCard::new(CardId::Strike, 2),
             CombatCard::new(CardId::Defend, 3),
-        ];
+        ])
+        .into();
         let mut reordered = first.clone();
         reordered.zones.draw_pile.swap(0, 2);
 

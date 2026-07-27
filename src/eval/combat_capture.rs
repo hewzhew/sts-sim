@@ -527,7 +527,7 @@ mod tests {
             .unwrap_or(0)
             .saturating_add(1);
         let card_uuids = (first_uuid..first_uuid.saturating_add(64)).collect::<Vec<_>>();
-        position.combat.zones.draw_pile = card_uuids
+        position.combat.zones.draw_pile = (card_uuids
             .iter()
             .map(|uuid| {
                 crate::runtime::combat::CombatCard::new(
@@ -535,7 +535,8 @@ mod tests {
                     *uuid,
                 )
             })
-            .collect();
+            .collect())
+        .into();
         position.combat.zones.card_uuid_counter = first_uuid.saturating_add(64);
         position.engine =
             EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {

@@ -521,11 +521,12 @@ mod tests {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![test_monster(crate::content::monsters::EnemyId::JawWorm)];
         combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Defend, 20),
             CombatCard::new(CardId::Strike, 21),
             CombatCard::new(CardId::Bash, 22),
-        ];
+        ])
+        .into();
         combat.emit_event(DomainEvent::CardDrawn {
             card: DomainCardSnapshot {
                 id: CardId::AscendersBane,
@@ -575,7 +576,7 @@ mod tests {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![test_monster(crate::content::monsters::EnemyId::JawWorm)];
         combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
-        combat.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 20)];
+        combat.zones.draw_pile = (vec![CombatCard::new(CardId::Defend, 20)]).into();
         let position = super::CombatPosition::new(EngineState::CombatPlayerTurn, combat);
 
         let step = super::apply_combat_input_to_stable(
@@ -631,11 +632,12 @@ mod tests {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![test_monster(crate::content::monsters::EnemyId::JawWorm)];
         combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Defend, 20),
             CombatCard::new(CardId::Strike, 21),
             CombatCard::new(CardId::Bash, 22),
-        ];
+        ])
+        .into();
         let position = super::CombatPosition::new(EngineState::CombatPlayerTurn, combat);
         let limits = super::CombatStepLimits {
             max_engine_steps: 20,

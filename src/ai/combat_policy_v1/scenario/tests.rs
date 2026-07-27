@@ -1484,10 +1484,11 @@ fn pending_selection_enumerates_all_combinations_beyond_legacy_sixteen_cap() {
 #[test]
 fn hidden_draw_order_does_not_leak_through_grid_selection_candidates() {
     let mut first = position_with_monster_id(7);
-    first.combat.zones.draw_pile = vec![
+    first.combat.zones.draw_pile = (vec![
         CombatCard::new(CardId::Bash, 10),
         CombatCard::new(CardId::Defend, 20),
-    ];
+    ])
+    .into();
     first.engine = EngineState::PendingChoice(PendingChoice::GridSelect {
         source_pile: PileType::Draw,
         candidate_uuids: vec![10, 20],
@@ -1590,9 +1591,10 @@ fn step_loop_crosses_hand_choice_without_exposing_uuid() {
 #[test]
 fn oversized_pending_choice_fails_with_typed_gap() {
     let mut position = position_with_monster_id(7);
-    position.combat.zones.draw_pile = (0..13)
+    position.combat.zones.draw_pile = ((0..13)
         .map(|index| CombatCard::new(CardId::Strike, 500 + index))
-        .collect();
+        .collect::<Vec<_>>())
+    .into();
     position.engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 13],
         card_uuids: (0..13).map(|index| 500 + index).collect(),
@@ -1676,10 +1678,11 @@ fn remaining_pending_choice_kinds_expose_typed_public_actions() {
     }
 
     let mut scry = position_with_monster_id(7);
-    scry.combat.zones.draw_pile = vec![
+    scry.combat.zones.draw_pile = (vec![
         CombatCard::new(CardId::Strike, 80_001),
         CombatCard::new(CardId::Defend, 80_002),
-    ];
+    ])
+    .into();
     scry.engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
         cards: vec![CardId::Strike, CardId::Defend],
         card_uuids: vec![80_001, 80_002],
@@ -1741,18 +1744,19 @@ fn turn_option_budget(
 fn position_with_draw_order(cards: [CardId; 2]) -> CombatPosition {
     let mut position = position_with_monster_id(7);
     position.combat.zones.draw_pile =
-        vec![CombatCard::new(cards[0], 20), CombatCard::new(cards[1], 21)];
+        (vec![CombatCard::new(cards[0], 20), CombatCard::new(cards[1], 21)]).into();
     position
 }
 
 fn position_with_battle_trance_draw_order(cards: [CardId; 4]) -> CombatPosition {
     let mut position = position_with_monster_id(7);
     position.combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 10)];
-    position.combat.zones.draw_pile = cards
+    position.combat.zones.draw_pile = (cards
         .into_iter()
         .enumerate()
         .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
-        .collect();
+        .collect::<Vec<_>>())
+    .into();
     position
 }
 

@@ -280,10 +280,11 @@ mod tests {
     #[test]
     fn card_uuid_does_not_change_semantic_features() {
         let mut left = blank_test_combat();
-        left.zones.draw_pile = vec![
+        left.zones.draw_pile = (vec![
             CombatCard::new(CardId::WildStrike, 1),
             CombatCard::new(CardId::Havoc, 2),
-        ];
+        ])
+        .into();
         let mut right = left.clone();
         right.zones.draw_pile[0].uuid = 91;
         right.zones.draw_pile[1].uuid = 92;
@@ -302,10 +303,11 @@ mod tests {
     #[test]
     fn draw_pile_order_changes_semantic_features() {
         let mut left = blank_test_combat();
-        left.zones.draw_pile = vec![
+        left.zones.draw_pile = (vec![
             CombatCard::new(CardId::WildStrike, 1),
             CombatCard::new(CardId::Havoc, 2),
-        ];
+        ])
+        .into();
         let mut right = left.clone();
         right.zones.draw_pile.swap(0, 1);
         assert_ne!(

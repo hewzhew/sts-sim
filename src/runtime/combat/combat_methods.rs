@@ -123,7 +123,7 @@ impl CombatState {
         }
         java_group_order.extend(place_on_top);
         java_group_order.reverse();
-        self.zones.draw_pile = java_group_order;
+        self.zones.draw_pile = java_group_order.into();
     }
 
     /// Helper to find a card by UUID in a specific slice and remove it. Returns the removed card.

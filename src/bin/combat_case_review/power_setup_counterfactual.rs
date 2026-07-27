@@ -453,7 +453,7 @@ mod tests {
         first_fnp.upgrades = 1;
         let mut second_fnp = CombatCard::new(CardId::FeelNoPain, 12);
         second_fnp.upgrades = 1;
-        combat.zones.draw_pile = vec![first_fnp, second_fnp];
+        combat.zones.draw_pile = (vec![first_fnp, second_fnp]).into();
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
     }
 

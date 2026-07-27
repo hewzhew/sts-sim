@@ -308,7 +308,7 @@ fn build_combat_for_case(case: &PendingCardContractCase) -> CombatState {
     combat.zones.hand = std::iter::once(case.card.clone())
         .chain(case.setup.hand_after_play_card.clone())
         .collect();
-    combat.zones.draw_pile = case.setup.draw_pile.clone();
+    combat.zones.draw_pile = (case.setup.draw_pile.clone()).into();
     combat.zones.discard_pile = case.setup.discard_pile.clone();
     combat.zones.exhaust_pile = case.setup.exhaust_pile.clone();
     combat.turn.energy = 3;

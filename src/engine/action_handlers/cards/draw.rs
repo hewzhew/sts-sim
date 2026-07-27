@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn ordinary_draw_emits_exact_draw_event() {
         let mut state = crate::test_support::blank_test_combat();
-        state.zones.draw_pile = vec![CombatCard::new(CardId::DefendB, 377)];
+        state.zones.draw_pile = (vec![CombatCard::new(CardId::DefendB, 377)]).into();
 
         crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut state);
 

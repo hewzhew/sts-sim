@@ -10,10 +10,10 @@ use crate::test_support::{blank_test_combat, test_monster};
 #[test]
 fn frontier_priority_prefers_stronger_visible_next_draw_when_state_ties() {
     let mut strike = test_node();
-    strike.combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 11)];
+    strike.combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 11)]).into();
 
     let mut carnage = test_node();
-    carnage.combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 12)];
+    carnage.combat.zones.draw_pile = (vec![CombatCard::new(CardId::Carnage, 12)]).into();
 
     assert!(priority_for_node(&carnage) > priority_for_node(&strike));
 }

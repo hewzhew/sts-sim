@@ -505,10 +505,11 @@ mod tests {
         let mut combat = crate::test_support::blank_test_combat();
         let cards = vec![CardId::Strike; 64];
         let card_uuids = (1..=64).collect::<Vec<_>>();
-        combat.zones.draw_pile = card_uuids
+        combat.zones.draw_pile = (card_uuids
             .iter()
             .map(|uuid| CombatCard::new(CardId::Strike, *uuid))
-            .collect();
+            .collect::<Vec<_>>())
+        .into();
         let surface = combat_legal_action_surface_v2(
             &EngineState::PendingChoice(PendingChoice::ScrySelect { cards, card_uuids }),
             &combat,
@@ -615,7 +616,7 @@ mod tests {
     #[test]
     fn invalid_grid_source_disables_submit_but_preserves_cancel() {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 7)];
+        combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 7)]).into();
         let choice = PendingChoice::GridSelect {
             source_pile: PileType::Draw,
             candidate_uuids: vec![7],
@@ -652,7 +653,7 @@ mod tests {
     #[test]
     fn duplicate_scry_uuids_keep_both_addresses_but_limit_distinct_payloads() {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 7)];
+        combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 7)]).into();
         let choice = PendingChoice::ScrySelect {
             cards: vec![CardId::Strike, CardId::Strike],
             card_uuids: vec![7, 7],

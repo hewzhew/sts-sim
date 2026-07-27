@@ -16,9 +16,10 @@ struct PotionWinStepper;
 fn production_search_factors_scry_without_materializing_the_power_set() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.draw_pile = (0..13)
+    combat.zones.draw_pile = ((0..13)
         .map(|index| CombatCard::new(CardId::Strike, 1_000 + index))
-        .collect();
+        .collect())
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 13],
         card_uuids: (1_000..1_013).collect(),
@@ -49,9 +50,10 @@ fn production_search_factors_scry_without_materializing_the_power_set() {
 fn production_search_steps_only_completed_scry_prefixes() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.draw_pile = (0..3)
+    combat.zones.draw_pile = ((0..3)
         .map(|index| CombatCard::new(CardId::Strike, 2_000 + index))
-        .collect();
+        .collect())
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 3],
         card_uuids: (2_000..2_003).collect(),
@@ -988,10 +990,11 @@ fn max_potions_used_cuts_potion_branches_without_disabling_policy_all() {
 fn search_report_declares_privileged_policy_evidence_boundary() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.draw_pile = vec![
+    combat.zones.draw_pile = (vec![
         CombatCard::new(CardId::Strike, 11),
         CombatCard::new(CardId::Defend, 12),
-    ];
+    ])
+    .into();
     combat
         .entities
         .player
@@ -1269,9 +1272,10 @@ fn split_work_quanta_reuse_the_same_search_state() {
 fn split_pending_choice_quanta_advance_the_same_virtual_prefix_work() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.draw_pile = (0..13)
+    combat.zones.draw_pile = ((0..13)
         .map(|index| CombatCard::new(CardId::Strike, 8_000 + index))
-        .collect();
+        .collect())
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 13],
         card_uuids: (8_000..8_013).collect(),

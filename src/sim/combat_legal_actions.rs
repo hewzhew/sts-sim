@@ -361,10 +361,11 @@ mod tests {
     #[test]
     fn pending_scry_stays_symbolic_instead_of_materializing_subsets() {
         let mut combat = build_fixture_combat();
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 10),
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 20),
-        ];
+        ])
+        .into();
         let engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
             cards: vec![
                 crate::content::cards::CardId::Strike,
@@ -420,10 +421,11 @@ mod tests {
     #[test]
     fn pending_membership_rejects_scry_indices_that_alias_one_card_uuid() {
         let mut combat = build_fixture_combat();
-        combat.zones.draw_pile = vec![crate::runtime::combat::CombatCard::new(
+        combat.zones.draw_pile = (vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::Strike,
             42,
-        )];
+        )])
+        .into();
         let engine = EngineState::PendingChoice(PendingChoice::ScrySelect {
             cards: vec![
                 crate::content::cards::CardId::Strike,
@@ -473,10 +475,11 @@ mod tests {
             crate::content::cards::CardId::Defend,
             20,
         )];
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 30),
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 40),
-        ];
+        ])
+        .into();
         let choices = vec![
             PendingChoice::HandSelect {
                 candidate_uuids: vec![10],

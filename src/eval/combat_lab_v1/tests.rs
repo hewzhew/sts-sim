@@ -2659,7 +2659,7 @@ fn replayable_win_sample() -> (
         CombatCard::new(CardId::BattleTrance, 1),
         CombatCard::new(CardId::Strike, 2),
     ];
-    combat.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 3)];
+    combat.zones.draw_pile = (vec![CombatCard::new(CardId::Defend, 3)]).into();
     let start = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
     let inputs = vec![
         ClientInput::PlayCard {

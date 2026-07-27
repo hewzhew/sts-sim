@@ -1722,7 +1722,7 @@ fn silent_execution_time_action_cards_match_java_actions() {
         Action::EscapePlanBlockIfSkill { block: 3 }
     );
     let mut escape_state = crate::test_support::blank_test_combat();
-    escape_state.zones.draw_pile = vec![CombatCard::new(CardId::Prepared, 924)];
+    escape_state.zones.draw_pile = (vec![CombatCard::new(CardId::Prepared, 924)]).into();
     escape_state.runtime.last_drawn_cards = vec![DrawnCardRecord {
         card_uuid: 999,
         card_id: CardId::StrikeG,
@@ -1973,7 +1973,7 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
         CombatCard::new(CardId::StrikeG, 934),
         CombatCard::new(CardId::Eviscerate, 935),
     ];
-    discard_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 936)];
+    discard_state.zones.draw_pile = (vec![CombatCard::new(CardId::Eviscerate, 936)]).into();
     discard_state.zones.discard_pile = vec![CombatCard::new(CardId::Eviscerate, 937)];
     crate::engine::action_handlers::cards::handle_discard_card(934, &mut discard_state);
     assert_eq!(discard_state.turn.counters.cards_discarded_this_turn, 1);
@@ -1983,7 +1983,8 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
 
     let mut end_turn_discard_state = crate::test_support::blank_test_combat();
     end_turn_discard_state.zones.hand = vec![CombatCard::new(CardId::StrikeG, 938)];
-    end_turn_discard_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 939)];
+    end_turn_discard_state.zones.draw_pile =
+        (vec![CombatCard::new(CardId::Eviscerate, 939)]).into();
     crate::engine::action_handlers::cards::handle_discard_from_hand(
         1,
         false,
@@ -1999,7 +2000,7 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
     let mut draw_state = crate::test_support::blank_test_combat();
     draw_state.turn.increment_cards_discarded();
     draw_state.turn.increment_cards_discarded();
-    draw_state.zones.draw_pile = vec![CombatCard::new(CardId::Eviscerate, 940)];
+    draw_state.zones.draw_pile = (vec![CombatCard::new(CardId::Eviscerate, 940)]).into();
     crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
     assert_eq!(draw_state.zones.hand[0].cost_for_turn_java(), 1);
 
@@ -2016,7 +2017,7 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
     damage_state.entities.monsters = vec![attacker];
     damage_state.entities.player.current_hp = 50;
     damage_state.zones.hand = vec![CombatCard::new(CardId::MasterfulStab, 941)];
-    damage_state.zones.draw_pile = vec![CombatCard::new(CardId::MasterfulStab, 942)];
+    damage_state.zones.draw_pile = (vec![CombatCard::new(CardId::MasterfulStab, 942)]).into();
     damage_state.zones.discard_pile = vec![CombatCard::new(CardId::MasterfulStab, 943)];
     crate::engine::action_handlers::execute_action(
         Action::Damage(DamageInfo {
@@ -2385,7 +2386,7 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
     );
 
     let mut finale_blocked = state.clone();
-    finale_blocked.zones.draw_pile = vec![CombatCard::new(CardId::StrikeG, 963)];
+    finale_blocked.zones.draw_pile = (vec![CombatCard::new(CardId::StrikeG, 963)]).into();
     assert!(
         can_play_card(&CombatCard::new(CardId::GrandFinale, 964), &finale_blocked).is_err(),
         "Java Grand Finale.canUse requires an empty draw pile"
@@ -2397,7 +2398,7 @@ fn silent_special_attack_cards_match_java_draw_and_mutation_hooks() {
     let mut draw_state = crate::test_support::blank_test_combat();
     let mut drawn = CombatCard::new(CardId::EndlessAgony, 966);
     drawn.upgrades = 1;
-    draw_state.zones.draw_pile = vec![drawn];
+    draw_state.zones.draw_pile = (vec![drawn]).into();
     crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
     assert_eq!(draw_state.zones.hand.len(), 1);
     assert_eq!(draw_state.zones.hand[0].id, CardId::EndlessAgony);
@@ -4281,7 +4282,7 @@ fn upgraded_blind_and_trip_enqueue_apply_power_for_every_monster_like_java() {
 fn put_on_deck_action_matches_java_rng_and_selection_edges() {
     let mut one_card_state = crate::test_support::blank_test_combat();
     one_card_state.zones.hand = vec![CombatCard::new(CardId::Strike, 400)];
-    one_card_state.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 401)];
+    one_card_state.zones.draw_pile = (vec![CombatCard::new(CardId::Defend, 401)]).into();
     assert_eq!(one_card_state.rng.card_random_rng.counter, 0);
 
     crate::engine::action_handlers::cards::handle_put_on_deck(1, false, &mut one_card_state);

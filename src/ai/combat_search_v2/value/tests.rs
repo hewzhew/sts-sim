@@ -13,11 +13,11 @@ use crate::test_support::blank_test_combat;
 fn state_value_prefers_survival_before_future_draw_quality() {
     let mut safe = test_node();
     safe.combat.entities.player.current_hp = 20;
-    safe.combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 11)];
+    safe.combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 11)]).into();
 
     let mut flashy = test_node();
     flashy.combat.entities.player.current_hp = 10;
-    flashy.combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 12)];
+    flashy.combat.zones.draw_pile = (vec![CombatCard::new(CardId::Carnage, 12)]).into();
 
     assert!(combat_search_state_value(&safe) > combat_search_state_value(&flashy));
 }

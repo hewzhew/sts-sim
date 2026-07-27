@@ -468,7 +468,7 @@ fn structured_pending_choices_fail_closed_and_are_explicit_in_report_schema() {
         let card = CombatCard::new(CardId::Strike, 31);
         cutpoint.position.combat.zones.hand = vec![card.clone()];
         cutpoint.position.combat.zones.discard_pile = vec![card.clone()];
-        cutpoint.position.combat.zones.draw_pile = vec![card];
+        cutpoint.position.combat.zones.draw_pile = (vec![card]).into();
         cutpoint.position.engine = EngineState::PendingChoice(choice);
         let grouped = group_cutpoints(vec![cutpoint])
             .pop()

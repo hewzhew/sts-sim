@@ -16,7 +16,7 @@ fn stepper_dropkick_against_vulnerable_draws_and_refunds_energy() {
     combat.entities.monsters = vec![monster(EnemyId::JawWorm, 10, 0, 30)];
     store::set_powers_for(&mut combat, 10, vec![power(PowerId::Vulnerable, 3)]);
     combat.zones.hand = vec![CombatCard::new(CardId::Dropkick, 100)];
-    combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 101)];
+    combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 101)]).into();
 
     let step = apply_from_player_turn(
         combat,

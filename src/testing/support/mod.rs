@@ -27,7 +27,7 @@ pub fn blank_test_combat() -> CombatState {
             counters: EphemeralCounters::default(),
         },
         zones: CardZones {
-            draw_pile: vec![],
+            draw_pile: vec![].into(),
             hand: vec![],
             discard_pile: vec![],
             exhaust_pile: vec![],

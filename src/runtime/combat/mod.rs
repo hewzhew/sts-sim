@@ -18,6 +18,7 @@ pub type MonsterId = usize;
 pub type CombatEntityMap<V> = HashMap<EntityId, V, FxBuildHasher>;
 
 mod card;
+mod card_pile;
 mod combat_methods;
 mod entities;
 mod master_deck_snapshot;
@@ -27,6 +28,7 @@ mod power;
 mod state;
 
 pub use card::*;
+pub use card_pile::*;
 pub use entities::*;
 pub use master_deck_snapshot::*;
 pub use monster_runtime::*;

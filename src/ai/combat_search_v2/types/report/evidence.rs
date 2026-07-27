@@ -222,10 +222,11 @@ mod tests {
     #[test]
     fn policy_evidence_marks_hidden_draw_order_without_frozen_eye() {
         let mut combat = blank_test_combat();
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 11),
             CombatCard::new(CardId::Defend, 12),
-        ];
+        ])
+        .into();
 
         let without_frozen_eye = combat_search_policy_evidence_for_combat(&combat);
         assert!(without_frozen_eye

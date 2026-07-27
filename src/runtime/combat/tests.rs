@@ -52,7 +52,7 @@ fn shared_master_deck_keeps_the_existing_json_array_shape() {
 #[test]
 fn card_zones_draw_pile_top_is_index_zero() {
     let mut zones = CardZones {
-        draw_pile: vec![CombatCard::new(CardId::Strike, 1)],
+        draw_pile: vec![CombatCard::new(CardId::Strike, 1)].into(),
         hand: vec![],
         discard_pile: vec![],
         exhaust_pile: vec![],
@@ -85,7 +85,8 @@ fn card_zones_random_spot_maps_java_bottom_index_to_rust_top_index() {
             CombatCard::new(CardId::Strike, 1),
             CombatCard::new(CardId::Defend, 2),
             CombatCard::new(CardId::Bash, 3),
-        ],
+        ]
+        .into(),
         hand: vec![],
         discard_pile: vec![],
         exhaust_pile: vec![],
@@ -105,7 +106,7 @@ fn card_zones_random_spot_maps_java_bottom_index_to_rust_top_index() {
 #[test]
 fn card_zones_discard_pile_preserves_java_card_group_order() {
     let mut zones = CardZones {
-        draw_pile: vec![],
+        draw_pile: vec![].into(),
         hand: vec![],
         discard_pile: vec![],
         exhaust_pile: vec![],
@@ -124,7 +125,7 @@ fn card_zones_discard_pile_preserves_java_card_group_order() {
 #[test]
 fn card_zones_exhaust_pile_preserves_java_card_group_order() {
     let mut zones = CardZones {
-        draw_pile: vec![],
+        draw_pile: vec![].into(),
         hand: vec![],
         discard_pile: vec![],
         exhaust_pile: vec![],
@@ -143,7 +144,7 @@ fn card_zones_exhaust_pile_preserves_java_card_group_order() {
 #[test]
 fn card_zones_uuid_helper_updates_java_battle_instances_only() {
     let mut zones = CardZones {
-        draw_pile: vec![CombatCard::new(CardId::Rampage, 7)],
+        draw_pile: vec![CombatCard::new(CardId::Rampage, 7)].into(),
         hand: vec![CombatCard::new(CardId::Rampage, 7)],
         discard_pile: vec![CombatCard::new(CardId::Strike, 8)],
         exhaust_pile: vec![CombatCard::new(CardId::Rampage, 7)],
@@ -219,12 +220,13 @@ fn combat_card_can_set_combat_cost_without_erasing_turn_override() {
 #[test]
 fn java_initialize_deck_order_places_innate_on_rust_top_after_reversing() {
     let mut state = crate::test_support::blank_test_combat();
-    state.zones.draw_pile = vec![
+    state.zones.draw_pile = (vec![
         CombatCard::new(CardId::Strike, 1),
         CombatCard::new(CardId::Writhe, 2),
         CombatCard::new(CardId::Defend, 3),
         CombatCard::new(CardId::Pride, 4),
-    ];
+    ])
+    .into();
 
     state.apply_java_initialize_deck_order_after_shuffle();
 

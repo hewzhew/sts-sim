@@ -241,7 +241,7 @@ fn facts_report_effective_ethereal_after_upgrade_sensitive_overrides() {
 fn facts_report_dropkick_contextual_draw_and_energy_delta_from_simulator() {
     let mut combat = blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Dropkick, 10)];
-    combat.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 11)];
+    combat.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 11)]).into();
     let mut monster = planned_monster(EnemyId::JawWorm, 1);
     monster.id = 1;
     combat.entities.monsters = vec![monster];

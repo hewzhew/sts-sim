@@ -145,10 +145,11 @@ mod tests {
         combat.turn.energy = 0;
         combat.entities.player.energy_master = 3;
         combat.turn.turn_start_draw_modifier = -4;
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 11),
             CombatCard::new(CardId::Carnage, 12),
-        ];
+        ])
+        .into();
 
         let value = next_draw_value(&combat);
 
@@ -247,9 +248,10 @@ mod tests {
         combat.zones.hand = (0..8)
             .map(|index| CombatCard::new(CardId::Defend, 100 + index))
             .collect();
-        combat.zones.draw_pile = (0..5)
+        combat.zones.draw_pile = ((0..5)
             .map(|index| CombatCard::new(CardId::Strike, 200 + index))
-            .collect();
+            .collect())
+        .into();
 
         let value = next_draw_value(&combat);
 
@@ -268,9 +270,10 @@ mod tests {
             .map(|index| CombatCard::new(CardId::Defend, 100 + index))
             .chain((0..3).map(|index| CombatCard::new(CardId::Apparition, 200 + index)))
             .collect();
-        combat.zones.draw_pile = (0..5)
+        combat.zones.draw_pile = ((0..5)
             .map(|index| CombatCard::new(CardId::Strike, 300 + index))
-            .collect();
+            .collect())
+        .into();
 
         assert_eq!(next_draw_value(&combat).damage, 30);
 

@@ -1107,7 +1107,7 @@ mod tests {
             CombatCard::new(CardId::ShrugItOff, 21),
             CombatCard::new(CardId::Wound, 22),
         ];
-        combat.zones.draw_pile = vec![CombatCard::new(CardId::TrueGrit, 23)];
+        combat.zones.draw_pile = (vec![CombatCard::new(CardId::TrueGrit, 23)]).into();
 
         let summary = player_setup_summary(&combat);
 
@@ -1198,9 +1198,10 @@ mod tests {
             .entities
             .power_db
             .insert(player, vec![test_power_amount(PowerId::FeelNoPain, 4)]);
-        stockpiled.zones.draw_pile = (0..12)
+        stockpiled.zones.draw_pile = ((0..12)
             .map(|index| CombatCard::new(CardId::Feed, 100 + index))
-            .collect();
+            .collect())
+        .into();
 
         let mut progressed = stockpiled.clone();
         progressed.zones.draw_pile.pop();

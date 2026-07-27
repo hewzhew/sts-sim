@@ -468,10 +468,11 @@ fn pending_discovery_session() -> RunControlSession {
 
 fn pending_scry_session() -> RunControlSession {
     let mut combat = crate::test_support::blank_test_combat();
-    combat.zones.draw_pile = vec![
+    combat.zones.draw_pile = (vec![
         CombatCard::new(CardId::Strike, 10),
         CombatCard::new(CardId::Defend, 20),
-    ];
+    ])
+    .into();
     let choice = PendingChoice::ScrySelect {
         cards: vec![CardId::Strike, CardId::Defend],
         card_uuids: vec![10, 20],

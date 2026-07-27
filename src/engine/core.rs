@@ -612,11 +612,12 @@ mod tests {
     fn seek_grid_candidates_match_java_better_draw_pile_sort_order() {
         let mut combat_state = blank_test_combat();
         let mut engine_state = EngineState::CombatProcessing;
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::StrikeB, 10),
             CombatCard::new(CardId::DefendB, 20),
             CombatCard::new(CardId::Bash, 30),
-        ];
+        ])
+        .into();
         combat_state.queue_action_back(Action::SuspendForGridSelect {
             source_pile: PileType::Draw,
             min: 1,
@@ -648,7 +649,7 @@ mod tests {
     fn omniscience_single_candidate_still_opens_grid_select_like_java() {
         let mut combat_state = blank_test_combat();
         let mut engine_state = EngineState::CombatProcessing;
-        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::StrikeP, 10)];
+        combat_state.zones.draw_pile = (vec![CombatCard::new(CardId::StrikeP, 10)]).into();
         combat_state.queue_action_back(Action::SuspendForGridSelect {
             source_pile: PileType::Draw,
             min: 1,
@@ -694,7 +695,7 @@ mod tests {
         selected.base_damage_override = Some(17);
         selected.base_damage_mut = 99;
         selected.free_to_play_once = true;
-        combat_state.zones.draw_pile = vec![selected];
+        combat_state.zones.draw_pile = (vec![selected]).into();
         let mut engine_state = EngineState::PendingChoice(PendingChoice::GridSelect {
             source_pile: PileType::Draw,
             candidate_uuids: vec![10],
@@ -841,12 +842,13 @@ mod tests {
     fn secret_technique_grid_candidates_consume_java_add_to_random_spot_rng() {
         let mut combat_state = blank_test_combat();
         let mut engine_state = EngineState::CombatProcessing;
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::StrikeB, 10),
             CombatCard::new(CardId::DefendB, 20),
             CombatCard::new(CardId::Seek, 30),
             CombatCard::new(CardId::DefendG, 40),
-        ];
+        ])
+        .into();
 
         let mut expected_rng = combat_state.rng.clone();
         let mut expected_candidates = Vec::new();
@@ -1476,9 +1478,10 @@ mod tests {
             crate::content::monsters::EnemyId::Cultist,
             3,
         )];
-        combat_state.zones.draw_pile = (0..5)
+        combat_state.zones.draw_pile = ((0..5)
             .map(|uuid| crate::runtime::combat::CombatCard::new(CardId::Strike, uuid))
-            .collect();
+            .collect::<Vec<_>>())
+        .into();
         combat_state.entities.power_db.insert(
             0,
             vec![Power {
@@ -1521,13 +1524,14 @@ mod tests {
     fn turn_start_post_draw_hooks_queue_before_draw_generated_actions_like_java() {
         let mut combat_state = blank_test_combat();
         combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             crate::runtime::combat::CombatCard::new(CardId::Void, 71),
             crate::runtime::combat::CombatCard::new(CardId::Strike, 72),
             crate::runtime::combat::CombatCard::new(CardId::Strike, 73),
             crate::runtime::combat::CombatCard::new(CardId::Strike, 74),
             crate::runtime::combat::CombatCard::new(CardId::Strike, 75),
-        ];
+        ])
+        .into();
         combat_state.entities.power_db.insert(
             0,
             vec![Power {
@@ -1628,13 +1632,14 @@ mod tests {
     fn initial_battle_start_gambling_chip_suspends_after_opening_draw_like_java() {
         let mut combat_state = blank_test_combat();
         combat_state.entities.monsters = vec![planned_monster(EnemyId::Cultist, 1)];
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 81),
             CombatCard::new(CardId::Defend, 82),
             CombatCard::new(CardId::Strike, 83),
             CombatCard::new(CardId::Defend, 84),
             CombatCard::new(CardId::Strike, 85),
-        ];
+        ])
+        .into();
         combat_state
             .entities
             .player

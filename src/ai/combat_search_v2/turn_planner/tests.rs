@@ -268,7 +268,7 @@ fn diagnostic_turn_planner_can_cross_structured_choice_within_same_turn() {
 fn diagnostic_turn_planner_materializes_engine_hand_selection() {
     let mut combat = test_combat_with_cards(&[CardId::Warcry, CardId::Strike]);
     combat.turn.energy = 2;
-    combat.zones.draw_pile = vec![CombatCard::new(CardId::Carnage, 30)];
+    combat.zones.draw_pile = (vec![CombatCard::new(CardId::Carnage, 30)]).into();
     let root = test_node(combat);
     let config = TurnPlannerConfigV1 {
         max_inner_nodes: 64,

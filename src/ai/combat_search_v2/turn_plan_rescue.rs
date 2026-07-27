@@ -220,14 +220,15 @@ mod tests {
     #[test]
     fn rescue_declines_pending_choice_owned_by_action_prefix_search() {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.zones.draw_pile = (0..13)
+        combat.zones.draw_pile = ((0..13)
             .map(|index| {
                 crate::runtime::combat::CombatCard::new(
                     crate::content::cards::CardId::Strike,
                     1_000 + index,
                 )
             })
-            .collect();
+            .collect())
+        .into();
         let start = CombatPosition::new(
             crate::state::core::EngineState::PendingChoice(
                 crate::state::core::PendingChoice::ScrySelect {

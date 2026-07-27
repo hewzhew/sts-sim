@@ -283,9 +283,10 @@ mod tests {
     fn microscope_samples_large_scry_without_materializing_its_power_set() {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
-        combat.zones.draw_pile = (0..13)
+        combat.zones.draw_pile = ((0..13)
             .map(|index| CombatCard::new(CardId::Strike, 10_000 + index))
-            .collect();
+            .collect())
+        .into();
         let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
             cards: vec![CardId::Strike; 13],
             card_uuids: (10_000..10_013).collect(),

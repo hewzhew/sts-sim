@@ -487,11 +487,12 @@ fn battle_trance_proof_sample(
     let mut combat = crate::test_support::blank_test_combat();
     combat.entities.player.current_hp = 1;
     combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 10)];
-    combat.zones.draw_pile = draw_order
+    combat.zones.draw_pile = (draw_order
         .into_iter()
         .enumerate()
         .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
-        .collect();
+        .collect())
+    .into();
     combat.entities.monsters = vec![deterministic_jaw_worm()];
     compiled_sample(
         sample_index,
@@ -515,11 +516,12 @@ fn deterministic_jaw_worm() -> crate::runtime::combat::MonsterEntity {
 fn battle_trance_sample(sample_index: u64, draw_order: [CardId; 4]) -> CombatLabCompiledSampleV1 {
     let mut combat = crate::test_support::blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 10)];
-    combat.zones.draw_pile = draw_order
+    combat.zones.draw_pile = (draw_order
         .into_iter()
         .enumerate()
         .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
-        .collect();
+        .collect())
+    .into();
     combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
     compiled_sample(
         sample_index,

@@ -629,11 +629,12 @@ mod tests {
                 card_uuids: vec![1, 2],
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 1),
             CombatCard::new(CardId::Defend, 2),
             CombatCard::new(CardId::Bash, 3),
-        ];
+        ])
+        .into();
 
         handle_scry(
             &mut engine_state,
@@ -666,10 +667,11 @@ mod tests {
                 card_uuids: vec![1, 2],
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 1),
             CombatCard::new(CardId::Defend, 2),
-        ];
+        ])
+        .into();
 
         let result = handle_scry(
             &mut engine_state,
@@ -692,7 +694,7 @@ mod tests {
                 card_uuids: vec![10, 20],
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 10)];
+        combat_state.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 10)]).into();
 
         let result = handle_scry(
             &mut engine_state,
@@ -1195,7 +1197,7 @@ mod tests {
         combat_state.zones.hand = (0..10)
             .map(|idx| CombatCard::new(CardId::Defend, 200 + idx))
             .collect();
-        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 30)];
+        combat_state.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 30)]).into();
 
         handle_grid_select(
             &mut engine_state,
@@ -1239,10 +1241,11 @@ mod tests {
                 reason: GridSelectReason::DrawPileToHand,
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.draw_pile = vec![
+        combat_state.zones.draw_pile = (vec![
             CombatCard::new(CardId::Strike, 30),
             CombatCard::new(CardId::Defend, 40),
-        ];
+        ])
+        .into();
 
         handle_grid_select(
             &mut engine_state,
@@ -1335,7 +1338,7 @@ mod tests {
                 reason: GridSelectReason::SkillFromDeckToHand,
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.draw_pile = vec![CombatCard::new(CardId::Defend, 40)];
+        combat_state.zones.draw_pile = (vec![CombatCard::new(CardId::Defend, 40)]).into();
 
         let result = handle_grid_select(
             &mut engine_state,

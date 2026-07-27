@@ -300,11 +300,12 @@ mod tests {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
         combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Defend, 20),
             CombatCard::new(CardId::Strike, 21),
             CombatCard::new(CardId::Bash, 22),
-        ];
+        ])
+        .into();
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
         let line = CombatSearchV2WitnessLine {
             source: "test",

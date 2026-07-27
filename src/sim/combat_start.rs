@@ -45,7 +45,7 @@ pub fn build_natural_combat_start(
         },
         turn: TurnRuntime::fresh_player_turn(3),
         zones: CardZones {
-            draw_pile: run_state.master_deck.clone(),
+            draw_pile: run_state.master_deck.clone().into(),
             hand: Vec::new(),
             discard_pile: Vec::new(),
             exhaust_pile: Vec::new(),

@@ -667,9 +667,10 @@ mod tests {
     #[test]
     fn pending_choice_opportunity_does_not_enumerate_combinatorial_inputs() {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.zones.draw_pile = (0..13)
+        combat.zones.draw_pile = ((0..13)
             .map(|index| CombatCard::new(crate::content::cards::CardId::Strike, 1_000 + index))
-            .collect();
+            .collect())
+        .into();
         let mut session = session_with_active_combat(combat);
         session.active_combat.as_mut().unwrap().engine_state =
             EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {

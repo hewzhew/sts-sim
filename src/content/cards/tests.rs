@@ -3133,7 +3133,7 @@ fn watcher_delayed_energy_batch_matches_java_sources() {
     assert!(deus_play.is_empty());
 
     let mut draw_state = crate::test_support::blank_test_combat();
-    draw_state.zones.draw_pile = vec![deus_plus.clone()];
+    draw_state.zones.draw_pile = (vec![deus_plus.clone()]).into();
     crate::engine::action_handlers::execute_action(Action::DrawCards(1), &mut draw_state);
     assert_eq!(draw_state.zones.hand.len(), 1);
     assert_eq!(draw_state.zones.hand[0].id, CardId::DeusExMachina);
@@ -5667,7 +5667,7 @@ fn recursion_redo_action_evokes_then_rechannels_same_orb_instance() {
 fn streamline_reduce_cost_action_mutates_matching_combat_instances() {
     let mut state = crate::test_support::blank_test_combat();
     state.zones.hand = vec![CombatCard::new(CardId::Streamline, 200)];
-    state.zones.draw_pile = vec![CombatCard::new(CardId::Streamline, 200)];
+    state.zones.draw_pile = (vec![CombatCard::new(CardId::Streamline, 200)]).into();
     state.zones.discard_pile = vec![CombatCard::new(CardId::Streamline, 201)];
 
     crate::engine::action_handlers::execute_action(
@@ -5737,7 +5737,7 @@ fn rebound_power_skips_card_that_created_it_like_java_just_evoked() {
 fn rebound_power_moves_next_non_power_card_to_draw_pile_top() {
     let mut state = crate::test_support::blank_test_combat();
     state.zones.limbo = vec![CombatCard::new(CardId::StrikeB, 211)];
-    state.zones.draw_pile = vec![CombatCard::new(CardId::DefendB, 212)];
+    state.zones.draw_pile = (vec![CombatCard::new(CardId::DefendB, 212)]).into();
     crate::content::powers::store::set_powers_for(
         &mut state,
         0,
@@ -5817,7 +5817,7 @@ fn gash_action_increases_current_and_visible_claw_cards_only() {
     ];
     let mut upgraded_claw = CombatCard::new(CardId::Claw, 223);
     upgraded_claw.upgrades = 1;
-    state.zones.draw_pile = vec![upgraded_claw];
+    state.zones.draw_pile = (vec![upgraded_claw]).into();
     let mut damaged_claw = CombatCard::new(CardId::Claw, 224);
     damaged_claw.base_damage_override = Some(10);
     state.zones.discard_pile = vec![damaged_claw];
@@ -5857,7 +5857,7 @@ fn steam_barrier_modify_block_action_persists_combat_base_block_changes() {
     state.zones.hand = vec![CombatCard::new(CardId::SteamBarrier, 231)];
     let mut upgraded = CombatCard::new(CardId::SteamBarrier, 231);
     upgraded.upgrades = 1;
-    state.zones.draw_pile = vec![upgraded];
+    state.zones.draw_pile = (vec![upgraded]).into();
     state.zones.discard_pile = vec![CombatCard::new(CardId::SteamBarrier, 232)];
     state.zones.limbo = vec![CombatCard::new(CardId::SteamBarrier, 231)];
 
@@ -6718,9 +6718,10 @@ fn defect_more_uncommon_runtime_actions_match_java_use_methods() {
 fn aggregate_energy_reads_draw_pile_size_when_action_executes() {
     let mut state = crate::test_support::blank_test_combat();
     state.turn.energy = 0;
-    state.zones.draw_pile = (0..9)
+    state.zones.draw_pile = ((0..9)
         .map(|offset| CombatCard::new(CardId::StrikeB, 300 + offset))
-        .collect();
+        .collect::<Vec<_>>())
+    .into();
 
     crate::engine::action_handlers::execute_action(
         Action::AggregateEnergy { divide_amount: 4 },
@@ -8709,7 +8710,7 @@ fn force_field_definition_runtime_and_cost_hooks_match_java_sources() {
     let mut hook_state = crate::test_support::blank_test_combat();
     hook_state.zones.hand = vec![CombatCard::new(CardId::ForceField, 355)];
     hook_state.zones.discard_pile = vec![CombatCard::new(CardId::ForceField, 356)];
-    hook_state.zones.draw_pile = vec![CombatCard::new(CardId::ForceField, 357)];
+    hook_state.zones.draw_pile = (vec![CombatCard::new(CardId::ForceField, 357)]).into();
     crate::engine::action_handlers::execute_action(
         Action::PlayCardDirect {
             card: Box::new(CombatCard::new(CardId::Defragment, 358)),
@@ -8794,7 +8795,7 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
         CombatCard::new(CardId::StrikeB, 363),
         CombatCard::new(CardId::DefendB, 364),
     ];
-    shuffle_all_state.zones.draw_pile = vec![CombatCard::new(CardId::Zap, 365)];
+    shuffle_all_state.zones.draw_pile = (vec![CombatCard::new(CardId::Zap, 365)]).into();
     shuffle_all_state.zones.discard_pile = vec![
         CombatCard::new(CardId::Dualcast, 366),
         CombatCard::new(CardId::BallLightning, 367),
@@ -8838,11 +8839,12 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
     );
 
     let mut shuffle_draw_state = crate::test_support::blank_test_combat();
-    shuffle_draw_state.zones.draw_pile = vec![
+    shuffle_draw_state.zones.draw_pile = (vec![
         CombatCard::new(CardId::Zap, 368),
         CombatCard::new(CardId::Dualcast, 369),
         CombatCard::new(CardId::StrikeB, 370),
-    ];
+    ])
+    .into();
     let mut expected_rng = shuffle_draw_state.rng.clone();
     let mut expected_java_draw = shuffle_draw_state.zones.draw_pile.clone();
     expected_java_draw.reverse();
@@ -8984,10 +8986,11 @@ fn scrape_definition_runtime_and_follow_up_match_java_sources() {
     assert_eq!(follow_up.turn.counters.cards_discarded_this_turn, 1);
 
     let mut draw_history = crate::test_support::blank_test_combat();
-    draw_history.zones.draw_pile = vec![
+    draw_history.zones.draw_pile = (vec![
         CombatCard::new(CardId::DefendB, 377),
         CombatCard::new(CardId::Turbo, 378),
-    ];
+    ])
+    .into();
     draw_history.runtime.last_drawn_cards = vec![DrawnCardRecord {
         card_uuid: 9998,
         card_id: CardId::StrikeB,
@@ -9042,10 +9045,11 @@ fn seek_definition_runtime_and_draw_pile_selection_match_java_sources() {
     );
 
     let mut choose_state = crate::test_support::blank_test_combat();
-    choose_state.zones.draw_pile = vec![
+    choose_state.zones.draw_pile = (vec![
         CombatCard::new(CardId::StrikeB, 381),
         CombatCard::new(CardId::DefendB, 382),
-    ];
+    ])
+    .into();
     let choose_actions = resolve_card_play(
         CardId::Seek,
         &choose_state,
@@ -9065,10 +9069,11 @@ fn seek_definition_runtime_and_draw_pile_selection_match_java_sources() {
     );
 
     let mut auto_state = crate::test_support::blank_test_combat();
-    auto_state.zones.draw_pile = vec![
+    auto_state.zones.draw_pile = (vec![
         CombatCard::new(CardId::StrikeB, 384),
         CombatCard::new(CardId::DefendB, 385),
-    ];
+    ])
+    .into();
     let mut plus = CombatCard::new(CardId::Seek, 386);
     plus.upgrades = 1;
     let auto_actions = resolve_card_play(CardId::Seek, &auto_state, &plus, None);
@@ -9804,7 +9809,7 @@ fn genetic_algorithm_definition_runtime_and_misc_growth_match_java_sources() {
 
     let mut grown = crate::test_support::blank_test_combat();
     grown.zones.hand = vec![CombatCard::new(CardId::GeneticAlgorithm, 414)];
-    grown.zones.draw_pile = vec![CombatCard::new(CardId::GeneticAlgorithm, 414)];
+    grown.zones.draw_pile = (vec![CombatCard::new(CardId::GeneticAlgorithm, 414)]).into();
     crate::engine::action_handlers::execute_action(
         Action::ModifyCardMisc {
             card_uuid: 414,
@@ -10414,7 +10419,7 @@ fn blood_for_blood_cost_updates_when_player_takes_hp_loss() {
     state.zones.discard_pile = vec![CombatCard::new(CardId::BloodForBlood, 61)];
     let mut upgraded = CombatCard::new(CardId::BloodForBlood, 62);
     upgraded.upgrades = 1;
-    state.zones.draw_pile = vec![upgraded];
+    state.zones.draw_pile = (vec![upgraded]).into();
 
     crate::engine::action_handlers::damage::handle_lose_hp(0, 1, true, &mut state);
 
@@ -11055,7 +11060,8 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     let mut hand_skill = CombatCard::new(CardId::Defend, 910);
     hand_skill.cost_modifier = 2;
     corruption_apply_state.zones.hand = vec![hand_skill];
-    corruption_apply_state.zones.draw_pile = vec![CombatCard::new(CardId::ShrugItOff, 911)];
+    corruption_apply_state.zones.draw_pile =
+        (vec![CombatCard::new(CardId::ShrugItOff, 911)]).into();
     corruption_apply_state.zones.discard_pile = vec![CombatCard::new(CardId::BurningPact, 912)];
     corruption_apply_state.zones.exhaust_pile = vec![CombatCard::new(CardId::PowerThrough, 913)];
     corruption_apply_state.zones.limbo = vec![CombatCard::new(CardId::TrueGrit, 914)];
@@ -11228,7 +11234,7 @@ fn corruption_power_on_apply_modifies_skill_costs_in_java_piles() {
         CombatCard::new(CardId::Defend, 120),
         CombatCard::new(CardId::Strike, 121),
     ];
-    state.zones.draw_pile = vec![CombatCard::new(CardId::Armaments, 122)];
+    state.zones.draw_pile = (vec![CombatCard::new(CardId::Armaments, 122)]).into();
     state.zones.discard_pile = vec![CombatCard::new(CardId::Disarm, 123)];
     state.zones.exhaust_pile = vec![CombatCard::new(CardId::BurningPact, 124)];
 
@@ -11887,7 +11893,7 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     dagger_target.current_hp = 5;
     dagger_normal.entities.monsters = vec![dagger_target];
     dagger_normal.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 900)];
-    dagger_normal.zones.draw_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.draw_pile = (vec![CombatCard::new(CardId::RitualDagger, 900)]).into();
     dagger_normal.zones.discard_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
     dagger_normal.zones.exhaust_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
     dagger_normal.zones.limbo = vec![CombatCard::new(CardId::RitualDagger, 900)];
@@ -12424,7 +12430,7 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
     second.slot = 1;
     played_havoc_state.entities.monsters = vec![first, second];
     played_havoc_state.zones.hand = vec![CombatCard::new(CardId::Havoc, 270)];
-    played_havoc_state.zones.draw_pile = vec![CombatCard::new(CardId::Clash, 271)];
+    played_havoc_state.zones.draw_pile = (vec![CombatCard::new(CardId::Clash, 271)]).into();
     assert_eq!(played_havoc_state.rng.card_random_rng.counter, 0);
 
     crate::engine::action_handlers::cards::handle_play_card_from_hand(
@@ -12931,7 +12937,7 @@ fn ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods() {
         perfected_strike_plus.clone(),
         CombatCard::new(CardId::Strike, 292),
     ];
-    state.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 293)];
+    state.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 293)]).into();
     state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 294)];
     state.zones.limbo = vec![CombatCard::new(CardId::Strike, 295)];
 
@@ -15087,7 +15093,7 @@ fn upgraded_forethought_opens_any_number_selection_at_execution() {
 #[test]
 fn thinking_ahead_uses_java_use_time_hand_visibility() {
     let mut direct_empty_hand = crate::test_support::blank_test_combat();
-    direct_empty_hand.zones.draw_pile = vec![CombatCard::new(CardId::Strike, 833)];
+    direct_empty_hand.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 833)]).into();
     let thinking = CombatCard::new(CardId::ThinkingAhead, 834);
 
     let direct_actions = resolve_card_play_with_context(

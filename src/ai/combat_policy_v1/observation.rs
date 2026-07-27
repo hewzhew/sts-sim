@@ -306,11 +306,12 @@ mod tests {
     #[test]
     fn draw_pile_order_is_hidden_without_frozen_eye_but_card_set_is_public() {
         let mut combat = crate::test_support::blank_test_combat();
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Bash, 1),
             CombatCard::new(CardId::Strike, 2),
             CombatCard::new(CardId::Defend, 3),
-        ];
+        ])
+        .into();
 
         let observation = combat_public_observation_v1(&combat);
 
@@ -341,11 +342,12 @@ mod tests {
             .entities
             .player
             .add_relic(RelicState::new(RelicId::FrozenEye));
-        combat.zones.draw_pile = vec![
+        combat.zones.draw_pile = (vec![
             CombatCard::new(CardId::Bash, 1),
             CombatCard::new(CardId::Strike, 2),
             CombatCard::new(CardId::Defend, 3),
-        ];
+        ])
+        .into();
 
         let observation = combat_public_observation_v1(&combat);
 

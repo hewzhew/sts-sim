@@ -108,7 +108,7 @@ pub fn handle_shuffle_all_into_draw(state: &mut CombatState) {
     let mut moved = std::mem::take(&mut state.zones.discard_pile);
     moved.reverse();
     moved.append(&mut state.zones.draw_pile);
-    state.zones.draw_pile = moved;
+    state.zones.draw_pile = moved.into();
 }
 
 pub fn handle_shuffle_draw_pile(trigger_relics: bool, state: &mut CombatState) {
