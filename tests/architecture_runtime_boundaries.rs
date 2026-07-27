@@ -168,6 +168,25 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 }
 
 #[test]
+fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
+    for module in [
+        "atomic_policy_searches.rs",
+        "combat_case_fold_solved_suffix.rs",
+        "combat_plan_diagnostics.rs",
+        "v2_capability_audit.rs",
+    ] {
+        let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        assert!(
+            !source.contains("use super::*;"),
+            "{} must name its oracle-lab host dependencies explicitly",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn oracle_lab_names_its_runtime_dependency_directly() {
     let manifest = std::fs::read_to_string("crates/sts_oracle_lab/Cargo.toml")
         .expect("read oracle laboratory manifest");

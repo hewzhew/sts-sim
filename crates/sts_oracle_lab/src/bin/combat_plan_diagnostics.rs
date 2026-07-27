@@ -1,5 +1,18 @@
+use std::path::PathBuf;
+
+use clap::Args;
+use serde_json::json;
+use sts_combat_strategy::{awakened_one_combat_plan_v1, awakened_one_plan_transition_v1};
+use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::sim::combat::{
+    combat_terminal, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
+use sts_oracle_runtime::sim::combat_action::combat_action_key;
+
 use super::combat_trace_view::combat_action_label;
-use super::*;
+use super::exact_turn_corridor::load_action_segments as load_combat_action_segments;
+use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePlanAnnotationsArgs {

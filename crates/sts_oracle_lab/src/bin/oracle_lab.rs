@@ -53,37 +53,26 @@ use oracle_cli::Command;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, fold_verified_suffix_through_turn_predecessors,
-    generate_depth_beam_turn_options, rank_layered_combat_lineage_parents,
-    search_depth_beam_agenda_witness, AtomicLevinRerooting, AtomicLevinWitnessConfig,
-    AtomicLevinWitnessQuantum, AtomicLevinWitnessSession, AtomicTurnPortfolioConfig,
-    AtomicTurnPortfolioEntryReport, AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession,
-    CombatDecisionRoot, CombatGuideLaneId, CombatPlanningQuantum, CombatPolicyChoice,
-    DepthBeamAgendaBudget, DepthBeamAgendaConfig, DepthBeamTurnBudget, DepthBeamTurnConfig,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, PolicyDiscrepancyConfig, PolicyDiscrepancyQuantum,
-    PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig, SolvedSuffixFoldConfig,
-    SolvedSuffixFoldStatus, TurnOptionAction, TurnOptionGenerationStatus,
-    TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
+    combat_plan_state_guide_policy_v1, generate_depth_beam_turn_options,
+    rank_layered_combat_lineage_parents, search_depth_beam_agenda_witness, AtomicLevinRerooting,
+    AtomicLevinWitnessConfig, AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport,
+    AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession, CombatDecisionRoot, CombatGuideLaneId,
+    CombatPlanningQuantum, CombatPolicyChoice, DepthBeamAgendaBudget, DepthBeamAgendaConfig,
+    DepthBeamTurnBudget, DepthBeamTurnConfig, LayeredCombatCandidateRaceConfig,
+    LayeredCombatCandidateRaceSession, LayeredCombatLineagePortfolioConfig,
+    LayeredCombatLineagePortfolioSession, LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum,
+    LayeredCombatWitnessSession, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    LocalTurnGraphWitnessSession, OracleCombatWitnessConfig, OracleCombatWitnessQuantum,
+    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession, PolicyDiscrepancyConfig,
+    PolicyDiscrepancyQuantum, PolicyDiscrepancySession, PolicyDiscrepancyTurnMacroConfig,
+    TurnOptionAction, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
+    TurnOptionGeneratorSession,
 };
-use sts_combat_strategy::{awakened_one_combat_plan_v1, awakened_one_plan_transition_v1};
-use sts_oracle_runtime::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-};
-use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::root_player_turn_action_policy_v1;
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
     GUIDE_LEARNED_BOUNDARY_VALUE,
-};
-use sts_oracle_runtime::eval::combat_search_v2::{
-    run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
-    CombatSearchV2RunOptions,
 };
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
@@ -93,9 +82,7 @@ use sts_oracle_runtime::runtime::branch::{
     load_oracle_run_continuation_v1, save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1,
     OracleRunConfig,
 };
-use sts_oracle_runtime::sim::combat::{
-    combat_terminal, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
-};
+use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 

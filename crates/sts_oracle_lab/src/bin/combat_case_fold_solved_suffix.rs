@@ -1,4 +1,19 @@
-use super::*;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use clap::Args;
+use serde_json::json;
+use sts_combat_planner::{
+    fold_verified_suffix_through_turn_predecessors, LayeredCombatWitnessConfig,
+    SolvedSuffixFoldConfig, SolvedSuffixFoldStatus, TurnOptionGeneratorConfig,
+};
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
+
+use super::exact_turn_corridor::{
+    load as load_exact_turn_corridor, load_action_segments as load_combat_action_segments,
+};
+use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCaseFoldSolvedSuffixArgs {
