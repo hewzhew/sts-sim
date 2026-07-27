@@ -276,6 +276,8 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
         wpr_instance = $InstanceName
         git_commit = [string] $Request.git_commit
         git_dirty = [bool] $Request.git_dirty
+        symbol_key = [string] $Request.symbol_key
+        cached_pdb = [string] $Request.cached_pdb
         capture_succeeded = ($null -eq $CaptureError -and $null -eq $StopError)
         capture_error = if ($null -eq $CaptureError) { $null } else { $CaptureError.ToString() }
         stop_error = $StopError
