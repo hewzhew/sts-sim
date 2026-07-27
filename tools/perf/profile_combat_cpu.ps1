@@ -35,6 +35,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "combat_contract_workload.ps1")
+. (Join-Path $PSScriptRoot "native_symbol_cache.ps1")
 
 function Test-IsAdministrator {
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -329,6 +330,14 @@ try {
         throw "symbolized combat contract is missing at '$Executable'; rerun without -SkipBuild"
     }
 
+    # Cache this exact build's PDB before another build can replace it. PerfView
+    # otherwise asks its GUI-backed PDB matcher to inspect the adjacent file;
+    # that helper is not reliable from a headless PowerShell process. The
+    # symbol-server key is read from the executable's RSDS record, so every
+    # captured build remains independently recoverable.
+    $PublishedSymbols = Publish-NativePdbToSymbolCache `
+        $Executable (Join-Path $ProfileRoot "symbol-cache")
+
     $WorkloadArguments = Get-StsCombatContractWorkloadArguments $CasePath
     & $Executable @WorkloadArguments *> $null
     if ($LASTEXITCODE -ne 0) {
@@ -357,6 +366,8 @@ try {
         metadata_path = $MetadataPath
         git_commit = $GitCommit
         git_dirty = $GitDirty
+        symbol_key = $PublishedSymbols.identity.symbol_key
+        cached_pdb = $PublishedSymbols.cached
     }
     $Request | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $RequestPath -Encoding utf8
 
@@ -364,6 +375,7 @@ try {
     Write-Host "case: $CasePath"
     Write-Host "iterations: $Iterations"
     Write-Host "trace: $TracePath"
+    Write-Host "symbols: $($PublishedSymbols.identity.symbol_key)"
     if ($PrepareOnly) {
         Remove-Item -LiteralPath $RequestPath -Force
         Write-Host "prepare-only: WPR was not started and no UAC request was made"

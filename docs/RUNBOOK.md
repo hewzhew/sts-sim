@@ -234,6 +234,12 @@ processes, so unrelated machine activity cannot distort the reported hotspot
 percentages. The portable Microsoft-signed PerfView executable remains an
 ignored local analysis dependency under `.profiles\tools`.
 
+Each capture publishes its matching Rust PDB into an ignored, GUID-keyed local
+symbol cache before WPR starts. This keeps old traces symbolizable after later
+builds and avoids PerfView's unreliable adjacent-PDB matcher. The summarizer
+rejects reports with less than 95% resolved executable-exclusive samples rather
+than emitting a plausible-looking hotspot table made from unknown symbols.
+
 For the same canonical workload without WPR or elevation, use:
 
 ```powershell

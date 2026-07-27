@@ -21,6 +21,8 @@ param(
     [int] $Top = 20,
     [ValidateRange(10, 600)]
     [int] $ExportTimeoutSeconds = 180,
+    [ValidateRange(1, 100)]
+    [double] $MinResolvedCombatPercent = 95,
     [switch] $ForceExport
 )
 
@@ -55,6 +57,7 @@ function Invoke-PerfViewCsvExport(
     [string] $Executable,
     [string] $TracePath,
     [string] $LogPath,
+    [string] $SymbolCacheRoot,
     [int] $TimeoutSeconds
 ) {
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
@@ -63,6 +66,10 @@ function Invoke-PerfViewCsvExport(
     $StartInfo.CreateNoWindow = $true
     $StartInfo.RedirectStandardOutput = $true
     $StartInfo.RedirectStandardError = $true
+    # Use only immutable, build-keyed project symbols. This bypasses PerfView's
+    # intermittent GUI-backed adjacent-PDB matcher and prevents a later build
+    # from silently symbolizing an older trace with the wrong PDB.
+    $StartInfo.Environment["_NT_SYMBOL_PATH"] = "SRV*$SymbolCacheRoot"
     foreach ($Argument in @(
             "/AcceptEULA",
             "/LogFile=$LogPath",
@@ -120,6 +127,7 @@ $RepoRoot = [IO.Path]::GetFullPath(
     (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
 $ProfileRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot ".profiles"))
+$SymbolCacheRoot = [IO.Path]::GetFullPath((Join-Path $ProfileRoot "symbol-cache"))
 $TracePath = if ([IO.Path]::IsPathRooted($Trace)) {
     [IO.Path]::GetFullPath($Trace)
 }
@@ -152,7 +160,7 @@ if ($NeedsExport) {
         Remove-Item -LiteralPath $CsvPath -Force
     }
     Invoke-PerfViewCsvExport `
-        $PerfViewPath $TracePath $LogPath $ExportTimeoutSeconds
+        $PerfViewPath $TracePath $LogPath $SymbolCacheRoot $ExportTimeoutSeconds
 }
 if (-not (Test-Path -LiteralPath $CsvPath -PathType Leaf)) {
     throw "PerfView completed without producing '$CsvPath'"
@@ -170,6 +178,37 @@ if ($CombatSamples -le 0) {
     throw "combat_contract process roots contain no CPU samples"
 }
 $CombatFunctions = @($Rows | Where-Object Name -Match '(^|\\)combat_contract!')
+$UnresolvedCombatFunctions = @($CombatFunctions |
+        Where-Object Name -Match 'combat_contract!\?')
+$ResolvedCombatFunctions = @($CombatFunctions |
+        Where-Object Name -NotMatch 'combat_contract!\?')
+$ResolvedExclusiveSamples = ($ResolvedCombatFunctions |
+        ForEach-Object { Convert-ToNumber $_.Exc } |
+        Measure-Object -Sum).Sum
+$UnresolvedExclusiveSamples = ($UnresolvedCombatFunctions |
+        ForEach-Object { Convert-ToNumber $_.Exc } |
+        Measure-Object -Sum).Sum
+if ($null -eq $ResolvedExclusiveSamples) {
+    $ResolvedExclusiveSamples = 0
+}
+if ($null -eq $UnresolvedExclusiveSamples) {
+    $UnresolvedExclusiveSamples = 0
+}
+$SymbolizedExclusiveSamples = $ResolvedExclusiveSamples + $UnresolvedExclusiveSamples
+$ResolvedCombatPercent = if ($SymbolizedExclusiveSamples -le 0) {
+    0
+} else {
+    100.0 * $ResolvedExclusiveSamples / $SymbolizedExclusiveSamples
+}
+if ($ResolvedCombatPercent -lt $MinResolvedCombatPercent) {
+    if (Test-Path -LiteralPath $SummaryPath -PathType Leaf) {
+        Remove-Item -LiteralPath $SummaryPath -Force
+    }
+    throw (
+        "combat symbols resolved only {0:N2}% of executable-exclusive samples; " +
+        "required at least {1:N2}%. The trace is valid, but its hotspot report is not."
+    ) -f $ResolvedCombatPercent, $MinResolvedCombatPercent
+}
 $InclusiveFunctions = @($CombatFunctions | Where-Object Name -NotMatch (
         'combat_contract!(?:__scrt_common_main_seh|main$|std::rt::|' +
         'std::sys::backtrace::|core::ops::function::FnOnce::call_once|' +
@@ -197,6 +236,9 @@ $Summary = [ordered]@{
     perfview_sha256 = (Get-FileHash -LiteralPath $PerfViewPath -Algorithm SHA256).Hash
     combat_processes = $CombatProcesses.Count
     combat_samples = [int] $CombatSamples
+    resolved_combat_exclusive_samples = [int] $ResolvedExclusiveSamples
+    unresolved_combat_exclusive_samples = [int] $UnresolvedExclusiveSamples
+    resolved_combat_percent = [math]::Round($ResolvedCombatPercent, 2)
     top_exclusive = $TopExclusive
     top_inclusive = $TopInclusive
 }
@@ -204,6 +246,7 @@ $Summary | ConvertTo-Json -Depth 8 |
     Set-Content -LiteralPath $SummaryPath -Encoding utf8
 
 Write-Host "combat CPU samples: $([int] $CombatSamples) across $($CombatProcesses.Count) processes"
+Write-Host "resolved combat symbols: $([math]::Round($ResolvedCombatPercent, 2))%"
 Write-Host "top exclusive"
 $TopExclusive | Format-Table samples, combat_percent, symbol -AutoSize
 Write-Host "top inclusive"
