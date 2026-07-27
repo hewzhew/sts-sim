@@ -358,7 +358,7 @@ fn active_combat_master_deck(
     session
         .active_combat
         .as_ref()
-        .map(|active| active.combat_state.meta.master_deck_snapshot.clone())
+        .map(|active| active.combat_state.meta.master_deck_snapshot.to_vec())
         .unwrap_or_default()
 }
 

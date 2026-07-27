@@ -47,7 +47,7 @@ fn focus_with_action(action_key: String, input: ClientInput) -> CombatReviewFocu
 fn records_played_triggered_scaling_card_from_focus_replay() {
     let mut combat = blank_test_combat();
     let demon_form = CombatCard::new(CardId::DemonForm, 42);
-    combat.meta.master_deck_snapshot = vec![demon_form.clone()];
+    combat.meta.master_deck_snapshot = vec![demon_form.clone()].into();
     combat.zones.hand = vec![demon_form];
     combat.entities.monsters = vec![test_monster(
         sts_simulator::content::monsters::EnemyId::Cultist,

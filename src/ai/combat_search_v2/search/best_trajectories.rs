@@ -69,7 +69,7 @@ mod tests {
         rich_combat.entities.player.current_hp = 80;
         let mut dagger = CombatCard::new(CardId::RitualDagger, 41);
         dagger.misc_value = 50;
-        rich_combat.meta.master_deck_snapshot = vec![dagger];
+        rich_combat.meta.master_deck_snapshot = vec![dagger].into();
         let mut rich = SearchNode::root(EngineState::GameOver(RunResult::Victory), rich_combat);
         rich.combat.entities.player.current_hp = 60;
 

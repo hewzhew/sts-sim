@@ -38,7 +38,7 @@ fn session_with_combat(mut combat: crate::runtime::combat::CombatState) -> RunCo
     session.run_state.current_hp = combat.entities.player.current_hp;
     session.run_state.max_hp = combat.entities.player.max_hp;
     session.run_state.gold = combat.entities.player.gold;
-    session.run_state.master_deck = combat.meta.master_deck_snapshot.clone();
+    session.run_state.master_deck = combat.meta.master_deck_snapshot.to_vec();
     session.run_state.relics = combat.entities.player.relics.clone();
     session.run_state.potions = combat.entities.potions.clone();
     session.run_state.rng_pool = combat.rng.pool.clone();
@@ -131,7 +131,7 @@ fn fixture_line_with_neutral_then_curse_input() -> (
     CombatSearchV2TrajectoryReport,
 ) {
     let mut combat = crate::test_support::blank_test_combat();
-    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 7)];
+    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 7)].into();
     combat.zones.hand = vec![
         CombatCard::new(CardId::Defend, 11),
         CombatCard::new(CardId::Strike, 12),
@@ -179,7 +179,7 @@ fn fixture_cutpoint_session() -> (RunControlSession, CombatPosition) {
     let mut combat = crate::test_support::blank_test_combat();
     let mut card = CombatCard::new(CardId::RitualDagger, 21);
     card.misc_value = 15;
-    combat.meta.master_deck_snapshot = vec![card];
+    combat.meta.master_deck_snapshot = vec![card].into();
     combat.entities.monsters = vec![planned_jaw_worm()];
     let session = session_with_combat(combat);
     let position = session
@@ -233,7 +233,7 @@ fn fixture_located_cutpoint(retained_index: usize, label: &str) -> LocatedBurden
 
 fn fixture_writhing_mass_reactive_cutpoint() -> LocatedBurdenCutpoint {
     let mut combat = crate::test_support::blank_test_combat();
-    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 31)];
+    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 31)].into();
     combat.zones.hand = vec![CombatCard::new(CardId::Strike, 31)];
     combat.update_hand_cards();
 

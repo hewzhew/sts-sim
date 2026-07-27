@@ -1,6 +1,39 @@
 use super::*;
 use crate::runtime::action::ActionInfo;
 use std::collections::VecDeque;
+use std::sync::Arc;
+
+#[test]
+fn combat_clone_shares_master_deck_until_a_branch_mutates_it() {
+    let mut original = crate::test_support::blank_test_combat();
+    original.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 7)].into();
+
+    let mut branch = original.clone();
+    assert!(Arc::ptr_eq(
+        &original.meta.master_deck_snapshot,
+        &branch.meta.master_deck_snapshot
+    ));
+
+    Arc::make_mut(&mut branch.meta.master_deck_snapshot)[0].upgrades = 1;
+    assert!(!Arc::ptr_eq(
+        &original.meta.master_deck_snapshot,
+        &branch.meta.master_deck_snapshot
+    ));
+    assert_eq!(original.meta.master_deck_snapshot[0].upgrades, 0);
+    assert_eq!(branch.meta.master_deck_snapshot[0].upgrades, 1);
+}
+
+#[test]
+fn shared_master_deck_keeps_the_existing_json_array_shape() {
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Bash, 9)].into();
+
+    let json = serde_json::to_value(&combat).expect("combat state should serialize");
+    assert!(json["meta"]["master_deck_snapshot"].is_array());
+    let restored: CombatState =
+        serde_json::from_value(json).expect("combat state should deserialize");
+    assert_eq!(restored, combat);
+}
 
 #[test]
 fn card_zones_draw_pile_top_is_index_zero() {

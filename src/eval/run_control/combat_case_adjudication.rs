@@ -95,7 +95,7 @@ pub(super) fn project_combat_case_session(case: &CombatCase) -> Result<RunContro
     session.run_state.current_hp = case.run.hp;
     session.run_state.max_hp = case.run.max_hp;
     session.run_state.gold = case.run.gold;
-    session.run_state.master_deck = case.position.combat.meta.master_deck_snapshot.clone();
+    session.run_state.master_deck = case.position.combat.meta.master_deck_snapshot.to_vec();
     session.run_state.relics = case.position.combat.entities.player.relics.clone();
     session.run_state.potions = case.position.combat.entities.potions.clone();
     session.run_state.rng_pool = case.position.combat.rng.pool.clone();
@@ -159,7 +159,7 @@ mod tests {
     fn projected_case() -> CombatCase {
         let mut combat = crate::test_support::blank_test_combat();
         combat.meta.player_class = "Ironclad".to_string();
-        combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 41)];
+        combat.meta.master_deck_snapshot = vec![CombatCard::new(CardId::Strike, 41)].into();
         combat.entities.player.current_hp = 37;
         combat.entities.player.max_hp = 61;
         combat.entities.player.gold = 123;
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(session.run_state.gold, 123);
         assert_eq!(
             session.run_state.master_deck,
-            case.position.combat.meta.master_deck_snapshot
+            case.position.combat.meta.master_deck_snapshot.as_ref()
         );
         assert_eq!(
             session.run_state.relics,

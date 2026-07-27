@@ -109,10 +109,10 @@ fn win_candidate_frontier_does_not_collapse_distinct_persistent_payoffs() {
 
     let mut dagger = CombatCard::new(CardId::RitualDagger, 41);
     dagger.misc_value = 15;
-    gold.combat.meta.master_deck_snapshot = vec![dagger.clone()];
+    gold.combat.meta.master_deck_snapshot = vec![dagger.clone()].into();
 
     let mut ritual = test_node();
-    ritual.combat.meta.master_deck_snapshot = vec![dagger];
+    ritual.combat.meta.master_deck_snapshot = vec![dagger].into();
     ritual
         .combat
         .meta

@@ -2863,7 +2863,8 @@ mod tests {
         combat.meta.master_deck_snapshot = vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::Reaper,
             92,
-        )];
+        )]
+        .into();
         assert_eq!(
             budgets.for_session(&session).satisfaction,
             Some(crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMost(0)),
@@ -2940,7 +2941,8 @@ mod tests {
         combat.meta.master_deck_snapshot = vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::HandOfGreed,
             91,
-        )];
+        )]
+        .into();
         session.active_combat = Some(ActiveCombat::new(
             crate::state::core::EngineState::CombatPlayerTurn,
             combat,

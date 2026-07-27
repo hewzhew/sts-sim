@@ -45,7 +45,7 @@ impl AwakenedOneDeckSignals {
                 .cloned()
                 .collect()
         } else {
-            combat.meta.master_deck_snapshot.clone()
+            combat.meta.master_deck_snapshot.to_vec()
         };
         let has_runic_dome = combat
             .entities
