@@ -15,6 +15,10 @@ directory.
 .EXAMPLE
 .\tools\perf\profile_combat_cpu.ps1 -PrepareOnly
 Builds and validates the workload without starting WPR or requesting UAC.
+
+.EXAMPLE
+.\tools\perf\profile_combat_cpu.ps1 -CompressTrace
+Trades a slower WPR stop for a smaller ETL file.
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -23,6 +27,7 @@ param(
     [int] $Iterations = 24,
     [switch] $SkipBuild,
     [switch] $PrepareOnly,
+    [switch] $CompressTrace,
     [Parameter(DontShow = $true)]
     [string] $ElevatedRequest
 )
@@ -50,6 +55,56 @@ function Get-WorkloadArguments([string] $CasePath) {
     )
 }
 
+function Invoke-WprCommand(
+    [string[]] $Arguments,
+    [ValidateRange(1, 300)]
+    [int] $TimeoutSeconds
+) {
+    $StartInfo = [Diagnostics.ProcessStartInfo]::new()
+    $StartInfo.FileName = (Get-Command wpr.exe -ErrorAction Stop).Source
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardInput = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    foreach ($Argument in $Arguments) {
+        $StartInfo.ArgumentList.Add($Argument)
+    }
+
+    $Process = [Diagnostics.Process]::new()
+    $Process.StartInfo = $StartInfo
+    if (-not $Process.Start()) {
+        throw "failed to start wpr.exe"
+    }
+    $StandardOutput = $Process.StandardOutput.ReadToEndAsync()
+    $StandardError = $Process.StandardError.ReadToEndAsync()
+    # WPR asks whether it may stop an incompatible existing recording. Closing
+    # stdin after an explicit "N" makes the safe answer deterministic instead
+    # of leaving an invisible elevated process blocked on a console prompt.
+    $Process.StandardInput.WriteLine("N")
+    $Process.StandardInput.Close()
+
+    $TimedOut = -not $Process.WaitForExit($TimeoutSeconds * 1000)
+    if ($TimedOut) {
+        try {
+            $Process.Kill($true)
+        }
+        catch {
+            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        }
+        $Process.WaitForExit()
+    }
+
+    return [pscustomobject]@{
+        timed_out = $TimedOut
+        exit_code = if ($TimedOut) { $null } else { $Process.ExitCode }
+        output = @(
+            $StandardOutput.GetAwaiter().GetResult(),
+            $StandardError.GetAwaiter().GetResult()
+        ).Where({ -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    }
+}
+
 function Invoke-ElevatedCapture([string] $RequestPath) {
     if (-not (Test-IsAdministrator)) {
         throw "the WPR capture child did not receive an elevated Windows token"
@@ -58,6 +113,9 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
     $ScriptRepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $RepoRoot = [IO.Path]::GetFullPath($ScriptRepoRoot)
     $ProfileRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot ".profiles"))
+    $WprProfilePath = [IO.Path]::GetFullPath(
+        (Join-Path $RepoRoot "tools\perf\sts_combat_cpu.wprp")
+    )
     $RequestPath = [IO.Path]::GetFullPath($RequestPath)
     if (-not $RequestPath.StartsWith($ProfileRoot + [IO.Path]::DirectorySeparatorChar,
             [StringComparison]::OrdinalIgnoreCase)) {
@@ -76,16 +134,24 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
     $ExpectedExecutable = [IO.Path]::GetFullPath(
         (Join-Path $RepoRoot "target\profiling\combat_contract.exe")
     )
+    $RequestedWprProfilePath = [IO.Path]::GetFullPath([string] $Request.wpr_profile_path)
     $CasePath = [IO.Path]::GetFullPath([string] $Request.case_path)
     $TracePath = [IO.Path]::GetFullPath([string] $Request.trace_path)
     $MetadataPath = [IO.Path]::GetFullPath([string] $Request.metadata_path)
     $Iterations = [int] $Request.iterations
+    $CompressTrace = [bool] $Request.compress_trace
 
     if ($Executable -ne $ExpectedExecutable) {
         throw "profiling request may execute only '$ExpectedExecutable'"
     }
+    if ($RequestedWprProfilePath -ne $WprProfilePath) {
+        throw "profiling request may use only '$WprProfilePath'"
+    }
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         throw "symbolized combat contract is missing at '$Executable'"
+    }
+    if (-not (Test-Path -LiteralPath $WprProfilePath -PathType Leaf)) {
+        throw "STS combat WPR profile is missing at '$WprProfilePath'"
     }
     if (-not (Test-Path -LiteralPath $CasePath -PathType Leaf)) {
         throw "combat case is missing at '$CasePath'"
@@ -107,32 +173,78 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
     $CaptureError = $null
     $StopError = $null
     $StartedAt = [DateTimeOffset]::UtcNow
+    $StartDurationMs = $null
+    $WorkloadDurationMs = $null
+    $StopDurationMs = $null
 
     try {
-        $StartOutput = @(& wpr.exe -start CPU -filemode -instancename $InstanceName 2>&1)
-        if ($LASTEXITCODE -ne 0) {
-            throw "WPR start failed: $($StartOutput -join [Environment]::NewLine)"
+        # A short CPU capture fits comfortably in WPR's bounded memory mode;
+        # file mode is intentionally avoided because it creates an unbounded
+        # temporary trace while the workload runs.
+        $StartTimer = [Diagnostics.Stopwatch]::StartNew()
+        $StartResult = Invoke-WprCommand `
+            -Arguments @(
+                "-start", "$WprProfilePath!StsCombatCpu.Verbose",
+                "-instancename", $InstanceName
+            ) `
+            -TimeoutSeconds 20
+        $StartTimer.Stop()
+        $StartDurationMs = $StartTimer.Elapsed.TotalMilliseconds
+        if ($StartResult.timed_out) {
+            throw "WPR start exceeded 20 seconds and its process was terminated"
+        }
+        if ($StartResult.exit_code -ne 0) {
+            throw "WPR start failed without replacing any existing recording: $($StartResult.output)"
         }
         $RecordingStarted = $true
 
+        $WorkloadTimer = [Diagnostics.Stopwatch]::StartNew()
         for ($Index = 1; $Index -le $Iterations; $Index++) {
             & $Executable @WorkloadArguments *> $null
             if ($LASTEXITCODE -ne 0) {
                 throw "combat contract failed during profiled iteration $Index/$Iterations"
             }
         }
+        $WorkloadTimer.Stop()
+        $WorkloadDurationMs = $WorkloadTimer.Elapsed.TotalMilliseconds
     }
     catch {
         $CaptureError = $_
     }
     finally {
         if ($RecordingStarted) {
-            $StopOutput = @(& wpr.exe -stop $TracePath `
-                    "sts_simulator symbolized combat CPU profile" `
-                    -compress -instancename $InstanceName 2>&1)
-            if ($LASTEXITCODE -ne 0) {
-                $StopError = "WPR stop failed: $($StopOutput -join [Environment]::NewLine)"
-                & wpr.exe -cancel -instancename $InstanceName *> $null
+            $StopArguments = [Collections.Generic.List[string]]::new()
+            foreach ($Argument in @(
+                    "-stop", $TracePath,
+                    "sts_simulator_symbolized_combat_CPU_profile"
+                )) {
+                $StopArguments.Add($Argument)
+            }
+            if ($CompressTrace) {
+                $StopArguments.Add("-compress")
+            }
+            # Rust PDBs already exist beside the profiled executable. Dynamic
+            # NGEN/embedded-PDB generation is irrelevant here and makes WPR's
+            # stop phase substantially slower on a desktop with .NET apps.
+            $StopArguments.Add("-skipPdbGen")
+            $StopArguments.Add("-instancename")
+            $StopArguments.Add($InstanceName)
+
+            $StopTimer = [Diagnostics.Stopwatch]::StartNew()
+            $StopResult = Invoke-WprCommand `
+                -Arguments $StopArguments.ToArray() `
+                -TimeoutSeconds 90
+            $StopTimer.Stop()
+            $StopDurationMs = $StopTimer.Elapsed.TotalMilliseconds
+            if ($StopResult.timed_out -or $StopResult.exit_code -ne 0) {
+                $StopError = if ($StopResult.timed_out) {
+                    "WPR stop exceeded 90 seconds"
+                } else {
+                    "WPR stop failed: $($StopResult.output)"
+                }
+                Invoke-WprCommand `
+                    -Arguments @("-cancel", "-instancename", $InstanceName) `
+                    -TimeoutSeconds 20 | Out-Null
             }
         }
     }
@@ -145,11 +257,34 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
             ([DateTimeOffset]::UtcNow - $StartedAt).TotalMilliseconds,
             3
         )
+        start_duration_ms = if ($null -eq $StartDurationMs) {
+            $null
+        } else {
+            [math]::Round($StartDurationMs, 3)
+        }
+        workload_duration_ms = if ($null -eq $WorkloadDurationMs) {
+            $null
+        } else {
+            [math]::Round($WorkloadDurationMs, 3)
+        }
+        stop_duration_ms = if ($null -eq $StopDurationMs) {
+            $null
+        } else {
+            [math]::Round($StopDurationMs, 3)
+        }
         trace_path = $TracePath
+        trace_bytes = if (Test-Path -LiteralPath $TracePath -PathType Leaf) {
+            (Get-Item -LiteralPath $TracePath).Length
+        } else {
+            $null
+        }
+        trace_compressed = $CompressTrace
         case_path = $CasePath
         executable = $Executable
         iterations = $Iterations
-        wpr_profile = "CPU"
+        wpr_profile = "StsCombatCpu.Verbose"
+        wpr_profile_path = $WprProfilePath
+        wpr_logging_mode = "memory"
         wpr_instance = $InstanceName
         git_commit = [string] $Request.git_commit
         git_dirty = [bool] $Request.git_dirty
@@ -178,6 +313,7 @@ if ($ElevatedRequest) {
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
 $ProfileRoot = Join-Path $RepoRoot ".profiles"
+$WprProfilePath = Join-Path $RepoRoot "tools\perf\sts_combat_cpu.wprp"
 New-Item -ItemType Directory -Path $ProfileRoot -Force | Out-Null
 
 $CasePath = if ([IO.Path]::IsPathRooted($Case)) {
@@ -187,6 +323,9 @@ $CasePath = if ([IO.Path]::IsPathRooted($Case)) {
 }
 if (-not (Test-Path -LiteralPath $CasePath -PathType Leaf)) {
     throw "combat case is missing at '$CasePath'"
+}
+if (-not (Test-Path -LiteralPath $WprProfilePath -PathType Leaf)) {
+    throw "STS combat WPR profile is missing at '$WprProfilePath'"
 }
 
 Push-Location $RepoRoot
@@ -225,6 +364,8 @@ try {
         executable = $Executable
         case_path = $CasePath
         iterations = $Iterations
+        compress_trace = [bool] $CompressTrace
+        wpr_profile_path = $WprProfilePath
         trace_path = $TracePath
         metadata_path = $MetadataPath
         git_commit = $GitCommit
