@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PlayerEntity {
@@ -18,7 +19,7 @@ pub struct PlayerEntity {
     pub orbs: Vec<OrbEntity>,
     pub stance: StanceId,
     pub relics: Vec<RelicState>,
-    pub relic_buses: RelicBuses,
+    pub relic_buses: Arc<RelicBuses>,
     /// Java: EnergyManager.energyMaster — base energy per turn.
     /// Starts at 3, boss relics with onEquip() { ++energyMaster } increment this.
     /// SlaversCollar conditionally adds +1 at battle start (handled separately).
@@ -36,94 +37,92 @@ impl PlayerEntity {
         self.energy_master += crate::content::relics::energy_master_delta(state.id);
 
         self.relics.push(state);
-        self.register_relic_subscriptions(index, sub);
+        Self::register_relic_subscriptions(Arc::make_mut(&mut self.relic_buses), index, sub);
     }
 
     fn register_relic_subscriptions(
-        &mut self,
+        relic_buses: &mut RelicBuses,
         index: usize,
         sub: crate::content::relics::RelicSubscriptions,
     ) {
         if sub.at_pre_battle {
-            self.relic_buses.at_pre_battle.push(index);
+            relic_buses.at_pre_battle.push(index);
         }
         if sub.at_battle_start_pre_draw {
-            self.relic_buses.at_battle_start_pre_draw.push(index);
+            relic_buses.at_battle_start_pre_draw.push(index);
         }
         if sub.at_battle_start {
-            self.relic_buses.at_battle_start.push(index);
+            relic_buses.at_battle_start.push(index);
         }
         if sub.at_turn_start {
-            self.relic_buses.at_turn_start.push(index);
+            relic_buses.at_turn_start.push(index);
         }
         if sub.at_turn_start_post_draw {
-            self.relic_buses.at_turn_start_post_draw.push(index);
+            relic_buses.at_turn_start_post_draw.push(index);
         }
         if sub.on_use_card {
-            self.relic_buses.on_use_card.push(index);
+            relic_buses.on_use_card.push(index);
         }
         if sub.on_shuffle {
-            self.relic_buses.on_shuffle.push(index);
+            relic_buses.on_shuffle.push(index);
         }
         if sub.on_exhaust {
-            self.relic_buses.on_exhaust.push(index);
+            relic_buses.on_exhaust.push(index);
         }
         if sub.on_lose_hp {
-            self.relic_buses.on_lose_hp.push(index);
+            relic_buses.on_lose_hp.push(index);
         }
         if sub.on_victory {
-            self.relic_buses.on_victory.push(index);
+            relic_buses.on_victory.push(index);
         }
         if sub.on_apply_power {
-            self.relic_buses.on_apply_power.push(index);
+            relic_buses.on_apply_power.push(index);
         }
         if sub.on_monster_death {
-            self.relic_buses.on_monster_death.push(index);
+            relic_buses.on_monster_death.push(index);
         }
         if sub.on_spawn_monster {
-            self.relic_buses.on_spawn_monster.push(index);
+            relic_buses.on_spawn_monster.push(index);
         }
         if sub.at_end_of_turn {
-            self.relic_buses.at_end_of_turn.push(index);
+            relic_buses.at_end_of_turn.push(index);
         }
         if sub.on_use_potion {
-            self.relic_buses.on_use_potion.push(index);
+            relic_buses.on_use_potion.push(index);
         }
         if sub.on_discard {
-            self.relic_buses.on_discard.push(index);
+            relic_buses.on_discard.push(index);
         }
         if sub.on_change_stance {
-            self.relic_buses.on_change_stance.push(index);
+            relic_buses.on_change_stance.push(index);
         }
         if sub.on_attacked_to_change_damage {
-            self.relic_buses.on_attacked_to_change_damage.push(index);
+            relic_buses.on_attacked_to_change_damage.push(index);
         }
         if sub.on_lose_hp_last {
-            self.relic_buses.on_lose_hp_last.push(index);
+            relic_buses.on_lose_hp_last.push(index);
         }
 
         if sub.on_calculate_heal {
-            self.relic_buses.on_calculate_heal.push(index);
+            relic_buses.on_calculate_heal.push(index);
         }
         if sub.on_calculate_x_cost {
-            self.relic_buses.on_calculate_x_cost.push(index);
+            relic_buses.on_calculate_x_cost.push(index);
         }
         if sub.on_calculate_block_retained {
-            self.relic_buses.on_calculate_block_retained.push(index);
+            relic_buses.on_calculate_block_retained.push(index);
         }
         if sub.on_calculate_energy_retained {
-            self.relic_buses.on_calculate_energy_retained.push(index);
+            relic_buses.on_calculate_energy_retained.push(index);
         }
         if sub.on_scry {
-            self.relic_buses.on_scry.push(index);
+            relic_buses.on_scry.push(index);
         }
         if sub.on_receive_power_modify {
-            self.relic_buses.on_receive_power_modify.push(index);
+            relic_buses.on_receive_power_modify.push(index);
         }
         if sub.on_calculate_vulnerable_multiplier {
-            self.relic_buses
-                .on_calculate_vulnerable_multiplier
-                .push(index);
+            relic_buses.on_calculate_vulnerable_multiplier.push(index);
         }
     }
 }

@@ -3,8 +3,8 @@
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{
     CardZones, CombatMeta, CombatPhase, CombatRng, CombatRuntimeHints, CombatState, EngineRuntime,
-    EntityState, EphemeralCounters, MonsterEntity, MonsterMoveState, PlayerEntity, RelicBuses,
-    StanceId, TurnRuntime,
+    EntityState, EphemeralCounters, MonsterEntity, MonsterMoveState, PlayerEntity, StanceId,
+    TurnRuntime,
 };
 use crate::runtime::rng::RngPool;
 use std::collections::VecDeque;
@@ -48,7 +48,7 @@ pub fn blank_test_combat() -> CombatState {
                 orbs: vec![],
                 stance: StanceId::Neutral,
                 relics: vec![],
-                relic_buses: RelicBuses::default(),
+                relic_buses: Default::default(),
                 energy_master: 3,
             },
             monsters: vec![],
