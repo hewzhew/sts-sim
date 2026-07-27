@@ -221,6 +221,19 @@ only the core package; it is not the complete workspace check. Use
 search/evaluation/run-control tests. Use both aliases plus `cargo architecture`
 before handoff.
 
+For a symbolized native CPU trace of the narrow combat contract, run
+`tools/perf/profile_combat_cpu.ps1`. Analyze an existing trace without another
+recording or elevation prompt with:
+
+```powershell
+.\tools\perf\summarize_combat_cpu.ps1 -Trace .profiles\combat-cpu-<id>.etl
+```
+
+The summary normalizes samples across only the recorded `combat_contract`
+processes, so unrelated machine activity cannot distort the reported hotspot
+percentages. The portable Microsoft-signed PerfView executable remains an
+ignored local analysis dependency under `.profiles\tools`.
+
 Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`
