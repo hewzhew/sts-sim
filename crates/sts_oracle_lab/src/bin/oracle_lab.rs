@@ -12,6 +12,7 @@ mod combat_case_layered;
 mod combat_case_layered_window_race;
 mod combat_case_legacy_global;
 mod combat_case_local_graph;
+mod combat_case_performance;
 mod combat_plan_diagnostics;
 mod depth_beam_audits;
 mod exact_combat_evidence;

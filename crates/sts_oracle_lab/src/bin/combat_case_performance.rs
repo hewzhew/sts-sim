@@ -1,0 +1,221 @@
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use sts_combat_planner::LocalTurnGraphWitnessReport;
+
+fn nanos(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+fn share(elapsed_ns: u64, parent_ns: u64) -> f64 {
+    if parent_ns == 0 {
+        0.0
+    } else {
+        elapsed_ns as f64 / parent_ns as f64
+    }
+}
+
+fn duration_share(elapsed_ns: u64, parent_ns: u64) -> Value {
+    json!({
+        "elapsed_ns": elapsed_ns,
+        "percent_of_parent": share(elapsed_ns, parent_ns) * 100.0,
+    })
+}
+
+fn per_second(count: usize, elapsed_ns: u64) -> Option<f64> {
+    (elapsed_ns > 0).then(|| count as f64 * 1_000_000_000.0 / elapsed_ns as f64)
+}
+
+fn nanos_per_item(elapsed_ns: u64, count: usize) -> Option<f64> {
+    (count > 0).then(|| elapsed_ns as f64 / count as f64)
+}
+
+pub(super) fn local_graph_performance_profile(
+    search_elapsed: Duration,
+    report: &LocalTurnGraphWitnessReport,
+) -> Value {
+    let search_ns = nanos(search_elapsed);
+    let timing = report.performance_timing;
+    let counters = &report.counters;
+
+    let outer_accounted_ns = timing
+        .selection_elapsed_ns
+        .saturating_add(timing.generation_elapsed_ns)
+        .saturating_add(timing.admission_elapsed_ns);
+    let outer_unattributed_ns = search_ns.saturating_sub(outer_accounted_ns);
+
+    // These four buckets are siblings inside generator time. The more
+    // detailed seen/publish/trace counters below are nested inside transition
+    // admission and must not be added to this total again.
+    let generation_accounted_ns = timing
+        .atomic_expand_elapsed_ns
+        .saturating_add(timing.transition_simulation_elapsed_ns)
+        .saturating_add(timing.transition_identity_elapsed_ns)
+        .saturating_add(timing.transition_admission_elapsed_ns);
+    let generation_unattributed_ns = timing
+        .generation_elapsed_ns
+        .saturating_sub(generation_accounted_ns);
+    let transition_admission_other_ns = timing.transition_admission_elapsed_ns.saturating_sub(
+        timing
+            .transition_seen_elapsed_ns
+            .saturating_add(timing.transition_publish_elapsed_ns),
+    );
+
+    let transitions = counters.applied_action_transitions;
+    let unique_ratio =
+        (transitions > 0).then(|| counters.unique_successor_states as f64 / transitions as f64);
+    let duplicate_ratio =
+        (transitions > 0).then(|| counters.duplicate_exact_successors as f64 / transitions as f64);
+
+    json!({
+        "schema_name": "LocalGraphPerformanceProfileV1",
+        "schema_version": 1,
+        "search_elapsed_ns": search_ns,
+        "outer": {
+            "selection": duration_share(timing.selection_elapsed_ns, search_ns),
+            "generation": duration_share(timing.generation_elapsed_ns, search_ns),
+            "admission": duration_share(timing.admission_elapsed_ns, search_ns),
+            "unattributed": duration_share(outer_unattributed_ns, search_ns),
+            "accounted_elapsed_ns": outer_accounted_ns,
+        },
+        "generation": {
+            "atomic_expand": duration_share(
+                timing.atomic_expand_elapsed_ns,
+                timing.generation_elapsed_ns,
+            ),
+            "transition_simulation": duration_share(
+                timing.transition_simulation_elapsed_ns,
+                timing.generation_elapsed_ns,
+            ),
+            "transition_identity": duration_share(
+                timing.transition_identity_elapsed_ns,
+                timing.generation_elapsed_ns,
+            ),
+            "transition_admission": duration_share(
+                timing.transition_admission_elapsed_ns,
+                timing.generation_elapsed_ns,
+            ),
+            "unattributed": duration_share(
+                generation_unattributed_ns,
+                timing.generation_elapsed_ns,
+            ),
+            "accounted_elapsed_ns": generation_accounted_ns,
+            "transition_admission_breakdown": {
+                "seen_set": duration_share(
+                    timing.transition_seen_elapsed_ns,
+                    timing.transition_admission_elapsed_ns,
+                ),
+                "publish": duration_share(
+                    timing.transition_publish_elapsed_ns,
+                    timing.transition_admission_elapsed_ns,
+                ),
+                "other": duration_share(
+                    transition_admission_other_ns,
+                    timing.transition_admission_elapsed_ns,
+                ),
+                "trace_subset_of_publish": duration_share(
+                    timing.transition_trace_elapsed_ns,
+                    timing.transition_publish_elapsed_ns,
+                ),
+            },
+        },
+        "throughput": {
+            "generation_work": counters.generation_work,
+            "applied_action_transitions": transitions,
+            "unique_successor_states": counters.unique_successor_states,
+            "duplicate_exact_successors": counters.duplicate_exact_successors,
+            "completed_turn_options": counters.completed_turn_options,
+            "exact_nodes": counters.exact_nodes,
+            "exact_edges": counters.exact_edges,
+            "generation_work_per_second": per_second(counters.generation_work, search_ns),
+            "transitions_per_second": per_second(transitions, search_ns),
+            "completed_turn_options_per_second": per_second(
+                counters.completed_turn_options,
+                search_ns,
+            ),
+            "unique_successor_ratio": unique_ratio,
+            "duplicate_successor_ratio": duplicate_ratio,
+            "ns_per_applied_transition": {
+                "simulation": nanos_per_item(
+                    timing.transition_simulation_elapsed_ns,
+                    transitions,
+                ),
+                "identity": nanos_per_item(
+                    timing.transition_identity_elapsed_ns,
+                    transitions,
+                ),
+                "seen_set": nanos_per_item(
+                    timing.transition_seen_elapsed_ns,
+                    transitions,
+                ),
+                "publish": nanos_per_item(
+                    timing.transition_publish_elapsed_ns,
+                    transitions,
+                ),
+            },
+        },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_combat_planner::{LocalTurnGraphWitnessCounters, LocalTurnGraphWitnessStatus};
+
+    fn report() -> LocalTurnGraphWitnessReport {
+        LocalTurnGraphWitnessReport {
+            status: LocalTurnGraphWitnessStatus::FrontierExhausted,
+            counters: LocalTurnGraphWitnessCounters::default(),
+            performance_timing: Default::default(),
+            root_visits: 0,
+            root_generated_options: 0,
+            root_children: 0,
+            generation_gaps: Vec::new(),
+            witness: None,
+        }
+    }
+
+    #[test]
+    fn profile_keeps_nested_timing_out_of_parent_totals() {
+        let mut report = report();
+        report.performance_timing.selection_elapsed_ns = 100;
+        report.performance_timing.generation_elapsed_ns = 700;
+        report.performance_timing.admission_elapsed_ns = 100;
+        report.performance_timing.atomic_expand_elapsed_ns = 50;
+        report.performance_timing.transition_simulation_elapsed_ns = 200;
+        report.performance_timing.transition_identity_elapsed_ns = 100;
+        report.performance_timing.transition_admission_elapsed_ns = 200;
+        report.performance_timing.transition_seen_elapsed_ns = 50;
+        report.performance_timing.transition_publish_elapsed_ns = 100;
+        report.performance_timing.transition_trace_elapsed_ns = 20;
+        report.counters.generation_work = 200;
+        report.counters.applied_action_transitions = 100;
+        report.counters.unique_successor_states = 80;
+        report.counters.duplicate_exact_successors = 20;
+
+        let profile = local_graph_performance_profile(Duration::from_nanos(1_000), &report);
+
+        assert_eq!(profile["outer"]["unattributed"]["elapsed_ns"], 100);
+        assert_eq!(profile["generation"]["accounted_elapsed_ns"], 550);
+        assert_eq!(profile["generation"]["unattributed"]["elapsed_ns"], 150);
+        assert_eq!(
+            profile["generation"]["transition_admission_breakdown"]["other"]["elapsed_ns"],
+            50
+        );
+        assert_eq!(profile["throughput"]["unique_successor_ratio"], 0.8);
+        assert_eq!(profile["throughput"]["duplicate_successor_ratio"], 0.2);
+        assert_eq!(
+            profile["throughput"]["ns_per_applied_transition"]["simulation"],
+            2.0
+        );
+    }
+
+    #[test]
+    fn zero_work_profile_has_finite_shares_and_null_unit_costs() {
+        let profile = local_graph_performance_profile(Duration::ZERO, &report());
+
+        assert_eq!(profile["outer"]["generation"]["percent_of_parent"], 0.0);
+        assert!(profile["throughput"]["transitions_per_second"].is_null());
+        assert!(profile["throughput"]["ns_per_applied_transition"]["identity"].is_null());
+    }
+}

@@ -77,6 +77,16 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// assertions pass. This keeps repeat regression checks readable.
     #[arg(long, requires = "expect_witness")]
     contract_only: bool,
+    /// Print only a hierarchical performance profile. Parent timings remain
+    /// separate from nested generator and transition timings, and rates are
+    /// normalized by exact work rather than inferred from wall time alone.
+    #[arg(
+        long,
+        conflicts_with = "contract_only",
+        conflicts_with = "readable",
+        conflicts_with = "trace"
+    )]
+    performance_only: bool,
     #[arg(long, default_value_t = 250_000)]
     max_nodes: usize,
     #[arg(long, default_value_t = 1_000_000)]
@@ -157,6 +167,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         expect_min_final_hp,
         expect_max_plan_suffix_work,
         contract_only,
+        performance_only,
         max_nodes,
         max_selections,
         wall_ms,
@@ -288,7 +299,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         },
         &EngineCombatStepper,
     );
-    let search_elapsed_ms = search_started.elapsed().as_millis();
+    let search_elapsed = search_started.elapsed();
+    let search_elapsed_ms = search_elapsed.as_millis();
     if expect_witness && report.witness.is_none() {
         return Err("combat-case contract failed: no replay-verified witness".to_owned());
     }
@@ -337,6 +349,29 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
                 "engine_steps": policy_line.suffix_probe_engine_steps,
             })),
         }));
+    }
+    let mut performance_profile =
+        combat_case_performance::local_graph_performance_profile(search_elapsed, &report);
+    let performance_profile_object = performance_profile
+        .as_object_mut()
+        .expect("performance profile must be a JSON object");
+    performance_profile_object.insert("case".to_owned(), json!(&case));
+    performance_profile_object.insert("status".to_owned(), json!(format!("{:?}", report.status)));
+    performance_profile_object.insert(
+        "witness".to_owned(),
+        report
+            .witness
+            .as_ref()
+            .map(|witness| {
+                json!({
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "actions": witness.actions.len(),
+                })
+            })
+            .unwrap_or(Value::Null),
+    );
+    if performance_only {
+        return print_json(&performance_profile);
     }
     let performance_timing = json!({
         "selection_elapsed_ns": report.performance_timing.selection_elapsed_ns,
@@ -687,5 +722,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     );
     output_object.insert("search_elapsed_ms".to_string(), json!(search_elapsed_ms));
     output_object.insert("performance_timing".to_string(), performance_timing);
+    output_object.insert("performance_profile".to_string(), performance_profile);
     print_json(&output)
 }
