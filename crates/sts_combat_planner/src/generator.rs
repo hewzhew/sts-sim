@@ -26,7 +26,7 @@ use super::types::{
 #[derive(Clone, Debug)]
 struct PartialTurnOption {
     position: CombatPosition,
-    trace: Option<Arc<PendingActionTrace>>,
+    trace: Option<usize>,
     atomic_depth: usize,
     negative_log_policy: f64,
     potion_expenditures: u32,
@@ -38,22 +38,22 @@ struct PendingActionTrace {
     // Generator branches share exact prefixes. Durable replay hashes are
     // materialized only when a complete segment is published, then cached on
     // the shared prefix node so sibling segments never re-hash that state.
-    parent: Option<Arc<Self>>,
+    parent: Option<usize>,
     input: ClientInput,
     successor_key: Arc<CombatExactStateKey>,
     engine_steps: usize,
-    depth: usize,
 }
 
 impl PartialTurnOption {
     fn action_depth(&self) -> usize {
-        self.trace.as_ref().map_or(0, |trace| trace.depth)
+        self.atomic_depth
     }
 
-    fn materialize_actions(&self) -> Vec<TurnOptionAction> {
+    fn materialize_actions(&self, trace_nodes: &[PendingActionTrace]) -> Vec<TurnOptionAction> {
         let mut actions = Vec::with_capacity(self.action_depth());
-        let mut cursor = self.trace.clone();
-        while let Some(trace) = cursor {
+        let mut cursor = self.trace;
+        while let Some(trace_id) = cursor {
+            let trace = &trace_nodes[trace_id];
             actions.push(TurnOptionAction {
                 input: trace.input.clone(),
                 expected_successor_hash: ReplaySuccessorHash::from_exact_key(
@@ -61,7 +61,7 @@ impl PartialTurnOption {
                 ),
                 engine_steps: trace.engine_steps,
             });
-            cursor = trace.parent.clone();
+            cursor = trace.parent;
         }
         actions.reverse();
         actions
@@ -380,6 +380,9 @@ pub struct TurnOptionGeneratorSession {
     /// ever released.
     max_potion_expenditures: Option<u32>,
     policy: SharedCombatActionPolicy,
+    /// Session-owned immutable prefix arena. Partial states retain only an
+    /// index, avoiding one heap allocation and Arc count per exact successor.
+    trace_nodes: Vec<PendingActionTrace>,
     work: Vec<Option<GeneratorWork>>,
     anchor_frontier: BinaryHeap<GeneratorQueueEntry>,
     guided_frontiers: Vec<GuidedGeneratorFrontier>,
@@ -507,6 +510,7 @@ impl TurnOptionGeneratorSession {
             config,
             max_potion_expenditures,
             policy,
+            trace_nodes: Vec::new(),
             work: Vec::new(),
             anchor_frontier: BinaryHeap::new(),
             guided_frontiers: Vec::new(),
@@ -1293,15 +1297,16 @@ impl TurnOptionGeneratorSession {
             .saturating_add(elapsed_nanos_u64(seen_started));
         let publish_started = Instant::now();
         if unseen {
+            let trace_id = self.trace_nodes.len();
+            self.trace_nodes.push(PendingActionTrace {
+                parent: action.parent.trace,
+                input: action.input,
+                successor_key,
+                engine_steps: result.engine_steps,
+            });
             let partial = PartialTurnOption {
                 position: result.position,
-                trace: Some(Arc::new(PendingActionTrace {
-                    parent: action.parent.trace.clone(),
-                    input: action.input,
-                    successor_key,
-                    engine_steps: result.engine_steps,
-                    depth: action.parent.action_depth().saturating_add(1),
-                })),
+                trace: Some(trace_id),
                 atomic_depth: action.atomic_depth,
                 negative_log_policy: action.negative_log_policy,
                 potion_expenditures: successor_potion_expenditures,
@@ -1314,7 +1319,7 @@ impl TurnOptionGeneratorSession {
                 // now instead of routing it back through the private atomic
                 // agenda.
                 let trace_started = Instant::now();
-                let actions = partial.materialize_actions();
+                let actions = partial.materialize_actions(&self.trace_nodes);
                 self.transition_trace_elapsed_ns = self
                     .transition_trace_elapsed_ns
                     .saturating_add(elapsed_nanos_u64(trace_started));
@@ -1358,7 +1363,7 @@ impl TurnOptionGeneratorSession {
         let terminal = stepper.terminal(&partial.position);
         if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
             let trace_started = Instant::now();
-            let actions = partial.materialize_actions();
+            let actions = partial.materialize_actions(&self.trace_nodes);
             self.transition_trace_elapsed_ns = self
                 .transition_trace_elapsed_ns
                 .saturating_add(elapsed_nanos_u64(trace_started));
