@@ -1,3 +1,6 @@
+use super::combat_planning_view::{
+    existing_combat_guide_diagnostics, layered_candidate_view_ranks,
+};
 use super::*;
 
 #[derive(Debug, Args)]

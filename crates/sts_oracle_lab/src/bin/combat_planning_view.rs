@@ -1,0 +1,323 @@
+//! Read-only plan-transition, guide-lane, and lineage portfolio views.
+
+use std::collections::BTreeMap;
+
+use serde::Serialize;
+use serde_json::{json, Value};
+use sts_combat_planner::{
+    CombatActionPolicy, LayeredCombatFrontierState, LayeredCombatLineagePortfolioEntryReport,
+    LocalTurnGraphPlanTransitionEdgeSnapshot, LocalTurnGraphWitnessSession,
+};
+use sts_combat_strategy::{CombatPlanTransitionAnnotationV1, CombatPlanTransitionV1};
+
+#[derive(Clone, Debug, Default, Serialize)]
+struct CombatPlanTransitionServiceAggregateV1 {
+    generated_edges: usize,
+    edge_served_edges: usize,
+    unserved_edges: usize,
+    successor_visited_edges: usize,
+    root_generated_edges: usize,
+    root_edge_served_edges: usize,
+    total_edge_visits: usize,
+    total_anchor_visits: usize,
+    total_guide_visits: usize,
+    total_backed_visits: usize,
+    total_successor_visits: usize,
+    minimum_negative_log_policy: Option<f64>,
+    minimum_action_count: Option<usize>,
+    maximum_player_hp_before: Option<i32>,
+    maximum_player_hp_after: Option<i32>,
+    maximum_visible_damage_margin_after: Option<i32>,
+    maximum_player_intangible_before: Option<i32>,
+    maximum_player_intangible_after: Option<i32>,
+    maximum_strength_reduction_before: Option<u16>,
+    maximum_strength_reduction_after: Option<u16>,
+    maximum_intangible_sources_before: Option<u16>,
+    maximum_intangible_sources_after: Option<u16>,
+    minimum_priority_target_hp_after: Option<i32>,
+    minimum_phase_transition_damage_after: Option<i32>,
+}
+
+impl CombatPlanTransitionServiceAggregateV1 {
+    fn observe(&mut self, edge: &LocalTurnGraphPlanTransitionEdgeSnapshot) {
+        let (_, transition) = plan_transition_parts(&edge.plan_transition_annotation);
+        self.generated_edges = self.generated_edges.saturating_add(1);
+        if edge.edge_visits > 0 {
+            self.edge_served_edges = self.edge_served_edges.saturating_add(1);
+        } else {
+            self.unserved_edges = self.unserved_edges.saturating_add(1);
+        }
+        if edge.successor_visits > 0 {
+            self.successor_visited_edges = self.successor_visited_edges.saturating_add(1);
+        }
+        if edge.parent_relative_turn_depth == 0 {
+            self.root_generated_edges = self.root_generated_edges.saturating_add(1);
+            if edge.edge_visits > 0 {
+                self.root_edge_served_edges = self.root_edge_served_edges.saturating_add(1);
+            }
+        }
+        self.total_edge_visits = self.total_edge_visits.saturating_add(edge.edge_visits);
+        self.total_anchor_visits = self.total_anchor_visits.saturating_add(edge.anchor_visits);
+        self.total_guide_visits = self.total_guide_visits.saturating_add(edge.guide_visits);
+        self.total_backed_visits = self.total_backed_visits.saturating_add(edge.backed_visits);
+        self.total_successor_visits = self
+            .total_successor_visits
+            .saturating_add(edge.successor_visits);
+        self.minimum_negative_log_policy = Some(
+            self.minimum_negative_log_policy
+                .map_or(edge.negative_log_policy, |current| {
+                    current.min(edge.negative_log_policy)
+                }),
+        );
+        self.minimum_action_count = Some(
+            self.minimum_action_count
+                .map_or(edge.action_count, |current| current.min(edge.action_count)),
+        );
+        self.maximum_player_hp_before = Some(
+            self.maximum_player_hp_before
+                .map_or(transition.envelope_before.player_hp, |current| {
+                    current.max(transition.envelope_before.player_hp)
+                }),
+        );
+        self.maximum_player_intangible_before = Some(self.maximum_player_intangible_before.map_or(
+            transition.envelope_before.player_intangible_turns,
+            |current| current.max(transition.envelope_before.player_intangible_turns),
+        ));
+        self.maximum_strength_reduction_before =
+            Some(self.maximum_strength_reduction_before.map_or(
+                transition.resources_before.remaining_strength_reduction,
+                |current| current.max(transition.resources_before.remaining_strength_reduction),
+            ));
+        self.maximum_intangible_sources_before =
+            Some(self.maximum_intangible_sources_before.map_or(
+                transition.resources_before.remaining_intangible_sources,
+                |current| current.max(transition.resources_before.remaining_intangible_sources),
+            ));
+        if let Some(envelope) = transition.envelope_after {
+            self.maximum_player_hp_after = Some(
+                self.maximum_player_hp_after
+                    .map_or(envelope.player_hp, |current| {
+                        current.max(envelope.player_hp)
+                    }),
+            );
+            self.maximum_visible_damage_margin_after = Some(
+                self.maximum_visible_damage_margin_after
+                    .map_or(envelope.visible_damage_margin, |current| {
+                        current.max(envelope.visible_damage_margin)
+                    }),
+            );
+            self.maximum_player_intangible_after = Some(
+                self.maximum_player_intangible_after
+                    .map_or(envelope.player_intangible_turns, |current| {
+                        current.max(envelope.player_intangible_turns)
+                    }),
+            );
+            if let Some(target_hp) = envelope.priority_target_hp_with_block {
+                self.minimum_priority_target_hp_after = Some(
+                    self.minimum_priority_target_hp_after
+                        .map_or(target_hp, |current| current.min(target_hp)),
+                );
+            }
+            if let Some(damage) = envelope.phase_transition_damage_remaining {
+                self.minimum_phase_transition_damage_after = Some(
+                    self.minimum_phase_transition_damage_after
+                        .map_or(damage, |current| current.min(damage)),
+                );
+            }
+        }
+        if let Some(resources) = transition.resources_after {
+            self.maximum_strength_reduction_after = Some(
+                self.maximum_strength_reduction_after
+                    .map_or(resources.remaining_strength_reduction, |current| {
+                        current.max(resources.remaining_strength_reduction)
+                    }),
+            );
+            self.maximum_intangible_sources_after = Some(
+                self.maximum_intangible_sources_after
+                    .map_or(resources.remaining_intangible_sources, |current| {
+                        current.max(resources.remaining_intangible_sources)
+                    }),
+            );
+        }
+    }
+}
+
+fn serialized_plan_label<T: Serialize>(value: &T) -> String {
+    match serde_json::to_value(value).expect("typed plan labels must serialize") {
+        Value::String(label) => label,
+        other => other.to_string(),
+    }
+}
+
+fn plan_transition_parts(
+    annotation: &CombatPlanTransitionAnnotationV1,
+) -> (&'static str, &CombatPlanTransitionV1) {
+    match annotation {
+        CombatPlanTransitionAnnotationV1::AwakenedOnePhaseControl(transition) => {
+            ("awakened_one_phase_control", transition)
+        }
+        CombatPlanTransitionAnnotationV1::ChampPhaseControl(transition) => {
+            ("champ_phase_control", transition)
+        }
+        CombatPlanTransitionAnnotationV1::DonuAndDecaGrowthControl(transition) => {
+            ("donu_and_deca_growth_control", transition)
+        }
+    }
+}
+
+pub(super) fn combat_plan_transition_portfolio_v1(session: &LocalTurnGraphWitnessSession) -> Value {
+    let edges = session.plan_transition_edge_snapshots();
+    let mut overall = CombatPlanTransitionServiceAggregateV1::default();
+    let mut plans = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut stage_transitions = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut completed_milestones =
+        BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+    let mut events = BTreeMap::<String, CombatPlanTransitionServiceAggregateV1>::new();
+
+    for edge in &edges {
+        overall.observe(edge);
+        let (plan, transition) = plan_transition_parts(&edge.plan_transition_annotation);
+        plans.entry(plan.to_string()).or_default().observe(edge);
+        let before = serialized_plan_label(&transition.before_stage);
+        let after = transition
+            .after_stage
+            .as_ref()
+            .map(serialized_plan_label)
+            .unwrap_or_else(|| "terminal_or_unowned".to_string());
+        stage_transitions
+            .entry(format!("{before}->{after}"))
+            .or_default()
+            .observe(edge);
+        for milestone in &transition.completed_milestones {
+            completed_milestones
+                .entry(serialized_plan_label(milestone))
+                .or_default()
+                .observe(edge);
+        }
+        for event in &transition.events {
+            let event = serde_json::to_value(event).expect("typed plan events must serialize");
+            let kind = event
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown_event");
+            events.entry(kind.to_string()).or_default().observe(edge);
+        }
+    }
+
+    json!({
+        "schema_name": "CombatPlanTransitionPortfolioV1",
+        "schema_version": 1,
+        "authority": "diagnostic_only",
+        "changes_search_order": false,
+        "overall": overall,
+        "plans": plans,
+        "stage_transitions": stage_transitions,
+        "completed_milestones": completed_milestones,
+        "events": events,
+    })
+}
+
+pub(super) fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
+    match lane_id {
+        1 => "progress",
+        2 => "survival",
+        3 => "horizon",
+        4 => "setup",
+        5 => "turn_depth",
+        10_001 => "exact_corridor_control",
+        10_002 => "typed_corridor_control",
+        _ => "policy_defined",
+    }
+}
+
+pub(super) fn layered_candidate_view_ranks(
+    candidates: &[LayeredCombatFrontierState],
+    target_index: usize,
+    policy: &dyn CombatActionPolicy,
+) -> Value {
+    let Some(target) = candidates.get(target_index) else {
+        return Value::Null;
+    };
+    let policy_cost = |candidate: &LayeredCombatFrontierState| {
+        candidate.negative_log_policy + (candidate.actions.len().max(1) as f64).ln()
+    };
+    let target_policy_cost = policy_cost(target);
+    let anchor_rank = candidates
+        .iter()
+        .filter(|candidate| {
+            policy_cost(candidate)
+                .total_cmp(&target_policy_cost)
+                .then_with(|| candidate.exact_state_hash.cmp(&target.exact_state_hash))
+                .is_lt()
+        })
+        .count()
+        .saturating_add(1);
+    let target_guides = policy.state_guides(&target.position);
+    let guide_ranks = target_guides
+        .iter()
+        .map(|target_guide| {
+            let ordinal_rank = candidates
+                .iter()
+                .filter(|candidate| {
+                    let candidate_guide = policy
+                        .state_guides(&candidate.position)
+                        .into_iter()
+                        .find(|guide| guide.lane == target_guide.lane);
+                    candidate_guide.is_some_and(|candidate_guide| {
+                        candidate_guide
+                            .rank
+                            .cmp(&target_guide.rank)
+                            .then_with(|| target_policy_cost.total_cmp(&policy_cost(candidate)))
+                            .then_with(|| target.exact_state_hash.cmp(&candidate.exact_state_hash))
+                            .is_gt()
+                    })
+                })
+                .count()
+                .saturating_add(1);
+            json!({
+                "lane_id": target_guide.lane.value(),
+                "lane": oracle_lab_guide_lane_label(target_guide.lane.value()),
+                "ordinal_rank": ordinal_rank,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "candidate_count": candidates.len(),
+        "anchor_rank": anchor_rank,
+        "guide_ranks": guide_ranks,
+    })
+}
+
+pub(super) fn existing_combat_guide_diagnostics(
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
+) -> Value {
+    json!({
+        "progress": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
+        "survival": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(position),
+        "horizon": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
+        "setup": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
+    })
+}
+
+pub(super) fn lineage_portfolio_entries_json(
+    entries: &[LayeredCombatLineagePortfolioEntryReport],
+) -> Vec<Value> {
+    entries
+        .iter()
+        .map(|entry| {
+            json!({
+                "parent_candidate_index": entry.parent_candidate_index,
+                "parent_exact_state_hash": entry.parent_exact_state_hash,
+                "parent_consensus_rank": entry.parent_consensus_rank,
+                "source_window_index": entry.source_window_index,
+                "window_discrepancy": entry.window_discrepancy,
+                "generation_work": entry.generation_work,
+                "engine_steps": entry.engine_steps,
+                "recursive_splits_remaining": entry.recursive_splits_remaining,
+                "terminal": entry.terminal,
+                "found_witness": entry.found_witness,
+                "child_entries": lineage_portfolio_entries_json(&entry.child_entries),
+            })
+        })
+        .collect()
+}
