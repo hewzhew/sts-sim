@@ -39,6 +39,18 @@ function Get-ContractIdentity($Report) {
     }
 }
 
+function Get-Median([double[]] $Values) {
+    if ($Values.Count -eq 0) {
+        return $null
+    }
+    $Sorted = @($Values | Sort-Object)
+    $Middle = [int][Math]::Floor($Sorted.Count / 2)
+    if (($Sorted.Count % 2) -eq 1) {
+        return $Sorted[$Middle]
+    }
+    return ($Sorted[$Middle - 1] + $Sorted[$Middle]) / 2.0
+}
+
 function Invoke-CombatContract(
     [string] $Executable,
     [object[]] $Arguments
@@ -119,6 +131,18 @@ try {
 
     $BatchMilliseconds = [Collections.Generic.List[double]]::new()
     $SearchMilliseconds = [Collections.Generic.List[double]]::new()
+    $TransitionMetricNames = @(
+        "simulation",
+        "identity",
+        "key_build",
+        "key_index",
+        "seen_set",
+        "publish"
+    )
+    $TransitionMetricSamples = @{}
+    foreach ($MetricName in $TransitionMetricNames) {
+        $TransitionMetricSamples[$MetricName] = [Collections.Generic.List[double]]::new()
+    }
     for ($Batch = 1; $Batch -le $Batches; $Batch++) {
         $BatchElapsedMilliseconds = 0.0
         for ($Iteration = 1; $Iteration -le $IterationsPerBatch; $Iteration++) {
@@ -126,6 +150,12 @@ try {
             $BatchElapsedMilliseconds += $Run.elapsed_milliseconds
             $LastReport = $Run.report
             $SearchMilliseconds.Add($LastReport.search_elapsed_ns / 1000000.0)
+            foreach ($MetricName in $TransitionMetricNames) {
+                $MetricValue = $LastReport.ns_per_applied_transition.$MetricName
+                if ($null -ne $MetricValue) {
+                    $TransitionMetricSamples[$MetricName].Add([double] $MetricValue)
+                }
+            }
             $Identity = Get-ContractIdentity $LastReport
             $IdentityJson = $Identity | ConvertTo-Json -Depth 100 -Compress
             if ($null -eq $ExpectedIdentityJson) {
@@ -138,19 +168,11 @@ try {
         $BatchMilliseconds.Add($BatchElapsedMilliseconds)
     }
 
-    $Sorted = @($BatchMilliseconds | Sort-Object)
-    $Middle = [int][Math]::Floor($Sorted.Count / 2)
-    $MedianBatchMilliseconds = if (($Sorted.Count % 2) -eq 1) {
-        $Sorted[$Middle]
-    } else {
-        ($Sorted[$Middle - 1] + $Sorted[$Middle]) / 2.0
-    }
-    $SortedSearch = @($SearchMilliseconds | Sort-Object)
-    $SearchMiddle = [int][Math]::Floor($SortedSearch.Count / 2)
-    $MedianSearchMilliseconds = if (($SortedSearch.Count % 2) -eq 1) {
-        $SortedSearch[$SearchMiddle]
-    } else {
-        ($SortedSearch[$SearchMiddle - 1] + $SortedSearch[$SearchMiddle]) / 2.0
+    $MedianBatchMilliseconds = Get-Median $BatchMilliseconds
+    $MedianSearchMilliseconds = Get-Median $SearchMilliseconds
+    $MedianTransitionMetrics = [ordered]@{}
+    foreach ($MetricName in $TransitionMetricNames) {
+        $MedianTransitionMetrics[$MetricName] = Get-Median $TransitionMetricSamples[$MetricName]
     }
     $GitCommit = (& git rev-parse HEAD).Trim()
     $GitDirty = -not [string]::IsNullOrWhiteSpace((& git status --porcelain) -join "`n")
@@ -167,6 +189,7 @@ try {
         median_batch_milliseconds = $MedianBatchMilliseconds
         median_iteration_milliseconds = $MedianBatchMilliseconds / $IterationsPerBatch
         median_search_milliseconds = $MedianSearchMilliseconds
+        median_ns_per_applied_transition = $MedianTransitionMetrics
         identity = $ExpectedIdentity
     }
 
@@ -180,6 +203,9 @@ try {
             batch_ms = (@($BatchMilliseconds | ForEach-Object { [Math]::Round($_, 2) }) -join ", ")
             median_process_ms = [Math]::Round($Result.median_iteration_milliseconds, 2)
             median_search_ms = [Math]::Round($Result.median_search_milliseconds, 2)
+            transition_ns = @($TransitionMetricNames | ForEach-Object {
+                "$_=$([Math]::Round($MedianTransitionMetrics[$_], 1))"
+            }) -join ", "
             generation_work = $ExpectedIdentity.counters.generation_work
             transitions = $ExpectedIdentity.counters.applied_action_transitions
             exact_nodes = $ExpectedIdentity.counters.exact_nodes
