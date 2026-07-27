@@ -12,6 +12,7 @@ use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 use super::combat_policy_controls::load_action_imitation_policy;
+use super::combat_replay_tools::save_combat_inputs;
 use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
@@ -92,16 +93,10 @@ pub(super) fn run_atomic_levin(args: CombatCaseAtomicLevinArgs) -> Result<(), St
     let elapsed = started.elapsed();
     if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), report.witness.as_ref())
     {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let actions = witness
-            .actions
-            .iter()
-            .map(|action| action.input.clone())
-            .collect::<Vec<_>>();
-        let bytes = serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?;
-        std::fs::write(path, bytes).map_err(|error| error.to_string())?;
+        save_combat_inputs(
+            path,
+            witness.actions.iter().map(|action| action.input.clone()),
+        )?;
     }
     print_json(&serde_json::json!({
             "schema_name": "OracleCombatCaseAtomicLevinV1",

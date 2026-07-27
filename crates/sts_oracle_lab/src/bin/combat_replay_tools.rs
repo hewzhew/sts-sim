@@ -8,8 +8,24 @@ use sts_combat_planner::{
 };
 use sts_oracle_runtime::eval::combat_case::{save_combat_case, CombatCase};
 use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_trace_view::{combat_action_label, combat_turn_snapshot};
+
+pub(super) fn save_combat_inputs(
+    output: &Path,
+    inputs: impl IntoIterator<Item = ClientInput>,
+) -> Result<(), String> {
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let inputs = inputs.into_iter().collect::<Vec<_>>();
+    let bytes = serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?;
+    std::fs::write(output, bytes).map_err(|error| error.to_string())
+}
 
 fn combat_policy_surface(
     position: &sts_oracle_runtime::sim::combat::CombatPosition,
@@ -109,15 +125,10 @@ pub(super) fn export_descendant_combat_case(
         .and_then(|value| value.to_str())
         .unwrap_or("deepest");
     let action_output = output.with_file_name(format!("{stem}.prefix.actions.json"));
-    let inputs = actions
-        .iter()
-        .map(|action| action.input.clone())
-        .collect::<Vec<_>>();
-    std::fs::write(
+    save_combat_inputs(
         &action_output,
-        serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+        actions.iter().map(|action| action.input.clone()),
+    )?;
     Ok(action_output)
 }
 
@@ -257,4 +268,29 @@ pub(super) fn replay_combat_path(
         "turns": turns,
         "terminal": format!("{terminal:?}"),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::save_combat_inputs;
+
+    #[test]
+    fn combat_input_artifact_owner_creates_parent_and_writes_json_array() {
+        let root = std::env::temp_dir().join(format!(
+            "sts-oracle-lab-combat-inputs-{}",
+            std::process::id()
+        ));
+        let output = root.join("nested").join("actions.json");
+        let _ = std::fs::remove_dir_all(&root);
+
+        save_combat_inputs(
+            &output,
+            std::iter::empty::<sts_oracle_runtime::state::core::ClientInput>(),
+        )
+        .expect("save empty combat input artifact");
+
+        let text = std::fs::read_to_string(&output).expect("read combat input artifact");
+        assert_eq!(text.trim(), "[]");
+        std::fs::remove_dir_all(root).expect("remove combat input artifact fixture");
+    }
 }

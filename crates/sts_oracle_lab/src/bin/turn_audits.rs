@@ -10,6 +10,7 @@ use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_policy_controls::load_action_imitation_policy;
+use super::combat_replay_tools::save_combat_inputs;
 use super::combat_trace_view::{combat_action_label, combat_turn_snapshot};
 use super::print_json;
 
@@ -293,20 +294,14 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
             save_combat_case(path, &exported)?;
         }
         if let Some(path) = export_actions.as_ref() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            }
-            let inputs = candidate
-                .report
-                .actions
-                .iter()
-                .map(|action| action.input.clone())
-                .collect::<Vec<_>>();
-            std::fs::write(
+            save_combat_inputs(
                 path,
-                serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
+                candidate
+                    .report
+                    .actions
+                    .iter()
+                    .map(|action| action.input.clone()),
+            )?;
         }
         Some(json!({
             "rank": rank,

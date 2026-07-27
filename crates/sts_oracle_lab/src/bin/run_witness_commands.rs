@@ -17,6 +17,8 @@ use sts_oracle_runtime::runtime::branch::{
 };
 use sts_oracle_runtime::sim::combat::CombatPosition;
 
+use super::combat_replay_tools::save_combat_inputs;
+
 pub(super) fn export_continuation(
     workspace: &Path,
     node: Option<usize>,
@@ -264,20 +266,14 @@ pub(super) fn export_historical_combat(
         position,
     );
     save_combat_case(case_output, &case)?;
-    if let Some(parent) = actions_output.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let actions = resolution
-        .trajectory
-        .actions
-        .iter()
-        .map(|action| action.input.clone())
-        .collect::<Vec<_>>();
-    std::fs::write(
+    save_combat_inputs(
         actions_output,
-        serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+        resolution
+            .trajectory
+            .actions
+            .iter()
+            .map(|action| action.input.clone()),
+    )?;
     if let Some(output) = continuation_output {
         let prefix_journal = RunProgressJournalV1::from_committed_steps(
             continuation.journal.entries()[..journal_entry].to_vec(),
@@ -303,7 +299,7 @@ pub(super) fn export_historical_combat(
         "case_output": case_output,
         "actions_output": actions_output,
         "continuation_output": continuation_output,
-        "action_count": actions.len(),
+        "action_count": resolution.trajectory.actions.len(),
         "combat": case.combat,
     }))
 }

@@ -13,6 +13,7 @@ use sts_oracle_runtime::eval::combat_search_v2::{
 };
 use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 
+use super::combat_replay_tools::save_combat_inputs;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::print_json;
 
@@ -99,14 +100,7 @@ pub(super) fn run(args: V2CapabilityAuditArgs) -> Result<(), String> {
         export_without_rollout_witness_actions.as_ref(),
         without_rollout.final_best_actions.as_ref(),
     ) {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        std::fs::write(
-            path,
-            serde_json::to_vec_pretty(actions).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
+        save_combat_inputs(path, actions.iter().cloned())?;
     }
     let root_rollout_started = Instant::now();
     let root_rollout = sts_oracle_runtime::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(

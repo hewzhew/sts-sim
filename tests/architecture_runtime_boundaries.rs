@@ -186,6 +186,37 @@ fn oracle_command_modules_name_their_host_dependencies_explicitly() {
 }
 
 #[test]
+fn combat_input_artifact_json_has_one_writer() {
+    let mut sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_oracle_lab/src/bin"),
+        &mut sources,
+    );
+    let direct_writers = sources
+        .into_iter()
+        .filter(|path| {
+            let source = std::fs::read_to_string(path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+            [
+                "to_vec_pretty(&inputs)",
+                "to_vec_pretty(inputs)",
+                "to_vec_pretty(&actions)",
+                "to_vec_pretty(actions)",
+            ]
+            .iter()
+            .any(|pattern| source.contains(pattern))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        direct_writers,
+        vec![std::path::PathBuf::from(
+            "crates/sts_oracle_lab/src/bin/combat_replay_tools.rs"
+        )],
+        "pretty-json ClientInput action lists must use save_combat_inputs instead of open-coded filesystem writes"
+    );
+}
+
+#[test]
 fn oracle_lab_names_its_runtime_dependency_directly() {
     let manifest = std::fs::read_to_string("crates/sts_oracle_lab/Cargo.toml")
         .expect("read oracle laboratory manifest");

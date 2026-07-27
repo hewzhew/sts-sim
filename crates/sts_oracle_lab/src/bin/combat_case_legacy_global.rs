@@ -22,7 +22,7 @@ use super::combat_policy_controls::{
     anchor_only_policy, exact_corridor_shadow_policy, load_action_imitation_policy,
     value_prototype_shadow_policy,
 };
-use super::combat_replay_tools::replay_combat_path;
+use super::combat_replay_tools::{replay_combat_path, save_combat_inputs};
 use super::combat_trace_view::{combat_position_snapshot, compact_corridor_report};
 use super::exact_turn_corridor::{
     load as load_exact_turn_corridor, typed_feature_components as typed_combat_feature_components,
@@ -499,16 +499,10 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
         .flatten();
     let witness = report.witness.as_ref();
     if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), witness) {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let actions = witness
-            .actions
-            .iter()
-            .map(|action| action.input.clone())
-            .collect::<Vec<_>>();
-        let bytes = serde_json::to_vec_pretty(&actions).map_err(|error| error.to_string())?;
-        std::fs::write(path, bytes).map_err(|error| error.to_string())?;
+        save_combat_inputs(
+            path,
+            witness.actions.iter().map(|action| action.input.clone()),
+        )?;
     }
     if !full && !readable {
         let summary_elapsed = summary_started.elapsed();

@@ -17,6 +17,7 @@ use super::combat_planning_view::{
     existing_combat_guide_diagnostics, lineage_portfolio_entries_json,
 };
 use super::combat_policy_controls::load_layered_solved_suffix_index;
+use super::combat_replay_tools::save_combat_inputs;
 use super::{oracle_lab_runtime_identity, print_json};
 
 #[derive(Debug, Args)]
@@ -151,19 +152,10 @@ pub(super) fn run(args: CombatCaseLayeredWindowRaceArgs) -> Result<(), String> {
     );
     if let Some(witness) = source_report.witness.as_ref() {
         if let Some(path) = export_witness_actions.as_ref() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            }
-            let inputs = witness
-                .actions
-                .iter()
-                .map(|action| action.input.clone())
-                .collect::<Vec<_>>();
-            std::fs::write(
+            save_combat_inputs(
                 path,
-                serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
+                witness.actions.iter().map(|action| action.input.clone()),
+            )?;
         }
         return print_json(&json!({
             "schema_name": "OracleCombatCaseLayeredWindowRaceV1",
@@ -242,19 +234,10 @@ pub(super) fn run(args: CombatCaseLayeredWindowRaceArgs) -> Result<(), String> {
             export_witness_actions.as_ref(),
             continuation_report.witness.as_ref(),
         ) {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-            }
-            let inputs = witness
-                .actions
-                .iter()
-                .map(|action| action.input.clone())
-                .collect::<Vec<_>>();
-            std::fs::write(
+            save_combat_inputs(
                 path,
-                serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
+                witness.actions.iter().map(|action| action.input.clone()),
+            )?;
         }
         let watched_states = watch_exact_state_hash
             .iter()
@@ -500,19 +483,10 @@ pub(super) fn run(args: CombatCaseLayeredWindowRaceArgs) -> Result<(), String> {
         .and_then(|report| report.witness.as_ref())
         .or(race_report.witness.as_ref());
     if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), final_witness) {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let inputs = witness
-            .actions
-            .iter()
-            .map(|action| action.input.clone())
-            .collect::<Vec<_>>();
-        std::fs::write(
+        save_combat_inputs(
             path,
-            serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
+            witness.actions.iter().map(|action| action.input.clone()),
+        )?;
     }
     print_json(&json!({
         "schema_name": "OracleCombatCaseLayeredWindowRaceV1",

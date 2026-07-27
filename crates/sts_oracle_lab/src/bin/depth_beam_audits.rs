@@ -18,6 +18,7 @@ use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 use super::combat_policy_controls::load_action_imitation_policy;
+use super::combat_replay_tools::save_combat_inputs;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::{oracle_lab_runtime_identity, print_json};
@@ -288,19 +289,10 @@ pub(super) fn run_agenda(args: DepthBeamAgendaAuditArgs) -> Result<(), String> {
     );
     if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), report.witness.as_ref())
     {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        let inputs = witness
-            .actions
-            .iter()
-            .map(|action| action.input.clone())
-            .collect::<Vec<_>>();
-        std::fs::write(
+        save_combat_inputs(
             path,
-            serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
+            witness.actions.iter().map(|action| action.input.clone()),
+        )?;
     }
     let watched_frontier = report
         .frontier_exact_state_hashes
