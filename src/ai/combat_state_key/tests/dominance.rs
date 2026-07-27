@@ -110,6 +110,44 @@ fn combat_dominance_key_keeps_special_monster_runtime_state() {
 }
 
 #[test]
+fn combat_exact_key_keeps_only_the_active_known_monster_runtime() {
+    let mut cultist = blank_test_combat();
+    cultist
+        .entities
+        .monsters
+        .push(planned_monster(EnemyId::Cultist, 3));
+
+    let mut inactive_variant = cultist.clone();
+    inactive_variant.entities.monsters[0].hexaghost.activated = true;
+    assert_eq!(
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &cultist),
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &inactive_variant),
+    );
+
+    let mut active_variant = cultist.clone();
+    active_variant.entities.monsters[0].cultist.first_move = false;
+    assert_ne!(
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &cultist),
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &active_variant),
+    );
+}
+
+#[test]
+fn combat_exact_key_preserves_all_runtime_for_unknown_monster_ids() {
+    let mut unknown = blank_test_combat();
+    let mut monster = planned_monster(EnemyId::Cultist, 3);
+    monster.monster_type = usize::MAX;
+    unknown.entities.monsters.push(monster);
+
+    let mut variant = unknown.clone();
+    variant.entities.monsters[0].hexaghost.activated = true;
+    assert_ne!(
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &unknown),
+        combat_exact_state_key(&EngineState::CombatPlayerTurn, &variant),
+    );
+}
+
+#[test]
 fn combat_dominance_key_keeps_monster_protocol_observation_state() {
     let mut baseline = blank_test_combat();
     baseline

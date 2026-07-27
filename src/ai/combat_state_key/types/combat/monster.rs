@@ -32,7 +32,57 @@ pub(crate) struct CombatMonsterKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CombatMonsterRuntimeKey {
+pub(crate) enum CombatMonsterRuntimeKey {
+    None,
+    Hexaghost(HexaghostRuntimeState),
+    Louse(LouseRuntimeState),
+    JawWorm(JawWormRuntimeState),
+    Thief(ThiefRuntimeState),
+    Byrd(ByrdRuntimeState),
+    Chosen(ChosenRuntimeState),
+    Snecko(SneckoRuntimeState),
+    ShelledParasite(ShelledParasiteRuntimeState),
+    BronzeAutomaton(BronzeAutomatonRuntimeState),
+    BronzeOrb(BronzeOrbRuntimeState),
+    BookOfStabbing(BookOfStabbingRuntimeState),
+    Collector(CollectorRuntimeState),
+    Champ(ChampRuntimeState),
+    AwakenedOne(AwakenedOneRuntimeState),
+    CorruptHeart(CorruptHeartRuntimeState),
+    WrithingMass(WrithingMassRuntimeState),
+    Spiker(SpikerRuntimeState),
+    SpireShield(SpireShieldRuntimeState),
+    SpireSpear(SpireSpearRuntimeState),
+    SlaverRed(SlaverRedRuntimeState),
+    GremlinLeader(GremlinLeaderRuntimeState),
+    GremlinNob(GremlinNobRuntimeState),
+    GremlinWizard(GremlinWizardRuntimeState),
+    Cultist(CultistRuntimeState),
+    Sentry(SentryRuntimeState),
+    SlimeBoss(SlimeBossRuntimeState),
+    LargeSlime(LargeSlimeRuntimeState),
+    SphericGuardian(SphericGuardianRuntimeState),
+    Reptomancer(ReptomancerRuntimeState),
+    Darkling(DarklingRuntimeState),
+    Nemesis(NemesisRuntimeState),
+    GiantHead(GiantHeadRuntimeState),
+    TimeEater(TimeEaterRuntimeState),
+    Donu(DonuRuntimeState),
+    Deca(DecaRuntimeState),
+    Transient(TransientRuntimeState),
+    Exploder(ExploderRuntimeState),
+    Maw(MawRuntimeState),
+    SnakeDagger(SnakeDaggerRuntimeState),
+    Lagavulin(LagavulinRuntimeState),
+    Guardian(GuardianRuntimeState),
+    /// Preserves exactness for simulator extensions whose numeric monster id
+    /// is not yet represented by `EnemyId`, without making every known
+    /// monster carry all inactive runtime records inline.
+    Unknown(Box<CombatMonsterRuntimeFallbackKey>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct CombatMonsterRuntimeFallbackKey {
     pub(crate) hexaghost: HexaghostRuntimeState,
     pub(crate) louse: LouseRuntimeState,
     pub(crate) jaw_worm: JawWormRuntimeState,

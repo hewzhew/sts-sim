@@ -1,6 +1,9 @@
+use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatState, MonsterEntity};
 
-use super::super::types::{CombatMonsterKey, CombatMonsterRuntimeKey};
+use super::super::types::{
+    CombatMonsterKey, CombatMonsterRuntimeFallbackKey, CombatMonsterRuntimeKey,
+};
 
 pub(super) fn monsters_key(combat: &CombatState) -> Vec<CombatMonsterKey> {
     combat.entities.monsters.iter().map(monster_key).collect()
@@ -25,7 +28,91 @@ fn monster_key(monster: &MonsterEntity) -> CombatMonsterKey {
 }
 
 fn monster_runtime_key(monster: &MonsterEntity) -> CombatMonsterRuntimeKey {
-    CombatMonsterRuntimeKey {
+    match EnemyId::from_id(monster.monster_type) {
+        Some(EnemyId::Hexaghost) => CombatMonsterRuntimeKey::Hexaghost(monster.hexaghost.clone()),
+        Some(EnemyId::LouseNormal | EnemyId::LouseDefensive) => {
+            CombatMonsterRuntimeKey::Louse(monster.louse.clone())
+        }
+        Some(EnemyId::JawWorm) => CombatMonsterRuntimeKey::JawWorm(monster.jaw_worm.clone()),
+        Some(EnemyId::Looter | EnemyId::Mugger) => {
+            CombatMonsterRuntimeKey::Thief(monster.thief.clone())
+        }
+        Some(EnemyId::Byrd) => CombatMonsterRuntimeKey::Byrd(monster.byrd.clone()),
+        Some(EnemyId::Chosen) => CombatMonsterRuntimeKey::Chosen(monster.chosen.clone()),
+        Some(EnemyId::Snecko) => CombatMonsterRuntimeKey::Snecko(monster.snecko.clone()),
+        Some(EnemyId::ShelledParasite) => {
+            CombatMonsterRuntimeKey::ShelledParasite(monster.shelled_parasite.clone())
+        }
+        Some(EnemyId::BronzeAutomaton) => {
+            CombatMonsterRuntimeKey::BronzeAutomaton(monster.bronze_automaton.clone())
+        }
+        Some(EnemyId::BronzeOrb) => CombatMonsterRuntimeKey::BronzeOrb(monster.bronze_orb.clone()),
+        Some(EnemyId::BookOfStabbing) => {
+            CombatMonsterRuntimeKey::BookOfStabbing(monster.book_of_stabbing.clone())
+        }
+        Some(EnemyId::TheCollector) => {
+            CombatMonsterRuntimeKey::Collector(monster.collector.clone())
+        }
+        Some(EnemyId::Champ) => CombatMonsterRuntimeKey::Champ(monster.champ.clone()),
+        Some(EnemyId::AwakenedOne) => {
+            CombatMonsterRuntimeKey::AwakenedOne(monster.awakened_one.clone())
+        }
+        Some(EnemyId::CorruptHeart) => {
+            CombatMonsterRuntimeKey::CorruptHeart(monster.corrupt_heart.clone())
+        }
+        Some(EnemyId::WrithingMass) => {
+            CombatMonsterRuntimeKey::WrithingMass(monster.writhing_mass.clone())
+        }
+        Some(EnemyId::Spiker) => CombatMonsterRuntimeKey::Spiker(monster.spiker.clone()),
+        Some(EnemyId::SpireShield) => {
+            CombatMonsterRuntimeKey::SpireShield(monster.spire_shield.clone())
+        }
+        Some(EnemyId::SpireSpear) => {
+            CombatMonsterRuntimeKey::SpireSpear(monster.spire_spear.clone())
+        }
+        Some(EnemyId::SlaverRed) => CombatMonsterRuntimeKey::SlaverRed(monster.slaver_red.clone()),
+        Some(EnemyId::GremlinLeader) => {
+            CombatMonsterRuntimeKey::GremlinLeader(monster.gremlin_leader.clone())
+        }
+        Some(EnemyId::GremlinNob) => {
+            CombatMonsterRuntimeKey::GremlinNob(monster.gremlin_nob.clone())
+        }
+        Some(EnemyId::GremlinWizard) => {
+            CombatMonsterRuntimeKey::GremlinWizard(monster.gremlin_wizard.clone())
+        }
+        Some(EnemyId::Cultist) => CombatMonsterRuntimeKey::Cultist(monster.cultist.clone()),
+        Some(EnemyId::Sentry) => CombatMonsterRuntimeKey::Sentry(monster.sentry.clone()),
+        Some(EnemyId::SlimeBoss) => CombatMonsterRuntimeKey::SlimeBoss(monster.slime_boss.clone()),
+        Some(EnemyId::AcidSlimeL | EnemyId::SpikeSlimeL) => {
+            CombatMonsterRuntimeKey::LargeSlime(monster.large_slime.clone())
+        }
+        Some(EnemyId::SphericGuardian) => {
+            CombatMonsterRuntimeKey::SphericGuardian(monster.spheric_guardian.clone())
+        }
+        Some(EnemyId::Reptomancer) => {
+            CombatMonsterRuntimeKey::Reptomancer(monster.reptomancer.clone())
+        }
+        Some(EnemyId::Darkling) => CombatMonsterRuntimeKey::Darkling(monster.darkling.clone()),
+        Some(EnemyId::Nemesis) => CombatMonsterRuntimeKey::Nemesis(monster.nemesis.clone()),
+        Some(EnemyId::GiantHead) => CombatMonsterRuntimeKey::GiantHead(monster.giant_head.clone()),
+        Some(EnemyId::TimeEater) => CombatMonsterRuntimeKey::TimeEater(monster.time_eater.clone()),
+        Some(EnemyId::Donu) => CombatMonsterRuntimeKey::Donu(monster.donu.clone()),
+        Some(EnemyId::Deca) => CombatMonsterRuntimeKey::Deca(monster.deca.clone()),
+        Some(EnemyId::Transient) => CombatMonsterRuntimeKey::Transient(monster.transient.clone()),
+        Some(EnemyId::Exploder) => CombatMonsterRuntimeKey::Exploder(monster.exploder.clone()),
+        Some(EnemyId::Maw) => CombatMonsterRuntimeKey::Maw(monster.maw.clone()),
+        Some(EnemyId::SnakeDagger) => {
+            CombatMonsterRuntimeKey::SnakeDagger(monster.snake_dagger.clone())
+        }
+        Some(EnemyId::Lagavulin) => CombatMonsterRuntimeKey::Lagavulin(monster.lagavulin.clone()),
+        Some(EnemyId::TheGuardian) => CombatMonsterRuntimeKey::Guardian(monster.guardian.clone()),
+        Some(_) => CombatMonsterRuntimeKey::None,
+        None => CombatMonsterRuntimeKey::Unknown(Box::new(all_monster_runtime_key(monster))),
+    }
+}
+
+fn all_monster_runtime_key(monster: &MonsterEntity) -> CombatMonsterRuntimeFallbackKey {
+    CombatMonsterRuntimeFallbackKey {
         hexaghost: monster.hexaghost.clone(),
         louse: monster.louse.clone(),
         jaw_worm: monster.jaw_worm.clone(),
