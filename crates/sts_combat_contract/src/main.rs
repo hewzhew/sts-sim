@@ -17,7 +17,9 @@ use sts_combat_planner::{
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
     TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
-use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
+use sts_core::ai::combat_state_key::{
+    combat_exact_state_hash_v1, combat_exact_state_key_profiled_v1,
+};
 use sts_core::sim::combat::{
     apply_combat_input_to_stable_profiled_v1, CombatPosition, CombatStepLimits, CombatStepResult,
     CombatStepper, CombatTerminal, EngineCombatStepper,
@@ -106,6 +108,7 @@ struct TransitionCloneProfile {
     combat_zone_component_elapsed_ns: [u64; 6],
     combat_entity_component_elapsed_ns: [u64; 4],
     combat_runtime_component_elapsed_ns: [u64; 7],
+    exact_key_build_component_elapsed_ns: [u64; 11],
     combat_engine_clone_elapsed_ns: u64,
     combat_rng_clone_elapsed_ns: u64,
     combat_runtime_clone_elapsed_ns: u64,
@@ -163,6 +166,28 @@ impl CombatStepper for ProfiledEngineCombatStepper {
         }
 
         let (step, timing) = apply_combat_input_to_stable_profiled_v1(position, input, limits);
+        let (_, key_timing) =
+            combat_exact_state_key_profiled_v1(&step.position.engine, &step.position.combat);
+        let key_samples = [
+            key_timing.engine_elapsed_ns,
+            key_timing.turn_elapsed_ns,
+            key_timing.meta_elapsed_ns,
+            key_timing.zones_elapsed_ns,
+            key_timing.monsters_elapsed_ns,
+            key_timing.powers_elapsed_ns,
+            key_timing.potions_elapsed_ns,
+            key_timing.queue_elapsed_ns,
+            key_timing.runtime_elapsed_ns,
+            key_timing.rng_elapsed_ns,
+            key_timing.player_elapsed_ns,
+        ];
+        for (total, sample) in profile
+            .exact_key_build_component_elapsed_ns
+            .iter_mut()
+            .zip(key_samples)
+        {
+            *total = total.saturating_add(sample);
+        }
         profile.samples = profile.samples.saturating_add(1);
         let emitted_event_items = position.combat.runtime.emitted_events.len();
         profile.emitted_event_items = profile
@@ -484,6 +509,19 @@ fn run(args: Cli) -> Result<(), String> {
                         "pending_rewards": per_sample(profile.combat_runtime_component_elapsed_ns[4]),
                         "last_drawn_cards": per_sample(profile.combat_runtime_component_elapsed_ns[5]),
                         "monster_protocol": per_sample(profile.combat_runtime_component_elapsed_ns[6]),
+                    },
+                    "key_build_components": {
+                        "engine": per_sample(profile.exact_key_build_component_elapsed_ns[0]),
+                        "turn": per_sample(profile.exact_key_build_component_elapsed_ns[1]),
+                        "meta": per_sample(profile.exact_key_build_component_elapsed_ns[2]),
+                        "zones": per_sample(profile.exact_key_build_component_elapsed_ns[3]),
+                        "monsters": per_sample(profile.exact_key_build_component_elapsed_ns[4]),
+                        "powers": per_sample(profile.exact_key_build_component_elapsed_ns[5]),
+                        "potions": per_sample(profile.exact_key_build_component_elapsed_ns[6]),
+                        "queue": per_sample(profile.exact_key_build_component_elapsed_ns[7]),
+                        "runtime": per_sample(profile.exact_key_build_component_elapsed_ns[8]),
+                        "rng": per_sample(profile.exact_key_build_component_elapsed_ns[9]),
+                        "player": per_sample(profile.exact_key_build_component_elapsed_ns[10]),
                     },
                     "execution": per_sample(profile.execution_elapsed_ns),
                 },

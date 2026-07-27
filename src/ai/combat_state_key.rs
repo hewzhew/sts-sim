@@ -24,6 +24,26 @@ use combat::{combat_dominance_bucket_key, combat_exact_runtime_key};
 use stable::build_stable_outcome_key;
 pub use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
 
+/// Sampled wall-clock decomposition of one exact combat-key build.
+///
+/// Search semantics and budgets never read these values. The profiled builder
+/// exists so performance work can target the expensive semantic section
+/// instead of guessing from collection sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct CombatExactKeyBuildTimingV1 {
+    pub engine_elapsed_ns: u64,
+    pub turn_elapsed_ns: u64,
+    pub meta_elapsed_ns: u64,
+    pub zones_elapsed_ns: u64,
+    pub monsters_elapsed_ns: u64,
+    pub powers_elapsed_ns: u64,
+    pub potions_elapsed_ns: u64,
+    pub queue_elapsed_ns: u64,
+    pub runtime_elapsed_ns: u64,
+    pub rng_elapsed_ns: u64,
+    pub player_elapsed_ns: u64,
+}
+
 /// Stable diagnostic hashes for the semantic sections of a dominance key.
 /// Search diagnostics use this view without depending on the key's private
 /// representation.
@@ -45,6 +65,17 @@ pub struct CombatDominanceDiagnosticPartsV1 {
 /// hp/block and runtime details that affect future combat transitions.
 pub fn combat_exact_state_key(engine: &EngineState, combat: &CombatState) -> CombatExactStateKey {
     combat_exact_runtime_key(engine, combat)
+}
+
+/// Builds the same exact key while timing each semantic section.
+///
+/// Callers should sample this function; its clocks are intentionally absent
+/// from the ordinary production builder.
+pub fn combat_exact_state_key_profiled_v1(
+    engine: &EngineState,
+    combat: &CombatState,
+) -> (CombatExactStateKey, CombatExactKeyBuildTimingV1) {
+    combat::combat_exact_runtime_key_profiled_v1(engine, combat)
 }
 
 pub fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {

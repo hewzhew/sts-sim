@@ -280,18 +280,20 @@ try {
                 $Case.simulation_ns.Add($Run.report.ns_per_applied_transition.simulation)
                 $Case.identity_ns.Add($Run.report.ns_per_applied_transition.identity)
                 $Case.key_build_ns.Add($Run.report.ns_per_applied_transition.key_build)
-                $KeyComponents = $Run.report.ns_per_applied_transition.key_build_components
-                $Case.key_engine_ns.Add($KeyComponents.engine)
-                $Case.key_turn_ns.Add($KeyComponents.turn)
-                $Case.key_meta_ns.Add($KeyComponents.meta)
-                $Case.key_zones_ns.Add($KeyComponents.zones)
-                $Case.key_monsters_ns.Add($KeyComponents.monsters)
-                $Case.key_powers_ns.Add($KeyComponents.powers)
-                $Case.key_potions_ns.Add($KeyComponents.potions)
-                $Case.key_queue_ns.Add($KeyComponents.queue)
-                $Case.key_runtime_ns.Add($KeyComponents.runtime)
-                $Case.key_rng_ns.Add($KeyComponents.rng)
-                $Case.key_player_ns.Add($KeyComponents.player)
+                if ($ProfileTransitionCloneCost) {
+                    $KeyComponents = $Run.report.transition_clone_profile.mean_ns_per_sample.key_build_components
+                    $Case.key_engine_ns.Add($KeyComponents.engine)
+                    $Case.key_turn_ns.Add($KeyComponents.turn)
+                    $Case.key_meta_ns.Add($KeyComponents.meta)
+                    $Case.key_zones_ns.Add($KeyComponents.zones)
+                    $Case.key_monsters_ns.Add($KeyComponents.monsters)
+                    $Case.key_powers_ns.Add($KeyComponents.powers)
+                    $Case.key_potions_ns.Add($KeyComponents.potions)
+                    $Case.key_queue_ns.Add($KeyComponents.queue)
+                    $Case.key_runtime_ns.Add($KeyComponents.runtime)
+                    $Case.key_rng_ns.Add($KeyComponents.rng)
+                    $Case.key_player_ns.Add($KeyComponents.player)
+                }
                 $Case.publish_ns.Add($Run.report.ns_per_applied_transition.publish)
                 if ($ProfileTransitionCloneCost) {
                     $Profile = $Run.report.transition_clone_profile
@@ -357,19 +359,21 @@ try {
                 simulation_ns = [math]::Round((Get-Median $_.simulation_ns), 1)
                 identity_ns = [math]::Round((Get-Median $_.identity_ns), 1)
                 key_build_ns = [math]::Round((Get-Median $_.key_build_ns), 1)
-                key_build_components_ns = [ordered]@{
-                    engine = [math]::Round((Get-Median $_.key_engine_ns), 1)
-                    turn = [math]::Round((Get-Median $_.key_turn_ns), 1)
-                    meta = [math]::Round((Get-Median $_.key_meta_ns), 1)
-                    zones = [math]::Round((Get-Median $_.key_zones_ns), 1)
-                    monsters = [math]::Round((Get-Median $_.key_monsters_ns), 1)
-                    powers = [math]::Round((Get-Median $_.key_powers_ns), 1)
-                    potions = [math]::Round((Get-Median $_.key_potions_ns), 1)
-                    queue = [math]::Round((Get-Median $_.key_queue_ns), 1)
-                    runtime = [math]::Round((Get-Median $_.key_runtime_ns), 1)
-                    rng = [math]::Round((Get-Median $_.key_rng_ns), 1)
-                    player = [math]::Round((Get-Median $_.key_player_ns), 1)
-                }
+                key_build_components_ns = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        engine = [math]::Round((Get-Median $_.key_engine_ns), 1)
+                        turn = [math]::Round((Get-Median $_.key_turn_ns), 1)
+                        meta = [math]::Round((Get-Median $_.key_meta_ns), 1)
+                        zones = [math]::Round((Get-Median $_.key_zones_ns), 1)
+                        monsters = [math]::Round((Get-Median $_.key_monsters_ns), 1)
+                        powers = [math]::Round((Get-Median $_.key_powers_ns), 1)
+                        potions = [math]::Round((Get-Median $_.key_potions_ns), 1)
+                        queue = [math]::Round((Get-Median $_.key_queue_ns), 1)
+                        runtime = [math]::Round((Get-Median $_.key_runtime_ns), 1)
+                        rng = [math]::Round((Get-Median $_.key_rng_ns), 1)
+                        player = [math]::Round((Get-Median $_.key_player_ns), 1)
+                    }
+                } else { $null }
                 publish_ns = [math]::Round((Get-Median $_.publish_ns), 1)
                 engine_clone_ns = if ($ProfileTransitionCloneCost) {
                     [math]::Round((Get-Median $_.engine_clone_ns), 1)
