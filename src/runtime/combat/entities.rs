@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PlayerEntity {
     pub id: EntityId,
     pub current_hp: i32,
@@ -19,11 +19,63 @@ pub struct PlayerEntity {
     pub orbs: Vec<OrbEntity>,
     pub stance: StanceId,
     pub relics: Vec<RelicState>,
+    /// Derived dispatch index for Java's ordered `player.relics` hook walks.
+    ///
+    /// This is an execution cache, not independent game state. Never persist
+    /// it: deserialization rebuilds it from `relics` so old or hand-edited
+    /// artifacts cannot make hook dispatch disagree with the authoritative
+    /// relic list.
+    #[serde(skip_serializing)]
     pub relic_buses: Arc<RelicBuses>,
     /// Java: EnergyManager.energyMaster — base energy per turn.
     /// Starts at 3, boss relics with onEquip() { ++energyMaster } increment this.
     /// SlaversCollar conditionally adds +1 at battle start (handled separately).
     pub energy_master: u8,
+}
+
+#[derive(Deserialize)]
+struct PlayerEntityDeserialize {
+    id: EntityId,
+    current_hp: i32,
+    max_hp: i32,
+    block: i32,
+    facing_left: bool,
+    gold_delta_this_combat: i32,
+    gold: i32,
+    max_orbs: u8,
+    orbs: Vec<OrbEntity>,
+    stance: StanceId,
+    relics: Vec<RelicState>,
+    /// Accepted only to migrate existing combat artifacts. Its contents are
+    /// intentionally ignored in favor of rebuilding from `relics`.
+    #[serde(default, rename = "relic_buses")]
+    _legacy_relic_buses: Option<serde::de::IgnoredAny>,
+    energy_master: u8,
+}
+
+impl<'de> Deserialize<'de> for PlayerEntity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let stored = PlayerEntityDeserialize::deserialize(deserializer)?;
+        let relic_buses = Arc::new(RelicBuses::from_relics(&stored.relics));
+        Ok(Self {
+            id: stored.id,
+            current_hp: stored.current_hp,
+            max_hp: stored.max_hp,
+            block: stored.block,
+            facing_left: stored.facing_left,
+            gold_delta_this_combat: stored.gold_delta_this_combat,
+            gold: stored.gold,
+            max_orbs: stored.max_orbs,
+            orbs: stored.orbs,
+            stance: stored.stance,
+            relics: stored.relics,
+            relic_buses,
+            energy_master: stored.energy_master,
+        })
+    }
 }
 
 impl PlayerEntity {
@@ -124,6 +176,17 @@ impl PlayerEntity {
         if sub.on_calculate_vulnerable_multiplier {
             relic_buses.on_calculate_vulnerable_multiplier.push(index);
         }
+    }
+}
+
+impl RelicBuses {
+    pub(crate) fn from_relics(relics: &[RelicState]) -> Self {
+        let mut buses = Self::default();
+        for (index, relic) in relics.iter().enumerate() {
+            let subscriptions = crate::content::relics::get_relic_subscriptions(relic.id);
+            PlayerEntity::register_relic_subscriptions(&mut buses, index, subscriptions);
+        }
+        buses
     }
 }
 
@@ -389,4 +452,48 @@ impl Default for MonsterProtocolObservationState {
 pub struct MonsterProtocolState {
     pub observation: MonsterProtocolObservationState,
     pub identity: MonsterProtocolIdentity,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::relics::RelicId;
+
+    #[test]
+    fn player_json_rebuilds_relic_dispatch_cache_from_authoritative_relics() {
+        let mut player = crate::test_support::blank_test_combat().entities.player;
+        player.add_relic(RelicState::new(RelicId::PenNib));
+        player.add_relic(RelicState::new(RelicId::Calipers));
+        assert_eq!(player.relic_buses.on_use_card.as_slice(), &[0]);
+        assert_eq!(
+            player.relic_buses.on_calculate_block_retained.as_slice(),
+            &[1]
+        );
+
+        let mut legacy_json = serde_json::to_value(&player).expect("serialize player");
+        assert!(
+            legacy_json.get("relic_buses").is_none(),
+            "derived dispatch cache must not be persisted"
+        );
+        legacy_json
+            .as_object_mut()
+            .expect("player serializes as an object")
+            .insert(
+                "relic_buses".to_owned(),
+                serde_json::json!({
+                    "on_use_card": [999],
+                    "on_calculate_block_retained": []
+                }),
+            );
+
+        let rebuilt: PlayerEntity =
+            serde_json::from_value(legacy_json).expect("read legacy player cache");
+
+        assert_eq!(rebuilt, player);
+        assert_eq!(rebuilt.relic_buses.on_use_card.as_slice(), &[0]);
+        assert_eq!(
+            rebuilt.relic_buses.on_calculate_block_retained.as_slice(),
+            &[1]
+        );
+    }
 }
