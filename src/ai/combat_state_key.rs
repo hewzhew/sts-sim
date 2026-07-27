@@ -5,9 +5,8 @@
 //! outcome keys are only for stable frontiers and may ignore runtime noise.
 //! Do not use one key family in place of another.
 
-use blake2::{Blake2b512, Digest};
-
 mod combat;
+mod identity;
 mod monster;
 mod pending_choice;
 mod postcombat;
@@ -21,6 +20,7 @@ use crate::runtime::combat::CombatState;
 use crate::state::EngineState;
 
 use combat::{combat_dominance_bucket_key, combat_exact_runtime_key};
+use identity::combat_exact_identity_v2;
 use stable::build_stable_outcome_key;
 pub use types::{CombatDominanceKey, CombatExactStateKey, StableOutcomeKey};
 
@@ -103,7 +103,7 @@ pub fn combat_exact_state_key_hash_v2(key: &CombatExactStateKey) -> String {
 /// hashing the large typed key a second time. Callers must still compare the
 /// typed key inside equal-digest buckets; the digest alone is not equality.
 pub fn combat_exact_state_key_identity_v2(key: &CombatExactStateKey) -> ([u8; 32], String) {
-    let digest = debug_digest(key);
+    let digest = combat_exact_identity_v2(key);
     (digest, hex_lower(&digest))
 }
 
@@ -192,15 +192,6 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         | EngineState::BossRelicSelect(_) => StableFrontierScope::PostCombat,
         EngineState::GameOver(_) => StableFrontierScope::GameOver,
     }
-}
-
-fn debug_digest<T: std::fmt::Debug>(value: &T) -> [u8; 32] {
-    let mut hasher = Blake2b512::new();
-    hasher.update(format!("{value:?}").as_bytes());
-    let digest = hasher.finalize();
-    digest[..32]
-        .try_into()
-        .expect("Blake2b-512 always contains a 32-byte prefix")
 }
 
 fn diagnostic_hash<T: std::fmt::Debug>(value: &T) -> String {

@@ -22,19 +22,19 @@ pub(crate) use self::rng::*;
 pub(crate) use self::runtime::*;
 pub(crate) use self::turn::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct CombatExactStateKey {
     pub(crate) common: CombatRuntimeKey,
     pub(crate) player: CombatExactPlayerKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct CombatDominanceKey {
     pub(crate) common: CombatRuntimeKey,
     pub(crate) player: CombatDominancePlayerKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatRuntimeKey {
     pub(crate) engine: CombatEngineKey,
     pub(crate) turn: CombatTurnKey,

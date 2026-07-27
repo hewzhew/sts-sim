@@ -10,26 +10,23 @@ pub(super) fn engine_key(engine: &EngineState) -> CombatEngineKey {
         EngineState::PendingChoice(choice) => {
             CombatEngineKey::PendingChoice(pending_choice_key(choice))
         }
-        EngineState::RewardScreen(value) => CombatEngineKey::RewardScreen(format!("{value:?}")),
-        EngineState::RewardOverlay {
-            reward_state,
-            return_state,
-        } => CombatEngineKey::RewardOverlay(format!("{reward_state:?}|return={return_state:?}")),
-        EngineState::TreasureRoom(value) => CombatEngineKey::TreasureRoom(format!("{value:?}")),
+        EngineState::RewardScreen(_) => CombatEngineKey::RewardScreen(canonical_json(engine)),
+        EngineState::RewardOverlay { .. } => CombatEngineKey::RewardOverlay(canonical_json(engine)),
+        EngineState::TreasureRoom(_) => CombatEngineKey::TreasureRoom(canonical_json(engine)),
         EngineState::Campfire => CombatEngineKey::Campfire,
-        EngineState::Shop(value) => CombatEngineKey::Shop(format!("{value:?}")),
+        EngineState::Shop(_) => CombatEngineKey::Shop(canonical_json(engine)),
         EngineState::MapNavigation => CombatEngineKey::MapNavigation,
-        EngineState::MapOverlay { return_state } => {
-            CombatEngineKey::MapOverlay(format!("{return_state:?}"))
-        }
+        EngineState::MapOverlay { .. } => CombatEngineKey::MapOverlay(canonical_json(engine)),
         EngineState::EventRoom => CombatEngineKey::EventRoom,
-        EngineState::CombatStart(value) => CombatEngineKey::CombatStart(format!("{value:?}")),
-        EngineState::RunPendingChoice(value) => {
-            CombatEngineKey::RunPendingChoice(format!("{value:?}"))
+        EngineState::CombatStart(_) => CombatEngineKey::CombatStart(canonical_json(engine)),
+        EngineState::RunPendingChoice(_) => {
+            CombatEngineKey::RunPendingChoice(canonical_json(engine))
         }
-        EngineState::BossRelicSelect(value) => {
-            CombatEngineKey::BossRelicSelect(format!("{value:?}"))
-        }
-        EngineState::GameOver(value) => CombatEngineKey::GameOver(format!("{value:?}")),
+        EngineState::BossRelicSelect(_) => CombatEngineKey::BossRelicSelect(canonical_json(engine)),
+        EngineState::GameOver(_) => CombatEngineKey::GameOver(canonical_json(engine)),
     }
+}
+
+fn canonical_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).expect("engine-state key should serialize deterministically")
 }

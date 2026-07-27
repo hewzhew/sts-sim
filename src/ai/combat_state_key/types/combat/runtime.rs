@@ -1,6 +1,6 @@
 use crate::content::cards::CardId;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatRuntimeHintsKey {
     pub(crate) using_card: bool,
     pub(crate) colorless_combat_pool: Vec<CardId>,
@@ -12,26 +12,26 @@ pub(crate) struct CombatRuntimeHintsKey {
     pub(crate) combat_smoked: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatDrawnCardKey {
     pub(crate) card_uuid: u32,
     pub(crate) card_id: CardId,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatMonsterProtocolKey {
     pub(crate) entity_id: usize,
     pub(crate) observation: CombatMonsterProtocolObservationKey,
     pub(crate) identity: CombatMonsterProtocolIdentityKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatMonsterProtocolObservationKey {
     pub(crate) visible_intent: CombatIntentKey,
     pub(crate) preview_damage_per_hit: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatMonsterProtocolIdentityKey {
     pub(crate) instance_id: Option<u64>,
     pub(crate) spawn_order: Option<u64>,
@@ -39,7 +39,7 @@ pub(crate) struct CombatMonsterProtocolIdentityKey {
     pub(crate) group_index: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatIntentKey {
     Attack { damage: i32, hits: u8 },
     AttackBuff { damage: i32, hits: u8 },

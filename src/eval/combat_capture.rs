@@ -4,7 +4,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_state_key::{
-    combat_exact_state_key, stable_dominance_bucket_key, stable_outcome_key,
+    combat_exact_state_key, combat_exact_state_key_hash_v2, stable_dominance_bucket_key,
+    stable_outcome_key,
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
@@ -13,7 +14,6 @@ use crate::eval::artifact::{
 };
 use crate::eval::fingerprint::{
     combat_fingerprint_bundle_v2, CombatLegalActionSurfaceFingerprintV2, StateFingerprintV2,
-    FINGERPRINT_ALGORITHM_DEBUG,
 };
 use crate::runtime::combat::Intent;
 use crate::sim::combat::{combat_terminal, stable_boundary, CombatPosition, CombatTerminal};
@@ -23,6 +23,8 @@ use crate::state::run::RunState;
 
 pub const COMBAT_CAPTURE_SCHEMA_NAME: &str = "CombatCaptureV2";
 pub const COMBAT_CAPTURE_SCHEMA_VERSION: u32 = 2;
+const COMBAT_CAPTURE_INTEGRITY_ALGORITHM_V2: &str =
+    "exact:blake2b_256_semantic_json_v2;stable:blake2b_512_prefix_256_debug_v1";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -245,10 +247,10 @@ pub fn validate_combat_capture_v2(capture: &CombatCaptureV2) -> Result<(), Strin
         return Err("combat capture artifact header does not match schema".to_string());
     }
     validate_capture_provenance(&capture.provenance)?;
-    if capture.integrity.fingerprint_algorithm != FINGERPRINT_ALGORITHM_DEBUG {
+    if capture.integrity.fingerprint_algorithm != COMBAT_CAPTURE_INTEGRITY_ALGORITHM_V2 {
         return Err(format!(
             "unsupported combat capture fingerprint algorithm '{}'; expected '{}'; regenerate this artifact after the exact-combat identity V2 cutover",
-            capture.integrity.fingerprint_algorithm, FINGERPRINT_ALGORITHM_DEBUG
+            capture.integrity.fingerprint_algorithm, COMBAT_CAPTURE_INTEGRITY_ALGORITHM_V2
         ));
     }
     if !active_combat_capture_boundary(&capture.position.engine, &capture.position.combat) {
@@ -280,8 +282,8 @@ fn integrity_for_position(position: &CombatPosition) -> CombatCaptureIntegrityV2
     let stable = stable_dominance_bucket_key(&position.engine, &position.combat)
         .map(|_| stable_outcome_key(&position.engine, &position.combat));
     CombatCaptureIntegrityV2 {
-        fingerprint_algorithm: FINGERPRINT_ALGORITHM_DEBUG.to_string(),
-        exact_state_fingerprint: fingerprint_debug(&exact),
+        fingerprint_algorithm: COMBAT_CAPTURE_INTEGRITY_ALGORITHM_V2.to_string(),
+        exact_state_fingerprint: combat_exact_state_key_hash_v2(&exact),
         stable_outcome_fingerprint: stable.as_ref().map(fingerprint_debug),
     }
 }
@@ -467,6 +469,10 @@ mod tests {
         );
         assert_eq!(loaded.integrity, capture.integrity);
         assert_eq!(loaded.fingerprints, capture.fingerprints);
+        assert_eq!(
+            loaded.integrity.exact_state_fingerprint, loaded.fingerprints.exact_state_hash,
+            "capture integrity and state fingerprint must share one exact identity owner"
+        );
         assert_eq!(loaded.legal_action_surface, capture.legal_action_surface);
         assert_eq!(
             loaded.fingerprints.legal_input_language_hash,
@@ -507,16 +513,22 @@ mod tests {
     }
 
     #[test]
-    fn combat_capture_validation_rejects_exact_identity_v1_artifacts_explicitly() {
+    fn combat_capture_validation_rejects_pre_semantic_exact_identities_explicitly() {
         let position = jaw_worm_position();
-        let mut capture = capture_combat_position_v2(None, &position).expect("capture should work");
-        capture.integrity.fingerprint_algorithm = "blake2b_256_of_typed_key_debug_v1".to_string();
+        for obsolete_algorithm in [
+            "blake2b_256_of_typed_key_debug_v1",
+            "blake2b_256_of_typed_key_debug_v2",
+        ] {
+            let mut capture =
+                capture_combat_position_v2(None, &position).expect("capture should work");
+            capture.integrity.fingerprint_algorithm = obsolete_algorithm.to_string();
 
-        let err = validate_combat_capture_v2(&capture)
-            .expect_err("V1 exact-identity artifacts must be regenerated");
+            let err = validate_combat_capture_v2(&capture)
+                .expect_err("Debug-derived exact identities must be regenerated");
 
-        assert!(err.contains("exact-combat identity V2 cutover"));
-        assert!(err.contains("regenerate"));
+            assert!(err.contains("exact-combat identity V2 cutover"));
+            assert!(err.contains("regenerate"));
+        }
     }
 
     #[test]

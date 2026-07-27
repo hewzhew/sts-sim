@@ -9,7 +9,7 @@ pub(super) fn queue_key(combat: &CombatState) -> Vec<CombatQueuedActionKey> {
 
 fn action_key(action: &Action) -> CombatQueuedActionKey {
     CombatQueuedActionKey {
-        discriminant: std::mem::discriminant(action),
-        payload: format!("{action:?}"),
+        canonical_payload: serde_json::to_string(action)
+            .expect("queued combat action should serialize deterministically"),
     }
 }

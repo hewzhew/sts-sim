@@ -1,18 +1,18 @@
 use crate::content::cards::CardId;
 use crate::runtime::combat::QueuedCardSource;
+use serde::ser::SerializeStruct;
 use smallvec::SmallVec;
-use std::hash::{Hash, Hasher};
 
 /// Exact card-zone identity stored in one allocation.
 ///
 /// The runtime already exposes each zone as an ordered card sequence. Keeping
 /// five independent `Vec`s here paid five allocations for every transposition
 /// key, even though search never mutates the projection. The boundary offsets
-/// retain those five exact sequences in one backing allocation. Custom
-/// `Debug` and `Hash` deliberately preserve the former field-by-field shape so
-/// durable diagnostic identities and `HashMap` equality semantics do not
-/// change with this ownership optimization.
-#[derive(Clone, PartialEq, Eq)]
+/// retain those five exact sequences in one backing allocation. Ordinary
+/// equality and hashing follow this compact representation. Durable identity
+/// uses the explicit semantic-zone serialization below, so storage packing can
+/// evolve independently.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatZonesKey {
     pub(crate) card_uuid_counter: u32,
     cards: Vec<CombatCardKey>,
@@ -83,34 +83,21 @@ impl CombatZonesKey {
     }
 }
 
-impl std::fmt::Debug for CombatZonesKey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CombatZonesKey")
-            .field("card_uuid_counter", &self.card_uuid_counter)
-            .field("hand", &self.hand())
-            .field("draw", &self.draw())
-            .field("discard", &self.discard())
-            .field("exhaust", &self.exhaust())
-            .field("limbo", &self.limbo())
-            .field("queued", &self.queued)
-            .finish()
+impl serde::Serialize for CombatZonesKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut zones = serializer.serialize_struct("CombatZonesSemanticV2", 7)?;
+        zones.serialize_field("card_uuid_counter", &self.card_uuid_counter)?;
+        zones.serialize_field("hand", self.hand())?;
+        zones.serialize_field("draw", self.draw())?;
+        zones.serialize_field("discard", self.discard())?;
+        zones.serialize_field("exhaust", self.exhaust())?;
+        zones.serialize_field("limbo", self.limbo())?;
+        zones.serialize_field("queued", &self.queued)?;
+        zones.end()
     }
 }
 
-impl Hash for CombatZonesKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.card_uuid_counter.hash(state);
-        self.hand().hash(state);
-        self.draw().hash(state);
-        self.discard().hash(state);
-        self.exhaust().hash(state);
-        self.limbo().hash(state);
-        self.queued.hash(state);
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatCardKey {
     pub(crate) id: CardId,
     pub(crate) uuid: u32,
@@ -130,7 +117,7 @@ pub(crate) struct CombatCardKey {
     pub(crate) energy_on_use: i32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatQueuedCardKey {
     pub(crate) card: CombatCardKey,
     pub(crate) target: CombatTargetKey,
@@ -143,7 +130,7 @@ pub(crate) struct CombatQueuedCardKey {
     pub(crate) source: QueuedCardSource,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatTargetKey {
     None,
     MonsterSlot(usize),

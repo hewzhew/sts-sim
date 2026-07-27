@@ -1,12 +1,12 @@
 use crate::content::potions::PotionId;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatPotionSlotKey {
     pub(crate) slot: usize,
     pub(crate) potion: Option<CombatPotionKey>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatPotionKey {
     pub(crate) id: PotionId,
     pub(crate) uuid: u32,

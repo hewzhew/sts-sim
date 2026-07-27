@@ -1,9 +1,4 @@
-use std::mem::Discriminant;
-
-use crate::runtime::action::Action;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatQueuedActionKey {
-    pub(crate) discriminant: Discriminant<Action>,
-    pub(crate) payload: String,
+    pub(crate) canonical_payload: String,
 }

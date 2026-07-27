@@ -1,7 +1,7 @@
 use crate::content::cards::CardId;
 use crate::runtime::combat::OrbId;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatTurnKey {
     pub(crate) turn_count: u32,
     pub(crate) phase: CombatPhaseKey,
@@ -10,14 +10,14 @@ pub(crate) struct CombatTurnKey {
     pub(crate) counters: CombatTurnCountersKey,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatPhaseKey {
     PlayerTurn,
     MonsterTurn,
     TurnTransition,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatTurnCountersKey {
     pub(crate) cards_played_this_turn: u8,
     pub(crate) attacks_played_this_turn: u8,

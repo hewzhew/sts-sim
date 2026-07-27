@@ -36,6 +36,11 @@ fn cached_master_deck_hash_collision_still_compares_every_card() {
     let strike_key = combat_exact_state_key(&EngineState::CombatPlayerTurn, &strike);
     let defend_key = combat_exact_state_key(&EngineState::CombatPlayerTurn, &defend);
     assert_ne!(strike_key, defend_key);
+    assert_ne!(
+        super::super::combat_exact_state_key_hash_v2(&strike_key),
+        super::super::combat_exact_state_key_hash_v2(&defend_key),
+        "durable identity must serialize deck semantics instead of trusting the cached in-process hash"
+    );
 
     let mut keys = HashSet::new();
     assert!(keys.insert(strike_key));

@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatRngPoolKey {
     pub(crate) monster_rng: CombatStsRngKey,
     pub(crate) event_rng: CombatStsRngKey,
@@ -15,7 +15,7 @@ pub(crate) struct CombatRngPoolKey {
     pub(crate) math_rng: CombatStsRngKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatStsRngKey {
     pub(crate) seed0: u64,
     pub(crate) seed1: u64,

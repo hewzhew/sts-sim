@@ -19,7 +19,10 @@ pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
         pending_rewards: runtime
             .pending_rewards
             .iter()
-            .map(|reward| format!("{reward:?}"))
+            .map(|reward| {
+                serde_json::to_string(reward)
+                    .expect("pending combat reward should serialize deterministically")
+            })
             .collect(),
         power_instance_counter: runtime.power_instance_counter,
         last_drawn_cards: runtime

@@ -1,6 +1,6 @@
 use crate::content::cards::CardId;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatEngineKey {
     CombatPlayerTurn,
     CombatProcessing,
@@ -19,7 +19,7 @@ pub(crate) enum CombatEngineKey {
     GameOver(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatPendingChoiceKey {
     GridSelect {
         source_pile: CombatPileTypeKey,
@@ -62,13 +62,13 @@ pub(crate) enum CombatPendingChoiceKey {
     StanceChoice,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatChooseOneCardKey {
     pub(crate) card_id: CardId,
     pub(crate) upgrades: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatPileTypeKey {
     Draw,
     Discard,
@@ -78,7 +78,7 @@ pub(crate) enum CombatPileTypeKey {
     MasterDeck,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatHandSelectReasonKey {
     Exhaust,
     Discard,
@@ -93,7 +93,7 @@ pub(crate) enum CombatHandSelectReasonKey {
     Recycle,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatGridSelectReasonKey {
     MoveToDrawPile,
     Exhume { upgrade: bool },
@@ -106,7 +106,7 @@ pub(crate) enum CombatGridSelectReasonKey {
     Omniscience { play_amount: u8 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatCardTypeKey {
     Attack,
     Skill,
@@ -115,7 +115,7 @@ pub(crate) enum CombatCardTypeKey {
     Curse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) enum CombatCardDestinationKey {
     Hand,
     DrawPileRandom,

@@ -62,6 +62,46 @@ fn java_card_queue_has_one_executable_rust_owner() {
 }
 
 #[test]
+fn durable_exact_identity_is_not_a_debug_or_layout_compatibility_view() {
+    let identity = std::fs::read_to_string("src/ai/combat_state_key/identity.rs")
+        .expect("read exact identity implementation");
+    let queue = std::fs::read_to_string("src/ai/combat_state_key/combat/queue.rs")
+        .expect("read exact action-queue projection");
+    let cards = std::fs::read_to_string("src/ai/combat_state_key/types/combat/cards.rs")
+        .expect("read exact card-zone key");
+    let monster = std::fs::read_to_string("src/ai/combat_state_key/types/combat/monster.rs")
+        .expect("read exact monster key");
+    let player = std::fs::read_to_string("src/ai/combat_state_key/types/combat/player.rs")
+        .expect("read exact player key");
+
+    assert!(
+        identity.contains("EXACT_IDENTITY_DOMAIN_V2")
+            && identity.contains("serde_json::to_writer"),
+        "durable exact identity must use a versioned streaming semantic encoding"
+    );
+    assert!(
+        !identity.contains("format!(") && !identity.contains("std::hash"),
+        "durable exact identity must not use Debug text or process-local Hash"
+    );
+    assert!(
+        !queue.contains("discriminant(action)") && !queue.contains("format!(\"{action:?}\")"),
+        "queued action identity must use its canonical serde payload"
+    );
+    assert!(
+        !cards.contains("impl std::fmt::Debug for CombatZonesKey"),
+        "packed zones must not re-create the historical owned-zone Debug shape"
+    );
+    assert!(
+        !monster.contains("CombatMonsterTurnPlanView") && !monster.contains("turn_plan_view"),
+        "monster identity must not hash a turn plan derived from move_state twice"
+    );
+    assert!(
+        !player.contains("impl std::fmt::Debug for CombatRelicBusesKey"),
+        "packed relic buses must not re-create 26 historical Debug fields"
+    );
+}
+
+#[test]
 fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
     const FRONTEND_LIMIT: u64 = 144 * 1024;
     const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;

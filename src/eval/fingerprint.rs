@@ -22,10 +22,6 @@ use crate::state::core::{ClientInput, EngineState};
 pub const FINGERPRINT_SCHEMA_NAME: &str = "StateFingerprintV2";
 pub const FINGERPRINT_SCHEMA_VERSION: u32 = 2;
 pub const FINGERPRINT_ALGORITHM_JSON: &str = "blake2b_256_canonical_json_v1";
-/// Typed-key debug fingerprints produced after the exact-combat identity V2
-/// cutover. V1 combat captures intentionally fail validation and must be
-/// regenerated from their source position.
-pub const FINGERPRINT_ALGORITHM_DEBUG: &str = "blake2b_256_of_typed_key_debug_v2";
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
