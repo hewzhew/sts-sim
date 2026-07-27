@@ -171,6 +171,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
     for module in [
         "atomic_policy_searches.rs",
+        "combat_case_atomic_turn_portfolio.rs",
         "combat_case_fold_solved_suffix.rs",
         "combat_case_layered.rs",
         "combat_plan_diagnostics.rs",
