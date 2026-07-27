@@ -73,6 +73,11 @@ pub(super) fn local_graph_performance_profile(
             .transition_seen_elapsed_ns
             .saturating_add(timing.transition_publish_elapsed_ns),
     );
+    let transition_identity_other_ns = timing.transition_identity_elapsed_ns.saturating_sub(
+        timing
+            .transition_key_build_elapsed_ns
+            .saturating_add(timing.transition_key_index_elapsed_ns),
+    );
 
     let transitions = counters.applied_action_transitions;
     let unique_ratio =
@@ -146,6 +151,20 @@ pub(super) fn local_graph_performance_profile(
                 timing.transition_identity_elapsed_ns,
                 timing.generation_elapsed_ns,
             ),
+            "transition_identity_breakdown": {
+                "key_build": duration_share(
+                    timing.transition_key_build_elapsed_ns,
+                    timing.transition_identity_elapsed_ns,
+                ),
+                "key_index": duration_share(
+                    timing.transition_key_index_elapsed_ns,
+                    timing.transition_identity_elapsed_ns,
+                ),
+                "other": duration_share(
+                    transition_identity_other_ns,
+                    timing.transition_identity_elapsed_ns,
+                ),
+            },
             "transition_admission": duration_share(
                 timing.transition_admission_elapsed_ns,
                 timing.generation_elapsed_ns,
@@ -220,6 +239,14 @@ pub(super) fn local_graph_performance_profile(
                     timing.transition_identity_elapsed_ns,
                     transitions,
                 ),
+                "key_build": nanos_per_item(
+                    timing.transition_key_build_elapsed_ns,
+                    transitions,
+                ),
+                "key_index": nanos_per_item(
+                    timing.transition_key_index_elapsed_ns,
+                    transitions,
+                ),
                 "seen_set": nanos_per_item(
                     timing.transition_seen_elapsed_ns,
                     transitions,
@@ -278,6 +305,10 @@ mod tests {
         );
         assert_eq!(profile["generation"]["accounted_elapsed_ns"], 550);
         assert_eq!(profile["generation"]["unattributed"]["elapsed_ns"], 150);
+        assert_eq!(
+            profile["generation"]["transition_identity_breakdown"]["other"]["elapsed_ns"],
+            100
+        );
         assert_eq!(
             profile["generation"]["transition_admission_breakdown"]["other"]["elapsed_ns"],
             50

@@ -382,6 +382,10 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             report.performance_timing.transition_simulation_elapsed_ns,
         "transition_identity_elapsed_ns":
             report.performance_timing.transition_identity_elapsed_ns,
+        "transition_key_build_elapsed_ns":
+            report.performance_timing.transition_key_build_elapsed_ns,
+        "transition_key_index_elapsed_ns":
+            report.performance_timing.transition_key_index_elapsed_ns,
         "transition_admission_elapsed_ns":
             report.performance_timing.transition_admission_elapsed_ns,
         "transition_trace_elapsed_ns":

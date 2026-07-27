@@ -407,6 +407,8 @@ pub struct TurnOptionGeneratorSession {
     atomic_expand_elapsed_ns: u64,
     transition_simulation_elapsed_ns: u64,
     transition_identity_elapsed_ns: u64,
+    transition_key_build_elapsed_ns: u64,
+    transition_key_index_elapsed_ns: u64,
     transition_admission_elapsed_ns: u64,
     transition_trace_elapsed_ns: u64,
     transition_seen_elapsed_ns: u64,
@@ -420,6 +422,8 @@ pub(crate) struct TurnOptionGeneratorTiming {
     pub atomic_expand_elapsed_ns: u64,
     pub transition_simulation_elapsed_ns: u64,
     pub transition_identity_elapsed_ns: u64,
+    pub transition_key_build_elapsed_ns: u64,
+    pub transition_key_index_elapsed_ns: u64,
     pub transition_admission_elapsed_ns: u64,
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
@@ -511,6 +515,8 @@ impl TurnOptionGeneratorSession {
             atomic_expand_elapsed_ns: 0,
             transition_simulation_elapsed_ns: 0,
             transition_identity_elapsed_ns: 0,
+            transition_key_build_elapsed_ns: 0,
+            transition_key_index_elapsed_ns: 0,
             transition_admission_elapsed_ns: 0,
             transition_trace_elapsed_ns: 0,
             transition_seen_elapsed_ns: 0,
@@ -768,6 +774,8 @@ impl TurnOptionGeneratorSession {
             atomic_expand_elapsed_ns: self.atomic_expand_elapsed_ns,
             transition_simulation_elapsed_ns: self.transition_simulation_elapsed_ns,
             transition_identity_elapsed_ns: self.transition_identity_elapsed_ns,
+            transition_key_build_elapsed_ns: self.transition_key_build_elapsed_ns,
+            transition_key_index_elapsed_ns: self.transition_key_index_elapsed_ns,
             transition_admission_elapsed_ns: self.transition_admission_elapsed_ns,
             transition_trace_elapsed_ns: self.transition_trace_elapsed_ns,
             transition_seen_elapsed_ns: self.transition_seen_elapsed_ns,
@@ -1234,7 +1242,12 @@ impl TurnOptionGeneratorSession {
 
         self.applied_action_transitions = self.applied_action_transitions.saturating_add(1);
         let identity_started = Instant::now();
+        let key_build_started = Instant::now();
         let key = combat_exact_state_key(&result.position.engine, &result.position.combat);
+        self.transition_key_build_elapsed_ns = self
+            .transition_key_build_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(key_build_started));
+        let key_index_started = Instant::now();
         let successor_key = Arc::new(key);
         let successor_potion_expenditures = action
             .parent
@@ -1245,6 +1258,9 @@ impl TurnOptionGeneratorSession {
             self.max_potion_expenditures
                 .map(|_| successor_potion_expenditures),
         );
+        self.transition_key_index_elapsed_ns = self
+            .transition_key_index_elapsed_ns
+            .saturating_add(elapsed_nanos_u64(key_index_started));
         self.transition_identity_elapsed_ns = self
             .transition_identity_elapsed_ns
             .saturating_add(elapsed_nanos_u64(identity_started));

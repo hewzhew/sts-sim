@@ -833,6 +833,22 @@ impl LocalTurnGraphWitnessSession {
                     .transition_identity_elapsed_ns
                     .saturating_sub(before_timing.transition_identity_elapsed_ns),
             );
+        self.performance_timing.transition_key_build_elapsed_ns = self
+            .performance_timing
+            .transition_key_build_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_key_build_elapsed_ns
+                    .saturating_sub(before_timing.transition_key_build_elapsed_ns),
+            );
+        self.performance_timing.transition_key_index_elapsed_ns = self
+            .performance_timing
+            .transition_key_index_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_key_index_elapsed_ns
+                    .saturating_sub(before_timing.transition_key_index_elapsed_ns),
+            );
         self.performance_timing.transition_admission_elapsed_ns = self
             .performance_timing
             .transition_admission_elapsed_ns

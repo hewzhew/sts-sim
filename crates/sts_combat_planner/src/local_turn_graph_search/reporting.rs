@@ -90,6 +90,8 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub atomic_expand_elapsed_ns: u64,
     pub transition_simulation_elapsed_ns: u64,
     pub transition_identity_elapsed_ns: u64,
+    pub transition_key_build_elapsed_ns: u64,
+    pub transition_key_index_elapsed_ns: u64,
     pub transition_admission_elapsed_ns: u64,
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
@@ -125,6 +127,12 @@ impl LocalTurnGraphPerformanceTiming {
         self.transition_identity_elapsed_ns = self
             .transition_identity_elapsed_ns
             .saturating_add(other.transition_identity_elapsed_ns);
+        self.transition_key_build_elapsed_ns = self
+            .transition_key_build_elapsed_ns
+            .saturating_add(other.transition_key_build_elapsed_ns);
+        self.transition_key_index_elapsed_ns = self
+            .transition_key_index_elapsed_ns
+            .saturating_add(other.transition_key_index_elapsed_ns);
         self.transition_admission_elapsed_ns = self
             .transition_admission_elapsed_ns
             .saturating_add(other.transition_admission_elapsed_ns);
