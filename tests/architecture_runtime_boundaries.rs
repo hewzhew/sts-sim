@@ -81,28 +81,65 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 }
 
 #[test]
-fn local_turn_graph_keeps_scheduler_mechanics_in_a_bounded_module() {
-    let search = std::path::Path::new(
-        "crates/sts_combat_planner/src/local_turn_graph_search.rs",
-    );
-    let scheduling = std::path::Path::new(
-        "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
-    );
-    let search_bytes = std::fs::metadata(search)
-        .expect("read local-turn graph search metadata")
-        .len();
-    let scheduling_bytes = std::fs::metadata(scheduling)
-        .expect("read local-turn graph scheduling metadata")
-        .len();
+fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
+    const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
+    const MODULES: [(&str, u64); 4] = [
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
+            32 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/policy_line.rs",
+            32 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/reporting.rs",
+            16 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/tests.rs",
+            16 * 1024,
+        ),
+    ];
 
+    let source = std::fs::read_to_string(ROOT).expect("read local-turn graph search source");
+    let root_bytes = source.len() as u64;
     assert!(
-        search_bytes <= 120 * 1024,
-        "local_turn_graph_search.rs grew to {search_bytes} bytes; keep service selection and scheduling mechanics in the dedicated child module"
+        root_bytes <= 96 * 1024,
+        "local_turn_graph_search.rs grew to {root_bytes} bytes; keep the root focused on graph state and orchestration"
+    );
+    for module in ["scheduling", "policy_line", "reporting"] {
+        assert!(
+            source.contains(&format!("mod {module};")),
+            "the local-turn graph root must retain the {module} responsibility boundary"
+        );
+    }
+    assert!(
+        source.contains("#[cfg(test)]\nmod tests;"),
+        "local-turn graph tests must remain in their dedicated child module"
     );
     assert!(
-        scheduling_bytes <= 32 * 1024,
-        "local-turn graph scheduling grew to {scheduling_bytes} bytes; split independent scheduler responsibilities before extending it"
+        !source.contains("pub struct LocalTurnGraphWitnessReport"),
+        "public reports belong in reporting.rs, not the orchestration root"
     );
+    assert!(
+        !source.contains("pub fn offer_plan_compatible_policy_line_with_suffix_probes"),
+        "policy-line materialization belongs in policy_line.rs, not the orchestration root"
+    );
+    assert!(
+        !source.contains("#[test]"),
+        "inline tests must not regrow inside the orchestration root"
+    );
+
+    for (path, limit) in MODULES {
+        let bytes = std::fs::metadata(path)
+            .unwrap_or_else(|error| panic!("read {path} metadata: {error}"))
+            .len();
+        assert!(
+            bytes <= limit,
+            "{path} grew to {bytes} bytes (limit {limit}); split its independent responsibilities before extending it"
+        );
+    }
 }
 
 #[test]
