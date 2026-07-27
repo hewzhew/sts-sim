@@ -38,11 +38,11 @@
       "expected": {
         "status": "Partial(GenerationWorkBudget)",
         "generation_work": 20000,
-        "applied_action_transitions": 11355,
-        "exact_nodes": 850,
-        "completed_turn_options": 4762,
-        "unique_successor_states": 11292,
-        "duplicate_exact_successors": 63,
+        "applied_action_transitions": 11403,
+        "exact_nodes": 917,
+        "completed_turn_options": 4638,
+        "unique_successor_states": 11249,
+        "duplicate_exact_successors": 154,
         "terminal_win_options": 0,
         "witness": null
       }

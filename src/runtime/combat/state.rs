@@ -211,7 +211,11 @@ pub struct CombatRuntimeHints {
     pub using_card: bool,
     pub card_queue: Vec<QueuedCardHint>,
     pub colorless_combat_pool: Vec<CardId>,
+    /// Output-only mailbox consumed by committed run execution.
+    /// Speculative steps clear it at stable boundaries; it is not state identity.
     pub emitted_events: Vec<DomainEvent>,
+    /// Output-only engine warnings for the caller of a committed transition.
+    /// These diagnostics never influence subsequent combat rules.
     pub engine_diagnostics: Vec<EngineDiagnostic>,
     pub pending_rewards: Vec<crate::state::rewards::RewardItem>,
     pub power_instance_counter: u32,
@@ -400,6 +404,17 @@ impl CombatState {
 
     pub fn take_engine_diagnostics(&mut self) -> Vec<EngineDiagnostic> {
         std::mem::take(&mut self.runtime.engine_diagnostics)
+    }
+
+    /// Clears output-only mailboxes at a stable simulation boundary.
+    ///
+    /// Domain events and engine diagnostics describe how a transition was
+    /// presented; they do not affect any later combat rule. Committed run
+    /// execution consumes them through `RunControlSession`, while speculative
+    /// combat search must not carry them into the next exact state.
+    pub fn clear_transition_observations(&mut self) {
+        self.runtime.emitted_events.clear();
+        self.runtime.engine_diagnostics.clear();
     }
 
     pub fn queue_action_front(&mut self, action: Action) {

@@ -461,6 +461,7 @@ fn step_result(
         None
     };
     let terminal = combat_terminal(&engine, &combat);
+    combat.clear_transition_observations();
     CombatStepResultInternal {
         step: CombatStepResult {
             position: CombatPosition { engine, combat },
@@ -513,7 +514,10 @@ mod tests {
     use crate::state::map::node::RoomType;
     use crate::state::rewards::RewardState;
     use crate::state::run::RunState;
-    use crate::state::{DomainCardSnapshot, DomainEvent, DomainEventSource};
+    use crate::state::{
+        DomainCardSnapshot, DomainEvent, DomainEventSource, EngineDiagnostic,
+        EngineDiagnosticClass, EngineDiagnosticSeverity,
+    };
     use crate::test_support::{blank_test_combat, test_monster};
 
     #[test]
@@ -572,11 +576,20 @@ mod tests {
     }
 
     #[test]
-    fn unobserved_step_still_clears_draw_events() {
+    fn speculative_step_clears_all_transition_observations() {
         let mut combat = blank_test_combat();
         combat.entities.monsters = vec![test_monster(crate::content::monsters::EnemyId::JawWorm)];
         combat.zones.hand = vec![CombatCard::new(CardId::BattleTrance, 1)];
         combat.zones.draw_pile = (vec![CombatCard::new(CardId::Defend, 20)]).into();
+        combat.emit_event(DomainEvent::CardsExhausted {
+            cards: Vec::new(),
+            source: DomainEventSource::DeckMutation,
+        });
+        combat.emit_diagnostic(EngineDiagnostic {
+            severity: EngineDiagnosticSeverity::Warning,
+            class: EngineDiagnosticClass::Suspicious,
+            message: "observation only".to_string(),
+        });
         let position = super::CombatPosition::new(EngineState::CombatPlayerTurn, combat);
 
         let step = super::apply_combat_input_to_stable(
@@ -591,13 +604,8 @@ mod tests {
             },
         );
 
-        assert!(step
-            .position
-            .combat
-            .runtime
-            .emitted_events
-            .iter()
-            .all(|event| !matches!(event, DomainEvent::CardDrawn { .. })));
+        assert!(step.position.combat.runtime.emitted_events.is_empty());
+        assert!(step.position.combat.runtime.engine_diagnostics.is_empty());
     }
 
     #[test]

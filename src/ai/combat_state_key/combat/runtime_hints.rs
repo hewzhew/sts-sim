@@ -1,12 +1,10 @@
-use crate::runtime::combat::{
-    CombatState, DrawnCardRecord, Intent, MonsterProtocolState, QueuedCardHint,
-};
-use crate::state::selection::DomainEvent;
-
 use super::super::types::{
     CombatDrawnCardKey, CombatIntentKey, CombatMonsterProtocolIdentityKey,
     CombatMonsterProtocolKey, CombatMonsterProtocolObservationKey, CombatQueuedCardHintKey,
     CombatRuntimeHintsKey,
+};
+use crate::runtime::combat::{
+    CombatState, DrawnCardRecord, Intent, MonsterProtocolState, QueuedCardHint,
 };
 
 pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
@@ -26,17 +24,6 @@ pub(super) fn runtime_key(combat: &CombatState) -> CombatRuntimeHintsKey {
             .map(queued_card_hint_key)
             .collect(),
         colorless_combat_pool: runtime.colorless_combat_pool.clone(),
-        emitted_events: runtime
-            .emitted_events
-            .iter()
-            .filter(|event| !matches!(event, DomainEvent::CardDrawn { .. }))
-            .map(|event| format!("{event:?}"))
-            .collect(),
-        engine_diagnostics: runtime
-            .engine_diagnostics
-            .iter()
-            .map(|diagnostic| format!("{diagnostic:?}"))
-            .collect(),
         pending_rewards: runtime
             .pending_rewards
             .iter()

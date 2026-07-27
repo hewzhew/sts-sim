@@ -58,7 +58,7 @@ fn combat_dominance_key_separates_state_progress_from_resource_vector() {
 }
 
 #[test]
-fn combat_keys_ignore_card_draw_observation_events() {
+fn combat_keys_ignore_transition_observation_mailboxes() {
     let baseline = blank_test_combat();
     let mut observed = baseline.clone();
     observed.emit_event(crate::state::selection::DomainEvent::CardDrawn {
@@ -68,6 +68,15 @@ fn combat_keys_ignore_card_draw_observation_events() {
             uuid: 377,
         },
         source: crate::state::selection::DomainEventSource::CombatDraw,
+    });
+    observed.emit_event(crate::state::selection::DomainEvent::CardsExhausted {
+        cards: Vec::new(),
+        source: crate::state::selection::DomainEventSource::DeckMutation,
+    });
+    observed.emit_diagnostic(crate::state::selection::EngineDiagnostic {
+        severity: crate::state::selection::EngineDiagnosticSeverity::Warning,
+        class: crate::state::selection::EngineDiagnosticClass::Suspicious,
+        message: "observation only".to_string(),
     });
 
     assert_eq!(

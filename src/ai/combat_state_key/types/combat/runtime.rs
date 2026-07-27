@@ -5,8 +5,6 @@ pub(crate) struct CombatRuntimeHintsKey {
     pub(crate) using_card: bool,
     pub(crate) card_queue: Vec<CombatQueuedCardHintKey>,
     pub(crate) colorless_combat_pool: Vec<CardId>,
-    pub(crate) emitted_events: Vec<String>,
-    pub(crate) engine_diagnostics: Vec<String>,
     pub(crate) pending_rewards: Vec<String>,
     pub(crate) power_instance_counter: u32,
     pub(crate) last_drawn_cards: Vec<CombatDrawnCardKey>,
