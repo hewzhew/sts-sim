@@ -52,13 +52,10 @@ use oracle_cli::Command;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, rank_layered_combat_lineage_parents, CombatDecisionRoot,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
-    LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
-    LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
-    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
-    OracleCombatWitnessConfig, OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction,
-    OracleCombatWitnessSession, TurnOptionAction, TurnOptionGeneratorConfig,
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
+    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessConfig,
+    OracleCombatWitnessQuantum, OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
+    TurnOptionAction, TurnOptionGeneratorConfig,
 };
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::combat_guidance_bundle::{

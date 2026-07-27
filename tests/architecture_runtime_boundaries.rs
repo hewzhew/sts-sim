@@ -174,6 +174,7 @@ fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
         "combat_case_atomic_turn_portfolio.rs",
         "combat_case_fold_solved_suffix.rs",
         "combat_case_layered.rs",
+        "combat_case_layered_window_race.rs",
         "combat_plan_diagnostics.rs",
         "depth_beam_audits.rs",
         "policy_discrepancy_search.rs",
