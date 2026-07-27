@@ -70,6 +70,10 @@ impl CombatDecisionRoot {
         self.exact_state_identity.as_str()
     }
 
+    pub(crate) fn exact_state_identity(&self) -> &ReplaySuccessorHash {
+        &self.exact_state_identity
+    }
+
     pub(crate) fn exact_state_key(&self) -> Option<&Arc<CombatExactStateKey>> {
         self.exact_state_identity.exact_key()
     }
@@ -240,7 +244,7 @@ pub enum CompleteTurnOptionBoundary {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompleteTurnOption {
-    root_exact_state_hash: String,
+    root_exact_state_identity: ReplaySuccessorHash,
     actions: Vec<TurnOptionAction>,
     boundary: CompleteTurnOptionBoundary,
     exact_successor_hash: ReplaySuccessorHash,
@@ -251,7 +255,7 @@ pub struct CompleteTurnOption {
 
 impl CompleteTurnOption {
     pub(crate) fn new(
-        root_exact_state_hash: String,
+        root_exact_state_identity: impl Into<ReplaySuccessorHash>,
         actions: Vec<TurnOptionAction>,
         boundary: CompleteTurnOptionBoundary,
         exact_successor: CombatPosition,
@@ -268,7 +272,7 @@ impl CompleteTurnOption {
             .map(|action| action.expected_successor_hash.clone())
             .unwrap_or_else(|| ReplaySuccessorHash::from(exact_hash(&exact_successor)));
         Self {
-            root_exact_state_hash,
+            root_exact_state_identity: root_exact_state_identity.into(),
             exact_successor_hash,
             actions,
             boundary,
@@ -279,7 +283,7 @@ impl CompleteTurnOption {
     }
 
     pub fn root_exact_state_hash(&self) -> &str {
-        &self.root_exact_state_hash
+        self.root_exact_state_identity.as_str()
     }
 
     pub fn actions(&self) -> &[TurnOptionAction] {

@@ -394,6 +394,20 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             report.performance_timing.transition_seen_elapsed_ns,
         "transition_publish_elapsed_ns":
             report.performance_timing.transition_publish_elapsed_ns,
+        "transition_publish_trace_node_elapsed_ns":
+            report.performance_timing.transition_publish_trace_node_elapsed_ns,
+        "transition_publish_boundary_elapsed_ns":
+            report.performance_timing.transition_publish_boundary_elapsed_ns,
+        "transition_publish_complete_elapsed_ns":
+            report.performance_timing.transition_publish_complete_elapsed_ns,
+        "transition_publish_push_elapsed_ns":
+            report.performance_timing.transition_publish_push_elapsed_ns,
+        "transition_publish_guide_elapsed_ns":
+            report.performance_timing.transition_publish_guide_elapsed_ns,
+        "transition_publish_retain_elapsed_ns":
+            report.performance_timing.transition_publish_retain_elapsed_ns,
+        "transition_publish_agenda_elapsed_ns":
+            report.performance_timing.transition_publish_agenda_elapsed_ns,
         "admission_root_option_elapsed_ns":
             report.performance_timing.admission_root_option_elapsed_ns,
         "admission_witness_filter_elapsed_ns":

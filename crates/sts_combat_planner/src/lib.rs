@@ -58,7 +58,9 @@ pub use evidence::{
     BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
     ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
-pub use generator::{LiveActionTransitionSnapshot, TurnOptionGeneratorSession};
+pub use generator::{
+    LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
+};
 pub use layered_witness_search::{
     rank_layered_combat_lineage_parents, search_layered_combat_witness,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceCounters,

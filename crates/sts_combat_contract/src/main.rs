@@ -14,7 +14,7 @@ use sts_combat_knowledge::existing_combat_knowledge_policy_v1;
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
-    TurnOptionGeneratorConfig,
+    TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 use sts_core::ai::combat_state_key::combat_exact_state_hash_v1;
 use sts_core::sim::combat::{
@@ -256,6 +256,7 @@ fn run(args: Cli) -> Result<(), String> {
             "schema_name": "CombatCasePerformanceProfileV1",
             "schema_version": 1,
             "runner": "lightweight-combat-contract",
+            "detail_timing_sample_interval": DETAIL_TIMING_SAMPLE_INTERVAL,
             "case": args.case,
             "search_elapsed_ns": search_elapsed_ns,
             "status": format!("{:?}", report.status),
@@ -288,6 +289,16 @@ fn run(args: Cli) -> Result<(), String> {
                 "key_index": per_transition(timing.transition_key_index_elapsed_ns),
                 "seen_set": per_transition(timing.transition_seen_elapsed_ns),
                 "publish": per_transition(timing.transition_publish_elapsed_ns),
+                "publish_trace_node": per_transition(
+                    timing.transition_publish_trace_node_elapsed_ns,
+                ),
+                "publish_boundary": per_transition(
+                    timing.transition_publish_boundary_elapsed_ns,
+                ),
+                "publish_complete": per_transition(
+                    timing.transition_publish_complete_elapsed_ns,
+                ),
+                "publish_push": per_transition(timing.transition_publish_push_elapsed_ns),
                 "publish_guide": per_transition(
                     timing.transition_publish_guide_elapsed_ns,
                 ),
@@ -352,6 +363,10 @@ fn run(args: Cli) -> Result<(), String> {
             "transition_trace": report.performance_timing.transition_trace_elapsed_ns,
             "transition_seen": report.performance_timing.transition_seen_elapsed_ns,
             "transition_publish": report.performance_timing.transition_publish_elapsed_ns,
+            "transition_publish_trace_node": report.performance_timing.transition_publish_trace_node_elapsed_ns,
+            "transition_publish_boundary": report.performance_timing.transition_publish_boundary_elapsed_ns,
+            "transition_publish_complete": report.performance_timing.transition_publish_complete_elapsed_ns,
+            "transition_publish_push": report.performance_timing.transition_publish_push_elapsed_ns,
             "transition_publish_guide": report.performance_timing.transition_publish_guide_elapsed_ns,
             "transition_publish_retain": report.performance_timing.transition_publish_retain_elapsed_ns,
             "transition_publish_agenda": report.performance_timing.transition_publish_agenda_elapsed_ns,

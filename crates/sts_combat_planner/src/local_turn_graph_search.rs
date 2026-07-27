@@ -881,6 +881,41 @@ impl LocalTurnGraphWitnessSession {
                     .transition_publish_elapsed_ns
                     .saturating_sub(before_timing.transition_publish_elapsed_ns),
             );
+        self.performance_timing
+            .transition_publish_trace_node_elapsed_ns = self
+            .performance_timing
+            .transition_publish_trace_node_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_trace_node_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_trace_node_elapsed_ns),
+            );
+        self.performance_timing
+            .transition_publish_boundary_elapsed_ns = self
+            .performance_timing
+            .transition_publish_boundary_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_boundary_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_boundary_elapsed_ns),
+            );
+        self.performance_timing
+            .transition_publish_complete_elapsed_ns = self
+            .performance_timing
+            .transition_publish_complete_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_complete_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_complete_elapsed_ns),
+            );
+        self.performance_timing.transition_publish_push_elapsed_ns = self
+            .performance_timing
+            .transition_publish_push_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_push_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_push_elapsed_ns),
+            );
         self.performance_timing.transition_publish_guide_elapsed_ns = self
             .performance_timing
             .transition_publish_guide_elapsed_ns

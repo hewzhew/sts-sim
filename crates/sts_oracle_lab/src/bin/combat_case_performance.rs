@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use sts_combat_planner::LocalTurnGraphWitnessReport;
+use sts_combat_planner::{LocalTurnGraphWitnessReport, DETAIL_TIMING_SAMPLE_INTERVAL};
 
 fn nanos(duration: Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
@@ -81,9 +81,10 @@ pub(super) fn local_graph_performance_profile(
     let transition_publish_other_ns = timing.transition_publish_elapsed_ns.saturating_sub(
         timing
             .transition_trace_elapsed_ns
-            .saturating_add(timing.transition_publish_guide_elapsed_ns)
-            .saturating_add(timing.transition_publish_retain_elapsed_ns)
-            .saturating_add(timing.transition_publish_agenda_elapsed_ns),
+            .saturating_add(timing.transition_publish_trace_node_elapsed_ns)
+            .saturating_add(timing.transition_publish_boundary_elapsed_ns)
+            .saturating_add(timing.transition_publish_complete_elapsed_ns)
+            .saturating_add(timing.transition_publish_push_elapsed_ns),
     );
 
     let transitions = counters.applied_action_transitions;
@@ -95,6 +96,7 @@ pub(super) fn local_graph_performance_profile(
     json!({
         "schema_name": "LocalGraphPerformanceProfileV1",
         "schema_version": 1,
+        "detail_timing_sample_interval": DETAIL_TIMING_SAMPLE_INTERVAL,
         "search_elapsed_ns": search_ns,
         "outer": {
             "selection": duration_share(timing.selection_elapsed_ns, search_ns),
@@ -199,15 +201,31 @@ pub(super) fn local_graph_performance_profile(
                     timing.transition_publish_elapsed_ns,
                 ),
                 "publish_breakdown": {
-                    "guide": duration_share(
+                    "trace_node": duration_share(
+                        timing.transition_publish_trace_node_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "boundary": duration_share(
+                        timing.transition_publish_boundary_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "complete": duration_share(
+                        timing.transition_publish_complete_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "push": duration_share(
+                        timing.transition_publish_push_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "guide_subset_of_push": duration_share(
                         timing.transition_publish_guide_elapsed_ns,
                         timing.transition_publish_elapsed_ns,
                     ),
-                    "retain": duration_share(
+                    "retain_subset_of_push": duration_share(
                         timing.transition_publish_retain_elapsed_ns,
                         timing.transition_publish_elapsed_ns,
                     ),
-                    "agenda": duration_share(
+                    "agenda_subset_of_push": duration_share(
                         timing.transition_publish_agenda_elapsed_ns,
                         timing.transition_publish_elapsed_ns,
                     ),
@@ -282,6 +300,22 @@ pub(super) fn local_graph_performance_profile(
                 ),
                 "publish": nanos_per_item(
                     timing.transition_publish_elapsed_ns,
+                    transitions,
+                ),
+                "publish_trace_node": nanos_per_item(
+                    timing.transition_publish_trace_node_elapsed_ns,
+                    transitions,
+                ),
+                "publish_boundary": nanos_per_item(
+                    timing.transition_publish_boundary_elapsed_ns,
+                    transitions,
+                ),
+                "publish_complete": nanos_per_item(
+                    timing.transition_publish_complete_elapsed_ns,
+                    transitions,
+                ),
+                "publish_push": nanos_per_item(
+                    timing.transition_publish_push_elapsed_ns,
                     transitions,
                 ),
                 "publish_guide": nanos_per_item(

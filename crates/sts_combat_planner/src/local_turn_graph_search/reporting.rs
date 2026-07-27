@@ -96,6 +96,10 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
+    pub transition_publish_trace_node_elapsed_ns: u64,
+    pub transition_publish_boundary_elapsed_ns: u64,
+    pub transition_publish_complete_elapsed_ns: u64,
+    pub transition_publish_push_elapsed_ns: u64,
     pub transition_publish_guide_elapsed_ns: u64,
     pub transition_publish_retain_elapsed_ns: u64,
     pub transition_publish_agenda_elapsed_ns: u64,
@@ -148,6 +152,18 @@ impl LocalTurnGraphPerformanceTiming {
         self.transition_publish_elapsed_ns = self
             .transition_publish_elapsed_ns
             .saturating_add(other.transition_publish_elapsed_ns);
+        self.transition_publish_trace_node_elapsed_ns = self
+            .transition_publish_trace_node_elapsed_ns
+            .saturating_add(other.transition_publish_trace_node_elapsed_ns);
+        self.transition_publish_boundary_elapsed_ns = self
+            .transition_publish_boundary_elapsed_ns
+            .saturating_add(other.transition_publish_boundary_elapsed_ns);
+        self.transition_publish_complete_elapsed_ns = self
+            .transition_publish_complete_elapsed_ns
+            .saturating_add(other.transition_publish_complete_elapsed_ns);
+        self.transition_publish_push_elapsed_ns = self
+            .transition_publish_push_elapsed_ns
+            .saturating_add(other.transition_publish_push_elapsed_ns);
         self.transition_publish_guide_elapsed_ns = self
             .transition_publish_guide_elapsed_ns
             .saturating_add(other.transition_publish_guide_elapsed_ns);
