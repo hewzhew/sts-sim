@@ -415,6 +415,9 @@ pub struct TurnOptionGeneratorSession {
     transition_trace_elapsed_ns: u64,
     transition_seen_elapsed_ns: u64,
     transition_publish_elapsed_ns: u64,
+    transition_publish_guide_elapsed_ns: u64,
+    transition_publish_retain_elapsed_ns: u64,
+    transition_publish_agenda_elapsed_ns: u64,
     used: CombatPlanningCounters,
     granted: CombatPlanningCounters,
 }
@@ -430,6 +433,16 @@ pub(crate) struct TurnOptionGeneratorTiming {
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
+    pub transition_publish_guide_elapsed_ns: u64,
+    pub transition_publish_retain_elapsed_ns: u64,
+    pub transition_publish_agenda_elapsed_ns: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct PushWorkTiming {
+    guide_elapsed_ns: u64,
+    retain_elapsed_ns: u64,
+    agenda_elapsed_ns: u64,
 }
 
 impl TurnOptionGeneratorSession {
@@ -523,6 +536,9 @@ impl TurnOptionGeneratorSession {
             transition_trace_elapsed_ns: 0,
             transition_seen_elapsed_ns: 0,
             transition_publish_elapsed_ns: 0,
+            transition_publish_guide_elapsed_ns: 0,
+            transition_publish_retain_elapsed_ns: 0,
+            transition_publish_agenda_elapsed_ns: 0,
             used: CombatPlanningCounters::default(),
             granted: CombatPlanningCounters::default(),
         };
@@ -782,6 +798,9 @@ impl TurnOptionGeneratorSession {
             transition_trace_elapsed_ns: self.transition_trace_elapsed_ns,
             transition_seen_elapsed_ns: self.transition_seen_elapsed_ns,
             transition_publish_elapsed_ns: self.transition_publish_elapsed_ns,
+            transition_publish_guide_elapsed_ns: self.transition_publish_guide_elapsed_ns,
+            transition_publish_retain_elapsed_ns: self.transition_publish_retain_elapsed_ns,
+            transition_publish_agenda_elapsed_ns: self.transition_publish_agenda_elapsed_ns,
         }
     }
 
@@ -1311,7 +1330,17 @@ impl TurnOptionGeneratorSession {
                     action.atomic_depth,
                     action.negative_log_policy,
                 );
-                self.push_work(GeneratorWork::Expand(partial), priority);
+                let (_, push_timing) =
+                    self.push_work_measured(GeneratorWork::Expand(partial), priority, true);
+                self.transition_publish_guide_elapsed_ns = self
+                    .transition_publish_guide_elapsed_ns
+                    .saturating_add(push_timing.guide_elapsed_ns);
+                self.transition_publish_retain_elapsed_ns = self
+                    .transition_publish_retain_elapsed_ns
+                    .saturating_add(push_timing.retain_elapsed_ns);
+                self.transition_publish_agenda_elapsed_ns = self
+                    .transition_publish_agenda_elapsed_ns
+                    .saturating_add(push_timing.agenda_elapsed_ns);
             }
         } else {
             self.duplicate_exact_successors = self.duplicate_exact_successors.saturating_add(1);
@@ -1489,7 +1518,17 @@ impl TurnOptionGeneratorSession {
     }
 
     fn push_work(&mut self, work: GeneratorWork, priority: GeneratorWorkPriority) -> usize {
+        self.push_work_measured(work, priority, false).0
+    }
+
+    fn push_work_measured(
+        &mut self,
+        work: GeneratorWork,
+        priority: GeneratorWorkPriority,
+        measure: bool,
+    ) -> (usize, PushWorkTiming) {
         debug_assert!(priority.levin_log_priority.is_finite());
+        let guide_started = measure.then(Instant::now);
         let mut guides = match &work {
             GeneratorWork::AtomicActions(cursor) => cursor.guides.clone(),
             _ => self.policy.turn_generation_guides(work.position()),
@@ -1504,6 +1543,9 @@ impl TurnOptionGeneratorSession {
                 }
             }
         }
+        let guide_elapsed_ns = guide_started.map(elapsed_nanos_u64).unwrap_or(0);
+
+        let retain_started = measure.then(Instant::now);
         let work_id = self.work.len();
         self.work.push(Some(work));
         let entry = GeneratorQueueEntry {
@@ -1511,6 +1553,9 @@ impl TurnOptionGeneratorSession {
             sequence_id: self.next_sequence_id,
             work_id,
         };
+        let retain_elapsed_ns = retain_started.map(elapsed_nanos_u64).unwrap_or(0);
+
+        let agenda_started = measure.then(Instant::now);
         self.anchor_frontier.push(entry);
         for guide in guides {
             let frontier_index = self.ensure_guide_frontier(guide.lane);
@@ -1526,7 +1571,15 @@ impl TurnOptionGeneratorSession {
         }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
         self.live_work_items = self.live_work_items.saturating_add(1);
-        work_id
+        let agenda_elapsed_ns = agenda_started.map(elapsed_nanos_u64).unwrap_or(0);
+        (
+            work_id,
+            PushWorkTiming {
+                guide_elapsed_ns,
+                retain_elapsed_ns,
+                agenda_elapsed_ns,
+            },
+        )
     }
 
     #[cfg(test)]

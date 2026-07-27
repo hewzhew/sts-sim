@@ -96,6 +96,9 @@ pub struct LocalTurnGraphPerformanceTiming {
     pub transition_trace_elapsed_ns: u64,
     pub transition_seen_elapsed_ns: u64,
     pub transition_publish_elapsed_ns: u64,
+    pub transition_publish_guide_elapsed_ns: u64,
+    pub transition_publish_retain_elapsed_ns: u64,
+    pub transition_publish_agenda_elapsed_ns: u64,
     pub admission_root_option_elapsed_ns: u64,
     pub admission_witness_filter_elapsed_ns: u64,
     pub admission_witness_replay_elapsed_ns: u64,
@@ -145,6 +148,15 @@ impl LocalTurnGraphPerformanceTiming {
         self.transition_publish_elapsed_ns = self
             .transition_publish_elapsed_ns
             .saturating_add(other.transition_publish_elapsed_ns);
+        self.transition_publish_guide_elapsed_ns = self
+            .transition_publish_guide_elapsed_ns
+            .saturating_add(other.transition_publish_guide_elapsed_ns);
+        self.transition_publish_retain_elapsed_ns = self
+            .transition_publish_retain_elapsed_ns
+            .saturating_add(other.transition_publish_retain_elapsed_ns);
+        self.transition_publish_agenda_elapsed_ns = self
+            .transition_publish_agenda_elapsed_ns
+            .saturating_add(other.transition_publish_agenda_elapsed_ns);
         self.admission_root_option_elapsed_ns = self
             .admission_root_option_elapsed_ns
             .saturating_add(other.admission_root_option_elapsed_ns);

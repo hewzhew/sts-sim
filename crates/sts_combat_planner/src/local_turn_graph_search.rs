@@ -881,6 +881,30 @@ impl LocalTurnGraphWitnessSession {
                     .transition_publish_elapsed_ns
                     .saturating_sub(before_timing.transition_publish_elapsed_ns),
             );
+        self.performance_timing.transition_publish_guide_elapsed_ns = self
+            .performance_timing
+            .transition_publish_guide_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_guide_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_guide_elapsed_ns),
+            );
+        self.performance_timing.transition_publish_retain_elapsed_ns = self
+            .performance_timing
+            .transition_publish_retain_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_retain_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_retain_elapsed_ns),
+            );
+        self.performance_timing.transition_publish_agenda_elapsed_ns = self
+            .performance_timing
+            .transition_publish_agenda_elapsed_ns
+            .saturating_add(
+                after_timing
+                    .transition_publish_agenda_elapsed_ns
+                    .saturating_sub(before_timing.transition_publish_agenda_elapsed_ns),
+            );
         self.generation_gaps.extend(new_gaps);
 
         let admission_started = Instant::now();

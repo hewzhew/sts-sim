@@ -78,6 +78,13 @@ pub(super) fn local_graph_performance_profile(
             .transition_key_build_elapsed_ns
             .saturating_add(timing.transition_key_index_elapsed_ns),
     );
+    let transition_publish_other_ns = timing.transition_publish_elapsed_ns.saturating_sub(
+        timing
+            .transition_trace_elapsed_ns
+            .saturating_add(timing.transition_publish_guide_elapsed_ns)
+            .saturating_add(timing.transition_publish_retain_elapsed_ns)
+            .saturating_add(timing.transition_publish_agenda_elapsed_ns),
+    );
 
     let transitions = counters.applied_action_transitions;
     let unique_ratio =
@@ -191,6 +198,28 @@ pub(super) fn local_graph_performance_profile(
                     timing.transition_trace_elapsed_ns,
                     timing.transition_publish_elapsed_ns,
                 ),
+                "publish_breakdown": {
+                    "guide": duration_share(
+                        timing.transition_publish_guide_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "retain": duration_share(
+                        timing.transition_publish_retain_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "agenda": duration_share(
+                        timing.transition_publish_agenda_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "trace": duration_share(
+                        timing.transition_trace_elapsed_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                    "other": duration_share(
+                        transition_publish_other_ns,
+                        timing.transition_publish_elapsed_ns,
+                    ),
+                },
             },
         },
         "throughput": {
@@ -253,6 +282,18 @@ pub(super) fn local_graph_performance_profile(
                 ),
                 "publish": nanos_per_item(
                     timing.transition_publish_elapsed_ns,
+                    transitions,
+                ),
+                "publish_guide": nanos_per_item(
+                    timing.transition_publish_guide_elapsed_ns,
+                    transitions,
+                ),
+                "publish_retain": nanos_per_item(
+                    timing.transition_publish_retain_elapsed_ns,
+                    transitions,
+                ),
+                "publish_agenda": nanos_per_item(
+                    timing.transition_publish_agenda_elapsed_ns,
                     transitions,
                 ),
             },
