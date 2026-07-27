@@ -187,8 +187,19 @@ try {
                 combat_engine_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_rng_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_runtime_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_draw_pile_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_hand_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_discard_pile_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_exhaust_pile_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_limbo_clone_ns = [Collections.Generic.List[double]]::new()
+                zone_queued_cards_clone_ns = [Collections.Generic.List[double]]::new()
+                entity_player_clone_ns = [Collections.Generic.List[double]]::new()
+                entity_monsters_clone_ns = [Collections.Generic.List[double]]::new()
+                entity_potions_clone_ns = [Collections.Generic.List[double]]::new()
+                entity_power_db_clone_ns = [Collections.Generic.List[double]]::new()
             }
         })
+    $ProfiledTypeSizes = $null
 
     for ($Warmup = 0; $Warmup -lt $WarmupIterations; $Warmup++) {
         foreach ($Case in $Cases) {
@@ -212,6 +223,9 @@ try {
                     if ($null -eq $Profile -or [int] $Profile.samples -le 0) {
                         throw "combat panel clone profile was not populated for '$($Case.definition.name)'"
                     }
+                    if ($null -eq $ProfiledTypeSizes) {
+                        $ProfiledTypeSizes = $Profile.type_size_bytes
+                    }
                     $Case.engine_clone_ns.Add($Profile.mean_ns_per_sample.engine_clone)
                     $Case.combat_clone_ns.Add($Profile.mean_ns_per_sample.combat_clone)
                     $Case.transition_execution_ns.Add($Profile.mean_ns_per_sample.execution)
@@ -223,6 +237,18 @@ try {
                     $Case.combat_engine_clone_ns.Add($Components.engine)
                     $Case.combat_rng_clone_ns.Add($Components.rng)
                     $Case.combat_runtime_clone_ns.Add($Components.runtime)
+                    $ZoneComponents = $Profile.mean_ns_per_sample.zone_components
+                    $Case.zone_draw_pile_clone_ns.Add($ZoneComponents.draw_pile)
+                    $Case.zone_hand_clone_ns.Add($ZoneComponents.hand)
+                    $Case.zone_discard_pile_clone_ns.Add($ZoneComponents.discard_pile)
+                    $Case.zone_exhaust_pile_clone_ns.Add($ZoneComponents.exhaust_pile)
+                    $Case.zone_limbo_clone_ns.Add($ZoneComponents.limbo)
+                    $Case.zone_queued_cards_clone_ns.Add($ZoneComponents.queued_cards)
+                    $EntityComponents = $Profile.mean_ns_per_sample.entity_components
+                    $Case.entity_player_clone_ns.Add($EntityComponents.player)
+                    $Case.entity_monsters_clone_ns.Add($EntityComponents.monsters)
+                    $Case.entity_potions_clone_ns.Add($EntityComponents.potions)
+                    $Case.entity_power_db_clone_ns.Add($EntityComponents.power_db)
                 }
             }
         }
@@ -257,6 +283,24 @@ try {
                         runtime = [math]::Round((Get-Median $_.combat_runtime_clone_ns), 1)
                     }
                 } else { $null }
+                zone_clone_components_ns = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        draw_pile = [math]::Round((Get-Median $_.zone_draw_pile_clone_ns), 1)
+                        hand = [math]::Round((Get-Median $_.zone_hand_clone_ns), 1)
+                        discard_pile = [math]::Round((Get-Median $_.zone_discard_pile_clone_ns), 1)
+                        exhaust_pile = [math]::Round((Get-Median $_.zone_exhaust_pile_clone_ns), 1)
+                        limbo = [math]::Round((Get-Median $_.zone_limbo_clone_ns), 1)
+                        queued_cards = [math]::Round((Get-Median $_.zone_queued_cards_clone_ns), 1)
+                    }
+                } else { $null }
+                entity_clone_components_ns = if ($ProfileTransitionCloneCost) {
+                    [ordered]@{
+                        player = [math]::Round((Get-Median $_.entity_player_clone_ns), 1)
+                        monsters = [math]::Round((Get-Median $_.entity_monsters_clone_ns), 1)
+                        potions = [math]::Round((Get-Median $_.entity_potions_clone_ns), 1)
+                        power_db = [math]::Round((Get-Median $_.entity_power_db_clone_ns), 1)
+                    }
+                } else { $null }
                 transitions = [int] $_.definition.expected.applied_action_transitions
                 exact_nodes = [int] $_.definition.expected.exact_nodes
                 witness_hp = if ($null -eq $_.definition.expected.witness) {
@@ -278,6 +322,7 @@ try {
         iterations_per_case = $IterationsPerCase
         warmup_iterations = $WarmupIterations
         transition_clone_profile_enabled = [bool] $ProfileTransitionCloneCost
+        profiled_type_size_bytes = $ProfiledTypeSizes
         cases = $Rows
     }
     if ($AsJson) {

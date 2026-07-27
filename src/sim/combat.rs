@@ -3,7 +3,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
-use crate::runtime::combat::CombatState;
+use crate::runtime::combat::{CardZones, CombatState, EntityState};
 use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_action_surface::CombatLegalActionSurfaceV2;
 use crate::state::core::{ClientInput, EngineState, RunResult};
@@ -59,6 +59,8 @@ pub struct CombatStepPerformanceTimingV1 {
     pub combat_turn_clone_elapsed_ns: u64,
     pub combat_zones_clone_elapsed_ns: u64,
     pub combat_entities_clone_elapsed_ns: u64,
+    pub combat_zone_component_elapsed_ns: [u64; 6],
+    pub combat_entity_component_elapsed_ns: [u64; 4],
     pub combat_engine_clone_elapsed_ns: u64,
     pub combat_rng_clone_elapsed_ns: u64,
     pub combat_runtime_clone_elapsed_ns: u64,
@@ -196,8 +198,60 @@ pub fn apply_combat_input_to_stable_profiled_v1(
 
     let (meta, combat_meta_clone_elapsed_ns) = clone_with_timing(&position.combat.meta);
     let (turn, combat_turn_clone_elapsed_ns) = clone_with_timing(&position.combat.turn);
-    let (zones, combat_zones_clone_elapsed_ns) = clone_with_timing(&position.combat.zones);
-    let (entities, combat_entities_clone_elapsed_ns) = clone_with_timing(&position.combat.entities);
+    let (draw_pile, draw_pile_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.zones.draw_pile);
+    let (hand, hand_clone_elapsed_ns) = clone_with_timing(&position.combat.zones.hand);
+    let (discard_pile, discard_pile_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.zones.discard_pile);
+    let (exhaust_pile, exhaust_pile_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.zones.exhaust_pile);
+    let (limbo, limbo_clone_elapsed_ns) = clone_with_timing(&position.combat.zones.limbo);
+    let (queued_cards, queued_cards_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.zones.queued_cards);
+    let combat_zone_component_elapsed_ns = [
+        draw_pile_clone_elapsed_ns,
+        hand_clone_elapsed_ns,
+        discard_pile_clone_elapsed_ns,
+        exhaust_pile_clone_elapsed_ns,
+        limbo_clone_elapsed_ns,
+        queued_cards_clone_elapsed_ns,
+    ];
+    let combat_zones_clone_elapsed_ns = combat_zone_component_elapsed_ns
+        .iter()
+        .copied()
+        .fold(0u64, u64::saturating_add);
+    let zones = CardZones {
+        draw_pile,
+        hand,
+        discard_pile,
+        exhaust_pile,
+        limbo,
+        queued_cards,
+        card_uuid_counter: position.combat.zones.card_uuid_counter,
+    };
+
+    let (player, player_clone_elapsed_ns) = clone_with_timing(&position.combat.entities.player);
+    let (monsters, monsters_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.entities.monsters);
+    let (potions, potions_clone_elapsed_ns) = clone_with_timing(&position.combat.entities.potions);
+    let (power_db, power_db_clone_elapsed_ns) =
+        clone_with_timing(&position.combat.entities.power_db);
+    let combat_entity_component_elapsed_ns = [
+        player_clone_elapsed_ns,
+        monsters_clone_elapsed_ns,
+        potions_clone_elapsed_ns,
+        power_db_clone_elapsed_ns,
+    ];
+    let combat_entities_clone_elapsed_ns = combat_entity_component_elapsed_ns
+        .iter()
+        .copied()
+        .fold(0u64, u64::saturating_add);
+    let entities = EntityState {
+        player,
+        monsters,
+        potions,
+        power_db,
+    };
     let (combat_engine, combat_engine_clone_elapsed_ns) =
         clone_with_timing(&position.combat.engine);
     let (rng, combat_rng_clone_elapsed_ns) = clone_with_timing(&position.combat.rng);
@@ -232,6 +286,8 @@ pub fn apply_combat_input_to_stable_profiled_v1(
             combat_turn_clone_elapsed_ns,
             combat_zones_clone_elapsed_ns,
             combat_entities_clone_elapsed_ns,
+            combat_zone_component_elapsed_ns,
+            combat_entity_component_elapsed_ns,
             combat_engine_clone_elapsed_ns,
             combat_rng_clone_elapsed_ns,
             combat_runtime_clone_elapsed_ns,

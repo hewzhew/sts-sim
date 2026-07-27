@@ -103,6 +103,8 @@ struct TransitionCloneProfile {
     combat_turn_clone_elapsed_ns: u64,
     combat_zones_clone_elapsed_ns: u64,
     combat_entities_clone_elapsed_ns: u64,
+    combat_zone_component_elapsed_ns: [u64; 6],
+    combat_entity_component_elapsed_ns: [u64; 4],
     combat_engine_clone_elapsed_ns: u64,
     combat_rng_clone_elapsed_ns: u64,
     combat_runtime_clone_elapsed_ns: u64,
@@ -173,6 +175,20 @@ impl CombatStepper for ProfiledEngineCombatStepper {
         profile.combat_entities_clone_elapsed_ns = profile
             .combat_entities_clone_elapsed_ns
             .saturating_add(timing.combat_entities_clone_elapsed_ns);
+        for (total, sample) in profile
+            .combat_zone_component_elapsed_ns
+            .iter_mut()
+            .zip(timing.combat_zone_component_elapsed_ns)
+        {
+            *total = total.saturating_add(sample);
+        }
+        for (total, sample) in profile
+            .combat_entity_component_elapsed_ns
+            .iter_mut()
+            .zip(timing.combat_entity_component_elapsed_ns)
+        {
+            *total = total.saturating_add(sample);
+        }
         profile.combat_engine_clone_elapsed_ns = profile
             .combat_engine_clone_elapsed_ns
             .saturating_add(timing.combat_engine_clone_elapsed_ns);
@@ -378,6 +394,16 @@ fn run(args: Cli) -> Result<(), String> {
                 "sample_interval": TRANSITION_CLONE_PROFILE_INTERVAL,
                 "transition_calls": profile.calls,
                 "samples": profile.samples,
+                "type_size_bytes": {
+                    "combat_state": std::mem::size_of::<sts_core::runtime::combat::CombatState>(),
+                    "card_zones": std::mem::size_of::<sts_core::runtime::combat::CardZones>(),
+                    "combat_card": std::mem::size_of::<sts_core::runtime::combat::CombatCard>(),
+                    "entity_state": std::mem::size_of::<sts_core::runtime::combat::EntityState>(),
+                    "player_entity": std::mem::size_of::<sts_core::runtime::combat::PlayerEntity>(),
+                    "monster_entity": std::mem::size_of::<sts_core::runtime::combat::MonsterEntity>(),
+                    "power": std::mem::size_of::<sts_core::runtime::combat::Power>(),
+                    "combat_runtime_hints": std::mem::size_of::<sts_core::runtime::combat::CombatRuntimeHints>(),
+                },
                 "total_elapsed_ns": {
                     "engine_clone": profile.engine_clone_elapsed_ns,
                     "combat_clone": profile.combat_clone_elapsed_ns,
@@ -394,6 +420,20 @@ fn run(args: Cli) -> Result<(), String> {
                         "engine": per_sample(profile.combat_engine_clone_elapsed_ns),
                         "rng": per_sample(profile.combat_rng_clone_elapsed_ns),
                         "runtime": per_sample(profile.combat_runtime_clone_elapsed_ns),
+                    },
+                    "zone_components": {
+                        "draw_pile": per_sample(profile.combat_zone_component_elapsed_ns[0]),
+                        "hand": per_sample(profile.combat_zone_component_elapsed_ns[1]),
+                        "discard_pile": per_sample(profile.combat_zone_component_elapsed_ns[2]),
+                        "exhaust_pile": per_sample(profile.combat_zone_component_elapsed_ns[3]),
+                        "limbo": per_sample(profile.combat_zone_component_elapsed_ns[4]),
+                        "queued_cards": per_sample(profile.combat_zone_component_elapsed_ns[5]),
+                    },
+                    "entity_components": {
+                        "player": per_sample(profile.combat_entity_component_elapsed_ns[0]),
+                        "monsters": per_sample(profile.combat_entity_component_elapsed_ns[1]),
+                        "potions": per_sample(profile.combat_entity_component_elapsed_ns[2]),
+                        "power_db": per_sample(profile.combat_entity_component_elapsed_ns[3]),
                     },
                     "execution": per_sample(profile.execution_elapsed_ns),
                 },
