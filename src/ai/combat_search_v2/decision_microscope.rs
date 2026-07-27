@@ -285,7 +285,7 @@ mod tests {
         combat.entities.monsters = vec![planned_monster(EnemyId::JawWorm, 1)];
         combat.zones.draw_pile = ((0..13)
             .map(|index| CombatCard::new(CardId::Strike, 10_000 + index))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
         let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
             cards: vec![CardId::Strike; 13],

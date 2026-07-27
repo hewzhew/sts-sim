@@ -939,7 +939,7 @@ fn retaliation_protection_uses_sequential_multi_hit_projection() {
 #[test]
 fn pending_choice_priority_uses_structured_selection_role() {
     let mut combat = blank_test_combat();
-    combat.zones.discard_pile = vec![CombatCard::new(CardId::Carnage, 20)];
+    combat.zones.discard_pile = vec![CombatCard::new(CardId::Carnage, 20)].into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![20],

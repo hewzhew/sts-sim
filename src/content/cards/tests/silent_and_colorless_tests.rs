@@ -1746,7 +1746,7 @@ fn silent_execution_time_action_cards_match_java_actions() {
 
     let mut split_escape_state = crate::test_support::blank_test_combat();
     split_escape_state.zones.draw_pile.clear();
-    split_escape_state.zones.discard_pile = vec![CombatCard::new(CardId::Prepared, 925)];
+    split_escape_state.zones.discard_pile = vec![CombatCard::new(CardId::Prepared, 925)].into();
     split_escape_state.runtime.last_drawn_cards = vec![DrawnCardRecord {
         card_uuid: 999,
         card_id: CardId::StrikeG,
@@ -1974,7 +1974,7 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
         CombatCard::new(CardId::Eviscerate, 935),
     ];
     discard_state.zones.draw_pile = (vec![CombatCard::new(CardId::Eviscerate, 936)]).into();
-    discard_state.zones.discard_pile = vec![CombatCard::new(CardId::Eviscerate, 937)];
+    discard_state.zones.discard_pile = vec![CombatCard::new(CardId::Eviscerate, 937)].into();
     crate::engine::action_handlers::cards::handle_discard_card(934, &mut discard_state);
     assert_eq!(discard_state.turn.counters.cards_discarded_this_turn, 1);
     assert_eq!(discard_state.zones.hand[0].cost_for_turn_java(), 2);
@@ -2018,7 +2018,7 @@ fn silent_dynamic_cost_cards_match_java_draw_discard_and_damage_hooks() {
     damage_state.entities.player.current_hp = 50;
     damage_state.zones.hand = vec![CombatCard::new(CardId::MasterfulStab, 941)];
     damage_state.zones.draw_pile = (vec![CombatCard::new(CardId::MasterfulStab, 942)]).into();
-    damage_state.zones.discard_pile = vec![CombatCard::new(CardId::MasterfulStab, 943)];
+    damage_state.zones.discard_pile = vec![CombatCard::new(CardId::MasterfulStab, 943)].into();
     crate::engine::action_handlers::execute_action(
         Action::Damage(DamageInfo {
             source: 7,

@@ -141,12 +141,12 @@ fn remember_max_uuid(max_uuid: &mut Option<u32>, uuid: u32) {
     *max_uuid = Some(max_uuid.map_or(uuid, |current| current.max(uuid)));
 }
 
-fn collect_active_cards(
+fn collect_active_cards<'a>(
     zone: &str,
-    cards: &[CombatCard],
+    cards: impl IntoIterator<Item = &'a CombatCard>,
     by_uuid: &mut BTreeMap<u32, Vec<CombatCardIdentityOccurrence>>,
 ) {
-    for (idx, card) in cards.iter().enumerate() {
+    for (idx, card) in cards.into_iter().enumerate() {
         push_card_occurrence(by_uuid, format!("{zone}[{idx}]"), card);
     }
 }

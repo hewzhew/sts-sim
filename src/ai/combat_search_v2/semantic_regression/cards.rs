@@ -51,7 +51,8 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
     combat.zones.discard_pile = vec![
         CombatCard::new(CardId::Strike, 201),
         CombatCard::new(CardId::Defend, 202),
-    ];
+    ]
+    .into();
 
     let after_headbutt = apply_from_player_turn(
         combat,

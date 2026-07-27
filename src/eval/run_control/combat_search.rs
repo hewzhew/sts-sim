@@ -669,7 +669,7 @@ mod tests {
         let mut combat = crate::test_support::blank_test_combat();
         combat.zones.draw_pile = ((0..13)
             .map(|index| CombatCard::new(crate::content::cards::CardId::Strike, 1_000 + index))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
         let mut session = session_with_active_combat(combat);
         session.active_combat.as_mut().unwrap().engine_state =

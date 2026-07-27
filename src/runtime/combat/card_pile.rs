@@ -1,8 +1,9 @@
 use super::CombatCard;
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::iter::FromIterator;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::slice;
 use std::sync::Arc;
 
@@ -223,6 +224,271 @@ impl PartialEq<Vec<CombatCard>> for DrawPile {
     }
 }
 
+/// Discard-pile storage specialized for branch-heavy exact search.
+///
+/// Java observes the discard pile in insertion order (bottom first, top
+/// last), and state identity reads that order much more often than a rule
+/// mutates an old discard. Snapshots therefore share the existing prefix and
+/// a short append tail independently. Appending only detaches that tail;
+/// identity and guide paths still read two contiguous slices without walking
+/// a node chain. Selection, old-card mutation, and shuffle are explicit
+/// flattening boundaries.
+#[derive(Clone)]
+pub struct DiscardPile {
+    base: Arc<Vec<CombatCard>>,
+    appended: Arc<Vec<CombatCard>>,
+}
+
+impl DiscardPile {
+    pub fn len(&self) -> usize {
+        self.base.len() + self.appended.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn iter(&self) -> DiscardIter<'_> {
+        DiscardIter {
+            base: self.base.iter(),
+            appended: self.appended.iter(),
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, CombatCard> {
+        self.materialize().iter_mut()
+    }
+
+    pub fn push(&mut self, card: CombatCard) {
+        if self.appended.is_empty() {
+            if let Some(base) = Arc::get_mut(&mut self.base) {
+                base.push(card);
+                return;
+            }
+        }
+        Arc::make_mut(&mut self.appended).push(card);
+    }
+
+    pub fn remove(&mut self, index: usize) -> CombatCard {
+        assert!(index < self.len(), "discard pile index out of bounds");
+        if index >= self.base.len() {
+            return Arc::make_mut(&mut self.appended).remove(index - self.base.len());
+        }
+        self.materialize().remove(index)
+    }
+
+    pub fn remove_by_uuid(&mut self, uuid: u32) -> Option<CombatCard> {
+        let index = self.iter().position(|card| card.uuid == uuid)?;
+        Some(self.remove(index))
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn into_vec(self) -> Vec<CombatCard> {
+        if self.appended.is_empty() {
+            return Arc::unwrap_or_clone(self.base);
+        }
+        self.iter().cloned().collect()
+    }
+
+    fn materialize(&mut self) -> &mut Vec<CombatCard> {
+        if !self.appended.is_empty() {
+            self.base = Arc::new(self.iter().cloned().collect());
+            self.appended = Arc::new(Vec::new());
+        }
+        Arc::make_mut(&mut self.base)
+    }
+}
+
+impl Default for DiscardPile {
+    fn default() -> Self {
+        Self {
+            base: Arc::new(Vec::new()),
+            appended: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl fmt::Debug for DiscardPile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for DiscardPile {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for DiscardPile {}
+
+impl Serialize for DiscardPile {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.len()))?;
+        for card in self {
+            sequence.serialize_element(card)?;
+        }
+        sequence.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for DiscardPile {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<CombatCard>::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl Index<usize> for DiscardPile {
+    type Output = CombatCard;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index < self.base.len() {
+            &self.base[index]
+        } else {
+            &self.appended[index - self.base.len()]
+        }
+    }
+}
+
+impl IndexMut<usize> for DiscardPile {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.materialize()[index]
+    }
+}
+
+impl From<Vec<CombatCard>> for DiscardPile {
+    fn from(cards: Vec<CombatCard>) -> Self {
+        Self {
+            base: Arc::new(cards),
+            appended: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl From<DiscardPile> for Vec<CombatCard> {
+    fn from(pile: DiscardPile) -> Self {
+        pile.into_vec()
+    }
+}
+
+impl FromIterator<CombatCard> for DiscardPile {
+    fn from_iter<T: IntoIterator<Item = CombatCard>>(iter: T) -> Self {
+        Vec::from_iter(iter).into()
+    }
+}
+
+impl IntoIterator for DiscardPile {
+    type Item = CombatCard;
+    type IntoIter = std::vec::IntoIter<CombatCard>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.into_vec().into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a DiscardPile {
+    type Item = &'a CombatCard;
+    type IntoIter = DiscardIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl PartialEq<Vec<CombatCard>> for DiscardPile {
+    fn eq(&self, other: &Vec<CombatCard>) -> bool {
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+#[derive(Clone)]
+pub struct DiscardIter<'a> {
+    base: slice::Iter<'a, CombatCard>,
+    appended: slice::Iter<'a, CombatCard>,
+}
+
+impl<'a> Iterator for DiscardIter<'a> {
+    type Item = &'a CombatCard;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.base.next().or_else(|| self.appended.next())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.base.len() + self.appended.len();
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for DiscardIter<'_> {}
+
+/// Allocation-free read view used where game rules can inspect several pile
+/// representations through one interface.
+#[derive(Clone, Copy)]
+pub enum CardPileView<'a> {
+    Contiguous(&'a [CombatCard]),
+    Discard(&'a DiscardPile),
+}
+
+impl<'a> CardPileView<'a> {
+    pub fn len(self) -> usize {
+        match self {
+            Self::Contiguous(cards) => cards.len(),
+            Self::Discard(cards) => cards.len(),
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn iter(self) -> CardPileViewIter<'a> {
+        match self {
+            Self::Contiguous(cards) => CardPileViewIter::Contiguous(cards.iter()),
+            Self::Discard(cards) => CardPileViewIter::Discard(cards.iter()),
+        }
+    }
+}
+
+impl Index<usize> for CardPileView<'_> {
+    type Output = CombatCard;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            Self::Contiguous(cards) => &cards[index],
+            Self::Discard(cards) => &cards[index],
+        }
+    }
+}
+
+pub enum CardPileViewIter<'a> {
+    Contiguous(slice::Iter<'a, CombatCard>),
+    Discard(DiscardIter<'a>),
+}
+
+impl<'a> Iterator for CardPileViewIter<'a> {
+    type Item = &'a CombatCard;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Contiguous(cards) => cards.next(),
+            Self::Discard(cards) => cards.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Contiguous(cards) => cards.size_hint(),
+            Self::Discard(cards) => cards.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for CardPileViewIter<'_> {}
+
 /// A combat card pile with cheap snapshots and ordinary `Vec` ergonomics.
 ///
 /// Exact search clones combat positions far more often than it mutates every
@@ -388,6 +654,96 @@ mod tests {
         assert_eq!(
             sibling.iter().map(|card| card.uuid).collect::<Vec<_>>(),
             vec![1, 2]
+        );
+    }
+
+    #[test]
+    fn discard_append_after_branch_reuses_base_and_detaches_tail() {
+        let original: DiscardPile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ]
+        .into();
+        let mut branch = original.clone();
+
+        assert!(Arc::ptr_eq(&original.base, &branch.base));
+        assert!(Arc::ptr_eq(&original.appended, &branch.appended));
+        branch.push(CombatCard::new(CardId::Bash, 3));
+
+        assert!(Arc::ptr_eq(&original.base, &branch.base));
+        assert!(!Arc::ptr_eq(&original.appended, &branch.appended));
+        assert_eq!(
+            branch.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            original.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+    }
+
+    #[test]
+    fn discard_arbitrary_removal_materializes_only_the_mutated_branch() {
+        let base: DiscardPile = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+        ]
+        .into();
+        let mut branch = base.clone();
+        branch.push(CombatCard::new(CardId::Bash, 3));
+        let sibling = branch.clone();
+
+        assert_eq!(branch.remove(0).uuid, 1);
+
+        assert!(!Arc::ptr_eq(&branch.base, &sibling.base));
+        assert!(branch.appended.is_empty());
+        assert!(!sibling.appended.is_empty());
+        assert_eq!(
+            branch.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        assert_eq!(
+            sibling.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn discard_top_removal_preserves_the_sibling_snapshot() {
+        let base: DiscardPile = vec![CombatCard::new(CardId::Strike, 1)].into();
+        let mut branch = base.clone();
+        branch.push(CombatCard::new(CardId::Defend, 2));
+
+        assert_eq!(branch.remove(1).uuid, 2);
+        assert_eq!(
+            base.iter().map(|card| card.uuid).collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(branch.into_vec(), base.into_vec());
+    }
+
+    #[test]
+    fn discard_serde_and_flattening_preserve_java_order() {
+        let base: DiscardPile = vec![CombatCard::new(CardId::Strike, 1)].into();
+        let mut branch = base.clone();
+        branch.push(CombatCard::new(CardId::Defend, 2));
+        branch.push(CombatCard::new(CardId::Bash, 3));
+        let expected = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::Defend, 2),
+            CombatCard::new(CardId::Bash, 3),
+        ];
+
+        let serialized = serde_json::to_value(&branch).expect("serialize discard pile");
+        assert_eq!(
+            serialized,
+            serde_json::to_value(&expected).expect("serialize expected cards")
+        );
+        assert_eq!(
+            serde_json::from_value::<DiscardPile>(serialized)
+                .expect("deserialize discard pile")
+                .into_vec(),
+            expected
         );
     }
 }

@@ -47,7 +47,7 @@ pub fn build_natural_combat_start(
         zones: CardZones {
             draw_pile: run_state.master_deck.clone().into(),
             hand: Vec::new(),
-            discard_pile: Vec::new(),
+            discard_pile: Vec::new().into(),
             exhaust_pile: Vec::new().into(),
             limbo: Vec::new(),
             queued_cards: VecDeque::new(),

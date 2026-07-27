@@ -61,14 +61,7 @@ pub fn handle_exhaust_card(
             }
         }
         crate::state::PileType::Discard => {
-            if let Some(pos) = state
-                .zones
-                .discard_pile
-                .iter()
-                .position(|c| c.uuid == card_uuid)
-            {
-                removed_card = Some(state.zones.discard_pile.remove(pos));
-            }
+            removed_card = state.zones.discard_pile.remove_by_uuid(card_uuid);
         }
         crate::state::PileType::Limbo => {
             if let Some(pos) = state.zones.limbo.iter().position(|c| c.uuid == card_uuid) {

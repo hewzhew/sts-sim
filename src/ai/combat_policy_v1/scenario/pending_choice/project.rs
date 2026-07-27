@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::content::cards::java_id;
 use crate::runtime::action::CardDestination;
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CardPileView, CombatCard, CombatState};
 use crate::state::core::{
     ClientInput, GridSelectReason, HandSelectReason, PendingChoice, PileType,
 };
@@ -34,7 +34,7 @@ pub(in crate::ai::combat_policy_v1::scenario) fn public_pending_choice_observati
             max_cards: *max_cards,
             can_cancel: *can_cancel,
             candidates: candidate_multiplicities(
-                &combat.zones.hand,
+                CardPileView::Contiguous(&combat.zones.hand),
                 candidate_uuids,
                 "hand selection",
             )?,
@@ -140,7 +140,7 @@ pub(in crate::ai::combat_policy_v1::scenario) fn public_pending_choice_action(
             context: hand_context(*reason),
             selected: selected_multiplicities(
                 scenario_id,
-                &combat.zones.hand,
+                CardPileView::Contiguous(&combat.zones.hand),
                 candidate_uuids,
                 &resolution.selected_card_uuids(),
                 input,
@@ -243,7 +243,7 @@ pub(in crate::ai::combat_policy_v1::scenario) fn public_pending_choice_action(
 }
 
 fn candidate_multiplicities(
-    pile: &[CombatCard],
+    pile: CardPileView<'_>,
     candidate_uuids: &[u32],
     context: &str,
 ) -> Result<Vec<CombatPublicCardMultiplicityV1>, String> {
@@ -264,7 +264,7 @@ fn candidate_multiplicities(
 
 fn selected_multiplicities(
     scenario_id: &str,
-    pile: &[CombatCard],
+    pile: CardPileView<'_>,
     candidate_uuids: &[u32],
     selected_uuids: &[u32],
     input: &ClientInput,
@@ -425,14 +425,14 @@ fn public_pile(pile: PileType) -> CombatPublicPileV1 {
     }
 }
 
-fn source_pile_cards(combat: &CombatState, pile: PileType) -> &[CombatCard] {
+fn source_pile_cards(combat: &CombatState, pile: PileType) -> CardPileView<'_> {
     match pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+        PileType::Draw => CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&combat.meta.master_deck_snapshot),
     }
 }
 

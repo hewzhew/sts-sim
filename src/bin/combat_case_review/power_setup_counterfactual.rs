@@ -8,7 +8,7 @@ use sts_simulator::content::cards::{self, CardId, CardType};
 use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::content::powers::{store, PowerId};
 use sts_simulator::eval::combat_case::CombatCase;
-use sts_simulator::runtime::combat::{CombatCard, CombatState, Power};
+use sts_simulator::runtime::combat::{CardPileView, CombatCard, CombatState, Power};
 use sts_simulator::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -365,9 +365,15 @@ fn restore_player_vulnerable(original: &CombatState, transformed: &mut CombatSta
 
 fn collect_power_cards(combat: &CombatState) -> Vec<PowerSetupCard> {
     let zones = [
-        ("hand", combat.zones.hand.as_slice()),
-        ("draw", combat.zones.draw_pile.as_slice()),
-        ("discard", combat.zones.discard_pile.as_slice()),
+        (
+            "hand",
+            CardPileView::Contiguous(combat.zones.hand.as_slice()),
+        ),
+        (
+            "draw",
+            CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+        ),
+        ("discard", CardPileView::Discard(&combat.zones.discard_pile)),
     ];
     zones
         .into_iter()

@@ -474,7 +474,8 @@ mod tests {
         combat.zones.discard_pile = vec![crate::runtime::combat::CombatCard::new(
             crate::content::cards::CardId::Defend,
             20,
-        )];
+        )]
+        .into();
         combat.zones.draw_pile = (vec![
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 30),
             crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Defend, 40),

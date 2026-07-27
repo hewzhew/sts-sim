@@ -342,13 +342,23 @@ pub(super) fn grid_select_candidates(
         _ => {}
     }
 
-    let pile: &[crate::runtime::combat::CombatCard] = match source_pile {
-        crate::state::PileType::Draw => &combat_state.zones.draw_pile,
-        crate::state::PileType::Discard => &combat_state.zones.discard_pile,
-        crate::state::PileType::Exhaust => &combat_state.zones.exhaust_pile,
-        crate::state::PileType::Hand => &combat_state.zones.hand,
-        crate::state::PileType::Limbo => &combat_state.zones.limbo,
-        crate::state::PileType::MasterDeck => &[],
+    let pile = match source_pile {
+        crate::state::PileType::Draw => {
+            crate::runtime::combat::CardPileView::Contiguous(combat_state.zones.draw_pile.as_ref())
+        }
+        crate::state::PileType::Discard => {
+            crate::runtime::combat::CardPileView::Discard(&combat_state.zones.discard_pile)
+        }
+        crate::state::PileType::Exhaust => crate::runtime::combat::CardPileView::Contiguous(
+            combat_state.zones.exhaust_pile.as_slice(),
+        ),
+        crate::state::PileType::Hand => {
+            crate::runtime::combat::CardPileView::Contiguous(&combat_state.zones.hand)
+        }
+        crate::state::PileType::Limbo => {
+            crate::runtime::combat::CardPileView::Contiguous(&combat_state.zones.limbo)
+        }
+        crate::state::PileType::MasterDeck => crate::runtime::combat::CardPileView::Contiguous(&[]),
     };
 
     pile.iter()

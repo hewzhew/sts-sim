@@ -491,7 +491,7 @@ fn battle_trance_proof_sample(
         .into_iter()
         .enumerate()
         .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
-        .collect())
+        .collect::<Vec<_>>())
     .into();
     combat.entities.monsters = vec![deterministic_jaw_worm()];
     compiled_sample(
@@ -520,7 +520,7 @@ fn battle_trance_sample(sample_index: u64, draw_order: [CardId; 4]) -> CombatLab
         .into_iter()
         .enumerate()
         .map(|(index, card_id)| CombatCard::new(card_id, 20 + index as u32))
-        .collect())
+        .collect::<Vec<_>>())
     .into();
     combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
     compiled_sample(

@@ -1,6 +1,7 @@
 use crate::content::cards::java_id;
 use crate::runtime::combat::{
-    CombatCard, CombatPhase, CombatState, OrbEntity, OrbId, Power, PowerPayload, StanceId,
+    CardPileView, CombatCard, CombatPhase, CombatState, OrbEntity, OrbId, Power, PowerPayload,
+    StanceId,
 };
 
 use super::super::{
@@ -103,7 +104,7 @@ pub fn combat_policy_observation_v1(combat: &CombatState) -> CombatPolicyObserva
                 .map(combat_policy_card_v1)
                 .collect(),
             draw: policy_pile(
-                &combat.zones.draw_pile,
+                CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
                 if draw_order_visible {
                     ObservationEvidenceKindV1::PublicOrderedCollection
                 } else {
@@ -113,12 +114,12 @@ pub fn combat_policy_observation_v1(combat: &CombatState) -> CombatPolicyObserva
                     .then_some(HiddenInformationReasonV1::DrawPileOrderHidden),
             ),
             discard: policy_pile(
-                &combat.zones.discard_pile,
+                CardPileView::Discard(&combat.zones.discard_pile),
                 ObservationEvidenceKindV1::PublicUnorderedCollection,
                 None,
             ),
             exhaust: policy_pile(
-                &combat.zones.exhaust_pile,
+                CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
                 ObservationEvidenceKindV1::PublicUnorderedCollection,
                 None,
             ),
@@ -199,7 +200,7 @@ fn policy_power(power: &Power) -> CombatPolicyPowerV1 {
 }
 
 fn policy_pile(
-    cards: &[CombatCard],
+    cards: CardPileView<'_>,
     evidence: ObservationEvidenceKindV1,
     hidden_reason: Option<HiddenInformationReasonV1>,
 ) -> CombatPolicyCardPileV1 {

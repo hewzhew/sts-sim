@@ -427,7 +427,8 @@ fn pending_grid_session() -> RunControlSession {
     combat.zones.discard_pile = vec![
         CombatCard::new(CardId::Strike, 10),
         CombatCard::new(CardId::Defend, 20),
-    ];
+    ]
+    .into();
     let choice = PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![10, 20],

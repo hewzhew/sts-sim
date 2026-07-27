@@ -169,7 +169,8 @@ fn compresses_single_card_pending_grid_selection_for_runtime_identical_cards() {
         CombatCard::new(CardId::Slimed, 10),
         CombatCard::new(CardId::Slimed, 11),
         CombatCard::new(CardId::Strike, 12),
-    ];
+    ]
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![10, 11, 12],
@@ -200,7 +201,8 @@ fn keeps_pending_grid_multi_select_atomic() {
     combat.zones.discard_pile = vec![
         CombatCard::new(CardId::Slimed, 10),
         CombatCard::new(CardId::Slimed, 11),
-    ];
+    ]
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![10, 11],

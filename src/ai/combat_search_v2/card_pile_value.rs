@@ -250,7 +250,7 @@ mod tests {
             .collect();
         combat.zones.draw_pile = ((0..5)
             .map(|index| CombatCard::new(CardId::Strike, 200 + index))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
 
         let value = next_draw_value(&combat);
@@ -272,7 +272,7 @@ mod tests {
             .collect();
         combat.zones.draw_pile = ((0..5)
             .map(|index| CombatCard::new(CardId::Strike, 300 + index))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
 
         assert_eq!(next_draw_value(&combat).damage, 30);

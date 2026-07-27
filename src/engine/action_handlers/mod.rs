@@ -162,7 +162,8 @@ mod tests {
         state.zones.discard_pile = vec![crate::runtime::combat::CombatCard::new(
             CardId::FlurryOfBlows,
             91001,
-        )];
+        )]
+        .into();
         state.entities.power_db.insert(
             0,
             vec![Power {

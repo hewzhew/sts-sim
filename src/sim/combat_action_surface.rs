@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::content::cards::CardId;
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CardPileView, CombatState};
 use crate::state::core::{
     ClientInput, EngineState, GridSelectReason, HandSelectReason, PendingChoice, PileType,
 };
@@ -134,7 +134,7 @@ pub fn pending_choice_input_is_legal(
             candidate_uuids,
             *min_cards as usize,
             *max_cards as usize,
-            &combat.zones.hand,
+            CardPileView::Contiguous(&combat.zones.hand),
         ),
         (
             PendingChoice::GridSelect {
@@ -222,7 +222,7 @@ fn pending_choice_surface(
                 candidate_uuids,
                 *min_cards as usize,
                 *max_cards as usize,
-                &combat.zones.hand,
+                CardPileView::Contiguous(&combat.zones.hand),
                 true,
             );
             symbolic_surface(family, *can_cancel)
@@ -318,7 +318,7 @@ fn card_uuid_family(
     candidate_uuids: &[u32],
     declared_min: usize,
     declared_max: usize,
-    source_cards: &[CombatCard],
+    source_cards: CardPileView<'_>,
     source_is_valid: bool,
 ) -> CombatSelectionActionFamilyV2 {
     let mut seen = HashSet::new();
@@ -439,14 +439,14 @@ fn scry_family(
     }
 }
 
-fn cards_for_pile(combat: &CombatState, pile: PileType) -> &[CombatCard] {
+fn cards_for_pile(combat: &CombatState, pile: PileType) -> CardPileView<'_> {
     match pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+        PileType::Draw => CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&combat.meta.master_deck_snapshot),
     }
 }
 
@@ -471,7 +471,7 @@ fn selection_is_legal(
     candidates: &[u32],
     min_cards: usize,
     max_cards: usize,
-    source_cards: &[CombatCard],
+    source_cards: CardPileView<'_>,
 ) -> bool {
     selected.len() >= min_cards
         && selected.len() <= max_cards.min(candidates.len())

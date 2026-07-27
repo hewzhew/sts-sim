@@ -1200,7 +1200,7 @@ mod tests {
             .insert(player, vec![test_power_amount(PowerId::FeelNoPain, 4)]);
         stockpiled.zones.draw_pile = ((0..12)
             .map(|index| CombatCard::new(CardId::Feed, 100 + index))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
 
         let mut progressed = stockpiled.clone();

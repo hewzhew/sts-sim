@@ -535,7 +535,7 @@ mod tests {
                     *uuid,
                 )
             })
-            .collect())
+            .collect::<Vec<_>>())
         .into();
         position.combat.zones.card_uuid_counter = first_uuid.saturating_add(64);
         position.engine =

@@ -1,4 +1,4 @@
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CardPileView, CombatState};
 use crate::state::core::{PendingChoice, PileType};
 
 use super::stable::stable_card_signature;
@@ -55,7 +55,7 @@ pub(super) fn pending_choice_key(
             candidates: candidate_cards_key(
                 combat,
                 candidate_uuids,
-                Some(&combat.zones.hand),
+                Some(CardPileView::Contiguous(&combat.zones.hand)),
                 false,
                 true,
                 "unknown_ref",
@@ -89,13 +89,15 @@ pub(super) fn pending_choice_key(
     }
 }
 
-fn pile_cards(combat: &CombatState, pile: PileType) -> Option<&[CombatCard]> {
+fn pile_cards(combat: &CombatState, pile: PileType) -> Option<CardPileView<'_>> {
     match pile {
-        PileType::Draw => Some(&combat.zones.draw_pile),
-        PileType::Discard => Some(&combat.zones.discard_pile),
-        PileType::Exhaust => Some(&combat.zones.exhaust_pile),
-        PileType::Hand => Some(&combat.zones.hand),
-        PileType::Limbo => Some(&combat.zones.limbo),
+        PileType::Draw => Some(CardPileView::Contiguous(combat.zones.draw_pile.as_ref())),
+        PileType::Discard => Some(CardPileView::Discard(&combat.zones.discard_pile)),
+        PileType::Exhaust => Some(CardPileView::Contiguous(
+            combat.zones.exhaust_pile.as_slice(),
+        )),
+        PileType::Hand => Some(CardPileView::Contiguous(&combat.zones.hand)),
+        PileType::Limbo => Some(CardPileView::Contiguous(&combat.zones.limbo)),
         PileType::MasterDeck => None,
     }
 }
@@ -103,7 +105,7 @@ fn pile_cards(combat: &CombatState, pile: PileType) -> Option<&[CombatCard]> {
 fn candidate_cards_key(
     combat: &CombatState,
     candidate_uuids: &[u32],
-    cards: Option<&[CombatCard]>,
+    cards: Option<CardPileView<'_>>,
     allow_visible_fallback: bool,
     normalize_order: bool,
     unresolved_prefix: &'static str,
@@ -127,7 +129,7 @@ fn candidate_cards_key(
 
 fn stable_candidate_card_key(
     combat: &CombatState,
-    cards: Option<&[CombatCard]>,
+    cards: Option<CardPileView<'_>>,
     uuid: u32,
     allow_visible_fallback: bool,
 ) -> Option<StableChoiceCandidateKey> {
@@ -143,13 +145,13 @@ fn stable_candidate_card_key(
         .map(|card| StableChoiceCandidateKey::Card(stable_card_signature(card)))
 }
 
-fn visible_card_zones(combat: &CombatState) -> [&[CombatCard]; 5] {
+fn visible_card_zones(combat: &CombatState) -> [CardPileView<'_>; 5] {
     [
-        &combat.zones.hand,
-        &combat.zones.draw_pile,
-        &combat.zones.discard_pile,
-        &combat.zones.exhaust_pile,
-        &combat.zones.limbo,
+        CardPileView::Contiguous(&combat.zones.hand),
+        CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+        CardPileView::Discard(&combat.zones.discard_pile),
+        CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
+        CardPileView::Contiguous(&combat.zones.limbo),
     ]
 }
 
@@ -157,11 +159,16 @@ fn scry_candidates_key(combat: &CombatState, card_uuids: &[u32]) -> Vec<StableCh
     card_uuids
         .iter()
         .map(|uuid| {
-            stable_candidate_card_key(combat, Some(&combat.zones.draw_pile), *uuid, false)
-                .unwrap_or(StableChoiceCandidateKey::Ref {
-                    prefix: "scry_ref",
-                    uuid: *uuid,
-                })
+            stable_candidate_card_key(
+                combat,
+                Some(CardPileView::Contiguous(combat.zones.draw_pile.as_ref())),
+                *uuid,
+                false,
+            )
+            .unwrap_or(StableChoiceCandidateKey::Ref {
+                prefix: "scry_ref",
+                uuid: *uuid,
+            })
         })
         .collect()
 }

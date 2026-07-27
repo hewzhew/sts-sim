@@ -22,6 +22,6 @@ mod targets;
 
 use support::*;
 
-fn card_snapshots(cards: &[CombatCard]) -> Vec<(CardId, u32)> {
-    cards.iter().map(|card| (card.id, card.uuid)).collect()
+fn card_snapshots<'a>(cards: impl IntoIterator<Item = &'a CombatCard>) -> Vec<(CardId, u32)> {
+    cards.into_iter().map(|card| (card.id, card.uuid)).collect()
 }

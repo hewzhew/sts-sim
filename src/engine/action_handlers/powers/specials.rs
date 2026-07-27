@@ -242,10 +242,10 @@ pub fn handle_apply_stasis(target_id: usize, state: &mut CombatState) {
     }
 
     let source_pile_draw = !state.zones.draw_pile.is_empty();
-    let source_pile: &[CombatCard] = if source_pile_draw {
-        state.zones.draw_pile.as_ref()
+    let source_pile: Vec<&CombatCard> = if source_pile_draw {
+        state.zones.draw_pile.iter().collect()
     } else {
-        state.zones.discard_pile.as_slice()
+        state.zones.discard_pile.iter().collect()
     };
 
     let rarities_to_check = [

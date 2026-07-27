@@ -47,14 +47,7 @@ pub fn handle_move_card(
             }
         }
         crate::state::PileType::Discard => {
-            if let Some(pos) = state
-                .zones
-                .discard_pile
-                .iter()
-                .position(|c| c.uuid == card_uuid)
-            {
-                removed_card = Some(state.zones.discard_pile.remove(pos));
-            }
+            removed_card = state.zones.discard_pile.remove_by_uuid(card_uuid);
         }
         crate::state::PileType::Exhaust => {
             if let Some(pos) = state
@@ -163,10 +156,14 @@ pub fn handle_remove_card_from_pile(
         state.zones.draw_pile.remove_by_uuid(card_uuid);
         return;
     }
+    if from == crate::state::PileType::Discard {
+        state.zones.discard_pile.remove_by_uuid(card_uuid);
+        return;
+    }
     let source = match from {
         crate::state::PileType::Hand => &mut state.zones.hand,
         crate::state::PileType::Draw => unreachable!("draw pile handled above"),
-        crate::state::PileType::Discard => &mut state.zones.discard_pile,
+        crate::state::PileType::Discard => unreachable!("discard pile handled above"),
         crate::state::PileType::Exhaust => &mut state.zones.exhaust_pile,
         crate::state::PileType::Limbo => &mut state.zones.limbo,
         crate::state::PileType::MasterDeck => return,
@@ -237,12 +234,12 @@ pub fn handle_meditate(amount: u8, state: &mut CombatState) {
             .map(|card| card.uuid)
             .collect();
         for uuid in uuids {
-            if let Some(pos) = state
+            let pos = state
                 .zones
                 .discard_pile
                 .iter()
-                .position(|card| card.uuid == uuid)
-            {
+                .position(|card| card.uuid == uuid);
+            if let Some(pos) = pos {
                 state.zones.discard_pile[pos].retain_override = Some(true);
                 if state.zones.hand.len() < 10 {
                     let card = state.zones.discard_pile.remove(pos);

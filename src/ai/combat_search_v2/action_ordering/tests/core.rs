@@ -598,7 +598,8 @@ fn pending_choice_actions_are_ordered_without_losing_original_ids() {
     combat.zones.discard_pile = vec![
         CombatCard::new(CardId::Strike, 10),
         CombatCard::new(CardId::Carnage, 20),
-    ];
+    ]
+    .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![10, 20],

@@ -168,8 +168,8 @@ fn stable_zones_key(zones: &CardZones) -> StableZonesKey {
     }
 }
 
-fn stable_card_zone_key(cards: &[CombatCard]) -> Vec<String> {
-    cards.iter().map(stable_card_signature).collect()
+fn stable_card_zone_key<'a>(cards: impl IntoIterator<Item = &'a CombatCard>) -> Vec<String> {
+    cards.into_iter().map(stable_card_signature).collect()
 }
 
 fn stable_powers_signature(combat: &CombatState) -> Vec<String> {

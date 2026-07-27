@@ -1,5 +1,5 @@
 use crate::content::cards::CardId;
-use crate::runtime::combat::{CombatCard, CombatState};
+use crate::runtime::combat::{CardPileView, CombatState};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::selection::{
     SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
@@ -120,21 +120,21 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
     }
 }
 
-fn combat_hand_cards(session: &RunControlSession) -> &[CombatCard] {
+fn combat_hand_cards(session: &RunControlSession) -> CardPileView<'_> {
     session
         .active_combat
         .as_ref()
-        .map(|active| active.combat_state.zones.hand.as_slice())
-        .unwrap_or(&[])
+        .map(|active| CardPileView::Contiguous(&active.combat_state.zones.hand))
+        .unwrap_or(CardPileView::Contiguous(&[]))
 }
 
-fn combat_cards_for_pile(session: &RunControlSession, pile: PileType) -> &[CombatCard] {
+fn combat_cards_for_pile(session: &RunControlSession, pile: PileType) -> CardPileView<'_> {
     let Some(combat) = session
         .active_combat
         .as_ref()
         .map(|active| &active.combat_state)
     else {
-        return &[];
+        return CardPileView::Contiguous(&[]);
     };
     grid_source_cards(combat, pile)
 }
@@ -146,7 +146,7 @@ enum CombatSelectionLocation {
 }
 
 fn selection_items_for_combat_cards(
-    cards: &[CombatCard],
+    cards: CardPileView<'_>,
     candidate_uuids: &[u32],
     source: CombatSelectionLocation,
 ) -> Vec<SelectionSurfaceItem> {
@@ -258,13 +258,13 @@ fn run_pending_resolution_is_allowed(
         && session.run_pending_selection_is_allowed(choice, &indices)
 }
 
-fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> &[CombatCard] {
+fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> CardPileView<'_> {
     match source_pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+        PileType::Draw => CardPileView::Contiguous(&combat.zones.draw_pile),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(&combat.zones.exhaust_pile),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&combat.meta.master_deck_snapshot),
     }
 }

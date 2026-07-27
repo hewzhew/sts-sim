@@ -101,11 +101,8 @@ pub fn handle_shuffle_all_into_draw(state: &mut CombatState) {
         return;
     }
 
-    crate::runtime::rng::shuffle_with_random_long(
-        &mut state.zones.discard_pile,
-        &mut state.rng.shuffle_rng,
-    );
-    let mut moved = std::mem::take(&mut state.zones.discard_pile);
+    let mut moved = std::mem::take(&mut state.zones.discard_pile).into_vec();
+    crate::runtime::rng::shuffle_with_random_long(&mut moved, &mut state.rng.shuffle_rng);
     moved.reverse();
     let mut remaining_draw = std::mem::take(&mut state.zones.draw_pile).into_vec();
     moved.append(&mut remaining_draw);

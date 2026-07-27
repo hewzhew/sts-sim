@@ -60,14 +60,21 @@ fn engine_label(engine: &EngineState) -> &'static str {
     }
 }
 
-pub(super) fn card_public_order_key(cards: &[CombatCard]) -> String {
-    stable_debug_hash(&cards.iter().map(card_public_signature).collect::<Vec<_>>())
-}
-
-pub(super) fn card_identity_order_key(cards: &[CombatCard]) -> String {
+pub(super) fn card_public_order_key<'a>(cards: impl IntoIterator<Item = &'a CombatCard>) -> String {
     stable_debug_hash(
         &cards
-            .iter()
+            .into_iter()
+            .map(card_public_signature)
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub(super) fn card_identity_order_key<'a>(
+    cards: impl IntoIterator<Item = &'a CombatCard>,
+) -> String {
+    stable_debug_hash(
+        &cards
+            .into_iter()
             .map(|card| (card.uuid, card_public_signature(card)))
             .collect::<Vec<_>>(),
     )

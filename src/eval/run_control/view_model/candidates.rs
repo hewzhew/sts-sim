@@ -2,7 +2,7 @@ use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::eval::run_control::RunDecisionAction;
-use crate::runtime::combat::CombatCard;
+use crate::runtime::combat::CardPileView;
 use crate::sim::combat_legal_actions::engine_atomic_actions;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::events::{EventOption, EventOptionTransition};
@@ -860,8 +860,11 @@ fn pending_choice_input_label(
             format!(
                 "{} {}",
                 hand_reason_verb(*reason),
-                selected_card_labels(&combat.zones.hand, &resolution.selected_card_uuids())
-                    .join(", ")
+                selected_card_labels(
+                    CardPileView::Contiguous(&combat.zones.hand),
+                    &resolution.selected_card_uuids(),
+                )
+                .join(", ")
             )
         }
         (PendingChoice::DiscoverySelect(choice), ClientInput::SubmitDiscoverChoice(idx)) => choice
@@ -920,7 +923,7 @@ fn pending_choice_input_label(
     }
 }
 
-fn selected_card_labels(cards: &[CombatCard], uuids: &[u32]) -> Vec<String> {
+fn selected_card_labels(cards: CardPileView<'_>, uuids: &[u32]) -> Vec<String> {
     if uuids.is_empty() {
         return vec!["nothing".to_string()];
     }
@@ -939,14 +942,14 @@ fn selected_card_labels(cards: &[CombatCard], uuids: &[u32]) -> Vec<String> {
 fn grid_source_cards(
     combat: &crate::runtime::combat::CombatState,
     source_pile: PileType,
-) -> &[CombatCard] {
+) -> CardPileView<'_> {
     match source_pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+        PileType::Draw => CardPileView::Contiguous(&combat.zones.draw_pile),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(&combat.zones.exhaust_pile),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&combat.meta.master_deck_snapshot),
     }
 }
 
@@ -1103,7 +1106,8 @@ mod tests {
         combat.zones.discard_pile = vec![
             CombatCard::new(CardId::Strike, 10),
             CombatCard::new(CardId::Defend, 20),
-        ];
+        ]
+        .into();
         let choice = PendingChoice::GridSelect {
             source_pile: PileType::Discard,
             candidate_uuids: vec![10, 20],

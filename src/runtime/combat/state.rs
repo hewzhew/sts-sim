@@ -75,7 +75,7 @@ impl DerefMut for CombatRng {
 pub struct CardZones {
     pub draw_pile: DrawPile,
     pub hand: Vec<CombatCard>,
-    pub discard_pile: Vec<CombatCard>,
+    pub discard_pile: DiscardPile,
     pub exhaust_pile: SharedCardPile,
     pub limbo: Vec<CombatCard>,
     pub queued_cards: VecDeque<QueuedCardPlay>,

@@ -30,8 +30,8 @@ pub(super) fn zones_key(combat: &CombatState) -> CombatZonesKey {
     }
 }
 
-fn zone_key(cards: &[CombatCard]) -> Vec<CombatCardKey> {
-    cards.iter().map(card_key).collect()
+fn zone_key<'a>(cards: impl IntoIterator<Item = &'a CombatCard>) -> Vec<CombatCardKey> {
+    cards.into_iter().map(card_key).collect()
 }
 
 pub(super) fn target_key(combat: &CombatState, target: Option<usize>) -> CombatTargetKey {

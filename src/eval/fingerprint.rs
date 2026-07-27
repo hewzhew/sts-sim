@@ -670,7 +670,7 @@ mod tests {
         combat.zones.draw_pile = (card_uuids
             .iter()
             .map(|uuid| CombatCard::new(CardId::Strike, *uuid))
-            .collect())
+            .collect::<Vec<_>>())
         .into();
 
         let surface = combat_legal_action_surface_fingerprint_v2(

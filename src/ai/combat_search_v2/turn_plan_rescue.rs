@@ -227,7 +227,7 @@ mod tests {
                     1_000 + index,
                 )
             })
-            .collect())
+            .collect::<Vec<_>>())
         .into();
         let start = CombatPosition::new(
             crate::state::core::EngineState::PendingChoice(

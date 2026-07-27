@@ -14,7 +14,7 @@ fn policy_observation_keeps_public_card_runtime_and_excludes_uuid() {
     card.cost_modifier = -1;
     card.cost_for_turn = Some(0);
     card.free_to_play_once = true;
-    combat.zones.discard_pile = vec![card];
+    combat.zones.discard_pile = vec![card].into();
 
     let observation = combat_policy_observation_v1(&combat);
     let public_card = &observation.zones.discard.cards[0];

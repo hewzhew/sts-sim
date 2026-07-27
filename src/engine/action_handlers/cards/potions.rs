@@ -88,8 +88,7 @@ pub fn handle_use_potion(slot: usize, target: Option<usize>, state: &mut CombatS
                 if state.zones.hand.len() >= 10 {
                     break;
                 }
-                if let Some(pos) = state.zones.discard_pile.iter().position(|c| c.uuid == uuid) {
-                    let mut card = state.zones.discard_pile.remove(pos);
+                if let Some(mut card) = state.zones.discard_pile.remove_by_uuid(uuid) {
                     card.set_cost_for_turn_java(0);
                     state.zones.hand.push(card);
                 }

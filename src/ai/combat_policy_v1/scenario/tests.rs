@@ -122,9 +122,9 @@ fn one_public_target_action_binds_to_each_worlds_exact_entity_id() {
 #[test]
 fn public_discard_contents_form_distinct_information_sets() {
     let mut first = position_with_monster_id(7);
-    first.combat.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 31)];
+    first.combat.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 31)].into();
     let mut second = first.clone();
-    second.combat.zones.discard_pile = vec![CombatCard::new(CardId::Defend, 32)];
+    second.combat.zones.discard_pile = vec![CombatCard::new(CardId::Defend, 32)].into();
 
     let groups =
         group_combat_scenarios_v1(vec![particle("first", first), particle("second", second)])

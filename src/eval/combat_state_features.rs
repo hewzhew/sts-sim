@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
-use crate::runtime::combat::{CombatCard, PowerPayload};
+use crate::runtime::combat::{CardPileView, CombatCard, PowerPayload};
 use crate::sim::combat::CombatPosition;
 
 pub const COMBAT_STATE_FEATURE_SCHEMA_V1: &str = "semantic-combat-state/v1";
@@ -66,11 +66,31 @@ pub fn semantic_combat_state_features_v1(position: &CombatPosition) -> Vec<Comba
     add(&mut features, "player/max_orbs", i32::from(player.max_orbs));
     categorical(&mut features, format!("player/stance/{:?}", player.stance));
 
-    add_card_zone(&mut features, "draw", &combat.zones.draw_pile);
-    add_card_zone(&mut features, "hand", &combat.zones.hand);
-    add_card_zone(&mut features, "discard", &combat.zones.discard_pile);
-    add_card_zone(&mut features, "exhaust", &combat.zones.exhaust_pile);
-    add_card_zone(&mut features, "limbo", &combat.zones.limbo);
+    add_card_zone(
+        &mut features,
+        "draw",
+        CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+    );
+    add_card_zone(
+        &mut features,
+        "hand",
+        CardPileView::Contiguous(&combat.zones.hand),
+    );
+    add_card_zone(
+        &mut features,
+        "discard",
+        CardPileView::Discard(&combat.zones.discard_pile),
+    );
+    add_card_zone(
+        &mut features,
+        "exhaust",
+        CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
+    );
+    add_card_zone(
+        &mut features,
+        "limbo",
+        CardPileView::Contiguous(&combat.zones.limbo),
+    );
 
     for (index, relic) in player.relics.iter().enumerate() {
         let prefix = format!("relic/{index}/{:?}", relic.id);
@@ -200,7 +220,7 @@ pub fn semantic_combat_state_features_v1(position: &CombatPosition) -> Vec<Comba
         .collect()
 }
 
-fn add_card_zone(features: &mut BTreeMap<String, i32>, zone: &str, cards: &[CombatCard]) {
+fn add_card_zone(features: &mut BTreeMap<String, i32>, zone: &str, cards: CardPileView<'_>) {
     add(
         features,
         format!("zone/{zone}/count"),
@@ -286,8 +306,10 @@ mod tests {
         ])
         .into();
         let mut right = left.clone();
-        right.zones.draw_pile[0].uuid = 91;
-        right.zones.draw_pile[1].uuid = 92;
+        let mut right_draw = std::mem::take(&mut right.zones.draw_pile).into_vec();
+        right_draw[0].uuid = 91;
+        right_draw[1].uuid = 92;
+        right.zones.draw_pile = right_draw.into();
         assert_eq!(
             semantic_combat_state_features_v1(&CombatPosition::new(
                 EngineState::CombatPlayerTurn,

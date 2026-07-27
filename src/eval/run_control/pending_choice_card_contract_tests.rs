@@ -235,7 +235,7 @@ fn pending_card_contract_cases() -> Vec<PendingCardContractCase> {
             card: card(CardId::Headbutt, 1),
             target: Some(1),
             setup: CombatSetup {
-                discard_pile: vec![card(CardId::Strike, 10), card(CardId::Defend, 20)],
+                discard_pile: vec![card(CardId::Strike, 10), card(CardId::Defend, 20)].into(),
                 ..Default::default()
             },
             expected: ExpectedPendingChoice::Grid(GridSelectReason::MoveToDrawPile),
@@ -309,7 +309,7 @@ fn build_combat_for_case(case: &PendingCardContractCase) -> CombatState {
         .chain(case.setup.hand_after_play_card.clone())
         .collect();
     combat.zones.draw_pile = (case.setup.draw_pile.clone()).into();
-    combat.zones.discard_pile = case.setup.discard_pile.clone();
+    combat.zones.discard_pile = case.setup.discard_pile.clone().into();
     combat.zones.exhaust_pile = (case.setup.exhaust_pile.clone()).into();
     combat.turn.energy = 3;
     combat

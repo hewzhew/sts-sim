@@ -18,7 +18,7 @@ fn production_search_factors_scry_without_materializing_the_power_set() {
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.draw_pile = ((0..13)
         .map(|index| CombatCard::new(CardId::Strike, 1_000 + index))
-        .collect())
+        .collect::<Vec<_>>())
     .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 13],
@@ -52,7 +52,7 @@ fn production_search_steps_only_completed_scry_prefixes() {
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.draw_pile = ((0..3)
         .map(|index| CombatCard::new(CardId::Strike, 2_000 + index))
-        .collect())
+        .collect::<Vec<_>>())
     .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 3],
@@ -161,7 +161,7 @@ fn production_search_submits_cancel_before_a_deep_selection_residual() {
 fn production_search_records_one_unresolved_parent_for_an_infeasible_selection() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 5_100)];
+    combat.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 5_100)].into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::GridSelect {
         source_pile: crate::state::core::PileType::Discard,
         candidate_uuids: vec![5_100],
@@ -1274,7 +1274,7 @@ fn split_pending_choice_quanta_advance_the_same_virtual_prefix_work() {
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.draw_pile = ((0..13)
         .map(|index| CombatCard::new(CardId::Strike, 8_000 + index))
-        .collect())
+        .collect::<Vec<_>>())
     .into();
     let engine = EngineState::PendingChoice(crate::state::core::PendingChoice::ScrySelect {
         cards: vec![CardId::Strike; 13],

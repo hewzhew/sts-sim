@@ -1379,7 +1379,8 @@ mod tests {
         position.combat.zones.draw_pile = vec![
             CombatCard::new(CardId::Wound, 1),
             CombatCard::new(CardId::Wound, 2),
-        ];
+        ]
+        .into();
 
         let unresolved = awakened_one_combat_plan_v1(&position).expect("Awakened One plan");
         assert!(unresolved

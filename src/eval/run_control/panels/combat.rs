@@ -1,6 +1,6 @@
 use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
-use crate::runtime::combat::{CombatCard, CombatState, Intent, Power};
+use crate::runtime::combat::{CardPileView, CombatState, Intent, Power};
 use crate::runtime::monster_move::MonsterMoveSpec;
 use crate::state::core::{EngineState, PendingChoice, PileType};
 
@@ -106,7 +106,11 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
                     reason, min_cards, max_cards, can_cancel
                 ),
             );
-            push_selection_cards(out, &combat.zones.hand, candidate_uuids);
+            push_selection_cards(
+                out,
+                CardPileView::Contiguous(&combat.zones.hand),
+                candidate_uuids,
+            );
             push_selection_command(out, *min_cards as usize, *max_cards as usize, *can_cancel);
         }
         PendingChoice::DiscoverySelect(choice) => {
@@ -157,7 +161,7 @@ fn push_pending_choice_screen(session: &RunControlSession, combat: &CombatState,
     }
 }
 
-fn push_selection_cards(out: &mut String, cards: &[CombatCard], candidate_uuids: &[u32]) {
+fn push_selection_cards(out: &mut String, cards: CardPileView<'_>, candidate_uuids: &[u32]) {
     push_line(out, "Selection cards:");
     for (idx, uuid) in candidate_uuids.iter().enumerate() {
         let label = cards
@@ -187,14 +191,14 @@ fn push_selection_command(
     push_line(out, format!("Selection command: {}", parts.join(" | ")));
 }
 
-fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> &[CombatCard] {
+fn grid_source_cards(combat: &CombatState, source_pile: PileType) -> CardPileView<'_> {
     match source_pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &combat.meta.master_deck_snapshot,
+        PileType::Draw => CardPileView::Contiguous(&combat.zones.draw_pile),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(&combat.zones.exhaust_pile),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&combat.meta.master_deck_snapshot),
     }
 }
 
@@ -504,7 +508,8 @@ mod tests {
         combat.zones.discard_pile = vec![
             CombatCard::new(CardId::Strike, 10),
             CombatCard::new(CardId::Defend, 20),
-        ];
+        ]
+        .into();
         let choice = PendingChoice::GridSelect {
             source_pile: crate::state::core::PileType::Discard,
             candidate_uuids: vec![10, 20],

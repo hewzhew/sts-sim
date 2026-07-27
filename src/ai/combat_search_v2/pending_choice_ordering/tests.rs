@@ -17,7 +17,8 @@ fn move_to_draw_prefers_higher_value_card() {
     combat.zones.discard_pile = vec![
         CombatCard::new(CardId::Strike, 10),
         CombatCard::new(CardId::Carnage, 20),
-    ];
+    ]
+    .into();
     let engine = EngineState::PendingChoice(PendingChoice::GridSelect {
         source_pile: PileType::Discard,
         candidate_uuids: vec![10, 20],

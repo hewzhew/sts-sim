@@ -33,10 +33,15 @@ fn reject_duplicate_uuids(uuids: &[u32], message: &'static str) -> Result<(), &'
     Ok(())
 }
 
-fn pile_contains_all(pile: &[crate::runtime::combat::CombatCard], uuids: &[u32]) -> bool {
-    uuids
-        .iter()
-        .all(|uuid| pile.iter().any(|card| card.uuid == *uuid))
+fn pile_contains_all<'a>(
+    pile: impl IntoIterator<Item = &'a crate::runtime::combat::CombatCard>,
+    uuids: &[u32],
+) -> bool {
+    let present = pile
+        .into_iter()
+        .map(|card| card.uuid)
+        .collect::<std::collections::HashSet<_>>();
+    uuids.iter().all(|uuid| present.contains(uuid))
 }
 
 fn snapshot_cards_from_hand(combat_state: &CombatState, uuids: &[u32]) -> Vec<DomainCardSnapshot> {
@@ -490,16 +495,23 @@ pub fn handle_grid_select(
                         return Err("Grid candidate no longer in source pile");
                     }
                     for uuid in &uuids {
-                        let pile = match source_pile {
-                            PileType::Discard => &mut combat_state.zones.discard_pile,
-                            PileType::Exhaust => &mut combat_state.zones.exhaust_pile,
+                        let card = match source_pile {
+                            PileType::Discard => combat_state
+                                .zones
+                                .discard_pile
+                                .remove_by_uuid(*uuid)
+                                .expect("validated discard selection must still exist"),
+                            PileType::Exhaust => {
+                                let pos = combat_state
+                                    .zones
+                                    .exhaust_pile
+                                    .iter()
+                                    .position(|card| card.uuid == *uuid)
+                                    .expect("validated exhaust selection must still exist");
+                                combat_state.zones.exhaust_pile.remove(pos)
+                            }
                             _ => unreachable!("source pile was validated above"),
                         };
-                        let pos = pile
-                            .iter()
-                            .position(|c| c.uuid == *uuid)
-                            .expect("validated move-to-draw selection must still exist");
-                        let card = pile.remove(pos);
                         combat_state.add_card_to_draw_pile_top(card);
                     }
                 }
@@ -1025,7 +1037,7 @@ mod tests {
                 reason: GridSelectReason::MoveToDrawPile,
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 10)];
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 10)].into();
 
         let result = handle_grid_select(
             &mut engine_state,
@@ -1070,7 +1082,7 @@ mod tests {
         combat_state.zones.hand = (0..10)
             .map(|idx| CombatCard::new(CardId::Defend, 100 + idx))
             .collect();
-        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 20)];
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 20)].into();
 
         handle_grid_select(
             &mut engine_state,
@@ -1114,7 +1126,7 @@ mod tests {
                 reason: GridSelectReason::DiscardToHandNoCostChange,
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 21)];
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 21)].into();
 
         handle_grid_select(
             &mut engine_state,
@@ -1156,7 +1168,7 @@ mod tests {
                 reason: GridSelectReason::DiscardToHandRetain,
             });
         let mut combat_state = blank_test_combat();
-        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 22)];
+        combat_state.zones.discard_pile = vec![CombatCard::new(CardId::Bash, 22)].into();
 
         handle_grid_select(
             &mut engine_state,

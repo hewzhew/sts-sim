@@ -2488,7 +2488,7 @@ fn watcher_scry_hook_batch_matches_java_sources() {
     }
 
     let mut hook_state = crate::test_support::blank_test_combat();
-    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::Weave, 983)];
+    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::Weave, 983)].into();
     assert_eq!(
         crate::content::cards::hooks::on_scry(&hook_state).as_slice(),
         &[ActionInfo {
@@ -2667,7 +2667,7 @@ fn watcher_energy_retain_and_block_hook_powers_match_java_sources() {
     }
 
     let mut stance_state = crate::test_support::blank_test_combat();
-    stance_state.zones.discard_pile = vec![CombatCard::new(CardId::FlurryOfBlows, 1001)];
+    stance_state.zones.discard_pile = vec![CombatCard::new(CardId::FlurryOfBlows, 1001)].into();
     crate::engine::action_handlers::execute_action(
         Action::EnterStance("Wrath".to_string()),
         &mut stance_state,
@@ -3431,7 +3431,8 @@ fn watcher_meditate_matches_java_sources() {
     all_state.zones.discard_pile = vec![
         CombatCard::new(CardId::StrikeP, 1041),
         CombatCard::new(CardId::DefendP, 1042),
-    ];
+    ]
+    .into();
     crate::engine::action_handlers::execute_action(Action::Meditate { amount: 2 }, &mut all_state);
     assert!(all_state.zones.discard_pile.is_empty());
     assert_eq!(all_state.zones.hand.len(), 2);
@@ -3448,7 +3449,8 @@ fn watcher_meditate_matches_java_sources() {
     select_state.zones.discard_pile = vec![
         CombatCard::new(CardId::StrikeP, 1043),
         CombatCard::new(CardId::DefendP, 1044),
-    ];
+    ]
+    .into();
     crate::engine::action_handlers::execute_action(
         Action::Meditate { amount: 1 },
         &mut select_state,
@@ -5202,7 +5204,8 @@ fn defect_first_common_batch_runtime_actions_match_java_use_methods() {
     stack_state.zones.discard_pile = vec![
         CombatCard::new(CardId::StrikeB, 123),
         CombatCard::new(CardId::DefendB, 124),
-    ];
+    ]
+    .into();
     let stack = resolve_card_play(
         CardId::Stack,
         &stack_state,
@@ -5668,7 +5671,7 @@ fn streamline_reduce_cost_action_mutates_matching_combat_instances() {
     let mut state = crate::test_support::blank_test_combat();
     state.zones.hand = vec![CombatCard::new(CardId::Streamline, 200)];
     state.zones.draw_pile = (vec![CombatCard::new(CardId::Streamline, 200)]).into();
-    state.zones.discard_pile = vec![CombatCard::new(CardId::Streamline, 201)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Streamline, 201)].into();
 
     crate::engine::action_handlers::execute_action(
         Action::ReduceCardCostForCombat {
@@ -5820,7 +5823,7 @@ fn gash_action_increases_current_and_visible_claw_cards_only() {
     state.zones.draw_pile = (vec![upgraded_claw]).into();
     let mut damaged_claw = CombatCard::new(CardId::Claw, 224);
     damaged_claw.base_damage_override = Some(10);
-    state.zones.discard_pile = vec![damaged_claw];
+    state.zones.discard_pile = vec![damaged_claw].into();
     state.zones.exhaust_pile = (vec![CombatCard::new(CardId::Claw, 225)]).into();
     state.zones.limbo = vec![CombatCard::new(CardId::Claw, 226)];
 
@@ -5858,7 +5861,7 @@ fn steam_barrier_modify_block_action_persists_combat_base_block_changes() {
     let mut upgraded = CombatCard::new(CardId::SteamBarrier, 231);
     upgraded.upgrades = 1;
     state.zones.draw_pile = (vec![upgraded]).into();
-    state.zones.discard_pile = vec![CombatCard::new(CardId::SteamBarrier, 232)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::SteamBarrier, 232)].into();
     state.zones.limbo = vec![CombatCard::new(CardId::SteamBarrier, 231)];
 
     crate::engine::action_handlers::execute_action(
@@ -8709,7 +8712,7 @@ fn force_field_definition_runtime_and_cost_hooks_match_java_sources() {
 
     let mut hook_state = crate::test_support::blank_test_combat();
     hook_state.zones.hand = vec![CombatCard::new(CardId::ForceField, 355)];
-    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::ForceField, 356)];
+    hook_state.zones.discard_pile = vec![CombatCard::new(CardId::ForceField, 356)].into();
     hook_state.zones.draw_pile = (vec![CombatCard::new(CardId::ForceField, 357)]).into();
     crate::engine::action_handlers::execute_action(
         Action::PlayCardDirect {
@@ -8799,9 +8802,10 @@ fn reboot_definition_runtime_and_shuffle_actions_match_java_sources() {
     shuffle_all_state.zones.discard_pile = vec![
         CombatCard::new(CardId::Dualcast, 366),
         CombatCard::new(CardId::BallLightning, 367),
-    ];
+    ]
+    .into();
     let mut expected_rng = shuffle_all_state.rng.clone();
-    let mut expected_discard = shuffle_all_state.zones.discard_pile.clone();
+    let mut expected_discard = shuffle_all_state.zones.discard_pile.clone().into_vec();
     crate::runtime::rng::shuffle_with_random_long(
         &mut expected_discard,
         &mut expected_rng.shuffle_rng,
@@ -9687,7 +9691,8 @@ fn all_for_one_definition_runtime_and_discard_to_hand_match_java_sources() {
         zero_cost.clone(),
         free_nonzero.clone(),
         only_turn_free.clone(),
-    ];
+    ]
+    .into();
     crate::engine::action_handlers::execute_action(
         Action::AllCostToHand { cost_target: 0 },
         &mut retrieval,
@@ -9746,7 +9751,7 @@ fn all_for_one_definition_runtime_and_discard_to_hand_match_java_sources() {
     full_hand.zones.hand = (0..10)
         .map(|idx| CombatCard::new(CardId::StrikeG, 400 + idx))
         .collect();
-    full_hand.zones.discard_pile = vec![CombatCard::new(CardId::Deflect, 411)];
+    full_hand.zones.discard_pile = vec![CombatCard::new(CardId::Deflect, 411)].into();
     crate::engine::action_handlers::execute_action(
         Action::DiscardToHand {
             card_uuid: 411,
@@ -10416,7 +10421,7 @@ fn ironclad_cost_and_hp_cards_runtime_actions_match_java_use_methods() {
 fn blood_for_blood_cost_updates_when_player_takes_hp_loss() {
     let mut state = crate::test_support::blank_test_combat();
     state.zones.hand = vec![CombatCard::new(CardId::BloodForBlood, 60)];
-    state.zones.discard_pile = vec![CombatCard::new(CardId::BloodForBlood, 61)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::BloodForBlood, 61)].into();
     let mut upgraded = CombatCard::new(CardId::BloodForBlood, 62);
     upgraded.upgrades = 1;
     state.zones.draw_pile = (vec![upgraded]).into();
@@ -11062,7 +11067,8 @@ fn ironclad_power_and_debuff_runtime_actions_match_java_use_methods() {
     corruption_apply_state.zones.hand = vec![hand_skill];
     corruption_apply_state.zones.draw_pile =
         (vec![CombatCard::new(CardId::ShrugItOff, 911)]).into();
-    corruption_apply_state.zones.discard_pile = vec![CombatCard::new(CardId::BurningPact, 912)];
+    corruption_apply_state.zones.discard_pile =
+        vec![CombatCard::new(CardId::BurningPact, 912)].into();
     corruption_apply_state.zones.exhaust_pile =
         (vec![CombatCard::new(CardId::PowerThrough, 913)]).into();
     corruption_apply_state.zones.limbo = vec![CombatCard::new(CardId::TrueGrit, 914)];
@@ -11236,7 +11242,7 @@ fn corruption_power_on_apply_modifies_skill_costs_in_java_piles() {
         CombatCard::new(CardId::Strike, 121),
     ];
     state.zones.draw_pile = (vec![CombatCard::new(CardId::Armaments, 122)]).into();
-    state.zones.discard_pile = vec![CombatCard::new(CardId::Disarm, 123)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Disarm, 123)].into();
     state.zones.exhaust_pile = (vec![CombatCard::new(CardId::BurningPact, 124)]).into();
 
     crate::engine::action_handlers::powers::handle_apply_power(
@@ -11896,7 +11902,7 @@ fn on_kill_card_rewards_ignore_minions_and_half_dead_targets_like_java_actions()
     dagger_normal.entities.monsters = vec![dagger_target];
     dagger_normal.zones.hand = vec![CombatCard::new(CardId::RitualDagger, 900)];
     dagger_normal.zones.draw_pile = (vec![CombatCard::new(CardId::RitualDagger, 900)]).into();
-    dagger_normal.zones.discard_pile = vec![CombatCard::new(CardId::RitualDagger, 900)];
+    dagger_normal.zones.discard_pile = vec![CombatCard::new(CardId::RitualDagger, 900)].into();
     dagger_normal.zones.exhaust_pile = (vec![CombatCard::new(CardId::RitualDagger, 900)]).into();
     dagger_normal.zones.limbo = vec![CombatCard::new(CardId::RitualDagger, 900)];
     crate::engine::action_handlers::damage::handle_ritual_dagger(
@@ -12365,7 +12371,7 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
     jaw_worm.current_hp = 0;
     jaw_worm.is_dying = true;
     headbutt_state.entities.monsters = vec![jaw_worm];
-    headbutt_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 250)];
+    headbutt_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 250)].into();
     crate::engine::action_handlers::cards::handle_discard_pile_to_top_of_deck(&mut headbutt_state);
     assert_eq!(headbutt_state.zones.discard_pile.len(), 1);
     assert!(headbutt_state.zones.draw_pile.is_empty());
@@ -12380,7 +12386,8 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
     headbutt_state.zones.discard_pile = vec![
         CombatCard::new(CardId::Strike, 251),
         CombatCard::new(CardId::Defend, 252),
-    ];
+    ]
+    .into();
     crate::engine::action_handlers::cards::handle_discard_pile_to_top_of_deck(&mut headbutt_state);
     match headbutt_state.pop_next_action() {
         Some(Action::SuspendForGridSelect {
@@ -12410,7 +12417,7 @@ fn headbutt_and_havoc_execution_helpers_match_java_sources() {
     second.id = 72;
     second.slot = 1;
     havoc_state.entities.monsters = vec![first, second];
-    havoc_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 260)];
+    havoc_state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 260)].into();
     crate::engine::action_handlers::cards::handle_play_top_card(None, true, &mut havoc_state);
     assert!(matches!(
         havoc_state.pop_next_action(),
@@ -12940,7 +12947,7 @@ fn ironclad_limit_and_strike_scaling_runtime_actions_match_java_use_methods() {
         CombatCard::new(CardId::Strike, 292),
     ];
     state.zones.draw_pile = (vec![CombatCard::new(CardId::Strike, 293)]).into();
-    state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 294)];
+    state.zones.discard_pile = vec![CombatCard::new(CardId::Strike, 294)].into();
     state.zones.limbo = vec![CombatCard::new(CardId::Strike, 295)];
 
     let perfected_actions = resolve_card_play(

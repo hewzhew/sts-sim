@@ -75,7 +75,7 @@ fn pending_single_card_selection_key(
             ..
         } if candidate_uuids.contains(uuid) => (
             format!("hand_select/reason:{reason:?}"),
-            combat.zones.hand.as_slice(),
+            crate::runtime::combat::CardPileView::Contiguous(&combat.zones.hand),
         ),
         _ => return None,
     };
@@ -86,14 +86,20 @@ fn pending_single_card_selection_key(
     })
 }
 
-fn pile_cards(combat: &CombatState, pile: PileType) -> &[crate::runtime::combat::CombatCard] {
+fn pile_cards(combat: &CombatState, pile: PileType) -> crate::runtime::combat::CardPileView<'_> {
     match pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &[],
+        PileType::Draw => {
+            crate::runtime::combat::CardPileView::Contiguous(combat.zones.draw_pile.as_ref())
+        }
+        PileType::Discard => {
+            crate::runtime::combat::CardPileView::Discard(&combat.zones.discard_pile)
+        }
+        PileType::Exhaust => {
+            crate::runtime::combat::CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice())
+        }
+        PileType::Hand => crate::runtime::combat::CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => crate::runtime::combat::CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => crate::runtime::combat::CardPileView::Contiguous(&[]),
     }
 }
 

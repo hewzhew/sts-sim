@@ -54,7 +54,7 @@ fn card_zones_draw_pile_top_is_index_zero() {
     let mut zones = CardZones {
         draw_pile: vec![CombatCard::new(CardId::Strike, 1)].into(),
         hand: vec![],
-        discard_pile: vec![],
+        discard_pile: vec![].into(),
         exhaust_pile: vec![].into(),
         limbo: vec![],
         queued_cards: VecDeque::new(),
@@ -88,7 +88,7 @@ fn card_zones_random_spot_maps_java_bottom_index_to_rust_top_index() {
         ]
         .into(),
         hand: vec![],
-        discard_pile: vec![],
+        discard_pile: vec![].into(),
         exhaust_pile: vec![].into(),
         limbo: vec![],
         queued_cards: VecDeque::new(),
@@ -108,7 +108,7 @@ fn card_zones_discard_pile_preserves_java_card_group_order() {
     let mut zones = CardZones {
         draw_pile: vec![].into(),
         hand: vec![],
-        discard_pile: vec![],
+        discard_pile: vec![].into(),
         exhaust_pile: vec![].into(),
         limbo: vec![],
         queued_cards: VecDeque::new(),
@@ -127,7 +127,7 @@ fn card_zones_exhaust_pile_preserves_java_card_group_order() {
     let mut zones = CardZones {
         draw_pile: vec![].into(),
         hand: vec![],
-        discard_pile: vec![],
+        discard_pile: vec![].into(),
         exhaust_pile: vec![].into(),
         limbo: vec![],
         queued_cards: VecDeque::new(),
@@ -146,7 +146,7 @@ fn card_zones_uuid_helper_updates_java_battle_instances_only() {
     let mut zones = CardZones {
         draw_pile: vec![CombatCard::new(CardId::Rampage, 7)].into(),
         hand: vec![CombatCard::new(CardId::Rampage, 7)],
-        discard_pile: vec![CombatCard::new(CardId::Strike, 8)],
+        discard_pile: vec![CombatCard::new(CardId::Strike, 8)].into(),
         exhaust_pile: vec![CombatCard::new(CardId::Rampage, 7)].into(),
         limbo: vec![CombatCard::new(CardId::Rampage, 7)],
         queued_cards: VecDeque::from([QueuedCardPlay {

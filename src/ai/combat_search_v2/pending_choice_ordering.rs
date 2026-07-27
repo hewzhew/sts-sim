@@ -1,7 +1,7 @@
 use super::*;
 #[cfg(test)]
 use crate::content::cards::CardId;
-use crate::runtime::combat::CombatCard;
+use crate::runtime::combat::{CardPileView, CombatCard};
 #[cfg(test)]
 use crate::state::core::{GridSelectReason, HandSelectReason};
 use crate::state::core::{PendingChoice, PileType};
@@ -46,7 +46,9 @@ pub(super) fn pending_choice_ordering_hint(
             let uuids = resolution.selected_card_uuids();
             let cards = uuids
                 .iter()
-                .filter_map(|uuid| find_card_by_uuid(&combat.zones.hand, *uuid))
+                .filter_map(|uuid| {
+                    find_card_by_uuid(CardPileView::Contiguous(&combat.zones.hand), *uuid)
+                })
                 .collect::<Vec<_>>();
             Some(selection_hint_for_hand_reason(*reason, &cards, uuids.len()))
         }
@@ -113,18 +115,18 @@ fn selection_is_subset(selected: &[u32], candidates: &[u32]) -> bool {
     selected.iter().all(|uuid| candidates.contains(uuid))
 }
 
-fn find_card_by_uuid(cards: &[CombatCard], uuid: u32) -> Option<&CombatCard> {
+fn find_card_by_uuid(cards: CardPileView<'_>, uuid: u32) -> Option<&CombatCard> {
     cards.iter().find(|card| card.uuid == uuid)
 }
 
-fn pile_cards(combat: &CombatState, pile: PileType) -> &[CombatCard] {
+fn pile_cards(combat: &CombatState, pile: PileType) -> CardPileView<'_> {
     match pile {
-        PileType::Draw => &combat.zones.draw_pile,
-        PileType::Discard => &combat.zones.discard_pile,
-        PileType::Exhaust => &combat.zones.exhaust_pile,
-        PileType::Hand => &combat.zones.hand,
-        PileType::Limbo => &combat.zones.limbo,
-        PileType::MasterDeck => &[],
+        PileType::Draw => CardPileView::Contiguous(combat.zones.draw_pile.as_ref()),
+        PileType::Discard => CardPileView::Discard(&combat.zones.discard_pile),
+        PileType::Exhaust => CardPileView::Contiguous(combat.zones.exhaust_pile.as_slice()),
+        PileType::Hand => CardPileView::Contiguous(&combat.zones.hand),
+        PileType::Limbo => CardPileView::Contiguous(&combat.zones.limbo),
+        PileType::MasterDeck => CardPileView::Contiguous(&[]),
     }
 }
 

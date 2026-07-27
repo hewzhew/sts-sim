@@ -85,7 +85,8 @@ impl CombatState {
     }
 
     pub fn shuffle_discard_pile_into_draw_pile(&mut self) {
-        self.zones.draw_pile.append(&mut self.zones.discard_pile);
+        let mut discarded = std::mem::take(&mut self.zones.discard_pile).into_vec();
+        self.zones.draw_pile.append(&mut discarded);
         crate::runtime::rng::shuffle_with_random_long(
             self.zones.draw_pile.as_mut_slice(),
             &mut self.rng.shuffle_rng,
@@ -146,7 +147,7 @@ impl CombatState {
         if let Some(c) = self.zones.draw_pile.remove_by_uuid(uuid) {
             return Some(c);
         }
-        if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.discard_pile, uuid) {
+        if let Some(c) = self.zones.discard_pile.remove_by_uuid(uuid) {
             return Some(c);
         }
         if let Some(c) = Self::remove_card_by_uuid(&mut self.zones.exhaust_pile, uuid) {
