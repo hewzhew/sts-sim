@@ -11,13 +11,13 @@ use sts_combat_planner::{
     LocalTurnGraphWitnessReport, LocalTurnGraphWitnessSession, LocalTurnGraphWitnessStatus,
     OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
 };
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
 };
-use sts_simulator::sim::combat::{
+use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
-use sts_simulator::state::core::{ClientInput, EngineState};
+use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 
 pub(crate) struct ExactCombatEvaluation {
     pub(crate) evidence: ExactCombatEvidence,
@@ -203,7 +203,7 @@ pub(crate) fn evaluate_unresolved_position(
         );
     };
     let Some(inputs) =
-        sts_simulator::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs(
+        sts_oracle_runtime::ai::combat_search_v2::pending_choice_action_prefix::canonical_pending_choice_inputs(
             choice,
         )
     else {

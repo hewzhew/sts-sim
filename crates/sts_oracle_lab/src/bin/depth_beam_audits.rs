@@ -302,7 +302,7 @@ pub(super) fn run_agenda(args: DepthBeamAgendaAuditArgs) -> Result<(), String> {
             .iter()
             .enumerate()
             .map(|(rank, position)| {
-                let hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                let hash = sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 );

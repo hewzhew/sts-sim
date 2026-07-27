@@ -14,15 +14,15 @@ use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_combat_planner::{CombatActionPolicy, CombatPolicyChoice};
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
-use sts_simulator::eval::combat_action_imitation::{
+use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
+use sts_oracle_runtime::eval::combat_action_imitation::{
     concrete_combat_action_candidates_for_witness_v1, exact_witness_adjacent_accepted_indices_v1,
 };
-use sts_simulator::sim::combat::{
+use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
-use sts_simulator::sim::combat_action::combat_action_key;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::sim::combat_action::combat_action_key;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::{
     combat_action_label, existing_combat_knowledge_policy_v1, load_combat_action_imitation_corpus,
@@ -560,7 +560,7 @@ pub(crate) fn build_batch(args: ActionReanalysisBatchArgs) -> Result<Value, Stri
 mod tests {
     use super::{compare_queue_items, ActionReanalysisQueueItem};
     use std::path::PathBuf;
-    use sts_simulator::state::core::ClientInput;
+    use sts_oracle_runtime::state::core::ClientInput;
 
     fn item(
         id: &str,

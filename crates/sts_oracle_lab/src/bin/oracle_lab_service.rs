@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, serve_oracle_analysis_tcp_v1,
 };
 

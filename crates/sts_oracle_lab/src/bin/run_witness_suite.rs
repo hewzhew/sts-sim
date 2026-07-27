@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     exact_audit_run_progress_journal_policy_v1, exact_replay_run_progress_journal_v1,
     ExactRunProgressReplayReportV1,
 };
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     current_oracle_candidate_order_v1, load_oracle_run_continuation_v1,
 };
 

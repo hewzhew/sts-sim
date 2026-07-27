@@ -99,7 +99,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
         .map(|weight| 0.95 * (*weight / total) + 0.05 * uniform)
         .collect::<Vec<_>>();
     let atomic_priority_diagnostics =
-                sts_simulator::ai::combat_search_v2::oracle_action_policy::
+                sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::
                     oracle_atomic_action_policy_priority_diagnostics_v1(
                         &position,
                         &surface.atomic_actions,
@@ -146,7 +146,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
                             "timed_out": result.timed_out,
                             "engine_steps": result.engine_steps,
                             "terminal": format!("{:?}", result.terminal),
-                            "exact_successor_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                            "exact_successor_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                                 &result.position.engine,
                                 &result.position.combat,
                             ),
@@ -184,7 +184,7 @@ pub(super) fn run_action(args: TurnActionAuditArgs) -> Result<(), String> {
         "schema_name": "OracleTurnActionAuditV1",
         "schema_version": 2,
         "through": through,
-        "position_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+        "position_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),
@@ -246,13 +246,13 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         export_actions,
     } = args;
     let case = load_combat_case(&case)?;
-    let mut config = sts_simulator::ai::combat_search_v2::CombatSearchV2Config::default();
+    let mut config = sts_oracle_runtime::ai::combat_search_v2::CombatSearchV2Config::default();
     config.max_engine_steps_per_action = max_engine_steps_per_transition.max(1);
     config.turn_plan_probe_max_inner_nodes = Some(max_inner_nodes.max(1));
     config.turn_plan_probe_max_end_states = Some(max_end_states.max(1));
     config.turn_plan_probe_per_bucket_limit = Some(per_bucket_limit.max(1));
     config.input_label = Some("oracle_lab_turn_plan_audit".to_string());
-    let audit = sts_simulator::ai::combat_search_v2::
+    let audit = sts_oracle_runtime::ai::combat_search_v2::
                 enumerate_combat_search_v2_turn_plan_probe_candidates_across_pending_choices(
                     &case.position.engine,
                     &case.position.combat,
@@ -268,7 +268,8 @@ pub(super) fn run_plan(args: TurnPlanAuditArgs) -> Result<(), String> {
         if let Some(path) = export_case.as_ref() {
             let mut exported = case.clone();
             exported.position = candidate.position.clone();
-            exported.combat = sts_simulator::eval::combat_case::combat_summary(&exported.position);
+            exported.combat =
+                sts_oracle_runtime::eval::combat_case::combat_summary(&exported.position);
             exported.run.hp = exported.position.combat.entities.player.current_hp;
             exported.run.max_hp = exported.position.combat.entities.player.max_hp;
             exported.gap.boundary =

@@ -441,25 +441,25 @@ pub(super) fn run(args: CombatCaseLayeredWindowRaceArgs) -> Result<(), String> {
                     .window
                     .candidates
                     .iter()
-                    .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&candidate.position))
+                    .map(|candidate| sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&candidate.position))
                     .max();
                 let best_survival = lineage
                     .window
                     .candidates
                     .iter()
-                    .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&candidate.position))
+                    .map(|candidate| sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&candidate.position))
                     .max();
                 let best_horizon = lineage
                     .window
                     .candidates
                     .iter()
-                    .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&candidate.position))
+                    .map(|candidate| sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&candidate.position))
                     .max();
                 let best_setup = lineage
                     .window
                     .candidates
                     .iter()
-                    .map(|candidate| sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&candidate.position))
+                    .map(|candidate| sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&candidate.position))
                     .max();
                 json!({
                     "parent_candidate_index": lineage.parent_candidate_index,

@@ -14,7 +14,7 @@ autotests = false
 canonical-oracle-artifacts = []
 
 [dependencies]
-sts_simulator = { package = "sts_oracle_runtime", path = "../sts_oracle_runtime" }
+sts_oracle_runtime = { path = "../sts_oracle_runtime" }
 sts_combat_planner = { path = "../sts_combat_planner" }
 sts_combat_strategy = { path = "../sts_combat_strategy" }
 blake2 = "0.10"

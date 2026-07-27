@@ -515,7 +515,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
                 "exact_state_hash": hash,
                 "state": session.state_snapshot_by_exact_hash(hash),
                 "incoming_from_root": session.edge_snapshot_by_exact_hashes(
-                    &sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                    &sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                         &search_root_position.engine,
                         &search_root_position.combat,
                     ),

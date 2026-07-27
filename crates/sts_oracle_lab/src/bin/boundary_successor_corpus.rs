@@ -15,15 +15,15 @@ use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption, CompleteTurnOptionBoundary,
     TurnOptionGeneratorConfig, TurnOptionGeneratorSession,
 };
-use sts_simulator::ai::combat_search_v2::oracle_search_witness_proposal_v1;
-use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
-use sts_simulator::eval::combat_state_features::{
+use sts_oracle_runtime::ai::combat_search_v2::oracle_search_witness_proposal_v1;
+use sts_oracle_runtime::eval::combat_action_imitation::typed_combat_feature_components_v1;
+use sts_oracle_runtime::eval::combat_state_features::{
     semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
 };
-use sts_simulator::sim::combat::{
+use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
 };
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::{
     exact_combat_evidence::{
@@ -519,10 +519,11 @@ fn build_group(
         verified_turn_actions,
         config.max_engine_steps_per_transition,
     )?;
-    let verified_successor_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
-        &verified_successor.engine,
-        &verified_successor.combat,
-    );
+    let verified_successor_hash =
+        sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+            &verified_successor.engine,
+            &verified_successor.combat,
+        );
     let verified_suffix_action_count = corridor.transition_actions[boundary_rank..]
         .iter()
         .map(Vec::len)
@@ -586,7 +587,7 @@ fn build_group(
         source_actions: action_paths,
         boundary_rank,
         player_turn: root_position.combat.turn.turn_count,
-        root_exact_state_hash: sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+        root_exact_state_hash: sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
             &root_position.engine,
             &root_position.combat,
         ),
@@ -829,7 +830,8 @@ fn evaluate_successor(
     ) else {
         return Ok(exact.evidence);
     };
-    if EngineCombatStepper.terminal(&replayed) != sts_simulator::sim::combat::CombatTerminal::Win
+    if EngineCombatStepper.terminal(&replayed)
+        != sts_oracle_runtime::sim::combat::CombatTerminal::Win
         || replayed.combat.runtime.combat_smoked
     {
         return Ok(exact.evidence);

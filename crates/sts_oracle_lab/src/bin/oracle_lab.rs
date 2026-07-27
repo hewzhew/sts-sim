@@ -6,6 +6,7 @@ mod action_successor_reanalysis;
 mod atomic_policy_searches;
 mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
+mod canonical_launch;
 mod combat_case_atomic_turn_portfolio;
 mod combat_case_fold_solved_suffix;
 mod combat_case_layered;
@@ -22,6 +23,11 @@ mod run_witness_suite;
 mod turn_audits;
 mod turn_membership_audit;
 mod v2_capability_audit;
+mod workspace_view;
+
+use canonical_launch::{
+    runtime_identity as oracle_lab_runtime_identity, source_content_fingerprint,
+};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -29,7 +35,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use atomic_policy_searches::CombatCaseAtomicLevinArgs;
-use blake2::{Blake2b512, Digest};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use combat_case_atomic_turn_portfolio::CombatCaseAtomicTurnPortfolioArgs;
 use combat_case_fold_solved_suffix::CombatCaseFoldSolvedSuffixArgs;
@@ -70,47 +75,47 @@ use sts_combat_strategy::{
     awakened_one_combat_plan_v1, awakened_one_plan_transition_v1, CombatPlanTransitionAnnotationV1,
     CombatPlanTransitionV1,
 };
-use sts_simulator::ai::combat_search_v2::{
+use sts_oracle_runtime::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
 };
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
-use sts_simulator::content::{cards, monsters::EnemyId};
-use sts_simulator::eval::combat_action_imitation::{
+use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
+use sts_oracle_runtime::content::{cards, monsters::EnemyId};
+use sts_oracle_runtime::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
     root_player_turn_action_policy_v1,
     train_combat_action_imitation_from_demonstrations_with_base_v1,
     train_combat_action_imitation_v1, CombatActionImitationArtifactV1,
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
 };
-use sts_simulator::eval::combat_case::{
+use sts_oracle_runtime::eval::combat_case::{
     load_combat_case, save_combat_case, CombatCase, CombatCaseGap, CombatCasePathStep,
     CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
 };
-use sts_simulator::eval::combat_guidance_bundle::{
+use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, combat_value_prototype_rank_v1,
     typed_combat_value_features_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
     GUIDE_LEARNED_BOUNDARY_VALUE,
 };
-use sts_simulator::eval::combat_search_v2::{
+use sts_oracle_runtime::eval::combat_search_v2::{
     run_combat_root_proposal_probe_v1, CombatRootProposalProbeV1Report, CombatSearchV2LoadedStart,
     CombatSearchV2RunOptions,
 };
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
     ExistingCombatKnowledgeAdvisorAdvanceV1, ExistingCombatKnowledgeAdvisorV1,
-    OracleAnalysisAdvanceRequestV1, OracleAnalysisNodeViewV1, RunProgressStepV1,
+    OracleAnalysisAdvanceRequestV1, RunProgressStepV1,
 };
-use sts_simulator::runtime::branch::{
+use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, load_oracle_run_continuation_v1,
     oracle_live_combat_diagnostic_v1, save_oracle_analysis_workspace_v1,
     save_oracle_run_continuation_v1, OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig,
     OracleRunContinuationV1,
 };
-use sts_simulator::sim::combat::{
+use sts_oracle_runtime::sim::combat::{
     combat_terminal, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
-use sts_simulator::sim::combat_action::{combat_action_key, target_label};
-use sts_simulator::state::core::{ClientInput, EngineState};
+use sts_oracle_runtime::sim::combat_action::{combat_action_key, target_label};
+use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 use turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use turn_membership_audit::TurnMembershipArgs;
 use v2_capability_audit::V2CapabilityAuditArgs;
@@ -636,7 +641,7 @@ struct LoadedCombatActionImitationDemonstrationV1 {
     id: String,
     case_path: PathBuf,
     action_paths: Vec<PathBuf>,
-    position: sts_simulator::sim::combat::CombatPosition,
+    position: sts_oracle_runtime::sim::combat::CombatPosition,
     actions: Vec<ClientInput>,
 }
 
@@ -645,7 +650,7 @@ struct ExactTurnCorridor {
     rank_by_exact_hash: HashMap<String, i32>,
     atomic_rank_by_exact_hash: HashMap<String, i32>,
     typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
-    positions_by_rank: Vec<sts_simulator::sim::combat::CombatPosition>,
+    positions_by_rank: Vec<sts_oracle_runtime::sim::combat::CombatPosition>,
     transition_actions: Vec<Vec<ClientInput>>,
     action_count: usize,
     terminal_final_hp: i32,
@@ -742,7 +747,7 @@ const GUIDE_TYPED_CORRIDOR: CombatGuideLaneId = CombatGuideLaneId::new(10_002);
 impl CombatActionPolicy for AnchorOnlyPolicy {
     fn weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
         choices: &[CombatPolicyChoice<'_>],
     ) -> Vec<f64> {
         self.base.weights(position, choices)
@@ -750,8 +755,8 @@ impl CombatActionPolicy for AnchorOnlyPolicy {
 
     fn structured_selection_member_weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+        family: &sts_oracle_runtime::sim::combat_action_surface::CombatSelectionActionFamilyV2,
         members: &[ClientInput],
     ) -> Vec<f64> {
         self.base
@@ -760,14 +765,14 @@ impl CombatActionPolicy for AnchorOnlyPolicy {
 
     fn state_guides(
         &self,
-        _position: &sts_simulator::sim::combat::CombatPosition,
+        _position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         Vec::new()
     }
 
     fn turn_generation_guides(
         &self,
-        _position: &sts_simulator::sim::combat::CombatPosition,
+        _position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         Vec::new()
     }
@@ -780,7 +785,7 @@ fn anchor_only_policy(base: SharedCombatActionPolicy) -> SharedCombatActionPolic
 impl CombatActionPolicy for RootTurnAnchorOnlyPolicy {
     fn weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
         choices: &[CombatPolicyChoice<'_>],
     ) -> Vec<f64> {
         self.base.weights(position, choices)
@@ -788,8 +793,8 @@ impl CombatActionPolicy for RootTurnAnchorOnlyPolicy {
 
     fn structured_selection_member_weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+        family: &sts_oracle_runtime::sim::combat_action_surface::CombatSelectionActionFamilyV2,
         members: &[ClientInput],
     ) -> Vec<f64> {
         self.base
@@ -798,7 +803,7 @@ impl CombatActionPolicy for RootTurnAnchorOnlyPolicy {
 
     fn state_guides(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         if position.combat.turn.turn_count == self.root_player_turn {
             Vec::new()
@@ -809,7 +814,7 @@ impl CombatActionPolicy for RootTurnAnchorOnlyPolicy {
 
     fn turn_generation_guides(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         if position.combat.turn.turn_count == self.root_player_turn {
             Vec::new()
@@ -832,7 +837,7 @@ fn root_turn_anchor_only_policy(
 impl CombatActionPolicy for ExactCorridorShadowPolicy {
     fn weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
         choices: &[CombatPolicyChoice<'_>],
     ) -> Vec<f64> {
         self.base.weights(position, choices)
@@ -840,8 +845,8 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
 
     fn structured_selection_member_weights(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
-        family: &sts_simulator::sim::combat_action_surface::CombatSelectionActionFamilyV2,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
+        family: &sts_oracle_runtime::sim::combat_action_surface::CombatSelectionActionFamilyV2,
         members: &[ClientInput],
     ) -> Vec<f64> {
         self.base
@@ -850,7 +855,7 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
 
     fn state_guides(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         let mut ranks = if self.shadow_only {
             Vec::new()
@@ -859,10 +864,11 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
-                    &position.engine,
-                    &position.combat,
-                );
+                let exact_hash =
+                    sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+                        &position.engine,
+                        &position.combat,
+                    );
                 if let Some(corridor_rank) = self.rank_by_exact_hash.get(&exact_hash).copied() {
                     // An exact-corridor control is a sparse oracle lane. Do
                     // not enqueue every non-corridor state with a low rank:
@@ -887,7 +893,7 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
 
     fn turn_generation_guides(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
     ) -> Vec<CombatStateGuide> {
         let mut ranks = if self.shadow_only {
             Vec::new()
@@ -896,10 +902,11 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
         };
         match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
-                    &position.engine,
-                    &position.combat,
-                );
+                let exact_hash =
+                    sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+                        &position.engine,
+                        &position.combat,
+                    );
                 if let Some(atomic_rank) = self.atomic_rank_by_exact_hash.get(&exact_hash).copied()
                 {
                     ranks.push(CombatStateGuide::new(
@@ -922,15 +929,16 @@ impl CombatActionPolicy for ExactCorridorShadowPolicy {
 impl ExactCorridorShadowPolicy {
     fn shadow_rank(
         &self,
-        position: &sts_simulator::sim::combat::CombatPosition,
+        position: &sts_oracle_runtime::sim::combat::CombatPosition,
         target_turn: u32,
     ) -> CombatStateGuideRank {
         let shadow_rank = match self.guide {
             ShadowCorridorGuide::Exact => {
-                let exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
-                    &position.engine,
-                    &position.combat,
-                );
+                let exact_hash =
+                    sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
+                        &position.engine,
+                        &position.combat,
+                    );
                 let corridor_rank = self.rank_by_exact_hash.get(&exact_hash).copied();
                 vec![
                     i32::from(corridor_rank.is_some()),
@@ -1030,7 +1038,7 @@ fn value_prototype_from_corridors(
 }
 
 fn typed_combat_feature_components(
-    position: &sts_simulator::sim::combat::CombatPosition,
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
 ) -> Vec<i32> {
     typed_combat_value_features_v1(position)
 }
@@ -1050,7 +1058,7 @@ fn load_exact_turn_corridor(
 }
 
 fn exact_turn_corridor_from_position_and_actions(
-    mut position: sts_simulator::sim::combat::CombatPosition,
+    mut position: sts_oracle_runtime::sim::combat::CombatPosition,
     actions: Vec<ClientInput>,
     max_engine_steps_per_transition: usize,
 ) -> Result<ExactTurnCorridor, String> {
@@ -1058,7 +1066,7 @@ fn exact_turn_corridor_from_position_and_actions(
     let mut rank_by_exact_hash = HashMap::new();
     let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
-    let initial_exact_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+    let initial_exact_hash = sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
         &position.engine,
         &position.combat,
     );
@@ -1096,19 +1104,19 @@ fn exact_turn_corridor_from_position_and_actions(
         }
         position = step.position;
         atomic_rank_by_exact_hash.insert(
-            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+            sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             ),
             i32::try_from(action_index.saturating_add(1)).unwrap_or(i32::MAX),
         );
-        if step.terminal == sts_simulator::sim::combat::CombatTerminal::Unresolved
+        if step.terminal == sts_oracle_runtime::sim::combat::CombatTerminal::Unresolved
             && position.combat.turn.turn_count != previous_turn
         {
             transition_actions.push(std::mem::take(&mut current_transition_actions));
             positions_by_rank.push(position.clone());
             rank_by_exact_hash.insert(
-                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 ),
@@ -1121,7 +1129,7 @@ fn exact_turn_corridor_from_position_and_actions(
             next_turn_rank = next_turn_rank.saturating_add(1);
         }
     }
-    if stepper.terminal(&position) != sts_simulator::sim::combat::CombatTerminal::Win {
+    if stepper.terminal(&position) != sts_oracle_runtime::sim::combat::CombatTerminal::Win {
         return Err("shadow corridor action list is not an exact terminal win".to_string());
     }
     if !current_transition_actions.is_empty() {
@@ -1262,7 +1270,7 @@ fn load_layered_solved_suffix_index(
 
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
-    validate_canonical_launch(cli.canonical_oracle)?;
+    canonical_launch::validate(cli.canonical_oracle)?;
     match cli.command {
         Command::SeedPanel(args) => print_json(&oracle_seed_panel::run(args)?),
         Command::New {
@@ -1347,7 +1355,7 @@ fn main() -> Result<(), String> {
             branch,
             output,
         } => {
-            let case = sts_simulator::runtime::branch::recover_oracle_analysis_combat_case_v1(
+            let case = sts_oracle_runtime::runtime::branch::recover_oracle_analysis_combat_case_v1(
                 &workspace, branch,
             )?;
             save_combat_case(&output, &case)?;
@@ -1366,12 +1374,13 @@ fn main() -> Result<(), String> {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let continuation = analysis.continuation(node)?;
             let expected_final = continuation.session.into_session()?;
-            let report = sts_simulator::eval::run_control::exact_replay_run_progress_journal_v1(
-                analysis.seed,
-                analysis.ascension,
-                &continuation.journal,
-                &expected_final,
-            )?;
+            let report =
+                sts_oracle_runtime::eval::run_control::exact_replay_run_progress_journal_v1(
+                    analysis.seed,
+                    analysis.ascension,
+                    &continuation.journal,
+                    &expected_final,
+                )?;
             print_json(&json!({
                 "schema_name": "ExactOracleRunWitnessReplayV1",
                 "schema_version": 1,
@@ -1389,12 +1398,12 @@ fn main() -> Result<(), String> {
             let continuation = analysis.continuation(node)?;
             let expected_final = continuation.session.into_session()?;
             let report =
-                sts_simulator::eval::run_control::exact_audit_run_progress_journal_policy_v1(
+                sts_oracle_runtime::eval::run_control::exact_audit_run_progress_journal_policy_v1(
                     analysis.seed,
                     analysis.ascension,
                     &continuation.journal,
                     &expected_final,
-                    sts_simulator::runtime::branch::current_oracle_candidate_order_v1,
+                    sts_oracle_runtime::runtime::branch::current_oracle_candidate_order_v1,
                 )?;
             let report = if details {
                 serde_json::to_value(report)
@@ -1461,7 +1470,7 @@ fn main() -> Result<(), String> {
                 })?;
             let expected_final = continuation.session.clone().into_session()?;
             let (journal, replay) =
-                sts_simulator::eval::run_control::splice_exact_combat_resolution_v1(
+                sts_oracle_runtime::eval::run_control::splice_exact_combat_resolution_v1(
                     continuation.seed,
                     continuation.ascension,
                     &continuation.journal,
@@ -1515,7 +1524,7 @@ fn main() -> Result<(), String> {
                 })?;
             let expected_final = continuation.session.clone().into_session()?;
             let historical =
-                sts_simulator::eval::run_control::exact_replay_run_progress_journal_prefix_v1(
+                sts_oracle_runtime::eval::run_control::exact_replay_run_progress_journal_prefix_v1(
                     continuation.seed,
                     continuation.ascension,
                     &continuation.journal,
@@ -1525,7 +1534,7 @@ fn main() -> Result<(), String> {
             let active = historical.active_combat.as_ref().ok_or_else(|| {
                 format!("journal entry {journal_entry} does not begin at an active combat")
             })?;
-            let position = sts_simulator::sim::combat::CombatPosition::new(
+            let position = sts_oracle_runtime::sim::combat::CombatPosition::new(
                 active.engine_state.clone(),
                 active.combat_state.clone(),
             );
@@ -1603,7 +1612,7 @@ fn main() -> Result<(), String> {
             .map_err(|error| error.to_string())?;
             if let Some(output) = &continuation_output {
                 let prefix_journal =
-                    sts_simulator::eval::run_control::RunProgressJournalV1::from_committed_steps(
+                    sts_oracle_runtime::eval::run_control::RunProgressJournalV1::from_committed_steps(
                         continuation.journal.entries()[..journal_entry].to_vec(),
                     )?;
                 let prefix = OracleRunContinuationV1 {
@@ -1612,7 +1621,7 @@ fn main() -> Result<(), String> {
                     seed: continuation.seed,
                     ascension: continuation.ascension,
                     journal: prefix_journal,
-                    session: sts_simulator::eval::run_control::RunControlSessionCheckpointV1::
+                    session: sts_oracle_runtime::eval::run_control::RunControlSessionCheckpointV1::
                         from_session(&historical),
                     explorer_frontier: None,
                 };
@@ -1902,8 +1911,8 @@ fn main() -> Result<(), String> {
             limit,
         } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
-            let view = selected_analysis_view(&analysis, node)?;
-            print_json(&compact_node_summary(&view, limit))
+            let view = workspace_view::selected(&analysis, node)?;
+            print_json(&workspace_view::compact_node(&view, limit))
         }
         Command::Choose {
             workspace,
@@ -1934,7 +1943,7 @@ fn main() -> Result<(), String> {
             };
             let view = analysis.try_choice(&choice.choice_ref.clone())?;
             save_oracle_analysis_workspace_v1(&workspace, &analysis)?;
-            print_json(&compact_node_summary(&view, 8))
+            print_json(&workspace_view::compact_node(&view, 8))
         }
         Command::Owner { workspace, steps } => {
             let mut analysis = load_oracle_analysis_workspace_v1(&workspace)?;
@@ -1973,7 +1982,7 @@ fn main() -> Result<(), String> {
                 "applied_count": applied.len(),
                 "applied": applied,
                 "stopped": stopped,
-                "status": compact_node_summary(&analysis.view()?, 8),
+                "status": workspace_view::compact_node(&analysis.view()?, 8),
             }))
         }
         Command::Timeline {
@@ -1986,7 +1995,7 @@ fn main() -> Result<(), String> {
             if tail == 0 || tail > 500 {
                 return Err("timeline tail must be in 1..=500".to_string());
             }
-            print_json(&compact_timeline(&analysis, node, tail)?)
+            print_json(&workspace_view::compact_timeline(&analysis, node, tail)?)
         }
         Command::ExportCombatCase {
             workspace,
@@ -1995,7 +2004,7 @@ fn main() -> Result<(), String> {
         } => {
             let analysis = load_oracle_analysis_workspace_v1(&workspace)?;
             let node = node.unwrap_or_else(|| analysis.session.cursor_node_id());
-            let case = analysis_combat_case(&analysis, node)?;
+            let case = workspace_view::combat_case(&analysis, node)?;
             save_combat_case(&output, &case)?;
             print_json(&json!({
                 "node": node,
@@ -2165,276 +2174,8 @@ fn main() -> Result<(), String> {
     }
 }
 
-fn selected_analysis_view(
-    analysis: &OracleAnalysisWorkspaceV1,
-    node: Option<usize>,
-) -> Result<OracleAnalysisNodeViewV1, String> {
-    if let Some(node) = node {
-        analysis.session.view_node(node)
-    } else {
-        analysis.view()
-    }
-}
-
-fn compact_node_summary(view: &OracleAnalysisNodeViewV1, limit: usize) -> Value {
-    let choices = view
-        .choices
-        .iter()
-        .take(limit)
-        .map(|choice| {
-            json!({
-                "choice_ref": choice.choice_ref,
-                "kind": choice.kind,
-                "candidate_id": choice.candidate_id,
-                "label": choice.label,
-                "owner_rank": choice.owner_rank,
-                "path_discrepancy": choice.path_discrepancy,
-            })
-        })
-        .collect::<Vec<_>>();
-    let children = view
-        .children
-        .iter()
-        .take(limit)
-        .map(|child| {
-            json!({
-                "edge_id": child.edge_id,
-                "child_node_id": child.child_node_id,
-                "kind": child.kind,
-                "label": child.label,
-                "is_on_mainline": child.is_on_mainline,
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({
-        "node": view.node_id,
-        "parent": view.canonical_parent_node_id,
-        "act": view.act,
-        "floor": view.floor,
-        "hp": view.current_hp,
-        "max_hp": view.max_hp,
-        "gold": view.gold,
-        "boundary": view.boundary,
-        "event": view.event,
-        "choice_count": view.choices.len(),
-        "choices_shown": choices.len(),
-        "choices_truncated": view.choices.len() > choices.len(),
-        "choices": choices,
-        "child_count": view.children.len(),
-        "children_shown": children.len(),
-        "children_truncated": view.children.len() > children.len(),
-        "children": children,
-        "encounter": view.encounter,
-        "combat": view.combat,
-    })
-}
-
-fn compact_timeline(
-    analysis: &OracleAnalysisWorkspaceV1,
-    node: usize,
-    tail: usize,
-) -> Result<Value, String> {
-    let entries = analysis.session.journal_entries(node)?;
-    let start = entries.len().saturating_sub(tail);
-    let compact = entries[start..]
-        .iter()
-        .enumerate()
-        .map(|(offset, entry)| match entry {
-            RunProgressStepV1::Decision(record) => json!({
-                "journal_index": start + offset,
-                "kind": "decision",
-                "location": record.before.location,
-                "title": record.before.title,
-                "chosen": record.result.chosen_label,
-                "candidates": record.before.candidates.iter().map(|candidate| &candidate.label).collect::<Vec<_>>(),
-            }),
-            RunProgressStepV1::ForcedTransition(record) => json!({
-                "journal_index": start + offset,
-                "kind": "forced_transition",
-                "location": record.before.location,
-                "title": record.before.title,
-            }),
-            RunProgressStepV1::CombatResolution(record) => json!({
-                "journal_index": start + offset,
-                "kind": "combat_resolution",
-                "location": record.before.location,
-                "title": record.before.title,
-                "resolution": record.kind,
-                "actions": record.trajectory.action_count,
-                "changes": record.result.changes,
-            }),
-            RunProgressStepV1::Stop(record) => json!({
-                "journal_index": start + offset,
-                "kind": "stop",
-                "stop_kind": record.kind,
-                "reason": record.reason,
-            }),
-        })
-        .collect::<Vec<_>>();
-    Ok(json!({
-        "node": node,
-        "total_entries": entries.len(),
-        "returned_entries": compact.len(),
-        "entries": compact,
-    }))
-}
-
-fn analysis_combat_case(
-    analysis: &OracleAnalysisWorkspaceV1,
-    node: usize,
-) -> Result<CombatCase, String> {
-    let view = analysis.session.view_node(node)?;
-    let (search_nodes, search_ms) = if view.encounter.as_ref().is_some_and(|it| it.is_boss) {
-        (analysis.budget.boss_nodes, analysis.budget.boss_ms)
-    } else if view.encounter.as_ref().is_some_and(|it| it.is_elite) {
-        (analysis.budget.elite_nodes, analysis.budget.elite_ms)
-    } else {
-        (analysis.budget.hallway_nodes, analysis.budget.hallway_ms)
-    };
-    analysis.session.combat_case(
-        node,
-        analysis.seed,
-        analysis.ascension,
-        search_nodes,
-        search_ms,
-    )
-}
-
-fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
-    const REQUIRED_PROFILE: &str = "release";
-    const BUILT_PROFILE: &str = env!("STS_CARGO_PROFILE");
-    const REPOSITORY_ROOT: &str = env!("STS_REPOSITORY_ROOT");
-
-    if !canonical_oracle {
-        return Err(
-            "oracle_lab refuses direct execution; run `cargo oracle-lab <command> ...`".to_string(),
-        );
-    }
-    if BUILT_PROFILE != REQUIRED_PROFILE {
-        return Err(format!(
-            "oracle_lab was built with forbidden profile `{BUILT_PROFILE}`; \
-             run `cargo oracle-lab <command> ...`"
-        ));
-    }
-    let executable_name = if cfg!(windows) {
-        "oracle_lab.exe"
-    } else {
-        "oracle_lab"
-    };
-    let expected = PathBuf::from(REPOSITORY_ROOT)
-        .join("target")
-        .join(REQUIRED_PROFILE)
-        .join(executable_name);
-    let current = std::env::current_exe()
-        .and_then(|path| path.canonicalize())
-        .map_err(|error| format!("failed to identify running oracle_lab: {error}"))?;
-    let expected = expected.canonicalize().map_err(|error| {
-        format!(
-            "canonical oracle_lab artifact is missing at {}: {error}; \
-             run `cargo oracle-lab <command> ...`",
-            expected.display()
-        )
-    })?;
-    if current != expected {
-        return Err(format!(
-            "oracle_lab refuses non-canonical artifact {}; expected {}; \
-             run `cargo oracle-lab <command> ...`",
-            current.display(),
-            expected.display()
-        ));
-    }
-    validate_source_freshness(&expected)?;
-    Ok(())
-}
-
-fn validate_source_freshness(executable: &Path) -> Result<(), String> {
-    let executable_modified = std::fs::metadata(executable)
-        .and_then(|metadata| metadata.modified())
-        .map_err(|error| {
-            format!(
-                "failed to inspect canonical oracle laboratory '{}': {error}",
-                executable.display()
-            )
-        })?;
-    let depfile = executable.with_extension("d");
-    let depfile_text = std::fs::read_to_string(&depfile).map_err(|error| {
-        format!(
-            "canonical oracle dependency manifest is missing at '{}': {error}; rebuild with `cargo oracle-lab --help`",
-            depfile.display()
-        )
-    })?;
-    let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
-    let mut dependencies = depfile_dependencies(&depfile_text);
-    dependencies.extend([
-        repository.join("Cargo.toml"),
-        repository.join("Cargo.lock"),
-        repository.join(".cargo/config.toml"),
-        repository.join("crates/sts_combat_planner/Cargo.toml"),
-    ]);
-    let stale = dependencies.iter().find(|dependency| {
-        std::fs::metadata(dependency)
-            .and_then(|metadata| metadata.modified())
-            .is_ok_and(|modified| modified > executable_modified)
-    });
-    if let Some(stale) = stale {
-        return Err(format!(
-            "canonical oracle laboratory is stale: '{}' changed after '{}'; rebuild once with \
-             `cargo oracle-lab --help`",
-            stale.display(),
-            executable.display()
-        ));
-    }
-    Ok(())
-}
-
-fn source_content_fingerprint(
-    repository: &Path,
-    dependencies: &[PathBuf],
-) -> Result<String, String> {
-    let mut dependencies = dependencies
-        .iter()
-        .map(|dependency| {
-            if dependency.is_absolute() {
-                dependency.clone()
-            } else {
-                repository.join(dependency)
-            }
-        })
-        .collect::<Vec<_>>();
-    dependencies.sort();
-    dependencies.dedup();
-    let mut digest = Blake2b512::new();
-    for dependency in dependencies {
-        let bytes = std::fs::read(&dependency).map_err(|error| {
-            format!(
-                "failed to fingerprint canonical dependency '{}': {error}",
-                dependency.display()
-            )
-        })?;
-        digest.update(dependency.to_string_lossy().as_bytes());
-        digest.update([0]);
-        digest.update((bytes.len() as u64).to_le_bytes());
-        digest.update(bytes);
-    }
-    Ok(digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
-}
-
-fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
-    depfile
-        .lines()
-        .filter_map(|line| line.split_once(": ").map(|(_, dependencies)| dependencies))
-        .flat_map(str::split_whitespace)
-        .filter(|dependency| !dependency.ends_with(':'))
-        .map(PathBuf::from)
-        .collect()
-}
-
 fn combat_policy_surface(
-    position: &sts_simulator::sim::combat::CombatPosition,
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
     limit: usize,
 ) -> Value {
     const UNIFORM_EXPLORATION: f64 = 0.05;
@@ -2442,7 +2183,7 @@ fn combat_policy_surface(
     let stepper = EngineCombatStepper;
     let actions = stepper.atomic_actions(position);
     let weights =
-        sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
+        sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
             position,
             &actions,
         );
@@ -2510,7 +2251,7 @@ fn export_descendant_combat_case(
 
     let mut exported = base.clone();
     exported.position = position;
-    exported.combat = sts_simulator::eval::combat_case::combat_summary(&exported.position);
+    exported.combat = sts_oracle_runtime::eval::combat_case::combat_summary(&exported.position);
     exported.run.hp = exported.position.combat.entities.player.current_hp;
     exported.run.max_hp = exported.position.combat.entities.player.max_hp;
     exported.gap.boundary = format!(
@@ -2545,12 +2286,12 @@ fn export_descendant_combat_case(
 
 fn local_graph_state_snapshot_for_path(
     session: &LocalTurnGraphWitnessSession,
-    root: sts_simulator::sim::combat::CombatPosition,
+    root: sts_oracle_runtime::sim::combat::CombatPosition,
     actions: &[TurnOptionAction],
     max_engine_steps_per_transition: usize,
 ) -> Result<Option<LocalTurnGraphStateSnapshot>, String> {
     let position = replay_descendant_position(root, actions, max_engine_steps_per_transition)?;
-    let exact_state_hash = sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+    let exact_state_hash = sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
         &position.engine,
         &position.combat,
     );
@@ -2558,10 +2299,10 @@ fn local_graph_state_snapshot_for_path(
 }
 
 fn replay_descendant_position(
-    mut position: sts_simulator::sim::combat::CombatPosition,
+    mut position: sts_oracle_runtime::sim::combat::CombatPosition,
     actions: &[TurnOptionAction],
     max_engine_steps_per_transition: usize,
-) -> Result<sts_simulator::sim::combat::CombatPosition, String> {
+) -> Result<sts_oracle_runtime::sim::combat::CombatPosition, String> {
     let stepper = EngineCombatStepper;
     for (index, action) in actions.iter().enumerate() {
         if stepper
@@ -2592,7 +2333,7 @@ fn replay_descendant_position(
 }
 
 fn replay_combat_path(
-    mut position: sts_simulator::sim::combat::CombatPosition,
+    mut position: sts_oracle_runtime::sim::combat::CombatPosition,
     actions: &[TurnOptionAction],
     max_engine_steps_per_transition: usize,
 ) -> Result<Value, String> {
@@ -2636,7 +2377,7 @@ fn replay_combat_path(
         if next_turn != turn_number
             || !matches!(
                 terminal,
-                sts_simulator::sim::combat::CombatTerminal::Unresolved
+                sts_oracle_runtime::sim::combat::CombatTerminal::Unresolved
             )
         {
             turns.push(json!({
@@ -2682,7 +2423,7 @@ fn replay_combat_path(
 }
 
 fn combat_action_label(
-    position: &sts_simulator::sim::combat::CombatPosition,
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
     input: &ClientInput,
 ) -> String {
     match input {
@@ -2734,7 +2475,7 @@ fn combat_action_label(
 }
 
 fn readable_turn_option_action_labels(
-    root: &sts_simulator::sim::combat::CombatPosition,
+    root: &sts_oracle_runtime::sim::combat::CombatPosition,
     actions: &[TurnOptionAction],
     max_engine_steps_per_transition: usize,
 ) -> Result<Vec<String>, String> {
@@ -2762,14 +2503,14 @@ fn readable_turn_option_action_labels(
 }
 
 fn target_atomic_policy_trace(
-    initial: &sts_simulator::sim::combat::CombatPosition,
+    initial: &sts_oracle_runtime::sim::combat::CombatPosition,
     target: &[ClientInput],
     max_engine_steps_per_transition: usize,
 ) -> Result<
     (
         Vec<Value>,
         String,
-        Vec<sts_simulator::sim::combat::CombatPosition>,
+        Vec<sts_oracle_runtime::sim::combat::CombatPosition>,
     ),
     String,
 > {
@@ -2782,7 +2523,7 @@ fn target_atomic_policy_trace(
     for (step_index, input) in target.iter().enumerate() {
         let legal = stepper.atomic_actions(&position);
         let weights =
-            sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
+            sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_atomic_action_policy_weights(
                 &position,
                 &legal,
             );
@@ -2842,7 +2583,7 @@ fn target_atomic_policy_trace(
     }
     Ok((
         trace,
-        sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+        sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
             &position.engine,
             &position.combat,
         ),
@@ -2851,7 +2592,7 @@ fn target_atomic_policy_trace(
 }
 
 fn compact_target_label(
-    combat: &sts_simulator::runtime::combat::CombatState,
+    combat: &sts_oracle_runtime::runtime::combat::CombatState,
     target: Option<usize>,
 ) -> String {
     let Some(target) = target else {
@@ -2872,7 +2613,7 @@ fn compact_target_label(
 }
 
 fn combat_card_uuid_label(
-    combat: &sts_simulator::runtime::combat::CombatState,
+    combat: &sts_oracle_runtime::runtime::combat::CombatState,
     uuid: u32,
 ) -> String {
     combat
@@ -2887,7 +2628,7 @@ fn combat_card_uuid_label(
         .unwrap_or_else(|| format!("card#{uuid}"))
 }
 
-fn combat_turn_snapshot(position: &sts_simulator::sim::combat::CombatPosition) -> Value {
+fn combat_turn_snapshot(position: &sts_oracle_runtime::sim::combat::CombatPosition) -> Value {
     let combat = &position.combat;
     let player = &combat.entities.player;
     json!({
@@ -2901,7 +2642,7 @@ fn combat_turn_snapshot(position: &sts_simulator::sim::combat::CombatPosition) -
     })
 }
 
-fn combat_position_snapshot(position: &sts_simulator::sim::combat::CombatPosition) -> Value {
+fn combat_position_snapshot(position: &sts_oracle_runtime::sim::combat::CombatPosition) -> Value {
     let combat = &position.combat;
     let player = &combat.entities.player;
     json!({
@@ -2921,10 +2662,10 @@ fn combat_position_snapshot(position: &sts_simulator::sim::combat::CombatPositio
 }
 
 fn combat_power_labels(
-    combat: &sts_simulator::runtime::combat::CombatState,
-    entity: sts_simulator::EntityId,
+    combat: &sts_oracle_runtime::runtime::combat::CombatState,
+    entity: sts_oracle_runtime::EntityId,
 ) -> Vec<String> {
-    sts_simulator::content::powers::store::powers_for(combat, entity)
+    sts_oracle_runtime::content::powers::store::powers_for(combat, entity)
         .unwrap_or_default()
         .iter()
         .map(|power| format!("{:?}:{}", power.power_type, power.amount))
@@ -2932,8 +2673,8 @@ fn combat_power_labels(
 }
 
 fn monster_state_label(
-    combat: &sts_simulator::runtime::combat::CombatState,
-    monster: &sts_simulator::runtime::combat::MonsterEntity,
+    combat: &sts_oracle_runtime::runtime::combat::CombatState,
+    monster: &sts_oracle_runtime::runtime::combat::MonsterEntity,
 ) -> String {
     let label = EnemyId::from_id(monster.monster_type)
         .map(|enemy| enemy.get_name())
@@ -2959,7 +2700,7 @@ fn monster_state_label(
     )
 }
 
-fn card_label(card: &sts_simulator::runtime::combat::CombatCard) -> String {
+fn card_label(card: &sts_oracle_runtime::runtime::combat::CombatCard) -> String {
     let upgrade = if card.upgrades == 0 {
         String::new()
     } else {
@@ -3376,69 +3117,14 @@ fn layered_candidate_view_ranks(
 }
 
 fn existing_combat_guide_diagnostics(
-    position: &sts_simulator::sim::combat::CombatPosition,
+    position: &sts_oracle_runtime::sim::combat::CombatPosition,
 ) -> Value {
     json!({
-        "progress": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
-        "survival": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(position),
-        "horizon": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
-        "setup": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
+        "progress": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(position),
+        "survival": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(position),
+        "horizon": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
+        "setup": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
     })
-}
-
-fn oracle_lab_runtime_identity() -> Value {
-    let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
-    let executable = std::env::current_exe().ok();
-    let metadata = executable
-        .as_ref()
-        .and_then(|path| std::fs::metadata(path).ok());
-    let modified_unix_ms = metadata
-        .as_ref()
-        .and_then(|metadata| metadata.modified().ok())
-        .and_then(|modified| {
-            modified
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .ok()
-        })
-        .map(|duration| duration.as_millis());
-    let git_head = read_git_head_fast(&repository);
-    json!({
-        "profile": env!("STS_CARGO_PROFILE"),
-        "executable": executable,
-        "artifact_bytes": metadata.map(|metadata| metadata.len()),
-        "artifact_modified_unix_ms": modified_unix_ms,
-        "git_head": git_head,
-        "git_dirty": Value::Null,
-        "dirty_scan": "omitted_in_compact_mode",
-    })
-}
-
-fn read_git_head_fast(repository: &std::path::Path) -> Option<String> {
-    let dot_git = repository.join(".git");
-    let git_dir = if dot_git.is_dir() {
-        dot_git
-    } else {
-        let pointer = std::fs::read_to_string(dot_git).ok()?;
-        let relative = pointer.trim().strip_prefix("gitdir:")?.trim();
-        repository.join(relative)
-    };
-    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    let revision = if let Some(reference) = head.trim().strip_prefix("ref: ") {
-        std::fs::read_to_string(git_dir.join(reference))
-            .ok()
-            .or_else(|| {
-                std::fs::read_to_string(git_dir.join("packed-refs"))
-                    .ok()?
-                    .lines()
-                    .find_map(|line| {
-                        let (hash, name) = line.split_once(' ')?;
-                        (name == reference).then(|| hash.to_owned())
-                    })
-            })?
-    } else {
-        head
-    };
-    Some(revision.trim().chars().take(12).collect())
 }
 
 fn print_json<T: Serialize>(value: &T) -> Result<(), String> {

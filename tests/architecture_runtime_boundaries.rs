@@ -103,7 +103,7 @@ fn durable_exact_identity_is_not_a_debug_or_layout_compatibility_view() {
 
 #[test]
 fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
-    const FRONTEND_LIMIT: u64 = 144 * 1024;
+    const FRONTEND_LIMIT: u64 = 128 * 1024;
     const COMMAND_MODULE_LIMIT: u64 = 40 * 1024;
 
     let frontend = std::path::Path::new("crates/sts_oracle_lab/src/bin/oracle_lab.rs");
@@ -138,6 +138,46 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         assert!(
             bytes <= COMMAND_MODULE_LIMIT,
             "{} grew to {bytes} bytes; split its independent responsibilities instead of creating another command monolith",
+            path.display()
+        );
+    }
+
+    for (module, limit) in [("canonical_launch.rs", 12 * 1024), ("workspace_view.rs", 12 * 1024)] {
+        let path = std::path::Path::new("crates/sts_oracle_lab/src/bin").join(module);
+        let bytes = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("read {} metadata: {error}", path.display()))
+            .len();
+        assert!(
+            bytes <= limit,
+            "{} grew to {bytes} bytes; keep this laboratory boundary focused instead of moving unrelated host logic into it",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn oracle_lab_names_its_runtime_dependency_directly() {
+    let manifest = std::fs::read_to_string("crates/sts_oracle_lab/Cargo.toml")
+        .expect("read oracle laboratory manifest");
+    assert!(
+        manifest.contains("sts_oracle_runtime = { path = \"../sts_oracle_runtime\" }"),
+        "oracle laboratory must name its runtime dependency directly"
+    );
+    assert!(
+        !manifest.contains("sts_simulator = { package = \"sts_oracle_runtime\""),
+        "oracle laboratory must not disguise sts_oracle_runtime behind the retired sts_simulator package name"
+    );
+
+    let mut sources = Vec::new();
+    collect_rust_sources(
+        std::path::Path::new("crates/sts_oracle_lab/src"),
+        &mut sources,
+    );
+    for path in sources {
+        let source = std::fs::read_to_string(&path).expect("read oracle laboratory source");
+        assert!(
+            !source.contains("sts_simulator::"),
+            "oracle laboratory source '{}' must import sts_oracle_runtime directly",
             path.display()
         );
     }

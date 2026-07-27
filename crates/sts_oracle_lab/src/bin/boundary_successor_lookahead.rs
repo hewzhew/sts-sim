@@ -11,16 +11,16 @@ use sts_combat_planner::{
     CombatDecisionRoot, CombatPlanningQuantum, TurnOptionGeneratorConfig,
     TurnOptionGeneratorSession,
 };
-use sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2;
-use sts_simulator::eval::combat_action_imitation::typed_combat_feature_components_v1;
-use sts_simulator::eval::combat_case::load_combat_case;
-use sts_simulator::eval::combat_state_features::{
+use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
+use sts_oracle_runtime::eval::combat_action_imitation::typed_combat_feature_components_v1;
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_state_features::{
     semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
 };
-use sts_simulator::eval::run_control::{
+use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
 };
-use sts_simulator::sim::combat::EngineCombatStepper;
+use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 #[derive(Clone, Debug, Args)]
 pub struct BoundarySuccessorLookaheadArgs {

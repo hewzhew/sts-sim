@@ -216,7 +216,7 @@ pub(super) fn run(args: TurnMembershipArgs) -> Result<(), String> {
                 .and_then(|next| generator.live_action_transition_snapshot(position, next));
             serde_json::json!({
                 "through_action": index + 1,
-                "exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                "exact_state_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                     &position.engine,
                     &position.combat,
                 ),

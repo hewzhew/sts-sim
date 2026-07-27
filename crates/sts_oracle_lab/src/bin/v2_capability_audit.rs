@@ -51,7 +51,7 @@ pub(super) fn run(args: V2CapabilityAuditArgs) -> Result<(), String> {
         .transpose()?
         .and_then(|corridor| corridor.positions_by_rank.get(1).cloned())
         .map(|position| {
-            sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+            sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             )
@@ -93,7 +93,7 @@ pub(super) fn run(args: V2CapabilityAuditArgs) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     }
     let root_rollout_started = Instant::now();
-    let root_rollout = sts_simulator::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
+    let root_rollout = sts_oracle_runtime::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
         &loaded.position,
         root_rollout_max_actions,
         Instant::now().checked_add(Duration::from_millis(wall_ms)),

@@ -162,7 +162,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             ));
         }
         case.position.combat.entities.player.current_hp = hp;
-        case.combat = sts_simulator::eval::combat_case::combat_summary(&case.position);
+        case.combat = sts_oracle_runtime::eval::combat_case::combat_summary(&case.position);
     }
     let stepper = EngineCombatStepper;
     let initial_position = case.position.clone();
@@ -236,7 +236,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
         prefix_replay_actions.push(TurnOptionAction {
             input: input.clone(),
             expected_successor_hash:
-                sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                     &step.position.engine,
                     &step.position.combat,
                 )
@@ -261,14 +261,14 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
         let mut focused_case = case.clone();
         focused_case.position = position.clone();
         focused_case.combat =
-            sts_simulator::eval::combat_case::combat_summary(&focused_case.position);
+            sts_oracle_runtime::eval::combat_case::combat_summary(&focused_case.position);
         focused_case.gap.boundary = format!(
             "{} + {} exact prefix actions",
             focused_case.gap.boundary,
             prefix.len()
         );
         focused_case.gap.reason = "oracle_lab_prefix_successor".to_string();
-        sts_simulator::eval::combat_case::save_combat_case(path, &focused_case)?;
+        sts_oracle_runtime::eval::combat_case::save_combat_case(path, &focused_case)?;
     }
     if replay_only {
         let prefix_trace = replay_combat_path(
@@ -288,12 +288,12 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             "exported_case": export_prefix_case,
             "trace": prefix_trace,
             "guide_components": {
-                "progress": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&position),
-                "survival": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&position),
-                "horizon": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&position),
-                "setup": sts_simulator::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&position),
+                "progress": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_state_guide_components(&position),
+                "survival": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_survival_guide_components(&position),
+                "horizon": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(&position),
+                "setup": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(&position),
             },
-            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+            "successor_exact_state_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                 &position.engine,
                 &position.combat,
             ),
@@ -622,7 +622,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             },
             "prefix": {
                 "trace": prefix_trace,
-                "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+                "successor_exact_state_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                     &search_root_position.engine,
                     &search_root_position.combat,
                 ),
@@ -678,7 +678,7 @@ pub(super) fn run(args: CombatCaseLegacyGlobalArgs) -> Result<(), String> {
             "action_count": prefix.len(),
             "actions": prefix,
             "trace": prefix_trace,
-            "successor_exact_state_hash": sts_simulator::ai::combat_state_key::combat_exact_state_hash_v2(
+            "successor_exact_state_hash": sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
                 &search_root_position.engine,
                 &search_root_position.combat,
             ),

@@ -10,7 +10,7 @@ use clap::Args;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sts_combat_planner::{CombatActionPolicy, CombatPolicyChoice};
-use sts_simulator::eval::combat_action_imitation::{
+use sts_oracle_runtime::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
     conservative_combat_reanalysis_target_v1,
     train_combat_action_imitation_with_reanalysis_and_base_v1,
@@ -18,8 +18,8 @@ use sts_simulator::eval::combat_action_imitation::{
     CombatActionReanalysisCandidateV1, CombatActionReanalysisDecisionV1,
     CombatActionReanalysisEvidenceV1, CombatActionReanalysisTrainingConfigV1,
 };
-use sts_simulator::sim::combat::CombatPosition;
-use sts_simulator::state::core::ClientInput;
+use sts_oracle_runtime::sim::combat::CombatPosition;
+use sts_oracle_runtime::state::core::ClientInput;
 
 use super::exact_combat_evidence::ExactCombatEvidence;
 use super::{
@@ -463,7 +463,7 @@ mod tests {
     use std::path::PathBuf;
 
     use serde_json::json;
-    use sts_simulator::eval::combat_action_imitation::{
+    use sts_oracle_runtime::eval::combat_action_imitation::{
         conservative_combat_reanalysis_target_v1, CombatActionReanalysisEvidenceV1,
         CombatActionReanalysisTrainingConfigV1,
     };
