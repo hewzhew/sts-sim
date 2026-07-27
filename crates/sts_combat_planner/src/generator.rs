@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Instant;
 
+use rustc_hash::FxHasher;
 use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey};
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
@@ -224,7 +224,9 @@ impl IndexedExactStateKey {
     }
 
     fn from_arc(key: Arc<CombatExactStateKey>, potion_expenditures: Option<u32>) -> Self {
-        let mut hasher = DefaultHasher::new();
+        // This is a trusted, process-local bucket hash. Full typed equality is
+        // still checked below, so collisions cannot merge simulator states.
+        let mut hasher = FxHasher::default();
         key.hash(&mut hasher);
         Self {
             structural_hash: hasher.finish(),
@@ -1977,6 +1979,25 @@ mod priority_tests {
             HashSet::from([without_spend, after_one_spend]).len(),
             2,
             "equal simulator states with different remaining finite resources cannot transpose"
+        );
+    }
+
+    #[test]
+    fn structural_hash_collision_still_compares_the_complete_typed_state() {
+        let root = test_root();
+        let position = root.position();
+        let player_turn = combat_exact_state_key(&position.engine, &position.combat);
+        let processing = combat_exact_state_key(&EngineState::CombatProcessing, &position.combat);
+        let first = IndexedExactStateKey::new(player_turn, None);
+        let mut collided = IndexedExactStateKey::new(processing, None);
+
+        collided.structural_hash = first.structural_hash;
+
+        assert_ne!(first, collided);
+        assert_eq!(
+            HashSet::from([first, collided]).len(),
+            2,
+            "a private structural-hash collision must not merge exact simulator states"
         );
     }
 }
