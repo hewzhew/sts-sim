@@ -234,6 +234,17 @@ processes, so unrelated machine activity cannot distort the reported hotspot
 percentages. The portable Microsoft-signed PerfView executable remains an
 ignored local analysis dependency under `.profiles\tools`.
 
+For the same canonical workload without WPR or elevation, use:
+
+```powershell
+.\tools\perf\benchmark_combat_contract.ps1
+```
+
+It builds the narrow profiling target once, performs warmup, reports batched
+process-wall timing, and rejects any iteration whose exact counters or witness
+differ. Both tools source `combat_contract_workload.ps1`, so their workload
+cannot silently drift apart.
+
 Oracle work uses one canonical `release` artifact. Build-owning commands use
 `cargo oracle-lab` or `cargo ol`; repeated offline calls use `.\ol.cmd`, and
 resident work uses `cargo ol-live` or `.\ol-live.cmd`. The retired `fast-run`

@@ -34,25 +34,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "combat_contract_workload.ps1")
+
 function Test-IsAdministrator {
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $Principal = [Security.Principal.WindowsPrincipal] $Identity
     return $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-function Get-WorkloadArguments([string] $CasePath) {
-    return @(
-        "--case", $CasePath,
-        "--max-nodes", "20000",
-        "--max-selections", "20000",
-        "--wall-ms", "5000",
-        "--max-potions-used", "2",
-        "--improve-incumbent",
-        "--typed-plan-guide",
-        "--expect-witness",
-        "--expect-min-final-hp", "70",
-        "--performance-only"
-    )
 }
 
 function Invoke-WprCommand(
@@ -168,7 +155,7 @@ function Invoke-ElevatedCapture([string] $RequestPath) {
 
     New-Item -ItemType Directory -Path $ProfileRoot -Force | Out-Null
     $InstanceName = "StsSimulatorCombatCpu-$PID"
-    $WorkloadArguments = Get-WorkloadArguments $CasePath
+    $WorkloadArguments = Get-StsCombatContractWorkloadArguments $CasePath
     $RecordingStarted = $false
     $CaptureError = $null
     $StopError = $null
@@ -342,7 +329,7 @@ try {
         throw "symbolized combat contract is missing at '$Executable'; rerun without -SkipBuild"
     }
 
-    $WorkloadArguments = Get-WorkloadArguments $CasePath
+    $WorkloadArguments = Get-StsCombatContractWorkloadArguments $CasePath
     & $Executable @WorkloadArguments *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "combat contract preflight failed; WPR was not started"
