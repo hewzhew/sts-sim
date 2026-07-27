@@ -882,20 +882,29 @@ impl LocalTurnGraphWitnessSession {
                 .saturating_add(elapsed_nanos_u64(root_option_started));
             match option.boundary() {
                 CompleteTurnOptionBoundary::TerminalWin => {
+                    self.used.terminal_win_options =
+                        self.used.terminal_win_options.saturating_add(1);
+                    self.used.witness_replay_attempts =
+                        self.used.witness_replay_attempts.saturating_add(1);
                     let witness_replay_started = Instant::now();
                     let (mut actions, prefix_negative_log_policy) = self.path_actions(path);
                     actions.extend_from_slice(option.actions());
-                    match replay_witness(
+                    let improved = match replay_witness(
                         &self.original_root,
                         &actions,
                         prefix_negative_log_policy + option.negative_log_policy(),
                         OracleCombatWitnessDiscoverySource::PlannerSearch,
                         stepper,
                     ) {
-                        Ok(witness) => {
-                            self.remember_witness(witness);
+                        Ok(witness) => self.remember_witness(witness),
+                        Err(error) => {
+                            self.replay_failure = Some(error);
+                            false
                         }
-                        Err(error) => self.replay_failure = Some(error),
+                    };
+                    if improved {
+                        self.used.witness_replay_improvements =
+                            self.used.witness_replay_improvements.saturating_add(1);
                     }
                     self.performance_timing.admission_witness_replay_elapsed_ns = self
                         .performance_timing

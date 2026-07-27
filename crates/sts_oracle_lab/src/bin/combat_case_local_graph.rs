@@ -725,6 +725,12 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         .then(|| combat_plan_transition_portfolio_v1(&session))
         .unwrap_or(Value::Null);
     output["counters"]["annotated_exact_edges"] = json!(report.counters.annotated_exact_edges);
+    output["counters"]["terminal_win_options"] = json!(report.counters.terminal_win_options);
+    output["counters"]["witness_replay_attempts"] = json!(report.counters.witness_replay_attempts);
+    output["counters"]["witness_replay_improvements"] =
+        json!(report.counters.witness_replay_improvements);
+    output["counters"]["witness_replay_dominated_skips"] =
+        json!(report.counters.witness_replay_dominated_skips);
     let output_object = output
         .as_object_mut()
         .expect("combat-case report must be a JSON object");

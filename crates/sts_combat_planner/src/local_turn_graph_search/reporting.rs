@@ -59,6 +59,15 @@ pub struct LocalTurnGraphWitnessCounters {
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub duplicate_successor_edges: usize,
+    /// Exact generated turn options that end in a terminal combat victory.
+    pub terminal_win_options: usize,
+    /// Terminal candidates replayed authoritatively from the combat root.
+    pub witness_replay_attempts: usize,
+    /// Authoritative replays that replaced the retained incumbent witness.
+    pub witness_replay_improvements: usize,
+    /// Terminal candidates proven unable to improve the incumbent before
+    /// paying for authoritative replay.
+    pub witness_replay_dominated_skips: usize,
     pub terminal_losses: usize,
     pub depth_limited_successors: usize,
     pub exhausted_nodes: usize,
