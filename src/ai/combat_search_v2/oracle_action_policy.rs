@@ -165,6 +165,67 @@ pub fn oracle_atomic_action_policy_weights_for_refs(
     oracle_atomic_action_policy_weights_from_iter(position, inputs.iter().copied())
 }
 
+/// Fast counterpart for inputs already obtained from the exact legal-action
+/// surface of `position`.
+///
+/// Unlike the compatibility APIs above, this does not ask the stepper to
+/// rediscover and validate every action or build the legacy ordering summary.
+/// It uses the same typed priority and comparison rules and returns the same
+/// ordinal weights. Callers must not pass speculative inputs.
+pub fn oracle_legal_atomic_action_policy_weights_for_refs(
+    position: &CombatPosition,
+    inputs: &[&ClientInput],
+) -> Vec<f64> {
+    oracle_legal_atomic_action_policy_weights_from_iter(position, inputs.iter().copied())
+}
+
+fn oracle_legal_atomic_action_policy_weights_from_iter<'a, I>(
+    position: &CombatPosition,
+    inputs: I,
+) -> Vec<f64>
+where
+    I: Clone + ExactSizeIterator<Item = &'a ClientInput>,
+{
+    let plugins = oracle_action_ordering_plugins(position);
+    let mut ranked = inputs
+        .clone()
+        .enumerate()
+        .map(|(original_action_id, input)| {
+            (
+                original_action_id,
+                super::action_priority::priority_for_input_with_plugins(
+                    &position.engine,
+                    &position.combat,
+                    input,
+                    plugins,
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    if super::action_ordering::action_ordering_enabled(&position.engine) {
+        ranked.sort_by(|(left_id, left), (right_id, right)| {
+            super::action_ordering::compare_action_ordering_priorities(left, None, right, None)
+                .then_with(|| left_id.cmp(right_id))
+        });
+    }
+    let mut rank_by_input = vec![None; inputs.len()];
+    for (rank, (original_action_id, _)) in ranked.into_iter().enumerate() {
+        rank_by_input[original_action_id] = Some(rank);
+    }
+    rank_by_input
+        .into_iter()
+        .zip(inputs)
+        .map(|(rank, input)| {
+            if matches!(input, ClientInput::UsePotion { .. })
+                && !super::potions::semantic_potion_action_allowed(&position.combat, input)
+            {
+                return 1.0e-6;
+            }
+            rank.map_or(1.0, oracle_ordinal_rank_weight)
+        })
+        .collect()
+}
+
 fn oracle_atomic_action_policy_weights_from_iter<'a, I>(
     position: &CombatPosition,
     inputs: I,
@@ -742,6 +803,25 @@ mod tests {
         assert!(weights
             .iter()
             .all(|weight| weight.is_finite() && *weight > 0.0));
+    }
+
+    #[test]
+    fn trusted_legal_policy_path_matches_validated_ordering() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(EnemyId::JawWorm)];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 11),
+            CombatCard::new(CardId::Defend, 12),
+        ];
+        combat.turn.energy = 1;
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let inputs = EngineCombatStepper.atomic_actions(&position);
+        let input_refs = inputs.iter().collect::<Vec<_>>();
+
+        assert_eq!(
+            oracle_legal_atomic_action_policy_weights_for_refs(&position, &input_refs),
+            oracle_atomic_action_policy_weights(&position, &inputs)
+        );
     }
 
     #[test]

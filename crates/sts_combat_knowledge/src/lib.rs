@@ -93,7 +93,7 @@ impl CombatActionPolicy for ExistingCombatKnowledgePolicy {
             })
             .collect::<Vec<_>>();
         let mut atomic_weights =
-            oracle_action_policy::oracle_atomic_action_policy_weights_for_refs(
+            oracle_action_policy::oracle_legal_atomic_action_policy_weights_for_refs(
                 position,
                 &atomic_inputs,
             )

@@ -12,6 +12,7 @@ use diagnostics::ACTION_EFFECT_SAMPLE_LIMIT;
 pub(super) use types::{ActionOrderingSummary, IndexedActionChoice};
 
 use compare::compare_action_ordering_entries;
+pub(in crate::ai::combat_search_v2) use compare::compare_action_ordering_priorities;
 use summary::summarize_ordering;
 use types::{ActionOrderingEntry, ActionOrderingResult};
 
@@ -117,7 +118,7 @@ pub(super) fn order_indexed_action_choices_with_plugins(
     ActionOrderingResult { choices, summary }
 }
 
-fn action_ordering_enabled(engine: &EngineState) -> bool {
+pub(in crate::ai::combat_search_v2) fn action_ordering_enabled(engine: &EngineState) -> bool {
     matches!(
         engine,
         EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
