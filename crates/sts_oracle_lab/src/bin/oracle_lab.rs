@@ -54,7 +54,7 @@ use serde_json::{json, Value};
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, rank_layered_combat_lineage_parents, AtomicLevinRerooting,
     AtomicLevinWitnessConfig, AtomicTurnPortfolioConfig, AtomicTurnPortfolioEntryReport,
-    AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession, CombatDecisionRoot, CombatPolicyChoice,
+    AtomicTurnPortfolioQuantum, AtomicTurnPortfolioSession, CombatDecisionRoot,
     LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceSession,
     LayeredCombatLineagePortfolioConfig, LayeredCombatLineagePortfolioSession,
     LayeredCombatWitnessConfig, LayeredCombatWitnessQuantum, LayeredCombatWitnessSession,
@@ -63,7 +63,7 @@ use sts_combat_planner::{
     OracleCombatWitnessSession, PolicyDiscrepancyConfig, PolicyDiscrepancyTurnMacroConfig,
     TurnOptionAction, TurnOptionGeneratorConfig,
 };
-use sts_oracle_runtime::eval::combat_case::{load_combat_case, save_combat_case};
+use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, CombatGuidanceBundleV1, CombatValuePrototypeArtifactV1,
 };
@@ -76,7 +76,6 @@ use sts_oracle_runtime::runtime::branch::{
     OracleRunConfig,
 };
 use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
-use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 
 fn main() -> Result<(), String> {

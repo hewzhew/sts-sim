@@ -176,6 +176,7 @@ fn small_oracle_diagnostics_name_their_host_dependencies_explicitly() {
         "combat_plan_diagnostics.rs",
         "depth_beam_audits.rs",
         "policy_discrepancy_search.rs",
+        "turn_audits.rs",
         "turn_membership_audit.rs",
         "v2_capability_audit.rs",
     ] {
