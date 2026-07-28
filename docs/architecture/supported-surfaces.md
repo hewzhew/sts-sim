@@ -48,8 +48,6 @@ had been committed:
 | Nonblank-style Rust line measure | 347,457 | PowerShell `Measure-Object -Line`; retained for comparison with the design-time estimate |
 | `#[test]` markers | 2,971 | `rg -n '#\[test\]' -g '*.rs'` |
 | `#[cfg(test)]` markers | 500 | `rg -n '#\[cfg\(test\)\]' -g '*.rs'` |
-| Design specifications | 41 | Files under `docs/superpowers/specs` |
-| Implementation plans | 43 | Files under `docs/superpowers/plans` |
 | Cargo binaries | 8 | `cargo metadata --no-deps --format-version 1` |
 
 The physical and nonblank-style line counts intentionally coexist: the earlier cleanup design used
@@ -162,9 +160,8 @@ No other status has cleanup meaning.
 ## Classification Method
 
 Classification combines Cargo metadata, current source and operator documentation, CLI ownership,
-artifact writers and readers, focused tests, and recent Git history. Searches exclude historical
-`docs/superpowers` plans when deciding whether a caller is active. Historical plans remain useful
-design evidence but cannot establish current support by themselves.
+artifact writers and readers, focused tests, and recent Git history. Retired plans live in Git
+history and cannot establish current support by themselves.
 
 The cleanup foundation used CLI `--help` smoke checks as one input to classification. Later
 retirement deliveries removed `branch_campaign_driver` and `decision_records`; neither remains a
