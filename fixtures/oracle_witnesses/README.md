@@ -152,7 +152,7 @@ A multi-trajectory accumulation control keeps that boundary explicit:
 - Verified result: victory on turn 14 with 13/85 HP.
 - A second exact witness,
   `seed20260713007_a0_awakened_one.layered-proof-cache.actions.json`, was
-  reconstructed by the new layered generator and exact solved-suffix cache:
+  reconstructed by the historical layered generator and exact solved-suffix cache:
   T3 was solved by turn-rerooted policy-discrepancy search, then the proof was
   folded through T2 and T1 until the root generator matched it naturally.
   The resulting 90-action root replay wins on turn 18 with 16/85 HP. This is
@@ -161,11 +161,12 @@ A multi-trajectory accumulation control keeps that boundary explicit:
 - The independently discovered 77-action T3 suffix used as the seed proof is
   preserved in
   `seed20260713007_a0_awakened_one.t3-policy-discrepancy.actions.json`.
-  `oracle_lab combat-case-fold-solved-suffix` can now compile that exact proof
-  back through a supplied sequence of player-turn boundary states in one
-  process. Corridor actions reconstruct subproblem roots only and have no
-  search-order authority; every fold must generate the cached successor and
-  replay the composed terminal witness exactly.
+  The retired `combat-case-fold-solved-suffix` laboratory command compiled that
+  exact proof back through supplied player-turn boundary states. Its
+  implementation remains available in Git history; the exact action witness
+  remains checked in and replayable. Corridor actions reconstructed subproblem
+  roots only and had no search-order authority; every fold generated the cached
+  successor and replayed the composed terminal witness exactly.
 - Layered proof-cache action SHA-256:
   `3D4800407A41E700C53BA122559E3E619B7066B6B9C449F25B71D25B81F0BF29`.
 - Combat start case SHA-256:

@@ -13,9 +13,6 @@ mod boundary_successor_lookahead;
 mod canonical_launch;
 mod combat_case_atomic_turn_portfolio;
 mod combat_case_contract;
-mod combat_case_fold_solved_suffix;
-mod combat_case_layered;
-mod combat_case_layered_window_race;
 mod combat_case_legacy_global;
 mod combat_case_local_graph;
 mod combat_case_performance;
@@ -281,9 +278,6 @@ fn main() -> Result<(), String> {
             print_json(&guidance_combination_audit::run(args)?)
         }
         Command::CombatCaseLocalGraph(args) => combat_case_local_graph::run(args),
-        Command::CombatCaseLayered(args) => combat_case_layered::run(args),
-        Command::CombatCaseFoldSolvedSuffix(args) => combat_case_fold_solved_suffix::run(args),
-        Command::CombatCaseLayeredWindowRace(args) => combat_case_layered_window_race::run(args),
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
         Command::CombatCaseAtomicLevin(args) => atomic_policy_searches::run_atomic_levin(args),

@@ -15,9 +15,6 @@ use super::atomic_policy_searches::CombatCaseAtomicLevinArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
 use super::combat_case_atomic_turn_portfolio::CombatCaseAtomicTurnPortfolioArgs;
-use super::combat_case_fold_solved_suffix::CombatCaseFoldSolvedSuffixArgs;
-use super::combat_case_layered::CombatCaseLayeredArgs;
-use super::combat_case_layered_window_race::CombatCaseLayeredWindowRaceArgs;
 use super::combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
@@ -182,19 +179,9 @@ pub(super) enum Command {
     /// Enumerate exact next-turn states under the base policy, while giving
     /// every state an independent resumable atomic suffix search.
     CombatCaseAtomicTurnPortfolio(CombatCaseAtomicTurnPortfolioArgs),
-    /// Lab-only turn-synchronous beam control. It never invokes the legacy
-    /// suffix donor or the production Widen/Deepen agenda.
-    CombatCaseLayered(CombatCaseLayeredArgs),
     /// Isolated local-graph component with node-local lazy widening.
     #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph(CombatCaseLocalGraphArgs),
-    /// Generate one exact turn boundary, select one deferred beam window,
-    /// then dovetail resumable layered continuations for its candidates.
-    CombatCaseLayeredWindowRace(CombatCaseLayeredWindowRaceArgs),
-    /// Compile one verified deep tactical suffix backwards through exact
-    /// player-turn predecessors. The corridor supplies predecessor states
-    /// only; each fold must naturally generate the already-proven successor.
-    CombatCaseFoldSolvedSuffix(CombatCaseFoldSolvedSuffixArgs),
     /// Distill one exact terminal witness into a semantic action-order artifact.
     BuildActionImitation {
         #[arg(long)]

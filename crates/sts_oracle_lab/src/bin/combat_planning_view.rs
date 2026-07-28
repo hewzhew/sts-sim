@@ -1,13 +1,10 @@
-//! Read-only plan-transition, guide-lane, and lineage portfolio views.
+//! Read-only plan-transition and guide-lane views.
 
 use std::collections::BTreeMap;
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use sts_combat_planner::{
-    CombatActionPolicy, LayeredCombatFrontierState, LayeredCombatLineagePortfolioEntryReport,
-    LocalTurnGraphPlanTransitionEdgeSnapshot, LocalTurnGraphWitnessSession,
-};
+use sts_combat_planner::{LocalTurnGraphPlanTransitionEdgeSnapshot, LocalTurnGraphWitnessSession};
 use sts_combat_strategy::{CombatPlanTransitionAnnotationV1, CombatPlanTransitionV1};
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -230,64 +227,6 @@ pub(super) fn oracle_lab_guide_lane_label(lane_id: u32) -> &'static str {
     }
 }
 
-pub(super) fn layered_candidate_view_ranks(
-    candidates: &[LayeredCombatFrontierState],
-    target_index: usize,
-    policy: &dyn CombatActionPolicy,
-) -> Value {
-    let Some(target) = candidates.get(target_index) else {
-        return Value::Null;
-    };
-    let policy_cost = |candidate: &LayeredCombatFrontierState| {
-        candidate.negative_log_policy + (candidate.actions.len().max(1) as f64).ln()
-    };
-    let target_policy_cost = policy_cost(target);
-    let anchor_rank = candidates
-        .iter()
-        .filter(|candidate| {
-            policy_cost(candidate)
-                .total_cmp(&target_policy_cost)
-                .then_with(|| candidate.exact_state_hash.cmp(&target.exact_state_hash))
-                .is_lt()
-        })
-        .count()
-        .saturating_add(1);
-    let target_guides = policy.state_guides(&target.position);
-    let guide_ranks = target_guides
-        .iter()
-        .map(|target_guide| {
-            let ordinal_rank = candidates
-                .iter()
-                .filter(|candidate| {
-                    let candidate_guide = policy
-                        .state_guides(&candidate.position)
-                        .into_iter()
-                        .find(|guide| guide.lane == target_guide.lane);
-                    candidate_guide.is_some_and(|candidate_guide| {
-                        candidate_guide
-                            .rank
-                            .cmp(&target_guide.rank)
-                            .then_with(|| target_policy_cost.total_cmp(&policy_cost(candidate)))
-                            .then_with(|| target.exact_state_hash.cmp(&candidate.exact_state_hash))
-                            .is_gt()
-                    })
-                })
-                .count()
-                .saturating_add(1);
-            json!({
-                "lane_id": target_guide.lane.value(),
-                "lane": oracle_lab_guide_lane_label(target_guide.lane.value()),
-                "ordinal_rank": ordinal_rank,
-            })
-        })
-        .collect::<Vec<_>>();
-    json!({
-        "candidate_count": candidates.len(),
-        "anchor_rank": anchor_rank,
-        "guide_ranks": guide_ranks,
-    })
-}
-
 pub(super) fn existing_combat_guide_diagnostics(
     position: &sts_oracle_runtime::sim::combat::CombatPosition,
 ) -> Value {
@@ -297,27 +236,4 @@ pub(super) fn existing_combat_guide_diagnostics(
         "horizon": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_horizon_guide_components(position),
         "setup": sts_oracle_runtime::ai::combat_search_v2::oracle_action_policy::oracle_combat_setup_guide_components(position),
     })
-}
-
-pub(super) fn lineage_portfolio_entries_json(
-    entries: &[LayeredCombatLineagePortfolioEntryReport],
-) -> Vec<Value> {
-    entries
-        .iter()
-        .map(|entry| {
-            json!({
-                "parent_candidate_index": entry.parent_candidate_index,
-                "parent_exact_state_hash": entry.parent_exact_state_hash,
-                "parent_consensus_rank": entry.parent_consensus_rank,
-                "source_window_index": entry.source_window_index,
-                "window_discrepancy": entry.window_discrepancy,
-                "generation_work": entry.generation_work,
-                "engine_steps": entry.engine_steps,
-                "recursive_splits_remaining": entry.recursive_splits_remaining,
-                "terminal": entry.terminal,
-                "found_witness": entry.found_witness,
-                "child_entries": lineage_portfolio_entries_json(&entry.child_entries),
-            })
-        })
-        .collect()
 }

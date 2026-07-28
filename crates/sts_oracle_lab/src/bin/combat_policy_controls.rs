@@ -1,13 +1,12 @@
-//! Explicit laboratory policy wrappers and verified solved-suffix loading.
+//! Explicit laboratory policy wrappers.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use sts_combat_planner::{
-    CombatActionPolicy, CombatDecisionRoot, CombatGuideLaneId, CombatPolicyChoice,
-    CombatStateGuide, CombatStateGuideRank, LayeredCombatSolvedSuffixIndex,
-    SharedCombatActionPolicy,
+    CombatActionPolicy, CombatGuideLaneId, CombatPolicyChoice, CombatStateGuide,
+    CombatStateGuideRank, SharedCombatActionPolicy,
 };
 use sts_oracle_runtime::eval::combat_action_imitation::{
     combat_action_imitation_policy_v1, CombatActionImitationArtifactV1,
@@ -15,12 +14,9 @@ use sts_oracle_runtime::eval::combat_action_imitation::{
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_rank_v1, CombatValuePrototypeArtifactV1,
 };
-use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 use sts_oracle_runtime::state::core::ClientInput;
 
-use super::exact_turn_corridor::{
-    load as load_exact_turn_corridor, ExactTurnCorridor, ShadowCorridorGuide,
-};
+use super::exact_turn_corridor::{ExactTurnCorridor, ShadowCorridorGuide};
 
 struct ExactCorridorShadowPolicy {
     base: SharedCombatActionPolicy,
@@ -294,47 +290,4 @@ pub(super) fn value_prototype_shadow_policy(
         guide: ShadowCorridorGuide::TypedFeature,
         shadow_only: false,
     })
-}
-
-pub(super) fn load_layered_solved_suffix_index(
-    case_path: Option<&PathBuf>,
-    actions_path: Option<&PathBuf>,
-    max_engine_steps_per_transition: usize,
-) -> Result<Arc<LayeredCombatSolvedSuffixIndex>, String> {
-    let (Some(case_path), Some(actions_path)) = (case_path, actions_path) else {
-        if case_path.is_some() || actions_path.is_some() {
-            return Err(
-                "--solved-suffix-case and --solved-suffix-actions must be provided together"
-                    .to_string(),
-            );
-        }
-        return Ok(Arc::new(LayeredCombatSolvedSuffixIndex::default()));
-    };
-    let corridor = load_exact_turn_corridor(
-        case_path,
-        std::slice::from_ref(actions_path),
-        max_engine_steps_per_transition,
-    )?;
-    let mut suffixes = LayeredCombatSolvedSuffixIndex::default();
-    for (turn_index, position) in corridor.positions_by_rank.iter().enumerate() {
-        let inputs = corridor.transition_actions[turn_index..]
-            .iter()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>();
-        let root = CombatDecisionRoot::new(position.clone()).map_err(|error| {
-            format!("invalid solved suffix root at turn segment {turn_index}: {error:?}")
-        })?;
-        suffixes
-            .insert_verified_inputs(
-                root,
-                inputs,
-                max_engine_steps_per_transition,
-                &EngineCombatStepper,
-            )
-            .map_err(|error| {
-                format!("solved suffix turn segment {turn_index} failed replay: {error:?}")
-            })?;
-    }
-    Ok(Arc::new(suffixes))
 }

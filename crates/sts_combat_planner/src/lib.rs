@@ -14,14 +14,12 @@ mod decision;
 mod depth_beam_turn;
 mod evidence;
 mod generator;
-mod layered_witness_search;
 mod local_turn_graph_search;
 mod policy;
 mod policy_discrepancy_search;
 mod prospect;
 mod replay;
 mod selection_transaction;
-mod solved_suffix_fold;
 mod types;
 mod witness_search;
 
@@ -61,20 +59,6 @@ pub use evidence::{
 pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
-pub use layered_witness_search::{
-    rank_layered_combat_lineage_parents, search_layered_combat_witness,
-    LayeredCombatCandidateRaceConfig, LayeredCombatCandidateRaceCounters,
-    LayeredCombatCandidateRaceEntryReport, LayeredCombatCandidateRaceReport,
-    LayeredCombatCandidateRaceSession, LayeredCombatCandidateRaceStatus,
-    LayeredCombatDeferredWindow, LayeredCombatFrontierState, LayeredCombatLayerReport,
-    LayeredCombatLineageParentRank, LayeredCombatLineagePortfolioConfig,
-    LayeredCombatLineagePortfolioCounters, LayeredCombatLineagePortfolioEntryReport,
-    LayeredCombatLineagePortfolioReport, LayeredCombatLineagePortfolioSession,
-    LayeredCombatLineagePortfolioStatus, LayeredCombatLineageWindow, LayeredCombatParentWorkReport,
-    LayeredCombatSolvedSuffixIndex, LayeredCombatWitnessBudget, LayeredCombatWitnessConfig,
-    LayeredCombatWitnessCounters, LayeredCombatWitnessInterruption, LayeredCombatWitnessQuantum,
-    LayeredCombatWitnessReport, LayeredCombatWitnessSession, LayeredCombatWitnessStatus,
-};
 pub use local_turn_graph_search::{
     LocalTurnGraphEdgeSnapshot, LocalTurnGraphGuideServiceSnapshot,
     LocalTurnGraphPlanAnnotationEnableError, LocalTurnGraphPlanTransitionEdgeSnapshot,
@@ -103,10 +87,6 @@ pub use prospect::{
 };
 pub use replay::{
     replay_turn_option, ReplayError, ReplayFailure, ReplayLimits, VerifiedTurnOptionReplay,
-};
-pub use solved_suffix_fold::{
-    fold_verified_suffix_through_turn_predecessors, SolvedSuffixFoldConfig, SolvedSuffixFoldError,
-    SolvedSuffixFoldReport, SolvedSuffixFoldStatus, SolvedSuffixFoldStepReport,
 };
 pub use types::{
     CombatDecisionRoot, CombatDecisionRootError, CombatPlanningCounters, CombatPlanningQuantum,

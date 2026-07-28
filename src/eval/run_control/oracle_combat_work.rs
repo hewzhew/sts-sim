@@ -934,9 +934,6 @@ impl OracleRunCombatWorkV1 {
                 OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch => {
                     CombatAutomationTrajectorySource::SearchCombat
                 }
-                OracleCombatWitnessDiscoverySource::SolvedSuffixComposition => {
-                    CombatAutomationTrajectorySource::SearchCombat
-                }
                 OracleCombatWitnessDiscoverySource::RestoredExactActions => {
                     CombatAutomationTrajectorySource::OracleExactActions
                 }
