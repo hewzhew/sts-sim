@@ -1,10 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use clap::ValueEnum;
 use serde::Deserialize;
-use serde_json::{json, Value};
-use sts_combat_planner::OracleCombatWitnessSession;
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::combat_guidance_bundle::typed_combat_value_features_v1;
@@ -15,13 +12,6 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 const CORPUS_SCHEMA_NAME: &str = "CombatActionImitationCorpusManifestV1";
 const CORPUS_SCHEMA_VERSION: u32 = 1;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
-pub(super) enum ShadowCorridorGuide {
-    #[default]
-    Exact,
-    TypedFeature,
-}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,75 +40,11 @@ pub(super) struct LoadedDemonstrationV1 {
 #[derive(Clone, Debug)]
 pub(super) struct ExactTurnCorridor {
     pub(super) rank_by_exact_hash: HashMap<String, i32>,
-    pub(super) atomic_rank_by_exact_hash: HashMap<String, i32>,
     pub(super) typed_target_by_turn: HashMap<u32, (i32, Vec<i32>)>,
     pub(super) positions_by_rank: Vec<CombatPosition>,
     pub(super) transition_actions: Vec<Vec<ClientInput>>,
     pub(super) action_count: usize,
     pub(super) terminal_final_hp: i32,
-}
-
-impl ExactTurnCorridor {
-    fn membership_states(&self, search: &OracleCombatWitnessSession) -> Vec<Value> {
-        let mut memberships = search.compact_state_memberships_by_exact_hashes(
-            self.rank_by_exact_hash.keys().map(String::as_str),
-        );
-        let mut states = self
-            .rank_by_exact_hash
-            .iter()
-            .map(|(exact_hash, rank)| {
-                let membership = memberships
-                    .remove(exact_hash)
-                    .expect("bulk corridor membership includes every requested hash");
-                (*rank, membership)
-            })
-            .collect::<Vec<_>>();
-        states.sort_by_key(|(rank, _)| *rank);
-        states
-            .into_iter()
-            .map(|(rank, membership)| {
-                json!({
-                    "corridor_rank": rank,
-                    "membership": membership,
-                })
-            })
-            .collect()
-    }
-
-    pub(super) fn report(
-        &self,
-        search: &OracleCombatWitnessSession,
-        guide: ShadowCorridorGuide,
-    ) -> Value {
-        json!({
-            "kind": match guide {
-                ShadowCorridorGuide::Exact => "exact_verified_turn_corridor_shadow",
-                ShadowCorridorGuide::TypedFeature => "typed_feature_corridor_shadow",
-            },
-            "authority": "guide_only",
-            "exact_turn_states": self.rank_by_exact_hash.len(),
-            "exact_atomic_prefix_states": self.atomic_rank_by_exact_hash.len(),
-            "typed_feature_targets": self.typed_target_by_turn.len(),
-            "typed_feature_count": self.typed_target_by_turn.values().next().map(|(_, features)| features.len()).unwrap_or_default(),
-            "action_count": self.action_count,
-            "terminal": "Win",
-            "terminal_final_hp": self.terminal_final_hp,
-            "states": self.membership_states(search),
-        })
-    }
-
-    pub(super) fn diagnostic_report(&self, search: &OracleCombatWitnessSession) -> Value {
-        json!({
-            "kind": "exact_verified_turn_corridor_watch",
-            "authority": "diagnostic_only",
-            "changes_search_order": false,
-            "exact_turn_states": self.rank_by_exact_hash.len(),
-            "action_count": self.action_count,
-            "terminal": "Win",
-            "terminal_final_hp": self.terminal_final_hp,
-            "states": self.membership_states(search),
-        })
-    }
 }
 
 pub(super) fn load(
@@ -138,11 +64,9 @@ pub(super) fn from_position_and_actions(
 ) -> Result<ExactTurnCorridor, String> {
     let stepper = EngineCombatStepper;
     let mut rank_by_exact_hash = HashMap::new();
-    let mut atomic_rank_by_exact_hash = HashMap::new();
     let mut typed_target_by_turn = HashMap::new();
     let initial_exact_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
-    rank_by_exact_hash.insert(initial_exact_hash.clone(), 0);
-    atomic_rank_by_exact_hash.insert(initial_exact_hash, 0);
+    rank_by_exact_hash.insert(initial_exact_hash, 0);
     typed_target_by_turn.insert(
         position.combat.turn.turn_count,
         (0, typed_feature_components(&position)),
@@ -174,10 +98,6 @@ pub(super) fn from_position_and_actions(
             ));
         }
         position = step.position;
-        atomic_rank_by_exact_hash.insert(
-            combat_exact_state_hash_v2(&position.engine, &position.combat),
-            i32::try_from(action_index.saturating_add(1)).unwrap_or(i32::MAX),
-        );
         if step.terminal == CombatTerminal::Unresolved
             && position.combat.turn.turn_count != previous_turn
         {
@@ -209,7 +129,6 @@ pub(super) fn from_position_and_actions(
     }
     Ok(ExactTurnCorridor {
         rank_by_exact_hash,
-        atomic_rank_by_exact_hash,
         typed_target_by_turn,
         positions_by_rank,
         transition_actions,

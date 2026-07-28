@@ -13,7 +13,6 @@ use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysis
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
-use super::combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use super::depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
@@ -157,9 +156,6 @@ pub(super) enum Command {
         #[arg(long)]
         continuation_output: Option<PathBuf>,
     },
-    /// Inspect the retired global-agenda search on one exact case.
-    #[command(name = "combat-case-legacy-global")]
-    CombatCase(CombatCaseLegacyGlobalArgs),
     /// Annotate every finite atomic successor with read-only typed combat-plan
     /// facts. This command does not search, rank, prune, or modify a policy.
     CombatCasePlanAnnotations(CombatCasePlanAnnotationsArgs),

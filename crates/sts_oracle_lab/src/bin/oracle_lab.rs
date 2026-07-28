@@ -11,7 +11,6 @@ mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
 mod canonical_launch;
 mod combat_case_contract;
-mod combat_case_legacy_global;
 mod combat_case_local_graph;
 mod combat_case_performance;
 mod combat_graph_diagnostics;
@@ -279,7 +278,6 @@ fn main() -> Result<(), String> {
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
         Command::CombatCasePolicyDiscrepancy(args) => policy_discrepancy_search::run(args),
-        Command::CombatCase(args) => combat_case_legacy_global::run(args),
         Command::TurnActionAudit(args) => turn_audits::run_action(args),
         Command::TurnPlanAudit(args) => turn_audits::run_plan(args),
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),
