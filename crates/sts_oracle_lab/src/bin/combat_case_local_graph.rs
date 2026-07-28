@@ -388,60 +388,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     if performance_only {
         return print_json(&performance_profile);
     }
-    let performance_timing = json!({
-        "selection_elapsed_ns": report.performance_timing.selection_elapsed_ns,
-        "generation_elapsed_ns": report.performance_timing.generation_elapsed_ns,
-        "admission_elapsed_ns": report.performance_timing.admission_elapsed_ns,
-        "atomic_expand_elapsed_ns": report.performance_timing.atomic_expand_elapsed_ns,
-        "transition_simulation_elapsed_ns":
-            report.performance_timing.transition_simulation_elapsed_ns,
-        "transition_identity_elapsed_ns":
-            report.performance_timing.transition_identity_elapsed_ns,
-        "transition_key_build_elapsed_ns":
-            report.performance_timing.transition_key_build_elapsed_ns,
-        "transition_key_index_elapsed_ns":
-            report.performance_timing.transition_key_index_elapsed_ns,
-        "transition_admission_elapsed_ns":
-            report.performance_timing.transition_admission_elapsed_ns,
-        "transition_trace_elapsed_ns":
-            report.performance_timing.transition_trace_elapsed_ns,
-        "transition_seen_elapsed_ns":
-            report.performance_timing.transition_seen_elapsed_ns,
-        "transition_publish_elapsed_ns":
-            report.performance_timing.transition_publish_elapsed_ns,
-        "transition_publish_trace_node_elapsed_ns":
-            report.performance_timing.transition_publish_trace_node_elapsed_ns,
-        "transition_publish_boundary_elapsed_ns":
-            report.performance_timing.transition_publish_boundary_elapsed_ns,
-        "transition_publish_complete_elapsed_ns":
-            report.performance_timing.transition_publish_complete_elapsed_ns,
-        "transition_publish_push_elapsed_ns":
-            report.performance_timing.transition_publish_push_elapsed_ns,
-        "transition_publish_guide_elapsed_ns":
-            report.performance_timing.transition_publish_guide_elapsed_ns,
-        "transition_publish_retain_elapsed_ns":
-            report.performance_timing.transition_publish_retain_elapsed_ns,
-        "transition_publish_agenda_elapsed_ns":
-            report.performance_timing.transition_publish_agenda_elapsed_ns,
-        "admission_root_option_elapsed_ns":
-            report.performance_timing.admission_root_option_elapsed_ns,
-        "admission_witness_filter_elapsed_ns":
-            report.performance_timing.admission_witness_filter_elapsed_ns,
-        "admission_witness_replay_elapsed_ns":
-            report.performance_timing.admission_witness_replay_elapsed_ns,
-        "successor_identity_elapsed_ns":
-            report.performance_timing.successor_identity_elapsed_ns,
-        "successor_lookup_elapsed_ns":
-            report.performance_timing.successor_lookup_elapsed_ns,
-        "successor_node_build_elapsed_ns":
-            report.performance_timing.successor_node_build_elapsed_ns,
-        "successor_edge_elapsed_ns":
-            report.performance_timing.successor_edge_elapsed_ns,
-        "successor_backup_elapsed_ns":
-            report.performance_timing.successor_backup_elapsed_ns,
-        "admission_refresh_elapsed_ns":
-            report.performance_timing.admission_refresh_elapsed_ns,
-    });
+    let performance_timing = combat_case_performance::local_graph_performance_timing(&report);
     let progress = session.progress_snapshot();
     let root_action_families = session
         .root_action_families()

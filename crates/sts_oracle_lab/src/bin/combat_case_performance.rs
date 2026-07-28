@@ -363,6 +363,10 @@ pub(super) fn local_graph_performance_report(
     profile
 }
 
+pub(super) fn local_graph_performance_timing(report: &LocalTurnGraphWitnessReport) -> Value {
+    json!(report.performance_timing)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,5 +448,24 @@ mod tests {
         assert_eq!(report["case"], "fixture.combat.json");
         assert_eq!(report["status"], "FrontierExhausted");
         assert!(report["witness"].is_null());
+    }
+
+    #[test]
+    fn raw_performance_timing_comes_from_the_authoritative_timing_type() {
+        let mut report = report();
+        report.performance_timing.selection_elapsed_ns = 17;
+        report
+            .performance_timing
+            .transition_publish_agenda_elapsed_ns = 23;
+
+        let timing = local_graph_performance_timing(&report);
+
+        assert_eq!(timing["selection_elapsed_ns"], 17);
+        assert_eq!(timing["transition_publish_agenda_elapsed_ns"], 23);
+        assert_eq!(
+            timing,
+            serde_json::to_value(report.performance_timing)
+                .expect("performance timing must remain serializable")
+        );
     }
 }
