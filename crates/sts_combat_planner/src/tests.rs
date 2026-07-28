@@ -2793,6 +2793,7 @@ fn atomic_turn_portfolio_gives_each_exact_boundary_an_independent_suffix_search(
             initial_boundary_work: 64,
             boundary_service_work: 8,
             suffix_service_work: 8,
+            initial_suffix_work: 8,
             boundary_layers: 1,
             terminal_work_per_boundary_batch: 64,
         },
@@ -2837,6 +2838,7 @@ fn atomic_turn_portfolio_recurses_through_exact_player_turn_boundaries() {
             initial_boundary_work: 64,
             boundary_service_work: 8,
             suffix_service_work: 8,
+            initial_suffix_work: 8,
             boundary_layers: 2,
             terminal_work_per_boundary_batch: 64,
         },
@@ -2922,6 +2924,32 @@ fn atomic_turn_portfolio_charges_selection_only_local_graph_progress() {
 }
 
 #[test]
+fn atomic_turn_portfolio_separates_suffix_initialization_from_deep_service() {
+    use crate::atomic_turn_portfolio::{initialization_service_order, terminal_service_quantum};
+
+    let config = AtomicTurnPortfolioConfig {
+        initial_suffix_work: 7,
+        suffix_service_work: 101,
+        ..AtomicTurnPortfolioConfig::default()
+    };
+    assert_eq!(terminal_service_quantum(&config, true, 1_000), 7);
+    assert_eq!(terminal_service_quantum(&config, false, 1_000), 101);
+    assert_eq!(terminal_service_quantum(&config, true, 3), 3);
+    assert_eq!(
+        initialization_service_order(false, 0, 4),
+        std::cmp::Ordering::Less
+    );
+    assert_eq!(
+        initialization_service_order(false, 2, 9),
+        std::cmp::Ordering::Equal
+    );
+    assert_eq!(
+        initialization_service_order(true, 0, 4),
+        std::cmp::Ordering::Equal
+    );
+}
+
+#[test]
 fn atomic_turn_portfolio_backs_up_only_materialized_better_guides() {
     use crate::atomic_turn_portfolio::{merge_backed_guides, AtomicTurnPortfolioGuideRank};
 
@@ -2988,6 +3016,7 @@ fn atomic_turn_portfolio_can_reroot_an_independent_policy_discrepancy_suffix() {
             initial_boundary_work: 64,
             boundary_service_work: 8,
             suffix_service_work: 8,
+            initial_suffix_work: 8,
             boundary_layers: 1,
             terminal_work_per_boundary_batch: 64,
         },
@@ -3036,6 +3065,7 @@ fn atomic_turn_portfolio_can_give_each_boundary_a_local_graph_suffix() {
             initial_boundary_work: 64,
             boundary_service_work: 8,
             suffix_service_work: 32,
+            initial_suffix_work: 32,
             boundary_layers: 1,
             terminal_work_per_boundary_batch: 64,
         },

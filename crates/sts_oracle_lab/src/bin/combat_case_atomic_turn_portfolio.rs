@@ -39,6 +39,10 @@ pub(super) struct CombatCaseAtomicTurnPortfolioArgs {
     boundary_service_work: usize,
     #[arg(long, alias = "suffix-service-transitions", default_value_t = 8_192)]
     suffix_service_work: usize,
+    /// One-time equal service granted to every newly exposed exact suffix
+    /// before evidence-guided deepening may revisit any suffix.
+    #[arg(long, default_value_t = 64)]
+    initial_suffix_work: usize,
     /// Reroot an independent policy-discrepancy search at every terminal
     /// portfolio boundary instead of using the atomic Levin suffix.
     #[arg(long)]
@@ -86,6 +90,7 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
         initial_boundary_work,
         boundary_service_work,
         suffix_service_work,
+        initial_suffix_work,
         policy_discrepancy_suffix,
         local_turn_graph_suffix,
         suffix_rollout_lookahead,
@@ -133,6 +138,7 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
         initial_boundary_work,
         boundary_service_work,
         suffix_service_work,
+        initial_suffix_work,
         boundary_layers,
         terminal_work_per_boundary_batch,
     };
@@ -330,8 +336,8 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
         })
         .collect::<Vec<_>>();
     print_json(&json!({
-        "schema_name": "OracleCombatCaseAtomicTurnPortfolioV5",
-        "schema_version": 5,
+        "schema_name": "OracleCombatCaseAtomicTurnPortfolioV6",
+        "schema_version": 6,
         "case": case_path,
         "runtime": oracle_lab_runtime_identity(),
         "mode": {
@@ -366,6 +372,7 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
             "boundary_service_work": boundary_service_work,
             "initial_boundary_work": initial_boundary_work,
             "suffix_service_work": suffix_service_work,
+            "initial_suffix_work": initial_suffix_work,
             "suffix_turn_macro_transitions": policy_discrepancy_suffix
                 .then_some(suffix_turn_macro_transitions),
             "boundary_layers": boundary_layers,
@@ -375,6 +382,7 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
             "services": report.after.services,
             "boundary_services": report.after.boundary_services,
             "suffix_services": report.after.suffix_services,
+            "suffix_initial_services": report.after.suffix_initial_services,
             "boundary_generation_work": report.after.boundary_generation_work,
             "terminal_search_work": report.after.terminal_search_work,
             "charged_search_work": report.after.charged_search_work,

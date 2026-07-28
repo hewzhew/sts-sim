@@ -43,6 +43,10 @@ pub struct AtomicTurnPortfolioConfig {
     /// charge exact transitions; the local-turn graph charges generation plus
     /// lookahead work. This shared unit is deliberately not wall time.
     pub suffix_service_work: usize,
+    /// One-time charged work granted before a newly exposed suffix may compete
+    /// for ordinary deep service. This separates breadth initialization from
+    /// evidence-guided deepening without treating an unserved suffix as bad.
+    pub initial_suffix_work: usize,
     /// Number of exact player-turn boundaries to expose before a task switches
     /// to terminal search. `1` reproduces the original one-layer control.
     pub boundary_layers: usize,
@@ -60,6 +64,10 @@ impl Default for AtomicTurnPortfolioConfig {
             initial_boundary_work: 512,
             boundary_service_work: 64,
             suffix_service_work: 8_192,
+            // Match the local graph's ordinary first-expansion contract. A
+            // portfolio suffix is newly exposed work, not a privileged root
+            // entitled to the graph's much larger root discovery batch.
+            initial_suffix_work: 64,
             boundary_layers: 1,
             terminal_work_per_boundary_batch: 65_536,
         }
@@ -71,6 +79,7 @@ pub struct AtomicTurnPortfolioCounters {
     pub services: usize,
     pub boundary_services: usize,
     pub suffix_services: usize,
+    pub suffix_initial_services: usize,
     pub applied_action_transitions: usize,
     pub boundary_generation_work: usize,
     /// Backend-independent work used to enforce the portfolio allowance.
@@ -255,7 +264,7 @@ impl SuffixWork {
                 .min(self.boundary_guides.len().saturating_add(1))
                 .max(1)
         } else {
-            config.suffix_service_work.max(1)
+            terminal_service_quantum(config, self.services == 0, usize::MAX)
         }
     }
 }
@@ -587,6 +596,7 @@ impl AtomicTurnPortfolioSession {
             return;
         };
         let mut suffix = self.suffixes.remove(suffix_index);
+        let initial_terminal_service = !boundary_task && suffix.services == 0;
         self.used.services = self.used.services.saturating_add(1);
         suffix.services = suffix.services.saturating_add(1);
         if boundary_task {
@@ -600,9 +610,14 @@ impl AtomicTurnPortfolioSession {
             );
         } else {
             self.used.suffix_services = self.used.suffix_services.saturating_add(1);
+            if initial_terminal_service {
+                self.used.suffix_initial_services =
+                    self.used.suffix_initial_services.saturating_add(1);
+            }
             self.service_terminal_task(
                 stepper,
                 suffix,
+                initial_terminal_service,
                 remaining_transitions,
                 remaining_engine_steps,
                 deadline,
@@ -696,15 +711,13 @@ impl AtomicTurnPortfolioSession {
         &mut self,
         stepper: &dyn CombatStepper,
         mut suffix: SuffixWork,
+        initial_service: bool,
         remaining_transitions: usize,
         remaining_engine_steps: usize,
         deadline: Option<Instant>,
     ) {
-        let transition_quantum = self
-            .config
-            .suffix_service_work
-            .max(1)
-            .min(remaining_transitions);
+        let transition_quantum =
+            terminal_service_quantum(&self.config, initial_service, remaining_transitions);
         let max_engine_steps_per_transition = match &self.terminal_search {
             PortfolioTerminalSearch::AtomicLevin => {
                 self.config.suffix_search.max_engine_steps_per_transition
@@ -1107,6 +1120,8 @@ impl AtomicTurnPortfolioSession {
             .enumerate()
             .filter(|(_, task)| (task.remaining_boundary_layers > 0) == boundary_task)
             .min_by(|(_, left), (_, right)| {
+                let initialization_order =
+                    initialization_service_order(boundary_task, left.services, right.services);
                 let left_work = left
                     .scheduler_work()
                     .saturating_add(left.next_scheduler_work(&self.config))
@@ -1126,7 +1141,8 @@ impl AtomicTurnPortfolioSession {
                 let guide_service_order = selected_guide_lane
                     .map(|_| guide_then_service_round(guide_order, left_work, right_work))
                     .unwrap_or(std::cmp::Ordering::Equal);
-                guide_service_order
+                initialization_order
+                    .then(guide_service_order)
                     .then_with(|| left_key.total_cmp(&right_key))
                     .then_with(|| left.boundary_id.cmp(&right.boundary_id))
             })
@@ -1294,6 +1310,31 @@ pub(crate) fn local_graph_charged_work(
     generation_and_lookahead_work: usize,
 ) -> usize {
     selection_work.max(generation_and_lookahead_work)
+}
+
+pub(crate) fn terminal_service_quantum(
+    config: &AtomicTurnPortfolioConfig,
+    initial_service: bool,
+    remaining_work: usize,
+) -> usize {
+    let requested = if initial_service {
+        config.initial_suffix_work
+    } else {
+        config.suffix_service_work
+    };
+    requested.max(1).min(remaining_work)
+}
+
+pub(crate) fn initialization_service_order(
+    boundary_task: bool,
+    left_services: usize,
+    right_services: usize,
+) -> std::cmp::Ordering {
+    if boundary_task {
+        std::cmp::Ordering::Equal
+    } else {
+        (left_services > 0).cmp(&(right_services > 0))
+    }
 }
 
 pub(crate) fn merge_backed_guides(
