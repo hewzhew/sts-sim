@@ -1,3 +1,5 @@
+//! Stable public combat observation used by durable state fingerprints.
+
 use serde::{Deserialize, Serialize};
 
 use crate::content::cards::java_id;
