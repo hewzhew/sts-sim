@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use sts_combat_planner::{CombatActionPolicy, CombatPolicyChoice};
 use sts_oracle_runtime::eval::combat_action_imitation::{
     audit_combat_action_imitation_v1, combat_action_imitation_policy_v1,
-    conservative_combat_reanalysis_target_v1,
+    combat_action_reanalysis_has_v1_preference_evidence, conservative_combat_reanalysis_target_v1,
     train_combat_action_imitation_with_reanalysis_and_base_v1,
     CombatActionImitationDemonstrationV1, CombatActionImitationTrainingConfigV1,
     CombatActionReanalysisCandidateV1, CombatActionReanalysisDecisionV1,
@@ -165,6 +165,10 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
             )
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let v1_informative_reanalysis_decision_count = reanalysis_audits
+        .iter()
+        .filter(|audit| audit.contains_budget_unknown || audit.contains_exact_non_win)
+        .count();
     let promotion_failures = reanalysis_audits
         .iter()
         .filter_map(|audit| {
@@ -202,7 +206,7 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
         "promotion": {
             "status": if artifact_saved { "accepted" } else { "rejected" },
             "artifact_saved": artifact_saved,
-            "contract": "closer_to_every_reanalysis_target_and_no_exact_win_mass_regression_under_uncertainty",
+            "contract": "v1_informative_reanalysis_only_closer_to_target_and_no_exact_win_mass_regression_under_uncertainty",
             "failures": promotion_failures,
         },
         "artifact": {
@@ -215,6 +219,7 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
             "source_action_count": artifact.source_action_count,
             "demonstration_trajectory_count": demonstrations.len(),
             "reanalysis_decision_count": loaded_reanalysis.len(),
+            "v1_informative_reanalysis_decision_count": v1_informative_reanalysis_decision_count,
             "ranked_decision_count": artifact.ranked_decision_count,
             "pairwise_comparison_count": artifact.pairwise_comparison_count,
             "training_top1_correct": artifact.training_top1_correct,
@@ -324,6 +329,7 @@ fn audit_reanalysis_decision(
         .iter()
         .map(|candidate| candidate.evidence)
         .collect::<Vec<_>>();
+    let has_v1_preference_evidence = combat_action_reanalysis_has_v1_preference_evidence(&evidence);
     let target_probabilities =
         conservative_combat_reanalysis_target_v1(&base_weights, &evidence, config)?;
     let base_probabilities = normalized_probabilities(&base_weights);
@@ -403,6 +409,7 @@ fn audit_reanalysis_decision(
     let report = json!({
         "source": decision.source,
         "candidate_count": decision.candidates.len(),
+        "has_v1_preference_evidence": has_v1_preference_evidence,
         "mass_by_evidence": {
             "base": {
                 "exact_win": base_exact_win_mass,

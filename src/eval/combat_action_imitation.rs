@@ -260,6 +260,24 @@ pub enum CombatActionReanalysisEvidenceV1 {
     BudgetUnknown,
 }
 
+/// Whether typed successor evidence distinguishes any action from the
+/// exact-win support under the conservative v1 feasibility target. Exact-win
+/// final HP remains available for a future quality target; v1 deliberately
+/// does not convert it into an ordering. Consequently, an all-win surface
+/// must not manufacture a v1 preference by copying the base distribution into
+/// training.
+pub fn combat_action_reanalysis_has_v1_preference_evidence(
+    evidence: &[CombatActionReanalysisEvidenceV1],
+) -> bool {
+    evidence.iter().any(|evidence| {
+        matches!(
+            evidence,
+            CombatActionReanalysisEvidenceV1::ExactNonWin
+                | CombatActionReanalysisEvidenceV1::BudgetUnknown
+        )
+    })
+}
+
 #[derive(Clone, Debug)]
 pub struct CombatActionReanalysisCandidateV1 {
     pub input: ClientInput,
@@ -610,6 +628,9 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
             .iter()
             .map(|candidate| candidate.evidence)
             .collect::<Vec<_>>();
+        if !combat_action_reanalysis_has_v1_preference_evidence(&typed_evidence) {
+            continue;
+        }
         let target_probabilities = conservative_combat_reanalysis_target_v1(
             &base_weights,
             &typed_evidence,
@@ -1946,6 +1967,22 @@ mod tests {
         assert!(weights["demonstrated"] > 0.0);
         assert!(weights["negative"] < 0.0);
         assert_eq!(weights["accepted_alternative"], 0.0);
+    }
+
+    #[test]
+    fn all_exact_wins_do_not_create_v1_feasibility_preference() {
+        assert!(!combat_action_reanalysis_has_v1_preference_evidence(&[
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 1 },
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 50 },
+        ]));
+        assert!(combat_action_reanalysis_has_v1_preference_evidence(&[
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 50 },
+            CombatActionReanalysisEvidenceV1::BudgetUnknown,
+        ]));
+        assert!(combat_action_reanalysis_has_v1_preference_evidence(&[
+            CombatActionReanalysisEvidenceV1::ExactWin { final_hp: 50 },
+            CombatActionReanalysisEvidenceV1::ExactNonWin,
+        ]));
     }
 
     #[test]
