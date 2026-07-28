@@ -50,3 +50,30 @@ fn semantic_exact_identity_v2_has_a_fixed_cross_process_fixture() {
         "5324bee97e289f32e069db1df9e586ce75c2c4f7657861f0089a48eb60ea361a"
     );
 }
+
+#[test]
+fn exact_identity_ignores_and_rebuilds_the_derived_relic_dispatch_cache() {
+    let mut combat = blank_test_combat();
+    combat
+        .entities
+        .player
+        .add_relic(crate::content::relics::RelicState::new(
+            crate::content::relics::RelicId::PenNib,
+        ));
+    let mut inconsistent_cache = combat.clone();
+    std::sync::Arc::make_mut(&mut inconsistent_cache.entities.player.relic_buses)
+        .on_use_card
+        .push(999);
+
+    let engine = EngineState::CombatPlayerTurn;
+    assert_eq!(
+        combat_exact_state_key(&engine, &combat),
+        combat_exact_state_key(&engine, &inconsistent_cache),
+        "a derived dispatch cache is not independent exact combat state"
+    );
+    assert_eq!(
+        super::combat_exact_state_hash_v2(&engine, &combat),
+        super::combat_exact_state_hash_v2(&engine, &inconsistent_cache),
+        "durable V2 identity must rebuild its compatibility projection from relics"
+    );
+}

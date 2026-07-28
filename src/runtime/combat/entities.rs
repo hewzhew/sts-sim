@@ -181,9 +181,15 @@ impl PlayerEntity {
 
 impl RelicBuses {
     pub(crate) fn from_relics(relics: &[RelicState]) -> Self {
+        Self::from_relic_ids(relics.iter().map(|relic| relic.id))
+    }
+
+    pub(crate) fn from_relic_ids(
+        relic_ids: impl IntoIterator<Item = crate::content::relics::RelicId>,
+    ) -> Self {
         let mut buses = Self::default();
-        for (index, relic) in relics.iter().enumerate() {
-            let subscriptions = crate::content::relics::get_relic_subscriptions(relic.id);
+        for (index, relic_id) in relic_ids.into_iter().enumerate() {
+            let subscriptions = crate::content::relics::get_relic_subscriptions(relic_id);
             PlayerEntity::register_relic_subscriptions(&mut buses, index, subscriptions);
         }
         buses

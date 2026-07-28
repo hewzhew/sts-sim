@@ -1,6 +1,6 @@
 use crate::content::relics::RelicId;
-use crate::runtime::combat::{OrbId, StanceId};
-use serde::ser::SerializeSeq;
+use crate::runtime::combat::{OrbId, RelicBuses, StanceId};
+use serde::ser::{SerializeSeq, SerializeStruct};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct CombatExactPlayerKey {
@@ -14,7 +14,7 @@ pub(crate) struct CombatDominancePlayerKey {
     pub(crate) future_relevant: CombatPlayerFutureKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct CombatPlayerFutureKey {
     pub(crate) entity_id: usize,
     pub(crate) max_hp: i32,
@@ -25,8 +25,29 @@ pub(crate) struct CombatPlayerFutureKey {
     pub(crate) orbs: Vec<CombatOrbKey>,
     pub(crate) stance: StanceId,
     pub(crate) relics: Vec<CombatRelicKey>,
-    pub(crate) relic_buses: CombatRelicBusesKey,
     pub(crate) energy_master: u8,
+}
+
+impl serde::Serialize for CombatPlayerFutureKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Preserve the field order and sequence-of-buses representation used
+        // by durable exact identity V2.  Only the in-memory key semantics are
+        // narrowed; existing replay hashes remain byte-for-byte stable.
+        let mut fields = serializer.serialize_struct("CombatPlayerFutureKey", 11)?;
+        fields.serialize_field("entity_id", &self.entity_id)?;
+        fields.serialize_field("max_hp", &self.max_hp)?;
+        fields.serialize_field("facing_left", &self.facing_left)?;
+        fields.serialize_field("gold_delta_this_combat", &self.gold_delta_this_combat)?;
+        fields.serialize_field("gold", &self.gold)?;
+        fields.serialize_field("max_orbs", &self.max_orbs)?;
+        fields.serialize_field("orbs", &self.orbs)?;
+        fields.serialize_field("stance", &self.stance)?;
+        fields.serialize_field("relics", &self.relics)?;
+        let relic_buses = RelicBuses::from_relic_ids(self.relics.iter().map(|relic| relic.id));
+        fields.serialize_field("relic_buses", &RelicBusesV2(&relic_buses))?;
+        fields.serialize_field("energy_master", &self.energy_master)?;
+        fields.end()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize)]
@@ -48,61 +69,58 @@ pub(crate) struct CombatRelicKey {
 
 const RELIC_BUS_COUNT: usize = 26;
 
-/// Exact identity of the derived relic dispatch cache in two allocations.
-///
-/// The former representation owned 26 independent Vecs for every exact
-/// search key. The hook indexes are immutable projections, so one backing
-/// buffer plus its slice ends preserves all ordered buses without copying the
-/// runtime cache into 26 allocation owners. Durable identity serializes the
-/// ordered semantic buses without coupling it to this packed storage layout.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CombatRelicBusesKey {
-    indices: Vec<usize>,
-    ends: Box<[usize; RELIC_BUS_COUNT]>,
-}
+struct RelicBusesV2<'a>(&'a RelicBuses);
 
-impl CombatRelicBusesKey {
-    pub(crate) fn from_slices(slices: [&[usize]; RELIC_BUS_COUNT]) -> Self {
-        let total_len = slices.iter().map(|slice| slice.len()).sum();
-        let mut indices = Vec::with_capacity(total_len);
-        let mut ends = [0; RELIC_BUS_COUNT];
-        for (index, slice) in slices.into_iter().enumerate() {
-            indices.extend_from_slice(slice);
-            ends[index] = indices.len();
-        }
-        Self {
-            indices,
-            ends: Box::new(ends),
-        }
-    }
-
-    fn bus(&self, index: usize) -> &[usize] {
-        let start = index
-            .checked_sub(1)
-            .map_or(0, |previous| self.ends[previous]);
-        &self.indices[start..self.ends[index]]
-    }
-}
-
-impl serde::Serialize for CombatRelicBusesKey {
+impl serde::Serialize for RelicBusesV2<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut buses = serializer.serialize_seq(Some(RELIC_BUS_COUNT))?;
-        for index in 0..RELIC_BUS_COUNT {
-            buses.serialize_element(self.bus(index))?;
+        for bus in relic_bus_slices(self.0) {
+            buses.serialize_element(bus)?;
         }
         buses.end()
     }
 }
 
+fn relic_bus_slices(buses: &RelicBuses) -> [&[usize]; RELIC_BUS_COUNT] {
+    [
+        &buses.at_pre_battle,
+        &buses.at_battle_start_pre_draw,
+        &buses.at_battle_start,
+        &buses.at_turn_start,
+        &buses.at_turn_start_post_draw,
+        &buses.on_use_card,
+        &buses.on_shuffle,
+        &buses.on_exhaust,
+        &buses.on_lose_hp,
+        &buses.on_victory,
+        &buses.on_apply_power,
+        &buses.on_monster_death,
+        &buses.on_spawn_monster,
+        &buses.at_end_of_turn,
+        &buses.on_use_potion,
+        &buses.on_discard,
+        &buses.on_change_stance,
+        &buses.on_attacked_to_change_damage,
+        &buses.on_lose_hp_last,
+        &buses.on_calculate_heal,
+        &buses.on_calculate_x_cost,
+        &buses.on_calculate_block_retained,
+        &buses.on_calculate_energy_retained,
+        &buses.on_scry,
+        &buses.on_receive_power_modify,
+        &buses.on_calculate_vulnerable_multiplier,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CombatRelicBusesKey;
+    use super::CombatPlayerFutureKey;
 
     #[test]
-    fn relic_bus_key_does_not_restore_one_vec_owner_per_hook() {
+    fn future_key_does_not_own_the_derived_relic_dispatch_cache() {
         assert!(
-            std::mem::size_of::<CombatRelicBusesKey>() <= 4 * std::mem::size_of::<usize>(),
-            "packed relic bus identity should remain two allocation handles, not 26 Vec owners"
+            std::mem::size_of::<CombatPlayerFutureKey>() <= 15 * std::mem::size_of::<usize>(),
+            "future key should contain authoritative relic state, not a derived bus cache"
         );
     }
 }

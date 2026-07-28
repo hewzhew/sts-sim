@@ -1,7 +1,7 @@
-use crate::runtime::combat::{CombatState, OrbEntity, RelicBuses};
+use crate::runtime::combat::{CombatState, OrbEntity};
 
 use super::super::types::{
-    CombatExactPlayerKey, CombatOrbKey, CombatPlayerFutureKey, CombatRelicBusesKey, CombatRelicKey,
+    CombatExactPlayerKey, CombatOrbKey, CombatPlayerFutureKey, CombatRelicKey,
 };
 
 pub(super) fn player_exact_key(combat: &CombatState) -> CombatExactPlayerKey {
@@ -34,7 +34,6 @@ pub(super) fn player_future_key(combat: &CombatState) -> CombatPlayerFutureKey {
                 amount: relic.amount,
             })
             .collect(),
-        relic_buses: relic_buses_key(&player.relic_buses),
         energy_master: player.energy_master,
     }
 }
@@ -47,35 +46,4 @@ fn orb_key(orb: &OrbEntity) -> CombatOrbKey {
         passive_amount: orb.passive_amount,
         evoke_amount: orb.evoke_amount,
     }
-}
-
-fn relic_buses_key(buses: &RelicBuses) -> CombatRelicBusesKey {
-    CombatRelicBusesKey::from_slices([
-        &buses.at_pre_battle,
-        &buses.at_battle_start_pre_draw,
-        &buses.at_battle_start,
-        &buses.at_turn_start,
-        &buses.at_turn_start_post_draw,
-        &buses.on_use_card,
-        &buses.on_shuffle,
-        &buses.on_exhaust,
-        &buses.on_lose_hp,
-        &buses.on_victory,
-        &buses.on_apply_power,
-        &buses.on_monster_death,
-        &buses.on_spawn_monster,
-        &buses.at_end_of_turn,
-        &buses.on_use_potion,
-        &buses.on_discard,
-        &buses.on_change_stance,
-        &buses.on_attacked_to_change_damage,
-        &buses.on_lose_hp_last,
-        &buses.on_calculate_heal,
-        &buses.on_calculate_x_cost,
-        &buses.on_calculate_block_retained,
-        &buses.on_calculate_energy_retained,
-        &buses.on_scry,
-        &buses.on_receive_power_modify,
-        &buses.on_calculate_vulnerable_multiplier,
-    ])
 }
