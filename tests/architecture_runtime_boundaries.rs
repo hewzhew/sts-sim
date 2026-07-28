@@ -145,6 +145,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
     for (module, limit) in [
         ("canonical_launch.rs", 12 * 1024),
         ("combat_case_performance.rs", 24 * 1024),
+        ("combat_graph_observation.rs", 12 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
         ("combat_policy_controls.rs", 16 * 1024),
         ("combat_replay_tools.rs", 12 * 1024),
@@ -182,6 +183,28 @@ fn oracle_command_modules_name_their_host_dependencies_explicitly() {
             !source.lines().any(|line| line == "use super::*;"),
             "{} must name its top-level oracle-lab host dependencies explicitly",
             path.display()
+        );
+    }
+}
+
+#[test]
+fn combat_graph_observation_stays_read_only() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_graph_observation.rs",
+    )
+    .expect("read combat graph observation module");
+
+    for forbidden in [
+        "EngineCombatStepper",
+        "CombatStepLimits",
+        ".advance(",
+        "std::fs",
+        "save_",
+        "export_",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "combat graph observation must not execute search or persist artifacts: `{forbidden}`"
         );
     }
 }

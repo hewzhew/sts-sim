@@ -18,6 +18,7 @@ use sts_oracle_runtime::eval::run_control::{
 use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 use super::combat_case_performance;
+use super::combat_graph_observation::capture_local_graph_observation;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::{
     anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
@@ -26,9 +27,7 @@ use super::combat_replay_tools::{
     export_descendant_combat_case, local_graph_state_snapshot_for_path, replay_combat_path,
     save_combat_inputs,
 };
-use super::combat_trace_view::{
-    combat_action_label, compact_combat_trace, compact_local_corridor_report,
-};
+use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::print_json;
@@ -390,40 +389,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     }
     let performance_timing = combat_case_performance::local_graph_performance_timing(&report);
     let progress = session.progress_snapshot();
-    let root_action_families = session
-        .root_action_families()
-        .into_iter()
-        .map(|family| {
-            json!({
-                "action": combat_action_label(
-                    &search_root_position,
-                    &family.first_action,
-                ),
-                "best_root_negative_log_policy":
-                    family.best_root_negative_log_policy,
-                "completed_root_turn_options":
-                    family.completed_root_turn_options,
-                "terminal_wins": family.terminal_wins,
-                "terminal_losses": family.terminal_losses,
-                "escapes": family.escapes,
-                "unique_next_turn_successors":
-                    family.unique_next_turn_successors,
-                "retained_next_turn_successors":
-                    family.retained_next_turn_successors,
-                "reachable_exact_states": family.reachable_exact_states,
-                "reachable_retained_states":
-                    family.reachable_retained_states,
-                "reachable_generation_work":
-                    family.reachable_generation_work,
-                "reachable_completed_turn_options":
-                    family.reachable_completed_turn_options,
-                "max_player_turn": family.max_player_turn,
-                "best_hp_at_max_turn": family.best_hp_at_max_turn,
-                "lowest_enemy_hp_at_max_turn":
-                    family.lowest_enemy_hp_at_max_turn,
-            })
-        })
-        .collect::<Vec<_>>();
     let include_trace = readable || trace;
     let deepest_survival_trace = include_trace
         .then(|| {
@@ -470,53 +435,15 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     } else {
         None
     };
-    let watched_states = watch_exact_state_hash
-        .iter()
-        .map(|hash| {
-            json!({
-                "exact_state_hash": hash,
-                "state": session.state_snapshot_by_exact_hash(hash),
-                "incoming_from_root": session.edge_snapshot_by_exact_hashes(
-                    &sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2(
-                        &search_root_position.engine,
-                        &search_root_position.combat,
-                    ),
-                    hash,
-                ),
-            })
-        })
-        .collect::<Vec<_>>();
-    let watched_corridor = watched_corridor.as_ref().map(|corridor| {
-        let mut ranked_hashes = corridor
-            .rank_by_exact_hash
-            .iter()
-            .map(|(hash, rank)| (*rank, hash))
-            .collect::<Vec<_>>();
-        ranked_hashes.sort_by_key(|(rank, _)| *rank);
-        let states = ranked_hashes
-            .iter()
-            .enumerate()
-            .map(|(index, (rank, hash))| {
-                let outgoing_to_next = ranked_hashes.get(index + 1).and_then(|(_, next_hash)| {
-                    session.edge_snapshot_by_exact_hashes(hash, next_hash)
-                });
-                json!({
-                    "corridor_rank": rank,
-                    "exact_state_hash": hash,
-                    "state": session.state_snapshot_by_exact_hash(hash),
-                    "outgoing_to_next": outgoing_to_next,
-                })
-            })
-            .collect::<Vec<_>>();
-        json!({
-            "authority": "diagnostic_only",
-            "changes_search_order": false,
-            "action_count": corridor.action_count,
-            "exact_turn_states": states.len(),
-            "terminal_final_hp": corridor.terminal_final_hp,
-            "states": states,
-        })
-    });
+    let observation = capture_local_graph_observation(
+        &session,
+        &search_root_position,
+        &watch_exact_state_hash,
+        watched_corridor.as_ref(),
+    );
+    let root_action_families = observation.root_action_families;
+    let watched_states = observation.watched_states;
+    let watched_corridor = observation.watched_corridor;
     if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), report.witness.as_ref())
     {
         save_combat_inputs(
