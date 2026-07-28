@@ -53,10 +53,6 @@ impl LocalTurnGraphWitnessSession {
             root.position(),
         );
         let root_backed_guides = guide_rank_map(&root_guides);
-        let root_boundary_service_views =
-            boundary_service_views_from_guides(&root_guides, root_lookahead_pending_lane);
-        let root_lookahead_acquisition_views =
-            lookahead_acquisition_views_from_guides(&root_guides, root_lookahead_pending_lane);
         // Expensive lookahead evaluates exact player-turn boundaries. Atomic
         // partial states remain the generator's private proposal mechanism;
         // evaluating them here would reintroduce an independent inner search.
@@ -74,6 +70,29 @@ impl LocalTurnGraphWitnessSession {
             ConstrainedExactStateKey::new(root_exact_key, config.max_potions_used, 0),
             0,
         );
+        let root_node = GraphNode {
+            generator,
+            potion_expenditures: 0,
+            diagnostic_parent: None,
+            path_negative_log_policy: 0.0,
+            path_atomic_depth: 0,
+            relative_turn_depth: 0,
+            visits: 0,
+            generated_options: 0,
+            children: Vec::new(),
+            guides: root_guides,
+            generation_service_views: root_generation_service_views,
+            next_generation_service_view: 0,
+            widen_anchor_visits: 0,
+            widen_guide_visits: BTreeMap::new(),
+            lookahead_pending_lane: root_lookahead_pending_lane,
+            backed_guides: root_backed_guides,
+            backed_lookahead_rank: None,
+            synced_gaps: 0,
+            exhausted: false,
+        };
+        let mut shared_agenda = SharedBoundaryAgenda::new(lookahead_evaluator.is_some());
+        shared_agenda.publish_node(0, &root_node, root_lookahead_pending_lane);
         Self {
             original_root,
             config,
@@ -81,29 +100,8 @@ impl LocalTurnGraphWitnessSession {
             lookahead_evaluator,
             collect_plan_transition_annotations: false,
             lookahead_lane: root_lookahead_pending_lane,
-            nodes: vec![GraphNode {
-                generator,
-                potion_expenditures: 0,
-                diagnostic_parent: None,
-                relative_turn_depth: 0,
-                visits: 0,
-                generated_options: 0,
-                children: Vec::new(),
-                guides: root_guides,
-                boundary_service_views: root_boundary_service_views,
-                next_boundary_service_view: 0,
-                lookahead_acquisition_views: root_lookahead_acquisition_views,
-                next_lookahead_acquisition_view: 0,
-                generation_service_views: root_generation_service_views,
-                next_generation_service_view: 0,
-                widen_anchor_visits: 0,
-                widen_guide_visits: BTreeMap::new(),
-                lookahead_pending_lane: root_lookahead_pending_lane,
-                backed_guides: root_backed_guides,
-                backed_lookahead_rank: None,
-                synced_gaps: 0,
-                exhausted: false,
-            }],
+            shared_agenda,
+            nodes: vec![root_node],
             nodes_by_exact_key,
             used: LocalTurnGraphWitnessCounters {
                 exact_nodes: 1,

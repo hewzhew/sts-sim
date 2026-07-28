@@ -3,18 +3,18 @@ use crate::witness_search::OracleCombatWitnessSatisfaction;
 
 /// Resumable search over a shared graph of exact player-turn boundaries.
 ///
-/// Complete-turn generation remains lazy, but Widen and Deepen are decided at
-/// the node that owns the alternatives. A deep path therefore does not have
-/// to compete against every shallower generator in one global queue.
+/// Complete-turn generation remains lazy. Independent global views select one
+/// shared boundary node, while the selected node owns its local generation
+/// lane. No guide recursively owns the subtree below the state it selected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LocalTurnGraphWitnessConfig {
     pub generator: TurnOptionGeneratorConfig,
     /// One deterministic service unit for a selected node's resumable turn
     /// generator. This controls preemption granularity, not search quality.
     pub generation_quantum_work: usize,
-    /// Coherent generator service after an exact boundary has earned backed
-    /// exploitation. It remains preemptible at the graph level while avoiding
-    /// repeated four-work drips on the selected expensive edge.
+    /// Coherent generator service granted when one non-anchor guide selects an
+    /// exact boundary. A guide services a shared state once; repeated and
+    /// exhaustive coverage remains owned by the anchor queue.
     pub backed_generation_quantum_work: usize,
     /// Deterministic work reserved for the first expansion of a selected exact
     /// turn-boundary node. Later resumptions return to the small quantum.

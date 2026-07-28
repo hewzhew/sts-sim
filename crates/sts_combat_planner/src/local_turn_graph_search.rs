@@ -5,13 +5,15 @@ mod potion_budget;
 mod reporting;
 mod scheduling;
 mod session;
+mod shared_agenda;
 
 pub use config::LocalTurnGraphWitnessConfig;
 use potion_budget::*;
 pub use reporting::*;
 use scheduling::*;
+use shared_agenda::SharedBoundaryAgenda;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -108,15 +110,16 @@ struct GraphNode {
     /// One exact incoming path retained for diagnostics only. Search ownership
     /// and scheduling continue to use the shared exact node.
     diagnostic_parent: Option<(usize, usize)>,
+    /// Retained exact path identity used by the shared boundary agendas.
+    /// Selection views rank this shared node; they do not recursively own the
+    /// path below it.
+    path_negative_log_policy: f64,
+    path_atomic_depth: usize,
     relative_turn_depth: usize,
     visits: usize,
     generated_options: usize,
     children: Vec<GraphEdge>,
     guides: Vec<CombatStateGuide>,
-    boundary_service_views: Vec<LocalServiceView>,
-    next_boundary_service_view: usize,
-    lookahead_acquisition_views: Vec<LocalServiceView>,
-    next_lookahead_acquisition_view: usize,
     generation_service_views: Vec<LocalServiceView>,
     next_generation_service_view: usize,
     widen_anchor_visits: usize,
@@ -129,6 +132,12 @@ struct GraphNode {
     backed_lookahead_rank: Option<CombatStateGuideRank>,
     synced_gaps: usize,
     exhausted: bool,
+}
+
+impl GraphNode {
+    fn path_cost(&self) -> f64 {
+        local_path_base(self.path_atomic_depth, self.path_negative_log_policy)
+    }
 }
 
 struct GraphEdge {
@@ -164,7 +173,6 @@ enum SelectedWork {
         node_id: usize,
         path: Vec<(usize, usize)>,
     },
-    Restart,
     Exhausted,
 }
 
@@ -177,6 +185,7 @@ pub struct LocalTurnGraphWitnessSession {
     lookahead_evaluator: Option<SharedCombatLookaheadEvaluator>,
     collect_plan_transition_annotations: bool,
     lookahead_lane: Option<CombatGuideLaneId>,
+    shared_agenda: SharedBoundaryAgenda,
     nodes: Vec<GraphNode>,
     nodes_by_exact_key: HashMap<ConstrainedExactStateKey, usize, FxBuildHasher>,
     used: LocalTurnGraphWitnessCounters,
@@ -306,7 +315,6 @@ impl LocalTurnGraphWitnessSession {
                         );
                     }
                 }
-                SelectedWork::Restart => continue,
                 SelectedWork::Exhausted => {
                     break if self.generation_gaps.is_empty() {
                         LocalTurnGraphWitnessStatus::FrontierExhausted
@@ -363,283 +371,140 @@ impl LocalTurnGraphWitnessSession {
     }
 
     fn select_work(&mut self) -> SelectedWork {
-        let mut node_id = 0usize;
-        let mut path = Vec::new();
-        let mut path_view = None;
-        loop {
-            self.refresh_exhaustion(node_id);
-            if self.nodes[node_id].exhausted {
-                return if node_id == 0 {
-                    SelectedWork::Exhausted
-                } else {
-                    SelectedWork::Restart
-                };
+        let attempts = self.shared_agenda.view_count().max(1);
+        for _ in 0..attempts {
+            let service_view = self.shared_agenda.next_service_view();
+            if service_view == LocalServiceView::LookaheadEvaluation {
+                if self.used.boundary_lookahead_evaluations < self.config.lookahead_max_evaluations
+                {
+                    if let Some(node_id) = self.shared_agenda.select_pending_lookahead(&self.nodes)
+                    {
+                        let path = self.retained_path_to(node_id);
+                        self.record_shared_service(node_id, &path, service_view);
+                        return SelectedWork::Evaluate { node_id, path };
+                    }
+                }
+                continue;
             }
 
-            self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
-            self.used.node_visits = self.used.node_visits.saturating_add(1);
-            let generator_counters = self.nodes[node_id].generator.counters();
-            if generator_needs_initial_grounding(
-                generator_counters.generation_work,
-                self.nodes[node_id].generator.is_finished(),
-            ) {
-                self.nodes[node_id].widen_anchor_visits =
-                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
-                return SelectedWork::Widen {
-                    node_id,
-                    path,
-                    view: LocalServiceView::Anchor,
-                    requested_work: if node_id == 0 {
+            let selected = match service_view {
+                LocalServiceView::Anchor => self.shared_agenda.select_anchor(&self.nodes),
+                LocalServiceView::Guide(lane) => self.shared_agenda.select_guide(lane, &self.nodes),
+                LocalServiceView::LookaheadEvaluation => unreachable!(),
+            };
+            let Some(node_id) = selected else {
+                continue;
+            };
+            let path = self.retained_path_to(node_id);
+            self.record_shared_service(node_id, &path, service_view);
+
+            // The agenda view has completed its only job: selecting one
+            // shared exact boundary. Expansion belongs to the selected node,
+            // whose private generator rotates its own independent lanes.
+            let generation_view = {
+                let node = &mut self.nodes[node_id];
+                let view = node.generation_service_views
+                    [node.next_generation_service_view % node.generation_service_views.len()];
+                node.next_generation_service_view =
+                    node.next_generation_service_view.saturating_add(1);
+                view
+            };
+            if service_view == LocalServiceView::Anchor {
+                self.shared_agenda
+                    .republish_anchor(node_id, &self.nodes[node_id]);
+            }
+            let generator_work = self.nodes[node_id].generator.counters().generation_work;
+            return SelectedWork::Widen {
+                node_id,
+                path,
+                view: generation_view,
+                requested_work: if generator_work == 0 {
+                    if node_id == 0 {
                         self.config.root_initial_expansion_work
                     } else {
                         self.config.initial_expansion_work
-                    },
-                };
-            }
-            let requested_view = {
+                    }
+                } else {
+                    match service_view {
+                        LocalServiceView::Guide(_) => self.config.backed_generation_quantum_work,
+                        LocalServiceView::Anchor => self.config.generation_quantum_work,
+                        LocalServiceView::LookaheadEvaluation => unreachable!(),
+                    }
+                },
+            };
+        }
+
+        // A guide can be temporarily empty while the anchor still owns live
+        // work. Give the anchor one explicit fallback before declaring the
+        // shared graph exhausted.
+        if let Some(node_id) = self.shared_agenda.select_anchor(&self.nodes) {
+            let path = self.retained_path_to(node_id);
+            self.record_shared_service(node_id, &path, LocalServiceView::Anchor);
+            let generation_view = {
                 let node = &mut self.nodes[node_id];
-                select_path_service_view(
-                    path_view,
-                    &node.boundary_service_views,
-                    &mut node.next_boundary_service_view,
-                )
+                let view = node.generation_service_views
+                    [node.next_generation_service_view % node.generation_service_views.len()];
+                node.next_generation_service_view =
+                    node.next_generation_service_view.saturating_add(1);
+                view
             };
-            if requested_view == LocalServiceView::LookaheadEvaluation {
-                // Rollout is one portfolio member, not the sole authority.
-                // Its service owns Widen/Deepen jointly and backs values along
-                // one exact path; the other root services preserve the proven
-                // anchor and typed semantic guides.
-                return self.select_backed_work();
+            self.shared_agenda
+                .republish_anchor(node_id, &self.nodes[node_id]);
+            return SelectedWork::Widen {
+                node_id,
+                path,
+                view: generation_view,
+                requested_work: self.config.generation_quantum_work,
+            };
+        }
+        SelectedWork::Exhausted
+    }
+
+    fn retained_path_to(&self, mut node_id: usize) -> Vec<(usize, usize)> {
+        let mut reversed = Vec::with_capacity(self.nodes[node_id].relative_turn_depth);
+        while let Some((parent_id, edge_index)) = self.nodes[node_id].diagnostic_parent {
+            reversed.push((parent_id, edge_index));
+            node_id = parent_id;
+        }
+        reversed.reverse();
+        reversed
+    }
+
+    fn record_shared_service(
+        &mut self,
+        node_id: usize,
+        path: &[(usize, usize)],
+        view: LocalServiceView,
+    ) {
+        self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
+        self.used.node_visits = self.used.node_visits.saturating_add(1);
+        match view {
+            LocalServiceView::Anchor => {
+                self.nodes[node_id].widen_anchor_visits =
+                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
             }
-            let selected = select_local_work(
-                &self.nodes[node_id],
-                &self.nodes,
-                requested_view,
-                true,
-                self.lookahead_lane,
-            )
-            .or_else(|| {
-                select_local_work(
-                    &self.nodes[node_id],
-                    &self.nodes,
-                    LocalServiceView::Anchor,
-                    true,
-                    self.lookahead_lane,
-                )
-            });
-            let Some(selected) = selected else {
-                self.nodes[node_id].exhausted = true;
-                self.used.exhausted_nodes = self.used.exhausted_nodes.saturating_add(1);
-                return SelectedWork::Restart;
-            };
-            let LocalWorkChoice::Edge {
-                edge_index,
-                view: actual_view,
-            } = selected
-            else {
-                let LocalWorkChoice::Widen { view } = selected else {
-                    unreachable!()
-                };
-                let node = &mut self.nodes[node_id];
-                let generation_view = match view {
-                    LocalServiceView::Anchor => {
-                        node.widen_anchor_visits = node.widen_anchor_visits.saturating_add(1);
-                        let generation_view = node.generation_service_views[node
-                            .next_generation_service_view
-                            % node.generation_service_views.len()];
-                        node.next_generation_service_view =
-                            node.next_generation_service_view.saturating_add(1);
-                        generation_view
-                    }
-                    LocalServiceView::Guide(lane) => {
-                        let visits = node.widen_guide_visits.entry(lane).or_default();
-                        *visits = visits.saturating_add(1);
-                        LocalServiceView::Guide(lane)
-                    }
-                    LocalServiceView::LookaheadEvaluation => {
-                        unreachable!("lookahead evaluation selects an existing boundary child")
-                    }
-                };
-                return SelectedWork::Widen {
-                    node_id,
-                    path,
-                    view: generation_view,
-                    requested_work: self.config.generation_quantum_work,
-                };
-            };
-            self.nodes[node_id].children[edge_index].visits = self.nodes[node_id].children
-                [edge_index]
-                .visits
-                .saturating_add(1);
-            match actual_view {
+            LocalServiceView::Guide(lane) => {
+                let visits = self.nodes[node_id]
+                    .widen_guide_visits
+                    .entry(lane)
+                    .or_default();
+                *visits = visits.saturating_add(1);
+            }
+            LocalServiceView::LookaheadEvaluation => {}
+        }
+        for (parent_id, edge_index) in path {
+            let edge = &mut self.nodes[*parent_id].children[*edge_index];
+            edge.visits = edge.visits.saturating_add(1);
+            match view {
                 LocalServiceView::Anchor => {
-                    self.nodes[node_id].children[edge_index].anchor_visits = self.nodes[node_id]
-                        .children[edge_index]
-                        .anchor_visits
-                        .saturating_add(1);
+                    edge.anchor_visits = edge.anchor_visits.saturating_add(1);
                 }
                 LocalServiceView::Guide(lane) => {
-                    let visits = self.nodes[node_id].children[edge_index]
-                        .guide_visits
-                        .entry(lane)
-                        .or_default();
+                    let visits = edge.guide_visits.entry(lane).or_default();
                     *visits = visits.saturating_add(1);
                 }
                 LocalServiceView::LookaheadEvaluation => {}
             }
-            let successor = self.nodes[node_id].children[edge_index].successor;
-            // One root service chooses one semantic view. Preserve that view
-            // through the selected path instead of independently rotating at
-            // every depth; independent rotations dilute an N-lane guide by
-            // another factor of N at each player turn. If a node had to fall
-            // back to Anchor, `actual_view` carries that explicit downgrade.
-            path_view = Some(actual_view);
-            path.push((node_id, edge_index));
-            node_id = successor;
-        }
-    }
-
-    /// Selects one exact unit of work for the rollout-backed graph.
-    ///
-    /// Complete player turns remain lazy proposals, but Widen and Deepen now
-    /// have one owner. Widen and Deepen share one service currency, while only
-    /// a progressively widened child window pays for rollout evaluation.
-    /// Descendant values are max-backed through the exact incoming path. This
-    /// is deliberately separate from the legacy multi-lane traversal above.
-    fn select_backed_work(&mut self) -> SelectedWork {
-        let mut node_id = 0usize;
-        let mut path = Vec::new();
-        loop {
-            self.refresh_exhaustion(node_id);
-            if self.nodes[node_id].exhausted {
-                return if node_id == 0 {
-                    SelectedWork::Exhausted
-                } else {
-                    SelectedWork::Restart
-                };
-            }
-
-            self.nodes[node_id].visits = self.nodes[node_id].visits.saturating_add(1);
-            self.used.node_visits = self.used.node_visits.saturating_add(1);
-            let generator_counters = self.nodes[node_id].generator.counters();
-            if generator_needs_initial_grounding(
-                generator_counters.generation_work,
-                self.nodes[node_id].generator.is_finished(),
-            ) {
-                self.nodes[node_id].widen_anchor_visits =
-                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
-                return SelectedWork::Widen {
-                    node_id,
-                    path,
-                    view: LocalServiceView::Anchor,
-                    requested_work: if node_id == 0 {
-                        self.config.root_initial_expansion_work
-                    } else {
-                        self.config.initial_expansion_work
-                    },
-                };
-            }
-
-            if node_id != 0
-                && self.nodes[node_id].lookahead_pending_lane.is_some()
-                && self.used.boundary_lookahead_evaluations < self.config.lookahead_max_evaluations
-            {
-                return SelectedWork::Evaluate { node_id, path };
-            }
-
-            let backed_services = self.nodes[node_id]
-                .children
-                .iter()
-                .map(|edge| edge.backed_visits)
-                .sum::<usize>();
-            if self.used.boundary_lookahead_evaluations < self.config.lookahead_max_evaluations {
-                let active_width = progressive_rollout_width(backed_services);
-                let acquisition_views = self.nodes[node_id].lookahead_acquisition_views.clone();
-                let pending_by_view = acquisition_views
-                    .iter()
-                    .copied()
-                    .map(|view| {
-                        select_pending_lookahead_edge(
-                            &self.nodes[node_id],
-                            &self.nodes,
-                            view,
-                            active_width,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let available = pending_by_view
-                    .iter()
-                    .map(Option::is_some)
-                    .collect::<Vec<_>>();
-                let start = self.nodes[node_id].next_lookahead_acquisition_view;
-                if let Some(view_index) = round_robin_available_index(start, &available) {
-                    self.nodes[node_id].next_lookahead_acquisition_view =
-                        view_index.saturating_add(1);
-                    let edge_index = pending_by_view[view_index]
-                        .expect("available acquisition view must own a pending edge");
-                    let successor = {
-                        let edge = &mut self.nodes[node_id].children[edge_index];
-                        edge.visits = edge.visits.saturating_add(1);
-                        edge.backed_visits = edge.backed_visits.saturating_add(1);
-                        edge.successor
-                    };
-                    path.push((node_id, edge_index));
-                    node_id = successor;
-                    continue;
-                }
-            }
-
-            let can_widen = !self.nodes[node_id].generator.is_finished();
-            let widen_due = backed_widen_due(
-                self.nodes[node_id].widen_anchor_visits,
-                backed_services,
-                can_widen,
-            );
-            if widen_due {
-                self.nodes[node_id].widen_anchor_visits =
-                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
-                return SelectedWork::Widen {
-                    node_id,
-                    path,
-                    view: LocalServiceView::Anchor,
-                    requested_work: backed_widen_quantum(
-                        node_id,
-                        self.config.generation_quantum_work,
-                        self.config.backed_generation_quantum_work,
-                    ),
-                };
-            }
-
-            if let Some(edge_index) = select_backed_edge(&self.nodes[node_id], &self.nodes) {
-                let successor = {
-                    let edge = &mut self.nodes[node_id].children[edge_index];
-                    edge.visits = edge.visits.saturating_add(1);
-                    edge.backed_visits = edge.backed_visits.saturating_add(1);
-                    edge.successor
-                };
-                path.push((node_id, edge_index));
-                node_id = successor;
-                continue;
-            }
-
-            if can_widen {
-                self.nodes[node_id].widen_anchor_visits =
-                    self.nodes[node_id].widen_anchor_visits.saturating_add(1);
-                return SelectedWork::Widen {
-                    node_id,
-                    path,
-                    view: LocalServiceView::Anchor,
-                    requested_work: backed_widen_quantum(
-                        node_id,
-                        self.config.generation_quantum_work,
-                        self.config.backed_generation_quantum_work,
-                    ),
-                };
-            }
-
-            self.nodes[node_id].exhausted = true;
-            self.used.exhausted_nodes = self.used.exhausted_nodes.saturating_add(1);
-            return SelectedWork::Restart;
         }
     }
 
@@ -693,6 +558,11 @@ impl LocalTurnGraphWitnessSession {
             update_max_rank(&mut edge.backed_lookahead_rank, &backed_rank);
         }
         self.nodes[node_id].lookahead_pending_lane = None;
+        // The evaluated lane was deliberately absent while pending. Publish
+        // only that newly grounded view: reinserting every guide here would
+        // silently grant already-serviced one-shot views another expansion.
+        self.shared_agenda
+            .publish_guide_entry(node_id, &self.nodes[node_id], expected_lane);
         self.used.lookahead_evaluations = self.used.lookahead_evaluations.saturating_add(1);
         self.used.lookahead_work = self
             .used
@@ -1072,6 +942,13 @@ impl LocalTurnGraphWitnessSession {
         }
         let refresh_started = Instant::now();
         self.refresh_exhaustion(node_id);
+        if self.nodes[node_id].generator.is_finished() || self.nodes[node_id].exhausted {
+            self.shared_agenda.remove_guide_entries(
+                node_id,
+                &self.nodes[node_id],
+                self.lookahead_lane,
+            );
+        }
         self.performance_timing.admission_refresh_elapsed_ns = self
             .performance_timing
             .admission_refresh_elapsed_ns
@@ -1099,6 +976,11 @@ impl LocalTurnGraphWitnessSession {
         let successor_identity_started = Instant::now();
         let (successor_identity, successor_position, option_actions, option_negative_log_policy) =
             option.into_successor_parts();
+        let successor_path_negative_log_policy =
+            self.nodes[parent_id].path_negative_log_policy + option_negative_log_policy;
+        let successor_path_atomic_depth = self.nodes[parent_id]
+            .path_atomic_depth
+            .saturating_add(option_actions.len());
         let successor_exact_key = successor_identity.exact_key().cloned().unwrap_or_else(|| {
             Arc::new(combat_exact_state_key(
                 &successor_position.engine,
@@ -1153,10 +1035,6 @@ impl LocalTurnGraphWitnessSession {
                 root.position(),
             );
             let backed_guides = guide_rank_map(&guides);
-            let boundary_service_views =
-                boundary_service_views_from_guides(&guides, lookahead_pending_lane);
-            let lookahead_acquisition_views =
-                lookahead_acquisition_views_from_guides(&guides, lookahead_pending_lane);
             let node_id = self.nodes.len();
             let generator = turn_generator_for_potion_budget(
                 root,
@@ -1171,15 +1049,13 @@ impl LocalTurnGraphWitnessSession {
                 generator,
                 potion_expenditures: successor_potion_expenditures,
                 diagnostic_parent: Some((parent_id, self.nodes[parent_id].children.len())),
+                path_negative_log_policy: successor_path_negative_log_policy,
+                path_atomic_depth: successor_path_atomic_depth,
                 relative_turn_depth,
                 visits: 0,
                 generated_options: 0,
                 children: Vec::new(),
                 guides,
-                boundary_service_views,
-                next_boundary_service_view: 0,
-                lookahead_acquisition_views,
-                next_lookahead_acquisition_view: 0,
                 generation_service_views,
                 next_generation_service_view: 0,
                 widen_anchor_visits: 0,
@@ -1202,11 +1078,6 @@ impl LocalTurnGraphWitnessSession {
         };
 
         let successor_edge_started = Instant::now();
-        let successor_lanes = self.nodes[successor]
-            .guides
-            .iter()
-            .map(|guide| guide.lane)
-            .collect::<BTreeSet<_>>();
         let successor_backed_guides = self.nodes[successor].backed_guides.clone();
         let successor_backed_rank = self.nodes[successor].backed_lookahead_rank.clone();
         let existing_edge_index = self.nodes[parent_id]
@@ -1249,15 +1120,6 @@ impl LocalTurnGraphWitnessSession {
                 backed_lookahead_rank: successor_backed_rank,
                 backed_visits: 0,
             });
-            for lane in successor_lanes {
-                if Some(lane) == self.lookahead_lane {
-                    continue;
-                }
-                let view = LocalServiceView::Guide(lane);
-                if !parent.boundary_service_views.contains(&view) {
-                    parent.boundary_service_views.push(view);
-                }
-            }
             parent.exhausted = false;
             self.used.exact_edges = self.used.exact_edges.saturating_add(1);
             if plan_transition_annotation.is_some() {
@@ -1265,12 +1127,36 @@ impl LocalTurnGraphWitnessSession {
             }
             edge_index
         };
+        let successor_path_improved = existing.is_some()
+            && local_path_base(
+                successor_path_atomic_depth,
+                successor_path_negative_log_policy,
+            )
+            .total_cmp(&self.nodes[successor].path_cost())
+            .is_lt();
+        if successor_path_improved {
+            self.shared_agenda.remove_guide_entries(
+                successor,
+                &self.nodes[successor],
+                self.lookahead_lane,
+            );
+            let successor_node = &mut self.nodes[successor];
+            successor_node.diagnostic_parent = Some((parent_id, edge_index));
+            successor_node.path_negative_log_policy = successor_path_negative_log_policy;
+            successor_node.path_atomic_depth = successor_path_atomic_depth;
+            self.shared_agenda
+                .publish_node(successor, &self.nodes[successor], self.lookahead_lane);
+        }
         self.performance_timing.successor_edge_elapsed_ns = self
             .performance_timing
             .successor_edge_elapsed_ns
             .saturating_add(elapsed_nanos_u64(successor_edge_started));
         let successor_backup_started = Instant::now();
         self.backup_guides_along_path(path, parent_id, edge_index, &successor_backed_guides);
+        if existing.is_none() {
+            self.shared_agenda
+                .publish_node(successor, &self.nodes[successor], self.lookahead_lane);
+        }
         self.performance_timing.successor_backup_elapsed_ns = self
             .performance_timing
             .successor_backup_elapsed_ns
