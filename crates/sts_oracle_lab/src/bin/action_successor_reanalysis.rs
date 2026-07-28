@@ -24,6 +24,7 @@ use sts_oracle_runtime::sim::combat::{
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_replay_tools::replay_combat_inputs;
 use super::combat_trace_view::combat_action_label;
 use super::exact_combat_evidence::{
     evaluate_unresolved_position, exact_terminal_non_win, known_exact_win, ExactCombatEvidence,
@@ -112,7 +113,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
             witness_actions.len()
         ));
     }
-    let final_position = replay_inputs(
+    let final_position = replay_combat_inputs(
         case.position.clone(),
         &witness_actions,
         args.max_engine_steps_per_transition,
@@ -122,7 +123,7 @@ pub(crate) fn build(args: ActionSuccessorReanalysisArgs) -> Result<Value, String
     {
         return Err("action-successor source is not an exact non-smoke victory".to_string());
     }
-    let root_position = replay_inputs(
+    let root_position = replay_combat_inputs(
         case.position,
         &witness_actions[..args.through],
         args.max_engine_steps_per_transition,
@@ -382,7 +383,7 @@ fn build_candidate(
                         Some(deadline),
                     ) {
                         Some(proposal) => {
-                            let replayed = replay_inputs(
+                            let replayed = replay_combat_inputs(
                                 step.position.clone(),
                                 &proposal.actions,
                                 max_engine_steps_per_transition,
@@ -412,7 +413,7 @@ fn build_candidate(
         let complete = std::iter::once(input.clone())
             .chain(continuation.iter().cloned())
             .collect::<Vec<_>>();
-        let replayed = replay_inputs(
+        let replayed = replay_combat_inputs(
             root_position.clone(),
             &complete,
             max_engine_steps_per_transition,
@@ -442,31 +443,4 @@ fn build_candidate(
         evidence,
         continuation_witness_actions,
     })
-}
-
-fn replay_inputs(
-    mut position: CombatPosition,
-    inputs: &[ClientInput],
-    max_engine_steps_per_transition: usize,
-) -> Result<CombatPosition, String> {
-    for (index, input) in inputs.iter().enumerate() {
-        if !EngineCombatStepper.is_legal_action(&position, input) {
-            return Err(format!("witness action {index} is not legal"));
-        }
-        let step = EngineCombatStepper.apply_to_stable(
-            &position,
-            input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if step.truncated || step.timed_out {
-            return Err(format!(
-                "witness action {index} did not reach a stable state"
-            ));
-        }
-        position = step.position;
-    }
-    Ok(position)
 }

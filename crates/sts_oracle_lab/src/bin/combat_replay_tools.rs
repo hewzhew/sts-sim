@@ -7,7 +7,9 @@ use sts_combat_planner::{
     LocalTurnGraphStateSnapshot, LocalTurnGraphWitnessSession, TurnOptionAction,
 };
 use sts_oracle_runtime::eval::combat_case::{save_combat_case, CombatCase};
-use sts_oracle_runtime::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
+use sts_oracle_runtime::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
+};
 use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_trace_view::{combat_action_label, combat_turn_snapshot};
@@ -25,6 +27,33 @@ pub(super) fn save_combat_inputs(
     let inputs = inputs.into_iter().collect::<Vec<_>>();
     let bytes = serde_json::to_vec_pretty(&inputs).map_err(|error| error.to_string())?;
     std::fs::write(output, bytes).map_err(|error| error.to_string())
+}
+
+pub(super) fn replay_combat_inputs(
+    mut position: CombatPosition,
+    inputs: &[ClientInput],
+    max_engine_steps_per_transition: usize,
+) -> Result<CombatPosition, String> {
+    for (index, input) in inputs.iter().enumerate() {
+        if !EngineCombatStepper.is_legal_action(&position, input) {
+            return Err(format!("combat replay action {index} is not legal"));
+        }
+        let step = EngineCombatStepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: max_engine_steps_per_transition,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return Err(format!(
+                "combat replay action {index} did not reach a stable state"
+            ));
+        }
+        position = step.position;
+    }
+    Ok(position)
 }
 
 fn combat_policy_surface(

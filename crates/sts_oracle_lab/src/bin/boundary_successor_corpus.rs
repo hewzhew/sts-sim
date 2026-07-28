@@ -21,11 +21,10 @@ use sts_oracle_runtime::eval::combat_state_features::{
     semantic_combat_state_features_v1, CombatStateFeatureV1, COMBAT_STATE_FEATURE_SCHEMA_V1,
 };
 use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
-use sts_oracle_runtime::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
-};
+use sts_oracle_runtime::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
 use sts_oracle_runtime::state::core::ClientInput;
 
+use super::combat_replay_tools::replay_combat_inputs;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::{
     exact_combat_evidence::{
@@ -516,7 +515,7 @@ fn build_group(
         .transition_actions
         .get(boundary_rank)
         .ok_or_else(|| format!("entry {} has no outgoing verified turn", entry.id))?;
-    let verified_successor = replay_inputs(
+    let verified_successor = replay_combat_inputs(
         root_position.clone(),
         verified_turn_actions,
         config.max_engine_steps_per_transition,
@@ -825,7 +824,7 @@ fn evaluate_successor(
         return Ok(exact.evidence);
     };
     let action_count = proposal.actions.len();
-    let Ok(replayed) = replay_inputs(
+    let Ok(replayed) = replay_combat_inputs(
         option.exact_successor().clone(),
         &proposal.actions,
         config.max_engine_steps_per_transition,
@@ -843,36 +842,6 @@ fn evaluate_successor(
         replayed.combat.entities.player.current_hp,
         action_count,
     ))
-}
-
-fn replay_inputs(
-    mut position: CombatPosition,
-    inputs: &[ClientInput],
-    max_engine_steps_per_transition: usize,
-) -> Result<CombatPosition, String> {
-    let stepper = EngineCombatStepper;
-    for (index, input) in inputs.iter().enumerate() {
-        if stepper.choice_for_legal_input(&position, input).is_none() {
-            return Err(format!(
-                "verified turn action {index} is not legal at its exact state"
-            ));
-        }
-        let step = stepper.apply_to_stable(
-            &position,
-            input.clone(),
-            CombatStepLimits {
-                max_engine_steps: max_engine_steps_per_transition,
-                deadline: None,
-            },
-        );
-        if step.truncated || step.timed_out {
-            return Err(format!(
-                "verified turn action {index} did not reach a stable successor"
-            ));
-        }
-        position = step.position;
-    }
-    Ok(position)
 }
 
 fn resolve_relative(base: &Path, path: &Path) -> PathBuf {

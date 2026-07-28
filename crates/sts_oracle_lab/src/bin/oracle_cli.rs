@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use sts_oracle_runtime::runtime::branch::OracleRunBudget;
 
+use super::action_boundary_evidence::ActionBoundaryEvidenceArgs;
 use super::action_reanalysis_policy::ActionReanalysisPolicyArgs;
 use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysisQueueArgs};
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
@@ -210,6 +211,12 @@ pub(super) enum Command {
     BuildActionSuccessorCorpus {
         #[command(flatten)]
         args: ActionSuccessorReanalysisArgs,
+    },
+    /// Expand every legal root action only to the next player-turn boundary
+    /// and score complete boundary surfaces with one frozen value artifact.
+    BuildActionBoundaryEvidence {
+        #[command(flatten)]
+        args: ActionBoundaryEvidenceArgs,
     },
     /// Train a conservative residual policy from exact witnesses plus typed
     /// action-successor reanalysis. Budget-unknown actions retain base mass.

@@ -1,5 +1,6 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
+mod action_boundary_evidence;
 mod action_reanalysis_policy;
 mod action_reanalysis_queue;
 mod action_successor_reanalysis;
@@ -229,6 +230,9 @@ fn main() -> Result<(), String> {
         Command::BuildActionSuccessorCorpus { args } => {
             let report = action_successor_reanalysis::build(args)?;
             print_json(&report)
+        }
+        Command::BuildActionBoundaryEvidence { args } => {
+            print_json(&action_boundary_evidence::build(args)?)
         }
         Command::BuildActionReanalysisPolicy { args } => {
             let report = action_reanalysis_policy::build(args)?;
