@@ -1,6 +1,5 @@
 mod artifact;
 mod contract;
-mod policy_bank;
 mod replay;
 mod runner;
 mod scenario;
@@ -8,7 +7,6 @@ mod summary;
 
 pub use artifact::*;
 pub use contract::*;
-pub use policy_bank::*;
 pub use replay::*;
 pub use runner::*;
 pub use scenario::*;

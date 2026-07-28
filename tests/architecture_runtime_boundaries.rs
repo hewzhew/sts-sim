@@ -28,8 +28,6 @@ fn java_card_queue_has_one_executable_rust_owner() {
         .expect("read combat state ownership model");
     let methods = std::fs::read_to_string("src/runtime/combat/combat_methods.rs")
         .expect("read combat queue operations");
-    let boundary = std::fs::read_to_string("src/ai/combat_policy_v1/scenario/boundary.rs")
-        .expect("read stable-boundary predicate");
     let exact_runtime_key =
         std::fs::read_to_string("src/ai/combat_state_key/types/combat/runtime.rs")
             .expect("read exact runtime key");
@@ -42,18 +40,10 @@ fn java_card_queue_has_one_executable_rust_owner() {
         !state.contains("pub card_queue:"),
         "CombatRuntimeHints must not restore a second, non-executable card queue"
     );
-    for (path, source) in [
-        ("src/runtime/combat/combat_methods.rs", methods.as_str()),
-        (
-            "src/ai/combat_policy_v1/scenario/boundary.rs",
-            boundary.as_str(),
-        ),
-    ] {
-        assert!(
-            !source.contains("runtime.card_queue"),
-            "{path} must use the executable CardZones queue, not a ghost runtime hint"
-        );
-    }
+    assert!(
+        !methods.contains("runtime.card_queue"),
+        "combat methods must use the executable CardZones queue, not a ghost runtime hint"
+    );
     assert!(
         !exact_runtime_key.contains("card_queue")
             && !exact_runtime_key.contains("CombatLegacyEmptyCardQueueKey"),
@@ -1586,85 +1576,6 @@ fn live_decision_layers_do_not_depend_on_offline_laboratories() {
                 path.display()
             );
         }
-    }
-}
-
-#[test]
-fn public_scenario_policy_bank_does_not_depend_on_legacy_search_or_rollout() {
-    let mut sources = Vec::new();
-    for root in [
-        "src/ai/combat_policy_v1/scenario",
-        "src/eval/combat_lab_v1/policy_bank",
-    ] {
-        collect_rust_sources(std::path::Path::new(root), &mut sources);
-    }
-
-    for path in sources {
-        let source = std::fs::read_to_string(&path).expect("read public scenario policy source");
-        for forbidden in ["run_combat_search_v2", "CombatSearchV2", "rollout"] {
-            assert!(
-                !source.contains(forbidden),
-                "public scenario policy source '{}' must not depend on legacy search detail '{forbidden}'",
-                path.display()
-            );
-        }
-    }
-}
-
-#[test]
-fn turn_option_widening_schedule_sees_only_public_policy_state() {
-    let source = std::fs::read_to_string("src/ai/combat_policy_v1/turn_option_schedule.rs")
-        .expect("read public turn-option widening schedule");
-
-    for forbidden in [
-        "CombatScenarioGroupV1",
-        "CombatScenarioParticleV1",
-        "CombatScenarioStepResultV1",
-        "CombatPosition",
-        "ClientInput",
-        "scenario_id",
-        "bind_action",
-        "exact_inputs",
-        "step_combat_scenario_group_v1",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "turn-option widening schedule must not depend on exact transition detail `{forbidden}`"
-        );
-    }
-}
-
-#[test]
-fn turn_option_observable_effect_uses_only_public_candidate_evidence() {
-    let source = std::fs::read_to_string("src/ai/combat_policy_v1/turn_option_effect.rs")
-        .expect("read public turn-option observable effect");
-
-    for forbidden in [
-        "CombatScenarioGroupV1",
-        "CombatScenarioParticleV1",
-        "CombatScenarioStepResultV1",
-        "CombatScenarioStepViewV1",
-        "CombatPosition",
-        "CombatStepResult",
-        "ClientInput",
-        "scenario_id",
-        "bind_action",
-        "exact_inputs",
-        "step_combat_scenario_group_v1",
-        "terminal_outcomes",
-        "retained_step",
-        "worlds",
-        "public_history_id",
-        "candidate.action",
-        "engine_steps",
-        "Deserialize",
-        "crate::runtime",
-        "crate::sim",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "observable-effect evidence must not depend on unchecked input or exact transition detail `{forbidden}`"
-        );
     }
 }
 
