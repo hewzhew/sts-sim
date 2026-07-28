@@ -144,6 +144,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 
     for (module, limit) in [
         ("canonical_launch.rs", 12 * 1024),
+        ("combat_case_contract.rs", 12 * 1024),
         ("combat_case_performance.rs", 24 * 1024),
         ("combat_graph_observation.rs", 12 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
@@ -205,6 +206,28 @@ fn combat_graph_observation_stays_read_only() {
         assert!(
             !source.contains(forbidden),
             "combat graph observation must not execute search or persist artifacts: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn combat_case_contract_stays_a_pure_report_evaluator() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_case_contract.rs",
+    )
+    .expect("read combat case contract module");
+
+    for forbidden in [
+        "EngineCombatStepper",
+        "CombatStepLimits",
+        ".advance(",
+        "std::fs",
+        "save_",
+        "export_",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "combat case contracts must evaluate existing reports without side effects: `{forbidden}`"
         );
     }
 }

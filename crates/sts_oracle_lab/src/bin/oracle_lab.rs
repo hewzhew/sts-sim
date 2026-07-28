@@ -8,6 +8,7 @@ mod boundary_successor_corpus;
 mod boundary_successor_lookahead;
 mod canonical_launch;
 mod combat_case_atomic_turn_portfolio;
+mod combat_case_contract;
 mod combat_case_fold_solved_suffix;
 mod combat_case_layered;
 mod combat_case_layered_window_race;

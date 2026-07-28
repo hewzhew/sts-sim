@@ -17,6 +17,7 @@ use sts_oracle_runtime::eval::run_control::{
 };
 use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
+use super::combat_case_contract::{evaluate_local_graph_contract, LocalGraphContractRequest};
 use super::combat_case_performance;
 use super::combat_graph_observation::capture_local_graph_observation;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
@@ -333,54 +334,17 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     );
     let search_elapsed = search_started.elapsed();
     let search_elapsed_ms = search_elapsed.as_millis();
-    if expect_witness && report.witness.is_none() {
-        return Err("combat-case contract failed: no replay-verified witness".to_owned());
-    }
-    if let Some(expected_minimum) = expect_min_final_hp {
-        let actual = report
-            .witness
-            .as_ref()
-            .map(|witness| witness.final_position.combat.entities.player.current_hp)
-            .ok_or_else(|| {
-                "combat-case contract failed: final HP requires a verified witness".to_owned()
-            })?;
-        if actual < expected_minimum {
-            return Err(format!(
-                "combat-case contract failed: final HP {actual} is below {expected_minimum}"
-            ));
-        }
-    }
-    if let Some(expected_maximum) = expect_max_plan_suffix_work {
-        let actual = policy_line_report
-            .as_ref()
-            .map(|policy_line| policy_line.suffix_probe_generation_work)
-            .unwrap_or_default();
-        if actual > expected_maximum {
-            return Err(format!(
-                "combat-case contract failed: plan suffix work {actual} exceeds \
-                         {expected_maximum}"
-            ));
-        }
-    }
-    if contract_only {
-        let witness = report
-            .witness
-            .as_ref()
-            .expect("clap requires --expect-witness");
-        return print_json(&json!({
-            "schema_name": "CombatCaseContractResultV1",
-            "schema_version": 1,
-            "status": "passed",
-            "case": case,
-            "elapsed_ms": command_started.elapsed().as_millis(),
-            "final_hp": witness.final_position.combat.entities.player.current_hp,
-            "witness_actions": witness.actions.len(),
-            "plan_suffix": policy_line_report.as_ref().map(|policy_line| json!({
-                "attempts": policy_line.suffix_probe_attempts,
-                "generation_work": policy_line.suffix_probe_generation_work,
-                "engine_steps": policy_line.suffix_probe_engine_steps,
-            })),
-        }));
+    if let Some(contract_result) = evaluate_local_graph_contract(LocalGraphContractRequest {
+        case: &case,
+        elapsed: command_started.elapsed(),
+        report: &report,
+        policy_line: policy_line_report.as_ref(),
+        expect_witness,
+        expect_min_final_hp,
+        expect_max_plan_suffix_work,
+        contract_only,
+    })? {
+        return print_json(&contract_result);
     }
     let performance_profile =
         combat_case_performance::local_graph_performance_report(search_elapsed, &case, &report);
