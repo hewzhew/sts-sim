@@ -973,7 +973,7 @@ impl TurnOptionGeneratorSession {
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
     ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum, false, 0, 0, 0)
+        self.advance_internal(stepper, quantum, 0, 0, 0)
     }
 
     pub fn advance_with_lookahead(
@@ -987,32 +987,16 @@ impl TurnOptionGeneratorSession {
         self.advance_internal(
             stepper,
             quantum,
-            false,
             lookahead_evaluations,
             lookahead_work,
             lookahead_work_per_evaluation,
         )
     }
 
-    /// Service exactly one frozen anchor/guide scheduling round.
-    ///
-    /// An outer portfolio uses this to release complete-turn successors
-    /// progressively. Work published by this round remains queued for the next
-    /// call and cannot recursively turn one coarse service into an eager dump
-    /// of every available turn option.
-    pub(crate) fn advance_one_scheduling_round(
-        &mut self,
-        stepper: &dyn CombatStepper,
-        quantum: CombatPlanningQuantum,
-    ) -> TurnOptionGenerationReport {
-        self.advance_internal(stepper, quantum, true, 0, 0, 0)
-    }
-
     fn advance_internal(
         &mut self,
         stepper: &dyn CombatStepper,
         quantum: CombatPlanningQuantum,
-        stop_after_one_round: bool,
         mut remaining_lookahead_evaluations: usize,
         mut remaining_lookahead_work: usize,
         lookahead_work_per_evaluation: usize,
@@ -1029,8 +1013,6 @@ impl TurnOptionGeneratorSession {
         // can publish a new head into a later lane and repeatedly overtake the
         // item which was already first there. A finite pending transaction can
         // consequently remain live forever despite round-robin lane service.
-        let mut scheduling_rounds_started = 0_usize;
-
         let interruption = loop {
             if self.is_finished() {
                 break None;
@@ -1049,15 +1031,11 @@ impl TurnOptionGeneratorSession {
                 self.scheduled_round.pop_front();
             }
             if self.scheduled_round.is_empty() {
-                if stop_after_one_round && scheduling_rounds_started > 0 {
-                    break Some(GenerationInterruption::SchedulingRoundBoundary);
-                }
                 self.scheduled_round = self.snapshot_scheduling_round();
                 if self.scheduled_round.is_empty() {
                     debug_assert!(self.is_finished());
                     break None;
                 }
-                scheduling_rounds_started = scheduling_rounds_started.saturating_add(1);
             }
             let (lane, work_id) = *self
                 .scheduled_round
@@ -1898,25 +1876,6 @@ mod priority_tests {
     }
 
     #[test]
-    fn one_scheduling_round_releases_work_published_by_that_round() {
-        let mut session =
-            TurnOptionGeneratorSession::new(test_root(), TurnOptionGeneratorConfig::default());
-        let report = session.advance_one_scheduling_round(
-            &EngineCombatStepper,
-            CombatPlanningQuantum::deterministic(1_000, 250_000),
-        );
-
-        assert_eq!(
-            report.status,
-            TurnOptionGenerationStatus::Partial(GenerationInterruption::SchedulingRoundBoundary)
-        );
-        assert_eq!(report.after.generation_work, 1);
-        let released = session.release_unused_grant();
-        assert_eq!(released.generation_work, 999);
-        assert!(session.retained_work_items() > 0);
-    }
-
-    #[test]
     fn one_partial_state_computes_base_generation_guides_once() {
         let calls = Arc::new(AtomicUsize::new(0));
         let policy = Arc::new(CountingGenerationGuides {
@@ -1929,7 +1888,7 @@ mod priority_tests {
         );
 
         assert_eq!(calls.load(AtomicOrdering::Relaxed), 1);
-        let report = session.advance_one_scheduling_round(
+        let report = session.advance(
             &EngineCombatStepper,
             CombatPlanningQuantum::deterministic(1, 250_000),
         );

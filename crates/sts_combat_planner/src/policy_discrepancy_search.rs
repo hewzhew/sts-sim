@@ -7,7 +7,7 @@ use sts_core::ai::combat_state_key::{combat_exact_state_key, CombatExactStateKey
 use sts_core::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal};
 use sts_core::state::core::{ClientInput, EngineState};
 
-use crate::atomic_levin_search::{replay_atomic_actions, AtomicLevinWitness};
+use crate::atomic_witness::{replay_atomic_actions, ExactAtomicWitness};
 use crate::depth_beam_turn::{
     generate_depth_beam_turn_options, DepthBeamTurnBudget, DepthBeamTurnConfig, DepthBeamTurnStatus,
 };
@@ -116,7 +116,7 @@ pub struct PolicyDiscrepancyReport {
     pub best_queued_priority: Option<f64>,
     pub best_queued_discrepancy: Option<f64>,
     pub status: PolicyDiscrepancyStatus,
-    pub witness: Option<AtomicLevinWitness>,
+    pub witness: Option<ExactAtomicWitness>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -293,7 +293,7 @@ pub struct PolicyDiscrepancySession {
     used: PolicyDiscrepancyCounters,
     granted_applied_transitions: usize,
     granted_engine_steps: usize,
-    witness: Option<AtomicLevinWitness>,
+    witness: Option<ExactAtomicWitness>,
     replay_mismatch: bool,
 }
 
@@ -882,7 +882,7 @@ impl PolicyDiscrepancySession {
             Ok((final_position, replay_engine_steps))
                 if stepper.terminal(&final_position) == CombatTerminal::Win =>
             {
-                self.witness = Some(AtomicLevinWitness {
+                self.witness = Some(ExactAtomicWitness {
                     actions,
                     final_position,
                     negative_log_policy: seed.discrepancy,

@@ -7,8 +7,7 @@
 //! The crate boundary also keeps planner iteration out of the core unit-test
 //! harness; production integration belongs to the control layer.
 
-mod atomic_levin_search;
-mod atomic_turn_portfolio;
+mod atomic_witness;
 mod depth_beam_turn;
 mod generator;
 mod local_turn_graph_search;
@@ -19,18 +18,7 @@ mod selection_transaction;
 mod types;
 mod witness_search;
 
-pub use atomic_levin_search::{
-    replay_atomic_actions, AtomicLevinRerooting, AtomicLevinSearchHorizon, AtomicLevinTurnBoundary,
-    AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
-    AtomicLevinWitnessInterruption, AtomicLevinWitnessQuantum, AtomicLevinWitnessReplayError,
-    AtomicLevinWitnessReport, AtomicLevinWitnessSession, AtomicLevinWitnessStatus,
-};
-pub use atomic_turn_portfolio::{
-    AtomicTurnPortfolioConfig, AtomicTurnPortfolioCounters, AtomicTurnPortfolioEntryReport,
-    AtomicTurnPortfolioGuideRank, AtomicTurnPortfolioInterruption, AtomicTurnPortfolioQuantum,
-    AtomicTurnPortfolioReport, AtomicTurnPortfolioSession, AtomicTurnPortfolioStatus,
-    AtomicTurnPortfolioTaskKind,
-};
+pub use atomic_witness::ExactAtomicWitness;
 pub use depth_beam_turn::{
     generate_depth_beam_turn_options, search_depth_beam_agenda_witness, DepthBeamAgendaBudget,
     DepthBeamAgendaConfig, DepthBeamAgendaCounters, DepthBeamAgendaInterruption,

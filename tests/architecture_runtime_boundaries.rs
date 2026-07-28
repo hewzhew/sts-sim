@@ -106,8 +106,6 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
     );
 
     for module in [
-        "atomic_policy_searches.rs",
-        "combat_case_atomic_turn_portfolio.rs",
         "combat_case_legacy_global.rs",
         "combat_case_local_graph.rs",
         "combat_plan_diagnostics.rs",

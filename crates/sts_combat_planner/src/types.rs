@@ -332,10 +332,6 @@ pub enum GenerationInterruption {
     GenerationWorkBudget,
     EngineStepBudget,
     Deadline,
-    /// A caller-requested frozen multi-view scheduling round completed.
-    /// Unused grant remains releasable and newly published work waits for the
-    /// next service.
-    SchedulingRoundBoundary,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

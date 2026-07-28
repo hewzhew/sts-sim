@@ -11,10 +11,8 @@ use super::action_boundary_root_race::ActionBoundaryRootRaceArgs;
 use super::action_reanalysis_policy::ActionReanalysisPolicyArgs;
 use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysisQueueArgs};
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
-use super::atomic_policy_searches::CombatCaseAtomicLevinArgs;
 use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
-use super::combat_case_atomic_turn_portfolio::CombatCaseAtomicTurnPortfolioArgs;
 use super::combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
@@ -162,10 +160,6 @@ pub(super) enum Command {
     /// Inspect the retired global-agenda search on one exact case.
     #[command(name = "combat-case-legacy-global")]
     CombatCase(CombatCaseLegacyGlobalArgs),
-    /// Run one pure atomic Levin policy-tree search on an exact combat case.
-    /// This deliberately bypasses complete-turn generation, state guides,
-    /// legacy donors, and every lane scheduler.
-    CombatCaseAtomicLevin(CombatCaseAtomicLevinArgs),
     /// Annotate every finite atomic successor with read-only typed combat-plan
     /// facts. This command does not search, rank, prune, or modify a policy.
     CombatCasePlanAnnotations(CombatCasePlanAnnotationsArgs),
@@ -176,9 +170,6 @@ pub(super) enum Command {
     /// Follow the action policy to terminal states and search complete
     /// trajectories by increasing weighted policy discrepancy.
     CombatCasePolicyDiscrepancy(CombatCasePolicyDiscrepancyArgs),
-    /// Enumerate exact next-turn states under the base policy, while giving
-    /// every state an independent resumable atomic suffix search.
-    CombatCaseAtomicTurnPortfolio(CombatCaseAtomicTurnPortfolioArgs),
     /// Isolated local-graph component with node-local lazy widening.
     #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph(CombatCaseLocalGraphArgs),
