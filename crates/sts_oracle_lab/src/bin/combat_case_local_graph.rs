@@ -19,15 +19,15 @@ use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 use super::combat_case_contract::{evaluate_local_graph_contract, LocalGraphContractRequest};
 use super::combat_case_performance;
+use super::combat_graph_diagnostics::{
+    materialize_local_graph_diagnostics, LocalGraphDiagnosticPaths, LocalGraphDiagnostics,
+};
 use super::combat_graph_observation::capture_local_graph_observation;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::{
     anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
 };
-use super::combat_replay_tools::{
-    export_descendant_combat_case, local_graph_state_snapshot_for_path, replay_combat_path,
-    save_combat_inputs,
-};
+use super::combat_replay_tools::{export_descendant_combat_case, save_combat_inputs};
 use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
@@ -354,51 +354,26 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let performance_timing = combat_case_performance::local_graph_performance_timing(&report);
     let progress = session.progress_snapshot();
     let include_trace = readable || trace;
-    let deepest_survival_trace = include_trace
-        .then(|| {
-            replay_combat_path(
-                search_root_position.clone(),
-                &progress.deepest_survival_actions,
-                max_engine_steps_per_transition,
-            )
-        })
-        .transpose()?;
-    let deepest_progress_trace = include_trace
-        .then(|| {
-            replay_combat_path(
-                search_root_position.clone(),
-                &progress.deepest_progress_actions,
-                max_engine_steps_per_transition,
-            )
-        })
-        .transpose()?;
-    let deepest_survival_node = local_graph_state_snapshot_for_path(
+    let LocalGraphDiagnostics {
+        deepest_survival_trace,
+        deepest_progress_trace,
+        deepest_survival_node,
+        deepest_progress_node,
+        witness_trace,
+    } = materialize_local_graph_diagnostics(
         &session,
-        search_root_position.clone(),
-        &progress.deepest_survival_actions,
+        &search_root_position,
+        LocalGraphDiagnosticPaths {
+            deepest_survival: &progress.deepest_survival_actions,
+            deepest_progress: &progress.deepest_progress_actions,
+            witness: report
+                .witness
+                .as_ref()
+                .map(|witness| witness.actions.as_slice()),
+        },
+        include_trace,
         max_engine_steps_per_transition,
     )?;
-    let deepest_progress_node = local_graph_state_snapshot_for_path(
-        &session,
-        search_root_position.clone(),
-        &progress.deepest_progress_actions,
-        max_engine_steps_per_transition,
-    )?;
-    let witness_trace = if include_trace {
-        report
-            .witness
-            .as_ref()
-            .map(|witness| {
-                replay_combat_path(
-                    search_root_position.clone(),
-                    &witness.actions,
-                    max_engine_steps_per_transition,
-                )
-            })
-            .transpose()?
-    } else {
-        None
-    };
     let observation = capture_local_graph_observation(
         &session,
         &search_root_position,

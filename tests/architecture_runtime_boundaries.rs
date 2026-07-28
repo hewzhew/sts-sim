@@ -146,6 +146,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         ("canonical_launch.rs", 12 * 1024),
         ("combat_case_contract.rs", 12 * 1024),
         ("combat_case_performance.rs", 24 * 1024),
+        ("combat_graph_diagnostics.rs", 8 * 1024),
         ("combat_graph_observation.rs", 12 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
         ("combat_policy_controls.rs", 16 * 1024),
@@ -228,6 +229,21 @@ fn combat_case_contract_stays_a_pure_report_evaluator() {
         assert!(
             !source.contains(forbidden),
             "combat case contracts must evaluate existing reports without side effects: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn combat_graph_diagnostics_do_not_own_search_or_persistence() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_graph_diagnostics.rs",
+    )
+    .expect("read combat graph diagnostics module");
+
+    for forbidden in [".advance(", "with_policy", "std::fs", "save_", "export_"] {
+        assert!(
+            !source.contains(forbidden),
+            "combat graph diagnostics may replay selected paths but must not own search or persistence: `{forbidden}`"
         );
     }
 }
