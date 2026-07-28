@@ -151,6 +151,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         ("combat_graph_exports.rs", 8 * 1024),
         ("combat_graph_observation.rs", 12 * 1024),
         ("combat_graph_report.rs", 24 * 1024),
+        ("combat_graph_search_spec.rs", 8 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
         ("combat_policy_controls.rs", 16 * 1024),
         ("combat_replay_tools.rs", 12 * 1024),
@@ -312,6 +313,28 @@ fn combat_graph_execution_only_prepares_search() {
         assert!(
             !source.contains(forbidden),
             "combat graph execution may compose policy and construct a session but must not search, persist, or report: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn combat_graph_search_spec_describes_work_without_performing_it() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_graph_search_spec.rs",
+    )
+    .expect("read combat graph search spec module");
+
+    for forbidden in [
+        "LocalTurnGraphWitnessSession",
+        ".advance(",
+        "load_combat_case",
+        "std::fs",
+        "print_json",
+        "save_combat_inputs",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "combat graph search specs may describe config and allowance but must not own sessions, search, persistence, or reporting: `{forbidden}`"
         );
     }
 }

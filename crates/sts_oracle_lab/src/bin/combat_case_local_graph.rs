@@ -1,12 +1,9 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use clap::Args;
 use serde_json::Value;
-use sts_combat_planner::{
-    CombatDecisionRoot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
-    OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
-};
+use sts_combat_planner::{CombatDecisionRoot, OracleCombatWitnessSatisfaction};
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, CombatGuidanceBundleV1,
@@ -28,6 +25,7 @@ use super::combat_graph_report::{
     local_graph_full_report, local_graph_trace_report, LocalGraphCounterfactual,
     LocalGraphFullReportOptions, LocalGraphReportData, LocalGraphRunIdentity,
 };
+use super::combat_graph_search_spec::LocalGraphSearchSpec;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::load_action_imitation_policy;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
@@ -240,6 +238,15 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         typed_plan_guide,
         typed_plan_selection_timing,
     )?;
+    let search_spec = LocalGraphSearchSpec::from_controls(
+        max_nodes,
+        max_selections,
+        wall_ms,
+        max_engine_steps_per_transition,
+        generation_quantum_work,
+        max_turn_depth,
+        max_potions_used,
+    );
     let search_root_position = loaded.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {
         None
@@ -259,25 +266,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     } else {
         OracleCombatWitnessSatisfaction::FirstWitness
     };
-    let config = LocalTurnGraphWitnessConfig {
-        generator: TurnOptionGeneratorConfig {
-            max_engine_steps_per_transition,
-            allow_potion_expenditure: max_potions_used != Some(0),
-            ..TurnOptionGeneratorConfig::default()
-        },
-        generation_quantum_work,
-        backed_generation_quantum_work: 256,
-        initial_expansion_work: 64,
-        root_initial_expansion_work: 2_048,
-        // Backed search charges every rollout to the same deterministic
-        // work allowance as exact generation. The count guard merely
-        // prevents more evaluations than that allowance can finance.
-        lookahead_max_evaluations: max_nodes.saturating_div(24).max(1),
-        lookahead_work_per_evaluation: 24,
-        max_turn_depth,
-        satisfaction,
-        max_potions_used,
-    };
+    let config = search_spec.planner_config(satisfaction);
     let policy = if let Some(path) = guidance_bundle.as_deref() {
         CombatGuidanceBundleV1::load(path)?.policy(existing_combat_knowledge_policy_v1())?
     } else {
@@ -315,15 +304,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         })
         .transpose()?;
     let search_started = Instant::now();
-    let report = session.advance(
-        LocalTurnGraphWitnessQuantum {
-            additional_selections: max_selections,
-            additional_generation_work: max_nodes,
-            additional_engine_steps: max_nodes.saturating_mul(max_engine_steps_per_transition),
-            deadline: Some(Instant::now() + Duration::from_millis(wall_ms)),
-        },
-        &EngineCombatStepper,
-    );
+    let report = session.advance(search_spec.quantum(), &EngineCombatStepper);
     let search_elapsed = search_started.elapsed();
     if let Some(contract_result) = evaluate_local_graph_contract(LocalGraphContractRequest {
         case: &case,
@@ -391,6 +372,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             elapsed: command_started.elapsed(),
             satisfaction,
             execution_profile,
+            search_spec,
             counterfactual: LocalGraphCounterfactual {
                 full_health,
                 original_hp,

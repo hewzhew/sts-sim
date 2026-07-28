@@ -13,6 +13,7 @@ use super::combat_graph_diagnostics::LocalGraphDiagnostics;
 use super::combat_graph_execution::LocalGraphExecutionProfile;
 use super::combat_graph_exports::LocalGraphExports;
 use super::combat_graph_observation::LocalGraphObservation;
+use super::combat_graph_search_spec::LocalGraphSearchSpec;
 use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
 
 #[derive(Clone, Copy)]
@@ -28,6 +29,7 @@ pub(super) struct LocalGraphRunIdentity<'a> {
     pub(super) elapsed: Duration,
     pub(super) satisfaction: OracleCombatWitnessSatisfaction,
     pub(super) execution_profile: LocalGraphExecutionProfile,
+    pub(super) search_spec: LocalGraphSearchSpec,
     pub(super) counterfactual: LocalGraphCounterfactual,
 }
 
@@ -70,6 +72,7 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
         "status": format!("{:?}", data.report.status),
         "satisfaction": format!("{:?}", data.run.satisfaction),
         "execution_profile": data.run.execution_profile,
+        "search_spec": data.run.search_spec,
         "elapsed_ms": data.run.elapsed.as_millis(),
         "counterfactual": {
             "full_health": data.run.counterfactual.full_health,
@@ -196,6 +199,7 @@ pub(super) fn local_graph_full_report(
         "satisfaction": format!("{:?}", data.run.satisfaction),
         "scheduler": data.run.execution_profile.scheduler_label(),
         "execution_profile": data.run.execution_profile,
+        "search_spec": data.run.search_spec,
         "status": format!("{:?}", data.report.status),
         "elapsed_ms": data.run.elapsed.as_millis(),
         "initial_hp": data.run.counterfactual.search_hp,
@@ -290,6 +294,7 @@ mod tests {
                         false, false, false, false, false,
                     )
                     .expect("fixture execution profile"),
+                    search_spec: LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 3, 9, Some(2)),
                     counterfactual: LocalGraphCounterfactual {
                         full_health: false,
                         original_hp: 80,
@@ -345,6 +350,10 @@ mod tests {
         assert_eq!(
             report["execution_profile"]["guide_service"],
             "anchor_and_guides"
+        );
+        assert_eq!(
+            report["search_spec"]["allowance"]["max_generation_work"],
+            240
         );
         assert_eq!(report["search_elapsed_ms"], 3);
         assert_eq!(report["counters"]["terminal_win_options"], 0);

@@ -325,6 +325,7 @@ fn run(args: Cli) -> Result<(), String> {
     let search_root_player_turn = search_position.combat.turn.turn_count;
     let root = CombatDecisionRoot::new(search_position)
         .map_err(|error| format!("invalid combat case root: {error:?}"))?;
+    let config_defaults = LocalTurnGraphWitnessConfig::default();
     let config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
             max_engine_steps_per_transition: args.max_engine_steps_per_transition,
@@ -332,11 +333,10 @@ fn run(args: Cli) -> Result<(), String> {
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work: args.generation_quantum_work,
-        backed_generation_quantum_work: 256,
-        initial_expansion_work: 64,
-        root_initial_expansion_work: 2_048,
-        lookahead_max_evaluations: args.max_nodes.saturating_div(24).max(1),
-        lookahead_work_per_evaluation: 24,
+        lookahead_max_evaluations: args
+            .max_nodes
+            .saturating_div(config_defaults.lookahead_work_per_evaluation)
+            .max(1),
         max_turn_depth: args.max_turn_depth,
         satisfaction: if args.improve_incumbent {
             OracleCombatWitnessSatisfaction::BudgetOrExhaustion
@@ -346,6 +346,7 @@ fn run(args: Cli) -> Result<(), String> {
             OracleCombatWitnessSatisfaction::FirstWitness
         },
         max_potions_used: args.max_potions_used,
+        ..config_defaults
     };
     let policy = existing_combat_knowledge_policy_v1();
     let policy = if args.typed_plan_guide {

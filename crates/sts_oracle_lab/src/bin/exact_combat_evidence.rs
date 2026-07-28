@@ -109,20 +109,20 @@ pub(crate) fn evaluate_nonterminal_position(
 ) -> Result<ExactCombatEvaluation, String> {
     let root = CombatDecisionRoot::new(position.clone())
         .map_err(|error| format!("invalid successor root: {error:?}"))?;
+    let config_defaults = LocalTurnGraphWitnessConfig::default();
     let search_config = LocalTurnGraphWitnessConfig {
         generator: TurnOptionGeneratorConfig {
             max_engine_steps_per_transition,
             ..TurnOptionGeneratorConfig::default()
         },
         generation_quantum_work: 4,
-        backed_generation_quantum_work: 256,
-        initial_expansion_work: 64,
-        root_initial_expansion_work: 2_048,
-        lookahead_max_evaluations: solve_work.saturating_div(24).max(1),
-        lookahead_work_per_evaluation: 24,
+        lookahead_max_evaluations: solve_work
+            .saturating_div(config_defaults.lookahead_work_per_evaluation)
+            .max(1),
         max_turn_depth: 32,
         satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
         max_potions_used: None,
+        ..config_defaults
     };
     let mut session = LocalTurnGraphWitnessSession::with_policy_and_lookahead(
         root,
