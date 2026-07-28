@@ -25,13 +25,16 @@ use victory::settle_victory_if_ready;
 
 use pending_choice_resolution::resolve_pending_choice;
 
-pub(crate) const COMBAT_ENGINE_PHASE_PROFILE_COUNT: usize = 5;
+pub(crate) const COMBAT_ENGINE_PHASE_PROFILE_COUNT: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CombatEngineProfilePhaseV1 {
     DiscardHand,
     MonsterPreTurn,
-    MonsterTurns,
+    MonsterTurnSetup,
+    MonsterMoveResolution,
+    MonsterDuringTurnPowers,
+    MonsterActionDrain,
     MonsterEndRound,
     PlayerTurnStart,
 }
@@ -41,9 +44,12 @@ impl CombatEngineProfilePhaseV1 {
         match self {
             Self::DiscardHand => 0,
             Self::MonsterPreTurn => 1,
-            Self::MonsterTurns => 2,
-            Self::MonsterEndRound => 3,
-            Self::PlayerTurnStart => 4,
+            Self::MonsterTurnSetup => 2,
+            Self::MonsterMoveResolution => 3,
+            Self::MonsterDuringTurnPowers => 4,
+            Self::MonsterActionDrain => 5,
+            Self::MonsterEndRound => 6,
+            Self::PlayerTurnStart => 7,
         }
     }
 }

@@ -99,7 +99,7 @@ struct CombatCaseRoot {
 
 const TRANSITION_CLONE_PROFILE_INTERVAL: usize = 16;
 const PROFILED_COMBAT_INPUT_KINDS: usize = 5;
-const PROFILED_COMBAT_ENGINE_PHASES: usize = 5;
+const PROFILED_COMBAT_ENGINE_PHASES: usize = 8;
 
 fn profiled_combat_input_kind(input: &ClientInput) -> usize {
     match input {
@@ -532,9 +532,12 @@ fn run(args: Cli) -> Result<(), String> {
                 "execution_by_engine_phase": {
                     "discard_hand": engine_phase(0),
                     "monster_pre_turn": engine_phase(1),
-                    "monster_turns": engine_phase(2),
-                    "monster_end_round": engine_phase(3),
-                    "player_turn_start": engine_phase(4),
+                    "monster_turn_setup": engine_phase(2),
+                    "monster_move_resolution": engine_phase(3),
+                    "monster_during_turn_powers": engine_phase(4),
+                    "monster_action_drain": engine_phase(5),
+                    "monster_end_round": engine_phase(6),
+                    "player_turn_start": engine_phase(7),
                 },
                 "sampled_collection_lengths": {
                     "mean_emitted_events": (profile.samples > 0).then(|| profile.emitted_event_items as f64 / profile.samples as f64),

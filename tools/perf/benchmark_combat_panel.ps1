@@ -29,7 +29,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProfiledCombatInputKinds = @("play_card", "end_turn", "potion", "selection", "other")
-$ProfiledCombatEnginePhases = @("discard_hand", "monster_pre_turn", "monster_turns", "monster_end_round", "player_turn_start")
+$ProfiledCombatEnginePhases = @(
+    "discard_hand",
+    "monster_pre_turn",
+    "monster_turn_setup",
+    "monster_move_resolution",
+    "monster_during_turn_powers",
+    "monster_action_drain",
+    "monster_end_round",
+    "player_turn_start"
+)
 
 . (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 

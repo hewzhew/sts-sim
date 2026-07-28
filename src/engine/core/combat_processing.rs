@@ -482,8 +482,8 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                     }
                     profiler.end(CombatEngineProfilePhaseV1::MonsterPreTurn, pre_turn_marker);
 
-                    let monster_turns_marker =
-                        profiler.begin(CombatEngineProfilePhaseV1::MonsterTurns);
+                    let monster_turn_setup_marker =
+                        profiler.begin(CombatEngineProfilePhaseV1::MonsterTurnSetup);
                     // 2. Execute each alive monster's turn (player block absorbs damage)
                     combat_state.begin_monster_turn();
                     let mut monster_snapshots = Vec::new();
@@ -498,12 +498,24 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                     for id in dead_ids {
                         store::remove_entity_powers(combat_state, id);
                     }
+                    profiler.end(
+                        CombatEngineProfilePhaseV1::MonsterTurnSetup,
+                        monster_turn_setup_marker,
+                    );
                     for monster in &monster_snapshots {
+                        let monster_move_resolution_marker =
+                            profiler.begin(CombatEngineProfilePhaseV1::MonsterMoveResolution);
                         let actions =
                             crate::content::monsters::resolve_monster_turn(combat_state, monster);
                         for action in actions {
                             combat_state.queue_action_back(action);
                         }
+                        profiler.end(
+                            CombatEngineProfilePhaseV1::MonsterMoveResolution,
+                            monster_move_resolution_marker,
+                        );
+                        let monster_during_turn_powers_marker =
+                            profiler.begin(CombatEngineProfilePhaseV1::MonsterDuringTurnPowers);
                         for power in &crate::content::powers::store::powers_snapshot_for(
                             combat_state,
                             monster.id,
@@ -516,6 +528,12 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                                 combat_state.queue_action_back(action);
                             }
                         }
+                        profiler.end(
+                            CombatEngineProfilePhaseV1::MonsterDuringTurnPowers,
+                            monster_during_turn_powers_marker,
+                        );
+                        let monster_action_drain_marker =
+                            profiler.begin(CombatEngineProfilePhaseV1::MonsterActionDrain);
                         // Drain this monster's turn actions
                         while let Some(action) = combat_state.pop_next_action() {
                             crate::engine::action_handlers::execute_action(action, combat_state);
@@ -523,17 +541,17 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                                 combat_state.clear_pending_actions();
                                 *engine_state = EngineState::GameOver(RunResult::Defeat);
                                 profiler.end(
-                                    CombatEngineProfilePhaseV1::MonsterTurns,
-                                    monster_turns_marker,
+                                    CombatEngineProfilePhaseV1::MonsterActionDrain,
+                                    monster_action_drain_marker,
                                 );
                                 return false;
                             }
                         }
+                        profiler.end(
+                            CombatEngineProfilePhaseV1::MonsterActionDrain,
+                            monster_action_drain_marker,
+                        );
                     }
-                    profiler.end(
-                        CombatEngineProfilePhaseV1::MonsterTurns,
-                        monster_turns_marker,
-                    );
 
                     let monster_end_round_marker =
                         profiler.begin(CombatEngineProfilePhaseV1::MonsterEndRound);
