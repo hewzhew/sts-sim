@@ -1,20 +1,32 @@
 use crate::runtime::combat::CombatState;
 pub fn handle_roll_monster_move(monster_id: usize, state: &mut CombatState) {
-    if let Some(m) = state.entities.monsters.iter().find(|m| m.id == monster_id) {
+    if let Some(monster_index) = state
+        .entities
+        .monsters
+        .iter()
+        .position(|monster| monster.id == monster_id)
+    {
         // Java RollMoveAction.update() calls monster.rollMove() without checking
         // isDying/isEscaping. Queued rolls after thorns kills, SuicideAction, or
         // slime split still consume aiRng and update moveHistory.
-        let entity_snapshot = m.clone();
-        let num = state.rng.ai_rng.random(99);
-        let player_powers = crate::content::powers::store::powers_snapshot_for(state, 0);
-        let outcome = crate::content::monsters::roll_monster_turn_outcome(
-            &mut state.rng.ai_rng,
-            &entity_snapshot,
-            state.meta.ascension_level,
-            num,
-            &state.entities.monsters,
-            &player_powers,
-        );
+        let outcome = {
+            let entities = &state.entities;
+            let rng = &mut state.rng.ai_rng;
+            let num = rng.random(99);
+            let player_powers = entities
+                .power_db
+                .get(&0)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            crate::content::monsters::roll_monster_turn_outcome(
+                rng,
+                &entities.monsters[monster_index],
+                state.meta.ascension_level,
+                num,
+                &entities.monsters,
+                player_powers,
+            )
+        };
         for action in outcome.setup_actions {
             crate::engine::action_handlers::execute_action(action, state);
         }
