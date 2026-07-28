@@ -306,6 +306,27 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let search_started = Instant::now();
     let report = session.advance(search_spec.quantum(), &EngineCombatStepper);
     let search_elapsed = search_started.elapsed();
+    let progress = session.progress_snapshot();
+    // Exports are explicit side effects of the command, not presentation.
+    // Complete them before compact-contract or performance-only reporting can
+    // return early.
+    let exports = export_local_graph_paths(
+        &loaded,
+        LocalGraphExportPaths {
+            witness_actions: export_witness_actions.as_deref(),
+            deepest_survival_case: export_deepest_survival_case.as_deref(),
+            deepest_progress_case: export_deepest_progress_case.as_deref(),
+        },
+        LocalGraphExportActions {
+            witness: report
+                .witness
+                .as_ref()
+                .map(|witness| witness.actions.as_slice()),
+            deepest_survival: &progress.deepest_survival_actions,
+            deepest_progress: &progress.deepest_progress_actions,
+        },
+        max_engine_steps_per_transition,
+    )?;
     if let Some(contract_result) = evaluate_local_graph_contract(LocalGraphContractRequest {
         case: &case,
         elapsed: command_started.elapsed(),
@@ -324,7 +345,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         return print_json(&performance_profile);
     }
     let performance_timing = combat_case_performance::local_graph_performance_timing(&report);
-    let progress = session.progress_snapshot();
     let include_trace = readable || trace;
     let diagnostics = materialize_local_graph_diagnostics(
         &session,
@@ -346,23 +366,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         &watch_exact_state_hash,
         watched_corridor.as_ref(),
     );
-    let exports = export_local_graph_paths(
-        &loaded,
-        LocalGraphExportPaths {
-            witness_actions: export_witness_actions.as_deref(),
-            deepest_survival_case: export_deepest_survival_case.as_deref(),
-            deepest_progress_case: export_deepest_progress_case.as_deref(),
-        },
-        LocalGraphExportActions {
-            witness: report
-                .witness
-                .as_ref()
-                .map(|witness| witness.actions.as_slice()),
-            deepest_survival: &progress.deepest_survival_actions,
-            deepest_progress: &progress.deepest_progress_actions,
-        },
-        max_engine_steps_per_transition,
-    )?;
     let plan_transition_portfolio = plan_transition_annotations
         .then(|| combat_plan_transition_portfolio_v1(&session))
         .unwrap_or(Value::Null);

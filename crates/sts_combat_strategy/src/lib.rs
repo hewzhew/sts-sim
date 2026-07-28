@@ -8,7 +8,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use sts_core::content::cards::{get_card_definition, CardId, CardType};
+use sts_core::ai::analysis::card_semantics::{
+    card_definition_with_upgrades, CombatEvent, PlayEffect,
+};
+use sts_core::content::cards::{exhausts_when_played, get_card_definition, CardId, CardType};
 use sts_core::content::monsters::EnemyId;
 use sts_core::content::powers::PowerId;
 use sts_core::runtime::combat::{CombatCard, CombatState, MonsterEntity};
@@ -163,6 +166,10 @@ pub struct CombatPlanResourcesV1 {
     pub exhaust_draw_active: bool,
     pub exhaust_block_active: bool,
     pub status_draw_active: bool,
+    /// Live cards which can still emit at least one exhaust event. This is
+    /// exact fuel availability, not an estimate of how valuable the event is.
+    #[serde(default)]
+    pub remaining_exhaust_sources: u16,
     /// Live, unexhausted cards which can reduce enemy Strength.
     #[serde(default)]
     pub remaining_strength_reduction: u16,
@@ -945,6 +952,8 @@ const fn stage_ordinal(stage: CombatPlanStageV1) -> u8 {
 
 fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
     let player = combat.entities.player.id;
+    let corruption_active =
+        sts_core::content::powers::store::has_power(combat, player, PowerId::Corruption);
     let finite_skill_conversion =
         if sts_core::content::powers::store::has_power(combat, player, PowerId::Corruption) {
             FiniteSkillConversionStateV1::Active
@@ -983,6 +992,10 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
             player,
             PowerId::Evolve,
         ),
+        remaining_exhaust_sources: count_live_cards(combat, |card| {
+            corruption_active && get_card_definition(card.id).card_type == CardType::Skill
+                || card_can_emit_exhaust_event(card)
+        }),
         remaining_strength_reduction: count_live_cards(combat, |card| {
             matches!(card.id, CardId::Disarm | CardId::DarkShackles)
         }),
@@ -1000,6 +1013,22 @@ fn combat_plan_resources_v1(combat: &CombatState) -> CombatPlanResourcesV1 {
             .count()
             .min(u8::MAX as usize) as u8,
     }
+}
+
+fn card_can_emit_exhaust_event(card: &CombatCard) -> bool {
+    if exhausts_when_played(card) {
+        return true;
+    }
+    card_definition_with_upgrades(card.id, card.upgrades)
+        .play_effects
+        .iter()
+        .any(|effect| {
+            matches!(
+                effect,
+                PlayEffect::EmitEvent(CombatEvent::CardExhausted)
+                    | PlayEffect::PlayTopCardAndExhaust
+            )
+        })
 }
 
 fn combat_plan_state_envelope_v1(combat: &CombatState) -> CombatPlanStateEnvelopeV1 {
@@ -1229,6 +1258,35 @@ mod tests {
         }
         store::set_powers_for(&mut combat, 10, vec![power(PowerId::Curiosity, 1)]);
         CombatPosition::new(EngineState::CombatPlayerTurn, combat)
+    }
+
+    #[test]
+    fn plan_resources_count_realized_exhaust_block_with_live_fuel() {
+        let mut unsupported = awakened_position(2);
+        unsupported.combat.zones.draw_pile = vec![CombatCard::new(CardId::SecondWind, 1)].into();
+        let mut supported = unsupported.clone();
+        store::set_powers_for(
+            &mut supported.combat,
+            0,
+            vec![power(PowerId::FeelNoPain, 4)],
+        );
+
+        let unsupported_plan = awakened_one_combat_plan_v1(&unsupported).expect("unsupported plan");
+        let supported_plan = awakened_one_combat_plan_v1(&supported).expect("supported plan");
+        assert_eq!(unsupported_plan.resources.remaining_exhaust_sources, 1);
+        assert_eq!(supported_plan.resources.remaining_exhaust_sources, 1);
+        assert!(supported_plan.resources.exhaust_block_active);
+    }
+
+    #[test]
+    fn plan_resources_do_not_invent_exhaust_fuel_from_an_active_power() {
+        let unsupported = awakened_position(2);
+        let mut no_fuel = unsupported.clone();
+        store::set_powers_for(&mut no_fuel.combat, 0, vec![power(PowerId::FeelNoPain, 4)]);
+
+        let plan = awakened_one_combat_plan_v1(&no_fuel).expect("no-fuel plan");
+        assert_eq!(plan.resources.remaining_exhaust_sources, 0);
+        assert!(plan.resources.exhaust_block_active);
     }
 
     fn donu_deca_position() -> CombatPosition {
