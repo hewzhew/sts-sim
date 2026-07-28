@@ -512,7 +512,10 @@ mod tests {
         args.rescue_search_ms = 1;
         args.boss_search_nodes = 1;
         args.boss_search_ms = 1;
-        args.wall_ms = Some(1_000);
+        // This contract verifies capsule persistence, not deadline handling.
+        // A wall deadline makes the assertion depend on unrelated parallel
+        // test load and may stop before the frontier is committed.
+        args.wall_ms = None;
 
         let result = OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
             args,
@@ -609,7 +612,9 @@ mod tests {
         args.rescue_search_ms = 1;
         args.boss_search_nodes = 1;
         args.boss_search_ms = 1;
-        args.wall_ms = Some(1_000);
+        // Ledger persistence is deterministic work; keep wall-clock pressure
+        // out of this correctness contract.
+        args.wall_ms = None;
 
         OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
             args,
