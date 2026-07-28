@@ -290,6 +290,17 @@ pub struct CombatActionReanalysisDecisionV1<'a> {
     pub candidates: &'a [CombatActionReanalysisCandidateV1],
 }
 
+/// One complete legal action surface with an externally constructed typed
+/// probability target.  The target may encode heuristic boundary quality, but
+/// it carries no terminal-win authority and cannot change simulator truth.
+#[derive(Clone, Copy, Debug)]
+pub struct CombatActionSoftTargetDecisionV1<'a> {
+    pub root: &'a CombatPosition,
+    pub candidates: &'a [ClientInput],
+    pub target_probabilities: &'a [f64],
+    pub top1_accepted_indices: &'a [usize],
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct CombatActionReanalysisTrainingConfigV1 {
     /// Probability mass transferred to uniformly weighted exact-win support
@@ -458,7 +469,57 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
     reanalysis_config: CombatActionReanalysisTrainingConfigV1,
     base_policy: SharedCombatActionPolicy,
 ) -> Result<CombatActionImitationArtifactV1, String> {
+    train_combat_action_imitation_with_soft_targets_and_base_v1(
+        demonstrations,
+        reanalysis,
+        &[],
+        config,
+        reanalysis_config,
+        base_policy,
+    )
+}
+
+pub fn train_combat_action_imitation_with_soft_targets_and_base_v1(
+    demonstrations: &[CombatActionImitationDemonstrationV1<'_>],
+    reanalysis: &[CombatActionReanalysisDecisionV1<'_>],
+    soft_targets: &[CombatActionSoftTargetDecisionV1<'_>],
+    config: CombatActionImitationTrainingConfigV1,
+    reanalysis_config: CombatActionReanalysisTrainingConfigV1,
+    base_policy: SharedCombatActionPolicy,
+) -> Result<CombatActionImitationArtifactV1, String> {
+    train_combat_action_imitation_with_soft_targets_and_initial_v1(
+        demonstrations,
+        reanalysis,
+        soft_targets,
+        config,
+        reanalysis_config,
+        base_policy,
+        None,
+    )
+}
+
+pub fn train_combat_action_imitation_with_soft_targets_and_initial_v1(
+    demonstrations: &[CombatActionImitationDemonstrationV1<'_>],
+    reanalysis: &[CombatActionReanalysisDecisionV1<'_>],
+    soft_targets: &[CombatActionSoftTargetDecisionV1<'_>],
+    config: CombatActionImitationTrainingConfigV1,
+    reanalysis_config: CombatActionReanalysisTrainingConfigV1,
+    base_policy: SharedCombatActionPolicy,
+    initial_artifact: Option<&CombatActionImitationArtifactV1>,
+) -> Result<CombatActionImitationArtifactV1, String> {
     validate_training_config(config)?;
+    if let Some(initial) = initial_artifact {
+        initial.validate()?;
+        if (initial.logit_scale - config.logit_scale).abs() > f64::EPSILON
+            || (initial.max_abs_log_factor - config.max_abs_log_factor).abs() > f64::EPSILON
+            || (initial.base_weight_exponent - config.base_weight_exponent).abs() > f64::EPSILON
+        {
+            return Err(
+                "combat action imitation warm start uses a different runtime policy contract"
+                    .to_string(),
+            );
+        }
+    }
     if demonstrations.is_empty() {
         return Err(
             "combat action imitation requires at least one exact terminal demonstration"
@@ -471,12 +532,20 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
     let mut pairwise_comparison_count = 0usize;
     let mut source_action_count = 0usize;
     let mut source_terminal_final_hp = i32::MAX;
-    let mut reanalysis_root_hashes = BTreeSet::new();
+    let mut replacement_root_hashes = BTreeSet::new();
     for (source_index, decision) in reanalysis.iter().enumerate() {
         let hash = combat_exact_state_hash_v2(&decision.root.engine, &decision.root.combat);
-        if !reanalysis_root_hashes.insert(hash) {
+        if !replacement_root_hashes.insert(hash) {
             return Err(format!(
                 "combat action reanalysis decision {source_index} duplicates an exact root"
+            ));
+        }
+    }
+    for (source_index, decision) in soft_targets.iter().enumerate() {
+        let hash = combat_exact_state_hash_v2(&decision.root.engine, &decision.root.combat);
+        if !replacement_root_hashes.insert(hash) {
+            return Err(format!(
+                "combat action soft-target decision {source_index} duplicates an evidence root"
             ));
         }
     }
@@ -505,7 +574,7 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
                 })?;
             if candidates.len() > 1 {
                 let exact_hash = combat_exact_state_hash_v2(&position.engine, &position.combat);
-                if !reanalysis_root_hashes.contains(&exact_hash) {
+                if initial_artifact.is_none() && !replacement_root_hashes.contains(&exact_hash) {
                     let accepted_indices = exact_witness_adjacent_accepted_indices_v1(
                         &stepper,
                         &position,
@@ -674,11 +743,128 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
         });
     }
 
+    for (source_index, decision) in soft_targets.iter().enumerate() {
+        if stepper.terminal(decision.root) != CombatTerminal::Unresolved {
+            return Err(format!(
+                "combat action soft-target decision {source_index} is already terminal"
+            ));
+        }
+        let legal_surface = stepper.legal_action_surface(decision.root);
+        if !legal_surface.selection_families.is_empty() {
+            return Err(format!(
+                "combat action soft-target decision {source_index} has a structured action family; v1 requires a complete atomic surface"
+            ));
+        }
+        if decision.candidates.len() != legal_surface.atomic_actions.len()
+            || legal_surface.atomic_actions.iter().any(|expected| {
+                !decision
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate == expected)
+            })
+        {
+            return Err(format!(
+                "combat action soft-target decision {source_index} does not cover its complete atomic surface"
+            ));
+        }
+        if decision.candidates.len() != decision.target_probabilities.len()
+            || decision.candidates.is_empty()
+            || decision
+                .target_probabilities
+                .iter()
+                .any(|probability| !probability.is_finite() || *probability < 0.0)
+        {
+            return Err(format!(
+                "combat action soft-target decision {source_index} has an invalid probability target"
+            ));
+        }
+        let target_total = decision.target_probabilities.iter().sum::<f64>();
+        if (target_total - 1.0).abs() > 1.0e-9 {
+            return Err(format!(
+                "combat action soft-target decision {source_index} target sums to {target_total}, not one"
+            ));
+        }
+        let mut unique_inputs = Vec::with_capacity(decision.candidates.len());
+        for candidate in decision.candidates {
+            if !stepper.is_legal_action(decision.root, candidate)
+                || unique_inputs.contains(candidate)
+            {
+                return Err(format!(
+                    "combat action soft-target decision {source_index} contains an invalid or duplicate action"
+                ));
+            }
+            unique_inputs.push(candidate.clone());
+        }
+        if decision.candidates.len() <= 1 {
+            skipped_forced_decision_count = skipped_forced_decision_count.saturating_add(1);
+            continue;
+        }
+        let best_target = decision
+            .target_probabilities
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        if decision.top1_accepted_indices.is_empty()
+            || decision.top1_accepted_indices.iter().any(|index| {
+                *index >= decision.candidates.len()
+                    || (decision.target_probabilities[*index] - best_target).abs() > 1.0e-12
+            })
+        {
+            return Err(format!(
+                "combat action soft-target decision {source_index} has invalid top1 support"
+            ));
+        }
+        let choices = unique_inputs
+            .iter()
+            .map(CombatPolicyChoice::Atomic)
+            .collect::<Vec<_>>();
+        let base_weights = base_policy.weights(decision.root, &choices);
+        if base_weights.len() != decision.candidates.len() {
+            return Err(format!(
+                "combat action soft-target decision {source_index} received a misaligned base policy"
+            ));
+        }
+        pairwise_comparison_count = pairwise_comparison_count.saturating_add(
+            decision
+                .target_probabilities
+                .iter()
+                .enumerate()
+                .map(|(left_index, left)| {
+                    decision.target_probabilities[left_index + 1..]
+                        .iter()
+                        .filter(|right| (*left - **right).abs() > 1.0e-12)
+                        .count()
+                })
+                .sum::<usize>(),
+        );
+        source_action_count = source_action_count.saturating_add(decision.candidates.len());
+        let state = typed_combat_feature_components_v1(decision.root);
+        examples.push(RankingExample {
+            target_probabilities: decision.target_probabilities.to_vec(),
+            neutral_indices: Vec::new(),
+            top1_accepted_indices: decision.top1_accepted_indices.to_vec(),
+            base_logits: concrete_base_logits(
+                decision.root,
+                &unique_inputs,
+                base_policy.as_ref(),
+                config.base_weight_exponent,
+            ),
+            candidates: unique_inputs
+                .iter()
+                .map(|candidate| action_feature_vector_with_state(decision.root, candidate, &state))
+                .collect(),
+        });
+    }
+
     if examples.is_empty() {
         return Err("combat action imitation source contains no ranked decisions".to_string());
     }
 
-    let weights = train_sparse_softmax(&examples, config);
+    let weights = train_sparse_softmax_with_initial(
+        &examples,
+        config,
+        initial_artifact.map(|artifact| artifact.coefficients.as_slice()),
+    );
     let training_top1_correct = examples
         .iter()
         .filter(|example| {
@@ -702,7 +888,9 @@ pub fn train_combat_action_imitation_with_reanalysis_and_base_v1(
         schema_version: COMBAT_ACTION_IMITATION_SCHEMA_VERSION,
         feature_schema: COMBAT_ACTION_FEATURE_SCHEMA.to_string(),
         runtime_compatibility_id: COMBAT_ACTION_IMITATION_RUNTIME_ID.to_string(),
-        training_authority: if reanalysis.is_empty() {
+        training_authority: if !soft_targets.is_empty() {
+            "exact_terminal_win_demonstrations_with_complete_typed_action_soft_targets".to_string()
+        } else if reanalysis.is_empty() {
             "exact_terminal_win_demonstration_with_exact_adjacent_alternatives_excluded_from_negatives"
                 .to_string()
         } else {
@@ -1323,27 +1511,52 @@ fn concrete_base_logits(
         .collect()
 }
 
+#[cfg(test)]
 fn train_sparse_softmax(
     examples: &[RankingExample],
     config: CombatActionImitationTrainingConfigV1,
 ) -> BTreeMap<String, f64> {
+    train_sparse_softmax_with_initial(examples, config, None)
+}
+
+fn train_sparse_softmax_with_initial(
+    examples: &[RankingExample],
+    config: CombatActionImitationTrainingConfigV1,
+    initial_coefficients: Option<&[CombatActionImitationCoefficientV1]>,
+) -> BTreeMap<String, f64> {
     let corpus = IndexedTrainingCorpus::compile(examples);
+    let initial_by_feature = initial_coefficients
+        .unwrap_or_default()
+        .iter()
+        .map(|coefficient| (coefficient.feature.clone(), coefficient.weight))
+        .collect::<BTreeMap<_, _>>();
     let mut weights = vec![0.0; corpus.feature_names.len()];
+    for (index, feature) in corpus.feature_names.iter().enumerate() {
+        if let Some(initial) = initial_by_feature.get(feature) {
+            weights[index] = *initial;
+        }
+    }
+    let regularization_center = weights.clone();
     for epoch in 0..config.epochs {
         let learning_rate = config.learning_rate / (1.0 + epoch as f64 * 0.05).sqrt();
         let shrink = (1.0 - learning_rate * config.l2_penalty).clamp(0.0, 1.0);
-        for weight in &mut weights {
-            *weight *= shrink;
+        for (weight, center) in weights.iter_mut().zip(&regularization_center) {
+            *weight = *center + (*weight - *center) * shrink;
         }
         for example in &corpus.examples {
-            let scores = example
+            let learned_logits = example
                 .candidates
                 .iter()
-                .zip(&example.base_logits)
-                .map(|(candidate, base)| {
-                    indexed_sparse_score(&weights, candidate) * config.logit_scale + base
-                })
+                .map(|candidate| indexed_sparse_score(&weights, candidate) * config.logit_scale)
                 .collect::<Vec<_>>();
+            // Match runtime clipping in the forward pass. The update below is
+            // deliberately a straight-through gradient so a target currently
+            // below the residual floor can still escape that floor.
+            let scores = runtime_combined_logits(
+                &learned_logits,
+                &example.base_logits,
+                config.max_abs_log_factor,
+            );
             let is_active = |candidate_index: usize| {
                 example.target_probabilities[candidate_index] > 0.0
                     || !example.neutral_indices.contains(&candidate_index)
@@ -1382,11 +1595,15 @@ fn train_sparse_softmax(
             }
         }
     }
-    corpus
+    let mut learned = corpus
         .feature_names
         .into_iter()
         .zip(weights)
-        .collect::<BTreeMap<_, _>>()
+        .collect::<BTreeMap<_, _>>();
+    for (feature, weight) in initial_by_feature {
+        learned.entry(feature).or_insert(weight);
+    }
+    learned
 }
 
 fn indexed_sparse_score(weights: &[f64], features: &[(usize, f64)]) -> f64 {
@@ -1409,14 +1626,16 @@ fn train_sparse_softmax_reference(
             *weight *= shrink;
         }
         for example in examples {
-            let scores = example
+            let learned_logits = example
                 .candidates
                 .iter()
-                .zip(&example.base_logits)
-                .map(|(candidate, base)| {
-                    sparse_score(&weights, candidate) * config.logit_scale + base
-                })
+                .map(|candidate| sparse_score(&weights, candidate) * config.logit_scale)
                 .collect::<Vec<_>>();
+            let scores = runtime_combined_logits(
+                &learned_logits,
+                &example.base_logits,
+                config.max_abs_log_factor,
+            );
             let is_active = |candidate_index: usize| {
                 example.target_probabilities[candidate_index] > 0.0
                     || !example.neutral_indices.contains(&candidate_index)
@@ -2089,6 +2308,47 @@ mod tests {
         let combined = runtime_combined_logits(&learned, &base, 3.0);
 
         assert_eq!(combined, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn warm_start_can_escape_the_runtime_residual_floor() {
+        let example = RankingExample {
+            target_probabilities: vec![0.0, 1.0],
+            neutral_indices: Vec::new(),
+            top1_accepted_indices: vec![1],
+            base_logits: vec![0.0, 0.0],
+            candidates: vec![
+                BTreeMap::from([("first".to_string(), 1.0)]),
+                BTreeMap::from([("second".to_string(), 1.0)]),
+            ],
+        };
+        let config = CombatActionImitationTrainingConfigV1 {
+            epochs: 80,
+            learning_rate: 0.2,
+            l2_penalty: 0.0,
+            ..CombatActionImitationTrainingConfigV1::default()
+        };
+        let initial = vec![
+            CombatActionImitationCoefficientV1 {
+                feature: "first".to_string(),
+                weight: 10.0,
+            },
+            CombatActionImitationCoefficientV1 {
+                feature: "second".to_string(),
+                weight: 0.0,
+            },
+        ];
+        let learned = train_sparse_softmax_with_initial(&[example.clone()], config, Some(&initial));
+
+        assert_eq!(
+            runtime_candidate_index(
+                &learned,
+                &example,
+                config.logit_scale,
+                config.max_abs_log_factor,
+            ),
+            1
+        );
     }
 
     #[test]

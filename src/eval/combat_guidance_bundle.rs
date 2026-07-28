@@ -14,10 +14,12 @@ use super::combat_action_imitation::{
 use crate::sim::combat::CombatPosition;
 use crate::sim::combat_action_surface::CombatSelectionActionFamilyV2;
 use crate::state::core::ClientInput;
+use crate::{content::potions::Potion, content::potions::ALL_POTIONS};
 
 pub const COMBAT_VALUE_PROTOTYPE_SCHEMA_NAME: &str = "CombatValuePrototypeArtifactV1";
 pub const COMBAT_VALUE_PROTOTYPE_SCHEMA_VERSION: u32 = 3;
-pub const COMBAT_VALUE_FEATURE_SCHEMA: &str = "existing-combat-guides/concatenated-v1";
+pub const COMBAT_VALUE_FEATURE_SCHEMA: &str =
+    "existing-combat-guides-plus-potion-inventory/concatenated-v2";
 pub const COMBAT_GUIDANCE_BUNDLE_SCHEMA_NAME: &str = "CombatGuidanceBundleV1";
 pub const COMBAT_GUIDANCE_BUNDLE_SCHEMA_VERSION: u32 = 1;
 
@@ -448,7 +450,21 @@ pub fn typed_combat_value_features_v1(position: &CombatPosition) -> Vec<i32> {
             position,
         ),
     );
+    features.extend(potion_inventory_features(&position.combat.entities.potions));
     features
+}
+
+fn potion_inventory_features(potions: &[Option<Potion>]) -> Vec<i32> {
+    ALL_POTIONS
+        .iter()
+        .map(|id| {
+            potions
+                .iter()
+                .flatten()
+                .filter(|potion| potion.id == *id)
+                .count() as i32
+        })
+        .collect()
 }
 
 pub fn combat_value_prototype_rank_v1(
@@ -492,6 +508,7 @@ fn normalized_feature_distance(target: &[i32], candidate: &[i32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::potions::{Potion, PotionId};
 
     #[test]
     fn bundle_rejects_empty_authority_before_runtime_use() {
@@ -515,5 +532,17 @@ mod tests {
             one_turn_loss_prototypes: Vec::new(),
         };
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn potion_inventory_features_preserve_resource_identity() {
+        let with_ancient =
+            potion_inventory_features(&[Some(Potion::new(PotionId::AncientPotion, 1)), None]);
+        let empty = potion_inventory_features(&[None, None]);
+
+        assert_eq!(with_ancient.len(), ALL_POTIONS.len());
+        assert_ne!(with_ancient, empty);
+        assert_eq!(with_ancient.iter().sum::<i32>(), 1);
+        assert_eq!(empty.iter().sum::<i32>(), 0);
     }
 }
