@@ -21,6 +21,7 @@ mod stances;
 
 pub use death::{check_and_trigger_monster_death, try_revive};
 pub use dispatcher::execute_action;
+pub(crate) use dispatcher::execute_action_with_profiler;
 
 #[cfg(test)]
 mod tests {

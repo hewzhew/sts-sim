@@ -532,25 +532,19 @@ pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
                             CombatEngineProfilePhaseV1::MonsterDuringTurnPowers,
                             monster_during_turn_powers_marker,
                         );
-                        let monster_action_drain_marker =
-                            profiler.begin(CombatEngineProfilePhaseV1::MonsterActionDrain);
                         // Drain this monster's turn actions
                         while let Some(action) = combat_state.pop_next_action() {
-                            crate::engine::action_handlers::execute_action(action, combat_state);
+                            crate::engine::action_handlers::execute_action_with_profiler(
+                                action,
+                                combat_state,
+                                profiler,
+                            );
                             if combat_state.entities.player.current_hp <= 0 {
                                 combat_state.clear_pending_actions();
                                 *engine_state = EngineState::GameOver(RunResult::Defeat);
-                                profiler.end(
-                                    CombatEngineProfilePhaseV1::MonsterActionDrain,
-                                    monster_action_drain_marker,
-                                );
                                 return false;
                             }
                         }
-                        profiler.end(
-                            CombatEngineProfilePhaseV1::MonsterActionDrain,
-                            monster_action_drain_marker,
-                        );
                     }
 
                     let monster_end_round_marker =

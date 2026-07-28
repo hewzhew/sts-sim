@@ -35,7 +35,12 @@ $ProfiledCombatEnginePhases = @(
     "monster_turn_setup",
     "monster_move_resolution",
     "monster_during_turn_powers",
-    "monster_action_drain",
+    "monster_action_damage_route",
+    "monster_action_power_route",
+    "monster_action_card_route",
+    "monster_action_spawn_route",
+    "monster_action_orb_route",
+    "monster_action_unhandled_route",
     "monster_end_round",
     "player_turn_start"
 )
