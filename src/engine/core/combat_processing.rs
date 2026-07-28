@@ -14,12 +14,13 @@ use super::pending_choice_resolution::{
 };
 use super::{
     compute_player_turn_start_draw_count, discard_hand_for_turn_transition, discovery,
-    update_monster_intents, victory,
+    update_monster_intents, victory, CombatEnginePhaseProfiler, CombatEngineProfilePhaseV1,
 };
 
-pub(super) fn process_combat_processing(
+pub(super) fn process_combat_processing<P: CombatEnginePhaseProfiler>(
     engine_state: &mut EngineState,
     combat_state: &mut CombatState,
+    profiler: &mut P,
 ) -> bool {
     combat_state.ensure_flush_next_queued_card();
     if combat_state.has_pending_actions() {
@@ -387,7 +388,9 @@ pub(super) fn process_combat_processing(
                 // === TURN TRANSITION: end of player turn -> enemy turn -> new player turn ===
 
                 // 1. Discard hand (respecting Retain and RunicPyramid)
+                let marker = profiler.begin(CombatEngineProfilePhaseV1::DiscardHand);
                 discard_hand_for_turn_transition(combat_state);
+                profiler.end(CombatEngineProfilePhaseV1::DiscardHand, marker);
 
                 // Smoke Bomb escape path: Java leaves an intermediate combat
                 // snapshot after end-of-turn effects and discarding, but before
@@ -424,6 +427,8 @@ pub(super) fn process_combat_processing(
                 if !skip_monster_turn {
                     // 1.5 === MONSTER PRE-TURN LOGIC ===
                     // Java: MonsterStartTurnAction calls MonsterGroup.applyPreTurnLogic() -> clears block, etc.
+                    let pre_turn_marker =
+                        profiler.begin(CombatEngineProfilePhaseV1::MonsterPreTurn);
                     let alive_for_pre: Vec<_> = combat_state
                         .entities
                         .monsters
@@ -470,10 +475,15 @@ pub(super) fn process_combat_processing(
                         if combat_state.entities.player.current_hp <= 0 {
                             combat_state.clear_pending_actions();
                             *engine_state = EngineState::GameOver(RunResult::Defeat);
+                            profiler
+                                .end(CombatEngineProfilePhaseV1::MonsterPreTurn, pre_turn_marker);
                             return false;
                         }
                     }
+                    profiler.end(CombatEngineProfilePhaseV1::MonsterPreTurn, pre_turn_marker);
 
+                    let monster_turns_marker =
+                        profiler.begin(CombatEngineProfilePhaseV1::MonsterTurns);
                     // 2. Execute each alive monster's turn (player block absorbs damage)
                     combat_state.begin_monster_turn();
                     let mut monster_snapshots = Vec::new();
@@ -512,10 +522,21 @@ pub(super) fn process_combat_processing(
                             if combat_state.entities.player.current_hp <= 0 {
                                 combat_state.clear_pending_actions();
                                 *engine_state = EngineState::GameOver(RunResult::Defeat);
+                                profiler.end(
+                                    CombatEngineProfilePhaseV1::MonsterTurns,
+                                    monster_turns_marker,
+                                );
                                 return false;
                             }
                         }
                     }
+                    profiler.end(
+                        CombatEngineProfilePhaseV1::MonsterTurns,
+                        monster_turns_marker,
+                    );
+
+                    let monster_end_round_marker =
+                        profiler.begin(CombatEngineProfilePhaseV1::MonsterEndRound);
                     // (Monster actions now drained per-monster inside the for-loop above)
 
                     // 2.3 === COLLECTIVE END OF TURN ===
@@ -587,6 +608,10 @@ pub(super) fn process_combat_processing(
                     }
                     // Clear all just_applied flags globally at the end of the round!
                     store::clear_just_applied_flags(combat_state);
+                    profiler.end(
+                        CombatEngineProfilePhaseV1::MonsterEndRound,
+                        monster_end_round_marker,
+                    );
                 }
 
                 // If player died during monster turn, immediate game over
@@ -596,6 +621,8 @@ pub(super) fn process_combat_processing(
                     return false;
                 }
 
+                let player_turn_start_marker =
+                    profiler.begin(CombatEngineProfilePhaseV1::PlayerTurnStart);
                 // 3. Intent rolling is usually handled by Action::RollMonsterMove in the queue,
                 //    but freshly spawned monsters may roll immediately during spawn to match
                 //    Java SpawnMonsterAction.init() timing.
@@ -691,6 +718,10 @@ pub(super) fn process_combat_processing(
                 }
 
                 *engine_state = EngineState::CombatProcessing;
+                profiler.end(
+                    CombatEngineProfilePhaseV1::PlayerTurnStart,
+                    player_turn_start_marker,
+                );
             }
             CombatPhase::MonsterTurn => {
                 // Monster actions drained, transition to player turn start

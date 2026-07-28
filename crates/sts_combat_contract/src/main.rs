@@ -99,6 +99,7 @@ struct CombatCaseRoot {
 
 const TRANSITION_CLONE_PROFILE_INTERVAL: usize = 16;
 const PROFILED_COMBAT_INPUT_KINDS: usize = 5;
+const PROFILED_COMBAT_ENGINE_PHASES: usize = 5;
 
 fn profiled_combat_input_kind(input: &ClientInput) -> usize {
     match input {
@@ -134,6 +135,8 @@ struct TransitionCloneProfile {
     input_kind_samples: [usize; PROFILED_COMBAT_INPUT_KINDS],
     input_kind_execution_elapsed_ns: [u64; PROFILED_COMBAT_INPUT_KINDS],
     input_kind_engine_steps: [usize; PROFILED_COMBAT_INPUT_KINDS],
+    engine_phase_elapsed_ns: [u64; PROFILED_COMBAT_ENGINE_PHASES],
+    engine_phase_occurrences: [usize; PROFILED_COMBAT_ENGINE_PHASES],
     emitted_event_items: usize,
     max_emitted_event_items: usize,
     engine_diagnostic_items: usize,
@@ -218,6 +221,20 @@ impl CombatStepper for ProfiledEngineCombatStepper {
             .saturating_add(timing.execution_elapsed_ns);
         profile.input_kind_engine_steps[input_kind] =
             profile.input_kind_engine_steps[input_kind].saturating_add(step.engine_steps);
+        for (total, sample) in profile
+            .engine_phase_elapsed_ns
+            .iter_mut()
+            .zip(timing.engine_phase_elapsed_ns)
+        {
+            *total = total.saturating_add(sample);
+        }
+        for (total, sample) in profile
+            .engine_phase_occurrences
+            .iter_mut()
+            .zip(timing.engine_phase_occurrences)
+        {
+            *total = total.saturating_add(sample);
+        }
         let emitted_event_items = position.combat.runtime.emitted_events.len();
         profile.emitted_event_items = profile
             .emitted_event_items
@@ -492,6 +509,15 @@ fn run(args: Cli) -> Result<(), String> {
                     "mean_engine_steps": (samples > 0).then(|| profile.input_kind_engine_steps[index] as f64 / samples as f64),
                 })
             };
+            let engine_phase = |index: usize| {
+                let occurrences = profile.engine_phase_occurrences[index];
+                let elapsed_ns = profile.engine_phase_elapsed_ns[index];
+                json!({
+                    "occurrences": occurrences,
+                    "mean_ns_per_occurrence": (occurrences > 0).then(|| elapsed_ns as f64 / occurrences as f64),
+                    "share_of_execution": (profile.execution_elapsed_ns > 0).then(|| elapsed_ns as f64 / profile.execution_elapsed_ns as f64),
+                })
+            };
             json!({
                 "sample_interval": TRANSITION_CLONE_PROFILE_INTERVAL,
                 "transition_calls": profile.calls,
@@ -502,6 +528,13 @@ fn run(args: Cli) -> Result<(), String> {
                     "potion": input_kind(2),
                     "selection": input_kind(3),
                     "other": input_kind(4),
+                },
+                "execution_by_engine_phase": {
+                    "discard_hand": engine_phase(0),
+                    "monster_pre_turn": engine_phase(1),
+                    "monster_turns": engine_phase(2),
+                    "monster_end_round": engine_phase(3),
+                    "player_turn_start": engine_phase(4),
                 },
                 "sampled_collection_lengths": {
                     "mean_emitted_events": (profile.samples > 0).then(|| profile.emitted_event_items as f64 / profile.samples as f64),

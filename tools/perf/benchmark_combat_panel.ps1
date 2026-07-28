@@ -29,6 +29,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProfiledCombatInputKinds = @("play_card", "end_turn", "potion", "selection", "other")
+$ProfiledCombatEnginePhases = @("discard_hand", "monster_pre_turn", "monster_turns", "monster_end_round", "player_turn_start")
 
 . (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 
@@ -74,6 +75,31 @@ function Get-InputProfileMedians($Profiles, [string[]] $Kinds) {
             sample_share = Get-RoundedMedian $Profile.sample_share 4
             execution_ns = Get-RoundedMedian $Profile.execution_ns 1
             engine_steps = Get-RoundedMedian $Profile.engine_steps 2
+        }
+    }
+    return $Summary
+}
+
+function New-EnginePhaseProfileAccumulators([string[]] $Phases) {
+    $Profiles = [ordered]@{}
+    foreach ($PhaseName in $Phases) {
+        $Profiles[$PhaseName] = [pscustomobject]@{
+            occurrences = [Collections.Generic.List[double]]::new()
+            execution_share = [Collections.Generic.List[double]]::new()
+            elapsed_ns = [Collections.Generic.List[double]]::new()
+        }
+    }
+    return $Profiles
+}
+
+function Get-EnginePhaseProfileMedians($Profiles, [string[]] $Phases) {
+    $Summary = [ordered]@{}
+    foreach ($PhaseName in $Phases) {
+        $Profile = $Profiles[$PhaseName]
+        $Summary[$PhaseName] = [ordered]@{
+            occurrences = Get-RoundedMedian $Profile.occurrences 1
+            execution_share = Get-RoundedMedian $Profile.execution_share 4
+            elapsed_ns = Get-RoundedMedian $Profile.elapsed_ns 1
         }
     }
     return $Summary
@@ -263,6 +289,7 @@ try {
                 combat_clone_ns = [Collections.Generic.List[double]]::new()
                 transition_execution_ns = [Collections.Generic.List[double]]::new()
                 transition_execution_by_input = New-InputProfileAccumulators $ProfiledCombatInputKinds
+                transition_execution_by_engine_phase = New-EnginePhaseProfileAccumulators $ProfiledCombatEnginePhases
                 combat_meta_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_turn_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_zones_clone_ns = [Collections.Generic.List[double]]::new()
@@ -357,6 +384,15 @@ try {
                             $Accumulator.engine_steps.Add($InputProfile.mean_engine_steps)
                         }
                     }
+                    foreach ($PhaseName in $ProfiledCombatEnginePhases) {
+                        $PhaseProfile = $Profile.execution_by_engine_phase.$PhaseName
+                        $Accumulator = $Case.transition_execution_by_engine_phase[$PhaseName]
+                        $Accumulator.occurrences.Add($PhaseProfile.occurrences)
+                        $Accumulator.execution_share.Add($PhaseProfile.share_of_execution)
+                        if ([int] $PhaseProfile.occurrences -gt 0) {
+                            $Accumulator.elapsed_ns.Add($PhaseProfile.mean_ns_per_occurrence)
+                        }
+                    }
                     $Components = $Profile.mean_ns_per_sample.combat_clone_components
                     $Case.combat_meta_clone_ns.Add($Components.meta)
                     $Case.combat_turn_clone_ns.Add($Components.turn)
@@ -436,6 +472,9 @@ try {
                 } else { $null }
                 transition_execution_by_input = if ($ProfileTransitionCloneCost) {
                     Get-InputProfileMedians $_.transition_execution_by_input $ProfiledCombatInputKinds
+                } else { $null }
+                transition_execution_by_engine_phase = if ($ProfileTransitionCloneCost) {
+                    Get-EnginePhaseProfileMedians $_.transition_execution_by_engine_phase $ProfiledCombatEnginePhases
                 } else { $null }
                 combat_clone_components_ns = if ($ProfileTransitionCloneCost) {
                     [ordered]@{

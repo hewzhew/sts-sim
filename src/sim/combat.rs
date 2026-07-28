@@ -2,7 +2,10 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::core::{is_smoke_escape_stable_boundary, tick_engine};
+use crate::engine::core::{
+    is_smoke_escape_stable_boundary, tick_engine_with_profiler, CombatEnginePhaseProfiler,
+    CombatEngineProfilePhaseV1, NoopCombatEnginePhaseProfiler, COMBAT_ENGINE_PHASE_PROFILE_COUNT,
+};
 use crate::runtime::combat::{CardZones, CombatRuntimeHints, CombatState, EntityState};
 use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_action_surface::CombatLegalActionSurfaceV2;
@@ -66,6 +69,29 @@ pub struct CombatStepPerformanceTimingV1 {
     pub combat_rng_clone_elapsed_ns: u64,
     pub combat_runtime_clone_elapsed_ns: u64,
     pub execution_elapsed_ns: u64,
+    pub engine_phase_elapsed_ns: [u64; COMBAT_ENGINE_PHASE_PROFILE_COUNT],
+    pub engine_phase_occurrences: [usize; COMBAT_ENGINE_PHASE_PROFILE_COUNT],
+}
+
+#[derive(Default)]
+struct CombatEnginePhaseTimingProfilerV1 {
+    elapsed_ns: [u64; COMBAT_ENGINE_PHASE_PROFILE_COUNT],
+    occurrences: [usize; COMBAT_ENGINE_PHASE_PROFILE_COUNT],
+}
+
+impl CombatEnginePhaseProfiler for CombatEnginePhaseTimingProfilerV1 {
+    type Marker = Instant;
+
+    fn begin(&mut self, _phase: CombatEngineProfilePhaseV1) -> Self::Marker {
+        Instant::now()
+    }
+
+    fn end(&mut self, phase: CombatEngineProfilePhaseV1, marker: Self::Marker) {
+        let index = phase.index();
+        self.elapsed_ns[index] =
+            self.elapsed_ns[index].saturating_add(elapsed_nanos_saturated(marker));
+        self.occurrences[index] = self.occurrences[index].saturating_add(1);
+    }
 }
 
 pub trait CombatStepper {
@@ -310,7 +336,16 @@ pub fn apply_combat_input_to_stable_profiled_v1(
     };
 
     let execution_started = Instant::now();
-    let step = apply_combat_input_to_stable_owned_inner(engine, combat, input, limits, false).step;
+    let mut phase_profiler = CombatEnginePhaseTimingProfilerV1::default();
+    let step = apply_combat_input_to_stable_owned_inner_with_profiler(
+        engine,
+        combat,
+        input,
+        limits,
+        false,
+        &mut phase_profiler,
+    )
+    .step;
     let execution_elapsed_ns = elapsed_nanos_saturated(execution_started);
 
     (
@@ -329,6 +364,8 @@ pub fn apply_combat_input_to_stable_profiled_v1(
             combat_rng_clone_elapsed_ns,
             combat_runtime_clone_elapsed_ns,
             execution_elapsed_ns,
+            engine_phase_elapsed_ns: phase_profiler.elapsed_ns,
+            engine_phase_occurrences: phase_profiler.occurrences,
         },
     )
 }
@@ -368,11 +405,30 @@ fn apply_combat_input_to_stable_inner(
 }
 
 fn apply_combat_input_to_stable_owned_inner(
+    engine: EngineState,
+    combat: CombatState,
+    input: ClientInput,
+    limits: CombatStepLimits,
+    observe_draws: bool,
+) -> CombatStepResultInternal {
+    let mut profiler = NoopCombatEnginePhaseProfiler;
+    apply_combat_input_to_stable_owned_inner_with_profiler(
+        engine,
+        combat,
+        input,
+        limits,
+        observe_draws,
+        &mut profiler,
+    )
+}
+
+fn apply_combat_input_to_stable_owned_inner_with_profiler<P: CombatEnginePhaseProfiler>(
     mut engine: EngineState,
     mut combat: CombatState,
     input: ClientInput,
     limits: CombatStepLimits,
     observe_draws: bool,
+    profiler: &mut P,
 ) -> CombatStepResultInternal {
     combat.clear_card_draw_observation_events();
 
@@ -381,7 +437,7 @@ fn apply_combat_input_to_stable_owned_inner(
     }
 
     let mut steps = 1usize;
-    let mut alive = tick_engine(&mut engine, &mut combat, Some(input));
+    let mut alive = tick_engine_with_profiler(&mut engine, &mut combat, Some(input), profiler);
     if !alive {
         mark_defeat_if_needed(&mut engine, &combat);
         return step_result(engine, combat, false, false, false, steps, observe_draws);
@@ -400,7 +456,7 @@ fn apply_combat_input_to_stable_owned_inner(
             return step_result(engine, combat, true, true, true, steps, observe_draws);
         }
 
-        alive = tick_engine(&mut engine, &mut combat, None);
+        alive = tick_engine_with_profiler(&mut engine, &mut combat, None, profiler);
         steps = steps.saturating_add(1);
         if !alive {
             mark_defeat_if_needed(&mut engine, &combat);

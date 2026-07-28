@@ -24,6 +24,50 @@ use discovery::{
 use victory::settle_victory_if_ready;
 
 use pending_choice_resolution::resolve_pending_choice;
+
+pub(crate) const COMBAT_ENGINE_PHASE_PROFILE_COUNT: usize = 5;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CombatEngineProfilePhaseV1 {
+    DiscardHand,
+    MonsterPreTurn,
+    MonsterTurns,
+    MonsterEndRound,
+    PlayerTurnStart,
+}
+
+impl CombatEngineProfilePhaseV1 {
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::DiscardHand => 0,
+            Self::MonsterPreTurn => 1,
+            Self::MonsterTurns => 2,
+            Self::MonsterEndRound => 3,
+            Self::PlayerTurnStart => 4,
+        }
+    }
+}
+
+pub(crate) trait CombatEnginePhaseProfiler {
+    type Marker;
+
+    fn begin(&mut self, phase: CombatEngineProfilePhaseV1) -> Self::Marker;
+    fn end(&mut self, phase: CombatEngineProfilePhaseV1, marker: Self::Marker);
+}
+
+#[derive(Default)]
+pub(crate) struct NoopCombatEnginePhaseProfiler;
+
+impl CombatEnginePhaseProfiler for NoopCombatEnginePhaseProfiler {
+    type Marker = ();
+
+    #[inline]
+    fn begin(&mut self, _phase: CombatEngineProfilePhaseV1) {}
+
+    #[inline]
+    fn end(&mut self, _phase: CombatEngineProfilePhaseV1, _marker: Self::Marker) {}
+}
+
 pub fn compute_player_turn_start_draw_count(combat_state: &CombatState) -> i32 {
     let mut draw_count: i32 = 5 + combat_state.turn.turn_start_draw_modifier;
     if combat_state
@@ -83,6 +127,16 @@ pub fn tick_engine(
     combat_state: &mut CombatState,
     input: Option<ClientInput>,
 ) -> bool {
+    let mut profiler = NoopCombatEnginePhaseProfiler;
+    tick_engine_with_profiler(engine_state, combat_state, input, &mut profiler)
+}
+
+pub(crate) fn tick_engine_with_profiler<P: CombatEnginePhaseProfiler>(
+    engine_state: &mut EngineState,
+    combat_state: &mut CombatState,
+    input: Option<ClientInput>,
+    profiler: &mut P,
+) -> bool {
     // Phase 1: pending choice overrides
     if let EngineState::PendingChoice(_) = engine_state {
         if let Some(cmd) = input {
@@ -137,7 +191,7 @@ pub fn tick_engine(
 
     // Phase 3: execute action queue
     if *engine_state == EngineState::CombatProcessing {
-        return combat_processing::process_combat_processing(engine_state, combat_state);
+        return combat_processing::process_combat_processing(engine_state, combat_state, profiler);
     }
 
     if let Some(keep_running) = victory::settle_victory_if_ready(engine_state, combat_state) {
