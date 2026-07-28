@@ -44,6 +44,36 @@ $ProfiledCombatEnginePhases = @(
     "monster_end_round",
     "player_turn_start"
 )
+$SearchTimingFields = @(
+    "selection_elapsed_ns",
+    "generation_elapsed_ns",
+    "admission_elapsed_ns",
+    "atomic_expand_elapsed_ns",
+    "transition_simulation_elapsed_ns",
+    "transition_identity_elapsed_ns",
+    "transition_key_build_elapsed_ns",
+    "transition_key_index_elapsed_ns",
+    "transition_admission_elapsed_ns",
+    "transition_trace_elapsed_ns",
+    "transition_seen_elapsed_ns",
+    "transition_publish_elapsed_ns",
+    "transition_publish_trace_node_elapsed_ns",
+    "transition_publish_boundary_elapsed_ns",
+    "transition_publish_complete_elapsed_ns",
+    "transition_publish_push_elapsed_ns",
+    "transition_publish_guide_elapsed_ns",
+    "transition_publish_retain_elapsed_ns",
+    "transition_publish_agenda_elapsed_ns",
+    "admission_root_option_elapsed_ns",
+    "admission_witness_filter_elapsed_ns",
+    "admission_witness_replay_elapsed_ns",
+    "successor_identity_elapsed_ns",
+    "successor_lookup_elapsed_ns",
+    "successor_node_build_elapsed_ns",
+    "successor_edge_elapsed_ns",
+    "successor_backup_elapsed_ns",
+    "admission_refresh_elapsed_ns"
+)
 
 . (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 
@@ -114,6 +144,26 @@ function Get-EnginePhaseProfileMedians($Profiles, [string[]] $Phases) {
             occurrences = Get-RoundedMedian $Profile.occurrences 1
             execution_share = Get-RoundedMedian $Profile.execution_share 4
             elapsed_ns = Get-RoundedMedian $Profile.elapsed_ns 1
+        }
+    }
+    return $Summary
+}
+
+function New-TimingAccumulators([string[]] $Fields) {
+    $Timings = [ordered]@{}
+    foreach ($Field in $Fields) {
+        $Timings[$Field] = [Collections.Generic.List[double]]::new()
+    }
+    return $Timings
+}
+
+function Get-TimingMediansMilliseconds($Timings, [string[]] $Fields) {
+    $Summary = [ordered]@{}
+    foreach ($Field in $Fields) {
+        $Name = $Field -replace '_elapsed_ns$', ''
+        $Median = Get-Median $Timings[$Field]
+        $Summary[$Name] = if ($null -eq $Median) { $null } else {
+            [math]::Round($Median / 1000000.0, 3)
         }
     }
     return $Summary
@@ -284,6 +334,7 @@ try {
                 path = $CasePath
                 process_ms = [Collections.Generic.List[double]]::new()
                 search_ms = [Collections.Generic.List[double]]::new()
+                search_timing_ns = New-TimingAccumulators $SearchTimingFields
                 simulation_ns = [Collections.Generic.List[double]]::new()
                 identity_ns = [Collections.Generic.List[double]]::new()
                 key_build_ns = [Collections.Generic.List[double]]::new()
@@ -359,6 +410,11 @@ try {
                 Assert-CombatPanelIdentity $Case.definition $Run.report
                 $Case.process_ms.Add($Run.process_milliseconds)
                 $Case.search_ms.Add($Run.report.search_elapsed_ns / 1000000.0)
+                foreach ($TimingField in $SearchTimingFields) {
+                    $Case.search_timing_ns[$TimingField].Add(
+                        [double] $Run.report.timing_ns.$TimingField
+                    )
+                }
                 $Case.simulation_ns.Add($Run.report.ns_per_applied_transition.simulation)
                 $Case.identity_ns.Add($Run.report.ns_per_applied_transition.identity)
                 $Case.key_build_ns.Add($Run.report.ns_per_applied_transition.key_build)
@@ -456,6 +512,7 @@ try {
                 case = $_.definition.name
                 process_ms = [math]::Round((Get-Median $_.process_ms), 2)
                 search_ms = [math]::Round((Get-Median $_.search_ms), 2)
+                search_phase_ms = Get-TimingMediansMilliseconds $_.search_timing_ns $SearchTimingFields
                 simulation_ns = [math]::Round((Get-Median $_.simulation_ns), 1)
                 identity_ns = [math]::Round((Get-Median $_.identity_ns), 1)
                 key_build_ns = [math]::Round((Get-Median $_.key_build_ns), 1)
