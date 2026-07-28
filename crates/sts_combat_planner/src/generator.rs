@@ -35,6 +35,7 @@ struct PartialTurnOption {
     atomic_depth: usize,
     negative_log_policy: f64,
     potion_expenditures: u32,
+    generation_guides: Option<Arc<[CombatStateGuide]>>,
     lookahead_guide: Option<CombatStateGuide>,
 }
 
@@ -93,7 +94,7 @@ struct AtomicActionCursorWork {
     parent: Arc<PartialTurnOption>,
     candidates: Vec<AtomicActionCandidate>,
     next_candidate: usize,
-    guides: Vec<CombatStateGuide>,
+    guides: Arc<[CombatStateGuide]>,
 }
 
 impl AtomicActionCursorWork {
@@ -101,7 +102,7 @@ impl AtomicActionCursorWork {
         parent: Arc<PartialTurnOption>,
         inputs: Vec<ClientInput>,
         probabilities: Vec<f64>,
-        guides: Vec<CombatStateGuide>,
+        guides: impl Into<Arc<[CombatStateGuide]>>,
     ) -> Option<Self> {
         let mut candidates = inputs
             .into_iter()
@@ -124,7 +125,7 @@ impl AtomicActionCursorWork {
             parent,
             candidates,
             next_candidate: 0,
-            guides,
+            guides: guides.into(),
         })
     }
 
@@ -458,6 +459,22 @@ struct PushWorkTiming {
     agenda_elapsed_ns: u64,
 }
 
+fn guides_with_lookahead(
+    base: Arc<[CombatStateGuide]>,
+    lookahead: Option<&CombatStateGuide>,
+) -> Arc<[CombatStateGuide]> {
+    let Some(lookahead) = lookahead else {
+        return base;
+    };
+    let mut guides = base.to_vec();
+    if let Some(existing) = guides.iter_mut().find(|guide| guide.lane == lookahead.lane) {
+        *existing = lookahead.clone();
+    } else {
+        guides.push(lookahead.clone());
+    }
+    guides.into()
+}
+
 impl TurnOptionGeneratorSession {
     pub fn new(root: CombatDecisionRoot, config: TurnOptionGeneratorConfig) -> Self {
         Self::with_policy(root, config, uniform_policy())
@@ -513,6 +530,7 @@ impl TurnOptionGeneratorSession {
             atomic_depth: 0,
             negative_log_policy: 0.0,
             potion_expenditures: 0,
+            generation_guides: None,
             lookahead_guide: None,
         });
         let mut session = Self {
@@ -1334,6 +1352,7 @@ impl TurnOptionGeneratorSession {
                 atomic_depth: action.atomic_depth,
                 negative_log_policy: action.negative_log_policy,
                 potion_expenditures: successor_potion_expenditures,
+                generation_guides: None,
                 lookahead_guide: None,
             };
             self.transition_publish_trace_node_elapsed_ns = self
@@ -1410,7 +1429,7 @@ impl TurnOptionGeneratorSession {
         ActionTransitionStatus::Consumed
     }
 
-    fn expand(&mut self, stepper: &dyn CombatStepper, partial: PartialTurnOption) {
+    fn expand(&mut self, stepper: &dyn CombatStepper, mut partial: PartialTurnOption) {
         let terminal = stepper.terminal(&partial.position);
         if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
             let trace_started = Instant::now();
@@ -1473,11 +1492,16 @@ impl TurnOptionGeneratorSession {
         let atomic_action_count = surface.atomic_actions.len();
         let atomic_probabilities = probabilities[..atomic_action_count].to_vec();
         let selection_probabilities = probabilities[atomic_action_count..].to_vec();
+        let base_generation_guides = partial
+            .generation_guides
+            .get_or_insert_with(|| self.policy.turn_generation_guides(&partial.position).into())
+            .clone();
+        let parent_guides =
+            guides_with_lookahead(base_generation_guides, partial.lookahead_guide.as_ref());
         // Every outgoing action observes the same immutable parent position.
         // Sharing it avoids one full combat-state and action-prefix clone for
         // every legal action while preserving the exact search graph.
         let parent = Arc::new(partial);
-        let parent_guides = self.policy.turn_generation_guides(&parent.position);
         if let Some(cursor) = AtomicActionCursorWork::new(
             parent.clone(),
             surface.atomic_actions,
@@ -1579,26 +1603,48 @@ impl TurnOptionGeneratorSession {
 
     fn push_work_measured(
         &mut self,
-        work: GeneratorWork,
+        mut work: GeneratorWork,
         priority: GeneratorWorkPriority,
         measure: bool,
     ) -> (usize, PushWorkTiming) {
         debug_assert!(priority.levin_log_priority.is_finite());
         let guide_started = measure.then(Instant::now);
-        let mut guides = match &work {
+        let base_guides = match &mut work {
             GeneratorWork::AtomicActions(cursor) => cursor.guides.clone(),
-            _ => self.policy.turn_generation_guides(work.position()),
-        };
-        if let GeneratorWork::Expand(partial) = &work {
-            if let Some(lookahead) = partial.lookahead_guide.as_ref() {
-                if let Some(existing) = guides.iter_mut().find(|guide| guide.lane == lookahead.lane)
-                {
-                    *existing = lookahead.clone();
+            GeneratorWork::Expand(partial) => {
+                if let Some(guides) = partial.generation_guides.as_ref() {
+                    guides.clone()
                 } else {
-                    guides.push(lookahead.clone());
+                    let guides: Arc<[CombatStateGuide]> =
+                        self.policy.turn_generation_guides(&partial.position).into();
+                    partial.generation_guides = Some(guides.clone());
+                    guides
                 }
             }
-        }
+            GeneratorWork::ApplyAction(action) => {
+                action.parent.generation_guides.clone().unwrap_or_else(|| {
+                    self.policy
+                        .turn_generation_guides(&action.parent.position)
+                        .into()
+                })
+            }
+            GeneratorWork::StructuredSelection(selection) => selection
+                .parent
+                .generation_guides
+                .clone()
+                .unwrap_or_else(|| {
+                    self.policy
+                        .turn_generation_guides(&selection.parent.position)
+                        .into()
+                }),
+        };
+        let guides = guides_with_lookahead(
+            base_guides,
+            match &work {
+                GeneratorWork::Expand(partial) => partial.lookahead_guide.as_ref(),
+                _ => None,
+            },
+        );
         let guide_elapsed_ns = guide_started.map(elapsed_nanos_u64).unwrap_or(0);
 
         let retain_started = measure.then(Instant::now);
@@ -1613,7 +1659,7 @@ impl TurnOptionGeneratorSession {
 
         let agenda_started = measure.then(Instant::now);
         self.anchor_frontier.push(entry);
-        for guide in guides {
+        for guide in guides.iter() {
             let frontier_index = self.ensure_guide_frontier(guide.lane);
             self.guided_frontiers[frontier_index]
                 .entries
@@ -1621,7 +1667,7 @@ impl TurnOptionGeneratorSession {
                     guide_lane: guide.lane,
                     work_id,
                     sequence_id: self.next_sequence_id,
-                    guide_rank: guide.rank,
+                    guide_rank: guide.rank.clone(),
                     anchor_priority: priority,
                 });
         }
@@ -1764,6 +1810,25 @@ mod priority_tests {
         calls: Arc<AtomicUsize>,
     }
 
+    struct CountingGenerationGuides {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl super::super::policy::CombatActionPolicy for CountingGenerationGuides {
+        fn weights(
+            &self,
+            _position: &CombatPosition,
+            choices: &[super::super::policy::CombatPolicyChoice<'_>],
+        ) -> Vec<f64> {
+            vec![1.0; choices.len()]
+        }
+
+        fn turn_generation_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
+            self.calls.fetch_add(1, AtomicOrdering::Relaxed);
+            vec![CombatStateGuide::new(CombatGuideLaneId::new(98), vec![0])]
+        }
+    }
+
     impl super::super::policy::CombatLookaheadEvaluator for CountingLookahead {
         fn pending_guide(&self, _position: &CombatPosition) -> Option<CombatStateGuide> {
             Some(CombatStateGuide::new(CombatGuideLaneId::new(99), vec![0]))
@@ -1843,6 +1908,32 @@ mod priority_tests {
         let released = session.release_unused_grant();
         assert_eq!(released.generation_work, 999);
         assert!(session.retained_work_items() > 0);
+    }
+
+    #[test]
+    fn one_partial_state_computes_base_generation_guides_once() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let policy = Arc::new(CountingGenerationGuides {
+            calls: calls.clone(),
+        });
+        let mut session = TurnOptionGeneratorSession::with_policy(
+            test_root(),
+            TurnOptionGeneratorConfig::default(),
+            policy,
+        );
+
+        assert_eq!(calls.load(AtomicOrdering::Relaxed), 1);
+        let report = session.advance_one_scheduling_round(
+            &EngineCombatStepper,
+            CombatPlanningQuantum::deterministic(1, 250_000),
+        );
+
+        assert_eq!(report.after.generation_work, 1);
+        assert_eq!(
+            calls.load(AtomicOrdering::Relaxed),
+            1,
+            "expanding a queued partial must reuse the guide bundle computed at publication"
+        );
     }
 
     #[test]
