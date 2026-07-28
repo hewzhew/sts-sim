@@ -7,6 +7,7 @@ use super::action_boundary_evidence::{
     ActionBoundaryEvidenceArgs, ActionBoundaryEvidenceBatchArgs,
 };
 use super::action_boundary_policy::ActionBoundaryPolicyArgs;
+use super::action_boundary_root_race::ActionBoundaryRootRaceArgs;
 use super::action_reanalysis_policy::ActionReanalysisPolicyArgs;
 use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysisQueueArgs};
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
@@ -231,6 +232,13 @@ pub(super) enum Command {
     BuildActionBoundaryPolicy {
         #[command(flatten)]
         args: ActionBoundaryPolicyArgs,
+    },
+    /// Give every materialized first action equal initial service, then race
+    /// exact next-turn generators under a frozen boundary-value teacher.
+    /// This is a read-only shadow audit and cannot alter production guidance.
+    AuditActionBoundaryRootRace {
+        #[command(flatten)]
+        args: ActionBoundaryRootRaceArgs,
     },
     /// Train a conservative residual policy from exact witnesses plus typed
     /// action-successor reanalysis. Budget-unknown actions retain base mass.

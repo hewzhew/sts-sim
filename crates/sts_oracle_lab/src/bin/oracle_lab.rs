@@ -2,6 +2,7 @@
 
 mod action_boundary_evidence;
 mod action_boundary_policy;
+mod action_boundary_root_race;
 mod action_reanalysis_policy;
 mod action_reanalysis_queue;
 mod action_successor_reanalysis;
@@ -240,6 +241,9 @@ fn main() -> Result<(), String> {
         }
         Command::BuildActionBoundaryPolicy { args } => {
             print_json(&action_boundary_policy::build(args)?)
+        }
+        Command::AuditActionBoundaryRootRace { args } => {
+            print_json(&action_boundary_root_race::run(args)?)
         }
         Command::BuildActionReanalysisPolicy { args } => {
             let report = action_reanalysis_policy::build(args)?;
