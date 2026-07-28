@@ -365,7 +365,11 @@ fn boss_relic_policy_band_v1(action: &BossRelicPolicyActionV1) -> BossRelicPolic
         return BossRelicPolicyBandV1::PreserveState;
     };
 
-    if *energy_gain > 0 && *unresolved_debt_terms == 0 && *compounding_debt_count == 0 {
+    if *energy_gain > 0
+        && added_debts.is_empty()
+        && *unresolved_debt_terms == 0
+        && *compounding_debt_count == 0
+    {
         return BossRelicPolicyBandV1::SupportedEnergy;
     }
     if *changed_deck_cards > 0
@@ -612,5 +616,60 @@ mod tests {
             ));
         }
         assert_eq!(decision.prior.entries.len(), 3);
+    }
+
+    #[test]
+    fn typed_energy_debt_is_not_mistaken_for_debt_free_energy() {
+        let session = boss_relic_session(vec![
+            RelicId::BustedCrown,
+            RelicId::Astrolabe,
+            RelicId::RunicPyramid,
+        ]);
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision = exact_boss_relic_policy_decision_v1(&session, &legal)
+            .expect("boss relic decision with reward-width debt");
+        let busted_crown = decision
+            .evidence
+            .iter()
+            .find(|entry| {
+                matches!(
+                    entry.action,
+                    BossRelicPolicyActionV1::Pick {
+                        relic: RelicId::BustedCrown,
+                        ..
+                    }
+                )
+            })
+            .expect("Busted Crown evidence");
+
+        assert!(matches!(
+            busted_crown.action,
+            BossRelicPolicyActionV1::Pick {
+                ref added_debts,
+                ..
+            } if added_debts.contains(&RunDebtContractKindV1::RewardWidthDebt)
+        ));
+        assert_eq!(busted_crown.band, BossRelicPolicyBandV1::ConstrainedEnergy);
+
+        let rank = |relic| {
+            decision
+                .prior
+                .entries
+                .iter()
+                .position(|entry| {
+                    decision.evidence.iter().any(|evidence| {
+                        evidence.candidate_id == entry.candidate_id
+                            && matches!(
+                                evidence.action,
+                                BossRelicPolicyActionV1::Pick { relic: found, .. }
+                                    if found == relic
+                            )
+                    })
+                })
+                .expect("relic remains present in the positive prior")
+        };
+        assert!(rank(RelicId::Astrolabe) < rank(RelicId::BustedCrown));
+        assert!(rank(RelicId::RunicPyramid) < rank(RelicId::BustedCrown));
     }
 }
