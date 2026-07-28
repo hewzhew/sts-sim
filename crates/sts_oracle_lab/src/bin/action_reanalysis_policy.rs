@@ -81,6 +81,7 @@ struct ReanalysisAudit {
     report: Value,
     source: PathBuf,
     contains_budget_unknown: bool,
+    contains_exact_non_win: bool,
     base_exact_win_mass: f64,
     learned_exact_win_mass: f64,
     target_exact_win_mass: f64,
@@ -229,7 +230,10 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
 }
 
 fn promotion_gate_failure_reason(audit: &ReanalysisAudit) -> Option<&'static str> {
-    if audit.learned_target_total_variation > audit.base_target_total_variation + 1.0e-12 {
+    let has_preference_evidence = audit.contains_budget_unknown || audit.contains_exact_non_win;
+    if has_preference_evidence
+        && audit.learned_target_total_variation > audit.base_target_total_variation + 1.0e-12
+    {
         return Some("learned_policy_farther_from_typed_reanalysis_target_than_base");
     }
     if audit.contains_budget_unknown
@@ -393,6 +397,9 @@ fn audit_reanalysis_decision(
     let contains_budget_unknown = evidence
         .iter()
         .any(|evidence| matches!(evidence, CombatActionReanalysisEvidenceV1::BudgetUnknown));
+    let contains_exact_non_win = evidence
+        .iter()
+        .any(|evidence| matches!(evidence, CombatActionReanalysisEvidenceV1::ExactNonWin));
     let report = json!({
         "source": decision.source,
         "candidate_count": decision.candidates.len(),
@@ -421,6 +428,7 @@ fn audit_reanalysis_decision(
         report,
         source: decision.source.clone(),
         contains_budget_unknown,
+        contains_exact_non_win,
         base_exact_win_mass,
         learned_exact_win_mass,
         target_exact_win_mass,
@@ -549,6 +557,7 @@ mod tests {
     #[test]
     fn promotion_gate_requires_each_learned_distribution_to_improve_on_base() {
         let audit = |contains_budget_unknown,
+                     contains_exact_non_win,
                      base_exact_win_mass,
                      learned_exact_win_mass,
                      base_target_total_variation,
@@ -557,6 +566,7 @@ mod tests {
                 report: json!({}),
                 source: PathBuf::from("source.json"),
                 contains_budget_unknown,
+                contains_exact_non_win,
                 base_exact_win_mass,
                 learned_exact_win_mass,
                 target_exact_win_mass: 0.75,
@@ -565,15 +575,20 @@ mod tests {
             }
         };
         assert_eq!(
-            promotion_gate_failure_reason(&audit(true, 0.4, 0.2, 0.3, 0.2)),
+            promotion_gate_failure_reason(&audit(true, false, 0.4, 0.2, 0.3, 0.2)),
             Some("learned_exact_win_mass_below_base_with_budget_unknown")
         );
         assert_eq!(
-            promotion_gate_failure_reason(&audit(false, 1.0, 1.0, 0.0, 0.4)),
+            promotion_gate_failure_reason(&audit(false, false, 1.0, 1.0, 0.0, 0.4)),
+            None,
+            "all exact wins provide no ordering evidence"
+        );
+        assert_eq!(
+            promotion_gate_failure_reason(&audit(false, true, 0.4, 0.6, 0.3, 0.4)),
             Some("learned_policy_farther_from_typed_reanalysis_target_than_base")
         );
         assert_eq!(
-            promotion_gate_failure_reason(&audit(true, 0.4, 0.6, 0.3, 0.2)),
+            promotion_gate_failure_reason(&audit(true, false, 0.4, 0.6, 0.3, 0.2)),
             None
         );
     }
