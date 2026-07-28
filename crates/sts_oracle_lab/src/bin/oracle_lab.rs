@@ -1,6 +1,7 @@
 //! Heavy offline and exact-search command frontend for the dedicated oracle runtime.
 
 mod action_boundary_evidence;
+mod action_boundary_followup;
 mod action_boundary_policy;
 mod action_boundary_root_race;
 mod action_reanalysis_policy;

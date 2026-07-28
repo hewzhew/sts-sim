@@ -9,6 +9,7 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use clap::Args;
 use serde::Serialize;
@@ -20,6 +21,7 @@ use sts_combat_planner::{
 use sts_oracle_runtime::ai::combat_state_key::combat_exact_state_hash_v2;
 use sts_oracle_runtime::eval::combat_action_imitation::concrete_combat_action_candidates_v1;
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_guidance_bundle::combat_value_prototype_policy_v1;
 use sts_oracle_runtime::eval::combat_guidance_bundle::combat_value_prototype_rank_v1;
 use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::{
@@ -28,6 +30,9 @@ use sts_oracle_runtime::sim::combat::{
 use sts_oracle_runtime::sim::combat_action::combat_action_key;
 use sts_oracle_runtime::state::core::{ClientInput, EngineState};
 
+use super::action_boundary_followup::{
+    run_exact_boundary_followup, ExactBoundaryFollowupConfig, ExactBoundaryFollowupReport,
+};
 use super::combat_trace_view::{combat_action_label, readable_turn_option_action_labels};
 use super::guidance_artifact_commands::load_value_prototype;
 
@@ -50,6 +55,15 @@ pub struct ActionBoundaryRootRaceArgs {
     max_structured_alternatives: usize,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
+    /// Number of final shadow candidates given equal exact continuation work.
+    /// Zero disables continuation and leaves a root-only report.
+    #[arg(long, default_value_t = 2)]
+    followup_top: usize,
+    /// Deterministic local-graph generation work per selected boundary.
+    #[arg(long, default_value_t = 20_000)]
+    followup_work: usize,
+    #[arg(long, default_value_t = 32)]
+    followup_max_turn_depth: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -146,13 +160,15 @@ impl PartialOrd for CandidateRankEvidence {
 }
 
 pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
+    let started = Instant::now();
     validate_args(&args)?;
     let loaded = load_combat_case(&args.case)?;
     let root_position = loaded.position;
     if EngineCombatStepper.terminal(&root_position) != CombatTerminal::Unresolved {
         return Err("action-boundary root race requires a non-terminal combat case".to_string());
     }
-    let value_targets = load_value_prototype(&args.value_prototype)?.targets_by_turn();
+    let value_artifact = load_value_prototype(&args.value_prototype)?;
+    let value_targets = value_artifact.targets_by_turn();
     let policy = existing_combat_knowledge_policy_v1();
     let inputs =
         concrete_combat_action_candidates_v1(&root_position, args.max_structured_alternatives);
@@ -266,6 +282,27 @@ pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
         &candidates,
         &observations,
     );
+    let followup_policy =
+        combat_value_prototype_policy_v1(existing_combat_knowledge_policy_v1(), &value_artifact);
+    let mut followups = HashMap::<usize, ExactBoundaryFollowupReport>::new();
+    for index in final_order.iter().copied().take(args.followup_top) {
+        if observations[index].exact_terminal_win_hp.is_some() {
+            continue;
+        }
+        let Some(position) = best_boundary_position(&candidates[index], &value_targets) else {
+            continue;
+        };
+        let report = run_exact_boundary_followup(
+            position,
+            followup_policy.clone(),
+            ExactBoundaryFollowupConfig {
+                generation_work: args.followup_work,
+                max_engine_steps_per_transition: args.max_engine_steps_per_transition,
+                max_turn_depth: args.followup_max_turn_depth,
+            },
+        )?;
+        followups.insert(index, report);
+    }
     let candidate_reports = final_order
         .iter()
         .enumerate()
@@ -286,6 +323,7 @@ pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
                 "deferred_after_round": candidate.deferred_after_round,
                 "disposition": disposition(candidate, observation),
                 "observation": observation,
+                "exact_followup": followups.get(index),
                 "service": candidate.service,
             })
         })
@@ -293,9 +331,13 @@ pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
     let root_exact_state_hash =
         combat_exact_state_hash_v2(&root_position.engine, &root_position.combat);
     Ok(json!({
-        "schema_name": "ActionBoundaryRootRaceReportV1",
-        "schema_version": 1,
-        "authority": "shadow_only_frozen_boundary_value_root_allocation",
+        "schema_name": "ActionBoundaryRootRaceReportV2",
+        "schema_version": 2,
+        "authority": {
+            "candidate_selection": "shadow_only_frozen_boundary_value",
+            "selected_boundary_followup": "exact_replay_authority_under_explicit_work",
+        },
+        "elapsed_ms": started.elapsed().as_millis(),
         "source_case": args.case,
         "value_prototype": args.value_prototype,
         "root_exact_state_hash": root_exact_state_hash,
@@ -311,8 +353,16 @@ pub fn run(args: ActionBoundaryRootRaceArgs) -> Result<Value, String> {
             "selection": "exact_win_then_frozen_boundary_value_then_base_root_prior",
             "survivor_schedule": "ceil_half_without_replacement",
             "generation_policy": "existing_combat_knowledge_only",
+            "boundary_selection_scope": "one_frozen_value_best_next_turn_successor_per_first_action",
+            "followup_scope": "exact_only_for_the_selected_boundary_not_every_observed_boundary",
             "unknown_contract": "deferred_unfinished_candidates_are_not_refutations",
             "max_engine_steps_per_transition": args.max_engine_steps_per_transition,
+            "exact_followup": {
+                "top_candidates": args.followup_top,
+                "generation_work_per_candidate": args.followup_work,
+                "max_turn_depth": args.followup_max_turn_depth,
+                "deadline": "none",
+            },
         },
         "rounds": round_reports,
         "candidates": candidate_reports,
@@ -324,10 +374,58 @@ fn validate_args(args: &ActionBoundaryRootRaceArgs) -> Result<(), String> {
         || args.round_work.iter().any(|work| *work == 0)
         || args.max_structured_alternatives == 0
         || args.max_engine_steps_per_transition == 0
+        || args.followup_work == 0
+        || args.followup_max_turn_depth == 0
     {
         return Err("action-boundary root race budgets must be positive".to_string());
     }
     Ok(())
+}
+
+fn best_boundary_position(
+    candidate: &RaceCandidate,
+    value_targets: &HashMap<u32, Vec<(i32, Vec<i32>)>>,
+) -> Option<CombatPosition> {
+    if candidate
+        .direct_observation
+        .as_ref()
+        .and_then(|observation| observation.best_boundary.as_ref())
+        .is_some()
+    {
+        return candidate.immediate_position.clone();
+    }
+    let generator = candidate.generator.as_ref()?;
+    let option_index = best_boundary_option_index(generator, value_targets)?;
+    Some(
+        generator.completed_options()[option_index]
+            .exact_successor()
+            .clone(),
+    )
+}
+
+fn best_boundary_option_index(
+    generator: &TurnOptionGeneratorSession,
+    value_targets: &HashMap<u32, Vec<(i32, Vec<i32>)>>,
+) -> Option<usize> {
+    let mut best_index = None;
+    let mut best_rank = None;
+    for (index, option) in generator.completed_options().iter().enumerate() {
+        if option.boundary() != CompleteTurnOptionBoundary::NextPlayerTurn {
+            continue;
+        }
+        let position = option.exact_successor();
+        let turn = position.combat.turn.turn_count;
+        let rank = (
+            combat_value_prototype_rank_v1(value_targets, position, turn),
+            position.combat.entities.player.current_hp,
+            Reverse(option.exact_successor_hash().to_string()),
+        );
+        if best_rank.as_ref().is_none_or(|best| rank > *best) {
+            best_rank = Some(rank);
+            best_index = Some(index);
+        }
+    }
+    best_index
 }
 
 fn build_candidate(
