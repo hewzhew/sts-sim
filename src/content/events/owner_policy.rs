@@ -879,11 +879,7 @@ fn masked_bandits_choice(run_state: &RunState) -> EventOwnerOptionSelector {
 
 fn masked_bandits_should_pay(run_state: &RunState) -> bool {
     let danger = run_state.current_hp <= 20 || run_state.current_hp * 100 <= run_state.max_hp * 25;
-    let borderline =
-        run_state.current_hp <= 28 || run_state.current_hp * 100 <= run_state.max_hp * 35;
-    danger
-        || (borderline && !masked_bandits_ready(run_state))
-        || (borderline && run_state.gold <= 80)
+    danger || !masked_bandits_ready(run_state)
 }
 
 fn masked_bandits_ready(run_state: &RunState) -> bool {
@@ -891,11 +887,18 @@ fn masked_bandits_ready(run_state: &RunState) -> bool {
         &run_state.master_deck,
         RunStrategicFacts::from_run_state(run_state),
     );
-    let offense = deficit.frontload_damage != StrategicDeficitLevel::Missing
-        || deficit.aoe_or_minion_control != StrategicDeficitLevel::Missing;
-    offense
-        && (deficit.block_or_mitigation != StrategicDeficitLevel::Missing
-            || has_bandit_swing_potion(run_state))
+    let multi_enemy_offense = deficit.aoe_or_minion_control != StrategicDeficitLevel::Missing;
+    let clean_focus_fire = matches!(
+        deficit.frontload_damage,
+        StrategicDeficitLevel::Adequate | StrategicDeficitLevel::Surplus
+    ) && !deficit.too_many_low_impact_attacks;
+    let sustained_mitigation = matches!(
+        deficit.block_or_mitigation,
+        StrategicDeficitLevel::Adequate | StrategicDeficitLevel::Surplus
+    );
+
+    (multi_enemy_offense || clean_focus_fire)
+        && (sustained_mitigation || has_bandit_swing_potion(run_state))
 }
 
 fn has_bandit_swing_potion(run_state: &RunState) -> bool {
@@ -1544,6 +1547,112 @@ mod tests {
         assert_eq!(
             scrap_ooze_choice(&low_hp),
             EventOwnerOptionSelector::Action(EventActionKind::Leave)
+        );
+    }
+
+    fn masked_bandits_run(deck: &[CardId], current_hp: i32, gold: i32) -> RunState {
+        let mut run_state = event_run(EventId::MaskedBandits, current_hp, 80, gold);
+        run_state.act_num = 2;
+        run_state.floor_num = 19;
+        run_state.master_deck = deck
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, id)| CombatCard::new(id, index as u32))
+            .collect();
+        run_state
+    }
+
+    #[test]
+    fn masked_bandits_pays_when_high_hp_hides_an_unprepared_multi_enemy_deck() {
+        let run_state = masked_bandits_run(
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::Berserk,
+                CardId::WildStrike,
+                CardId::ShrugItOff,
+                CardId::HeavyBlade,
+                CardId::Clothesline,
+                CardId::TwinStrike,
+                CardId::Clash,
+                CardId::Intimidate,
+                CardId::Evolve,
+                CardId::BattleTrance,
+                CardId::Shockwave,
+                CardId::TrueGrit,
+            ],
+            72,
+            292,
+        );
+
+        assert!(!masked_bandits_ready(&run_state));
+        assert_eq!(
+            masked_bandits_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Trade)
+        );
+    }
+
+    #[test]
+    fn masked_bandits_still_fights_with_real_multi_enemy_offense_and_mitigation() {
+        let run_state = masked_bandits_run(
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::Immolate,
+                CardId::Cleave,
+                CardId::FlameBarrier,
+                CardId::ShrugItOff,
+                CardId::Disarm,
+                CardId::Shockwave,
+                CardId::BattleTrance,
+            ],
+            72,
+            292,
+        );
+
+        assert!(masked_bandits_ready(&run_state));
+        assert_eq!(
+            masked_bandits_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Fight)
+        );
+    }
+
+    #[test]
+    fn masked_bandits_does_not_spend_a_dangerously_low_hp_buffer_even_when_ready() {
+        let run_state = masked_bandits_run(
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+                CardId::Immolate,
+                CardId::Cleave,
+                CardId::FlameBarrier,
+                CardId::ShrugItOff,
+                CardId::Disarm,
+                CardId::Shockwave,
+            ],
+            20,
+            292,
+        );
+
+        assert_eq!(
+            masked_bandits_choice(&run_state),
+            EventOwnerOptionSelector::Action(EventActionKind::Trade)
         );
     }
 
