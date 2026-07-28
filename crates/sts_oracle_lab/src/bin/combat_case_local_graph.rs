@@ -146,6 +146,11 @@ pub(super) struct CombatCaseLocalGraphArgs {
     max_potions_used: Option<u32>,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
+    /// Uniform exploration mixed into action-policy weights, in parts per
+    /// million. This is part of search identity and must be explicit when
+    /// comparing this graph with another exact-search host.
+    #[arg(long, default_value_t = 50_000)]
+    uniform_exploration_ppm: u32,
     #[arg(long, default_value_t = 4)]
     generation_quantum_work: usize,
     #[arg(long, default_value_t = 32)]
@@ -212,6 +217,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         max_hp_loss,
         max_potions_used,
         max_engine_steps_per_transition,
+        uniform_exploration_ppm,
         generation_quantum_work,
         max_turn_depth,
         full_health,
@@ -243,6 +249,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         max_selections,
         wall_ms,
         max_engine_steps_per_transition,
+        uniform_exploration_ppm,
         generation_quantum_work,
         max_turn_depth,
         max_potions_used,

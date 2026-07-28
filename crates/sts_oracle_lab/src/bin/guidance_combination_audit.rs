@@ -214,6 +214,7 @@ pub(super) fn run(
         args.max_selections,
         args.wall_ms,
         args.max_engine_steps_per_transition,
+        50_000,
         args.generation_quantum_work,
         args.max_turn_depth,
         args.max_potions_used,

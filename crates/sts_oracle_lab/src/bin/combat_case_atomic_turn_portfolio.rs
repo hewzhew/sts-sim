@@ -336,14 +336,15 @@ pub(super) fn run(args: CombatCaseAtomicTurnPortfolioArgs) -> Result<(), String>
         })
         .collect::<Vec<_>>();
     print_json(&json!({
-        "schema_name": "OracleCombatCaseAtomicTurnPortfolioV6",
-        "schema_version": 6,
+        "schema_name": "OracleCombatCaseAtomicTurnPortfolioV7",
+        "schema_version": 7,
         "case": case_path,
         "runtime": oracle_lab_runtime_identity(),
         "mode": {
             "search": "turn_boundary_atomic_suffix_portfolio",
             "boundary_worker": "exact_multi_guide_turn_generator",
             "boundary_policy": "existing_combat_knowledge_v1",
+            "uniform_exploration_ppm": uniform_exploration_ppm,
             "suffix_action_imitation_artifact": action_imitation_artifact,
             "suffix_search": if policy_discrepancy_suffix {
                 "policy_discrepancy"

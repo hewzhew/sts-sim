@@ -294,7 +294,16 @@ mod tests {
                         false, false, false, false, false,
                     )
                     .expect("fixture execution profile"),
-                    search_spec: LocalGraphSearchSpec::from_controls(240, 80, 15, 7, 3, 9, Some(2)),
+                    search_spec: LocalGraphSearchSpec::from_controls(
+                        240,
+                        80,
+                        15,
+                        7,
+                        50_000,
+                        3,
+                        9,
+                        Some(2),
+                    ),
                     counterfactual: LocalGraphCounterfactual {
                         full_health: false,
                         original_hp: 80,
