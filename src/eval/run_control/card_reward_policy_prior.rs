@@ -3,13 +3,17 @@ use std::collections::BTreeSet;
 
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
 use crate::ai::card_component_signal_v1::{
-    evaluate_card_component_signals_v1, CardComponentSignalContextV1, CardComponentSignalKindV1,
-    CardComponentSignalReportV1,
+    evaluate_card_component_signals_v1, is_concrete_package_support_signal_v1,
+    is_unresolved_package_payoff_debt_signal_v1, CardComponentSignalContextV1,
+    CardComponentSignalKindV1, CardComponentSignalReportV1,
 };
 use crate::ai::card_semantics_v1::{
     card_access_evidence_v1, card_reward_semantic_profile_v1, CardAccessEvidenceV1,
     CardAccessLeverageV1, CardRewardPickDependencyV1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
+};
+use crate::ai::deck_shape_v1::{
+    deck_shape_candidate_delta_v1, deck_shape_profile_v1, DeckShapeProfileV1, DeckShapeRiskV1,
 };
 use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, DeckStartupProfileV1};
 use crate::ai::noncombat_strategy_v1::{
@@ -65,6 +69,12 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
+    /// Exact deck-shape liabilities introduced by this candidate.
+    ///
+    /// This consumes the shared deck-shape model instead of allowing the
+    /// reward owner to rediscover card-specific playability and saturation
+    /// rules through coarse threat thresholds.
+    pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
     /// Support for the route resource required by an upgrade-investment card.
@@ -100,6 +110,7 @@ pub fn exact_card_reward_policy_decision_v1(
     let upgrade_sink_support = strategy.support(StrategyPackageIdV2::UpgradeSink);
     let formation_needs = strategy.formation_summary().needs;
     let startup = deck_startup_profile_v1(&session.run_state);
+    let deck_shape = deck_shape_profile_v1(&session.run_state);
     let block_plan = block_plan_profile_v1(&session.run_state);
     let mut evidence = exact
         .actions
@@ -120,6 +131,7 @@ pub fn exact_card_reward_policy_decision_v1(
                 upgrade_sink_support,
                 &formation_needs,
                 &startup,
+                &deck_shape,
                 &block_plan,
             )
         })
@@ -196,6 +208,7 @@ fn card_reward_action_evidence_v1(
     upgrade_sink_support: StrategyPlanSupportV1,
     formation_needs: &[crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1],
     startup: &DeckStartupProfileV1,
+    deck_shape: &DeckShapeProfileV1,
     block_plan: &BlockPlanProfileV1,
 ) -> Result<CardRewardPolicyActionEvidenceV1, String> {
     let candidate_key = action.candidate_key.clone().ok_or_else(|| {
@@ -260,6 +273,14 @@ fn card_reward_action_evidence_v1(
                         && delta.capability_improvements.is_empty()
                         && delta.resolved_formation_needs.is_empty()))
     );
+    let added_deck_shape_risks = match &acquisition {
+        CardRewardPolicyAcquisitionV1::Card { card, .. } => {
+            deck_shape_candidate_delta_v1(deck_shape, *card).risks
+        }
+        CardRewardPolicyAcquisitionV1::SingingBowl
+        | CardRewardPolicyAcquisitionV1::Skip
+        | CardRewardPolicyAcquisitionV1::OpenReward => Vec::new(),
+    };
     let improves_threat_relevant_capability = !threat_relevant_capability_improvements_v1(
         &decision.before.threats,
         &decision.before.threat_coverage,
@@ -283,6 +304,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_conflict_or_redundancy,
+        !added_deck_shape_risks.is_empty(),
         improves_threat_relevant_capability,
         amplifies_existing_answers,
     );
@@ -298,6 +320,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_conflict_or_redundancy,
+        added_deck_shape_risks,
         improves_threat_relevant_capability,
         amplifies_existing_answers,
         upgrade_investment_support,
@@ -374,6 +397,7 @@ fn card_reward_band_v1(
     status_burden: bool,
     duplicate_low_marginal: bool,
     access_conflict_or_redundancy: bool,
+    introduces_deck_shape_risk: bool,
     improves_threat_relevant_capability: bool,
     amplifies_existing_answers: bool,
 ) -> CardRewardPolicyBandV1 {
@@ -386,11 +410,20 @@ fn card_reward_band_v1(
         }
         CardRewardPolicyAcquisitionV1::SingingBowl => CardRewardPolicyBandV1::PreserveDeckQuality,
         CardRewardPolicyAcquisitionV1::Skip => CardRewardPolicyBandV1::PreserveDeckQuality,
-        CardRewardPolicyAcquisitionV1::Card { semantics, .. } => {
+        CardRewardPolicyAcquisitionV1::Card {
+            semantics,
+            component_signals,
+            ..
+        } => {
             if status_burden
                 || unsupported
                 || duplicate_low_marginal
                 || access_conflict_or_redundancy
+                || introduces_deck_shape_risk
+                || component_signals
+                    .debt_signals
+                    .iter()
+                    .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
             {
                 CardRewardPolicyBandV1::Liability
             } else if !delta.closed_threat_gaps.is_empty() {
@@ -401,6 +434,10 @@ fn card_reward_band_v1(
                 CardRewardPolicyBandV1::ImproveRequiredCapability
             } else if !delta.resolved_formation_needs.is_empty()
                 || !delta.added_formation_strengths.is_empty()
+                || component_signals
+                    .positive_signals
+                    .iter()
+                    .any(|signal| is_concrete_package_support_signal_v1(*signal))
                 || semantics
                     .roles
                     .iter()
@@ -800,6 +837,189 @@ mod tests {
                 key,
                 DecisionCandidateKey::CardRewardSkip { .. }
             ))
+        );
+    }
+
+    #[test]
+    fn seed006_f8_clash_debt_does_not_masquerade_as_new_frontload() {
+        let mut session = reward_session(&[
+            (CardId::Clash, 0),
+            (CardId::Feed, 0),
+            (CardId::PommelStrike, 0),
+        ]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 8;
+        session.run_state.boss_key = Some(EncounterId::TheGuardian);
+        session.run_state.current_hp = 72;
+        session.run_state.max_hp = 80;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Berserk, 0),
+            (CardId::WildStrike, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::HeavyBlade, 0),
+            (CardId::Clothesline, 0),
+            (CardId::TwinStrike, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let clash = card_evidence(&decision, CardId::Clash);
+        assert!(clash
+            .added_deck_shape_risks
+            .iter()
+            .any(|risk| matches!(risk, DeckShapeRiskV1::ClashPlayabilityDebt { .. })));
+        assert_eq!(clash.band, CardRewardPolicyBandV1::Liability);
+        for better in [CardId::Feed, CardId::PommelStrike] {
+            assert!(
+                position(&decision, |key| matches!(
+                    key,
+                    DecisionCandidateKey::CardRewardPick { card, .. } if *card == better
+                )) < position(&decision, |key| matches!(
+                    key,
+                    DecisionCandidateKey::CardRewardPick {
+                        card: CardId::Clash,
+                        ..
+                    }
+                )),
+                "{better:?} should precede the newly unplayable Clash; evidence={:#?}",
+                decision.evidence
+            );
+        }
+    }
+
+    #[test]
+    fn clash_without_deck_shape_debt_is_not_rejected_by_the_shared_gate() {
+        let session = reward_session(&[(CardId::Clash, 0)]);
+        let decision = decision(&session);
+        let clash = card_evidence(&decision, CardId::Clash);
+        assert!(clash.added_deck_shape_risks.is_empty());
+        assert_ne!(clash.band, CardRewardPolicyBandV1::Liability);
+    }
+
+    #[test]
+    fn supported_exhaust_payoff_precedes_skip_before_awakened_one() {
+        let mut session = reward_session(&[
+            (CardId::ThunderClap, 0),
+            (CardId::FeelNoPain, 1),
+            (CardId::Evolve, 1),
+        ]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 42;
+        session.run_state.boss_key = Some(EncounterId::AwakenedOne);
+        session.run_state.current_hp = 87;
+        session.run_state.max_hp = 87;
+        session.run_state.master_deck = [
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::WildStrike, 0),
+            (CardId::ShrugItOff, 1),
+            (CardId::HeavyBlade, 0),
+            (CardId::Clothesline, 0),
+            (CardId::TwinStrike, 0),
+            (CardId::Feed, 0),
+            (CardId::Intimidate, 0),
+            (CardId::Evolve, 1),
+            (CardId::BattleTrance, 0),
+            (CardId::Shockwave, 0),
+            (CardId::Barricade, 1),
+            (CardId::FiendFire, 1),
+            (CardId::IronWave, 1),
+            (CardId::Disarm, 0),
+            (CardId::SwordBoomerang, 1),
+            (CardId::PommelStrike, 0),
+            (CardId::Immolate, 1),
+            (CardId::Cleave, 0),
+            (CardId::Inflame, 1),
+            (CardId::BodySlam, 0),
+            (CardId::SecondWind, 1),
+            (CardId::Sentinel, 1),
+            (CardId::DarkEmbrace, 1),
+            (CardId::Carnage, 0),
+            (CardId::Bloodletting, 1),
+            (CardId::FireBreathing, 1),
+            (CardId::Whirlwind, 1),
+            (CardId::Parasite, 0),
+            (CardId::ThunderClap, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let fnp = card_evidence(&decision, CardId::FeelNoPain);
+        assert!(matches!(
+            &fnp.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .positive_signals
+                .contains(&CardComponentSignalKindV1::ExhaustPayoffSupported)
+        ));
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::FeelNoPain,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "supported exhaust payoff should precede skip; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn unsupported_exhaust_payoff_does_not_receive_shared_asset_status() {
+        let session = reward_session(&[(CardId::FeelNoPain, 0)]);
+        let decision = decision(&session);
+        let fnp = card_evidence(&decision, CardId::FeelNoPain);
+        assert!(matches!(
+            &fnp.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .debt_signals
+                .contains(&CardComponentSignalKindV1::ExhaustPayoffUnsupported)
+        ));
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::FeelNoPain,
+                    ..
+                }
+            )),
+            "unsupported exhaust payoff must not be promoted above skip; evidence={:#?}",
+            decision.evidence
         );
     }
 

@@ -222,7 +222,7 @@ fn add_unresolved_package_payoff_debts(
     if report
         .positive_signals
         .iter()
-        .any(|component| package_payoff_support_signal(*component))
+        .any(|component| is_package_payoff_support_signal_v1(*component))
     {
         return;
     }
@@ -232,7 +232,7 @@ fn add_unresolved_package_payoff_debts(
     );
 }
 
-fn package_payoff_support_signal(signal: CardComponentSignalKindV1) -> bool {
+fn is_package_payoff_support_signal_v1(signal: CardComponentSignalKindV1) -> bool {
     matches!(
         signal,
         CardComponentSignalKindV1::FormationNeedCoverage
@@ -243,6 +243,35 @@ fn package_payoff_support_signal(signal: CardComponentSignalKindV1) -> bool {
             | CardComponentSignalKindV1::SelfDamagePayoffSupported
             | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
             | CardComponentSignalKindV1::StrengthPayoffSupported
+    )
+}
+
+/// Concrete evidence that a candidate's package role already has usable support.
+///
+/// `FormationNeedCoverage` is deliberately excluded: it describes a broad deck
+/// need, not proof that this particular payoff has its required enabler.
+pub fn is_concrete_package_support_signal_v1(signal: CardComponentSignalKindV1) -> bool {
+    matches!(
+        signal,
+        CardComponentSignalKindV1::ExhaustPayoffSupported
+            | CardComponentSignalKindV1::BlockPayoffSupported
+            | CardComponentSignalKindV1::ExhaustEngineEnabler
+            | CardComponentSignalKindV1::FnpEngineUnlock
+            | CardComponentSignalKindV1::SelfDamagePayoffSupported
+            | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
+            | CardComponentSignalKindV1::StrengthPayoffSupported
+    )
+}
+
+pub fn is_unresolved_package_payoff_debt_signal_v1(signal: CardComponentSignalKindV1) -> bool {
+    matches!(
+        signal,
+        CardComponentSignalKindV1::PayoffWithoutVisibleGapFill
+            | CardComponentSignalKindV1::ExhaustPayoffUnsupported
+            | CardComponentSignalKindV1::BlockPayoffUnsupported
+            | CardComponentSignalKindV1::SelfDamagePayoffUnsupported
+            | CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator
+            | CardComponentSignalKindV1::StrengthPayoffUnsupported
     )
 }
 
