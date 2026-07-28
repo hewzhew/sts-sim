@@ -1,4 +1,3 @@
-
 use crate::ai::combat_search_v2::{
     CombatSearchV2ActionAccessMechanicsFacts, CombatSearchV2ActionCardFacts,
     CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
