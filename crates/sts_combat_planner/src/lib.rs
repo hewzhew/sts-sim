@@ -7,27 +7,18 @@
 //! The crate boundary also keeps planner iteration out of the core unit-test
 //! harness; production integration belongs to the control layer.
 
-mod agenda;
 mod atomic_levin_search;
 mod atomic_turn_portfolio;
-mod decision;
 mod depth_beam_turn;
-mod evidence;
 mod generator;
 mod local_turn_graph_search;
 mod policy;
 mod policy_discrepancy_search;
-mod prospect;
 mod replay;
 mod selection_transaction;
 mod types;
 mod witness_search;
 
-pub use agenda::{
-    CombatPlannerAgendaBudget, CombatPlannerAgendaConfig, CombatPlannerAgendaCounters,
-    CombatPlannerAgendaInterruption, CombatPlannerAgendaQuantum, CombatPlannerAgendaReport,
-    CombatPlannerAgendaSession, CombatPlannerAgendaStatus,
-};
 pub use atomic_levin_search::{
     replay_atomic_actions, AtomicLevinRerooting, AtomicLevinSearchHorizon, AtomicLevinTurnBoundary,
     AtomicLevinWitness, AtomicLevinWitnessConfig, AtomicLevinWitnessCounters,
@@ -40,21 +31,12 @@ pub use atomic_turn_portfolio::{
     AtomicTurnPortfolioReport, AtomicTurnPortfolioSession, AtomicTurnPortfolioStatus,
     AtomicTurnPortfolioTaskKind,
 };
-pub use decision::{
-    decide_combat_option, CombatEvaluationContext, CombatPlannerDecision,
-    CombatPlannerDecisionBasis, CombatPlannerDecisionDeferral, CombatPlannerDecisionGap,
-    CombatPlannerDecisionResult, ProspectEvidenceGap,
-};
 pub use depth_beam_turn::{
     generate_depth_beam_turn_options, search_depth_beam_agenda_witness, DepthBeamAgendaBudget,
     DepthBeamAgendaConfig, DepthBeamAgendaCounters, DepthBeamAgendaInterruption,
     DepthBeamAgendaReport, DepthBeamAgendaStatus, DepthBeamAgendaWitness, DepthBeamTurnBudget,
     DepthBeamTurnConfig, DepthBeamTurnCounters, DepthBeamTurnInterruption,
     DepthBeamTurnLayerReport, DepthBeamTurnReport, DepthBeamTurnStatus,
-};
-pub use evidence::{
-    BoundaryWitnessEvidence, ContinuationEvidence, ContinuationInterruption, ExactHorizonEvidence,
-    ExactHorizonGenerationGapEvidence, OptionProspect, OptionProspectId,
 };
 pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,
@@ -80,10 +62,6 @@ pub use policy_discrepancy_search::{
     PolicyDiscrepancyQuantum, PolicyDiscrepancyReport, PolicyDiscrepancySession,
     PolicyDiscrepancyStateDiagnostic, PolicyDiscrepancyStatus, PolicyDiscrepancyTrajectoryAudit,
     PolicyDiscrepancyTrajectoryDeviation, PolicyDiscrepancyTurnMacroConfig,
-};
-pub use prospect::{
-    ExactCombatZoneCounts, ExactCountChange, ExactI32Change, ExactImmediateOptionProspect,
-    ExactProspectError,
 };
 pub use replay::{
     replay_turn_option, ReplayError, ReplayFailure, ReplayLimits, VerifiedTurnOptionReplay,

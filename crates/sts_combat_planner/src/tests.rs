@@ -1851,16 +1851,11 @@ fn real_engine_preserves_targeted_potion_inside_an_exact_option() {
     )
     .unwrap();
     assert_eq!(replay.position, *option.exact_successor());
-    let prospect = ExactImmediateOptionProspect::from_option(&root, option).unwrap();
-    assert_eq!(prospect.changed_potion_slots, 1);
-    assert_eq!(
-        prospect.occupied_potion_slots,
-        ExactCountChange {
-            before: 1,
-            after: 0
-        }
+    assert!(option.exact_successor().combat.entities.potions[0].is_none());
+    assert!(
+        option.exact_successor().combat.entities.monsters[0].current_hp
+            < root.position().combat.entities.monsters[0].current_hp
     );
-    assert!(prospect.total_enemy_hp.delta() < 0);
 }
 
 #[test]
@@ -2902,6 +2897,3 @@ fn policy_discrepancy_turn_macro_waits_for_its_full_budget_across_quanta() {
         report.status, report.after, report.frontier_entries
     );
 }
-
-mod agenda;
-mod decision;
