@@ -126,12 +126,6 @@ impl CombatActionPolicy for PreferSelection22Policy {
     }
 }
 
-#[derive(Clone)]
-struct SplitGuidePolicy {
-    boundary_calls: Arc<AtomicI32>,
-    generation_calls: Arc<AtomicI32>,
-}
-
 #[derive(Clone, Copy)]
 struct SharedGuidePolicy;
 
@@ -158,44 +152,6 @@ impl CombatActionPolicy for SharedGuidePolicy {
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
         self.state_guides(position)
     }
-}
-
-impl CombatActionPolicy for SplitGuidePolicy {
-    fn weights(&self, _position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
-        vec![1.0; choices.len()]
-    }
-
-    fn state_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
-        self.boundary_calls.fetch_add(1, Ordering::Relaxed);
-        vec![CombatStateGuide::new(CombatGuideLaneId::new(1), vec![1])]
-    }
-
-    fn turn_generation_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
-        self.generation_calls.fetch_add(1, Ordering::Relaxed);
-        vec![CombatStateGuide::new(CombatGuideLaneId::new(2), vec![2])]
-    }
-}
-
-#[test]
-fn witness_search_keeps_boundary_and_turn_generation_guides_separate() {
-    let boundary_calls = Arc::new(AtomicI32::new(0));
-    let generation_calls = Arc::new(AtomicI32::new(0));
-    let policy = Arc::new(SplitGuidePolicy {
-        boundary_calls: boundary_calls.clone(),
-        generation_calls: generation_calls.clone(),
-    });
-
-    let _session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig::default(),
-        policy.clone(),
-    );
-
-    assert_eq!(boundary_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(generation_calls.load(Ordering::Relaxed), 1);
-    let generator = TurnOptionGeneratorSession::with_policy(root(), config(), policy);
-    assert!(!generator.has_guide_lane(CombatGuideLaneId::new(1)));
-    assert!(generator.has_guide_lane(CombatGuideLaneId::new(2)));
 }
 
 #[derive(Clone)]
@@ -272,13 +228,6 @@ impl TinyTurnStepper {
     fn lethal_after_current_turn() -> Self {
         Self {
             lethal_from_turn: Some(2),
-            ..Self::plain()
-        }
-    }
-
-    fn losing() -> Self {
-        Self {
-            terminal_loss: true,
             ..Self::plain()
         }
     }
@@ -764,7 +713,7 @@ fn shared_guide_publishes_and_services_the_best_partial_expansion() {
 
     assert_eq!(
         generator
-            .best_retained_guide_promise(SHARED_TEST_GUIDE)
+            .best_retained_guide_promise_snapshot(SHARED_TEST_GUIDE)
             .expect("root guide promise")
             .rank,
         CombatStateGuideRank::new(vec![0])
@@ -776,7 +725,7 @@ fn shared_guide_publishes_and_services_the_best_partial_expansion() {
 
     assert_eq!(
         generator
-            .best_retained_guide_promise(SHARED_TEST_GUIDE)
+            .best_retained_guide_promise_snapshot(SHARED_TEST_GUIDE)
             .expect("partial-state guide promise")
             .rank,
         CombatStateGuideRank::new(vec![1]),
@@ -839,118 +788,6 @@ fn generator_publishes_a_reached_turn_boundary_without_rescheduling_it() {
         session.completed_options()[0].actions()[0].input,
         ClientInput::EndTurn
     );
-}
-
-#[test]
-fn oracle_witness_search_crosses_turns_and_exactly_replays_first_win() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 1,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1_000, 1_000, 4_000),
-    );
-
-    assert_eq!(report.status, OracleCombatWitnessStatus::WitnessFound);
-    let witness = report.witness.expect("verified witness");
-    assert_eq!(
-        witness.discovery_source,
-        OracleCombatWitnessDiscoverySource::PlannerSearch
-    );
-    assert_eq!(witness.actions.first().unwrap().input, ClientInput::EndTurn);
-    assert_eq!(witness.actions.last().unwrap().input, PLAY);
-    assert_eq!(
-        stepper.terminal(&witness.final_position),
-        CombatTerminal::Win
-    );
-    assert!(witness.replay_engine_steps > 0);
-}
-
-#[test]
-fn policy_witness_proposal_only_becomes_a_witness_after_exact_root_replay() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let decision_root = root();
-    let proposal = CombatPolicyWitnessProposal {
-        actions: exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]),
-        final_hp_hint: decision_root.position().combat.entities.player.current_hp,
-    };
-    let mut session = OracleCombatWitnessSession::new(
-        decision_root,
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 1,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-        },
-    );
-    assert!(session.offer_witness_proposal(proposal));
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(8, 8, 32),
-    );
-
-    assert_eq!(report.status, OracleCombatWitnessStatus::WitnessFound);
-    assert_eq!(report.after.policy_witness_proposals, 1);
-    assert_eq!(report.after.generation_work, 0);
-    assert_eq!(
-        report.after.exact_states, 2,
-        "the verified next-turn boundary from an advisor line joins the canonical graph"
-    );
-    let witness = report
-        .witness
-        .expect("proposal must be replayed into a witness");
-    assert_eq!(
-        witness.discovery_source,
-        OracleCombatWitnessDiscoverySource::PolicyProposal
-    );
-    assert_eq!(witness.actions.len(), 2);
-    assert_eq!(
-        stepper.terminal(&witness.final_position),
-        CombatTerminal::Win
-    );
-    assert!(witness.replay_engine_steps >= 2);
-}
-
-#[test]
-fn policy_witness_proposal_with_a_false_successor_is_rejected() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let decision_root = root();
-    let mut actions = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn, PLAY]);
-    actions[0].expected_successor_hash = "forged-successor".into();
-    let proposal = CombatPolicyWitnessProposal {
-        actions,
-        final_hp_hint: decision_root.position().combat.entities.player.current_hp,
-    };
-    let mut session = OracleCombatWitnessSession::new(
-        decision_root,
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 1,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-        },
-    );
-    assert!(session.offer_witness_proposal(proposal));
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(8, 8, 32),
-    );
-
-    assert_eq!(
-        report.status,
-        OracleCombatWitnessStatus::ReplayMismatch(
-            OracleCombatWitnessReplayError::SuccessorMismatch { action_index: 0 }
-        )
-    );
-    assert!(report.witness.is_none());
 }
 
 #[test]
@@ -1327,294 +1164,6 @@ fn local_turn_graph_plan_annotations_leave_unowned_encounters_empty() {
     assert!(session.plan_transition_edge_snapshots().is_empty());
 }
 
-#[test]
-fn witness_generation_batch_reserves_engine_allowance_for_the_whole_batch() {
-    let stepper = TinyTurnStepper::plain();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1, 4, 16),
-    );
-
-    assert_eq!(report.after.agenda_pops, 1);
-    assert_eq!(report.after.generation_work, 4);
-    assert!(
-        report.after.applied_action_transitions >= 2,
-        "one agenda pop must be able to execute more than one exact transition when its generation batch requests it"
-    );
-}
-
-#[test]
-fn verified_witness_survives_a_serialized_search_restart() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let config = OracleCombatWitnessConfig {
-        generator: config(),
-        generation_work_per_agenda_pop: 1,
-        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-    };
-    let mut original =
-        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
-    let report = original.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1_000, 1_000, 4_000),
-    );
-    let witness = report.witness.expect("verified witness");
-    let encoded = serde_json::to_vec(&witness).expect("serialize witness");
-    let decoded: OracleCombatWitness =
-        serde_json::from_slice(&encoded).expect("deserialize witness");
-
-    let mut restarted =
-        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
-    restarted
-        .restore_verified_witness(decoded)
-        .expect("restore verified witness");
-
-    let restored = restarted.witness().expect("restored incumbent");
-    assert_eq!(restored.actions, witness.actions);
-    assert_eq!(restored.final_position, witness.final_position);
-    assert_eq!(restored.negative_log_policy, witness.negative_log_policy);
-}
-
-#[test]
-fn smoke_bomb_escape_cannot_be_restored_as_a_victory_witness() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let config = OracleCombatWitnessConfig {
-        generator: config(),
-        generation_work_per_agenda_pop: 1,
-        satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-    };
-    let mut source =
-        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
-    let report = source.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1_000, 1_000, 4_000),
-    );
-    let mut escaped = report.witness.expect("verified witness");
-    escaped.final_position.combat.runtime.combat_smoked = true;
-
-    let mut restarted =
-        OracleCombatWitnessSession::with_policy(root(), config, Arc::new(PreferPlayPolicy));
-    let error = restarted
-        .restore_verified_witness(escaped)
-        .expect_err("escape is not victory");
-
-    assert!(error.contains("Smoke Bomb escape"));
-    assert!(restarted.witness().is_none());
-}
-
-#[test]
-fn oracle_witness_search_retains_work_across_split_quanta() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let make_session = || {
-        OracleCombatWitnessSession::with_policy(
-            root(),
-            OracleCombatWitnessConfig {
-                generator: config(),
-                generation_work_per_agenda_pop: 1,
-                satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-            },
-            Arc::new(PreferPlayPolicy),
-        )
-    };
-    let mut one_shot = make_session();
-    let one_shot_report = one_shot.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1_000, 1_000, 4_000),
-    );
-
-    let mut split = make_session();
-    let first = split.advance(&stepper, OracleCombatWitnessQuantum::deterministic(2, 2, 8));
-    assert!(matches!(
-        first.status,
-        OracleCombatWitnessStatus::Partial(_)
-    ));
-    assert!(first.retained_state_work > 0);
-    let split_report = split.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(998, 998, 3_992),
-    );
-
-    assert_eq!(
-        one_shot_report.status,
-        OracleCombatWitnessStatus::WitnessFound
-    );
-    assert_eq!(split_report.status, OracleCombatWitnessStatus::WitnessFound);
-    assert_eq!(
-        one_shot_report
-            .witness
-            .unwrap()
-            .actions
-            .into_iter()
-            .map(|action| action.input)
-            .collect::<Vec<_>>(),
-        split_report
-            .witness
-            .unwrap()
-            .actions
-            .into_iter()
-            .map(|action| action.input)
-            .collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn witness_membership_distinguishes_generated_and_accepted_from_retained_work() {
-    let stepper = TinyTurnStepper::plain();
-    let decision_root = root();
-    let target_hash = exact_actions(&stepper, &decision_root, [ClientInput::EndTurn])[0]
-        .expected_successor_hash
-        .as_str()
-        .to_owned();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        decision_root,
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-
-    session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(1_024, 1_024, 4_096),
-    );
-    let membership = session.state_membership_by_exact_hash(&target_hash);
-    let compact = session.compact_state_membership_by_exact_hash(&target_hash);
-    let mut bulk = session.compact_state_memberships_by_exact_hashes([target_hash.as_str()]);
-    let bulk = bulk.remove(&target_hash).expect("requested membership");
-
-    assert!(membership.generated);
-    assert!(membership.accepted);
-    assert_eq!(membership.retained, membership.progress.is_some());
-    assert_eq!(compact.generated, membership.generated);
-    assert_eq!(compact.accepted, membership.accepted);
-    assert_eq!(compact.retained, membership.retained);
-    assert_eq!(bulk, compact);
-    if let Some(progress) = compact.progress {
-        assert_eq!(progress.anchor_states_ahead, None);
-        assert_eq!(progress.guided_states_ahead, None);
-    }
-}
-
-#[test]
-fn root_action_families_attribute_generation_and_downstream_service() {
-    let stepper = TinyTurnStepper::plain();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(UniformCombatActionPolicy),
-    );
-
-    session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(256, 256, 1_024),
-    );
-    let families = session.root_action_families();
-    let play = families
-        .iter()
-        .find(|family| family.first_action == PLAY)
-        .expect("play-rooted family");
-    let end_turn = families
-        .iter()
-        .find(|family| family.first_action == ClientInput::EndTurn)
-        .expect("end-turn-rooted family");
-
-    assert!(play.completed_root_turn_options > 0);
-    assert!(play.unique_root_successors > 0);
-    assert!(play.accepted_root_successors > 0);
-    assert!(end_turn.completed_root_turn_options > 0);
-    assert!(families.iter().any(|family| {
-        family.retained_descendants > 0 && family.descendant_generation_work > 0
-    }));
-    assert!(families.iter().all(|family| {
-        family.retained_descendants <= family.accepted_descendants
-            && family.retained_root_successors <= family.accepted_root_successors
-    }));
-}
-
-#[test]
-fn budget_satisfaction_retains_a_verified_incumbent_without_stopping_on_it() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 1,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(UniformCombatActionPolicy),
-    );
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(100, 100, 400),
-    );
-
-    assert!(matches!(
-        report.status,
-        OracleCombatWitnessStatus::Partial(_)
-    ));
-    assert!(
-        report.witness.is_some(),
-        "a verified incumbent must survive"
-    );
-    assert!(
-        report.retained_state_work > 0,
-        "quality search must continue"
-    );
-}
-
-#[test]
-fn verified_first_witness_can_be_reopened_for_quality_search() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 1,
-            satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
-        },
-        Arc::new(UniformCombatActionPolicy),
-    );
-
-    let first = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(100, 100, 400),
-    );
-    assert_eq!(first.status, OracleCombatWitnessStatus::WitnessFound);
-    let first_work = first.after.generation_work;
-
-    session.set_satisfaction(OracleCombatWitnessSatisfaction::BudgetOrExhaustion);
-    let resumed = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(100, 100, 400),
-    );
-
-    assert!(matches!(
-        resumed.status,
-        OracleCombatWitnessStatus::Partial(_)
-    ));
-    assert!(resumed.witness.is_some());
-    assert!(
-        resumed.after.generation_work > first_work,
-        "reopened quality search must perform new work"
-    );
-}
-
 fn finish(
     session: &mut TurnOptionGeneratorSession,
     stepper: &TinyTurnStepper,
@@ -1936,66 +1485,6 @@ fn finite_potion_generator_limit_prunes_over_budget_prefixes() {
         potion_expenditures.iter().all(|count| *count <= 1),
         "the generator must not spend work completing over-budget turn lines"
     );
-}
-
-#[test]
-fn witness_search_records_only_gap_free_exhaustive_one_turn_loss() {
-    let stepper = TinyTurnStepper::losing();
-    let expected_hash = root().exact_state_hash().to_owned();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-    session.set_one_turn_loss_evidence_limit(1);
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(32, 128, 512),
-    );
-
-    assert_eq!(report.after.exhaustive_one_turn_losses, 1);
-    let evidence = session.one_turn_loss_evidence();
-    assert_eq!(evidence.len(), 1);
-    assert_eq!(evidence[0].exact_state_hash, expected_hash);
-    assert!(evidence[0].actions.is_empty());
-    assert!(evidence[0].terminal_loss_turn_options > 0);
-}
-
-#[test]
-fn witness_search_records_exact_one_turn_viability_witness() {
-    let stepper = TinyTurnStepper::plain();
-    let expected_hash = root().exact_state_hash().to_owned();
-    let mut session = OracleCombatWitnessSession::with_policy(
-        root(),
-        OracleCombatWitnessConfig {
-            generator: config(),
-            generation_work_per_agenda_pop: 4,
-            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
-        },
-        Arc::new(PreferPlayPolicy),
-    );
-    session.set_one_turn_viability_evidence_limit(1);
-
-    let report = session.advance(
-        &stepper,
-        OracleCombatWitnessQuantum::deterministic(16, 64, 256),
-    );
-
-    assert!(report.after.exact_one_turn_viable_states >= 1);
-    let evidence = session.one_turn_viability_evidence();
-    assert_eq!(evidence.len(), 1);
-    assert_eq!(evidence[0].exact_state_hash, expected_hash);
-    assert!(evidence[0].actions.is_empty());
-    assert_eq!(
-        evidence[0].witness_boundary,
-        CompleteTurnOptionBoundary::NextPlayerTurn
-    );
-    assert!(!evidence[0].witness_turn_actions.is_empty());
 }
 
 #[test]

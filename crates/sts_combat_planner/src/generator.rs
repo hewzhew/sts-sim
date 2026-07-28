@@ -331,7 +331,6 @@ struct GuidedGeneratorFrontier {
 pub(crate) struct RetainedGuidePromise {
     pub(crate) rank: CombatStateGuideRank,
     pub(crate) atomic_depth: usize,
-    pub(crate) negative_log_policy: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -861,21 +860,6 @@ impl TurnOptionGeneratorSession {
         self.live_work_items == 0
     }
 
-    pub(crate) fn best_retained_path_bound(&mut self) -> Option<(usize, f64)> {
-        while let Some(entry) = self.anchor_frontier.peek() {
-            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
-                break;
-            }
-            self.anchor_frontier.pop();
-        }
-        self.anchor_frontier.peek().map(|entry| {
-            (
-                entry.priority.atomic_depth,
-                entry.priority.negative_log_policy,
-            )
-        })
-    }
-
     pub(crate) fn best_retained_path_bound_snapshot(&self) -> Option<(usize, f64)> {
         let anchor = self
             .anchor_frontier
@@ -901,31 +885,6 @@ impl TurnOptionGeneratorSession {
         anchor
     }
 
-    pub(crate) fn has_guide_lane(&self, lane: CombatGuideLaneId) -> bool {
-        self.guided_frontiers
-            .iter()
-            .any(|frontier| frontier.lane == lane)
-    }
-
-    /// The best still-live partial expansion for one semantically identical
-    /// guide lane.  This is the partial-expansion promise published to the
-    /// outer search; it is not a terminal estimate and changes no legality.
-    pub(crate) fn best_retained_guide_promise(
-        &mut self,
-        lane: CombatGuideLaneId,
-    ) -> Option<RetainedGuidePromise> {
-        let frontier_index = self.guide_frontier_index(lane)?;
-        self.peek_guided_work_id(frontier_index)?;
-        self.guided_frontiers[frontier_index]
-            .entries
-            .peek()
-            .map(|entry| RetainedGuidePromise {
-                rank: entry.guide_rank.clone(),
-                atomic_depth: entry.anchor_priority.atomic_depth,
-                negative_log_policy: entry.anchor_priority.negative_log_policy,
-            })
-    }
-
     pub(crate) fn best_retained_guide_promise_snapshot(
         &self,
         lane: CombatGuideLaneId,
@@ -940,7 +899,6 @@ impl TurnOptionGeneratorSession {
             .map(|entry| RetainedGuidePromise {
                 rank: entry.guide_rank.clone(),
                 atomic_depth: entry.anchor_priority.atomic_depth,
-                negative_log_policy: entry.anchor_priority.negative_log_policy,
             })
     }
 
@@ -951,21 +909,6 @@ impl TurnOptionGeneratorSession {
                 .guide_frontier_index(lane)
                 .map_or(0, |frontier_index| frontier_index.saturating_add(1)),
         };
-    }
-
-    pub(crate) fn release_unused_grant(&mut self) -> CombatPlanningCounters {
-        let released = CombatPlanningCounters {
-            generation_work: self
-                .granted
-                .generation_work
-                .saturating_sub(self.used.generation_work),
-            engine_steps: self
-                .granted
-                .engine_steps
-                .saturating_sub(self.used.engine_steps),
-        };
-        self.granted = self.used;
-        released
     }
 
     pub fn advance(

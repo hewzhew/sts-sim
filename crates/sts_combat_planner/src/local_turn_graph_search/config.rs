@@ -1,5 +1,5 @@
 use crate::types::TurnOptionGeneratorConfig;
-use crate::witness_search::OracleCombatWitnessSatisfaction;
+use crate::witness::OracleCombatWitnessSatisfaction;
 
 /// Resumable search over a shared graph of exact player-turn boundaries.
 ///

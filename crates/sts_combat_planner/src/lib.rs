@@ -16,7 +16,7 @@ mod policy_discrepancy_search;
 mod replay;
 mod selection_transaction;
 mod types;
-mod witness_search;
+mod witness;
 
 pub use atomic_witness::ExactAtomicWitness;
 pub use depth_beam_turn::{
@@ -61,16 +61,11 @@ pub use types::{
     TurnOptionGenerationGapKind, TurnOptionGenerationReport, TurnOptionGenerationStatus,
     TurnOptionGeneratorConfig,
 };
-pub use witness_search::{
+pub use witness::{
     OracleCombatDeepStateSnapshot, OracleCombatGuideQueueSnapshot, OracleCombatGuideRankSnapshot,
-    OracleCombatOneTurnLossEvidence, OracleCombatOneTurnViabilityEvidence,
-    OracleCombatRootActionFamilySnapshot, OracleCombatWitness, OracleCombatWitnessConfig,
-    OracleCombatWitnessCounters, OracleCombatWitnessDiscoverySource,
-    OracleCombatWitnessInterruption, OracleCombatWitnessProgressSnapshot,
-    OracleCombatWitnessQuantum, OracleCombatWitnessReplayError, OracleCombatWitnessReport,
-    OracleCombatWitnessSatisfaction, OracleCombatWitnessSession,
-    OracleCombatWitnessStateMembershipSnapshot, OracleCombatWitnessStateProgressSnapshot,
-    OracleCombatWitnessStatus,
+    OracleCombatWitness, OracleCombatWitnessDiscoverySource, OracleCombatWitnessProgressSnapshot,
+    OracleCombatWitnessReplayError, OracleCombatWitnessSatisfaction,
+    OracleCombatWitnessStateProgressSnapshot,
 };
 
 #[cfg(test)]

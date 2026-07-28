@@ -5,7 +5,7 @@ use sts_combat_strategy::{CombatPlanProjectionV1, CombatPlanTransitionAnnotation
 use sts_core::state::core::ClientInput;
 
 use crate::types::{TurnOptionAction, TurnOptionGenerationGap};
-use crate::witness_search::{OracleCombatWitness, OracleCombatWitnessReplayError};
+use crate::witness::{OracleCombatWitness, OracleCombatWitnessReplayError};
 
 #[derive(Clone, Copy, Debug)]
 pub struct LocalTurnGraphWitnessQuantum {

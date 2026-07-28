@@ -40,7 +40,7 @@ use super::types::{
     exact_hash, CombatDecisionRoot, CombatPlanningQuantum, CompleteTurnOption,
     CompleteTurnOptionBoundary, TurnOptionAction, TurnOptionGenerationGap,
 };
-use super::witness_search::{
+use super::witness::{
     OracleCombatDeepStateSnapshot, OracleCombatWitness, OracleCombatWitnessDiscoverySource,
     OracleCombatWitnessProgressSnapshot, OracleCombatWitnessReplayError,
     OracleCombatWitnessSatisfaction, OracleCombatWitnessStateProgressSnapshot,
