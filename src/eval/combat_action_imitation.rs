@@ -853,11 +853,7 @@ pub fn combat_action_imitation_policy_v1(
     artifact: CombatActionImitationArtifactV1,
 ) -> Result<SharedCombatActionPolicy, String> {
     artifact.validate()?;
-    let coefficients = artifact
-        .coefficients
-        .iter()
-        .map(|coefficient| (coefficient.feature.clone(), coefficient.weight))
-        .collect();
+    let coefficients = CompiledActionImitationWeightsV1::new(&artifact.coefficients);
     Ok(Arc::new(CombatActionImitationPolicyV1 {
         base,
         coefficients,
@@ -925,7 +921,7 @@ impl CombatActionPolicy for RootPlayerTurnActionPolicyV1 {
 #[derive(Clone)]
 struct CombatActionImitationPolicyV1 {
     base: SharedCombatActionPolicy,
-    coefficients: HashMap<String, f64>,
+    coefficients: CompiledActionImitationWeightsV1,
     logit_scale: f64,
     max_abs_log_factor: f64,
     base_weight_exponent: f64,
@@ -933,10 +929,83 @@ struct CombatActionImitationPolicyV1 {
 
 impl CombatActionImitationPolicyV1 {
     fn learned_logit(&self, position: &CombatPosition, input: &ClientInput, state: &[i32]) -> f64 {
-        sparse_score(
-            &self.coefficients,
-            &action_feature_vector_with_state(position, input, state),
-        ) * self.logit_scale
+        self.coefficients.score(position, input, state) * self.logit_scale
+    }
+}
+
+/// The serialized artifact deliberately uses stable, inspectable feature
+/// names. Rebuilding those names and a `BTreeMap` for every action expansion
+/// is far too expensive for the search hot path, so loading compiles the same
+/// linear model into token-local indexed dot products.
+#[derive(Clone, Debug, Default)]
+struct CompiledActionImitationWeightsV1 {
+    action_by_token: HashMap<String, f64>,
+    cross_by_token: HashMap<String, Vec<(usize, f64)>>,
+    numeric: HashMap<String, f64>,
+}
+
+impl CompiledActionImitationWeightsV1 {
+    fn new(coefficients: &[CombatActionImitationCoefficientV1]) -> Self {
+        let mut compiled = Self::default();
+        for coefficient in coefficients {
+            if let Some(token) = coefficient.feature.strip_prefix("action/") {
+                compiled
+                    .action_by_token
+                    .insert(token.to_string(), coefficient.weight);
+                continue;
+            }
+            if let Some(cross) = coefficient.feature.strip_prefix("cross/") {
+                if let Some((token, state_index)) = cross.rsplit_once("/state/") {
+                    if let Ok(state_index) = state_index.parse::<usize>() {
+                        compiled
+                            .cross_by_token
+                            .entry(token.to_string())
+                            .or_default()
+                            .push((state_index, coefficient.weight));
+                        continue;
+                    }
+                }
+            }
+            compiled
+                .numeric
+                .insert(coefficient.feature.clone(), coefficient.weight);
+        }
+        compiled
+    }
+
+    fn score(&self, position: &CombatPosition, input: &ClientInput, state: &[i32]) -> f64 {
+        let tokens = action_semantic_tokens(position, input);
+        let token_scale = 1.0 / (tokens.len().max(1) as f64).sqrt();
+        let mut score = 0.0;
+        for token in tokens {
+            score += self
+                .action_by_token
+                .get(&token)
+                .copied()
+                .unwrap_or_default()
+                * token_scale;
+            if let Some(cross) = self.cross_by_token.get(&token) {
+                score += cross
+                    .iter()
+                    .map(|(index, weight)| {
+                        state
+                            .get(*index)
+                            .copied()
+                            .map(squash_component)
+                            .unwrap_or_default()
+                            * weight
+                            * token_scale
+                    })
+                    .sum::<f64>();
+            }
+        }
+
+        // Numeric action features are few (at most the played card and its
+        // target). Keeping their stable names here avoids a second artifact
+        // schema while removing the much larger token × state allocation.
+        let mut numeric = SparseFeatures::new();
+        add_numeric_action_features(position, input, &mut numeric);
+        score + sparse_score(&self.numeric, &numeric)
     }
 }
 
@@ -2110,6 +2179,42 @@ mod tests {
         );
         assert!(
             !into_exposed.contains_key("action/interaction/card/Bash+0/target/power/Artifact/1")
+        );
+    }
+
+    #[test]
+    fn compiled_runtime_score_matches_sparse_training_features() {
+        let mut combat = blank_test_combat();
+        let mut target = test_monster(EnemyId::Cultist);
+        target.current_hp = 19;
+        combat.entities.monsters = vec![target];
+        combat.zones.hand = vec![CombatCard::new(CardId::Bash, 11)];
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+        let input = ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        };
+        let state = typed_combat_feature_components_v1(&position);
+        let features = action_feature_vector_with_state(&position, &input, &state);
+        let coefficients = features
+            .keys()
+            .enumerate()
+            .map(|(index, feature)| CombatActionImitationCoefficientV1 {
+                feature: feature.clone(),
+                weight: (index as f64 + 1.0) / 97.0,
+            })
+            .collect::<Vec<_>>();
+        let sparse = coefficients
+            .iter()
+            .map(|coefficient| (coefficient.feature.clone(), coefficient.weight))
+            .collect::<HashMap<_, _>>();
+        let expected = sparse_score(&sparse, &features);
+        let actual =
+            CompiledActionImitationWeightsV1::new(&coefficients).score(&position, &input, &state);
+
+        assert!(
+            (expected - actual).abs() < 1.0e-10,
+            "{expected} != {actual}"
         );
     }
 
