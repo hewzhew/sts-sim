@@ -56,6 +56,7 @@ function Invoke-CombatPanelCase(
         "--max-potions-used", "2",
         "--improve-incumbent",
         "--typed-plan-guide",
+        "--typed-plan-selection-timing",
         "--performance-only"
     )
     if ($ProfileCloneCost) {

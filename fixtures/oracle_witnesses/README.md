@@ -116,7 +116,7 @@ The strategy-to-search handoff has a separate deterministic regression:
 - The compact regression command is:
 
   ```text
-  ol-contract.cmd --case fixtures/oracle_witnesses/seed20260713007_a0_awakened_one_managed_t4.combat-case.json --typed-plan-guide --plan-compatible-policy-line --plan-compatible-suffix-work 5000 --expect-witness --expect-min-final-hp 17 --expect-max-plan-suffix-work 3317
+  ol-contract.cmd --case fixtures/oracle_witnesses/seed20260713007_a0_awakened_one_managed_t4.combat-case.json --typed-plan-guide --typed-plan-selection-timing --plan-compatible-policy-line --plan-compatible-suffix-work 5000 --expect-witness --expect-min-final-hp 17 --expect-max-plan-suffix-work 3317
   ```
 
 - SHA-256: managed T4 case

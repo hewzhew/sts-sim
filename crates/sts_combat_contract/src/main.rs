@@ -13,9 +13,9 @@ use serde::Deserialize;
 use serde_json::json;
 use sts_combat_knowledge::existing_combat_knowledge_policy_v1;
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
-    TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
+    combat_plan_selection_timing_policy_v1, combat_plan_state_guide_policy_v1, CombatDecisionRoot,
+    LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
+    OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig, DETAIL_TIMING_SAMPLE_INTERVAL,
 };
 use sts_core::ai::combat_state_key::{
     combat_exact_state_hash_v2, combat_exact_state_key_profiled_v1, CombatExactStateKey,
@@ -45,6 +45,10 @@ struct Cli {
     start_at_player_turn: Option<u32>,
     #[arg(long)]
     typed_plan_guide: bool,
+    /// Order concrete members of structured selections using typed encounter
+    /// timing without adding a state-guide lane.
+    #[arg(long)]
+    typed_plan_selection_timing: bool,
     #[arg(long)]
     plan_compatible_policy_line: bool,
     #[arg(long, default_value_t = 0, requires = "plan_compatible_policy_line")]
@@ -346,6 +350,11 @@ fn run(args: Cli) -> Result<(), String> {
     let policy = existing_combat_knowledge_policy_v1();
     let policy = if args.typed_plan_guide {
         combat_plan_state_guide_policy_v1(policy)
+    } else {
+        policy
+    };
+    let policy = if args.typed_plan_selection_timing {
+        combat_plan_selection_timing_policy_v1(policy)
     } else {
         policy
     };

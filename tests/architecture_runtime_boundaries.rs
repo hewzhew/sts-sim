@@ -147,6 +147,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         ("combat_case_contract.rs", 12 * 1024),
         ("combat_case_performance.rs", 24 * 1024),
         ("combat_graph_diagnostics.rs", 8 * 1024),
+        ("combat_graph_execution.rs", 12 * 1024),
         ("combat_graph_exports.rs", 8 * 1024),
         ("combat_graph_observation.rs", 12 * 1024),
         ("combat_graph_report.rs", 24 * 1024),
@@ -289,6 +290,28 @@ fn combat_graph_report_remains_a_pure_projection() {
         assert!(
             !source.contains(forbidden),
             "combat graph reports must project completed typed facts without search or side effects: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn combat_graph_execution_only_prepares_search() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_graph_execution.rs",
+    )
+    .expect("read combat graph execution module");
+
+    for forbidden in [
+        ".advance(",
+        "load_combat_case",
+        "std::fs",
+        "print_json",
+        "save_combat_inputs",
+        "export_local_graph_paths",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "combat graph execution may compose policy and construct a session but must not search, persist, or report: `{forbidden}`"
         );
     }
 }

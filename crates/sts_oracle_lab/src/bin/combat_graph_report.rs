@@ -10,6 +10,7 @@ use sts_combat_planner::{
 };
 
 use super::combat_graph_diagnostics::LocalGraphDiagnostics;
+use super::combat_graph_execution::LocalGraphExecutionProfile;
 use super::combat_graph_exports::LocalGraphExports;
 use super::combat_graph_observation::LocalGraphObservation;
 use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
@@ -26,6 +27,7 @@ pub(super) struct LocalGraphRunIdentity<'a> {
     pub(super) case: &'a Path,
     pub(super) elapsed: Duration,
     pub(super) satisfaction: OracleCombatWitnessSatisfaction,
+    pub(super) execution_profile: LocalGraphExecutionProfile,
     pub(super) counterfactual: LocalGraphCounterfactual,
 }
 
@@ -42,47 +44,11 @@ pub(super) struct LocalGraphReportData<'a> {
     pub(super) exports: &'a LocalGraphExports,
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum LocalGraphScheduler {
-    AnchorOnly,
-    RootTurnAnchorThenGuides,
-    AnchorGuidesAndLazyRolloutLookahead,
-    AnchorAndGuides,
-}
-
-impl LocalGraphScheduler {
-    pub(super) fn from_controls(
-        anchor_only: bool,
-        root_turn_anchor_only: bool,
-        rollout_lookahead: bool,
-    ) -> Self {
-        if anchor_only {
-            Self::AnchorOnly
-        } else if root_turn_anchor_only {
-            Self::RootTurnAnchorThenGuides
-        } else if rollout_lookahead {
-            Self::AnchorGuidesAndLazyRolloutLookahead
-        } else {
-            Self::AnchorAndGuides
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::AnchorOnly => "anchor_only",
-            Self::RootTurnAnchorThenGuides => "root_turn_anchor_then_guides",
-            Self::AnchorGuidesAndLazyRolloutLookahead => "anchor_guides_and_lazy_rollout_lookahead",
-            Self::AnchorAndGuides => "anchor_and_guides",
-        }
-    }
-}
-
 pub(super) struct LocalGraphFullReportOptions<'a> {
     pub(super) action_imitation_artifact: Option<&'a Path>,
     pub(super) value_prototype_artifact: Option<&'a Path>,
     pub(super) guidance_bundle: Option<&'a Path>,
     pub(super) watch_corridor_actions: &'a [PathBuf],
-    pub(super) scheduler: LocalGraphScheduler,
     pub(super) readable: bool,
     pub(super) search_elapsed: Duration,
     pub(super) performance_timing: &'a Value,
@@ -103,6 +69,7 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
         "case": data.run.case,
         "status": format!("{:?}", data.report.status),
         "satisfaction": format!("{:?}", data.run.satisfaction),
+        "execution_profile": data.run.execution_profile,
         "elapsed_ms": data.run.elapsed.as_millis(),
         "counterfactual": {
             "full_health": data.run.counterfactual.full_health,
@@ -227,7 +194,8 @@ pub(super) fn local_graph_full_report(
         "guidance_bundle": options.guidance_bundle,
         "watch_corridor_actions": options.watch_corridor_actions,
         "satisfaction": format!("{:?}", data.run.satisfaction),
-        "scheduler": options.scheduler.label(),
+        "scheduler": data.run.execution_profile.scheduler_label(),
+        "execution_profile": data.run.execution_profile,
         "status": format!("{:?}", data.report.status),
         "elapsed_ms": data.run.elapsed.as_millis(),
         "initial_hp": data.run.counterfactual.search_hp,
@@ -318,6 +286,10 @@ mod tests {
                     case: Path::new("fixture.combat.json"),
                     elapsed: Duration::from_millis(7),
                     satisfaction: OracleCombatWitnessSatisfaction::FirstWitness,
+                    execution_profile: LocalGraphExecutionProfile::from_controls(
+                        false, false, false, false, false,
+                    )
+                    .expect("fixture execution profile"),
                     counterfactual: LocalGraphCounterfactual {
                         full_health: false,
                         original_hp: 80,
@@ -361,7 +333,6 @@ mod tests {
                 value_prototype_artifact: None,
                 guidance_bundle: None,
                 watch_corridor_actions: &[],
-                scheduler: LocalGraphScheduler::AnchorAndGuides,
                 readable: false,
                 search_elapsed: Duration::from_millis(3),
                 performance_timing: &timing,
@@ -371,6 +342,10 @@ mod tests {
 
         assert_eq!(report["schema_name"], "LocalTurnGraphCombatSearchReportV1");
         assert_eq!(report["scheduler"], "anchor_and_guides");
+        assert_eq!(
+            report["execution_profile"]["guide_service"],
+            "anchor_and_guides"
+        );
         assert_eq!(report["search_elapsed_ms"], 3);
         assert_eq!(report["counters"]["terminal_win_options"], 0);
         assert_eq!(report["watched_states"], json!([]));

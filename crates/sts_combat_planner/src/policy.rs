@@ -185,13 +185,63 @@ pub struct CombatPlanStateGuidePolicyV1 {
     base: SharedCombatActionPolicy,
 }
 
+/// Orders concrete members of a structured selection using encounter-owned
+/// plan timing without adding any state-guide lane.
+///
+/// This is separate from [`CombatPlanStateGuidePolicyV1`] so callers can
+/// distinguish cross-turn state guidance from within-choice action ordering.
+pub struct CombatPlanSelectionTimingPolicyV1 {
+    base: SharedCombatActionPolicy,
+}
+
 impl CombatPlanStateGuidePolicyV1 {
     pub fn new(base: SharedCombatActionPolicy) -> Self {
         Self { base }
     }
 }
 
+impl CombatPlanSelectionTimingPolicyV1 {
+    pub fn new(base: SharedCombatActionPolicy) -> Self {
+        Self { base }
+    }
+}
+
 impl CombatActionPolicy for CombatPlanStateGuidePolicyV1 {
+    fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
+        self.base.weights(position, choices)
+    }
+
+    fn structured_selection_member_weights(
+        &self,
+        position: &CombatPosition,
+        family: &CombatSelectionActionFamilyV2,
+        members: &[ClientInput],
+    ) -> Vec<f64> {
+        self.base
+            .structured_selection_member_weights(position, family, members)
+    }
+
+    fn state_guide_rank(&self, position: &CombatPosition) -> Option<CombatStateGuideRank> {
+        self.base.state_guide_rank(position)
+    }
+
+    fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        let mut guides = self.base.state_guides(position);
+        if let Some(rank) = combat_plan_state_guide_rank_v1(position) {
+            guides.push(CombatStateGuide::new(
+                COMBAT_PLAN_STATE_GUIDE_LANE_V1,
+                rank.components().to_vec(),
+            ));
+        }
+        guides
+    }
+
+    fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
+        self.base.turn_generation_guides(position)
+    }
+}
+
+impl CombatActionPolicy for CombatPlanSelectionTimingPolicyV1 {
     fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
         self.base.weights(position, choices)
     }
@@ -246,14 +296,7 @@ impl CombatActionPolicy for CombatPlanStateGuidePolicyV1 {
     }
 
     fn state_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
-        let mut guides = self.base.state_guides(position);
-        if let Some(rank) = combat_plan_state_guide_rank_v1(position) {
-            guides.push(CombatStateGuide::new(
-                COMBAT_PLAN_STATE_GUIDE_LANE_V1,
-                rank.components().to_vec(),
-            ));
-        }
-        guides
+        self.base.state_guides(position)
     }
 
     fn turn_generation_guides(&self, position: &CombatPosition) -> Vec<CombatStateGuide> {
@@ -265,6 +308,12 @@ pub fn combat_plan_state_guide_policy_v1(
     base: SharedCombatActionPolicy,
 ) -> SharedCombatActionPolicy {
     Arc::new(CombatPlanStateGuidePolicyV1::new(base))
+}
+
+pub fn combat_plan_selection_timing_policy_v1(
+    base: SharedCombatActionPolicy,
+) -> SharedCombatActionPolicy {
+    Arc::new(CombatPlanSelectionTimingPolicyV1::new(base))
 }
 
 pub const COMBAT_PLAN_STATE_GUIDE_LANE_V1: CombatGuideLaneId = CombatGuideLaneId::new(0x4350_0001);
@@ -374,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_policy_orders_compatible_forced_exhaust_before_destroying_owned_resource() {
+    fn plan_state_guide_policy_preserves_structured_selection_ordering() {
         let mut combat = blank_test_combat();
         let mut awakened = test_monster(EnemyId::AwakenedOne);
         awakened.id = 10;
@@ -416,7 +465,55 @@ mod tests {
 
         let weights = policy.structured_selection_member_weights(&position, family, &members);
 
+        assert_eq!(weights, vec![1.0, 1.0]);
+    }
+
+    #[test]
+    fn plan_selection_timing_orders_compatible_exhaust_without_adding_guides() {
+        let mut combat = blank_test_combat();
+        let mut awakened = test_monster(EnemyId::AwakenedOne);
+        awakened.id = 10;
+        awakened.slot = 2;
+        combat.entities.monsters.push(awakened);
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 31),
+            CombatCard::new(CardId::Strike, 32),
+        ];
+        let position = CombatPosition::new(
+            EngineState::PendingChoice(PendingChoice::HandSelect {
+                candidate_uuids: vec![31, 32],
+                min_cards: 1,
+                max_cards: 1,
+                can_cancel: false,
+                reason: HandSelectReason::Exhaust,
+            }),
+            combat,
+        );
+        let surface = sts_core::sim::combat_action_surface::combat_legal_action_surface_v2(
+            &position.engine,
+            &position.combat,
+        );
+        let family = surface
+            .selection_families
+            .first()
+            .expect("forced exhaust family");
+        let members = vec![
+            ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                SelectionScope::Hand,
+                [31],
+            )),
+            ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                SelectionScope::Hand,
+                [32],
+            )),
+        ];
+        let policy = combat_plan_selection_timing_policy_v1(Arc::new(UniformCombatActionPolicy));
+
+        let weights = policy.structured_selection_member_weights(&position, family, &members);
+
         assert!(weights[1] > weights[0]);
         assert!(weights[0] > 0.0);
+        assert!(policy.state_guides(&position).is_empty());
+        assert!(policy.turn_generation_guides(&position).is_empty());
     }
 }

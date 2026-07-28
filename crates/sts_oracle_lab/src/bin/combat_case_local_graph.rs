@@ -4,17 +4,14 @@ use std::time::{Duration, Instant};
 use clap::Args;
 use serde_json::Value;
 use sts_combat_planner::{
-    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
-    LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
-    TurnOptionGeneratorConfig,
+    CombatDecisionRoot, LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum,
+    OracleCombatWitnessSatisfaction, TurnOptionGeneratorConfig,
 };
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::combat_guidance_bundle::{
     combat_value_prototype_policy_v1, CombatGuidanceBundleV1,
 };
-use sts_oracle_runtime::eval::run_control::{
-    existing_combat_knowledge_policy_v1, existing_combat_rollout_lookahead_v1,
-};
+use sts_oracle_runtime::eval::run_control::existing_combat_knowledge_policy_v1;
 use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 
 use super::combat_case_contract::{evaluate_local_graph_contract, LocalGraphContractRequest};
@@ -22,18 +19,17 @@ use super::combat_case_performance;
 use super::combat_graph_diagnostics::{
     materialize_local_graph_diagnostics, LocalGraphDiagnosticPaths,
 };
+use super::combat_graph_execution::LocalGraphExecutionProfile;
 use super::combat_graph_exports::{
     export_local_graph_paths, LocalGraphExportActions, LocalGraphExportPaths,
 };
 use super::combat_graph_observation::capture_local_graph_observation;
 use super::combat_graph_report::{
     local_graph_full_report, local_graph_trace_report, LocalGraphCounterfactual,
-    LocalGraphFullReportOptions, LocalGraphReportData, LocalGraphRunIdentity, LocalGraphScheduler,
+    LocalGraphFullReportOptions, LocalGraphReportData, LocalGraphRunIdentity,
 };
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
-use super::combat_policy_controls::{
-    anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
-};
+use super::combat_policy_controls::load_action_imitation_policy;
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::print_json;
@@ -88,6 +84,10 @@ pub(super) struct CombatCaseLocalGraphArgs {
     /// legality, exact-state identity and terminal truth remain unchanged.
     #[arg(long, conflicts_with = "anchor_only")]
     typed_plan_guide: bool,
+    /// Opt-in lab control: order concrete members of structured selections
+    /// using encounter-owned plan timing. This does not add a state guide.
+    #[arg(long)]
+    typed_plan_selection_timing: bool,
     /// Lab-only control: materialize one exact base-policy mainline at
     /// player-turn boundaries. A typed encounter plan may defer a
     /// prematurely resource-consuming action or prefer a precisely timed
@@ -199,6 +199,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         watch_corridor_actions,
         plan_transition_annotations,
         typed_plan_guide,
+        typed_plan_selection_timing,
         plan_compatible_policy_line,
         plan_compatible_suffix_work,
         expect_witness,
@@ -232,6 +233,13 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     }
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let root_player_turn = loaded.position.combat.turn.turn_count;
+    let execution_profile = LocalGraphExecutionProfile::from_controls(
+        anchor_only,
+        root_turn_anchor_only,
+        rollout_lookahead,
+        typed_plan_guide,
+        typed_plan_selection_timing,
+    )?;
     let search_root_position = loaded.position.clone();
     let watched_corridor = if watch_corridor_actions.is_empty() {
         None
@@ -285,28 +293,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             policy
         }
     };
-    let policy = if anchor_only {
-        anchor_only_policy(policy)
-    } else if root_turn_anchor_only {
-        root_turn_anchor_only_policy(root_player_turn, policy)
-    } else {
-        policy
-    };
-    let policy = if typed_plan_guide {
-        combat_plan_state_guide_policy_v1(policy)
-    } else {
-        policy
-    };
-    let mut session = if rollout_lookahead {
-        LocalTurnGraphWitnessSession::with_policy_and_lookahead(
-            root,
-            config,
-            policy,
-            existing_combat_rollout_lookahead_v1(),
-        )
-    } else {
-        LocalTurnGraphWitnessSession::with_policy(root, config, policy)
-    };
+    let mut session = execution_profile.prepare_session(root, root_player_turn, config, policy);
     if plan_transition_annotations {
         session
             .enable_plan_transition_annotations()
@@ -403,6 +390,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             case: &case,
             elapsed: command_started.elapsed(),
             satisfaction,
+            execution_profile,
             counterfactual: LocalGraphCounterfactual {
                 full_health,
                 original_hp,
@@ -429,11 +417,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             value_prototype_artifact: value_prototype_artifact.as_deref(),
             guidance_bundle: guidance_bundle.as_deref(),
             watch_corridor_actions: &watch_corridor_actions,
-            scheduler: LocalGraphScheduler::from_controls(
-                anchor_only,
-                root_turn_anchor_only,
-                rollout_lookahead,
-            ),
             readable,
             search_elapsed,
             performance_timing: &performance_timing,
