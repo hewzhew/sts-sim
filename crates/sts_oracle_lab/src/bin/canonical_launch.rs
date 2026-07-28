@@ -67,13 +67,7 @@ fn validate_source_freshness(executable: &Path) -> Result<(), String> {
         )
     })?;
     let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
-    let mut dependencies = depfile_dependencies(&depfile_text);
-    dependencies.extend([
-        repository.join("Cargo.toml"),
-        repository.join("Cargo.lock"),
-        repository.join(".cargo/config.toml"),
-        repository.join("crates/sts_combat_planner/Cargo.toml"),
-    ]);
+    let dependencies = canonical_dependencies(&repository, &depfile_text);
     let stale = dependencies.iter().find(|dependency| {
         std::fs::metadata(dependency)
             .and_then(|metadata| metadata.modified())
@@ -98,6 +92,17 @@ fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
         .filter(|dependency| !dependency.ends_with(':'))
         .map(PathBuf::from)
         .collect()
+}
+
+fn canonical_dependencies(repository: &Path, depfile: &str) -> Vec<PathBuf> {
+    let mut dependencies = depfile_dependencies(depfile);
+    dependencies.extend([
+        repository.join("Cargo.toml"),
+        repository.join("Cargo.lock"),
+        repository.join(".cargo/config.toml"),
+        repository.join("crates/sts_combat_planner/Cargo.toml"),
+    ]);
+    dependencies
 }
 
 pub(super) fn source_content_fingerprint(
@@ -161,6 +166,24 @@ pub(super) fn runtime_identity() -> Value {
         "git_dirty": Value::Null,
         "dirty_scan": "omitted_in_compact_mode",
     })
+}
+
+/// Content identity of every source dependency recorded for the canonical
+/// executable. Unlike `git_head`, this also distinguishes binaries built from
+/// different uncommitted worktrees at the same revision.
+pub(super) fn runtime_source_content_fingerprint() -> Result<String, String> {
+    let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("failed to identify running oracle_lab: {error}"))?;
+    let depfile = executable.with_extension("d");
+    let depfile_text = std::fs::read_to_string(&depfile).map_err(|error| {
+        format!(
+            "canonical oracle dependency manifest is missing at '{}': {error}",
+            depfile.display()
+        )
+    })?;
+    let dependencies = canonical_dependencies(&repository, &depfile_text);
+    source_content_fingerprint(&repository, &dependencies)
 }
 
 fn read_git_head_fast(repository: &Path) -> Option<String> {

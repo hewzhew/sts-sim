@@ -30,6 +30,7 @@ mod depth_beam_audits;
 mod exact_combat_evidence;
 mod exact_turn_corridor;
 mod guidance_artifact_commands;
+mod guidance_combination_audit;
 mod oracle_cli;
 mod oracle_seed_panel;
 mod policy_discrepancy_search;
@@ -259,6 +260,9 @@ fn main() -> Result<(), String> {
         Command::AuditBoundarySuccessorLookahead { args } => {
             let report = boundary_successor_lookahead::audit(args)?;
             print_json(&report)
+        }
+        Command::AuditGuidanceCombination(args) => {
+            print_json(&guidance_combination_audit::run(args)?)
         }
         Command::CombatCaseLocalGraph(args) => combat_case_local_graph::run(args),
         Command::CombatCaseLayered(args) => combat_case_layered::run(args),

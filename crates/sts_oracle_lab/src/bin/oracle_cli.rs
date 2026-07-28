@@ -17,6 +17,7 @@ use super::combat_case_legacy_global::CombatCaseLegacyGlobalArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
 use super::depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
+use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
 use super::oracle_seed_panel::OracleSeedPanelArgs;
 use super::policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
 use super::run_witness_suite::RunWitnessSuiteArgs;
@@ -247,6 +248,9 @@ pub(super) enum Command {
         #[command(flatten)]
         args: BoundarySuccessorLookaheadArgs,
     },
+    /// Run base, action-only, value-only, and combined guidance controls in
+    /// one process against the same exact combat root and bounded allowance.
+    AuditGuidanceCombination(GuidanceCombinationAuditArgs),
     /// Distill several exact terminal witnesses from one compact manifest.
     /// Relative case and action paths are resolved beside the manifest.
     BuildActionImitationCorpus {
