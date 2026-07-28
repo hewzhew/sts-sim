@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -335,6 +336,33 @@ pub(super) fn local_graph_performance_profile(
     })
 }
 
+pub(super) fn local_graph_performance_report(
+    search_elapsed: Duration,
+    case: &Path,
+    report: &LocalTurnGraphWitnessReport,
+) -> Value {
+    let mut profile = local_graph_performance_profile(search_elapsed, report);
+    let object = profile
+        .as_object_mut()
+        .expect("performance profile must be a JSON object");
+    object.insert("case".to_owned(), json!(case));
+    object.insert("status".to_owned(), json!(format!("{:?}", report.status)));
+    object.insert(
+        "witness".to_owned(),
+        report
+            .witness
+            .as_ref()
+            .map(|witness| {
+                json!({
+                    "final_hp": witness.final_position.combat.entities.player.current_hp,
+                    "actions": witness.actions.len(),
+                })
+            })
+            .unwrap_or(Value::Null),
+    );
+    profile
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +431,18 @@ mod tests {
         assert_eq!(profile["outer"]["generation"]["percent_of_parent"], 0.0);
         assert!(profile["throughput"]["transitions_per_second"].is_null());
         assert!(profile["throughput"]["ns_per_applied_transition"]["identity"].is_null());
+    }
+
+    #[test]
+    fn performance_report_owns_case_status_and_witness_metadata() {
+        let report = local_graph_performance_report(
+            Duration::ZERO,
+            Path::new("fixture.combat.json"),
+            &report(),
+        );
+
+        assert_eq!(report["case"], "fixture.combat.json");
+        assert_eq!(report["status"], "FrontierExhausted");
+        assert!(report["witness"].is_null());
     }
 }

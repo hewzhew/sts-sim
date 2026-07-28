@@ -144,6 +144,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
 
     for (module, limit) in [
         ("canonical_launch.rs", 12 * 1024),
+        ("combat_case_performance.rs", 24 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
         ("combat_policy_controls.rs", 16 * 1024),
         ("combat_replay_tools.rs", 12 * 1024),

@@ -383,26 +383,8 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
             })),
         }));
     }
-    let mut performance_profile =
-        combat_case_performance::local_graph_performance_profile(search_elapsed, &report);
-    let performance_profile_object = performance_profile
-        .as_object_mut()
-        .expect("performance profile must be a JSON object");
-    performance_profile_object.insert("case".to_owned(), json!(&case));
-    performance_profile_object.insert("status".to_owned(), json!(format!("{:?}", report.status)));
-    performance_profile_object.insert(
-        "witness".to_owned(),
-        report
-            .witness
-            .as_ref()
-            .map(|witness| {
-                json!({
-                    "final_hp": witness.final_position.combat.entities.player.current_hp,
-                    "actions": witness.actions.len(),
-                })
-            })
-            .unwrap_or(Value::Null),
-    );
+    let performance_profile =
+        combat_case_performance::local_graph_performance_report(search_elapsed, &case, &report);
     if performance_only {
         return print_json(&performance_profile);
     }
