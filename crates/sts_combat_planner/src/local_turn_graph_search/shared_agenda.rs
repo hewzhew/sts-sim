@@ -79,6 +79,12 @@ pub(super) struct SharedBoundaryAgenda {
     lookahead_enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SharedAgendaPosition {
+    pub(super) ordinal_rank: Option<usize>,
+    pub(super) candidate_count: usize,
+}
+
 impl SharedBoundaryAgenda {
     pub(super) fn new(lookahead_enabled: bool) -> Self {
         Self {
@@ -247,6 +253,77 @@ impl SharedBoundaryAgenda {
                     .then_with(|| left_id.cmp(right_id))
             })
             .map(|(node_id, _)| node_id)
+    }
+
+    pub(super) fn anchor_position(
+        &self,
+        node_id: usize,
+        nodes: &[GraphNode],
+    ) -> SharedAgendaPosition {
+        let mut candidates = self
+            .anchor
+            .iter()
+            .filter_map(|entry| {
+                let node = &nodes[entry.node_id];
+                (!node.exhausted
+                    && !node.generator.is_finished()
+                    && entry
+                        .service_cost
+                        .total_cmp(&anchor_service_cost(node))
+                        .is_eq())
+                .then_some((entry.node_id, entry.service_cost))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|(left_id, left_cost), (right_id, right_cost)| {
+            left_cost
+                .total_cmp(right_cost)
+                .then_with(|| left_id.cmp(right_id))
+        });
+        candidates.dedup_by_key(|(candidate_id, _)| *candidate_id);
+        SharedAgendaPosition {
+            ordinal_rank: candidates
+                .iter()
+                .position(|(candidate_id, _)| *candidate_id == node_id)
+                .map(|index| index.saturating_add(1)),
+            candidate_count: candidates.len(),
+        }
+    }
+
+    pub(super) fn guide_position(
+        &self,
+        node_id: usize,
+        lane: CombatGuideLaneId,
+        nodes: &[GraphNode],
+    ) -> (SharedAgendaPosition, Option<&CombatStateGuideRank>) {
+        let Some(entries) = self.guides.get(&lane) else {
+            return (
+                SharedAgendaPosition {
+                    ordinal_rank: None,
+                    candidate_count: 0,
+                },
+                None,
+            );
+        };
+        let candidates = entries
+            .iter()
+            .filter(|entry| {
+                let node = &nodes[entry.node_id];
+                !node.exhausted
+                    && !node.generator.is_finished()
+                    && guide_rank(node, lane) == Some(&entry.rank)
+                    && node.path_cost().total_cmp(&entry.path_cost).is_eq()
+            })
+            .collect::<Vec<_>>();
+        (
+            SharedAgendaPosition {
+                ordinal_rank: candidates
+                    .iter()
+                    .position(|entry| entry.node_id == node_id)
+                    .map(|index| index.saturating_add(1)),
+                candidate_count: candidates.len(),
+            },
+            candidates.first().map(|entry| &entry.rank),
+        )
     }
 }
 

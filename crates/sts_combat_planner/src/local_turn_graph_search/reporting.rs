@@ -315,10 +315,17 @@ pub struct LocalTurnGraphRootActionFamilySnapshot {
 pub struct LocalTurnGraphGuideServiceSnapshot {
     pub lane: u32,
     pub edge_visits: usize,
-    pub ordinal_rank: usize,
-    pub candidate_count: usize,
+    /// Rank among siblings of the observed parent. This is a local diagnostic,
+    /// not the production scheduler's queue position.
+    pub sibling_ordinal_rank: usize,
+    pub sibling_candidate_count: usize,
     pub successor_rank: Vec<i32>,
-    pub best_rank: Vec<i32>,
+    pub sibling_best_rank: Vec<i32>,
+    /// Actual position in the shared global guide agenda. `None` means this
+    /// one-shot guide has already serviced the state or was never published.
+    pub global_ordinal_rank: Option<usize>,
+    pub global_candidate_count: usize,
+    pub global_best_rank: Vec<i32>,
 }
 
 /// One already-materialized exact edge in the local turn graph.
@@ -337,6 +344,9 @@ pub struct LocalTurnGraphEdgeSnapshot {
     pub backed_lookahead_rank: Option<Vec<i32>>,
     pub lookahead_pending_rank: Option<usize>,
     pub lookahead_pending_candidates: usize,
+    pub successor_path_cost: f64,
+    pub successor_anchor_ordinal_rank: Option<usize>,
+    pub successor_anchor_candidate_count: usize,
     pub guide_service: Vec<LocalTurnGraphGuideServiceSnapshot>,
     pub successor_visits: usize,
     pub successor_generated_options: usize,

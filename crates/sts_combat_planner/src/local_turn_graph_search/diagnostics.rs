@@ -239,6 +239,9 @@ impl LocalTurnGraphWitnessSession {
             .iter()
             .position(|candidate| candidate.successor == successor_id)
             .map(|index| index.saturating_add(1));
+        let successor_anchor_position = self
+            .shared_agenda
+            .anchor_position(successor_id, &self.nodes);
         let guide_service = successor
             .guides
             .iter()
@@ -269,18 +272,26 @@ impl LocalTurnGraphWitnessSession {
                     .position(|(candidate, _)| candidate.successor == successor_id)
                     .map(|index| index.saturating_add(1))
                     .unwrap_or(0);
+                let (global_position, global_best_rank) =
+                    self.shared_agenda
+                        .guide_position(successor_id, guide.lane, &self.nodes);
                 LocalTurnGraphGuideServiceSnapshot {
                     lane: guide.lane.value(),
                     edge_visits: edge.guide_visits.get(&guide.lane).copied().unwrap_or(0),
-                    ordinal_rank,
-                    candidate_count: candidates.len(),
+                    sibling_ordinal_rank: ordinal_rank,
+                    sibling_candidate_count: candidates.len(),
                     successor_rank: backed_guide_rank(edge, successor, guide.lane)
                         .unwrap_or(&guide.rank)
                         .components()
                         .to_vec(),
-                    best_rank: candidates
+                    sibling_best_rank: candidates
                         .first()
                         .map(|(_, rank)| rank.components().to_vec())
+                        .unwrap_or_default(),
+                    global_ordinal_rank: global_position.ordinal_rank,
+                    global_candidate_count: global_position.candidate_count,
+                    global_best_rank: global_best_rank
+                        .map(|rank| rank.components().to_vec())
                         .unwrap_or_default(),
                 }
             })
@@ -302,6 +313,9 @@ impl LocalTurnGraphWitnessSession {
                 .map(|rank| rank.components().to_vec()),
             lookahead_pending_rank,
             lookahead_pending_candidates: pending_lookahead.len(),
+            successor_path_cost: successor.path_cost(),
+            successor_anchor_ordinal_rank: successor_anchor_position.ordinal_rank,
+            successor_anchor_candidate_count: successor_anchor_position.candidate_count,
             guide_service,
             successor_visits: successor.visits,
             successor_generated_options: successor.generated_options,
