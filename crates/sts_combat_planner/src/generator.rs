@@ -225,6 +225,7 @@ impl Hash for IndexedExactStateKey {
 }
 
 impl IndexedExactStateKey {
+    #[cfg(test)]
     fn new(key: CombatExactStateKey, potion_expenditures: Option<u32>) -> Self {
         Self::from_arc(Arc::new(key), potion_expenditures)
     }
@@ -519,8 +520,13 @@ impl TurnOptionGeneratorSession {
             Some(0)
         };
         let mut seen = HashSet::with_hasher(FxBuildHasher);
-        let root_key = combat_exact_state_key(&root.position().engine, &root.position().combat);
-        seen.insert(IndexedExactStateKey::new(
+        let root_key = root.exact_state_key().cloned().unwrap_or_else(|| {
+            Arc::new(combat_exact_state_key(
+                &root.position().engine,
+                &root.position().combat,
+            ))
+        });
+        seen.insert(IndexedExactStateKey::from_arc(
             root_key,
             max_potion_expenditures.map(|_| 0),
         ));
