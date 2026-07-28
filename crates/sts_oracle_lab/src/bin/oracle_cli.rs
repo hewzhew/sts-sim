@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use sts_oracle_runtime::runtime::branch::OracleRunBudget;
 
-use super::action_boundary_evidence::ActionBoundaryEvidenceArgs;
+use super::action_boundary_evidence::{
+    ActionBoundaryEvidenceArgs, ActionBoundaryEvidenceBatchArgs,
+};
+use super::action_boundary_policy::ActionBoundaryPolicyArgs;
 use super::action_reanalysis_policy::ActionReanalysisPolicyArgs;
 use super::action_reanalysis_queue::{ActionReanalysisBatchArgs, ActionReanalysisQueueArgs};
 use super::action_successor_reanalysis::ActionSuccessorReanalysisArgs;
@@ -217,6 +220,17 @@ pub(super) enum Command {
     BuildActionBoundaryEvidence {
         #[command(flatten)]
         args: ActionBoundaryEvidenceArgs,
+    },
+    /// Build next-boundary evidence for a ranked state queue in one process.
+    BuildActionBoundaryEvidenceBatch {
+        #[command(flatten)]
+        args: ActionBoundaryEvidenceBatchArgs,
+    },
+    /// Train an action residual from complete next-boundary evidence while
+    /// retaining positive base mass for every non-refuted unknown action.
+    BuildActionBoundaryPolicy {
+        #[command(flatten)]
+        args: ActionBoundaryPolicyArgs,
     },
     /// Train a conservative residual policy from exact witnesses plus typed
     /// action-successor reanalysis. Budget-unknown actions retain base mass.

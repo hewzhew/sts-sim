@@ -71,6 +71,36 @@ pub(super) struct ActionBoundaryEvidenceArgs {
     max_engine_steps_per_transition: usize,
 }
 
+#[derive(Debug, Args)]
+pub(super) struct ActionBoundaryEvidenceBatchArgs {
+    /// Queue produced by `build-action-reanalysis-queue`.
+    #[arg(long)]
+    queue: PathBuf,
+    /// Frozen action/value bundle shared by every boundary audit.
+    #[arg(long)]
+    guidance_bundle: PathBuf,
+    /// Directory receiving one typed boundary corpus per selected state.
+    #[arg(long)]
+    output_dir: PathBuf,
+    /// Compact report listing every generated corpus.
+    #[arg(long)]
+    report: PathBuf,
+    /// Number of highest-priority queue items to inspect.
+    #[arg(long, default_value_t = 24)]
+    take: usize,
+    /// Number of higher-priority queue items already processed.
+    #[arg(long, default_value_t = 0)]
+    skip: usize,
+    #[arg(long, default_value_t = 5_000)]
+    generation_work_per_candidate: usize,
+    #[arg(long, default_value_t = 4)]
+    candidate_jobs: usize,
+    #[arg(long, default_value_t = 256)]
+    max_structured_alternatives: usize,
+    #[arg(long, default_value_t = 250)]
+    max_engine_steps_per_transition: usize,
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct BoundaryGenerationEvidence {
     status: String,
@@ -350,6 +380,75 @@ pub(super) fn build(args: ActionBoundaryEvidenceArgs) -> Result<Value, String> {
         "surface": corpus["surface"],
         "evidence_counts": corpus["evidence_counts"],
     }))
+}
+
+pub(super) fn build_batch(args: ActionBoundaryEvidenceBatchArgs) -> Result<Value, String> {
+    if args.take == 0 {
+        return Err("--take must be positive".to_string());
+    }
+    let queue = super::action_reanalysis_queue::load_queue(&args.queue)?;
+    let selected = queue
+        .queue
+        .iter()
+        .skip(args.skip)
+        .take(args.take)
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Err(format!(
+            "action-boundary batch selected no states from {}",
+            args.queue.display()
+        ));
+    }
+    std::fs::create_dir_all(&args.output_dir).map_err(|error| error.to_string())?;
+    let mut generated = Vec::with_capacity(selected.len());
+    for item in selected {
+        let hash_prefix = item
+            .exact_state_hash
+            .get(..12)
+            .unwrap_or(&item.exact_state_hash);
+        let output = args.output_dir.join(format!(
+            "boundary-{:03}-{hash_prefix}.json",
+            item.queue_rank
+        ));
+        let result = build(ActionBoundaryEvidenceArgs {
+            case: item.source_case.clone(),
+            actions: item.source_actions.clone(),
+            through: item.through,
+            guidance_bundle: args.guidance_bundle.clone(),
+            output: output.clone(),
+            generation_work_per_candidate: args.generation_work_per_candidate,
+            candidate_jobs: args.candidate_jobs,
+            max_structured_alternatives: args.max_structured_alternatives,
+            max_engine_steps_per_transition: args.max_engine_steps_per_transition,
+        })?;
+        generated.push(json!({
+            "queue_rank": item.queue_rank,
+            "demonstration_id": item.demonstration_id,
+            "through": item.through,
+            "source_exact_state_hash": item.exact_state_hash,
+            "output": output,
+            "result": result,
+        }));
+    }
+    let report = json!({
+        "schema_name": "ActionBoundaryEvidenceBatchReportV1",
+        "schema_version": 1,
+        "queue": args.queue,
+        "guidance_bundle": args.guidance_bundle,
+        "skip": args.skip,
+        "take": args.take,
+        "generated_count": generated.len(),
+        "generated": generated,
+    });
+    if let Some(parent) = args.report.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    std::fs::write(
+        &args.report,
+        serde_json::to_vec_pretty(&report).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(report)
 }
 
 fn validate_args(args: &ActionBoundaryEvidenceArgs) -> Result<(), String> {
