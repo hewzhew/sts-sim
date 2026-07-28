@@ -84,6 +84,8 @@ struct ReanalysisAudit {
     base_exact_win_mass: f64,
     learned_exact_win_mass: f64,
     target_exact_win_mass: f64,
+    base_target_total_variation: f64,
+    learned_target_total_variation: f64,
 }
 
 pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
@@ -164,15 +166,17 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
         .collect::<Result<Vec<_>, String>>()?;
     let promotion_failures = reanalysis_audits
         .iter()
-        .filter(|audit| promotion_gate_rejects(audit))
-        .map(|audit| {
-            json!({
+        .filter_map(|audit| {
+            let reason = promotion_gate_failure_reason(audit)?;
+            Some(json!({
                 "source": audit.source,
-                "reason": "learned_exact_win_mass_below_base_with_budget_unknown",
+                "reason": reason,
                 "base_exact_win_mass": audit.base_exact_win_mass,
                 "learned_exact_win_mass": audit.learned_exact_win_mass,
                 "target_exact_win_mass": audit.target_exact_win_mass,
-            })
+                "base_target_total_variation": audit.base_target_total_variation,
+                "learned_target_total_variation": audit.learned_target_total_variation,
+            }))
         })
         .collect::<Vec<_>>();
     let artifact_saved = promotion_failures.is_empty();
@@ -197,7 +201,7 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
         "promotion": {
             "status": if artifact_saved { "accepted" } else { "rejected" },
             "artifact_saved": artifact_saved,
-            "contract": "no_exact_win_mass_regression_on_reanalysis_states_with_budget_unknown",
+            "contract": "closer_to_every_reanalysis_target_and_no_exact_win_mass_regression_under_uncertainty",
             "failures": promotion_failures,
         },
         "artifact": {
@@ -224,9 +228,16 @@ pub(crate) fn build(args: ActionReanalysisPolicyArgs) -> Result<Value, String> {
     }))
 }
 
-fn promotion_gate_rejects(audit: &ReanalysisAudit) -> bool {
-    audit.contains_budget_unknown
+fn promotion_gate_failure_reason(audit: &ReanalysisAudit) -> Option<&'static str> {
+    if audit.learned_target_total_variation > audit.base_target_total_variation + 1.0e-12 {
+        return Some("learned_policy_farther_from_typed_reanalysis_target_than_base");
+    }
+    if audit.contains_budget_unknown
         && audit.learned_exact_win_mass + 1.0e-12 < audit.base_exact_win_mass
+    {
+        return Some("learned_exact_win_mass_below_base_with_budget_unknown");
+    }
+    None
 }
 
 fn load_reanalysis_corpus(path: &PathBuf) -> Result<LoadedReanalysisDecision, String> {
@@ -345,12 +356,16 @@ fn audit_reanalysis_decision(
             .map(|(probability, _)| *probability)
             .sum::<f64>()
     };
-    let target_total_variation = 0.5
-        * learned_probabilities
+    let total_variation = |left: &[f64], right: &[f64]| {
+        0.5 * left
             .iter()
-            .zip(&target_probabilities)
-            .map(|(learned, target)| (learned - target).abs())
-            .sum::<f64>();
+            .zip(right)
+            .map(|(left, right)| (left - right).abs())
+            .sum::<f64>()
+    };
+    let base_target_total_variation = total_variation(&base_probabilities, &target_probabilities);
+    let learned_target_total_variation =
+        total_variation(&learned_probabilities, &target_probabilities);
     let candidates = decision
         .candidates
         .iter()
@@ -398,7 +413,8 @@ fn audit_reanalysis_decision(
                 "exact_non_win": exact_non_win_mass(&learned_probabilities),
             },
         },
-        "target_total_variation": target_total_variation,
+        "base_target_total_variation": base_target_total_variation,
+        "learned_target_total_variation": learned_target_total_variation,
         "candidates": candidates,
     });
     Ok(ReanalysisAudit {
@@ -408,6 +424,8 @@ fn audit_reanalysis_decision(
         base_exact_win_mass,
         learned_exact_win_mass,
         target_exact_win_mass,
+        base_target_total_variation,
+        learned_target_total_variation,
     })
 }
 
@@ -468,7 +486,7 @@ mod tests {
         CombatActionReanalysisTrainingConfigV1,
     };
 
-    use super::{promotion_gate_rejects, ReanalysisAudit};
+    use super::{promotion_gate_failure_reason, ReanalysisAudit};
 
     #[test]
     fn conservative_target_preserves_unknown_mass_and_only_zeros_exact_non_wins() {
@@ -529,8 +547,12 @@ mod tests {
     }
 
     #[test]
-    fn promotion_gate_rejects_only_evidence_regression_under_uncertainty() {
-        let audit = |contains_budget_unknown, base_exact_win_mass, learned_exact_win_mass| {
+    fn promotion_gate_requires_each_learned_distribution_to_improve_on_base() {
+        let audit = |contains_budget_unknown,
+                     base_exact_win_mass,
+                     learned_exact_win_mass,
+                     base_target_total_variation,
+                     learned_target_total_variation| {
             ReanalysisAudit {
                 report: json!({}),
                 source: PathBuf::from("source.json"),
@@ -538,10 +560,21 @@ mod tests {
                 base_exact_win_mass,
                 learned_exact_win_mass,
                 target_exact_win_mass: 0.75,
+                base_target_total_variation,
+                learned_target_total_variation,
             }
         };
-        assert!(promotion_gate_rejects(&audit(true, 0.4, 0.2)));
-        assert!(!promotion_gate_rejects(&audit(true, 0.4, 0.6)));
-        assert!(!promotion_gate_rejects(&audit(false, 1.0, 1.0)));
+        assert_eq!(
+            promotion_gate_failure_reason(&audit(true, 0.4, 0.2, 0.3, 0.2)),
+            Some("learned_exact_win_mass_below_base_with_budget_unknown")
+        );
+        assert_eq!(
+            promotion_gate_failure_reason(&audit(false, 1.0, 1.0, 0.0, 0.4)),
+            Some("learned_policy_farther_from_typed_reanalysis_target_than_base")
+        );
+        assert_eq!(
+            promotion_gate_failure_reason(&audit(true, 0.4, 0.6, 0.3, 0.2)),
+            None
+        );
     }
 }
