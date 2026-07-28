@@ -149,6 +149,7 @@ fn oracle_lab_frontend_stays_split_into_bounded_command_modules() {
         ("combat_graph_diagnostics.rs", 8 * 1024),
         ("combat_graph_exports.rs", 8 * 1024),
         ("combat_graph_observation.rs", 12 * 1024),
+        ("combat_graph_report.rs", 24 * 1024),
         ("combat_planning_view.rs", 16 * 1024),
         ("combat_policy_controls.rs", 16 * 1024),
         ("combat_replay_tools.rs", 12 * 1024),
@@ -266,6 +267,28 @@ fn combat_graph_exports_reuse_canonical_writers_without_owning_search() {
         assert!(
             !source.contains(forbidden),
             "combat graph exports must orchestrate canonical writers without owning search or serialization: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn combat_graph_report_remains_a_pure_projection() {
+    let source = std::fs::read_to_string(
+        "crates/sts_oracle_lab/src/bin/combat_graph_report.rs",
+    )
+    .expect("read combat graph report module");
+
+    for forbidden in [
+        "EngineCombatStepper",
+        "LocalTurnGraphWitnessSession",
+        ".advance(",
+        "std::fs",
+        "save_combat_inputs",
+        "export_descendant_combat_case",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "combat graph reports must project completed typed facts without search or side effects: `{forbidden}`"
         );
     }
 }

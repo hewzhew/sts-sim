@@ -18,6 +18,7 @@ mod combat_case_performance;
 mod combat_graph_diagnostics;
 mod combat_graph_exports;
 mod combat_graph_observation;
+mod combat_graph_report;
 mod combat_plan_diagnostics;
 mod combat_planning_view;
 mod combat_policy_controls;

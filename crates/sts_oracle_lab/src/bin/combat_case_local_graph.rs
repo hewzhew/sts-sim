@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sts_combat_planner::{
     combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessConfig,
     LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession, OracleCombatWitnessSatisfaction,
@@ -20,17 +20,20 @@ use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 use super::combat_case_contract::{evaluate_local_graph_contract, LocalGraphContractRequest};
 use super::combat_case_performance;
 use super::combat_graph_diagnostics::{
-    materialize_local_graph_diagnostics, LocalGraphDiagnosticPaths, LocalGraphDiagnostics,
+    materialize_local_graph_diagnostics, LocalGraphDiagnosticPaths,
 };
 use super::combat_graph_exports::{
-    export_local_graph_paths, LocalGraphExportActions, LocalGraphExportPaths, LocalGraphExports,
+    export_local_graph_paths, LocalGraphExportActions, LocalGraphExportPaths,
 };
 use super::combat_graph_observation::capture_local_graph_observation;
+use super::combat_graph_report::{
+    local_graph_full_report, local_graph_trace_report, LocalGraphCounterfactual,
+    LocalGraphFullReportOptions, LocalGraphReportData, LocalGraphRunIdentity, LocalGraphScheduler,
+};
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::{
     anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
 };
-use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
 use super::print_json;
@@ -335,7 +338,6 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         &EngineCombatStepper,
     );
     let search_elapsed = search_started.elapsed();
-    let search_elapsed_ms = search_elapsed.as_millis();
     if let Some(contract_result) = evaluate_local_graph_contract(LocalGraphContractRequest {
         case: &case,
         elapsed: command_started.elapsed(),
@@ -356,13 +358,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let performance_timing = combat_case_performance::local_graph_performance_timing(&report);
     let progress = session.progress_snapshot();
     let include_trace = readable || trace;
-    let LocalGraphDiagnostics {
-        deepest_survival_trace,
-        deepest_progress_trace,
-        deepest_survival_node,
-        deepest_progress_node,
-        witness_trace,
-    } = materialize_local_graph_diagnostics(
+    let diagnostics = materialize_local_graph_diagnostics(
         &session,
         &search_root_position,
         LocalGraphDiagnosticPaths {
@@ -382,16 +378,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         &watch_exact_state_hash,
         watched_corridor.as_ref(),
     );
-    let root_action_families = observation.root_action_families;
-    let watched_states = observation.watched_states;
-    let watched_corridor = observation.watched_corridor;
-    let LocalGraphExports {
-        witness_actions: exported_witness_actions,
-        deepest_survival_case: exported_deepest_survival_case,
-        deepest_survival_actions: exported_deepest_survival_actions,
-        deepest_progress_case: exported_deepest_progress_case,
-        deepest_progress_actions: exported_deepest_progress_actions,
-    } = export_local_graph_paths(
+    let exports = export_local_graph_paths(
         &loaded,
         LocalGraphExportPaths {
             witness_actions: export_witness_actions.as_deref(),
@@ -408,171 +395,50 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         },
         max_engine_steps_per_transition,
     )?;
-    let watched_corridor_output = if readable {
-        watched_corridor.clone().unwrap_or(Value::Null)
-    } else {
-        compact_local_corridor_report(watched_corridor.as_ref())
-    };
-    if trace {
-        let compact_survival_trace =
-            if progress.deepest_survival_actions == progress.deepest_progress_actions {
-                json!({"same_as": "deepest_progress_trace"})
-            } else {
-                compact_combat_trace(deepest_survival_trace.as_ref())
-            };
-        let plan_transition_portfolio = plan_transition_annotations
-            .then(|| combat_plan_transition_portfolio_v1(&session))
-            .unwrap_or(Value::Null);
-        return print_json(&json!({
-            "schema_name": "LocalTurnGraphCombatTraceV1",
-            "schema_version": 1,
-            "case": case,
-            "status": format!("{:?}", report.status),
-            "satisfaction": format!("{satisfaction:?}"),
-            "elapsed_ms": command_started.elapsed().as_millis(),
-            "counterfactual": {
-                "full_health": full_health,
-                "original_hp": original_hp,
-                "search_hp": initial_hp,
-            },
-            "work": {
-                "generation_work": report.counters.generation_work,
-                "exact_nodes": report.counters.exact_nodes,
-                "completed_turn_options": report.counters.completed_turn_options,
-                "applied_action_transitions": report.counters.applied_action_transitions,
-            },
-            "root_action_families": root_action_families,
-            "plan_compatible_policy_line": policy_line_report,
-            "plan_transition_annotations": plan_transition_annotations,
-            "plan_transition_portfolio": plan_transition_portfolio,
-            "deepest": {
-                "progress_state": progress.deepest_progress_state,
-                "progress_node": deepest_progress_node,
-                "progress_trace": compact_combat_trace(deepest_progress_trace.as_ref()),
-                "survival_state": progress.deepest_survival_state,
-                "survival_node": deepest_survival_node,
-                "survival_trace": compact_survival_trace,
-            },
-            "witness": report.witness.as_ref().map(|witness| json!({
-                "final_hp": witness.final_position.combat.entities.player.current_hp,
-                "action_count": witness.actions.len(),
-                "trace": compact_combat_trace(witness_trace.as_ref()),
-            })),
-            "exported_witness_actions": exported_witness_actions,
-            "exported_deepest_survival_case": exported_deepest_survival_case,
-            "exported_deepest_survival_actions": exported_deepest_survival_actions,
-            "exported_deepest_progress_case": exported_deepest_progress_case,
-            "exported_deepest_progress_actions": exported_deepest_progress_actions,
-        }));
-    }
-    let mut output = json!({
-        "schema_name": "LocalTurnGraphCombatSearchReportV1",
-        "schema_version": 1,
-        "case": case,
-        "counterfactual": {
-            "full_health": full_health,
-            "original_hp": original_hp,
-            "search_hp": initial_hp,
-        },
-        "action_imitation_artifact": action_imitation_artifact,
-        "value_prototype_artifact": value_prototype_artifact,
-        "guidance_bundle": guidance_bundle,
-        "watch_corridor_actions": watch_corridor_actions,
-        "satisfaction": format!("{satisfaction:?}"),
-        "scheduler": if anchor_only {
-            "anchor_only"
-        } else if root_turn_anchor_only {
-            "root_turn_anchor_then_guides"
-        } else if rollout_lookahead {
-            "anchor_guides_and_lazy_rollout_lookahead"
-        } else {
-            "anchor_and_guides"
-        },
-        "status": format!("{:?}", report.status),
-        "elapsed_ms": command_started.elapsed().as_millis(),
-        "initial_hp": initial_hp,
-        "final_hp": report.witness.as_ref().map(|witness| {
-            witness.final_position.combat.entities.player.current_hp
-        }),
-        "witness_actions": report.witness.as_ref().map(|witness| witness.actions.len()),
-        "root": {
-            "visits": report.root_visits,
-            "generated_options": report.root_generated_options,
-            "children": report.root_children,
-        },
-        "root_action_families": root_action_families,
-        "plan_compatible_policy_line": policy_line_report,
-        "counters": {
-            "selections": report.counters.selections,
-            "node_visits": report.counters.node_visits,
-            "generation_work": report.counters.generation_work,
-            "lookahead_evaluations": report.counters.lookahead_evaluations,
-            "lookahead_work": report.counters.lookahead_work,
-            "atomic_lookahead_evaluations": report.counters.atomic_lookahead_evaluations,
-            "atomic_lookahead_work": report.counters.atomic_lookahead_work,
-            "boundary_lookahead_evaluations": report.counters.boundary_lookahead_evaluations,
-            "boundary_lookahead_work": report.counters.boundary_lookahead_work,
-            "engine_steps": report.counters.engine_steps,
-            "exact_nodes": report.counters.exact_nodes,
-            "exact_edges": report.counters.exact_edges,
-            "completed_turn_options": report.counters.completed_turn_options,
-            "applied_action_transitions": report.counters.applied_action_transitions,
-            "unique_successor_states": report.counters.unique_successor_states,
-            "duplicate_exact_successors": report.counters.duplicate_exact_successors,
-            "duplicate_successor_edges": report.counters.duplicate_successor_edges,
-            "terminal_losses": report.counters.terminal_losses,
-            "depth_limited_successors": report.counters.depth_limited_successors,
-            "exhausted_nodes": report.counters.exhausted_nodes,
-            "maximum_turn_depth": report.counters.maximum_turn_depth,
-        },
-        "progress": {
-            "retained_states": progress.retained_states,
-            "retained_state_work": session.retained_state_work(),
-            "max_player_turn": progress.max_player_turn,
-            "max_path_atomic_depth": progress.max_path_atomic_depth,
-            "deepest_survival_state": progress.deepest_survival_state,
-            "deepest_survival_node": deepest_survival_node,
-            "deepest_survival_actions": readable.then_some(&progress.deepest_survival_actions),
-            "deepest_survival_trace": deepest_survival_trace,
-            "deepest_progress_state": progress.deepest_progress_state,
-            "deepest_progress_node": deepest_progress_node,
-            "deepest_progress_actions": readable.then_some(&progress.deepest_progress_actions),
-            "deepest_progress_trace": deepest_progress_trace,
-            "recent_turn_survival_envelope": progress.recent_turn_survival_envelope,
-        },
-        "witness_trace": witness_trace,
-        "generation_gap_count": report.generation_gaps.len(),
-        "watched_states": watched_states,
-        "watched_corridor": watched_corridor_output,
-        "exported_witness_actions": exported_witness_actions,
-        "exported_deepest_survival_case": exported_deepest_survival_case,
-        "exported_deepest_survival_actions": exported_deepest_survival_actions,
-        "exported_deepest_progress_case": exported_deepest_progress_case,
-        "exported_deepest_progress_actions": exported_deepest_progress_actions,
-    });
     let plan_transition_portfolio = plan_transition_annotations
         .then(|| combat_plan_transition_portfolio_v1(&session))
         .unwrap_or(Value::Null);
-    output["counters"]["annotated_exact_edges"] = json!(report.counters.annotated_exact_edges);
-    output["counters"]["terminal_win_options"] = json!(report.counters.terminal_win_options);
-    output["counters"]["witness_replay_attempts"] = json!(report.counters.witness_replay_attempts);
-    output["counters"]["witness_replay_improvements"] =
-        json!(report.counters.witness_replay_improvements);
-    output["counters"]["witness_replay_dominated_skips"] =
-        json!(report.counters.witness_replay_dominated_skips);
-    let output_object = output
-        .as_object_mut()
-        .expect("combat-case report must be a JSON object");
-    output_object.insert(
-        "plan_transition_annotations".to_string(),
-        json!(plan_transition_annotations),
+    let report_data = LocalGraphReportData {
+        run: LocalGraphRunIdentity {
+            case: &case,
+            elapsed: command_started.elapsed(),
+            satisfaction,
+            counterfactual: LocalGraphCounterfactual {
+                full_health,
+                original_hp,
+                search_hp: initial_hp,
+            },
+        },
+        report: &report,
+        progress: &progress,
+        retained_state_work: session.retained_state_work(),
+        policy_line: policy_line_report.as_ref(),
+        plan_transition_annotations,
+        plan_transition_portfolio: &plan_transition_portfolio,
+        diagnostics: &diagnostics,
+        observation: &observation,
+        exports: &exports,
+    };
+    if trace {
+        return print_json(&local_graph_trace_report(&report_data));
+    }
+    let output = local_graph_full_report(
+        &report_data,
+        LocalGraphFullReportOptions {
+            action_imitation_artifact: action_imitation_artifact.as_deref(),
+            value_prototype_artifact: value_prototype_artifact.as_deref(),
+            guidance_bundle: guidance_bundle.as_deref(),
+            watch_corridor_actions: &watch_corridor_actions,
+            scheduler: LocalGraphScheduler::from_controls(
+                anchor_only,
+                root_turn_anchor_only,
+                rollout_lookahead,
+            ),
+            readable,
+            search_elapsed,
+            performance_timing: &performance_timing,
+            performance_profile: &performance_profile,
+        },
     );
-    output_object.insert(
-        "plan_transition_portfolio".to_string(),
-        plan_transition_portfolio,
-    );
-    output_object.insert("search_elapsed_ms".to_string(), json!(search_elapsed_ms));
-    output_object.insert("performance_timing".to_string(), performance_timing);
-    output_object.insert("performance_profile".to_string(), performance_profile);
     print_json(&output)
 }
