@@ -1097,16 +1097,17 @@ impl LocalTurnGraphWitnessSession {
         }
 
         let successor_identity_started = Instant::now();
-        let successor_identity = option.exact_successor_identity().clone();
+        let (successor_identity, successor_position, option_actions, option_negative_log_policy) =
+            option.into_successor_parts();
         let successor_exact_key = successor_identity.exact_key().cloned().unwrap_or_else(|| {
             Arc::new(combat_exact_state_key(
-                &option.exact_successor().engine,
-                &option.exact_successor().combat,
+                &successor_position.engine,
+                &successor_position.combat,
             ))
         });
         let successor_potion_expenditures = self.nodes[parent_id]
             .potion_expenditures
-            .saturating_add(actions_potion_expenditures(option.actions()));
+            .saturating_add(actions_potion_expenditures(&option_actions));
         self.performance_timing.successor_identity_elapsed_ns = self
             .performance_timing
             .successor_identity_elapsed_ns
@@ -1137,7 +1138,7 @@ impl LocalTurnGraphWitnessSession {
         } else {
             let successor_node_build_started = Instant::now();
             let Ok(root) = CombatDecisionRoot::with_exact_state_identity(
-                option.exact_successor().clone(),
+                successor_position,
                 successor_identity,
             ) else {
                 self.performance_timing.successor_node_build_elapsed_ns = self
@@ -1158,7 +1159,7 @@ impl LocalTurnGraphWitnessSession {
                 lookahead_acquisition_views_from_guides(&guides, lookahead_pending_lane);
             let node_id = self.nodes.len();
             let generator = turn_generator_for_potion_budget(
-                root.clone(),
+                root,
                 self.config.generator,
                 self.policy.clone(),
                 self.config.max_potions_used,
@@ -1216,13 +1217,12 @@ impl LocalTurnGraphWitnessSession {
             self.used.duplicate_successor_edges =
                 self.used.duplicate_successor_edges.saturating_add(1);
             let edge = &mut self.nodes[parent_id].children[edge_index];
-            if option
-                .negative_log_policy()
+            if option_negative_log_policy
                 .total_cmp(&edge.negative_log_policy)
                 .is_lt()
             {
-                edge.actions = option.actions().to_vec();
-                edge.negative_log_policy = option.negative_log_policy();
+                edge.actions = option_actions;
+                edge.negative_log_policy = option_negative_log_policy;
             }
             edge_index
         } else {
@@ -1231,7 +1231,7 @@ impl LocalTurnGraphWitnessSession {
                 .then(|| {
                     combat_plan_transition_annotation_v1(
                         self.nodes[parent_id].generator.root().position(),
-                        option.exact_successor(),
+                        self.nodes[successor].generator.root().position(),
                     )
                 })
                 .flatten();
@@ -1239,8 +1239,8 @@ impl LocalTurnGraphWitnessSession {
             let edge_index = parent.children.len();
             parent.children.push(GraphEdge {
                 successor,
-                actions: option.actions().to_vec(),
-                negative_log_policy: option.negative_log_policy(),
+                actions: option_actions,
+                negative_log_policy: option_negative_log_policy,
                 plan_transition_annotation: plan_transition_annotation.clone(),
                 visits: 0,
                 anchor_visits: 0,

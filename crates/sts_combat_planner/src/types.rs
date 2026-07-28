@@ -298,10 +298,6 @@ impl CompleteTurnOption {
         self.exact_successor_hash.as_str()
     }
 
-    pub(crate) fn exact_successor_identity(&self) -> &ReplaySuccessorHash {
-        &self.exact_successor_hash
-    }
-
     pub fn exact_successor(&self) -> &CombatPosition {
         &self.exact_successor
     }
@@ -312,6 +308,22 @@ impl CompleteTurnOption {
 
     pub fn negative_log_policy(&self) -> f64 {
         self.negative_log_policy
+    }
+
+    pub(crate) fn into_successor_parts(
+        self,
+    ) -> (
+        ReplaySuccessorHash,
+        CombatPosition,
+        Vec<TurnOptionAction>,
+        f64,
+    ) {
+        (
+            self.exact_successor_hash,
+            self.exact_successor,
+            self.actions,
+            self.negative_log_policy,
+        )
     }
 }
 
