@@ -85,6 +85,13 @@ pub(super) struct SharedAgendaPosition {
     pub(super) candidate_count: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SharedAnchorPosition {
+    pub(super) agenda: SharedAgendaPosition,
+    pub(super) service_cost: Option<f64>,
+    pub(super) best_service_cost: Option<f64>,
+}
+
 impl SharedBoundaryAgenda {
     pub(super) fn new(lookahead_enabled: bool) -> Self {
         Self {
@@ -259,7 +266,7 @@ impl SharedBoundaryAgenda {
         &self,
         node_id: usize,
         nodes: &[GraphNode],
-    ) -> SharedAgendaPosition {
+    ) -> SharedAnchorPosition {
         let mut candidates = self
             .anchor
             .iter()
@@ -280,12 +287,19 @@ impl SharedBoundaryAgenda {
                 .then_with(|| left_id.cmp(right_id))
         });
         candidates.dedup_by_key(|(candidate_id, _)| *candidate_id);
-        SharedAgendaPosition {
-            ordinal_rank: candidates
+        SharedAnchorPosition {
+            agenda: SharedAgendaPosition {
+                ordinal_rank: candidates
+                    .iter()
+                    .position(|(candidate_id, _)| *candidate_id == node_id)
+                    .map(|index| index.saturating_add(1)),
+                candidate_count: candidates.len(),
+            },
+            service_cost: candidates
                 .iter()
-                .position(|(candidate_id, _)| *candidate_id == node_id)
-                .map(|index| index.saturating_add(1)),
-            candidate_count: candidates.len(),
+                .find(|(candidate_id, _)| *candidate_id == node_id)
+                .map(|(_, cost)| *cost),
+            best_service_cost: candidates.first().map(|(_, cost)| *cost),
         }
     }
 

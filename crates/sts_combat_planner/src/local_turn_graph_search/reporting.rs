@@ -347,6 +347,8 @@ pub struct LocalTurnGraphEdgeSnapshot {
     pub successor_path_cost: f64,
     pub successor_anchor_ordinal_rank: Option<usize>,
     pub successor_anchor_candidate_count: usize,
+    pub successor_anchor_service_cost: Option<f64>,
+    pub best_anchor_service_cost: Option<f64>,
     pub guide_service: Vec<LocalTurnGraphGuideServiceSnapshot>,
     pub successor_visits: usize,
     pub successor_generated_options: usize,
