@@ -98,6 +98,20 @@ struct CombatCaseRoot {
 }
 
 const TRANSITION_CLONE_PROFILE_INTERVAL: usize = 16;
+const PROFILED_COMBAT_INPUT_KINDS: usize = 5;
+
+fn profiled_combat_input_kind(input: &ClientInput) -> usize {
+    match input {
+        ClientInput::PlayCard { .. } => 0,
+        ClientInput::EndTurn => 1,
+        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_) => 2,
+        ClientInput::SubmitCardChoice(_)
+        | ClientInput::SubmitDiscoverChoice(_)
+        | ClientInput::SubmitScryDiscard(_)
+        | ClientInput::SubmitSelection(_) => 3,
+        _ => 4,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct TransitionCloneProfile {
@@ -117,6 +131,9 @@ struct TransitionCloneProfile {
     combat_rng_clone_elapsed_ns: u64,
     combat_runtime_clone_elapsed_ns: u64,
     execution_elapsed_ns: u64,
+    input_kind_samples: [usize; PROFILED_COMBAT_INPUT_KINDS],
+    input_kind_execution_elapsed_ns: [u64; PROFILED_COMBAT_INPUT_KINDS],
+    input_kind_engine_steps: [usize; PROFILED_COMBAT_INPUT_KINDS],
     emitted_event_items: usize,
     max_emitted_event_items: usize,
     engine_diagnostic_items: usize,
@@ -169,6 +186,7 @@ impl CombatStepper for ProfiledEngineCombatStepper {
             return EngineCombatStepper.apply_to_stable(position, input, limits);
         }
 
+        let input_kind = profiled_combat_input_kind(&input);
         let (step, timing) = apply_combat_input_to_stable_profiled_v1(position, input, limits);
         let (_, key_timing) =
             combat_exact_state_key_profiled_v1(&step.position.engine, &step.position.combat);
@@ -193,6 +211,13 @@ impl CombatStepper for ProfiledEngineCombatStepper {
             *total = total.saturating_add(sample);
         }
         profile.samples = profile.samples.saturating_add(1);
+        profile.input_kind_samples[input_kind] =
+            profile.input_kind_samples[input_kind].saturating_add(1);
+        profile.input_kind_execution_elapsed_ns[input_kind] = profile
+            .input_kind_execution_elapsed_ns[input_kind]
+            .saturating_add(timing.execution_elapsed_ns);
+        profile.input_kind_engine_steps[input_kind] =
+            profile.input_kind_engine_steps[input_kind].saturating_add(step.engine_steps);
         let emitted_event_items = position.combat.runtime.emitted_events.len();
         profile.emitted_event_items = profile
             .emitted_event_items
@@ -458,10 +483,26 @@ fn run(args: Cli) -> Result<(), String> {
             let per_sample = |elapsed_ns: u64| {
                 (profile.samples > 0).then(|| elapsed_ns as f64 / profile.samples as f64)
             };
+            let input_kind = |index: usize| {
+                let samples = profile.input_kind_samples[index];
+                json!({
+                    "samples": samples,
+                    "sample_share": (profile.samples > 0).then(|| samples as f64 / profile.samples as f64),
+                    "mean_execution_ns": (samples > 0).then(|| profile.input_kind_execution_elapsed_ns[index] as f64 / samples as f64),
+                    "mean_engine_steps": (samples > 0).then(|| profile.input_kind_engine_steps[index] as f64 / samples as f64),
+                })
+            };
             json!({
                 "sample_interval": TRANSITION_CLONE_PROFILE_INTERVAL,
                 "transition_calls": profile.calls,
                 "samples": profile.samples,
+                "execution_by_input": {
+                    "play_card": input_kind(0),
+                    "end_turn": input_kind(1),
+                    "potion": input_kind(2),
+                    "selection": input_kind(3),
+                    "other": input_kind(4),
+                },
                 "sampled_collection_lengths": {
                     "mean_emitted_events": (profile.samples > 0).then(|| profile.emitted_event_items as f64 / profile.samples as f64),
                     "max_emitted_events": profile.max_emitted_event_items,

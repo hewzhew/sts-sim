@@ -28,6 +28,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProfiledCombatInputKinds = @("play_card", "end_turn", "potion", "selection", "other")
 
 . (Join-Path $PSScriptRoot "combat_contract_build_receipt.ps1")
 
@@ -41,6 +42,41 @@ function Get-Median([double[]] $Values) {
         return $Sorted[$Middle]
     }
     return ($Sorted[$Middle - 1] + $Sorted[$Middle]) / 2.0
+}
+
+function Get-RoundedMedian([double[]] $Values, [int] $Digits) {
+    $Median = Get-Median $Values
+    if ($null -eq $Median) {
+        return $null
+    }
+    return [math]::Round($Median, $Digits)
+}
+
+function New-InputProfileAccumulators([string[]] $Kinds) {
+    $Profiles = [ordered]@{}
+    foreach ($Kind in $Kinds) {
+        $Profiles[$Kind] = [pscustomobject]@{
+            samples = [Collections.Generic.List[double]]::new()
+            sample_share = [Collections.Generic.List[double]]::new()
+            execution_ns = [Collections.Generic.List[double]]::new()
+            engine_steps = [Collections.Generic.List[double]]::new()
+        }
+    }
+    return $Profiles
+}
+
+function Get-InputProfileMedians($Profiles, [string[]] $Kinds) {
+    $Summary = [ordered]@{}
+    foreach ($Kind in $Kinds) {
+        $Profile = $Profiles[$Kind]
+        $Summary[$Kind] = [ordered]@{
+            samples = Get-RoundedMedian $Profile.samples 1
+            sample_share = Get-RoundedMedian $Profile.sample_share 4
+            execution_ns = Get-RoundedMedian $Profile.execution_ns 1
+            engine_steps = Get-RoundedMedian $Profile.engine_steps 2
+        }
+    }
+    return $Summary
 }
 
 function Invoke-CombatPanelCase(
@@ -226,6 +262,7 @@ try {
                 engine_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_clone_ns = [Collections.Generic.List[double]]::new()
                 transition_execution_ns = [Collections.Generic.List[double]]::new()
+                transition_execution_by_input = New-InputProfileAccumulators $ProfiledCombatInputKinds
                 combat_meta_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_turn_clone_ns = [Collections.Generic.List[double]]::new()
                 combat_zones_clone_ns = [Collections.Generic.List[double]]::new()
@@ -310,6 +347,16 @@ try {
                     $Case.engine_clone_ns.Add($Profile.mean_ns_per_sample.engine_clone)
                     $Case.combat_clone_ns.Add($Profile.mean_ns_per_sample.combat_clone)
                     $Case.transition_execution_ns.Add($Profile.mean_ns_per_sample.execution)
+                    foreach ($InputKind in $ProfiledCombatInputKinds) {
+                        $InputProfile = $Profile.execution_by_input.$InputKind
+                        $Accumulator = $Case.transition_execution_by_input[$InputKind]
+                        $Accumulator.samples.Add($InputProfile.samples)
+                        $Accumulator.sample_share.Add($InputProfile.sample_share)
+                        if ([int] $InputProfile.samples -gt 0) {
+                            $Accumulator.execution_ns.Add($InputProfile.mean_execution_ns)
+                            $Accumulator.engine_steps.Add($InputProfile.mean_engine_steps)
+                        }
+                    }
                     $Components = $Profile.mean_ns_per_sample.combat_clone_components
                     $Case.combat_meta_clone_ns.Add($Components.meta)
                     $Case.combat_turn_clone_ns.Add($Components.turn)
@@ -386,6 +433,9 @@ try {
                 } else { $null }
                 transition_execution_ns = if ($ProfileTransitionCloneCost) {
                     [math]::Round((Get-Median $_.transition_execution_ns), 1)
+                } else { $null }
+                transition_execution_by_input = if ($ProfileTransitionCloneCost) {
+                    Get-InputProfileMedians $_.transition_execution_by_input $ProfiledCombatInputKinds
                 } else { $null }
                 combat_clone_components_ns = if ($ProfileTransitionCloneCost) {
                     [ordered]@{
