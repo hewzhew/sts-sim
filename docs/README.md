@@ -22,6 +22,15 @@ notes are not kept searchable; use git history for archaeology.
 - [Durable Trajectory Evidence Migration](design/2026-07-16-durable-trajectory-evidence-migration.md):
   implemented capsule segment DAG, verified checkpoint heads, and rebuildable
   behavior/outcome projections across bounded slices.
+- [Answer Deployment Evidence Contract](design/2026-07-16-answer-deployment-evidence-contract.md):
+  committed-trajectory evidence for whether owned combat answers were reached,
+  playable, and actually applied.
+- [Combinatorial Action-Prefix Search](design/2026-07-17-combinatorial-action-prefix-search-design.md):
+  lazy, replay-exact enumeration for structured combat selections without
+  materializing the complete action surface.
+- [Exact Model, Policy, and Lazy Run Search Migration](design/2026-07-24-exact-model-policy-lazy-run-search-migration.md):
+  active oracle-mainline boundary between exact mechanics, policy guidance,
+  state value, and lazy run search.
 
 ## Rules
 
