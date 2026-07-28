@@ -22,12 +22,14 @@ use super::combat_case_performance;
 use super::combat_graph_diagnostics::{
     materialize_local_graph_diagnostics, LocalGraphDiagnosticPaths, LocalGraphDiagnostics,
 };
+use super::combat_graph_exports::{
+    export_local_graph_paths, LocalGraphExportActions, LocalGraphExportPaths, LocalGraphExports,
+};
 use super::combat_graph_observation::capture_local_graph_observation;
 use super::combat_planning_view::combat_plan_transition_portfolio_v1;
 use super::combat_policy_controls::{
     anchor_only_policy, load_action_imitation_policy, root_turn_anchor_only_policy,
 };
-use super::combat_replay_tools::{export_descendant_combat_case, save_combat_inputs};
 use super::combat_trace_view::{compact_combat_trace, compact_local_corridor_report};
 use super::exact_turn_corridor::load as load_exact_turn_corridor;
 use super::guidance_artifact_commands::load_value_prototype;
@@ -383,37 +385,29 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
     let root_action_families = observation.root_action_families;
     let watched_states = observation.watched_states;
     let watched_corridor = observation.watched_corridor;
-    if let (Some(path), Some(witness)) = (export_witness_actions.as_ref(), report.witness.as_ref())
-    {
-        save_combat_inputs(
-            path,
-            witness.actions.iter().map(|action| action.input.clone()),
-        )?;
-    }
-    let exported_deepest_survival_actions =
-        if let Some(path) = export_deepest_survival_case.as_ref() {
-            Some(export_descendant_combat_case(
-                &loaded,
-                &progress.deepest_survival_actions,
-                path,
-                max_engine_steps_per_transition,
-                "local_turn_graph_deepest_survival",
-            )?)
-        } else {
-            None
-        };
-    let exported_deepest_progress_actions =
-        if let Some(path) = export_deepest_progress_case.as_ref() {
-            Some(export_descendant_combat_case(
-                &loaded,
-                &progress.deepest_progress_actions,
-                path,
-                max_engine_steps_per_transition,
-                "local_turn_graph_deepest_progress",
-            )?)
-        } else {
-            None
-        };
+    let LocalGraphExports {
+        witness_actions: exported_witness_actions,
+        deepest_survival_case: exported_deepest_survival_case,
+        deepest_survival_actions: exported_deepest_survival_actions,
+        deepest_progress_case: exported_deepest_progress_case,
+        deepest_progress_actions: exported_deepest_progress_actions,
+    } = export_local_graph_paths(
+        &loaded,
+        LocalGraphExportPaths {
+            witness_actions: export_witness_actions.as_deref(),
+            deepest_survival_case: export_deepest_survival_case.as_deref(),
+            deepest_progress_case: export_deepest_progress_case.as_deref(),
+        },
+        LocalGraphExportActions {
+            witness: report
+                .witness
+                .as_ref()
+                .map(|witness| witness.actions.as_slice()),
+            deepest_survival: &progress.deepest_survival_actions,
+            deepest_progress: &progress.deepest_progress_actions,
+        },
+        max_engine_steps_per_transition,
+    )?;
     let watched_corridor_output = if readable {
         watched_corridor.clone().unwrap_or(Value::Null)
     } else {
@@ -464,12 +458,10 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
                 "action_count": witness.actions.len(),
                 "trace": compact_combat_trace(witness_trace.as_ref()),
             })),
-            "exported_witness_actions": report.witness.is_some()
-                .then_some(export_witness_actions.as_ref())
-                .flatten(),
-            "exported_deepest_survival_case": export_deepest_survival_case,
+            "exported_witness_actions": exported_witness_actions,
+            "exported_deepest_survival_case": exported_deepest_survival_case,
             "exported_deepest_survival_actions": exported_deepest_survival_actions,
-            "exported_deepest_progress_case": export_deepest_progress_case,
+            "exported_deepest_progress_case": exported_deepest_progress_case,
             "exported_deepest_progress_actions": exported_deepest_progress_actions,
         }));
     }
@@ -552,12 +544,10 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         "generation_gap_count": report.generation_gaps.len(),
         "watched_states": watched_states,
         "watched_corridor": watched_corridor_output,
-        "exported_witness_actions": report.witness.is_some()
-            .then_some(export_witness_actions.as_ref())
-            .flatten(),
-        "exported_deepest_survival_case": export_deepest_survival_case,
+        "exported_witness_actions": exported_witness_actions,
+        "exported_deepest_survival_case": exported_deepest_survival_case,
         "exported_deepest_survival_actions": exported_deepest_survival_actions,
-        "exported_deepest_progress_case": export_deepest_progress_case,
+        "exported_deepest_progress_case": exported_deepest_progress_case,
         "exported_deepest_progress_actions": exported_deepest_progress_actions,
     });
     let plan_transition_portfolio = plan_transition_annotations

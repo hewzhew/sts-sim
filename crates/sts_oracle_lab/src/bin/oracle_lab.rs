@@ -16,6 +16,7 @@ mod combat_case_legacy_global;
 mod combat_case_local_graph;
 mod combat_case_performance;
 mod combat_graph_diagnostics;
+mod combat_graph_exports;
 mod combat_graph_observation;
 mod combat_plan_diagnostics;
 mod combat_planning_view;
