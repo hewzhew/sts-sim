@@ -619,8 +619,11 @@ fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
         "the oracle-run explorer must retain its decision-materialization boundary"
     );
     for materialization_owner in [
+        "struct PreparedOracleRunDecisionV1",
+        "struct PreparedOracleRunDecisionRegistrationV1",
         "fn materialize_decision",
-        "fn materialize_explicit_decision",
+        "fn prepare_explicit_decision",
+        "fn commit_explicit_decision",
         "fn settle_oracle_forced_transitions",
     ] {
         assert!(
@@ -637,8 +640,11 @@ fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
         "{MATERIALIZATION} grew to {materialization_bytes} bytes; split forced-transition settlement from exact decision commit before extending it"
     );
     for required_owner in [
+        "struct PreparedOracleRunDecisionV1",
+        "struct PreparedOracleRunDecisionRegistrationV1",
         "fn materialize_decision",
-        "fn materialize_explicit_decision",
+        "fn prepare_explicit_decision",
+        "fn commit_explicit_decision",
         "fn settle_oracle_forced_transitions",
     ] {
         assert!(

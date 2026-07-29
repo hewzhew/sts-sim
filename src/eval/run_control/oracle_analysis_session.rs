@@ -998,11 +998,15 @@ impl OracleAnalysisSessionV1 {
         let selection_service = self
             .explorer
             .prepare_selection_member_release(&work.stable_work_key)?;
-        let child_node_id = self
+        let decision = self
             .explorer
-            .materialize_explicit_decision(work, self.decision_annotation)?;
+            .prepare_explicit_decision(work, self.decision_annotation)?;
+        let child_registration = self
+            .explorer
+            .prepare_explicit_decision_registration(&decision, self.decision_prior)?;
+        let child_node_id = self.explorer.commit_explicit_decision(decision);
         self.explorer
-            .register_explicit_decisions_for_branch(child_node_id, self.decision_prior)?;
+            .apply_explicit_decision_registration(child_registration);
         self.explorer
             .apply_selection_member_release(selection_service);
         let edge_id = self.record_edge(

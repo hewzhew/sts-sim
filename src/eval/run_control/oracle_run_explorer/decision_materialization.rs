@@ -1,4 +1,13 @@
+use super::decision_supply::{decision_supply_for_branch, OracleRunDecisionSupplyV1};
 use super::*;
+
+pub(in super::super) struct PreparedOracleRunDecisionV1 {
+    child: OracleRunBranchV1,
+}
+
+pub(in super::super) struct PreparedOracleRunDecisionRegistrationV1 {
+    supply: Option<OracleRunDecisionSupplyV1>,
+}
 
 impl OracleRunExplorerV1 {
     pub(super) fn materialize_decision(
@@ -6,6 +15,15 @@ impl OracleRunExplorerV1 {
         work: LazyOracleRunDecisionV1,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
     ) -> Result<Option<usize>, String> {
+        let prepared = self.prepare_decision(work, decision_annotation)?;
+        Ok(self.commit_prepared_decision(prepared))
+    }
+
+    fn prepare_decision(
+        &self,
+        work: LazyOracleRunDecisionV1,
+        decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
+    ) -> Result<PreparedOracleRunDecisionV1, String> {
         let parent = self
             .branches
             .iter()
@@ -68,26 +86,80 @@ impl OracleRunExplorerV1 {
             journal,
             session,
         };
-        self.next_branch_id = self.next_branch_id.saturating_add(1);
-        Ok(self.accept_branch(child))
+        Ok(PreparedOracleRunDecisionV1 { child })
     }
 
-    pub(in super::super) fn materialize_explicit_decision(
-        &mut self,
+    fn commit_prepared_decision(&mut self, prepared: PreparedOracleRunDecisionV1) -> Option<usize> {
+        assert_eq!(
+            prepared.child.branch_id, self.next_branch_id,
+            "prepared decision branch id must remain current until commit"
+        );
+        self.next_branch_id = self.next_branch_id.saturating_add(1);
+        self.accept_branch(prepared.child)
+    }
+
+    pub(in super::super) fn prepare_explicit_decision(
+        &self,
         work: LazyOracleRunDecisionV1,
         decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
-    ) -> Result<usize, String> {
+    ) -> Result<PreparedOracleRunDecisionV1, String> {
+        self.prepare_decision(work, decision_annotation)
+    }
+
+    pub(in super::super) fn prepare_explicit_decision_registration(
+        &self,
+        prepared: &PreparedOracleRunDecisionV1,
+        decision_prior: Option<RunPolicyPriorFnV1>,
+    ) -> Result<PreparedOracleRunDecisionRegistrationV1, String> {
+        let branch = self
+            .state_index
+            .get(&prepared.child.state_fingerprint)
+            .and_then(|branch_id| {
+                self.branches
+                    .iter()
+                    .find(|branch| branch.branch_id == *branch_id)
+            })
+            .unwrap_or(&prepared.child);
+        let supply = match branch.boundary {
+            OracleRunBoundaryV1::Combat
+            | OracleRunBoundaryV1::TerminalVictory
+            | OracleRunBoundaryV1::TerminalDefeat => None,
+            _ => Some(decision_supply_for_branch(branch, decision_prior)?),
+        };
+        Ok(PreparedOracleRunDecisionRegistrationV1 { supply })
+    }
+
+    pub(in super::super) fn commit_explicit_decision(
+        &mut self,
+        prepared: PreparedOracleRunDecisionV1,
+    ) -> usize {
         let duplicate_count = self.retired_exact_duplicates.len();
-        if let Some(branch_id) = self.materialize_decision(work, decision_annotation)? {
-            return Ok(branch_id);
+        if let Some(branch_id) = self.commit_prepared_decision(prepared) {
+            return branch_id;
         }
         self.retired_exact_duplicates
             .get(duplicate_count)
             .map(|duplicate| duplicate.survivor_branch_id)
-            .ok_or_else(|| {
-                "explicit oracle decision was discarded without an exact-duplicate record"
-                    .to_string()
-            })
+            .expect("explicit decision duplicate must record its survivor")
+    }
+
+    pub(in super::super) fn apply_explicit_decision_registration(
+        &mut self,
+        prepared: PreparedOracleRunDecisionRegistrationV1,
+    ) {
+        let Some(mut supply) = prepared.supply else {
+            return;
+        };
+        supply.decisions.retain(|item| {
+            self.registered_work_keys
+                .insert(item.stable_work_key.clone())
+        });
+        self.pending_decisions.extend(supply.decisions);
+        if let Some(family) = supply.selection_family {
+            if self.registered_work_keys.insert(family.family_key.clone()) {
+                self.pending_selection_families.push_back(family);
+            }
+        }
     }
 }
 
