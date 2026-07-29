@@ -90,6 +90,47 @@ fn drive_reports_wall_deadline_before_touching_live_work() {
 }
 
 #[test]
+fn exact_duplicate_admission_is_first_wins_and_records_the_discarded_path() {
+    let mut explorer = OracleRunExplorerV1::empty();
+    let mut first = test_branch(7, Some(1));
+    first.state_fingerprint = "shared-exact-state".to_string();
+    first.path_negative_log_policy = 9.0;
+    first.path_discrepancy = 12;
+    assert_eq!(explorer.accept_branch(first), Some(7));
+
+    let mut later_better_path = test_branch(9, Some(3));
+    later_better_path.state_fingerprint = "shared-exact-state".to_string();
+    later_better_path.neow_root_candidate_id = "alternate-root".to_string();
+    later_better_path.path_negative_log_policy = 0.0;
+    later_better_path.path_discrepancy = 0;
+    later_better_path.replay.push(OracleRunReplayStepV1 {
+        candidate_id: "discarded-choice".to_string(),
+        label: "discarded choice".to_string(),
+        action: RunDecisionAction::Input(ClientInput::Proceed),
+    });
+    assert_eq!(explorer.accept_branch(later_better_path), None);
+
+    assert_eq!(explorer.branches.len(), 1);
+    assert_eq!(explorer.branches[0].branch_id, 7);
+    assert_eq!(explorer.branches[0].path_discrepancy, 12);
+    assert_eq!(
+        explorer.state_index.get("shared-exact-state"),
+        Some(&7),
+        "the first exact-state owner remains the survivor"
+    );
+
+    assert_eq!(explorer.retired_exact_duplicates.len(), 1);
+    let duplicate = &explorer.retired_exact_duplicates[0];
+    assert_eq!(duplicate.branch_id, 9);
+    assert_eq!(duplicate.parent_branch_id, Some(3));
+    assert_eq!(duplicate.survivor_branch_id, 7);
+    assert_eq!(duplicate.neow_root_candidate_id, "alternate-root");
+    assert_eq!(duplicate.state_fingerprint, "shared-exact-state");
+    assert_eq!(duplicate.replay.len(), 1);
+    assert_eq!(duplicate.replay[0].candidate_id, "discarded-choice");
+}
+
+#[test]
 fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
     let mut branch = test_branch(0, None);
     branch.boundary = OracleRunBoundaryV1::RunChoice;

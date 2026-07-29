@@ -605,6 +605,10 @@ impl OracleRunExplorerV1 {
     }
 
     pub(super) fn accept_branch(&mut self, branch: OracleRunBranchV1) -> Option<usize> {
+        // Exact-state admission is deliberately first-wins. Replacing the
+        // survivor based on policy, discrepancy, or path quality would change
+        // global search behavior and must be introduced as an explicit
+        // dominance policy, never as a branch-storage refactor.
         if let Some(survivor_branch_id) = self.state_index.get(&branch.state_fingerprint).copied() {
             self.retired_exact_duplicates
                 .push(ExactDuplicateOracleRunBranchV1 {
