@@ -14,6 +14,7 @@ use sts_oracle_runtime::sim::combat::EngineCombatStepper;
 use super::combat_policy_controls::load_action_imitation_policy;
 use super::print_json;
 
+#[derive(Debug, Args)]
 pub(super) struct DepthBeamTurnAuditArgs {
     #[arg(long)]
     case: PathBuf,
