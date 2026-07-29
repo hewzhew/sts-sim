@@ -20,11 +20,9 @@ mod witness;
 
 pub use atomic_witness::ExactAtomicWitness;
 pub use depth_beam_turn::{
-    generate_depth_beam_turn_options, search_depth_beam_agenda_witness, DepthBeamAgendaBudget,
-    DepthBeamAgendaConfig, DepthBeamAgendaCounters, DepthBeamAgendaInterruption,
-    DepthBeamAgendaReport, DepthBeamAgendaStatus, DepthBeamAgendaWitness, DepthBeamTurnBudget,
-    DepthBeamTurnConfig, DepthBeamTurnCounters, DepthBeamTurnInterruption,
-    DepthBeamTurnLayerReport, DepthBeamTurnReport, DepthBeamTurnStatus,
+    generate_depth_beam_turn_options, DepthBeamTurnBudget, DepthBeamTurnConfig,
+    DepthBeamTurnCounters, DepthBeamTurnInterruption, DepthBeamTurnLayerReport,
+    DepthBeamTurnReport, DepthBeamTurnStatus,
 };
 pub use generator::{
     LiveActionTransitionSnapshot, TurnOptionGeneratorSession, DETAIL_TIMING_SAMPLE_INTERVAL,

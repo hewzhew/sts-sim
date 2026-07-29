@@ -281,7 +281,6 @@ fn main() -> Result<(), String> {
         Command::TurnActionAudit(args) => turn_audits::run_action(args),
         Command::TurnPlanAudit(args) => turn_audits::run_plan(args),
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),
-        Command::DepthBeamAgendaAudit(args) => depth_beam_audits::run_agenda(args),
         Command::TurnMembership(args) => turn_membership_audit::run(args),
         Command::V2CapabilityAudit(args) => v2_capability_audit::run(args),
         Command::View { workspace, node } => {

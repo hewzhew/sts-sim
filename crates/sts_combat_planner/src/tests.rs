@@ -82,25 +82,6 @@ impl CombatActionPolicy for PreferEndTurnPolicy {
 #[derive(Clone, Copy)]
 struct PreferSelection22Policy;
 
-#[derive(Clone, Copy)]
-struct DeferredSiblingPolicy;
-
-const DEFERRED_SIBLING_GUIDE: CombatGuideLaneId = CombatGuideLaneId::new(78);
-
-impl CombatActionPolicy for DeferredSiblingPolicy {
-    fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
-        PreferPlayPolicy.weights(position, choices)
-    }
-
-    fn state_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
-        vec![CombatStateGuide::new(DEFERRED_SIBLING_GUIDE, vec![0])]
-    }
-
-    fn turn_generation_guides(&self, _position: &CombatPosition) -> Vec<CombatStateGuide> {
-        Vec::new()
-    }
-}
-
 impl CombatActionPolicy for PreferSelection22Policy {
     fn weights(&self, position: &CombatPosition, choices: &[CombatPolicyChoice<'_>]) -> Vec<f64> {
         PreferPlayPolicy.weights(position, choices)
@@ -656,53 +637,6 @@ fn depth_beam_reports_a_truncated_structured_family_as_partial() {
         DepthBeamTurnStatus::Partial(DepthBeamTurnInterruption::StructuredFamilyLimit)
     );
     assert_eq!(report.counters.truncated_structured_families, 1);
-}
-
-#[test]
-fn depth_beam_agenda_revisits_a_deferred_exact_boundary_sibling() {
-    let stepper = TinyTurnStepper::lethal_after_current_turn();
-    let report = search_depth_beam_agenda_witness(
-        root(),
-        DepthBeamAgendaConfig {
-            turn: DepthBeamTurnConfig {
-                generator: config(),
-                partial_beam_width: 1,
-                retained_per_view: 1,
-                max_atomic_depth: 4,
-                max_structured_members_per_family: 8,
-            },
-            boundary_guide_lane: Some(DEFERRED_SIBLING_GUIDE),
-            max_applied_transitions_per_parent: 8,
-        },
-        DepthBeamAgendaBudget {
-            max_applied_transitions: 512,
-            max_engine_steps: 2_048,
-            deadline: None,
-        },
-        Arc::new(DeferredSiblingPolicy),
-        &stepper,
-    );
-
-    assert_eq!(report.status, DepthBeamAgendaStatus::WitnessFound);
-    assert_eq!(report.counters.partially_generated_parents, 0);
-    assert!(report.counters.expanded_parents >= 3);
-    assert_eq!(
-        report.expanded_parent_exact_state_hashes.len(),
-        report.counters.expanded_parents
-    );
-    assert_eq!(
-        report.expanded_parent_exact_state_hashes[0],
-        exact_hash(root().position())
-    );
-    let witness = report
-        .witness
-        .expect("deferred sibling should lead to a win");
-    assert_eq!(
-        stepper.terminal(&witness.final_position),
-        CombatTerminal::Win
-    );
-    assert_eq!(witness.actions[0].input, ClientInput::EndTurn);
-    assert_eq!(witness.actions[1].input, PLAY);
 }
 
 #[test]

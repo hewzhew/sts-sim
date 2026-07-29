@@ -15,7 +15,7 @@ use super::boundary_successor_corpus::BoundarySuccessorCorpusArgs;
 use super::boundary_successor_lookahead::BoundarySuccessorLookaheadArgs;
 use super::combat_case_local_graph::CombatCaseLocalGraphArgs;
 use super::combat_plan_diagnostics::{CombatCasePlanAnnotationsArgs, CombatCasePlanTraceArgs};
-use super::depth_beam_audits::{DepthBeamAgendaAuditArgs, DepthBeamTurnAuditArgs};
+use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
 use super::oracle_seed_panel::OracleSeedPanelArgs;
 use super::policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
@@ -329,10 +329,6 @@ pub(super) enum Command {
     /// Generate complete-turn proposals with an independent action-depth beam.
     /// Finished short turns never displace still-live longer prefixes.
     DepthBeamTurnAudit(DepthBeamTurnAuditArgs),
-    /// Lazily expand one exact player-turn boundary at a time using one
-    /// explicitly selected guide lane. This lab control retains deferred
-    /// exact variants instead of discarding them through a boundary beam.
-    DepthBeamAgendaAudit(DepthBeamAgendaAuditArgs),
     /// View the current cursor or another exact analysis node.
     View {
         #[arg(long)]
