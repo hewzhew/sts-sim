@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b512, Digest};
+use oracle_artifact_contract::{artifact_dependencies, ensure_artifact_fresh, CanonicalArtifact};
 use serde_json::{json, Value};
 
 pub(super) fn validate(canonical_oracle: bool) -> Result<(), String> {
@@ -51,58 +52,14 @@ pub(super) fn validate(canonical_oracle: bool) -> Result<(), String> {
 }
 
 fn validate_source_freshness(executable: &Path) -> Result<(), String> {
-    let executable_modified = std::fs::metadata(executable)
-        .and_then(|metadata| metadata.modified())
-        .map_err(|error| {
-            format!(
-                "failed to inspect canonical oracle laboratory '{}': {error}",
-                executable.display()
-            )
-        })?;
-    let depfile = executable.with_extension("d");
-    let depfile_text = std::fs::read_to_string(&depfile).map_err(|error| {
-        format!(
-            "canonical oracle dependency manifest is missing at '{}': {error}; rebuild with `cargo oracle-lab --help`",
-            depfile.display()
-        )
-    })?;
     let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
-    let dependencies = canonical_dependencies(&repository, &depfile_text);
-    let stale = dependencies.iter().find(|dependency| {
-        std::fs::metadata(dependency)
-            .and_then(|metadata| metadata.modified())
-            .is_ok_and(|modified| modified > executable_modified)
-    });
-    if let Some(stale) = stale {
-        return Err(format!(
-            "canonical oracle laboratory is stale: '{}' changed after '{}'; rebuild once with \
-             `cargo oracle-lab --help`",
-            stale.display(),
-            executable.display()
-        ));
-    }
-    Ok(())
-}
-
-fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
-    depfile
-        .lines()
-        .filter_map(|line| line.split_once(": ").map(|(_, dependencies)| dependencies))
-        .flat_map(str::split_whitespace)
-        .filter(|dependency| !dependency.ends_with(':'))
-        .map(PathBuf::from)
-        .collect()
-}
-
-fn canonical_dependencies(repository: &Path, depfile: &str) -> Vec<PathBuf> {
-    let mut dependencies = depfile_dependencies(depfile);
-    dependencies.extend([
-        repository.join("Cargo.toml"),
-        repository.join("Cargo.lock"),
-        repository.join(".cargo/config.toml"),
-        repository.join("crates/sts_combat_planner/Cargo.toml"),
-    ]);
-    dependencies
+    ensure_artifact_fresh(
+        executable,
+        &repository,
+        CanonicalArtifact::OracleHost,
+        "canonical oracle laboratory",
+        "cargo oracle-lab --help",
+    )
 }
 
 pub(super) fn source_content_fingerprint(
@@ -175,14 +132,13 @@ pub(super) fn runtime_source_content_fingerprint() -> Result<String, String> {
     let repository = PathBuf::from(env!("STS_REPOSITORY_ROOT"));
     let executable = std::env::current_exe()
         .map_err(|error| format!("failed to identify running oracle_lab: {error}"))?;
-    let depfile = executable.with_extension("d");
-    let depfile_text = std::fs::read_to_string(&depfile).map_err(|error| {
-        format!(
-            "canonical oracle dependency manifest is missing at '{}': {error}",
-            depfile.display()
-        )
-    })?;
-    let dependencies = canonical_dependencies(&repository, &depfile_text);
+    let dependencies = artifact_dependencies(
+        &executable,
+        &repository,
+        CanonicalArtifact::OracleHost,
+        "canonical oracle laboratory",
+        "cargo oracle-lab --help",
+    )?;
     source_content_fingerprint(&repository, &dependencies)
 }
 

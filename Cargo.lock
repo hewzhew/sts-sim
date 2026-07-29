@@ -235,11 +235,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "oracle_artifact_contract"
+version = "0.1.0"
+
+[[package]]
 name = "oracle_lab_client"
 version = "0.1.0"
 dependencies = [
  "clap",
  "fs2",
+ "oracle_artifact_contract",
  "oracle_lab_protocol",
  "serde",
  "serde_json",
@@ -415,6 +420,7 @@ version = "0.1.0"
 dependencies = [
  "blake2",
  "clap",
+ "oracle_artifact_contract",
  "serde",
  "serde_json",
  "sts_combat_planner",

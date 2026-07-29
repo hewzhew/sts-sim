@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+const BUILD_INPUTS: &str = include_str!("../oracle_artifact_contract/build-inputs/oracle-host.txt");
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string());
@@ -14,12 +16,14 @@ fn main() {
         .and_then(|path| path.parent())
         .expect("oracle lab package lives below <repository>/crates")
         .to_path_buf();
-    // The runtime freshness guard treats both the canonical Cargo aliases and
-    // resolved dependency graph as part of the executable contract. Cargo
-    // must therefore rerun this build script when either repository input
-    // changes; otherwise the guard can demand a rebuild that Cargo considers
-    // unnecessary.
-    for input in [".cargo/config.toml", "Cargo.lock"] {
+    // Freshness validation and Cargo invalidation consume the same declared
+    // input contract. This prevents a manifest-only edit from producing a
+    // permanent "stale, but Cargo rebuilt nothing" loop.
+    for input in BUILD_INPUTS
+        .lines()
+        .map(str::trim)
+        .filter(|input| !input.is_empty() && !input.starts_with('#'))
+    {
         println!(
             "cargo:rerun-if-changed={}",
             repository_root.join(input).display()

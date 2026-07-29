@@ -11,6 +11,7 @@ use std::os::windows::process::CommandExt;
 
 use clap::{Parser, Subcommand};
 use fs2::FileExt;
+use oracle_artifact_contract::{ensure_artifact_fresh, CanonicalArtifact};
 use oracle_lab_protocol::{
     call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
 };
@@ -1214,6 +1215,8 @@ fn rebuild_heavy_artifact(reason: &str) -> Result<(), String> {
 fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
+        &repository_root(),
+        CanonicalArtifact::OracleHost,
         "heavy oracle laboratory",
         "cargo build --release -p sts_oracle_lab --features canonical-oracle-artifacts --bin oracle_lab",
     )
@@ -1222,61 +1225,11 @@ fn ensure_heavy_artifact_fresh(executable: &Path) -> Result<(), String> {
 fn ensure_service_artifact_fresh(executable: &Path) -> Result<(), String> {
     ensure_artifact_fresh(
         executable,
+        &repository_root(),
+        CanonicalArtifact::OracleHost,
         "resident oracle host",
         "cargo build --release -p sts_oracle_lab --features canonical-oracle-artifacts --bin oracle_lab_service",
     )
-}
-
-fn ensure_artifact_fresh(
-    executable: &Path,
-    label: &str,
-    rebuild_command: &str,
-) -> Result<(), String> {
-    let executable_modified = fs::metadata(executable)
-        .and_then(|metadata| metadata.modified())
-        .map_err(|error| {
-            format!(
-                "failed to inspect {label} '{}': {error}",
-                executable.display()
-            )
-        })?;
-    let depfile = executable.with_extension("d");
-    let depfile_text = fs::read_to_string(&depfile).map_err(|error| {
-        format!(
-            "{label} dependency manifest is missing at '{}': {error}; rebuild with `{rebuild_command}`",
-            depfile.display()
-        )
-    })?;
-    // Cargo's depfile is the authoritative list of files that contributed to
-    // this artifact.  Extending it with workspace manifests creates false
-    // positives: Cargo may correctly determine that an unrelated manifest
-    // edit does not require relinking this binary, while an mtime comparison
-    // cannot make that distinction.
-    let stale_dependency = depfile_dependencies(&depfile_text)
-        .into_iter()
-        .find(|dependency| {
-            fs::metadata(dependency)
-                .and_then(|metadata| metadata.modified())
-                .is_ok_and(|modified| modified > executable_modified)
-        });
-    if let Some(dependency) = stale_dependency {
-        return Err(format!(
-            "{label} is stale: '{}' is newer than '{}'. Rebuild once with `{rebuild_command}`; refusing to run stale search code",
-            dependency.display(),
-            executable.display()
-        ));
-    }
-    Ok(())
-}
-
-fn depfile_dependencies(depfile: &str) -> Vec<PathBuf> {
-    depfile
-        .lines()
-        .filter_map(|line| line.split_once(": ").map(|(_, dependencies)| dependencies))
-        .flat_map(str::split_whitespace)
-        .filter(|dependency| !dependency.ends_with(':'))
-        .map(PathBuf::from)
-        .collect()
 }
 
 fn resolve_endpoint_argument(
@@ -1355,6 +1308,8 @@ fn validate_canonical_launch(canonical_oracle: bool) -> Result<(), String> {
     }
     ensure_artifact_fresh(
         &current,
+        &repository_root(),
+        CanonicalArtifact::OracleClient,
         "lightweight oracle client",
         "cargo build --release -p oracle_lab_client --bin oracle_lab_client",
     )?;
@@ -1615,23 +1570,6 @@ mod tests {
             Command::Offline { arguments }
                 if arguments == ["combat-case", "--case", "fight.json"]
         ));
-    }
-
-    #[test]
-    fn windows_depfile_parser_does_not_split_the_drive_prefix() {
-        let dependencies = depfile_dependencies(
-            r#"D:\rust\target\oracle_lab.exe: D:\rust\src\lib.rs D:\rust\src\bin\oracle_lab.rs
-D:\rust\src\lib.rs:
-D:\rust\src\bin\oracle_lab.rs:
-"#,
-        );
-        assert_eq!(
-            dependencies,
-            [
-                PathBuf::from(r"D:\rust\src\lib.rs"),
-                PathBuf::from(r"D:\rust\src\bin\oracle_lab.rs"),
-            ]
-        );
     }
 
     #[test]

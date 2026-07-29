@@ -22,6 +22,121 @@ fn contains_rust_identifier(source: &str, identifier: &str) -> bool {
         .any(|token| token == identifier)
 }
 
+fn local_manifest_closure(root_manifest: &str) -> std::collections::BTreeSet<String> {
+    let repository = std::fs::canonicalize(".").expect("resolve repository root");
+    let mut pending =
+        std::collections::VecDeque::from([repository.join(root_manifest)]);
+    let mut manifests = std::collections::BTreeSet::new();
+    while let Some(manifest) = pending.pop_front() {
+        let manifest = std::fs::canonicalize(&manifest)
+            .unwrap_or_else(|error| panic!("resolve {}: {error}", manifest.display()));
+        let relative = manifest
+            .strip_prefix(&repository)
+            .unwrap_or_else(|error| panic!("{} is outside repository: {error}", manifest.display()))
+            .to_string_lossy()
+            .replace('\\', "/");
+        if !manifests.insert(relative) {
+            continue;
+        }
+        let source = std::fs::read_to_string(&manifest)
+            .unwrap_or_else(|error| panic!("read {}: {error}", manifest.display()));
+        let parent = manifest.parent().expect("manifest has a parent");
+        for line in source.lines() {
+            let Some((_, dependency)) = line.split_once("= {") else {
+                continue;
+            };
+            let Some((_, path)) = dependency.split_once("path = \"") else {
+                continue;
+            };
+            let Some((path, _)) = path.split_once('"') else {
+                continue;
+            };
+            pending.push_back(parent.join(path).join("Cargo.toml"));
+        }
+    }
+    manifests
+}
+
+fn declared_artifact_inputs(path: &str) -> std::collections::BTreeSet<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("read {path}: {error}"))
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn canonical_artifact_inputs_match_their_real_local_dependency_closures() {
+    for (label, root_manifest, contract) in [
+        (
+            "oracle host",
+            "crates/sts_oracle_lab/Cargo.toml",
+            "crates/oracle_artifact_contract/build-inputs/oracle-host.txt",
+        ),
+        (
+            "oracle client",
+            "crates/oracle_lab_client/Cargo.toml",
+            "crates/oracle_artifact_contract/build-inputs/oracle-client.txt",
+        ),
+    ] {
+        let mut expected = local_manifest_closure(root_manifest);
+        expected.extend([
+            ".cargo/config.toml".to_string(),
+            "Cargo.lock".to_string(),
+            "Cargo.toml".to_string(),
+        ]);
+        let declared = declared_artifact_inputs(contract);
+        assert_eq!(
+            declared, expected,
+            "{label} build-input contract drifted from its local Cargo dependency closure"
+        );
+    }
+}
+
+#[test]
+fn canonical_artifact_freshness_has_one_shared_owner() {
+    let contract = std::fs::read_to_string("crates/oracle_artifact_contract/src/lib.rs")
+        .expect("read artifact contract");
+    let host = std::fs::read_to_string("crates/sts_oracle_lab/src/bin/canonical_launch.rs")
+        .expect("read oracle host launch guard");
+    let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
+        .expect("read oracle client");
+    let host_build =
+        std::fs::read_to_string("crates/sts_oracle_lab/build.rs").expect("read host build script");
+    let client_build = std::fs::read_to_string("crates/oracle_lab_client/build.rs")
+        .expect("read client build script");
+
+    assert!(
+        contract.contains("pub fn ensure_artifact_fresh")
+            && contract.contains("pub fn artifact_dependencies"),
+        "the lightweight artifact contract must own freshness and dependency expansion"
+    );
+    for (label, source) in [("oracle host", host), ("oracle client", client)] {
+        assert!(
+            source.contains("oracle_artifact_contract")
+                && !source.contains("fn depfile_dependencies"),
+            "{label} must consume the shared artifact contract instead of recreating freshness"
+        );
+    }
+    assert!(
+        host_build.contains("build-inputs/oracle-host.txt")
+            && client_build.contains("build-inputs/oracle-client.txt"),
+        "Cargo invalidation and runtime freshness must consume the same artifact input lists"
+    );
+    let host_manifest = std::fs::read_to_string("crates/sts_oracle_lab/Cargo.toml")
+        .expect("read oracle host manifest");
+    let client_manifest = std::fs::read_to_string("crates/oracle_lab_client/Cargo.toml")
+        .expect("read oracle client manifest");
+    assert!(
+        host_manifest.contains("features = [\"oracle-host\"]")
+            && client_manifest
+                .contains("features = [\"oracle-client\", \"oracle-host\"]"),
+        "the host must compile only its own contract, while its launcher must carry both contracts"
+    );
+}
+
 #[test]
 fn java_card_queue_has_one_executable_rust_owner() {
     let state = std::fs::read_to_string("src/runtime/combat/state.rs")
