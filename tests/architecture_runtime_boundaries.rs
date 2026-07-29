@@ -533,6 +533,47 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
 }
 
 #[test]
+fn turn_option_generator_keeps_scheduling_in_a_bounded_module() {
+    const ROOT: &str = "crates/sts_combat_planner/src/generator.rs";
+    const SCHEDULING: &str = "crates/sts_combat_planner/src/generator/scheduling.rs";
+
+    let source = std::fs::read_to_string(ROOT).expect("read turn-option generator source");
+    let root_bytes = source.len() as u64;
+    assert!(
+        root_bytes <= 64 * 1024,
+        "generator.rs grew to {root_bytes} bytes; keep the root focused on exact turn expansion and transition execution"
+    );
+    assert!(
+        source.contains("mod scheduling;"),
+        "the turn-option generator must retain its scheduling responsibility boundary"
+    );
+    assert!(
+        !source.contains("struct GeneratorWorkPriority"),
+        "generator queue priority belongs in scheduling.rs, not the expansion root"
+    );
+    assert!(
+        !source.contains("struct GuidedGeneratorQueueEntry"),
+        "guided queue entries belong in scheduling.rs, not the expansion root"
+    );
+    assert!(
+        !source.contains("fn push_work_measured"),
+        "generator queue publication belongs in scheduling.rs, not the expansion root"
+    );
+    assert!(
+        !source.contains("#[test]"),
+        "inline tests must not regrow inside the turn-option generator root"
+    );
+
+    let scheduling_bytes = std::fs::metadata(SCHEDULING)
+        .unwrap_or_else(|error| panic!("read {SCHEDULING} metadata: {error}"))
+        .len();
+    assert!(
+        scheduling_bytes <= 16 * 1024,
+        "{SCHEDULING} grew to {scheduling_bytes} bytes; split queue policy from queue mechanics before extending it"
+    );
+}
+
+#[test]
 fn resident_oracle_state_stays_outside_cargo_target() {
     let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
         .expect("read oracle_lab client source");
