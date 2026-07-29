@@ -533,20 +533,23 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
 }
 
 #[test]
-fn turn_option_generator_keeps_scheduling_in_a_bounded_module() {
+fn turn_option_generator_keeps_scheduling_and_diagnostics_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/generator.rs";
     const SCHEDULING: &str = "crates/sts_combat_planner/src/generator/scheduling.rs";
+    const DIAGNOSTICS: &str = "crates/sts_combat_planner/src/generator/diagnostics.rs";
 
     let source = std::fs::read_to_string(ROOT).expect("read turn-option generator source");
     let root_bytes = source.len() as u64;
     assert!(
-        root_bytes <= 64 * 1024,
+        root_bytes <= 56 * 1024,
         "generator.rs grew to {root_bytes} bytes; keep the root focused on exact turn expansion and transition execution"
     );
-    assert!(
-        source.contains("mod scheduling;"),
-        "the turn-option generator must retain its scheduling responsibility boundary"
-    );
+    for module in ["diagnostics", "scheduling"] {
+        assert!(
+            source.contains(&format!("mod {module};")),
+            "the turn-option generator must retain its {module} responsibility boundary"
+        );
+    }
     assert!(
         !source.contains("struct GeneratorWorkPriority"),
         "generator queue priority belongs in scheduling.rs, not the expansion root"
@@ -560,6 +563,14 @@ fn turn_option_generator_keeps_scheduling_in_a_bounded_module() {
         "generator queue publication belongs in scheduling.rs, not the expansion root"
     );
     assert!(
+        !source.contains("pub struct LiveActionTransitionSnapshot"),
+        "live generator snapshots belong in diagnostics.rs, not the expansion root"
+    );
+    assert!(
+        !source.contains("fn live_action_transition_snapshot"),
+        "read-only queue inspection belongs in diagnostics.rs, not the expansion root"
+    );
+    assert!(
         !source.contains("#[test]"),
         "inline tests must not regrow inside the turn-option generator root"
     );
@@ -570,6 +581,13 @@ fn turn_option_generator_keeps_scheduling_in_a_bounded_module() {
     assert!(
         scheduling_bytes <= 16 * 1024,
         "{SCHEDULING} grew to {scheduling_bytes} bytes; split queue policy from queue mechanics before extending it"
+    );
+    let diagnostics_bytes = std::fs::metadata(DIAGNOSTICS)
+        .unwrap_or_else(|error| panic!("read {DIAGNOSTICS} metadata: {error}"))
+        .len();
+    assert!(
+        diagnostics_bytes <= 20 * 1024,
+        "{DIAGNOSTICS} grew to {diagnostics_bytes} bytes; split independent diagnostic projections before extending it"
     );
 }
 
