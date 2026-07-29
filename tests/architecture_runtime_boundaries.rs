@@ -399,6 +399,54 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 }
 
 #[test]
+fn oracle_run_explorer_keeps_checkpointing_out_of_the_scheduling_root() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const CHECKPOINT: &str = "src/eval/run_control/oracle_run_explorer/checkpoint.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    let root_bytes = root.len() as u64;
+    assert!(
+        root_bytes <= 96 * 1024,
+        "oracle_run_explorer.rs grew to {root_bytes} bytes; split an owned capability instead of regrowing the scheduling root"
+    );
+    assert!(
+        root.contains("mod checkpoint;"),
+        "the oracle-run explorer must retain its checkpoint capability boundary"
+    );
+    for checkpoint_owner in [
+        "pub struct OracleRunBranchCheckpointV1",
+        "pub struct OracleRunExplorerCheckpointV1",
+        "fn checkpoint_for_branches",
+        "fn restore_frontier_journal",
+    ] {
+        assert!(
+            !root.contains(checkpoint_owner),
+            "oracle-run checkpoint owner `{checkpoint_owner}` must not return to the scheduling root"
+        );
+    }
+
+    let checkpoint =
+        std::fs::read_to_string(CHECKPOINT).expect("read oracle-run checkpoint module");
+    let checkpoint_bytes = checkpoint.len() as u64;
+    assert!(
+        checkpoint_bytes <= 16 * 1024,
+        "{CHECKPOINT} grew to {checkpoint_bytes} bytes; split the serialized contract from journal encoding before extending it"
+    );
+    for required_owner in [
+        "pub struct OracleRunBranchCheckpointV1",
+        "pub struct OracleRunExplorerCheckpointV1",
+        "pub fn frontier_checkpoint",
+        "fn checkpoint_for_branches",
+        "fn restore_frontier_journal",
+    ] {
+        assert!(
+            checkpoint.contains(required_owner),
+            "oracle-run checkpoint module must retain `{required_owner}`"
+        );
+    }
+}
+
+#[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
     const MODULES: [(&str, u64); 8] = [
