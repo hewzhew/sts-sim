@@ -8,11 +8,11 @@
       "expected": {
         "status": "Partial(GenerationWorkBudget)",
         "generation_work": 20000,
-        "applied_action_transitions": 12827,
-        "exact_nodes": 2441,
-        "completed_turn_options": 3915,
-        "unique_successor_states": 12391,
-        "duplicate_exact_successors": 436,
+        "applied_action_transitions": 13016,
+        "exact_nodes": 1516,
+        "completed_turn_options": 5243,
+        "unique_successor_states": 12732,
+        "duplicate_exact_successors": 284,
         "terminal_win_options": 0,
         "witness": null
       }
@@ -23,11 +23,11 @@
       "expected": {
         "status": "Partial(GenerationWorkBudget)",
         "generation_work": 20000,
-        "applied_action_transitions": 12931,
-        "exact_nodes": 2113,
-        "completed_turn_options": 3621,
-        "unique_successor_states": 12618,
-        "duplicate_exact_successors": 313,
+        "applied_action_transitions": 13139,
+        "exact_nodes": 1143,
+        "completed_turn_options": 5372,
+        "unique_successor_states": 12843,
+        "duplicate_exact_successors": 296,
         "terminal_win_options": 0,
         "witness": null
       }
@@ -38,13 +38,16 @@
       "expected": {
         "status": "Partial(GenerationWorkBudget)",
         "generation_work": 20000,
-        "applied_action_transitions": 11403,
-        "exact_nodes": 917,
-        "completed_turn_options": 4638,
-        "unique_successor_states": 11249,
-        "duplicate_exact_successors": 154,
-        "terminal_win_options": 0,
-        "witness": null
+        "applied_action_transitions": 12199,
+        "exact_nodes": 2047,
+        "completed_turn_options": 4652,
+        "unique_successor_states": 12126,
+        "duplicate_exact_successors": 73,
+        "terminal_win_options": 1899,
+        "witness": {
+          "final_hp": 19,
+          "actions": 59
+        }
       }
     },
     {
@@ -53,15 +56,15 @@
       "expected": {
         "status": "Partial(GenerationWorkBudget)",
         "generation_work": 20000,
-        "applied_action_transitions": 13238,
-        "exact_nodes": 1675,
-        "completed_turn_options": 4817,
-        "unique_successor_states": 12986,
-        "duplicate_exact_successors": 252,
-        "terminal_win_options": 79,
+        "applied_action_transitions": 13953,
+        "exact_nodes": 3843,
+        "completed_turn_options": 6966,
+        "unique_successor_states": 13730,
+        "duplicate_exact_successors": 223,
+        "terminal_win_options": 2790,
         "witness": {
           "final_hp": 70,
-          "actions": 29
+          "actions": 24
         }
       }
     }
