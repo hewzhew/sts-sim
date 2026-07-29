@@ -1,10 +1,12 @@
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::policy::{CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank};
+use crate::policy::{CombatGuideLaneId, CombatStateGuide};
 
+use super::guide_frontier::{
+    GuidedGeneratorEntries, GuidedGeneratorFrontier, GuidedGeneratorQueueEntry,
+};
 use super::{elapsed_nanos_u64, GeneratorWork, GeneratorWorkHandle, TurnOptionGeneratorSession};
 
 #[derive(Clone, Copy, Debug)]
@@ -56,45 +58,6 @@ pub(super) struct GeneratorQueueEntry {
     pub(super) priority: GeneratorWorkPriority,
     pub(super) sequence_id: u64,
     pub(super) work_id: usize,
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct GuidedGeneratorQueueEntry {
-    pub(super) guide_lane: CombatGuideLaneId,
-    pub(super) work_id: usize,
-    pub(super) sequence_id: u64,
-    pub(super) guide_rank: CombatStateGuideRank,
-    pub(super) anchor_priority: GeneratorWorkPriority,
-}
-
-impl Eq for GuidedGeneratorQueueEntry {}
-
-impl PartialEq for GuidedGeneratorQueueEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.guide_lane == other.guide_lane
-            && self.work_id == other.work_id
-            && self.sequence_id == other.sequence_id
-    }
-}
-
-impl Ord for GuidedGeneratorQueueEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.guide_rank
-            .cmp(&other.guide_rank)
-            .then_with(|| self.anchor_priority.cmp(&other.anchor_priority))
-            .then_with(|| other.sequence_id.cmp(&self.sequence_id))
-    }
-}
-
-impl PartialOrd for GuidedGeneratorQueueEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-pub(super) struct GuidedGeneratorFrontier {
-    pub(super) lane: CombatGuideLaneId,
-    pub(super) entries: BinaryHeap<GuidedGeneratorQueueEntry>,
 }
 
 impl Eq for GeneratorQueueEntry {}
@@ -333,7 +296,7 @@ impl TurnOptionGeneratorSession {
         }
         self.guided_frontiers.push(GuidedGeneratorFrontier {
             lane,
-            entries: BinaryHeap::new(),
+            entries: GuidedGeneratorEntries::new(),
         });
         self.guided_frontiers.len() - 1
     }

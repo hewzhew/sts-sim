@@ -28,6 +28,12 @@ pub struct LocalTurnGraphStorageSnapshot {
     pub stale_anchor_entries_in_rebuild_candidates: usize,
     pub generator_anchor_capacity: usize,
     pub generator_guide_frontiers: usize,
+    pub generator_empty_guide_frontiers: usize,
+    pub generator_single_entry_guide_frontiers: usize,
+    pub generator_two_to_four_entry_guide_frontiers: usize,
+    pub generator_five_to_sixteen_entry_guide_frontiers: usize,
+    pub generator_larger_guide_frontiers: usize,
+    pub maximum_guide_frontier_entries: usize,
     pub generator_guide_entries: usize,
     pub generator_live_guide_entries: usize,
     pub generator_stale_guide_entries: usize,
@@ -142,6 +148,24 @@ impl LocalTurnGraphWitnessSession {
             snapshot.generator_guide_frontiers = snapshot
                 .generator_guide_frontiers
                 .saturating_add(generator.guide_frontiers);
+            snapshot.generator_empty_guide_frontiers = snapshot
+                .generator_empty_guide_frontiers
+                .saturating_add(generator.empty_guide_frontiers);
+            snapshot.generator_single_entry_guide_frontiers = snapshot
+                .generator_single_entry_guide_frontiers
+                .saturating_add(generator.single_entry_guide_frontiers);
+            snapshot.generator_two_to_four_entry_guide_frontiers = snapshot
+                .generator_two_to_four_entry_guide_frontiers
+                .saturating_add(generator.two_to_four_entry_guide_frontiers);
+            snapshot.generator_five_to_sixteen_entry_guide_frontiers = snapshot
+                .generator_five_to_sixteen_entry_guide_frontiers
+                .saturating_add(generator.five_to_sixteen_entry_guide_frontiers);
+            snapshot.generator_larger_guide_frontiers = snapshot
+                .generator_larger_guide_frontiers
+                .saturating_add(generator.larger_guide_frontiers);
+            snapshot.maximum_guide_frontier_entries = snapshot
+                .maximum_guide_frontier_entries
+                .max(generator.maximum_guide_frontier_entries);
             snapshot.generator_guide_entries = snapshot
                 .generator_guide_entries
                 .saturating_add(generator.guide_entries);

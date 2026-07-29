@@ -22,18 +22,18 @@ use super::types::{
     TurnOptionGenerationReport, TurnOptionGenerationStatus, TurnOptionGeneratorConfig,
 };
 pub use diagnostics::LiveActionTransitionSnapshot;
+use guide_frontier::GuidedGeneratorFrontier;
 #[cfg(test)]
-use scheduling::GuidedGeneratorQueueEntry;
+use guide_frontier::GuidedGeneratorQueueEntry;
 pub(crate) use scheduling::TurnOptionGeneratorPreferredLane;
-use scheduling::{
-    guides_with_lookahead, GeneratorQueueEntry, GeneratorWorkPriority, GuidedGeneratorFrontier,
-};
+use scheduling::{guides_with_lookahead, GeneratorQueueEntry, GeneratorWorkPriority};
 #[cfg(test)]
 use transition::detail_timing_scale;
 use transition::{is_potion_expenditure, ActionTransitionStatus};
 use work_slots::GeneratorWorkHandle;
 
 pub(crate) mod diagnostics;
+mod guide_frontier;
 mod lifecycle;
 mod reclamation;
 mod scheduling;

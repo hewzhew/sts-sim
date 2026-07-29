@@ -1060,6 +1060,8 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
 #[test]
 fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/generator.rs";
+    const GUIDE_FRONTIER: &str =
+        "crates/sts_combat_planner/src/generator/guide_frontier.rs";
     const SCHEDULING: &str = "crates/sts_combat_planner/src/generator/scheduling.rs";
     const RECLAMATION: &str = "crates/sts_combat_planner/src/generator/reclamation.rs";
     const WORK_SLOTS: &str = "crates/sts_combat_planner/src/generator/work_slots.rs";
@@ -1074,6 +1076,7 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     );
     for module in [
         "diagnostics",
+        "guide_frontier",
         "reclamation",
         "scheduling",
         "transition",
@@ -1090,7 +1093,7 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     );
     assert!(
         !source.contains("struct GuidedGeneratorQueueEntry"),
-        "guided queue entries belong in scheduling.rs, not the expansion root"
+        "guided queue entries belong in guide_frontier.rs, not the expansion root"
     );
     assert!(
         !source.contains("fn push_work_measured"),
@@ -1098,8 +1101,18 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     );
     let scheduling =
         std::fs::read_to_string(SCHEDULING).expect("read generator scheduling source");
+    let guide_frontier =
+        std::fs::read_to_string(GUIDE_FRONTIER).expect("read generator guide-frontier source");
     let reclamation =
         std::fs::read_to_string(RECLAMATION).expect("read generator reclamation source");
+    assert!(
+        !scheduling.contains("enum GuidedGeneratorEntries"),
+        "guided-frontier storage belongs in guide_frontier.rs, not scheduling.rs"
+    );
+    assert!(
+        guide_frontier.contains("enum GuidedGeneratorEntries"),
+        "guide_frontier.rs must own the guided-frontier storage representation"
+    );
     assert!(
         !scheduling.contains("fn reclaim_stale_scheduling_entries"),
         "stale scheduling storage reclamation belongs in reclamation.rs, not scheduling.rs"
@@ -1131,6 +1144,13 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     assert!(
         scheduling_bytes <= 16 * 1024,
         "{SCHEDULING} grew to {scheduling_bytes} bytes; split queue policy from queue mechanics before extending it"
+    );
+    let guide_frontier_bytes = std::fs::metadata(GUIDE_FRONTIER)
+        .unwrap_or_else(|error| panic!("read {GUIDE_FRONTIER} metadata: {error}"))
+        .len();
+    assert!(
+        guide_frontier_bytes <= 12 * 1024,
+        "{GUIDE_FRONTIER} grew to {guide_frontier_bytes} bytes; keep singleton storage mechanics separate from scheduling policy"
     );
     let reclamation_bytes = std::fs::metadata(RECLAMATION)
         .unwrap_or_else(|error| panic!("read {RECLAMATION} metadata: {error}"))

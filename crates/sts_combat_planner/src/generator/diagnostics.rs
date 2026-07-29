@@ -7,6 +7,7 @@ use crate::types::{
     CombatPlanningCounters, TurnOptionGenerationDiagnostics, TurnOptionGenerationGap,
 };
 
+use super::guide_frontier::guide_frontier_length_census;
 use super::{GeneratorWork, GeneratorWorkHandle, TurnOptionGeneratorSession};
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,12 @@ pub(crate) struct TurnOptionGeneratorStorageSnapshot {
     pub(crate) live_anchor_entries: usize,
     pub(crate) anchor_capacity: usize,
     pub(crate) guide_frontiers: usize,
+    pub(crate) empty_guide_frontiers: usize,
+    pub(crate) single_entry_guide_frontiers: usize,
+    pub(crate) two_to_four_entry_guide_frontiers: usize,
+    pub(crate) five_to_sixteen_entry_guide_frontiers: usize,
+    pub(crate) larger_guide_frontiers: usize,
+    pub(crate) maximum_guide_frontier_entries: usize,
     pub(crate) guide_entries: usize,
     pub(crate) live_guide_entries: usize,
     pub(crate) guide_capacity: usize,
@@ -363,6 +370,8 @@ impl TurnOptionGeneratorSession {
                 })
             })
             .count();
+        let (guide_frontier_lengths, maximum_guide_frontier_entries) =
+            guide_frontier_length_census(&self.guided_frontiers);
         let live_scheduled_round_entries = self
             .scheduled_round
             .iter()
@@ -394,6 +403,12 @@ impl TurnOptionGeneratorSession {
             live_anchor_entries,
             anchor_capacity: self.anchor_frontier.capacity(),
             guide_frontiers: self.guided_frontiers.len(),
+            empty_guide_frontiers: guide_frontier_lengths[0],
+            single_entry_guide_frontiers: guide_frontier_lengths[1],
+            two_to_four_entry_guide_frontiers: guide_frontier_lengths[2],
+            five_to_sixteen_entry_guide_frontiers: guide_frontier_lengths[3],
+            larger_guide_frontiers: guide_frontier_lengths[4],
+            maximum_guide_frontier_entries,
             guide_entries: self
                 .guided_frontiers
                 .iter()

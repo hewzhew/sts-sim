@@ -80,6 +80,41 @@ fn guided_entry(
 }
 
 #[test]
+fn singleton_guide_frontier_preserves_heap_order_after_promotion() {
+    let mut entries = super::guide_frontier::GuidedGeneratorEntries::new();
+    entries.push(guided_entry(1, 1.0, 1, 1));
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.capacity(), 1);
+    assert_eq!(entries.peek().map(|entry| entry.sequence_id), Some(1));
+
+    entries.push(guided_entry(3, 3.0, 1, 3));
+    entries.push(guided_entry(2, 2.0, 1, 2));
+    assert_eq!(
+        std::iter::from_fn(|| entries.pop())
+            .map(|entry| entry.sequence_id)
+            .collect::<Vec<_>>(),
+        vec![3, 2, 1]
+    );
+}
+
+#[test]
+fn guide_frontier_rebuild_demotes_one_survivor_to_inline_storage() {
+    let mut entries = super::guide_frontier::GuidedGeneratorEntries::new();
+    entries.push(guided_entry(1, 1.0, 1, 1));
+    entries.push(guided_entry(3, 3.0, 1, 3));
+    entries.push(guided_entry(2, 2.0, 1, 2));
+
+    entries.retain(|entry| entry.sequence_id == 2);
+    entries.shrink_to_fit();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.capacity(), 1);
+    assert_eq!(entries.pop().map(|entry| entry.sequence_id), Some(2));
+    assert_eq!(entries.len(), 0);
+    assert_eq!(entries.capacity(), 0);
+}
+
+#[test]
 fn generator_work_slot_keeps_large_expand_payload_indirect() {
     const MAX_WORK_SLOT_BYTES: usize = 160;
 
