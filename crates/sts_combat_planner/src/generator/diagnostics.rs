@@ -58,11 +58,14 @@ pub(crate) struct TurnOptionGeneratorStorageSnapshot {
     pub(crate) seen_states: usize,
     pub(crate) seen_capacity: usize,
     pub(crate) anchor_entries: usize,
+    pub(crate) live_anchor_entries: usize,
     pub(crate) anchor_capacity: usize,
     pub(crate) guide_frontiers: usize,
     pub(crate) guide_entries: usize,
+    pub(crate) live_guide_entries: usize,
     pub(crate) guide_capacity: usize,
     pub(crate) scheduled_round_entries: usize,
+    pub(crate) live_scheduled_round_entries: usize,
     pub(crate) scheduled_round_capacity: usize,
     pub(crate) completed_options: usize,
     pub(crate) completed_capacity: usize,
@@ -324,6 +327,22 @@ impl TurnOptionGeneratorSession {
     }
 
     pub(crate) fn storage_snapshot(&self) -> TurnOptionGeneratorStorageSnapshot {
+        let live_anchor_entries = self
+            .anchor_frontier
+            .iter()
+            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .count();
+        let live_guide_entries = self
+            .guided_frontiers
+            .iter()
+            .flat_map(|frontier| frontier.entries.iter())
+            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .count();
+        let live_scheduled_round_entries = self
+            .scheduled_round
+            .iter()
+            .filter(|(_, work_id)| self.work.get(*work_id).is_some_and(Option::is_some))
+            .count();
         TurnOptionGeneratorStorageSnapshot {
             finished: self.is_finished(),
             live_work_items: self.live_work_items,
@@ -332,6 +351,7 @@ impl TurnOptionGeneratorSession {
             seen_states: self.seen.len(),
             seen_capacity: self.seen.capacity(),
             anchor_entries: self.anchor_frontier.len(),
+            live_anchor_entries,
             anchor_capacity: self.anchor_frontier.capacity(),
             guide_frontiers: self.guided_frontiers.len(),
             guide_entries: self
@@ -339,12 +359,14 @@ impl TurnOptionGeneratorSession {
                 .iter()
                 .map(|frontier| frontier.entries.len())
                 .sum(),
+            live_guide_entries,
             guide_capacity: self
                 .guided_frontiers
                 .iter()
                 .map(|frontier| frontier.entries.capacity())
                 .sum(),
             scheduled_round_entries: self.scheduled_round.len(),
+            live_scheduled_round_entries,
             scheduled_round_capacity: self.scheduled_round.capacity(),
             completed_options: self.completed.len(),
             completed_capacity: self.completed.capacity(),

@@ -365,8 +365,11 @@ not a seed failure.
 Full `combat-case` reports also include a read-only `storage` census. It
 separates live generator work from retained slot, exact-state index, scheduling
 heap, and graph-edge capacities, including the subset owned by already
-finished turn generators. These values diagnose ownership and allocation
-shape only; no search budget, ordering, or witness contract reads them.
+finished turn generators. It also distinguishes live from stale scheduling
+entries and reports the active-generator live-work distribution, so lazy queue
+garbage can be measured without changing service order. These values diagnose
+ownership and allocation shape only; no search budget, ordering, or witness
+contract reads them.
 
 Resident endpoints, immutable service images, and new local case artifacts
 live below the ignored `.oracle-lab/` state root. They are deliberately outside
