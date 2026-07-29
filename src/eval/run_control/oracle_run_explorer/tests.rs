@@ -701,6 +701,52 @@ fn unresolved_combat_evidence_classification_is_typed_and_conservative() {
     }
 }
 
+fn assert_failed_decision_materialization_is_atomic(
+    work: LazyOracleRunDecisionV1,
+    expected_error_fragment: &str,
+) {
+    let mut explorer = OracleRunExplorerV1::empty();
+    explorer.next_branch_id = 1;
+    explorer
+        .accept_branch(test_branch(0, None))
+        .expect("unique parent branch");
+
+    let error = explorer
+        .materialize_decision(work, None)
+        .expect_err("invalid decision must fail");
+
+    assert!(
+        error.contains(expected_error_fragment),
+        "unexpected materialization error: {error}"
+    );
+    assert_eq!(explorer.next_branch_id, 1);
+    assert_eq!(explorer.branches.len(), 1);
+    assert_eq!(explorer.branches[0].branch_id, 0);
+    assert_eq!(explorer.branches[0].state_fingerprint, "state/0");
+    assert_eq!(explorer.branches[0].session.decision_step, 0);
+    assert!(explorer.branches[0].replay.is_empty());
+    assert!(explorer.branches[0].journal.is_empty());
+    assert_eq!(explorer.state_index.get("state/0"), Some(&0));
+    assert!(explorer.retired_exact_duplicates.is_empty());
+}
+
+#[test]
+fn failed_decision_materialization_never_commits_partial_explorer_state() {
+    let mut missing_parent = test_decision(42, "missing-parent");
+    missing_parent.parent_state_fingerprint = "state/42".to_string();
+    assert_failed_decision_materialization_is_atomic(missing_parent, "missing parent branch 42");
+
+    let mut stale_parent = test_decision(0, "stale-parent");
+    stale_parent.parent_state_fingerprint = "stale-state".to_string();
+    assert_failed_decision_materialization_is_atomic(
+        stale_parent,
+        "parent fingerprint changed for branch 0",
+    );
+
+    let illegal_action = test_decision(0, "not-a-public-candidate");
+    assert_failed_decision_materialization_is_atomic(illegal_action, "candidate");
+}
+
 fn test_owner_annotation(
     _session: &RunControlSession,
     _candidate_id: &str,
