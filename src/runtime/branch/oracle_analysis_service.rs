@@ -321,7 +321,7 @@ fn execute_command(
         OracleAnalysisServiceCommandV1::Capabilities => (
             json!({
                 "commands": [
-                    "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "campfire_policy_audit", "view", "tree", "try",
+                    "ping", "capabilities", "status", "explain", "route_policy_audit", "shop_policy_audit", "card_reward_policy_audit", "campfire_policy_audit", "view", "tree", "try",
                     "focus", "choose", "owner", "run", "choose_path", "follow", "back", "promote", "advance", "accept_combat", "restart_combat", "history",
                     "journal", "timeline", "journal_entry", "trajectory", "combat_summary", "combat_diagnostic",
                     "export_combat_case", "export_continuation", "verify_run_witness", "escape_combat", "save", "shutdown"
@@ -367,6 +367,12 @@ fn execute_command(
         ),
         OracleAnalysisServiceCommandV1::ShopPolicyAudit { node } => (
             to_value(&workspace.session.shop_policy_audit(node)?)?,
+            false,
+            false,
+            false,
+        ),
+        OracleAnalysisServiceCommandV1::CardRewardPolicyAudit { node } => (
+            to_value(&workspace.session.card_reward_policy_audit(node)?)?,
             false,
             false,
             false,

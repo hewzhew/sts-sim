@@ -28,12 +28,13 @@ use super::oracle_run_explorer::{
     OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
-    build_decision_surface, exact_campfire_policy_audit_v1, exact_route_policy_audit_v1,
-    exact_shop_policy_audit_v1, CombatAutomationMonsterStateV1, CombatAutomationTrajectoryRecordV1,
-    ExactCampfirePolicyAuditV1, ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1,
-    RunControlCombatSearchQuantum, RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1,
-    RunControlTraceAnnotationV1, RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1,
-    RunProgressJournalV1, RunProgressStepV1,
+    build_decision_surface, exact_campfire_policy_audit_v1, exact_card_reward_policy_audit_v1,
+    exact_route_policy_audit_v1, exact_shop_policy_audit_v1, CombatAutomationMonsterStateV1,
+    CombatAutomationTrajectoryRecordV1, ExactCampfirePolicyAuditV1, ExactCardRewardPolicyAuditV1,
+    ExactRoutePolicyAuditV1, ExactShopPolicyAuditV1, RunControlCombatSearchQuantum,
+    RunControlCombatWorkAdvanceV1, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
+    RunDecisionAction, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunProgressJournalV1,
+    RunProgressStepV1,
 };
 
 pub const ORACLE_ANALYSIS_SESSION_SCHEMA_NAME: &str = "OracleAnalysisSession";
@@ -968,6 +969,30 @@ impl OracleAnalysisSessionV1 {
             })
             .collect::<Vec<_>>();
         exact_shop_policy_audit_v1(&branch.session, &legal)
+    }
+
+    pub fn card_reward_policy_audit(
+        &self,
+        node_id: usize,
+    ) -> Result<ExactCardRewardPolicyAuditV1, String> {
+        let branch = self.require_branch(node_id)?;
+        let surface = build_decision_surface(&branch.session);
+        let legal = surface
+            .view
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                candidate
+                    .action
+                    .executable_action_ref()
+                    .map(|action| RunPolicyCandidateV1 {
+                        candidate_id: &candidate.id,
+                        label: &candidate.label,
+                        action,
+                    })
+            })
+            .collect::<Vec<_>>();
+        exact_card_reward_policy_audit_v1(&branch.session, &legal)
     }
 
     pub fn campfire_policy_audit(

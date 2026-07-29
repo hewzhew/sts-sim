@@ -78,6 +78,9 @@ pub enum OracleAnalysisServiceCommandV1 {
     ShopPolicyAudit {
         node: usize,
     },
+    CardRewardPolicyAudit {
+        node: usize,
+    },
     CampfirePolicyAudit {
         node: usize,
     },
@@ -429,6 +432,19 @@ mod tests {
         assert!(matches!(
             command,
             OracleAnalysisServiceCommandV1::RoutePolicyAudit { node: 185 }
+        ));
+    }
+
+    #[test]
+    fn card_reward_policy_audit_requires_an_explicit_node() {
+        let command = serde_json::from_value::<OracleAnalysisServiceCommandV1>(json!({
+            "command": "card_reward_policy_audit",
+            "node": 53,
+        }))
+        .expect("parse card reward policy audit command");
+        assert!(matches!(
+            command,
+            OracleAnalysisServiceCommandV1::CardRewardPolicyAudit { node: 53 }
         ));
     }
 

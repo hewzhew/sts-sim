@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+use serde::Serialize;
+
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, is_concrete_package_support_signal_v1,
@@ -30,7 +32,8 @@ use super::{
     RunControlSession, RunPolicyCandidateV1, RunPolicyPriorV1, RunPolicyStateDeltaV1,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CardRewardPolicyBandV1 {
     ResolvePendingBoundary,
     ImmediateResource,
@@ -91,6 +94,140 @@ pub struct ExactCardRewardPolicyDecisionV1 {
     pub exact: ExactRunPolicyDecisionV1,
     pub evidence: Vec<CardRewardPolicyActionEvidenceV1>,
     pub prior: RunPolicyPriorV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardRewardPolicyAuditCandidateV1 {
+    pub owner_rank: usize,
+    pub candidate_id: String,
+    pub label: String,
+    pub candidate_key: DecisionCandidateKey,
+    pub acquisition: String,
+    pub band: CardRewardPolicyBandV1,
+    pub closed_threat_gaps: Vec<String>,
+    pub capability_improvements: Vec<String>,
+    pub resolved_formation_needs: Vec<String>,
+    pub added_formation_strengths: Vec<String>,
+    pub introduces_unsupported_mechanics: bool,
+    pub introduces_undigested_status_burden: bool,
+    pub duplicate_low_marginal: bool,
+    pub access_conflict_or_redundancy: bool,
+    pub added_deck_shape_risks: Vec<String>,
+    pub improves_threat_relevant_capability: bool,
+    pub amplifies_existing_answers: bool,
+    pub upgrade_investment_support: Option<String>,
+    pub surface_index: usize,
+    pub prior_probability: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExactCardRewardPolicyAuditV1 {
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    pub candidates: Vec<CardRewardPolicyAuditCandidateV1>,
+}
+
+impl ExactCardRewardPolicyDecisionV1 {
+    pub fn audit(
+        &self,
+        legal: &[RunPolicyCandidateV1<'_>],
+    ) -> Result<ExactCardRewardPolicyAuditV1, String> {
+        let candidates = self
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(owner_rank, evidence)| {
+                let legal_candidate = legal
+                    .iter()
+                    .find(|candidate| candidate.candidate_id == evidence.candidate_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "card reward policy audit could not find legal candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                let prior_probability = self
+                    .prior
+                    .entries
+                    .iter()
+                    .find(|entry| entry.candidate_id == evidence.candidate_id)
+                    .map(|entry| entry.probability)
+                    .ok_or_else(|| {
+                        format!(
+                            "card reward policy audit could not find prior for candidate '{}'",
+                            evidence.candidate_id
+                        )
+                    })?;
+                Ok(CardRewardPolicyAuditCandidateV1 {
+                    owner_rank,
+                    candidate_id: evidence.candidate_id.clone(),
+                    label: legal_candidate.label.to_string(),
+                    candidate_key: evidence.candidate_key.clone(),
+                    acquisition: format!("{:?}", evidence.acquisition),
+                    band: evidence.band,
+                    closed_threat_gaps: evidence
+                        .delta
+                        .closed_threat_gaps
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    capability_improvements: evidence
+                        .delta
+                        .capability_improvements
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    resolved_formation_needs: evidence
+                        .delta
+                        .resolved_formation_needs
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    added_formation_strengths: evidence
+                        .delta
+                        .added_formation_strengths
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    introduces_unsupported_mechanics: evidence.introduces_unsupported_mechanics,
+                    introduces_undigested_status_burden: evidence
+                        .introduces_undigested_status_burden,
+                    duplicate_low_marginal: evidence.duplicate_low_marginal,
+                    access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
+                    added_deck_shape_risks: evidence
+                        .added_deck_shape_risks
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    improves_threat_relevant_capability: evidence
+                        .improves_threat_relevant_capability,
+                    amplifies_existing_answers: evidence.amplifies_existing_answers,
+                    upgrade_investment_support: evidence
+                        .upgrade_investment_support
+                        .map(|value| format!("{value:?}")),
+                    surface_index: evidence.surface_index,
+                    prior_probability,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        Ok(ExactCardRewardPolicyAuditV1 {
+            current_hp: self.exact.before.resources.current_hp,
+            max_hp: self.exact.before.resources.max_hp,
+            gold: self.exact.before.resources.gold,
+            candidates,
+        })
+    }
+}
+
+pub fn exact_card_reward_policy_audit_v1(
+    session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<ExactCardRewardPolicyAuditV1, String> {
+    exact_card_reward_policy_decision_v1(session, legal)?.audit(legal)
 }
 
 pub fn exact_card_reward_policy_prior_v1(
@@ -606,9 +743,10 @@ mod tests {
         session
     }
 
-    fn decision(session: &RunControlSession) -> ExactCardRewardPolicyDecisionV1 {
-        let surface = build_decision_surface(session);
-        let legal = surface
+    fn policy_candidates<'a>(
+        surface: &'a super::super::DecisionSurface,
+    ) -> Vec<RunPolicyCandidateV1<'a>> {
+        surface
             .view
             .candidates
             .iter()
@@ -625,7 +763,12 @@ mod tests {
                         action,
                     })
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    fn decision(session: &RunControlSession) -> ExactCardRewardPolicyDecisionV1 {
+        let surface = build_decision_surface(session);
+        let legal = policy_candidates(&surface);
         exact_card_reward_policy_decision_v1(session, &legal).expect("exact card reward policy")
     }
 
@@ -1100,6 +1243,30 @@ mod tests {
             .entries
             .iter()
             .all(|entry| entry.probability.is_finite() && entry.probability > 0.0));
+    }
+
+    #[test]
+    fn audit_exposes_every_ranked_candidate_without_changing_support() {
+        let session = reward_session(&[
+            (CardId::WildStrike, 0),
+            (CardId::BattleTrance, 1),
+            (CardId::DualWield, 0),
+        ]);
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let audit = exact_card_reward_policy_audit_v1(&session, &legal).expect("card reward audit");
+
+        assert_eq!(audit.candidates.len(), legal.len());
+        assert!(audit
+            .candidates
+            .iter()
+            .enumerate()
+            .all(|(rank, candidate)| {
+                candidate.owner_rank == rank
+                    && !candidate.label.is_empty()
+                    && candidate.prior_probability.is_finite()
+                    && candidate.prior_probability > 0.0
+            }));
     }
 
     #[test]

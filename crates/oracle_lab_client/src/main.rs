@@ -116,6 +116,11 @@ enum LiveCommand {
         #[arg(long)]
         node: Option<usize>,
     },
+    /// Explain the exact card-reward owner's complete ranked evidence.
+    CardReward {
+        #[arg(long)]
+        node: Option<usize>,
+    },
     /// Explain the exact campfire owner's complete ranked evidence at a campfire node.
     Campfire {
         #[arg(long)]
@@ -302,6 +307,13 @@ fn run_live_command(endpoint: &Path, command: LiveCommand) -> Result<(), String>
             print_json(&live_call(
                 endpoint,
                 OracleAnalysisServiceCommandV1::ShopPolicyAudit { node },
+            )?)
+        }
+        LiveCommand::CardReward { node } => {
+            let node = resolve_live_node(endpoint, node)?;
+            print_json(&live_call(
+                endpoint,
+                OracleAnalysisServiceCommandV1::CardRewardPolicyAudit { node },
             )?)
         }
         LiveCommand::Campfire { node } => {
