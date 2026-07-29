@@ -482,8 +482,15 @@ fn compact_run_combat_progress(
     };
     json!({
         "generation_work": combat.generation_work,
+        "local_generation_work": combat.local_generation_work,
+        "discrepancy_generation_work": combat.discrepancy_generation_work,
         "exact_states": combat.exact_states,
+        "local_exact_states": combat.local_exact_states,
+        "discrepancy_exact_states": combat.discrepancy_exact_states,
         "completed_turn_options": combat.completed_turn_options,
+        "retained_state_work": combat.retained_state_work,
+        "local_retained_state_work": combat.local_retained_state_work,
+        "discrepancy_retained_state_work": combat.discrepancy_retained_state_work,
         "max_player_turn": combat.max_player_turn,
         "policy_witness_proposals": combat.policy_witness_proposals,
         "policy_witness_proposal_rejections": combat.policy_witness_proposal_rejections,

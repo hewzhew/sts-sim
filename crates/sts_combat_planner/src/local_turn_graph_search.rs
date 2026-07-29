@@ -201,6 +201,52 @@ pub struct LocalTurnGraphWitnessSession {
     replay_failure: Option<OracleCombatWitnessReplayError>,
 }
 
+impl Drop for LocalTurnGraphWitnessSession {
+    fn drop(&mut self) {
+        const MIN_PARALLEL_DROP_NODES: usize = 1_024;
+        const MAX_DROP_WORKERS: usize = 4;
+
+        if self.nodes.len() < MIN_PARALLEL_DROP_NODES {
+            return;
+        }
+
+        // Search is already over and GraphNode ownership is flat: edges refer
+        // to successor ids rather than owning child nodes. Release agenda and
+        // transposition references first, then let independent node-owned turn
+        // generators tear down concurrently. This changes only destruction;
+        // no live search state or result ordering is observable here.
+        self.shared_agenda.clear();
+        self.nodes_by_exact_key.clear();
+        let mut nodes = std::mem::take(&mut self.nodes);
+        let workers = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .min(MAX_DROP_WORKERS)
+            .min(nodes.len());
+        if workers <= 1 {
+            drop(nodes);
+            return;
+        }
+
+        let chunk_len = nodes.len().div_ceil(workers);
+        let mut chunks = Vec::with_capacity(workers);
+        while nodes.len() > chunk_len {
+            let split_at = nodes.len() - chunk_len;
+            chunks.push(nodes.split_off(split_at));
+        }
+        chunks.push(nodes);
+        let Some(main_chunk) = chunks.pop() else {
+            return;
+        };
+        std::thread::scope(|scope| {
+            for chunk in chunks {
+                scope.spawn(move || drop(chunk));
+            }
+            drop(main_chunk);
+        });
+    }
+}
+
 impl LocalTurnGraphWitnessSession {
     pub fn advance(
         &mut self,

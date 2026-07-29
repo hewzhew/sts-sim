@@ -126,15 +126,21 @@ pub(super) struct OracleRunCombatWorkProgressV1 {
     pub current_search_generation_work: u64,
     /// Historical plus current work. This is accounting, not resumable depth.
     pub generation_work: u64,
+    pub local_generation_work: u64,
+    pub discrepancy_generation_work: u64,
     pub lookahead_evaluations: usize,
     pub lookahead_work: usize,
     pub engine_steps: usize,
     pub exact_states: usize,
+    pub local_exact_states: usize,
+    pub discrepancy_exact_states: usize,
     pub applied_action_transitions: usize,
     pub unique_successor_states: usize,
     pub duplicate_exact_successors: usize,
     pub completed_turn_options: usize,
     pub retained_state_work: usize,
+    pub local_retained_state_work: usize,
+    pub discrepancy_retained_state_work: usize,
     pub queued_anchor_entries: usize,
     pub queued_guided_entries: Vec<usize>,
     pub root_state: Option<OracleCombatWitnessStateProgressSnapshot>,
@@ -853,13 +859,20 @@ impl OracleRunCombatWorkV1 {
         let incumbent = self.best_witness();
         let incumbent_final_hp =
             incumbent.map(|witness| witness.final_position.combat.entities.player.current_hp);
-        let current_generation_work = self.current_generation_work();
+        let local_generation_work = self.current_local_search_work() as u64;
+        let discrepancy_generation_work = discrepancy_counters.applied_action_transitions as u64;
+        let current_generation_work =
+            local_generation_work.saturating_add(discrepancy_generation_work);
+        let local_retained_state_work = self.local_search.retained_state_work();
+        let discrepancy_retained_state_work = self.discrepancy_search.retained_state_work();
         OracleRunCombatWorkProgressV1 {
             historical_generation_work: self.prior_generation_work,
             current_search_generation_work: current_generation_work,
             generation_work: self
                 .prior_generation_work
                 .saturating_add(current_generation_work),
+            local_generation_work,
+            discrepancy_generation_work,
             lookahead_evaluations: local_counters.lookahead_evaluations,
             lookahead_work: local_counters.lookahead_work,
             engine_steps: local_counters
@@ -869,6 +882,8 @@ impl OracleRunCombatWorkV1 {
             exact_states: local_counters
                 .exact_nodes
                 .saturating_add(discrepancy_counters.exact_states),
+            local_exact_states: local_counters.exact_nodes,
+            discrepancy_exact_states: discrepancy_counters.exact_states,
             applied_action_transitions: local_counters
                 .applied_action_transitions
                 .saturating_add(discrepancy_counters.applied_action_transitions),
@@ -879,10 +894,10 @@ impl OracleRunCombatWorkV1 {
             completed_turn_options: local_counters
                 .completed_turn_options
                 .saturating_add(discrepancy_counters.turn_macro_options_generated),
-            retained_state_work: self
-                .local_search
-                .retained_state_work()
-                .saturating_add(self.discrepancy_search.retained_state_work()),
+            retained_state_work: local_retained_state_work
+                .saturating_add(discrepancy_retained_state_work),
+            local_retained_state_work,
+            discrepancy_retained_state_work,
             queued_anchor_entries: local_progress
                 .queued_anchor_entries
                 .saturating_add(self.discrepancy_search.frontier_entries()),

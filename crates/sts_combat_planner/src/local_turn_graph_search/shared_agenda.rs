@@ -102,6 +102,11 @@ impl SharedBoundaryAgenda {
         }
     }
 
+    pub(super) fn clear(&mut self) {
+        self.anchor.clear();
+        self.guides.clear();
+    }
+
     pub(super) fn publish_node(
         &mut self,
         node_id: usize,
