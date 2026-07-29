@@ -399,7 +399,7 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 }
 
 #[test]
-fn oracle_run_explorer_keeps_checkpointing_out_of_the_scheduling_root() {
+fn oracle_run_explorer_keeps_checkpointing_out_of_the_orchestration_root() {
     const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
     const CHECKPOINT: &str = "src/eval/run_control/oracle_run_explorer/checkpoint.rs";
     const RESTORE: &str =
@@ -459,6 +459,55 @@ fn oracle_run_explorer_keeps_checkpointing_out_of_the_scheduling_root() {
         restore.contains("pub fn seed_oracle_run_explorer_from_checkpoint_v1"),
         "oracle-run checkpoint restoration must retain its public reconstruction entry point"
     );
+}
+
+#[test]
+fn oracle_run_explorer_keeps_work_selection_in_a_bounded_module() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const SCHEDULING: &str = "src/eval/run_control/oracle_run_explorer/scheduling.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    let root_bytes = root.len() as u64;
+    assert!(
+        root_bytes <= 76 * 1024,
+        "oracle_run_explorer.rs grew to {root_bytes} bytes; keep the root focused on branch materialization and the drive loop"
+    );
+    assert!(
+        root.contains("mod scheduling;"),
+        "the oracle-run explorer must retain its work-selection boundary"
+    );
+    for scheduling_owner in [
+        "enum ScheduledOracleRunWorkV1",
+        "fn next_neow_root_for_service",
+        "fn take_next_scheduled_work",
+        "fn refresh_combat_edge_probes",
+        "fn oracle_run_decision_priority_order",
+    ] {
+        assert!(
+            !root.contains(scheduling_owner),
+            "oracle-run scheduling owner `{scheduling_owner}` must not return to the orchestration root"
+        );
+    }
+
+    let scheduling =
+        std::fs::read_to_string(SCHEDULING).expect("read oracle-run scheduling module");
+    let scheduling_bytes = scheduling.len() as u64;
+    assert!(
+        scheduling_bytes <= 16 * 1024,
+        "{SCHEDULING} grew to {scheduling_bytes} bytes; split root rotation from within-root ordering before extending it"
+    );
+    for required_owner in [
+        "enum ScheduledOracleRunWorkV1",
+        "fn next_neow_root_for_service",
+        "fn take_next_scheduled_work",
+        "fn refresh_combat_edge_probes",
+        "fn oracle_run_decision_priority_order",
+    ] {
+        assert!(
+            scheduling.contains(required_owner),
+            "oracle-run scheduling module must retain `{required_owner}`"
+        );
+    }
 }
 
 #[test]
