@@ -402,22 +402,25 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 fn oracle_run_explorer_keeps_checkpointing_out_of_the_scheduling_root() {
     const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
     const CHECKPOINT: &str = "src/eval/run_control/oracle_run_explorer/checkpoint.rs";
+    const RESTORE: &str =
+        "src/eval/run_control/oracle_run_explorer/checkpoint_restore.rs";
 
     let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
     let root_bytes = root.len() as u64;
     assert!(
-        root_bytes <= 96 * 1024,
+        root_bytes <= 84 * 1024,
         "oracle_run_explorer.rs grew to {root_bytes} bytes; split an owned capability instead of regrowing the scheduling root"
     );
     assert!(
-        root.contains("mod checkpoint;"),
-        "the oracle-run explorer must retain its checkpoint capability boundary"
+        root.contains("mod checkpoint;") && root.contains("mod checkpoint_restore;"),
+        "the oracle-run explorer must retain its checkpoint and restoration capability boundaries"
     );
     for checkpoint_owner in [
         "pub struct OracleRunBranchCheckpointV1",
         "pub struct OracleRunExplorerCheckpointV1",
         "fn checkpoint_for_branches",
         "fn restore_frontier_journal",
+        "pub fn seed_oracle_run_explorer_from_checkpoint_v1",
     ] {
         assert!(
             !root.contains(checkpoint_owner),
@@ -444,6 +447,18 @@ fn oracle_run_explorer_keeps_checkpointing_out_of_the_scheduling_root() {
             "oracle-run checkpoint module must retain `{required_owner}`"
         );
     }
+
+    let restore =
+        std::fs::read_to_string(RESTORE).expect("read oracle-run checkpoint restoration module");
+    let restore_bytes = restore.len() as u64;
+    assert!(
+        restore_bytes <= 16 * 1024,
+        "{RESTORE} grew to {restore_bytes} bytes; split validation from frontier reconstruction before extending it"
+    );
+    assert!(
+        restore.contains("pub fn seed_oracle_run_explorer_from_checkpoint_v1"),
+        "oracle-run checkpoint restoration must retain its public reconstruction entry point"
+    );
 }
 
 #[test]
