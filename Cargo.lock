@@ -248,6 +248,7 @@ dependencies = [
  "oracle_lab_protocol",
  "serde",
  "serde_json",
+ "windows-sys",
 ]
 
 [[package]]

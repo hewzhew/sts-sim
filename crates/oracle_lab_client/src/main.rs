@@ -2,12 +2,9 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command as ProcessCommand, Stdio};
+use std::process::Command as ProcessCommand;
 use std::thread;
 use std::time::{Duration, Instant};
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 
 use clap::{Parser, Subcommand};
 use fs2::FileExt;
@@ -18,6 +15,10 @@ use oracle_lab_protocol::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+
+mod resident_process;
+
+use resident_process::spawn_resident_service;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -877,25 +878,8 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
         executable = service_executable()?;
     }
 
-    let mut command = ProcessCommand::new(&executable);
-    command
-        .current_dir(repository_root())
-        .arg("--canonical-oracle")
-        .arg("--workspace")
-        .arg(&workspace)
-        .arg("--endpoint")
-        .arg(&endpoint_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    command.creation_flags(0x0800_0000);
-    let mut child = command.spawn().map_err(|error| {
-        format!(
-            "failed to start resident oracle service '{}': {error}",
-            executable.display()
-        )
-    })?;
+    let mut child =
+        spawn_resident_service(&executable, &workspace, &endpoint_path, &repository_root())?;
 
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -915,10 +899,7 @@ fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
                 "endpoint": endpoint_path,
             }));
         }
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|error| format!("failed to inspect resident oracle service: {error}"))?
-        {
+        if let Some(status) = child.try_exit()? {
             return Err(format!(
                 "resident oracle service exited before publishing its endpoint: {status}"
             ));

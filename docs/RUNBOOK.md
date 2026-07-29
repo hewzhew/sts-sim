@@ -325,6 +325,11 @@ files below `target/` remain valid offline replay inputs, but resident startup
 rejects them before building or launching the service so verification cannot
 silently rewrite golden evidence.
 
+On Windows, the lightweight client parents a newly launched resident host to
+the interactive shell process. This lets one-shot Cargo, PowerShell, and tool
+callers return their first `started` response without remaining attached to the
+long-lived service process tree.
+
 For a consecutive multi-seed panel, do not launch resident services from a
 PowerShell loop. Use the single-process panel owner so each finished seed drops
 all search memory before the next seed, writes its report immediately, and

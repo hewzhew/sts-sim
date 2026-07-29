@@ -1162,6 +1162,21 @@ fn resident_oracle_state_stays_outside_cargo_target() {
 }
 
 #[test]
+fn resident_oracle_service_breaks_away_from_one_shot_callers_on_windows() {
+    let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
+        .expect("read oracle_lab client source");
+    let resident_process =
+        std::fs::read_to_string("crates/oracle_lab_client/src/resident_process.rs")
+            .expect("read resident process owner");
+    assert!(
+        client.contains("spawn_resident_service")
+            && resident_process.contains("PROC_THREAD_ATTRIBUTE_PARENT_PROCESS")
+            && resident_process.contains("GetShellWindow"),
+        "a newly started resident service must be parented outside Cargo, PowerShell, or tool caller process trees"
+    );
+}
+
+#[test]
 fn generated_oracle_cases_stay_outside_cargo_target() {
     let mut sources = Vec::new();
     collect_rust_sources(std::path::Path::new("src"), &mut sources);
