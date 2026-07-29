@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use sts_oracle_runtime::runtime::branch::{
-    load_oracle_analysis_workspace_v1, serve_oracle_analysis_tcp_v1,
+    load_oracle_analysis_workspace_v1, resolve_owned_resident_workspace,
+    serve_oracle_analysis_tcp_v1,
 };
 
 #[derive(Debug, Parser)]
@@ -34,12 +35,8 @@ fn main() {
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
     validate_canonical_launch(cli.canonical_oracle)?;
-    let workspace_path = cli.workspace.canonicalize().map_err(|error| {
-        format!(
-            "failed to resolve oracle workspace '{}': {error}",
-            cli.workspace.display()
-        )
-    })?;
+    let workspace_path =
+        resolve_owned_resident_workspace(&cli.workspace, &repository_root().join(".oracle-lab"))?;
     let workspace = load_oracle_analysis_workspace_v1(&workspace_path)?;
     serve_oracle_analysis_tcp_v1(
         &workspace_path,

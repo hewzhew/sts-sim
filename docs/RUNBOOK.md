@@ -318,6 +318,13 @@ replays the complete committed journal from the canonical seed state inside
 the resident service, exports the exact continuation when requested, and
 returns `victory_verified`.
 
+Resident services autosave their workspace in place after every mutation and
+on shutdown. `live start` therefore accepts mutable workspaces only below the
+ignored `.oracle-lab/` state root. Committed witness fixtures and historical
+files below `target/` remain valid offline replay inputs, but resident startup
+rejects them before building or launching the service so verification cannot
+silently rewrite golden evidence.
+
 For a consecutive multi-seed panel, do not launch resident services from a
 PowerShell loop. Use the single-process panel owner so each finished seed drops
 all search memory before the next seed, writes its report immediately, and

@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 
+mod resident_state;
+
+pub use resident_state::resolve_owned_resident_workspace;
+
 pub const ORACLE_ANALYSIS_SERVICE_PROTOCOL: &str = "oracle-analysis-jsonl";
 pub const ORACLE_ANALYSIS_SERVICE_PROTOCOL_VERSION: u32 = 1;
 pub const ORACLE_ANALYSIS_SERVICE_ENDPOINT_SCHEMA: &str = "OracleAnalysisServiceEndpoint";

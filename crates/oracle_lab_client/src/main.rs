@@ -13,7 +13,8 @@ use clap::{Parser, Subcommand};
 use fs2::FileExt;
 use oracle_artifact_contract::{ensure_artifact_fresh, CanonicalArtifact};
 use oracle_lab_protocol::{
-    call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
+    call_oracle_analysis_tcp_v1, resolve_owned_resident_workspace, OracleAnalysisServiceCommandV1,
+    OracleAnalysisServiceEndpointV1,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -846,18 +847,7 @@ fn card_value_label(card: &Value) -> String {
 
 fn start_session(session: &str, workspace: &Path) -> Result<(), String> {
     validate_session_name(session)?;
-    let workspace = workspace.canonicalize().map_err(|error| {
-        format!(
-            "failed to resolve oracle workspace '{}': {error}",
-            workspace.display()
-        )
-    })?;
-    if !workspace.is_file() {
-        return Err(format!(
-            "oracle workspace is not a file: {}",
-            workspace.display()
-        ));
-    }
+    let workspace = resolve_owned_resident_workspace(workspace, &oracle_lab_state_root())?;
     let endpoint_path = session_endpoint_path(session)?;
     let mut executable = service_executable()?;
     let mut restarted_stale_runtime = false;

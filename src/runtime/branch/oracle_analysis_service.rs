@@ -8,6 +8,7 @@ use blake2::{Blake2s256, Digest};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+pub use oracle_lab_protocol::resolve_owned_resident_workspace;
 pub use oracle_lab_protocol::{
     call_oracle_analysis_tcp_v1, OracleAnalysisServiceCommandV1, OracleAnalysisServiceEndpointV1,
     OracleAnalysisServiceRequestV1, OracleAnalysisServiceResponseV1,

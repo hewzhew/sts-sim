@@ -1145,7 +1145,20 @@ fn resident_oracle_state_stays_outside_cargo_target() {
             source.contains(r#".join(".oracle-lab")"#),
             "{label} must resolve resident state through the ignored .oracle-lab root"
         );
+        assert!(
+            source.contains("resolve_owned_resident_workspace"),
+            "{label} must reject an autosave workspace outside the owned .oracle-lab state root"
+        );
     }
+    let state_contract =
+        std::fs::read_to_string("crates/oracle_lab_protocol/src/resident_state.rs")
+            .expect("read resident workspace ownership contract");
+    assert!(
+        state_contract.contains("workspace.starts_with(&state_root)")
+            && state_contract.contains("autosave in place")
+            && state_contract.contains("read-only inputs"),
+        "resident workspace ownership must fail closed before a fixture or historical artifact can become an autosave target"
+    );
 }
 
 #[test]
