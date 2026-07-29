@@ -3,6 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
+use crate::ai::card_component_signal_v1::{
+    evaluate_card_component_signals_v1, is_unresolved_package_payoff_debt_signal_v1,
+    CardComponentSignalContextV1, CardComponentSignalReportV1,
+};
 use crate::ai::card_semantics_v1::{
     card_access_evidence_v1, card_reward_semantic_profile_v1, potion_acquisition_requirements_v1,
     potion_acquisition_traits_v1, relic_acquisition_requirements_v1, relic_acquisition_traits_v1,
@@ -14,8 +19,14 @@ use crate::ai::combat_upgrade_coverage_v1::CombatUpgradeScopeV1;
 use crate::ai::deck_mutation_compiler_v1::{
     deck_removal_target_snapshots_v1, DeckMutationTargetLossTierV1,
 };
+use crate::ai::deck_shape_v1::{
+    deck_shape_candidate_delta_v1, deck_shape_profile_v1, DeckShapeProfileV1, DeckShapeRiskV1,
+};
+use crate::ai::deck_startup_profile_v1::{deck_startup_profile_v1, DeckStartupProfileV1};
 use crate::ai::noncombat_strategy_v1::{
-    StrategyCapabilityKindV1, StrategyDeckFormationNeedV1, StrategyPackageIdV2,
+    build_run_strategy_snapshot_from_run_state_v2, threat_relevant_capability_improvements_v1,
+    StrategyCapabilityCoverageV1, StrategyCapabilityKindV1, StrategyDeckFormationNeedV1,
+    StrategyPackageIdV2,
 };
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, route_window_targets, RouteWindowFactsConfig,
@@ -66,6 +77,7 @@ pub enum ShopPolicyAcquisitionV1 {
         copies_before: usize,
         semantics: CardRewardSemanticProfileV1,
         access: Option<CardAccessEvidenceV1>,
+        component_signals: CardComponentSignalReportV1,
     },
     Relic {
         relic: RelicId,
@@ -103,12 +115,15 @@ pub struct ShopPolicyActionEvidenceV1 {
     pub deck_size_delta: isize,
     pub closed_threat_gaps: Vec<ShopPolicyThreatGapKeyV1>,
     pub capability_improvements: Vec<ShopPolicyCapabilityChangeV1>,
+    pub reinforced_threat_capabilities: Vec<StrategyCapabilityKindV1>,
     pub resolved_formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub added_formation_strengths: Vec<StrategyPackageIdV2>,
     pub matched_consumable_capabilities: Vec<StrategyCapabilityKindV1>,
     pub upgrade_scope_before: Option<CombatUpgradeScopeV1>,
     pub upgrade_scope_after: Option<CombatUpgradeScopeV1>,
     pub introduces_status_burden: bool,
+    pub added_deck_shape_risks: Vec<DeckShapeRiskV1>,
+    pub introduces_package_debt: bool,
     pub redundant_upgrade_access: bool,
     pub purge_target_loss: Option<DeckMutationTargetLossTierV1>,
     surface_index: usize,
@@ -137,12 +152,15 @@ pub struct ShopPolicyAuditCandidateV1 {
     pub deck_size_delta: isize,
     pub closed_threat_gaps: Vec<String>,
     pub capability_improvements: Vec<String>,
+    pub reinforced_threat_capabilities: Vec<String>,
     pub resolved_formation_needs: Vec<String>,
     pub added_formation_strengths: Vec<String>,
     pub matched_consumable_capabilities: Vec<String>,
     pub upgrade_scope_before: Option<String>,
     pub upgrade_scope_after: Option<String>,
     pub introduces_status_burden: bool,
+    pub added_deck_shape_risks: Vec<String>,
+    pub introduces_package_debt: bool,
     pub redundant_upgrade_access: bool,
     pub purge_target_loss: Option<String>,
     pub surface_index: usize,
@@ -211,6 +229,11 @@ impl ExactShopPolicyDecisionV1 {
                         .iter()
                         .map(|value| format!("{value:?}"))
                         .collect(),
+                    reinforced_threat_capabilities: evidence
+                        .reinforced_threat_capabilities
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
                     resolved_formation_needs: evidence
                         .resolved_formation_needs
                         .iter()
@@ -233,6 +256,12 @@ impl ExactShopPolicyDecisionV1 {
                         .upgrade_scope_after
                         .map(|value| format!("{value:?}")),
                     introduces_status_burden: evidence.introduces_status_burden,
+                    added_deck_shape_risks: evidence
+                        .added_deck_shape_risks
+                        .iter()
+                        .map(|value| format!("{value:?}"))
+                        .collect(),
+                    introduces_package_debt: evidence.introduces_package_debt,
                     redundant_upgrade_access: evidence.redundant_upgrade_access,
                     purge_target_loss: evidence.purge_target_loss.map(|value| format!("{value:?}")),
                     surface_index: evidence.surface_index,
@@ -277,12 +306,27 @@ pub fn exact_shop_policy_decision_v1(
         .into_iter()
         .map(|snapshot| (snapshot.deck_index, snapshot.target_loss.tier))
         .collect::<BTreeMap<_, _>>();
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(&session.run_state);
+    let formation_needs = strategy.formation_summary().needs;
+    let startup = deck_startup_profile_v1(&session.run_state);
+    let deck_shape = deck_shape_profile_v1(&session.run_state);
+    let block_plan = block_plan_profile_v1(&session.run_state);
     let mut evidence = exact
         .actions
         .iter()
         .enumerate()
         .map(|(surface_index, action)| {
-            shop_action_evidence_v1(session, &exact, action, surface_index, &purge_target_losses)
+            shop_action_evidence_v1(
+                session,
+                &exact,
+                action,
+                surface_index,
+                &purge_target_losses,
+                &formation_needs,
+                &startup,
+                &deck_shape,
+                &block_plan,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     evidence.sort_by(compare_shop_evidence);
@@ -329,15 +373,33 @@ fn shop_action_evidence_v1(
     action: &ExactRunPolicyActionSuccessorV1,
     surface_index: usize,
     purge_target_losses: &BTreeMap<usize, DeckMutationTargetLossTierV1>,
+    formation_needs: &[StrategyDeckFormationNeedV1],
+    startup: &DeckStartupProfileV1,
+    deck_shape: &DeckShapeProfileV1,
+    block_plan: &BlockPlanProfileV1,
 ) -> Result<ShopPolicyActionEvidenceV1, String> {
     let candidate_key = action
         .candidate_key
         .clone()
         .ok_or_else(|| format!("shop candidate '{}' has no typed key", action.candidate_id))?;
-    let acquisition = acquisition_v1(parent, &candidate_key)?;
+    let acquisition = acquisition_v1(parent, &candidate_key, formation_needs, startup, block_plan)?;
     let delta = run_policy_state_delta_v1(&decision.before, &action.after);
     let closed_threat_gaps = delta.closed_threat_gaps;
     let capability_improvements = delta.capability_improvements;
+    let threat_relevant_improvements = threat_relevant_capability_improvements_v1(
+        &decision.before.threats,
+        &decision.before.threat_coverage,
+        &action.after.threat_coverage,
+    );
+    let reinforced_threat_capabilities = capability_improvements
+        .iter()
+        .filter(|change| {
+            change.before == StrategyCapabilityCoverageV1::Supported
+                && change.after == StrategyCapabilityCoverageV1::Strong
+                && threat_relevant_improvements.contains(&change.capability)
+        })
+        .map(|change| change.capability)
+        .collect::<Vec<_>>();
     let resolved_formation_needs = delta.resolved_formation_needs;
     let added_formation_strengths = delta.added_formation_strengths;
     let matched_consumable_capabilities =
@@ -352,6 +414,22 @@ fn shop_action_evidence_v1(
             .relics
             .iter()
             .any(|relic| relic.id == RelicId::RunicPyramid);
+    let added_deck_shape_risks = match &acquisition {
+        ShopPolicyAcquisitionV1::Card { card, .. } => {
+            deck_shape_candidate_delta_v1(deck_shape, *card).risks
+        }
+        _ => Vec::new(),
+    };
+    let introduces_package_debt = matches!(
+        &acquisition,
+        ShopPolicyAcquisitionV1::Card {
+            component_signals,
+            ..
+        } if component_signals
+            .debt_signals
+            .iter()
+            .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
+    );
     let redundant_upgrade_access = matches!(
         acquisition,
         ShopPolicyAcquisitionV1::Card {
@@ -392,13 +470,15 @@ fn shop_action_evidence_v1(
         max_hp_gain,
         deck_size_delta,
         &closed_threat_gaps,
-        &capability_improvements,
+        &reinforced_threat_capabilities,
         &resolved_formation_needs,
         &added_formation_strengths,
         &matched_consumable_capabilities,
         upgrade_scope_before,
         upgrade_scope_after,
         introduces_status_burden,
+        !added_deck_shape_risks.is_empty(),
+        introduces_package_debt,
         redundant_upgrade_access,
         purge_target_loss,
     );
@@ -415,12 +495,15 @@ fn shop_action_evidence_v1(
         deck_size_delta,
         closed_threat_gaps,
         capability_improvements,
+        reinforced_threat_capabilities,
         resolved_formation_needs,
         added_formation_strengths,
         matched_consumable_capabilities,
         upgrade_scope_before,
         upgrade_scope_after,
         introduces_status_burden,
+        added_deck_shape_risks,
+        introduces_package_debt,
         redundant_upgrade_access,
         purge_target_loss,
         surface_index,
@@ -430,6 +513,9 @@ fn shop_action_evidence_v1(
 fn acquisition_v1(
     parent: &RunControlSession,
     key: &DecisionCandidateKey,
+    formation_needs: &[StrategyDeckFormationNeedV1],
+    startup: &DeckStartupProfileV1,
+    block_plan: &BlockPlanProfileV1,
 ) -> Result<ShopPolicyAcquisitionV1, String> {
     Ok(match key {
         DecisionCandidateKey::ShopBuyCard { card, upgrades, .. } => {
@@ -439,12 +525,23 @@ fn acquisition_v1(
                 .iter()
                 .filter(|owned| owned.id == *card)
                 .count();
+            let reward = RewardCard::new(*card, *upgrades);
+            let semantics = card_reward_semantic_profile_v1(&reward);
             ShopPolicyAcquisitionV1::Card {
                 card: *card,
                 upgrades: *upgrades,
                 copies_before,
-                semantics: card_reward_semantic_profile_v1(&RewardCard::new(*card, *upgrades)),
-                access: card_access_evidence_v1(&RewardCard::new(*card, *upgrades)),
+                access: card_access_evidence_v1(&reward),
+                component_signals: evaluate_card_component_signals_v1(
+                    &CardComponentSignalContextV1 {
+                        same_card_count: copies_before,
+                        formation_needs: formation_needs.to_vec(),
+                        startup: startup.clone(),
+                        block_plan: block_plan.clone(),
+                    },
+                    &semantics,
+                ),
+                semantics,
             }
         }
         DecisionCandidateKey::ShopBuyRelic { relic, .. } => {
@@ -582,13 +679,15 @@ fn shop_policy_band_v1(
     max_hp_gain: i32,
     deck_size_delta: isize,
     closed_threat_gaps: &[ShopPolicyThreatGapKeyV1],
-    capability_improvements: &[ShopPolicyCapabilityChangeV1],
+    reinforced_threat_capabilities: &[StrategyCapabilityKindV1],
     resolved_formation_needs: &[StrategyDeckFormationNeedV1],
     added_formation_strengths: &[StrategyPackageIdV2],
     matched_consumable_capabilities: &[StrategyCapabilityKindV1],
     upgrade_scope_before: Option<CombatUpgradeScopeV1>,
     upgrade_scope_after: Option<CombatUpgradeScopeV1>,
     introduces_status_burden: bool,
+    introduces_deck_shape_risk: bool,
+    introduces_package_debt: bool,
     redundant_upgrade_access: bool,
     purge_target_loss: Option<DeckMutationTargetLossTierV1>,
 ) -> ShopPolicyBandV1 {
@@ -598,13 +697,20 @@ fn shop_policy_band_v1(
     if hp_gain > 0 || max_hp_gain > 0 {
         return ShopPolicyBandV1::ImmediateSurvival;
     }
+    if introduces_status_burden
+        || introduces_deck_shape_risk
+        || introduces_package_debt
+        || redundant_upgrade_access
+    {
+        return ShopPolicyBandV1::Liability;
+    }
     if !closed_threat_gaps.is_empty() {
         return ShopPolicyBandV1::CloseThreatGap;
     }
     if first_copy_efficient_access(acquisition) {
         return ShopPolicyBandV1::AmplifyStrategicAccess;
     }
-    if !capability_improvements.is_empty() || !matched_consumable_capabilities.is_empty() {
+    if !reinforced_threat_capabilities.is_empty() || !matched_consumable_capabilities.is_empty() {
         return ShopPolicyBandV1::ImproveRequiredCapability;
     }
     if matches!(acquisition, ShopPolicyAcquisitionV1::Purge { .. }) {
@@ -620,9 +726,6 @@ fn shop_policy_band_v1(
         } else {
             ShopPolicyBandV1::Liability
         };
-    }
-    if introduces_status_burden || redundant_upgrade_access {
-        return ShopPolicyBandV1::Liability;
     }
     if !resolved_formation_needs.is_empty()
         || !added_formation_strengths.is_empty()
@@ -920,6 +1023,128 @@ mod tests {
             candidate_band(&duplicate, CardId::BattleTrance),
             ShopPolicyBandV1::AmplifyStrategicAccess
         );
+    }
+
+    #[test]
+    fn partial_capability_gain_cannot_hide_card_debt_or_spend_over_leave() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 2;
+        session.run_state.boss_key = Some(EncounterId::TheGuardian);
+        session.run_state.current_hp = 80;
+        session.run_state.max_hp = 80;
+        session.run_state.gold = 93;
+        session.run_state.master_deck = [
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Berserk,
+            CardId::WildStrike,
+            CardId::ShrugItOff,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, card)| CombatCard::new(card, index as u32))
+        .collect();
+
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.cards.extend([
+            ShopCard {
+                card_id: CardId::HeavyBlade,
+                upgrades: 0,
+                price: 49,
+                can_buy: true,
+                blocked_reason: None,
+            },
+            ShopCard {
+                card_id: CardId::Clash,
+                upgrades: 0,
+                price: 52,
+                can_buy: true,
+                blocked_reason: None,
+            },
+        ]);
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_shop_policy_decision_v1(&session, &legal).expect("seed006 F2 shop policy");
+        let heavy = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::HeavyBlade,
+                        ..
+                    }
+                )
+            })
+            .expect("Heavy Blade evidence");
+        let clash = decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyCard {
+                        card: CardId::Clash,
+                        ..
+                    }
+                )
+            })
+            .expect("Clash evidence");
+        let leave = decision
+            .evidence
+            .iter()
+            .position(|candidate| {
+                matches!(candidate.candidate_key, DecisionCandidateKey::ShopLeave)
+            })
+            .expect("leave evidence");
+
+        assert!(heavy.capability_improvements.iter().any(|change| {
+            change.capability == StrategyCapabilityKindV1::LongFightScaling
+                && change.before == StrategyCapabilityCoverageV1::Missing
+                && change.after == StrategyCapabilityCoverageV1::Thin
+        }));
+        assert!(heavy.reinforced_threat_capabilities.is_empty());
+        assert!(
+            matches!(
+                &heavy.acquisition,
+                ShopPolicyAcquisitionV1::Card {
+                    component_signals,
+                    ..
+                } if component_signals
+                    .debt_signals
+                    .iter()
+                    .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
+            ),
+            "acquisition={:#?}",
+            heavy.acquisition
+        );
+        assert_eq!(heavy.band, ShopPolicyBandV1::Liability);
+        assert!(clash
+            .added_deck_shape_risks
+            .iter()
+            .any(|risk| matches!(risk, DeckShapeRiskV1::ClashPlayabilityDebt { .. })));
+        assert_eq!(clash.band, ShopPolicyBandV1::Liability);
+        assert!(leave < candidate_position(&decision, CardId::HeavyBlade));
+        assert!(leave < candidate_position(&decision, CardId::Clash));
+        assert!(decision
+            .prior
+            .entries
+            .iter()
+            .all(|entry| entry.probability.is_finite() && entry.probability > 0.0));
     }
 
     #[test]
