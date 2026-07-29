@@ -639,22 +639,22 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
 #[test]
 fn unresolved_combat_evidence_classification_is_typed_and_conservative() {
     assert_eq!(
-        classify_unresolved_combat_evidence(Some("frontier_exhausted"), 0),
+        combat_completion::classify_unresolved_combat_evidence(Some("frontier_exhausted"), 0),
         OracleRunCombatEvidenceKindV1::ExhaustiveRefutation
     );
     assert_eq!(
-        classify_unresolved_combat_evidence(Some("frontier_exhausted"), 1),
+        combat_completion::classify_unresolved_combat_evidence(Some("frontier_exhausted"), 1),
         OracleRunCombatEvidenceKindV1::BudgetUnknown
     );
     for status in ["mechanics_gap", "replay_mismatch"] {
         assert_eq!(
-            classify_unresolved_combat_evidence(Some(status), 0),
+            combat_completion::classify_unresolved_combat_evidence(Some(status), 0),
             OracleRunCombatEvidenceKindV1::SetupOrMechanicsError
         );
     }
     for status in [None, Some("partial"), Some("allowance_exhausted")] {
         assert_eq!(
-            classify_unresolved_combat_evidence(status, 0),
+            combat_completion::classify_unresolved_combat_evidence(status, 0),
             OracleRunCombatEvidenceKindV1::BudgetUnknown
         );
     }

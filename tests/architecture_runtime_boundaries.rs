@@ -561,6 +561,49 @@ fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
 }
 
 #[test]
+fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const COMPLETION: &str =
+        "src/eval/run_control/oracle_run_explorer/combat_completion.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    assert!(
+        root.contains("mod combat_completion;"),
+        "the oracle-run explorer must retain its combat-completion boundary"
+    );
+    for completion_owner in [
+        "enum FinishedOracleCombatV1",
+        "fn classify_unresolved_combat_evidence",
+        "fn finish_combat",
+        "fn accept_resolved_combat_branch",
+    ] {
+        assert!(
+            !root.contains(completion_owner),
+            "oracle combat-completion owner `{completion_owner}` must not return to the orchestration root"
+        );
+    }
+
+    let completion =
+        std::fs::read_to_string(COMPLETION).expect("read oracle combat-completion module");
+    let completion_bytes = completion.len() as u64;
+    assert!(
+        completion_bytes <= 16 * 1024,
+        "{COMPLETION} grew to {completion_bytes} bytes; split evidence classification from exact commit before extending it"
+    );
+    for required_owner in [
+        "enum FinishedOracleCombatV1",
+        "fn classify_unresolved_combat_evidence",
+        "fn finish_combat",
+        "fn accept_resolved_combat_branch",
+    ] {
+        assert!(
+            completion.contains(required_owner),
+            "oracle combat-completion module must retain `{required_owner}`"
+        );
+    }
+}
+
+#[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
     const MODULES: [(&str, u64); 8] = [
