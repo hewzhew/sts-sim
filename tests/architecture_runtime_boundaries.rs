@@ -577,9 +577,11 @@ fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
     );
     for completion_owner in [
         "enum FinishedOracleCombatV1",
+        "enum PreparedOracleRunCombatV1",
         "fn classify_unresolved_combat_evidence",
         "fn finish_combat",
-        "fn accept_resolved_combat_branch",
+        "fn prepare_resolved_combat_branch",
+        "fn commit_prepared_combat",
     ] {
         assert!(
             !root.contains(completion_owner),
@@ -596,9 +598,11 @@ fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
     );
     for required_owner in [
         "enum FinishedOracleCombatV1",
+        "enum PreparedOracleRunCombatV1",
         "fn classify_unresolved_combat_evidence",
         "fn finish_combat",
-        "fn accept_resolved_combat_branch",
+        "fn prepare_resolved_combat_branch",
+        "fn commit_prepared_combat",
     ] {
         assert!(
             completion.contains(required_owner),

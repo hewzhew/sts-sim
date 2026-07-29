@@ -111,15 +111,23 @@ impl OracleRunExplorerV1 {
         prepared: &PreparedOracleRunDecisionV1,
         decision_prior: Option<RunPolicyPriorFnV1>,
     ) -> Result<PreparedOracleRunDecisionRegistrationV1, String> {
+        self.prepare_explicit_branch_registration(&prepared.child, decision_prior)
+    }
+
+    pub(in super::super) fn prepare_explicit_branch_registration(
+        &self,
+        prospective_child: &OracleRunBranchV1,
+        decision_prior: Option<RunPolicyPriorFnV1>,
+    ) -> Result<PreparedOracleRunDecisionRegistrationV1, String> {
         let branch = self
             .state_index
-            .get(&prepared.child.state_fingerprint)
+            .get(&prospective_child.state_fingerprint)
             .and_then(|branch_id| {
                 self.branches
                     .iter()
                     .find(|branch| branch.branch_id == *branch_id)
             })
-            .unwrap_or(&prepared.child);
+            .unwrap_or(prospective_child);
         let supply = match branch.boundary {
             OracleRunBoundaryV1::Combat
             | OracleRunBoundaryV1::TerminalVictory

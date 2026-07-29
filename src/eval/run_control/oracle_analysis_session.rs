@@ -1127,7 +1127,13 @@ impl OracleAnalysisSessionV1 {
             .remove(&source_node_id)
             .expect("ready analysis combat job exists");
         let final_progress = combat_progress_view(&work);
-        let child_node_id = self.materialize_combat_work(source_node_id, work)?;
+        let child_node_id = match self.materialize_combat_work(source_node_id, &work) {
+            Ok(child_node_id) => child_node_id,
+            Err(error) => {
+                self.combat_jobs.insert(source_node_id, work);
+                return Err(error);
+            }
+        };
         let status = if let Some(child_node_id) = child_node_id {
             OracleAnalysisAdvanceStatusV1::BoundaryReached { child_node_id }
         } else {
@@ -1180,7 +1186,14 @@ impl OracleAnalysisSessionV1 {
                 "oracle analysis node {source_node_id} has no verified combat incumbent"
             ));
         }
-        self.materialize_combat_work(source_node_id, work)?
+        let child_node_id = match self.materialize_combat_work(source_node_id, &work) {
+            Ok(child_node_id) => child_node_id,
+            Err(error) => {
+                self.combat_jobs.insert(source_node_id, work);
+                return Err(error);
+            }
+        };
+        child_node_id
             .ok_or_else(|| "verified combat incumbent did not materialize a child".to_string())
     }
 
@@ -1189,27 +1202,25 @@ impl OracleAnalysisSessionV1 {
         actions: &[ClientInput],
     ) -> Result<usize, String> {
         let source_node_id = self.cursor_node_id;
-        let mut work = if let Some(work) = self.combat_jobs.remove(&source_node_id) {
-            work
-        } else {
-            let branch = self.require_branch(source_node_id)?;
-            if branch.boundary != OracleRunBoundaryV1::Combat {
-                return Err(format!(
-                    "oracle analysis node {source_node_id} is at {:?}, not combat",
-                    branch.boundary
-                ));
-            }
-            OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
-                &branch.session,
-                self.combat_budgets.for_session(&branch.session),
-                self.combat_budgets.guidance_bundle.as_deref(),
-            )?
-        };
-        if let Err(error) = work.verify_and_restore_action_witness(actions) {
-            self.combat_jobs.insert(source_node_id, work);
-            return Err(error);
+        let branch = self.require_branch(source_node_id)?;
+        if branch.boundary != OracleRunBoundaryV1::Combat {
+            return Err(format!(
+                "oracle analysis node {source_node_id} is at {:?}, not combat",
+                branch.boundary
+            ));
         }
-        self.materialize_combat_work(source_node_id, work)?
+        // Analyst-supplied exact actions are prepared in an isolated work
+        // object. A failed replay or downstream decision supply therefore
+        // leaves any resident tactical frontier byte-for-byte untouched.
+        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &branch.session,
+            self.combat_budgets.for_session(&branch.session),
+            self.combat_budgets.guidance_bundle.as_deref(),
+        )?;
+        work.verify_and_restore_action_witness(actions)?;
+        let child_node_id = self.materialize_combat_work(source_node_id, &work)?;
+        self.combat_jobs.remove(&source_node_id);
+        child_node_id
             .ok_or_else(|| "verified combat action witness did not materialize a child".to_string())
     }
 
@@ -1225,12 +1236,28 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
+        let prepared = self
+            .explorer
+            .prepare_explicit_smoke_bomb_escape(source_node_id)?;
+        let prospective_child = prepared
+            .prospective_branch()
+            .expect("exact Smoke Bomb preparation must resolve a child");
+        let child_registration = self
+            .explorer
+            .prepare_explicit_branch_registration(prospective_child, self.decision_prior)?;
         let child_node_id = self
             .explorer
-            .materialize_explicit_smoke_bomb_escape(source_node_id)?
-            .ok_or_else(|| "exact Smoke Bomb escape did not materialize a child".to_string())?;
+            .commit_explicit_combat(prepared)?
+            .expect("exact Smoke Bomb preparation must commit a child or exact survivor");
+        self.explorer
+            .apply_explicit_decision_registration(child_registration);
         self.combat_jobs.remove(&source_node_id);
-        let child = self.require_branch(child_node_id)?;
+        let child = self
+            .explorer
+            .branches
+            .iter()
+            .find(|branch| branch.branch_id == child_node_id)
+            .expect("committed Smoke Bomb child or exact survivor must remain addressable");
         let edge_id = self.record_edge(
             source_node_id,
             child_node_id,
@@ -1271,15 +1298,30 @@ impl OracleAnalysisSessionV1 {
     fn materialize_combat_work(
         &mut self,
         source_node_id: usize,
-        work: OracleRunCombatWorkV1,
+        work: &OracleRunCombatWorkV1,
     ) -> Result<Option<usize>, String> {
-        let child_node_id = self
+        let prepared = self
             .explorer
-            .materialize_explicit_combat(source_node_id, work)?;
-        if let Some(child_node_id) = child_node_id {
+            .prepare_explicit_combat(source_node_id, work)?;
+        let child_registration = prepared
+            .prospective_branch()
+            .map(|branch| {
+                self.explorer
+                    .prepare_explicit_branch_registration(branch, self.decision_prior)
+            })
+            .transpose()?;
+        let child_node_id = self.explorer.commit_explicit_combat(prepared)?;
+        if let Some(child_registration) = child_registration {
             self.explorer
-                .register_explicit_decisions_for_branch(child_node_id, self.decision_prior)?;
-            let child = self.require_branch(child_node_id)?;
+                .apply_explicit_decision_registration(child_registration);
+        }
+        if let Some(child_node_id) = child_node_id {
+            let child = self
+                .explorer
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == child_node_id)
+                .expect("committed combat child or exact survivor must remain addressable");
             let edge_id = self.record_edge(
                 source_node_id,
                 child_node_id,

@@ -439,6 +439,16 @@ impl OracleRunCombatWorkV1 {
         Ok(work)
     }
 
+    pub(super) fn for_exact_action_witness_with_guidance(
+        session: &RunControlSession,
+        options: RunControlSearchCombatOptions,
+        guidance: Option<&CombatGuidanceBundleV1>,
+    ) -> Result<Self, String> {
+        // Exact analyst actions need simulator verification, not an implicit
+        // rollout proposal that could replace the explicitly supplied line.
+        Self::new_with_policy_proposal(session, options, false, guidance)
+    }
+
     pub(super) fn checkpoint(&self) -> OracleRunCombatWorkCheckpointV1 {
         OracleRunCombatWorkCheckpointV1 {
             consumed_nodes: self.nodes_expanded(),
@@ -917,7 +927,7 @@ impl OracleRunCombatWorkV1 {
     }
 
     pub(super) fn finish_and_apply(
-        self,
+        &self,
         session: &mut RunControlSession,
     ) -> Result<RunProgressOutcome, String> {
         if session.current_active_combat_position()? != self.start {

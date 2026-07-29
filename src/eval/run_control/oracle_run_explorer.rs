@@ -652,25 +652,6 @@ impl OracleRunExplorerV1 {
         Ok(())
     }
 
-    pub(super) fn register_explicit_decisions_for_branch(
-        &mut self,
-        branch_id: usize,
-        decision_prior: Option<RunPolicyPriorFnV1>,
-    ) -> Result<(), String> {
-        let boundary = self
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == branch_id)
-            .map(|branch| branch.boundary)
-            .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
-        match boundary {
-            OracleRunBoundaryV1::Combat
-            | OracleRunBoundaryV1::TerminalVictory
-            | OracleRunBoundaryV1::TerminalDefeat => Ok(()),
-            _ => self.register_decision_work(branch_id, decision_prior),
-        }
-    }
-
     fn schedule_branch(
         &mut self,
         branch_id: usize,
@@ -752,67 +733,13 @@ impl OracleRunExplorerV1 {
             .collect()
     }
 
-    pub(super) fn materialize_explicit_combat(
-        &mut self,
-        branch_id: usize,
-        work: OracleRunCombatWorkV1,
-    ) -> Result<Option<usize>, String> {
-        match self.finish_combat(PendingOracleCombatV1 {
-            branch_id,
-            stage: 0,
-            work,
-        })? {
-            FinishedOracleCombatV1::Resolved(branch_id) => Ok(Some(branch_id)),
-            FinishedOracleCombatV1::ExactDuplicate => self
-                .retired_exact_duplicates
-                .last()
-                .map(|duplicate| Some(duplicate.survivor_branch_id))
-                .ok_or_else(|| {
-                    "explicit oracle combat duplicated without a survivor record".to_string()
-                }),
-            FinishedOracleCombatV1::Unresolved(unresolved) => {
-                self.unresolved_combats.push(unresolved);
-                Ok(None)
-            }
-        }
-    }
-
+    #[cfg(test)]
     pub(super) fn materialize_explicit_smoke_bomb_escape(
         &mut self,
         branch_id: usize,
     ) -> Result<Option<usize>, String> {
-        let parent = self
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == branch_id)
-            .cloned()
-            .ok_or_else(|| format!("missing oracle combat branch {branch_id}"))?;
-        let mut session = parent.session.clone();
-        let outcome =
-            super::combat_no_win_fallback::try_apply_smoke_bomb_survival_fallback_after_rejection(
-                &mut session,
-                "explicit oracle escape",
-            )?
-            .ok_or_else(|| {
-                format!(
-                    "oracle combat branch {branch_id} has no currently usable Smoke Bomb escape"
-                )
-            })?;
-        let finished =
-            self.accept_resolved_combat_branch(parent, session, outcome.progress_steps)?;
-        match finished {
-            FinishedOracleCombatV1::Resolved(branch_id) => Ok(Some(branch_id)),
-            FinishedOracleCombatV1::ExactDuplicate => self
-                .retired_exact_duplicates
-                .last()
-                .map(|duplicate| Some(duplicate.survivor_branch_id))
-                .ok_or_else(|| {
-                    "explicit Smoke Bomb escape duplicated without a survivor record".to_string()
-                }),
-            FinishedOracleCombatV1::Unresolved(_) => {
-                Err("explicit Smoke Bomb escape unexpectedly remained unresolved".to_string())
-            }
-        }
+        let prepared = self.prepare_explicit_smoke_bomb_escape(branch_id)?;
+        self.commit_explicit_combat(prepared)
     }
 }
 

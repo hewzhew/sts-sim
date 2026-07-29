@@ -1,11 +1,16 @@
 use super::*;
 
+use crate::content::potions::{Potion, PotionId};
 use crate::eval::run_control::{
     seed_oracle_run_explorer_from_session_v1, RunControlConfig, RunControlSearchCombatOptions,
     RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunPolicyPriorV1,
 };
 use crate::runtime::combat::CombatCard;
-use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::core::{
+    ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
+    RunPendingChoiceReason, RunPendingChoiceState,
+};
+use crate::state::map::node::RoomType;
 use crate::state::selection::DomainEventSource;
 
 fn parameterized_selection_analysis() -> OracleAnalysisSessionV1 {
@@ -44,6 +49,76 @@ fn reject_child_decision_supply(
     _legal: &[RunPolicyCandidateV1<'_>],
 ) -> Result<RunPolicyPriorV1, String> {
     Err("injected child decision-supply failure".to_string())
+}
+
+fn combat_analysis(
+    combat: crate::runtime::combat::CombatState,
+    decision_prior: Option<RunPolicyPriorFnV1>,
+) -> OracleAnalysisSessionV1 {
+    let mut run = RunControlSession::new(RunControlConfig::default());
+    run.engine_state = EngineState::CombatPlayerTurn;
+    run.active_combat = Some(ActiveCombat::new(
+        EngineState::CombatPlayerTurn,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoom,
+        }),
+    ));
+    let combat_budgets =
+        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+    let explorer = seed_oracle_run_explorer_from_session_v1(
+        run,
+        RunProgressJournalV1::default(),
+        &combat_budgets,
+        None,
+    )
+    .expect("seed combat analysis");
+    OracleAnalysisSessionV1::from_explorer(explorer, Some(0), combat_budgets, decision_prior, None)
+        .expect("combat analysis")
+}
+
+fn one_strike_combat_analysis(
+    decision_prior: Option<RunPolicyPriorFnV1>,
+) -> OracleAnalysisSessionV1 {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+    let plan = crate::content::monsters::roll_monster_turn_plan(
+        &mut combat.rng.ai_rng,
+        &monster,
+        combat.meta.ascension_level,
+        99,
+        std::slice::from_ref(&monster),
+        &[],
+    );
+    monster.set_planned_move_id(plan.move_id);
+    monster.set_planned_steps(plan.steps);
+    monster.set_planned_visible_spec(plan.visible_spec);
+    monster.current_hp = 6;
+    monster.max_hp = 6;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![CombatCard::new(crate::content::cards::CardId::Strike, 1)];
+    combat_analysis(combat, decision_prior)
+}
+
+fn smoke_bomb_combat_analysis(
+    decision_prior: Option<RunPolicyPriorFnV1>,
+) -> OracleAnalysisSessionV1 {
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+    let plan = crate::content::monsters::roll_monster_turn_plan(
+        &mut combat.rng.ai_rng,
+        &monster,
+        combat.meta.ascension_level,
+        99,
+        std::slice::from_ref(&monster),
+        &[],
+    );
+    monster.set_planned_move_id(plan.move_id);
+    monster.set_planned_steps(plan.steps);
+    monster.set_planned_visible_spec(plan.visible_spec);
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![Some(Potion::new(PotionId::SmokeBomb, 41))];
+    combat_analysis(combat, decision_prior)
 }
 
 #[test]
@@ -120,11 +195,98 @@ fn child_supply_failure_does_not_leave_an_unlinked_materialized_branch() {
         .try_choice(&requested_ref)
         .expect_err("injected child supply must fail");
 
-    assert!(error.contains("injected child decision-supply failure"));
+    assert!(
+        error.contains("injected child decision-supply failure"),
+        "unexpected decision failure: {error}"
+    );
     let after = serde_json::to_value(analysis.checkpoint().expect("checkpoint after failure"))
         .expect("serialize after checkpoint");
     assert_eq!(
         after, before,
         "a failed child supply must not leave an unlinked branch or consume the choice"
+    );
+}
+
+#[test]
+fn combat_child_supply_failure_does_not_leave_an_unlinked_materialized_branch() {
+    let mut analysis = one_strike_combat_analysis(Some(reject_child_decision_supply));
+    let before = serde_json::to_value(analysis.checkpoint().expect("checkpoint before failure"))
+        .expect("serialize before checkpoint");
+
+    let error = analysis
+        .accept_cursor_combat_actions(&[ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }])
+        .expect_err("injected combat child supply must fail");
+
+    assert!(
+        error.contains("injected child decision-supply failure"),
+        "unexpected combat failure: {error}"
+    );
+    let after = serde_json::to_value(analysis.checkpoint().expect("checkpoint after failure"))
+        .expect("serialize after checkpoint");
+    assert!(
+        after == before,
+        "failed combat child supply must preserve the branch, resident work, edges, and navigation"
+    );
+}
+
+#[test]
+fn exact_combat_actions_register_the_materialized_child_decision_supply() {
+    let mut analysis = one_strike_combat_analysis(None);
+
+    let child_node_id = analysis
+        .accept_cursor_combat_actions(&[ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        }])
+        .expect("exact one-Strike witness");
+    let child = analysis.view_cursor().expect("combat child view");
+
+    assert_eq!(child.node_id, child_node_id);
+    assert_eq!(child.boundary, OracleRunBoundaryV1::Reward);
+    assert!(
+        !child.choices.is_empty(),
+        "a committed combat child must expose its legal reward decisions"
+    );
+}
+
+#[test]
+fn smoke_bomb_child_supply_failure_does_not_leave_an_unlinked_materialized_branch() {
+    let mut analysis = smoke_bomb_combat_analysis(Some(reject_child_decision_supply));
+    let before = serde_json::to_value(analysis.checkpoint().expect("checkpoint before failure"))
+        .expect("serialize before checkpoint");
+
+    let error = analysis
+        .accept_cursor_smoke_bomb_escape()
+        .expect_err("injected Smoke Bomb child supply must fail");
+
+    assert!(
+        error.contains("injected child decision-supply failure"),
+        "unexpected Smoke Bomb failure: {error}"
+    );
+    let after = serde_json::to_value(analysis.checkpoint().expect("checkpoint after failure"))
+        .expect("serialize after checkpoint");
+    assert_eq!(
+        after, before,
+        "failed Smoke Bomb child supply must preserve the branch, resident work, edges, and navigation"
+    );
+}
+
+#[test]
+fn smoke_bomb_escape_registers_the_materialized_child_decision_supply() {
+    let mut analysis = smoke_bomb_combat_analysis(None);
+
+    let child_node_id = analysis
+        .accept_cursor_smoke_bomb_escape()
+        .expect("exact Smoke Bomb escape");
+    let child = analysis.view_cursor().expect("escaped child view");
+
+    assert_eq!(child.node_id, child_node_id);
+    assert_eq!(child.boundary, OracleRunBoundaryV1::Reward);
+    assert!(
+        !child.choices.is_empty(),
+        "a committed escape child must expose its legal reward decisions"
     );
 }
