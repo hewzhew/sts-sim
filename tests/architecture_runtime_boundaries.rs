@@ -483,6 +483,56 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
 }
 
 #[test]
+fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
+    const ROOT: &str = "crates/sts_combat_planner/src/policy_discrepancy_search.rs";
+    const MODULES: [(&str, u64); 2] = [
+        (
+            "crates/sts_combat_planner/src/policy_discrepancy_search/contract.rs",
+            8 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/policy_discrepancy_search/turn_macro.rs",
+            16 * 1024,
+        ),
+    ];
+
+    let source = std::fs::read_to_string(ROOT).expect("read policy-discrepancy search source");
+    let root_bytes = source.len() as u64;
+    assert!(
+        root_bytes <= 40 * 1024,
+        "policy_discrepancy_search.rs grew to {root_bytes} bytes; keep the root focused on session scheduling and atomic policy dives"
+    );
+    for module in ["contract", "turn_macro"] {
+        assert!(
+            source.contains(&format!("mod {module};")),
+            "the policy-discrepancy root must retain the {module} responsibility boundary"
+        );
+    }
+    assert!(
+        !source.contains("pub struct PolicyDiscrepancyConfig"),
+        "public policy-discrepancy contracts belong in contract.rs, not the session root"
+    );
+    assert!(
+        !source.contains("generate_depth_beam_turn_options"),
+        "turn-macro generation belongs in turn_macro.rs, not the session root"
+    );
+    assert!(
+        !source.contains("#[test]"),
+        "inline tests must not regrow inside the policy-discrepancy session root"
+    );
+
+    for (path, limit) in MODULES {
+        let bytes = std::fs::metadata(path)
+            .unwrap_or_else(|error| panic!("read {path} metadata: {error}"))
+            .len();
+        assert!(
+            bytes <= limit,
+            "{path} grew to {bytes} bytes (limit {limit}); split its independent responsibilities before extending it"
+        );
+    }
+}
+
+#[test]
 fn resident_oracle_state_stays_outside_cargo_target() {
     let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
         .expect("read oracle_lab client source");
