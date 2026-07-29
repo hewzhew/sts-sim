@@ -401,7 +401,7 @@ fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
 #[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
-    const MODULES: [(&str, u64); 7] = [
+    const MODULES: [(&str, u64); 8] = [
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/admission.rs",
             16 * 1024,
@@ -409,6 +409,10 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/diagnostics.rs",
             24 * 1024,
+        ),
+        (
+            "crates/sts_combat_planner/src/local_turn_graph_search/generation_service.rs",
+            28 * 1024,
         ),
         (
             "crates/sts_combat_planner/src/local_turn_graph_search/scheduling.rs",
@@ -435,12 +439,13 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     let source = std::fs::read_to_string(ROOT).expect("read local-turn graph search source");
     let root_bytes = source.len() as u64;
     assert!(
-        root_bytes <= 56 * 1024,
+        root_bytes <= 32 * 1024,
         "local_turn_graph_search.rs grew to {root_bytes} bytes; keep the root focused on graph state and orchestration"
     );
     for module in [
         "admission",
         "diagnostics",
+        "generation_service",
         "scheduling",
         "policy_line",
         "reporting",
@@ -474,6 +479,14 @@ fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     assert!(
         !source.contains("fn accept_successor"),
         "exact successor admission belongs in admission.rs, not the orchestration root"
+    );
+    assert!(
+        !source.contains("fn widen"),
+        "turn-generator servicing belongs in generation_service.rs, not the orchestration root"
+    );
+    assert!(
+        !source.contains("fn evaluate_lookahead"),
+        "selected boundary lookahead belongs in generation_service.rs, not the orchestration root"
     );
     assert!(
         !source.contains("#[test]"),
