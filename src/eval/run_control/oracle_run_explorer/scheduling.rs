@@ -1,8 +1,17 @@
 use super::*;
 
-pub(super) enum ScheduledOracleRunWorkV1 {
-    Decision(LazyOracleRunDecisionV1),
-    DeferredCombat(DeferredOracleCombatV1),
+pub(super) enum PreparedScheduledOracleRunWorkV1 {
+    Decision {
+        root: String,
+        index: usize,
+        work: LazyOracleRunDecisionV1,
+    },
+    DeferredCombat {
+        root: String,
+        index: usize,
+        branch_id: usize,
+        stage: u8,
+    },
 }
 
 impl OracleRunExplorerV1 {
@@ -107,7 +116,7 @@ impl OracleRunExplorerV1 {
             .map(|(index, _)| index)
     }
 
-    pub(super) fn take_next_scheduled_work(&mut self) -> Option<ScheduledOracleRunWorkV1> {
+    pub(super) fn prepare_next_scheduled_work(&self) -> Option<PreparedScheduledOracleRunWorkV1> {
         let root = self.next_neow_root_for_service()?;
         let decision_index = self.best_decision_index_for_root(&root);
         let deferred_index = self.best_deferred_combat_index_for_root(&root);
@@ -147,16 +156,58 @@ impl OracleRunExplorerV1 {
             }
             (None, None) => return None,
         };
-        self.last_served_neow_root = Some(root);
         if take_deferred {
-            self.deferred_combats
-                .remove(deferred_index.expect("deferred index selected"))
-                .map(ScheduledOracleRunWorkV1::DeferredCombat)
+            let index = deferred_index.expect("deferred index selected");
+            Some(PreparedScheduledOracleRunWorkV1::DeferredCombat {
+                root,
+                index,
+                branch_id: self.deferred_combats[index].branch_id,
+                stage: self.deferred_combats[index].stage,
+            })
         } else {
-            self.pending_decisions
-                .remove(decision_index.expect("decision index selected"))
-                .map(ScheduledOracleRunWorkV1::Decision)
+            let index = decision_index.expect("decision index selected");
+            Some(PreparedScheduledOracleRunWorkV1::Decision {
+                root,
+                index,
+                work: self.pending_decisions[index].clone(),
+            })
         }
+    }
+
+    pub(super) fn commit_scheduled_decision(
+        &mut self,
+        root: String,
+        index: usize,
+        expected_work_key: &str,
+    ) {
+        let removed = self
+            .pending_decisions
+            .remove(index)
+            .expect("prepared decision work must remain queued until commit");
+        assert_eq!(
+            removed.stable_work_key, expected_work_key,
+            "prepared decision work identity must remain stable until commit"
+        );
+        self.last_served_neow_root = Some(root);
+    }
+
+    pub(super) fn commit_scheduled_deferred_combat(
+        &mut self,
+        root: String,
+        index: usize,
+        expected_branch_id: usize,
+        expected_stage: u8,
+    ) {
+        let removed = self
+            .deferred_combats
+            .remove(index)
+            .expect("prepared deferred combat must remain queued until commit");
+        assert_eq!(
+            (removed.branch_id, removed.stage),
+            (expected_branch_id, expected_stage),
+            "prepared deferred combat identity must remain stable until commit"
+        );
+        self.last_served_neow_root = Some(root);
     }
 
     pub(super) fn refresh_combat_edge_probes(

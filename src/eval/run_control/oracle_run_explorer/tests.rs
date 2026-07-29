@@ -58,6 +58,28 @@ fn test_explore_budget(wall_ms: Option<u64>) -> OracleRunExploreBudgetV1 {
     }
 }
 
+fn take_next_scheduled_work_for_test(
+    explorer: &mut OracleRunExplorerV1,
+) -> PreparedScheduledOracleRunWorkV1 {
+    let prepared = explorer
+        .prepare_next_scheduled_work()
+        .expect("scheduled work");
+    match &prepared {
+        PreparedScheduledOracleRunWorkV1::Decision { root, index, work } => {
+            explorer.commit_scheduled_decision(root.clone(), *index, &work.stable_work_key);
+        }
+        PreparedScheduledOracleRunWorkV1::DeferredCombat {
+            root,
+            index,
+            branch_id,
+            stage,
+        } => {
+            explorer.commit_scheduled_deferred_combat(root.clone(), *index, *branch_id, *stage);
+        }
+    }
+    prepared
+}
+
 #[test]
 fn drive_reports_work_exhausted_without_consuming_service() {
     let result =
@@ -86,6 +108,165 @@ fn drive_reports_wall_deadline_before_touching_live_work() {
     assert_eq!(
         result.explorer.pending_decisions[0].candidate_id,
         "still-live"
+    );
+}
+
+#[test]
+fn scheduled_work_is_only_removed_when_its_preparation_commits() {
+    let mut explorer = OracleRunExplorerV1::empty();
+    let mut first = test_decision(0, "first");
+    first.neow_root_candidate_id = "0".to_string();
+    let mut second = test_decision(1, "second");
+    second.neow_root_candidate_id = "1".to_string();
+    explorer.pending_decisions = VecDeque::from([first, second]);
+
+    let prepared = explorer
+        .prepare_next_scheduled_work()
+        .expect("prepared scheduled work");
+
+    assert_eq!(explorer.pending_decisions.len(), 2);
+    assert_eq!(explorer.last_served_neow_root, None);
+    let PreparedScheduledOracleRunWorkV1::Decision { root, index, work } = prepared else {
+        panic!("first scheduled work should be a decision");
+    };
+    explorer.commit_scheduled_decision(root, index, &work.stable_work_key);
+    assert_eq!(explorer.pending_decisions.len(), 1);
+    assert_eq!(explorer.pending_decisions[0].candidate_id, "second");
+    assert_eq!(explorer.last_served_neow_root.as_deref(), Some("0"));
+}
+
+fn reject_branch_schedule_prior(
+    _session: &RunControlSession,
+    _legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<crate::eval::run_control::RunPolicyPriorV1, String> {
+    Err("injected branch-schedule prior failure".to_string())
+}
+
+#[test]
+fn branch_schedule_prior_failure_is_prepare_only() {
+    let mut explorer = OracleRunExplorerV1::empty();
+    let mut branch = test_branch(0, None);
+    branch.state_fingerprint = run_session_fingerprint_v2(&branch.session);
+    explorer.next_branch_id = 1;
+    explorer.accept_branch(branch).expect("unique branch");
+    let before_registered = explorer.registered_work_keys.clone();
+    let before_decisions = explorer.pending_decisions.len();
+
+    let error = explorer
+        .prepare_branch_schedule(
+            &explorer.branches[0],
+            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            Some(reject_branch_schedule_prior),
+        )
+        .err()
+        .expect("injected child scheduling must fail");
+
+    assert!(
+        error.contains("injected branch-schedule prior failure"),
+        "unexpected scheduling error: {error}"
+    );
+    assert_eq!(explorer.next_branch_id, 1);
+    assert_eq!(explorer.branches.len(), 1);
+    assert_eq!(explorer.registered_work_keys, before_registered);
+    assert_eq!(explorer.pending_decisions.len(), before_decisions);
+    assert!(explorer.pending_combats.is_empty());
+}
+
+fn delayed_reward_prior(
+    _session: &RunControlSession,
+    legal: &[RunPolicyCandidateV1<'_>],
+) -> Result<crate::eval::run_control::RunPolicyPriorV1, String> {
+    std::thread::sleep(Duration::from_millis(15));
+    positive_ranked_run_policy_prior_v1(legal, std::iter::empty::<String>())
+}
+
+#[test]
+fn combat_service_time_includes_exact_commit_and_child_scheduling() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut combat = crate::test_support::blank_test_combat();
+    let mut monster = crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+    let plan = crate::content::monsters::roll_monster_turn_plan(
+        &mut combat.rng.ai_rng,
+        &monster,
+        combat.meta.ascension_level,
+        99,
+        std::slice::from_ref(&monster),
+        &[],
+    );
+    monster.set_planned_move_id(plan.move_id);
+    monster.set_planned_steps(plan.steps);
+    monster.set_planned_visible_spec(plan.visible_spec);
+    monster.current_hp = 6;
+    monster.max_hp = 6;
+    let target = monster.id;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        1,
+    )];
+    session.engine_state = EngineState::CombatPlayerTurn;
+    session.active_combat = Some(ActiveCombat::new(
+        EngineState::CombatPlayerTurn,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoom,
+        }),
+    ));
+
+    let mut explorer = OracleRunExplorerV1::empty();
+    explorer.next_branch_id = 1;
+    let branch_id = explorer
+        .accept_branch(OracleRunBranchV1 {
+            branch_id: 0,
+            parent_branch_id: None,
+            neow_root_candidate_id: "test_root".to_string(),
+            neow_root_label: "test root".to_string(),
+            state_fingerprint: run_session_fingerprint_v2(&session),
+            boundary: OracleRunBoundaryV1::Combat,
+            path_negative_log_policy: 0.0,
+            path_discrepancy: 0,
+            path_depth: 1,
+            replay: Vec::new(),
+            journal: RunProgressJournalV1::default(),
+            session,
+        })
+        .expect("unique combat branch");
+    let combat_budgets =
+        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
+    explorer
+        .schedule_branch(branch_id, &combat_budgets, None)
+        .expect("combat schedule");
+    explorer.pending_combats[0]
+        .work
+        .verify_and_restore_action_witness(&[ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(target),
+        }])
+        .expect("exact one-Strike witness");
+
+    let result = drive_oracle_run_explorer_v1(
+        explorer,
+        OracleRunExploreBudgetV1 {
+            max_work_items: 2,
+            wall_ms: None,
+            combat: combat_budgets,
+            combat_quantum_nodes: 64,
+            combat_quantum_ms: None,
+            decision_prior: Some(delayed_reward_prior),
+            decision_annotation: None,
+            combat_edge_order: None,
+        },
+    )
+    .expect("drive exact combat completion");
+
+    assert!(
+        result.combat_service_ms >= 10,
+        "combat service must include the delayed child schedule, got {} ms with stop {:?}, {} branches, {} pending combats, and {} pending decisions",
+        result.combat_service_ms,
+        result.stop,
+        result.explorer.branches.len(),
+        result.explorer.pending_combat_count(),
+        result.explorer.pending_decisions.len()
     );
 }
 
@@ -152,7 +333,13 @@ fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
 
     let mut explorer = OracleRunExplorerV1::empty();
     explorer.accept_branch(branch);
-    explorer.register_decision_work(0, None).unwrap();
+    explorer
+        .schedule_branch(
+            0,
+            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            None,
+        )
+        .unwrap();
 
     assert_eq!(explorer.pending_decisions.len(), 1);
     assert_eq!(explorer.pending_selection_families.len(), 1);
@@ -167,9 +354,10 @@ fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
         assert_eq!(work.path_discrepancy, expected_rank);
         assert!(((-work.path_negative_log_policy).exp() - 1.0 / 3.0).abs() < 1.0e-9);
         emitted.push(work.stable_work_key.clone());
-        explorer
-            .release_next_selection_member(&work.stable_work_key)
+        let release = explorer
+            .prepare_selection_member_release(&work.stable_work_key)
             .unwrap();
+        explorer.apply_selection_member_release(release);
         assert!(
             explorer.pending_decisions.len() <= 1,
             "the frontier must never contain the whole combination family"
@@ -202,7 +390,13 @@ fn analysis_selection_widens_without_mutating_parent_choices() {
 
     let mut explorer = OracleRunExplorerV1::empty();
     explorer.accept_branch(branch);
-    explorer.register_decision_work(0, None).unwrap();
+    explorer
+        .schedule_branch(
+            0,
+            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            None,
+        )
+        .unwrap();
     let first = explorer.pending_decisions[0].stable_work_key.clone();
 
     let release = explorer.prepare_selection_member_release(&first).unwrap();
@@ -249,7 +443,13 @@ fn parameterized_run_selection_cursor_survives_frontier_checkpoint() {
 
     let mut explorer = OracleRunExplorerV1::empty();
     explorer.accept_branch(branch);
-    explorer.register_decision_work(0, None).unwrap();
+    explorer
+        .schedule_branch(
+            0,
+            &OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+            None,
+        )
+        .unwrap();
     let checkpoint = explorer.frontier_checkpoint().unwrap().unwrap();
 
     assert_eq!(checkpoint.pending_decisions.len(), 1);
@@ -269,9 +469,10 @@ fn parameterized_run_selection_cursor_survives_frontier_checkpoint() {
     assert_eq!(restored.pending_selection_families.len(), 1);
 
     let first = restored.take_best_decision().unwrap();
-    restored
-        .release_next_selection_member(&first.stable_work_key)
+    let release = restored
+        .prepare_selection_member_release(&first.stable_work_key)
         .unwrap();
+    restored.apply_selection_member_release(release);
     assert_eq!(restored.pending_decisions.len(), 1);
     assert_eq!(
         restored.pending_selection_families[0]
@@ -571,8 +772,8 @@ fn deferred_retry_stays_on_the_existing_deep_first_discrepancy_contour() {
     explorer.pending_decisions.push_back(shallow_same_contour);
 
     assert!(matches!(
-        explorer.take_next_scheduled_work(),
-        Some(ScheduledOracleRunWorkV1::DeferredCombat(_))
+        take_next_scheduled_work_for_test(&mut explorer),
+        PreparedScheduledOracleRunWorkV1::DeferredCombat { .. }
     ));
 
     explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
@@ -587,8 +788,8 @@ fn deferred_retry_stays_on_the_existing_deep_first_discrepancy_contour() {
     deeper_same_contour.parent_floor = explorer.branches[0].session.run_state.floor_num;
     explorer.pending_decisions.push_back(deeper_same_contour);
     assert!(matches!(
-        explorer.take_next_scheduled_work(),
-        Some(ScheduledOracleRunWorkV1::Decision(_))
+        take_next_scheduled_work_for_test(&mut explorer),
+        PreparedScheduledOracleRunWorkV1::Decision { .. }
     ));
 }
 
@@ -714,8 +915,9 @@ fn assert_failed_decision_materialization_is_atomic(
         .expect("unique parent branch");
 
     let error = explorer
-        .materialize_decision(work, None)
-        .expect_err("invalid decision must fail");
+        .prepare_explicit_decision(work, None)
+        .err()
+        .expect("invalid decision must fail");
 
     assert!(
         error.contains(expected_error_fragment),
@@ -854,9 +1056,11 @@ fn materialized_oracle_decision_commits_owner_provenance_to_the_journal() {
     explorer.branches.push(parent);
     explorer.next_branch_id = 1;
 
+    let prepared = explorer
+        .prepare_explicit_decision(work, Some(test_owner_annotation))
+        .expect("prepare decision");
     let child_id = explorer
-        .materialize_decision(work, Some(test_owner_annotation))
-        .expect("materialize decision")
+        .commit_prepared_decision(prepared)
         .expect("unique child");
     let transaction = explorer
         .branches
@@ -1045,29 +1249,23 @@ fn a_wide_neow_root_cannot_monopolize_strategic_service() {
     root_one.path_discrepancy = 20;
     explorer.pending_decisions = VecDeque::from([root_zero_first, root_zero_second, root_one]);
 
-    let first = explorer
-        .take_next_scheduled_work()
-        .expect("first root service");
+    let first = take_next_scheduled_work_for_test(&mut explorer);
     assert!(matches!(
         first,
-        ScheduledOracleRunWorkV1::Decision(ref decision)
-            if decision.neow_root_candidate_id == "0"
+        PreparedScheduledOracleRunWorkV1::Decision { ref work, .. }
+            if work.neow_root_candidate_id == "0"
     ));
-    let second = explorer
-        .take_next_scheduled_work()
-        .expect("second root service");
+    let second = take_next_scheduled_work_for_test(&mut explorer);
     assert!(matches!(
         second,
-        ScheduledOracleRunWorkV1::Decision(ref decision)
-            if decision.neow_root_candidate_id == "1"
+        PreparedScheduledOracleRunWorkV1::Decision { ref work, .. }
+            if work.neow_root_candidate_id == "1"
     ));
-    let third = explorer
-        .take_next_scheduled_work()
-        .expect("wrapped root service");
+    let third = take_next_scheduled_work_for_test(&mut explorer);
     assert!(matches!(
         third,
-        ScheduledOracleRunWorkV1::Decision(ref decision)
-            if decision.neow_root_candidate_id == "0"
+        PreparedScheduledOracleRunWorkV1::Decision { ref work, .. }
+            if work.neow_root_candidate_id == "0"
     ));
 }
 

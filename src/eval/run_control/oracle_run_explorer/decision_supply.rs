@@ -67,6 +67,19 @@ pub(in super::super) struct SelectionMemberReleasePlanV1 {
 }
 
 impl OracleRunExplorerV1 {
+    pub(super) fn apply_decision_supply(&mut self, mut supply: OracleRunDecisionSupplyV1) {
+        supply.decisions.retain(|item| {
+            self.registered_work_keys
+                .insert(item.stable_work_key.clone())
+        });
+        self.pending_decisions.extend(supply.decisions);
+        if let Some(family) = supply.selection_family {
+            if self.registered_work_keys.insert(family.family_key.clone()) {
+                self.pending_selection_families.push_back(family);
+            }
+        }
+    }
+
     pub(in super::super) fn prepare_selection_member_release(
         &self,
         completed_work_key: &str,
@@ -142,15 +155,6 @@ impl OracleRunExplorerV1 {
         if let Some(family) = plan.next_family {
             self.pending_selection_families.push_back(family);
         }
-    }
-
-    pub(super) fn release_next_selection_member(
-        &mut self,
-        completed_work_key: &str,
-    ) -> Result<(), String> {
-        let plan = self.prepare_selection_member_release(completed_work_key)?;
-        self.apply_selection_member_release(plan);
-        Ok(())
     }
 }
 

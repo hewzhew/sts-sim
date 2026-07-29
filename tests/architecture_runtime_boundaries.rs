@@ -477,9 +477,11 @@ fn oracle_run_explorer_keeps_work_selection_in_a_bounded_module() {
         "the oracle-run explorer must retain its work-selection boundary"
     );
     for scheduling_owner in [
-        "enum ScheduledOracleRunWorkV1",
+        "enum PreparedScheduledOracleRunWorkV1",
         "fn next_neow_root_for_service",
-        "fn take_next_scheduled_work",
+        "fn prepare_next_scheduled_work",
+        "fn commit_scheduled_decision",
+        "fn commit_scheduled_deferred_combat",
         "fn refresh_combat_edge_probes",
         "fn oracle_run_decision_priority_order",
     ] {
@@ -497,9 +499,11 @@ fn oracle_run_explorer_keeps_work_selection_in_a_bounded_module() {
         "{SCHEDULING} grew to {scheduling_bytes} bytes; split root rotation from within-root ordering before extending it"
     );
     for required_owner in [
-        "enum ScheduledOracleRunWorkV1",
+        "enum PreparedScheduledOracleRunWorkV1",
         "fn next_neow_root_for_service",
-        "fn take_next_scheduled_work",
+        "fn prepare_next_scheduled_work",
+        "fn commit_scheduled_decision",
+        "fn commit_scheduled_deferred_combat",
         "fn refresh_combat_edge_probes",
         "fn oracle_run_decision_priority_order",
     ] {
@@ -531,9 +535,11 @@ fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
         "struct SelectionMemberReleasePlanV1",
         "fn decision_supply_for_branch",
         "fn apply_decision_policy",
+        "fn apply_decision_supply",
         "fn preferred_run_choice_selections",
         "fn selection_family_decision",
-        "fn release_next_selection_member",
+        "fn prepare_selection_member_release",
+        "fn apply_selection_member_release",
     ] {
         assert!(
             !root.contains(supply_owner),
@@ -553,9 +559,11 @@ fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
         "struct SelectionMemberReleasePlanV1",
         "fn decision_supply_for_branch",
         "fn apply_decision_policy",
+        "fn apply_decision_supply",
         "fn preferred_run_choice_selections",
         "fn selection_family_decision",
-        "fn release_next_selection_member",
+        "fn prepare_selection_member_release",
+        "fn apply_selection_member_release",
     ] {
         assert!(
             supply.contains(required_owner),
@@ -579,7 +587,7 @@ fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
         "enum FinishedOracleCombatV1",
         "enum PreparedOracleRunCombatV1",
         "fn classify_unresolved_combat_evidence",
-        "fn finish_combat",
+        "fn prepare_combat",
         "fn prepare_resolved_combat_branch",
         "fn commit_prepared_combat",
     ] {
@@ -600,13 +608,60 @@ fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
         "enum FinishedOracleCombatV1",
         "enum PreparedOracleRunCombatV1",
         "fn classify_unresolved_combat_evidence",
-        "fn finish_combat",
+        "fn prepare_combat",
         "fn prepare_resolved_combat_branch",
         "fn commit_prepared_combat",
     ] {
         assert!(
             completion.contains(required_owner),
             "oracle combat-completion module must retain `{required_owner}`"
+        );
+    }
+}
+
+#[test]
+fn oracle_run_explorer_keeps_branch_scheduling_in_a_bounded_module() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const SCHEDULING: &str =
+        "src/eval/run_control/oracle_run_explorer/branch_scheduling.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    assert!(
+        root.contains("mod branch_scheduling;"),
+        "the oracle-run explorer must retain its branch-scheduling boundary"
+    );
+    for scheduling_owner in [
+        "enum PreparedOracleRunBranchScheduleV1",
+        "fn prepare_branch_schedule",
+        "fn apply_branch_schedule",
+        "fn schedule_branch",
+        "fn prepare_deferred_combat",
+        "fn apply_prepared_deferred_combat",
+    ] {
+        assert!(
+            !root.contains(scheduling_owner),
+            "oracle branch-scheduling owner `{scheduling_owner}` must not return to the orchestration root"
+        );
+    }
+
+    let scheduling =
+        std::fs::read_to_string(SCHEDULING).expect("read oracle branch-scheduling module");
+    let scheduling_bytes = scheduling.len() as u64;
+    assert!(
+        scheduling_bytes <= 12 * 1024,
+        "{SCHEDULING} grew to {scheduling_bytes} bytes; split combat and decision schedule preparation before extending it"
+    );
+    for required_owner in [
+        "enum PreparedOracleRunBranchScheduleV1",
+        "fn prepare_branch_schedule",
+        "fn apply_branch_schedule",
+        "fn schedule_branch",
+        "fn prepare_deferred_combat",
+        "fn apply_prepared_deferred_combat",
+    ] {
+        assert!(
+            scheduling.contains(required_owner),
+            "oracle branch-scheduling module must retain `{required_owner}`"
         );
     }
 }
@@ -625,7 +680,7 @@ fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
     for materialization_owner in [
         "struct PreparedOracleRunDecisionV1",
         "struct PreparedOracleRunDecisionRegistrationV1",
-        "fn materialize_decision",
+        "fn commit_prepared_decision",
         "fn prepare_explicit_decision",
         "fn commit_explicit_decision",
         "fn settle_oracle_forced_transitions",
@@ -646,7 +701,7 @@ fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
     for required_owner in [
         "struct PreparedOracleRunDecisionV1",
         "struct PreparedOracleRunDecisionRegistrationV1",
-        "fn materialize_decision",
+        "fn commit_prepared_decision",
         "fn prepare_explicit_decision",
         "fn commit_explicit_decision",
         "fn settle_oracle_forced_transitions",

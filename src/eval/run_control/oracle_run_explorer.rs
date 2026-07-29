@@ -17,6 +17,7 @@ use super::{
     StrategicProbeShadowOrderKeyV1,
 };
 
+mod branch_scheduling;
 mod checkpoint;
 mod checkpoint_restore;
 mod combat_completion;
@@ -33,7 +34,7 @@ pub use checkpoint_restore::seed_oracle_run_explorer_from_checkpoint_v1;
 use combat_completion::FinishedOracleCombatV1;
 pub use combat_completion::OracleRunCombatEvidenceKindV1;
 use decision_supply::decision_supply_for_branch;
-use scheduling::ScheduledOracleRunWorkV1;
+use scheduling::PreparedScheduledOracleRunWorkV1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -628,104 +629,6 @@ impl OracleRunExplorerV1 {
         Some(branch_id)
     }
 
-    fn register_decision_work(
-        &mut self,
-        branch_id: usize,
-        decision_prior: Option<RunPolicyPriorFnV1>,
-    ) -> Result<(), String> {
-        let branch = self
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == branch_id)
-            .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
-        let mut supply = decision_supply_for_branch(branch, decision_prior)?;
-        supply.decisions.retain(|item| {
-            self.registered_work_keys
-                .insert(item.stable_work_key.clone())
-        });
-        self.pending_decisions.extend(supply.decisions);
-        if let Some(family) = supply.selection_family {
-            if self.registered_work_keys.insert(family.family_key.clone()) {
-                self.pending_selection_families.push_back(family);
-            }
-        }
-        Ok(())
-    }
-
-    fn schedule_branch(
-        &mut self,
-        branch_id: usize,
-        combat_budgets: &OracleRunCombatBudgetsV1,
-        decision_prior: Option<RunPolicyPriorFnV1>,
-    ) -> Result<(), String> {
-        let branch = self
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == branch_id)
-            .ok_or_else(|| format!("missing oracle run branch {branch_id}"))?;
-        match branch.boundary {
-            OracleRunBoundaryV1::Combat => {
-                if !self.pending_combats.is_empty() {
-                    return Err(format!(
-                        "oracle attempted to start combat branch {branch_id} while another lazy combat edge was active"
-                    ));
-                }
-                let key = format!("combat:{}", branch.state_fingerprint);
-                if !self.registered_work_keys.insert(key) {
-                    return Ok(());
-                }
-                let work = OracleRunCombatWorkV1::new_with_guidance(
-                    &branch.session,
-                    combat_budgets.for_session_stage(&branch.session, 0),
-                    combat_budgets.guidance_bundle.as_deref(),
-                )?;
-                self.pending_combats.push_back(PendingOracleCombatV1 {
-                    branch_id,
-                    stage: 0,
-                    work,
-                });
-                Ok(())
-            }
-            OracleRunBoundaryV1::TerminalVictory | OracleRunBoundaryV1::TerminalDefeat => Ok(()),
-            _ => self.register_decision_work(branch_id, decision_prior),
-        }
-    }
-
-    fn start_deferred_combat(
-        &mut self,
-        deferred: DeferredOracleCombatV1,
-        combat_budgets: &OracleRunCombatBudgetsV1,
-    ) -> Result<(), String> {
-        if !self.pending_combats.is_empty() {
-            return Err(
-                "oracle cannot resume a deferred combat while another edge is active".into(),
-            );
-        }
-        let branch = self
-            .branches
-            .iter()
-            .find(|branch| branch.branch_id == deferred.branch_id)
-            .ok_or_else(|| {
-                format!(
-                    "missing deferred oracle combat branch {}",
-                    deferred.branch_id
-                )
-            })?;
-        let work = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
-            &branch.session,
-            combat_budgets.for_session_stage(&branch.session, deferred.stage),
-            deferred.prior_work,
-            combat_budgets.guidance_bundle.as_deref(),
-        )?;
-        self.pending_combats.push_back(PendingOracleCombatV1 {
-            branch_id: deferred.branch_id,
-            stage: deferred.stage,
-            work,
-        });
-        self.combat_search_restarts = self.combat_search_restarts.saturating_add(1);
-        Ok(())
-    }
-
     pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, OracleRunCombatWorkV1)> {
         self.pending_combats
             .drain(..)
@@ -926,17 +829,16 @@ pub fn drive_oracle_run_explorer_v1(
                 .expect("combat existence checked above");
             let service_started = Instant::now();
             let advance = pending.work.advance(&quantum, deadline);
-            let service_elapsed = service_started.elapsed();
-            combat_service = combat_service.saturating_add(service_elapsed);
             work_items = work_items.saturating_add(1);
             combat_quanta = combat_quanta.saturating_add(1);
+            let mut stop_after_service = None;
             match advance {
                 RunControlCombatWorkAdvanceV1::Pending => {
                     explorer.pending_combats.push_front(pending);
                 }
                 RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => {
                     explorer.pending_combats.push_front(pending);
-                    break OracleRunExploreStopV1::WallDeadlineReached;
+                    stop_after_service = Some(OracleRunExploreStopV1::WallDeadlineReached);
                 }
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
@@ -958,46 +860,64 @@ pub fn drive_oracle_run_explorer_v1(
                             stage: stage.saturating_add(1),
                             prior_work: prior_work.expect("later stage preserves prior work"),
                         });
-                        continue;
-                    }
-                    let finished = explorer.finish_combat(pending)?;
-                    match finished {
-                        FinishedOracleCombatV1::Resolved(branch_id) => {
-                            let boundary = explorer
-                                .branches
-                                .iter()
-                                .find(|branch| branch.branch_id == branch_id)
-                                .map(|branch| branch.boundary)
-                                .ok_or_else(|| {
-                                    format!("missing resolved combat branch {branch_id}")
-                                })?;
-                            if boundary == OracleRunBoundaryV1::TerminalVictory {
-                                break OracleRunExploreStopV1::Victory { branch_id };
+                    } else {
+                        let prepared =
+                            explorer.prepare_explicit_combat(pending.branch_id, &pending.work)?;
+                        let branch_schedule = prepared
+                            .prospective_branch()
+                            .map(|branch| {
+                                explorer.prepare_branch_schedule(
+                                    branch,
+                                    &budget.combat,
+                                    budget.decision_prior,
+                                )
+                            })
+                            .transpose()?;
+                        let finished = explorer.commit_prepared_combat(prepared)?;
+                        match finished {
+                            FinishedOracleCombatV1::Resolved(branch_id) => {
+                                explorer.apply_branch_schedule(
+                                    branch_schedule
+                                        .expect("resolved combat must prepare child scheduling"),
+                                );
+                                let boundary = explorer
+                                    .branches
+                                    .iter()
+                                    .find(|branch| branch.branch_id == branch_id)
+                                    .map(|branch| branch.boundary)
+                                    .expect("resolved combat branch must remain addressable");
+                                if boundary == OracleRunBoundaryV1::TerminalVictory {
+                                    stop_after_service =
+                                        Some(OracleRunExploreStopV1::Victory { branch_id });
+                                }
                             }
-                            explorer.schedule_branch(
-                                branch_id,
-                                &budget.combat,
-                                budget.decision_prior,
-                            )?;
-                        }
-                        FinishedOracleCombatV1::Unresolved(unresolved) => {
-                            if unresolved.evidence_kind
-                                == OracleRunCombatEvidenceKindV1::BudgetUnknown
-                            {
-                                if let Some(prior_work) = prior_work {
+                            FinishedOracleCombatV1::Unresolved(unresolved) => {
+                                if unresolved.evidence_kind
+                                    == OracleRunCombatEvidenceKindV1::BudgetUnknown
+                                    && prior_work.is_some()
+                                {
                                     explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
                                         branch_id: unresolved.branch_id,
                                         stage: stage.saturating_add(1),
-                                        prior_work,
+                                        prior_work: prior_work
+                                            .expect("available later-stage work checked above"),
                                     });
-                                    continue;
+                                } else {
+                                    explorer.unresolved_combats.push(unresolved);
                                 }
                             }
-                            explorer.unresolved_combats.push(unresolved);
+                            FinishedOracleCombatV1::ExactDuplicate => {
+                                if let Some(branch_schedule) = branch_schedule {
+                                    explorer.apply_branch_schedule(branch_schedule);
+                                }
+                            }
                         }
-                        FinishedOracleCombatV1::ExactDuplicate => {}
                     }
                 }
+            }
+            combat_service = combat_service.saturating_add(service_started.elapsed());
+            if let Some(stop) = stop_after_service {
+                break stop;
             }
             continue;
         }
@@ -1008,34 +928,63 @@ pub fn drive_oracle_run_explorer_v1(
             combat_edge_probe_evaluations.saturating_add(probe_evaluations);
         immediate_combat_edge_hints = immediate_combat_edge_hints.saturating_add(immediate_hints);
         let scheduled = explorer
-            .take_next_scheduled_work()
+            .prepare_next_scheduled_work()
             .expect("strategic work existence checked above");
         let service_started = Instant::now();
         work_items = work_items.saturating_add(1);
+        let mut stop_after_service = None;
         match scheduled {
-            ScheduledOracleRunWorkV1::Decision(decision) => {
-                explorer.release_next_selection_member(&decision.stable_work_key)?;
-                if let Some(branch_id) =
-                    explorer.materialize_decision(decision, budget.decision_annotation)?
-                {
+            PreparedScheduledOracleRunWorkV1::Decision {
+                root,
+                index,
+                work: decision,
+            } => {
+                let selection_service =
+                    explorer.prepare_selection_member_release(&decision.stable_work_key)?;
+                let prepared = explorer
+                    .prepare_explicit_decision(decision.clone(), budget.decision_annotation)?;
+                let branch_schedule = explorer.prepare_branch_schedule(
+                    prepared.prospective_branch(),
+                    &budget.combat,
+                    budget.decision_prior,
+                )?;
+                explorer.commit_scheduled_decision(root, index, &decision.stable_work_key);
+                let child_branch_id = explorer.commit_prepared_decision(prepared);
+                explorer.apply_branch_schedule(branch_schedule);
+                explorer.apply_selection_member_release(selection_service);
+                if let Some(branch_id) = child_branch_id {
                     let boundary = explorer
                         .branches
                         .iter()
                         .find(|branch| branch.branch_id == branch_id)
                         .map(|branch| branch.boundary)
-                        .ok_or_else(|| format!("missing materialized oracle branch {branch_id}"))?;
+                        .expect("materialized oracle branch must remain addressable");
                     if boundary == OracleRunBoundaryV1::TerminalVictory {
-                        break OracleRunExploreStopV1::Victory { branch_id };
+                        stop_after_service = Some(OracleRunExploreStopV1::Victory { branch_id });
                     }
-                    explorer.schedule_branch(branch_id, &budget.combat, budget.decision_prior)?;
                 }
             }
-            ScheduledOracleRunWorkV1::DeferredCombat(deferred) => {
-                explorer.start_deferred_combat(deferred, &budget.combat)?;
+            PreparedScheduledOracleRunWorkV1::DeferredCombat {
+                root,
+                index,
+                branch_id,
+                stage,
+            } => {
+                let deferred = &explorer.deferred_combats[index];
+                assert_eq!(
+                    (deferred.branch_id, deferred.stage),
+                    (branch_id, stage),
+                    "prepared deferred combat identity must remain stable before construction"
+                );
+                let pending = explorer.prepare_deferred_combat(deferred, &budget.combat)?;
+                explorer.commit_scheduled_deferred_combat(root, index, branch_id, stage);
+                explorer.apply_prepared_deferred_combat(pending);
             }
         }
-        let service_elapsed = service_started.elapsed();
-        decision_service = decision_service.saturating_add(service_elapsed);
+        decision_service = decision_service.saturating_add(service_started.elapsed());
+        if let Some(stop) = stop_after_service {
+            break stop;
+        }
     };
 
     Ok(OracleRunExploreResultV1 {

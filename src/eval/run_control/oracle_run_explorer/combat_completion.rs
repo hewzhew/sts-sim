@@ -145,7 +145,7 @@ impl OracleRunExplorerV1 {
         })
     }
 
-    fn commit_prepared_combat(
+    pub(super) fn commit_prepared_combat(
         &mut self,
         prepared: PreparedOracleRunCombatV1,
     ) -> Result<FinishedOracleCombatV1, String> {
@@ -166,14 +166,6 @@ impl OracleRunExplorerV1 {
             Some(branch_id) => FinishedOracleCombatV1::Resolved(branch_id),
             None => FinishedOracleCombatV1::ExactDuplicate,
         })
-    }
-
-    pub(super) fn finish_combat(
-        &mut self,
-        pending: PendingOracleCombatV1,
-    ) -> Result<FinishedOracleCombatV1, String> {
-        let prepared = self.prepare_combat(pending.branch_id, &pending.work)?;
-        self.commit_prepared_combat(prepared)
     }
 
     pub(in super::super) fn prepare_explicit_combat(

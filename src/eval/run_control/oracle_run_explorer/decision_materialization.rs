@@ -5,20 +5,17 @@ pub(in super::super) struct PreparedOracleRunDecisionV1 {
     child: OracleRunBranchV1,
 }
 
+impl PreparedOracleRunDecisionV1 {
+    pub(in super::super) fn prospective_branch(&self) -> &OracleRunBranchV1 {
+        &self.child
+    }
+}
+
 pub(in super::super) struct PreparedOracleRunDecisionRegistrationV1 {
     supply: Option<OracleRunDecisionSupplyV1>,
 }
 
 impl OracleRunExplorerV1 {
-    pub(super) fn materialize_decision(
-        &mut self,
-        work: LazyOracleRunDecisionV1,
-        decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
-    ) -> Result<Option<usize>, String> {
-        let prepared = self.prepare_decision(work, decision_annotation)?;
-        Ok(self.commit_prepared_decision(prepared))
-    }
-
     fn prepare_decision(
         &self,
         work: LazyOracleRunDecisionV1,
@@ -89,7 +86,10 @@ impl OracleRunExplorerV1 {
         Ok(PreparedOracleRunDecisionV1 { child })
     }
 
-    fn commit_prepared_decision(&mut self, prepared: PreparedOracleRunDecisionV1) -> Option<usize> {
+    pub(in super::super) fn commit_prepared_decision(
+        &mut self,
+        prepared: PreparedOracleRunDecisionV1,
+    ) -> Option<usize> {
         assert_eq!(
             prepared.child.branch_id, self.next_branch_id,
             "prepared decision branch id must remain current until commit"
@@ -155,19 +155,10 @@ impl OracleRunExplorerV1 {
         &mut self,
         prepared: PreparedOracleRunDecisionRegistrationV1,
     ) {
-        let Some(mut supply) = prepared.supply else {
+        let Some(supply) = prepared.supply else {
             return;
         };
-        supply.decisions.retain(|item| {
-            self.registered_work_keys
-                .insert(item.stable_work_key.clone())
-        });
-        self.pending_decisions.extend(supply.decisions);
-        if let Some(family) = supply.selection_family {
-            if self.registered_work_keys.insert(family.family_key.clone()) {
-                self.pending_selection_families.push_back(family);
-            }
-        }
+        self.apply_decision_supply(supply);
     }
 }
 
