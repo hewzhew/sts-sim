@@ -405,7 +405,7 @@ fn finish_oracle_run_report(
                     config,
                     branch,
                     "bounded_run_stopped_with_active_combat".to_string(),
-                    pending.nodes_expanded.min(usize::MAX as u64) as usize,
+                    pending.generation_work.min(usize::MAX as u64) as usize,
                 )
             })
     });
@@ -460,7 +460,7 @@ fn finish_oracle_run_report(
                 rejection: format!("{:?}", combat.rejection),
                 evidence_kind: combat.evidence_kind.as_str().to_string(),
                 last_status: combat.last_status.clone(),
-                nodes_expanded: combat.nodes_expanded,
+                nodes_expanded: combat.generation_work,
                 exact_states: combat.exact_states,
                 applied_action_transitions: combat.applied_action_transitions,
                 unique_successor_states: combat.unique_successor_states,
@@ -628,7 +628,7 @@ fn first_unresolved_combat_case(
         config,
         branch,
         format!("{:?}", unresolved.rejection),
-        unresolved.nodes_expanded.min(usize::MAX as u64) as usize,
+        unresolved.generation_work.min(usize::MAX as u64) as usize,
     )
 }
 

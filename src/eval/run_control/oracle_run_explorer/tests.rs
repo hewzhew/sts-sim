@@ -546,7 +546,7 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
             rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
             evidence_kind: OracleRunCombatEvidenceKindV1::BudgetUnknown,
             last_status: Some("partial".to_string()),
-            nodes_expanded: 10,
+            generation_work: 10,
             exact_states: 9,
             applied_action_transitions: 8,
             unique_successor_states: 7,
@@ -576,11 +576,19 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
         decoded.unresolved_combats[0].evidence_kind,
         OracleRunCombatEvidenceKindV1::BudgetUnknown
     );
+    assert_eq!(decoded.unresolved_combats[0].generation_work, 10);
     let encoded_value: serde_json::Value =
         serde_json::from_str(&encoded).expect("deserialize checkpoint JSON");
     assert_eq!(
         encoded_value["unresolved_combats"][0]["evidence_kind"],
         "budget_unknown"
+    );
+    assert_eq!(encoded_value["unresolved_combats"][0]["nodes_expanded"], 10);
+    assert!(
+        encoded_value["unresolved_combats"][0]
+            .get("generation_work")
+            .is_none(),
+        "checkpoint schema keeps its legacy nodes_expanded key"
     );
 }
 
@@ -1022,7 +1030,13 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
         OracleCombatSearchResumeKindV1::Fresh
     );
     assert_eq!(pending[0].restart_count, 0);
-    let consumed_before_restart = pending[0].nodes_expanded;
+    let pending_json = serde_json::to_value(&pending[0]).expect("serialize pending combat");
+    assert_eq!(pending_json["nodes_expanded"], pending[0].generation_work);
+    assert!(
+        pending_json.get("generation_work").is_none(),
+        "pending report schema keeps its legacy nodes_expanded key"
+    );
+    let consumed_before_restart = pending[0].generation_work;
     let remaining_before_restart = pending[0].remaining_nodes;
 
     let checkpoint = result
@@ -1048,7 +1062,7 @@ fn a_single_combat_remains_exactly_resumable_across_quanta() {
     let restored_pending = restored
         .pending_combat_summaries()
         .expect("restored pending combat summary");
-    assert_eq!(restored_pending[0].nodes_expanded, consumed_before_restart);
+    assert_eq!(restored_pending[0].generation_work, consumed_before_restart);
     assert_eq!(
         restored_pending[0].remaining_nodes,
         remaining_before_restart

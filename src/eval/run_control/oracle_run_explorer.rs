@@ -154,7 +154,10 @@ pub struct OracleRunUnresolvedCombatV1 {
     pub rejection: RunControlCombatSearchRejection,
     pub evidence_kind: OracleRunCombatEvidenceKindV1,
     pub last_status: Option<String>,
-    pub nodes_expanded: u64,
+    /// Exact generator work consumed. The serialized field name remains
+    /// `nodes_expanded` for checkpoint compatibility.
+    #[serde(rename = "nodes_expanded")]
+    pub generation_work: u64,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
     pub unique_successor_states: usize,
@@ -212,7 +215,10 @@ pub struct OraclePendingCombatSummaryV1 {
     pub elite: bool,
     pub boss: bool,
     pub enemies: Vec<OraclePendingCombatEnemyV1>,
-    pub nodes_expanded: u64,
+    /// Exact generator work consumed. The serialized field name remains
+    /// `nodes_expanded` for report compatibility.
+    #[serde(rename = "nodes_expanded")]
+    pub generation_work: u64,
     pub engine_steps: usize,
     pub exact_states: usize,
     pub applied_action_transitions: usize,
@@ -596,7 +602,7 @@ impl OracleRunExplorerV1 {
                     elite: active.combat_state.meta.is_elite_fight,
                     boss: active.combat_state.meta.is_boss_fight,
                     enemies,
-                    nodes_expanded: progress.generation_work,
+                    generation_work: progress.generation_work,
                     engine_steps: progress.engine_steps,
                     exact_states: progress.exact_states,
                     applied_action_transitions: progress.applied_action_transitions,
@@ -986,7 +992,6 @@ impl OracleRunExplorerV1 {
             .cloned()
             .ok_or_else(|| format!("missing oracle combat branch {}", pending.branch_id))?;
         let progress = pending.work.progress();
-        let nodes_expanded = progress.generation_work;
         let mut session = parent.session.clone();
         // Deadlines bound search advancement. Once a verified witness is
         // ready, its exact replay is an atomic commit and is never interrupted
@@ -1017,7 +1022,7 @@ impl OracleRunExplorerV1 {
                     progress.generation_gap_count,
                 ),
                 last_status: progress.last_status.map(str::to_string),
-                nodes_expanded,
+                generation_work: progress.generation_work,
                 exact_states: progress.exact_states,
                 applied_action_transitions: progress.applied_action_transitions,
                 unique_successor_states: progress.unique_successor_states,

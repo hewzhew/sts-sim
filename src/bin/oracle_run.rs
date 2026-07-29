@@ -340,7 +340,7 @@ fn main() -> Result<(), String> {
                 "player_hp": combat.player_hp,
                 "player_max_hp": combat.player_max_hp,
                 "enemies": combat.enemies.iter().map(|enemy| enemy.name.as_str()).collect::<Vec<_>>(),
-                "generation_work": combat.nodes_expanded,
+                "generation_work": combat.generation_work,
                 "exact_states": combat.exact_states,
                 "completed_turn_options": combat.completed_turn_options,
                 "max_player_turn": combat.max_player_turn,
