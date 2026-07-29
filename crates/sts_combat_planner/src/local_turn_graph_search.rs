@@ -8,12 +8,14 @@ mod reporting;
 mod scheduling;
 mod session;
 mod shared_agenda;
+mod storage_diagnostics;
 
 pub use config::LocalTurnGraphWitnessConfig;
 use potion_budget::*;
 pub use reporting::*;
 use scheduling::*;
 use shared_agenda::SharedBoundaryAgenda;
+pub use storage_diagnostics::LocalTurnGraphStorageSnapshot;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sts_combat_planner::{
-    LocalTurnGraphPolicyLineReport, LocalTurnGraphWitnessReport,
+    LocalTurnGraphPolicyLineReport, LocalTurnGraphStorageSnapshot, LocalTurnGraphWitnessReport,
     OracleCombatWitnessProgressSnapshot, OracleCombatWitnessSatisfaction,
 };
 
@@ -38,6 +38,7 @@ pub(super) struct LocalGraphReportData<'a> {
     pub(super) report: &'a LocalTurnGraphWitnessReport,
     pub(super) progress: &'a OracleCombatWitnessProgressSnapshot,
     pub(super) retained_state_work: usize,
+    pub(super) storage: LocalTurnGraphStorageSnapshot,
     pub(super) policy_line: Option<&'a LocalTurnGraphPolicyLineReport>,
     pub(super) plan_transition_annotations: bool,
     pub(super) plan_transition_portfolio: &'a Value,
@@ -85,6 +86,7 @@ pub(super) fn local_graph_trace_report(data: &LocalGraphReportData<'_>) -> Value
             "completed_turn_options": data.report.counters.completed_turn_options,
             "applied_action_transitions": data.report.counters.applied_action_transitions,
         },
+        "storage": data.storage,
         "root_action_families": data.observation.root_action_families,
         "plan_compatible_policy_line": data.policy_line,
         "plan_transition_annotations": data.plan_transition_annotations,
@@ -216,6 +218,7 @@ pub(super) fn local_graph_full_report(
         "plan_compatible_policy_line": data.policy_line,
         "counters": counters,
         "progress": progress,
+        "storage": data.storage,
         "witness_trace": data.diagnostics.witness_trace,
         "generation_gap_count": data.report.generation_gaps.len(),
         "watched_states": data.observation.watched_states,
@@ -241,6 +244,7 @@ mod tests {
     struct Fixture {
         report: LocalTurnGraphWitnessReport,
         progress: OracleCombatWitnessProgressSnapshot,
+        storage: LocalTurnGraphStorageSnapshot,
         diagnostics: LocalGraphDiagnostics,
         observation: LocalGraphObservation,
         exports: LocalGraphExports,
@@ -261,6 +265,7 @@ mod tests {
                     witness: None,
                 },
                 progress: OracleCombatWitnessProgressSnapshot::default(),
+                storage: LocalTurnGraphStorageSnapshot::default(),
                 diagnostics: LocalGraphDiagnostics {
                     deepest_survival_trace: None,
                     deepest_progress_trace: None,
@@ -313,6 +318,7 @@ mod tests {
                 report: &self.report,
                 progress: &self.progress,
                 retained_state_work: 0,
+                storage: self.storage,
                 policy_line: None,
                 plan_transition_annotations: false,
                 plan_transition_portfolio: &self.plan_transition_portfolio,
@@ -330,6 +336,7 @@ mod tests {
 
         assert_eq!(report["schema_name"], "LocalTurnGraphCombatTraceV1");
         assert_eq!(report["elapsed_ms"], 7);
+        assert_eq!(report["storage"]["exact_nodes"], 0);
         assert!(report["witness"].is_null());
         assert!(report.get("watched_states").is_none());
         assert!(report.get("performance_profile").is_none());
@@ -366,6 +373,7 @@ mod tests {
         );
         assert_eq!(report["search_elapsed_ms"], 3);
         assert_eq!(report["counters"]["terminal_win_options"], 0);
+        assert_eq!(report["storage"]["exact_nodes"], 0);
         assert_eq!(report["watched_states"], json!([]));
         assert_eq!(
             report["performance_profile"]["schema_name"],

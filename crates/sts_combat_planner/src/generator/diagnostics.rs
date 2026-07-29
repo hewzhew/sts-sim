@@ -49,6 +49,27 @@ pub(crate) struct TurnOptionGeneratorTiming {
     pub transition_publish_agenda_elapsed_ns: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TurnOptionGeneratorStorageSnapshot {
+    pub(crate) finished: bool,
+    pub(crate) live_work_items: usize,
+    pub(crate) work_slots: usize,
+    pub(crate) work_capacity: usize,
+    pub(crate) seen_states: usize,
+    pub(crate) seen_capacity: usize,
+    pub(crate) anchor_entries: usize,
+    pub(crate) anchor_capacity: usize,
+    pub(crate) guide_frontiers: usize,
+    pub(crate) guide_entries: usize,
+    pub(crate) guide_capacity: usize,
+    pub(crate) scheduled_round_entries: usize,
+    pub(crate) scheduled_round_capacity: usize,
+    pub(crate) completed_options: usize,
+    pub(crate) completed_capacity: usize,
+    pub(crate) gaps: usize,
+    pub(crate) gaps_capacity: usize,
+}
+
 impl TurnOptionGeneratorSession {
     /// Diagnostic membership for one exact partial-turn position. `seen`
     /// records both live and already-expanded states, so this distinguishes a
@@ -299,6 +320,36 @@ impl TurnOptionGeneratorSession {
             transition_publish_guide_elapsed_ns: self.transition_publish_guide_elapsed_ns,
             transition_publish_retain_elapsed_ns: self.transition_publish_retain_elapsed_ns,
             transition_publish_agenda_elapsed_ns: self.transition_publish_agenda_elapsed_ns,
+        }
+    }
+
+    pub(crate) fn storage_snapshot(&self) -> TurnOptionGeneratorStorageSnapshot {
+        TurnOptionGeneratorStorageSnapshot {
+            finished: self.is_finished(),
+            live_work_items: self.live_work_items,
+            work_slots: self.work.len(),
+            work_capacity: self.work.capacity(),
+            seen_states: self.seen.len(),
+            seen_capacity: self.seen.capacity(),
+            anchor_entries: self.anchor_frontier.len(),
+            anchor_capacity: self.anchor_frontier.capacity(),
+            guide_frontiers: self.guided_frontiers.len(),
+            guide_entries: self
+                .guided_frontiers
+                .iter()
+                .map(|frontier| frontier.entries.len())
+                .sum(),
+            guide_capacity: self
+                .guided_frontiers
+                .iter()
+                .map(|frontier| frontier.entries.capacity())
+                .sum(),
+            scheduled_round_entries: self.scheduled_round.len(),
+            scheduled_round_capacity: self.scheduled_round.capacity(),
+            completed_options: self.completed.len(),
+            completed_capacity: self.completed.capacity(),
+            gaps: self.gaps.len(),
+            gaps_capacity: self.gaps.capacity(),
         }
     }
 

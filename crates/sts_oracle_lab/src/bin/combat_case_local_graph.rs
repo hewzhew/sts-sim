@@ -392,6 +392,7 @@ pub(super) fn run(args: CombatCaseLocalGraphArgs) -> Result<(), String> {
         report: &report,
         progress: &progress,
         retained_state_work: session.retained_state_work(),
+        storage: session.storage_snapshot(),
         policy_line: policy_line_report.as_ref(),
         plan_transition_annotations,
         plan_transition_portfolio: &plan_transition_portfolio,

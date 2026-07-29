@@ -362,6 +362,12 @@ artifact paths after every completed seed. A top-level
 `interrupted / invocation_wall_budget` result is a successful durable slice,
 not a seed failure.
 
+Full `combat-case` reports also include a read-only `storage` census. It
+separates live generator work from retained slot, exact-state index, scheduling
+heap, and graph-edge capacities, including the subset owned by already
+finished turn generators. These values diagnose ownership and allocation
+shape only; no search budget, ordering, or witness contract reads them.
+
 Resident endpoints, immutable service images, and new local case artifacts
 live below the ignored `.oracle-lab/` state root. They are deliberately outside
 Cargo's `target/` tree so `cargo clean` cannot erase a live session or research
