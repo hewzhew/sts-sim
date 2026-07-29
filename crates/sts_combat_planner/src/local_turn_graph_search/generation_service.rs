@@ -1,4 +1,5 @@
 use super::*;
+use crate::generator::diagnostics::TurnOptionGeneratorTiming;
 
 impl LocalTurnGraphWitnessSession {
     pub(super) fn evaluate_lookahead(
@@ -218,137 +219,8 @@ impl LocalTurnGraphWitnessSession {
                 .duplicate_exact_successors
                 .saturating_sub(before_diagnostics.duplicate_exact_successors),
         );
-        self.performance_timing.atomic_expand_elapsed_ns = self
-            .performance_timing
-            .atomic_expand_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .atomic_expand_elapsed_ns
-                    .saturating_sub(before_timing.atomic_expand_elapsed_ns),
-            );
-        self.performance_timing.transition_simulation_elapsed_ns = self
-            .performance_timing
-            .transition_simulation_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_simulation_elapsed_ns
-                    .saturating_sub(before_timing.transition_simulation_elapsed_ns),
-            );
-        self.performance_timing.transition_identity_elapsed_ns = self
-            .performance_timing
-            .transition_identity_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_identity_elapsed_ns
-                    .saturating_sub(before_timing.transition_identity_elapsed_ns),
-            );
-        self.performance_timing.transition_key_build_elapsed_ns = self
-            .performance_timing
-            .transition_key_build_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_key_build_elapsed_ns
-                    .saturating_sub(before_timing.transition_key_build_elapsed_ns),
-            );
-        self.performance_timing.transition_key_index_elapsed_ns = self
-            .performance_timing
-            .transition_key_index_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_key_index_elapsed_ns
-                    .saturating_sub(before_timing.transition_key_index_elapsed_ns),
-            );
-        self.performance_timing.transition_admission_elapsed_ns = self
-            .performance_timing
-            .transition_admission_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_admission_elapsed_ns
-                    .saturating_sub(before_timing.transition_admission_elapsed_ns),
-            );
-        self.performance_timing.transition_trace_elapsed_ns = self
-            .performance_timing
-            .transition_trace_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_trace_elapsed_ns
-                    .saturating_sub(before_timing.transition_trace_elapsed_ns),
-            );
-        self.performance_timing.transition_seen_elapsed_ns = self
-            .performance_timing
-            .transition_seen_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_seen_elapsed_ns
-                    .saturating_sub(before_timing.transition_seen_elapsed_ns),
-            );
-        self.performance_timing.transition_publish_elapsed_ns = self
-            .performance_timing
-            .transition_publish_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_elapsed_ns),
-            );
         self.performance_timing
-            .transition_publish_trace_node_elapsed_ns = self
-            .performance_timing
-            .transition_publish_trace_node_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_trace_node_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_trace_node_elapsed_ns),
-            );
-        self.performance_timing
-            .transition_publish_boundary_elapsed_ns = self
-            .performance_timing
-            .transition_publish_boundary_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_boundary_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_boundary_elapsed_ns),
-            );
-        self.performance_timing
-            .transition_publish_complete_elapsed_ns = self
-            .performance_timing
-            .transition_publish_complete_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_complete_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_complete_elapsed_ns),
-            );
-        self.performance_timing.transition_publish_push_elapsed_ns = self
-            .performance_timing
-            .transition_publish_push_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_push_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_push_elapsed_ns),
-            );
-        self.performance_timing.transition_publish_guide_elapsed_ns = self
-            .performance_timing
-            .transition_publish_guide_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_guide_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_guide_elapsed_ns),
-            );
-        self.performance_timing.transition_publish_retain_elapsed_ns = self
-            .performance_timing
-            .transition_publish_retain_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_retain_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_retain_elapsed_ns),
-            );
-        self.performance_timing.transition_publish_agenda_elapsed_ns = self
-            .performance_timing
-            .transition_publish_agenda_elapsed_ns
-            .saturating_add(
-                after_timing
-                    .transition_publish_agenda_elapsed_ns
-                    .saturating_sub(before_timing.transition_publish_agenda_elapsed_ns),
-            );
+            .accumulate(generator_timing_delta(before_timing, after_timing));
         self.generation_gaps.extend(new_gaps);
 
         let admission_started = Instant::now();
@@ -465,5 +337,136 @@ impl LocalTurnGraphWitnessSession {
             self.nodes[node_id].exhausted = true;
             self.used.exhausted_nodes = self.used.exhausted_nodes.saturating_add(1);
         }
+    }
+}
+
+fn generator_timing_delta(
+    before: TurnOptionGeneratorTiming,
+    after: TurnOptionGeneratorTiming,
+) -> LocalTurnGraphPerformanceTiming {
+    let TurnOptionGeneratorTiming {
+        atomic_expand_elapsed_ns: before_atomic_expand_elapsed_ns,
+        transition_simulation_elapsed_ns: before_transition_simulation_elapsed_ns,
+        transition_identity_elapsed_ns: before_transition_identity_elapsed_ns,
+        transition_key_build_elapsed_ns: before_transition_key_build_elapsed_ns,
+        transition_key_index_elapsed_ns: before_transition_key_index_elapsed_ns,
+        transition_admission_elapsed_ns: before_transition_admission_elapsed_ns,
+        transition_trace_elapsed_ns: before_transition_trace_elapsed_ns,
+        transition_seen_elapsed_ns: before_transition_seen_elapsed_ns,
+        transition_publish_elapsed_ns: before_transition_publish_elapsed_ns,
+        transition_publish_trace_node_elapsed_ns: before_transition_publish_trace_node_elapsed_ns,
+        transition_publish_boundary_elapsed_ns: before_transition_publish_boundary_elapsed_ns,
+        transition_publish_complete_elapsed_ns: before_transition_publish_complete_elapsed_ns,
+        transition_publish_push_elapsed_ns: before_transition_publish_push_elapsed_ns,
+        transition_publish_guide_elapsed_ns: before_transition_publish_guide_elapsed_ns,
+        transition_publish_retain_elapsed_ns: before_transition_publish_retain_elapsed_ns,
+        transition_publish_agenda_elapsed_ns: before_transition_publish_agenda_elapsed_ns,
+    } = before;
+    let TurnOptionGeneratorTiming {
+        atomic_expand_elapsed_ns,
+        transition_simulation_elapsed_ns,
+        transition_identity_elapsed_ns,
+        transition_key_build_elapsed_ns,
+        transition_key_index_elapsed_ns,
+        transition_admission_elapsed_ns,
+        transition_trace_elapsed_ns,
+        transition_seen_elapsed_ns,
+        transition_publish_elapsed_ns,
+        transition_publish_trace_node_elapsed_ns,
+        transition_publish_boundary_elapsed_ns,
+        transition_publish_complete_elapsed_ns,
+        transition_publish_push_elapsed_ns,
+        transition_publish_guide_elapsed_ns,
+        transition_publish_retain_elapsed_ns,
+        transition_publish_agenda_elapsed_ns,
+    } = after;
+
+    LocalTurnGraphPerformanceTiming {
+        atomic_expand_elapsed_ns: atomic_expand_elapsed_ns
+            .saturating_sub(before_atomic_expand_elapsed_ns),
+        transition_simulation_elapsed_ns: transition_simulation_elapsed_ns
+            .saturating_sub(before_transition_simulation_elapsed_ns),
+        transition_identity_elapsed_ns: transition_identity_elapsed_ns
+            .saturating_sub(before_transition_identity_elapsed_ns),
+        transition_key_build_elapsed_ns: transition_key_build_elapsed_ns
+            .saturating_sub(before_transition_key_build_elapsed_ns),
+        transition_key_index_elapsed_ns: transition_key_index_elapsed_ns
+            .saturating_sub(before_transition_key_index_elapsed_ns),
+        transition_admission_elapsed_ns: transition_admission_elapsed_ns
+            .saturating_sub(before_transition_admission_elapsed_ns),
+        transition_trace_elapsed_ns: transition_trace_elapsed_ns
+            .saturating_sub(before_transition_trace_elapsed_ns),
+        transition_seen_elapsed_ns: transition_seen_elapsed_ns
+            .saturating_sub(before_transition_seen_elapsed_ns),
+        transition_publish_elapsed_ns: transition_publish_elapsed_ns
+            .saturating_sub(before_transition_publish_elapsed_ns),
+        transition_publish_trace_node_elapsed_ns: transition_publish_trace_node_elapsed_ns
+            .saturating_sub(before_transition_publish_trace_node_elapsed_ns),
+        transition_publish_boundary_elapsed_ns: transition_publish_boundary_elapsed_ns
+            .saturating_sub(before_transition_publish_boundary_elapsed_ns),
+        transition_publish_complete_elapsed_ns: transition_publish_complete_elapsed_ns
+            .saturating_sub(before_transition_publish_complete_elapsed_ns),
+        transition_publish_push_elapsed_ns: transition_publish_push_elapsed_ns
+            .saturating_sub(before_transition_publish_push_elapsed_ns),
+        transition_publish_guide_elapsed_ns: transition_publish_guide_elapsed_ns
+            .saturating_sub(before_transition_publish_guide_elapsed_ns),
+        transition_publish_retain_elapsed_ns: transition_publish_retain_elapsed_ns
+            .saturating_sub(before_transition_publish_retain_elapsed_ns),
+        transition_publish_agenda_elapsed_ns: transition_publish_agenda_elapsed_ns
+            .saturating_sub(before_transition_publish_agenda_elapsed_ns),
+        ..LocalTurnGraphPerformanceTiming::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generator_timing(value: u64) -> TurnOptionGeneratorTiming {
+        TurnOptionGeneratorTiming {
+            atomic_expand_elapsed_ns: value,
+            transition_simulation_elapsed_ns: value,
+            transition_identity_elapsed_ns: value,
+            transition_key_build_elapsed_ns: value,
+            transition_key_index_elapsed_ns: value,
+            transition_admission_elapsed_ns: value,
+            transition_trace_elapsed_ns: value,
+            transition_seen_elapsed_ns: value,
+            transition_publish_elapsed_ns: value,
+            transition_publish_trace_node_elapsed_ns: value,
+            transition_publish_boundary_elapsed_ns: value,
+            transition_publish_complete_elapsed_ns: value,
+            transition_publish_push_elapsed_ns: value,
+            transition_publish_guide_elapsed_ns: value,
+            transition_publish_retain_elapsed_ns: value,
+            transition_publish_agenda_elapsed_ns: value,
+        }
+    }
+
+    #[test]
+    fn generator_timing_delta_maps_every_generator_field_only() {
+        let delta = generator_timing_delta(generator_timing(5), generator_timing(8));
+        assert_eq!(
+            delta,
+            LocalTurnGraphPerformanceTiming {
+                atomic_expand_elapsed_ns: 3,
+                transition_simulation_elapsed_ns: 3,
+                transition_identity_elapsed_ns: 3,
+                transition_key_build_elapsed_ns: 3,
+                transition_key_index_elapsed_ns: 3,
+                transition_admission_elapsed_ns: 3,
+                transition_trace_elapsed_ns: 3,
+                transition_seen_elapsed_ns: 3,
+                transition_publish_elapsed_ns: 3,
+                transition_publish_trace_node_elapsed_ns: 3,
+                transition_publish_boundary_elapsed_ns: 3,
+                transition_publish_complete_elapsed_ns: 3,
+                transition_publish_push_elapsed_ns: 3,
+                transition_publish_guide_elapsed_ns: 3,
+                transition_publish_retain_elapsed_ns: 3,
+                transition_publish_agenda_elapsed_ns: 3,
+                ..LocalTurnGraphPerformanceTiming::default()
+            }
+        );
     }
 }
