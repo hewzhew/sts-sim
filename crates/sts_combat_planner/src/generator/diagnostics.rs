@@ -7,7 +7,7 @@ use crate::types::{
     CombatPlanningCounters, TurnOptionGenerationDiagnostics, TurnOptionGenerationGap,
 };
 
-use super::{GeneratorWork, PartialTurnOption, TurnOptionGeneratorSession};
+use super::{GeneratorWork, GeneratorWorkHandle, PartialTurnOption, TurnOptionGeneratorSession};
 
 #[derive(Clone, Debug)]
 pub(crate) struct RetainedGuidePromise {
@@ -55,6 +55,10 @@ pub(crate) struct TurnOptionGeneratorStorageSnapshot {
     pub(crate) live_work_items: usize,
     pub(crate) work_slots: usize,
     pub(crate) work_capacity: usize,
+    pub(crate) work_sequence_capacity: usize,
+    pub(crate) guide_entry_count_capacity: usize,
+    pub(crate) free_work_slots: usize,
+    pub(crate) free_work_capacity: usize,
     pub(crate) seen_states: usize,
     pub(crate) seen_capacity: usize,
     pub(crate) anchor_entries: usize,
@@ -72,6 +76,7 @@ pub(crate) struct TurnOptionGeneratorStorageSnapshot {
     pub(crate) gaps: usize,
     pub(crate) gaps_capacity: usize,
     pub(crate) scheduling_rebuilds: usize,
+    pub(crate) reused_work_slots: usize,
     pub(crate) reclaimed_anchor_entries: usize,
     pub(crate) reclaimed_guide_entries: usize,
 }
@@ -141,7 +146,7 @@ impl TurnOptionGeneratorSession {
                         .find(|(_, candidate)| candidate.input == *input)?;
                     let cursor_priority = actions.priority()?;
                     let (anchor_queue_rank, guide_queue_ranks) =
-                        self.live_queue_ranks_for_work_id(work_id)?;
+                        self.live_queue_ranks_for_work_handle(self.live_work_handle(work_id)?)?;
                     Some(LiveActionTransitionSnapshot {
                         candidate_ordinal: offset.saturating_add(1),
                         remaining_candidate_count: remaining.len(),
@@ -160,7 +165,7 @@ impl TurnOptionGeneratorSession {
                         && action.input == *input =>
                 {
                     let (anchor_queue_rank, guide_queue_ranks) =
-                        self.live_queue_ranks_for_work_id(work_id)?;
+                        self.live_queue_ranks_for_work_handle(self.live_work_handle(work_id)?)?;
                     Some(LiveActionTransitionSnapshot {
                         candidate_ordinal: 1,
                         remaining_candidate_count: 1,
@@ -198,35 +203,45 @@ impl TurnOptionGeneratorSession {
                 }
                 _ => None,
             })?;
-        self.live_queue_ranks_for_work_id(target_work_id)
+        self.live_queue_ranks_for_work_handle(self.live_work_handle(target_work_id)?)
     }
 
-    fn live_queue_ranks_for_work_id(&self, target_work_id: usize) -> Option<(usize, Vec<usize>)> {
-        let target_anchor = self
-            .anchor_frontier
-            .iter()
-            .find(|entry| entry.work_id == target_work_id)?;
+    fn live_queue_ranks_for_work_handle(
+        &self,
+        target: GeneratorWorkHandle,
+    ) -> Option<(usize, Vec<usize>)> {
+        let target_anchor = self.anchor_frontier.iter().find(|entry| {
+            entry.work_id == target.work_id && entry.sequence_id == target.sequence_id
+        })?;
         let anchor_rank = 1 + self
             .anchor_frontier
             .iter()
-            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| {
+                self.is_live_work_handle(GeneratorWorkHandle {
+                    work_id: entry.work_id,
+                    sequence_id: entry.sequence_id,
+                })
+            })
             .filter(|entry| *entry > target_anchor)
             .count();
         let guide_ranks = self
             .guided_frontiers
             .iter()
             .map(|frontier| {
-                let Some(target) = frontier
-                    .entries
-                    .iter()
-                    .find(|entry| entry.work_id == target_work_id)
-                else {
+                let Some(target) = frontier.entries.iter().find(|entry| {
+                    entry.work_id == target.work_id && entry.sequence_id == target.sequence_id
+                }) else {
                     return 0;
                 };
                 1 + frontier
                     .entries
                     .iter()
-                    .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+                    .filter(|entry| {
+                        self.is_live_work_handle(GeneratorWorkHandle {
+                            work_id: entry.work_id,
+                            sequence_id: entry.sequence_id,
+                        })
+                    })
                     .filter(|entry| *entry > target)
                     .count()
             })
@@ -282,10 +297,12 @@ impl TurnOptionGeneratorSession {
         self.guided_frontiers
             .iter()
             .filter(|frontier| {
-                frontier
-                    .entries
-                    .iter()
-                    .any(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+                frontier.entries.iter().any(|entry| {
+                    self.is_live_work_handle(GeneratorWorkHandle {
+                        work_id: entry.work_id,
+                        sequence_id: entry.sequence_id,
+                    })
+                })
             })
             .map(|frontier| frontier.lane)
             .collect()
@@ -333,26 +350,49 @@ impl TurnOptionGeneratorSession {
         let live_anchor_entries = self
             .anchor_frontier
             .iter()
-            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| {
+                self.is_live_work_handle(GeneratorWorkHandle {
+                    work_id: entry.work_id,
+                    sequence_id: entry.sequence_id,
+                })
+            })
             .count();
         let live_guide_entries = self
             .guided_frontiers
             .iter()
             .flat_map(|frontier| frontier.entries.iter())
-            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| {
+                self.is_live_work_handle(GeneratorWorkHandle {
+                    work_id: entry.work_id,
+                    sequence_id: entry.sequence_id,
+                })
+            })
             .count();
         let live_scheduled_round_entries = self
             .scheduled_round
             .iter()
-            .filter(|(_, work_id)| self.work.get(*work_id).is_some_and(Option::is_some))
+            .filter(|(_, handle)| self.is_live_work_handle(*handle))
             .count();
+        debug_assert_eq!(self.work_sequence_ids.len(), self.work.len());
         debug_assert_eq!(self.guide_entries_per_work.len(), self.work.len());
+        debug_assert_eq!(
+            self.free_work_ids.len(),
+            self.work.len().saturating_sub(self.live_work_items)
+        );
+        debug_assert!(self
+            .free_work_ids
+            .iter()
+            .all(|work_id| self.work.get(*work_id).is_some_and(Option::is_none)));
         debug_assert_eq!(self.live_guide_entries, live_guide_entries);
         TurnOptionGeneratorStorageSnapshot {
             finished: self.is_finished(),
             live_work_items: self.live_work_items,
             work_slots: self.work.len(),
             work_capacity: self.work.capacity(),
+            work_sequence_capacity: self.work_sequence_ids.capacity(),
+            guide_entry_count_capacity: self.guide_entries_per_work.capacity(),
+            free_work_slots: self.free_work_ids.len(),
+            free_work_capacity: self.free_work_ids.capacity(),
             seen_states: self.seen.len(),
             seen_capacity: self.seen.capacity(),
             anchor_entries: self.anchor_frontier.len(),
@@ -378,6 +418,7 @@ impl TurnOptionGeneratorSession {
             gaps: self.gaps.len(),
             gaps_capacity: self.gaps.capacity(),
             scheduling_rebuilds: self.scheduling_rebuilds,
+            reused_work_slots: self.reused_work_slots,
             reclaimed_anchor_entries: self.reclaimed_anchor_entries,
             reclaimed_guide_entries: self.reclaimed_guide_entries,
         }
@@ -386,7 +427,12 @@ impl TurnOptionGeneratorSession {
     pub(crate) fn best_retained_path_bound_snapshot(&self) -> Option<(usize, f64)> {
         self.anchor_frontier
             .iter()
-            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| {
+                self.is_live_work_handle(GeneratorWorkHandle {
+                    work_id: entry.work_id,
+                    sequence_id: entry.sequence_id,
+                })
+            })
             .min_by(|left, right| {
                 left.priority
                     .levin_log_priority
@@ -415,7 +461,12 @@ impl TurnOptionGeneratorSession {
             .find(|frontier| frontier.lane == lane)?
             .entries
             .iter()
-            .filter(|entry| self.work.get(entry.work_id).is_some_and(Option::is_some))
+            .filter(|entry| {
+                self.is_live_work_handle(GeneratorWorkHandle {
+                    work_id: entry.work_id,
+                    sequence_id: entry.sequence_id,
+                })
+            })
             .max()
             .map(|entry| RetainedGuidePromise {
                 rank: entry.guide_rank.clone(),

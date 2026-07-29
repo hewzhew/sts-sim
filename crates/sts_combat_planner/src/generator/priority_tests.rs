@@ -242,8 +242,8 @@ fn scheduling_round_heads_cannot_be_overtaken_by_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: anchor_head,
-            sequence_id: 10_000,
+            work_id: anchor_head.work_id,
+            sequence_id: anchor_head.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![0]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
         });
@@ -251,8 +251,8 @@ fn scheduling_round_heads_cannot_be_overtaken_by_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: guide_head,
-            sequence_id: 10_001,
+            work_id: guide_head.work_id,
+            sequence_id: guide_head.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![10]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 10.0),
         });
@@ -272,8 +272,8 @@ fn scheduling_round_heads_cannot_be_overtaken_by_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: newcomer,
-            sequence_id: 10_002,
+            work_id: newcomer.work_id,
+            sequence_id: newcomer.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![20]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
         });
@@ -307,8 +307,8 @@ fn interrupted_scheduling_round_resumes_before_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: anchor_head,
-            sequence_id: 10_000,
+            work_id: anchor_head.work_id,
+            sequence_id: anchor_head.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![0]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
         });
@@ -316,8 +316,8 @@ fn interrupted_scheduling_round_resumes_before_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: guide_head,
-            sequence_id: 10_001,
+            work_id: guide_head.work_id,
+            sequence_id: guide_head.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![10]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 10.0),
         });
@@ -345,8 +345,8 @@ fn interrupted_scheduling_round_resumes_before_new_arrivals() {
         .entries
         .push(GuidedGeneratorQueueEntry {
             guide_lane: lane,
-            work_id: newcomer,
-            sequence_id: 10_002,
+            work_id: newcomer.work_id,
+            sequence_id: newcomer.sequence_id,
             guide_rank: CombatStateGuideRank::new(vec![20]),
             anchor_priority: GeneratorWorkPriority::for_path(1, 0.0),
         });
@@ -355,12 +355,12 @@ fn interrupted_scheduling_round_resumes_before_new_arrivals() {
         &EngineCombatStepper,
         CombatPlanningQuantum::deterministic(1, 250),
     );
-    assert!(session.work[guide_head].is_none());
-    assert!(session.work[newcomer].is_some());
+    assert!(!session.is_live_work_handle(guide_head));
+    assert!(session.is_live_work_handle(newcomer));
 }
 
 #[test]
-fn scheduling_rebuild_removes_only_buried_stale_entries() {
+fn scheduling_rebuild_rejects_stale_generations_after_slot_reuse() {
     let calls = Arc::new(AtomicUsize::new(0));
     let policy = Arc::new(CountingGenerationGuides { calls });
     let mut session = TurnOptionGeneratorSession::with_policy(
@@ -373,12 +373,14 @@ fn scheduling_rebuild_removes_only_buried_stale_entries() {
         panic!("root work must be an expansion");
     };
 
+    let mut stale_handles = Vec::new();
     for negative_log_policy in [100.0, 110.0, 120.0] {
         let stale = session.push_work(
             GeneratorWork::Expand(parent.clone()),
             GeneratorWorkPriority::for_path(1, negative_log_policy),
         );
         session.take_live_work(stale);
+        stale_handles.push(stale);
     }
     let first_live = session.push_work(
         GeneratorWork::Expand(parent.clone()),
@@ -393,21 +395,66 @@ fn scheduling_rebuild_removes_only_buried_stale_entries() {
     assert_eq!(session.live_guide_entries, 2);
     assert_eq!(session.guide_entries_per_work.len(), session.work.len());
     let round_before = session.snapshot_scheduling_round();
+    let scheduled_sequences = |round: &VecDeque<(usize, GeneratorWorkHandle)>| {
+        round
+            .iter()
+            .map(|(lane, handle)| (*lane, handle.sequence_id))
+            .collect::<Vec<_>>()
+    };
+    let scheduled_sequences_before = scheduled_sequences(&round_before);
+    let mut live_sequences_before = [first_live, second_live]
+        .into_iter()
+        .map(|handle| handle.sequence_id)
+        .collect::<Vec<_>>();
+    live_sequences_before.sort_unstable();
+    let work_slots_before = session.work.len();
     let anchor_entries_before = session.anchor_frontier.len();
     let guide_entries_before = session.guided_frontiers[0].entries.len();
+    let storage_before = session.storage_snapshot();
+    assert_eq!(storage_before.live_anchor_entries, 2);
+    assert_eq!(storage_before.live_guide_entries, 2);
+    assert_eq!(storage_before.free_work_slots, 0);
+    assert_eq!(storage_before.reused_work_slots, 4);
 
     session.reclaim_stale_scheduling_entries();
 
-    assert_eq!(session.snapshot_scheduling_round(), round_before);
+    let round_after = session.snapshot_scheduling_round();
     assert_eq!(
-        round_before.front().map(|(_, work_id)| *work_id),
-        Some(first_live)
+        scheduled_sequences(&round_after),
+        scheduled_sequences_before
     );
-    assert!(session.work[first_live].is_some());
-    assert!(session.work[second_live].is_some());
+    let mut live_sequences_after = session
+        .anchor_frontier
+        .iter()
+        .map(|entry| entry.sequence_id)
+        .collect::<Vec<_>>();
+    live_sequences_after.sort_unstable();
+    assert_eq!(live_sequences_after, live_sequences_before);
+    assert_eq!(
+        scheduled_sequences_before
+            .first()
+            .map(|(_, sequence)| *sequence),
+        live_sequences_before.first().copied()
+    );
+    assert!(session.work.iter().all(Option::is_some));
+    assert!(stale_handles
+        .iter()
+        .all(|handle| !session.is_live_work_handle(*handle)));
+    assert!(stale_handles
+        .iter()
+        .all(|handle| handle.work_id == first_live.work_id));
+    assert_ne!(
+        stale_handles.last().map(|handle| handle.sequence_id),
+        Some(first_live.sequence_id)
+    );
+    assert_eq!(session.work.len(), 2);
+    assert_eq!(work_slots_before, 2);
+    assert_eq!(session.free_work_ids.len(), 0);
+    assert_eq!(session.guide_entries_per_work.len(), 2);
     assert_eq!(session.anchor_frontier.len(), 2);
     assert_eq!(session.guided_frontiers[0].entries.len(), 2);
     assert_eq!(session.scheduling_rebuilds, 1);
+    assert_eq!(session.reused_work_slots, 4);
     assert_eq!(
         session.reclaimed_anchor_entries,
         anchor_entries_before.saturating_sub(2)

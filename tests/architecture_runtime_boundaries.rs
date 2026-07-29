@@ -1061,6 +1061,8 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
 fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/generator.rs";
     const SCHEDULING: &str = "crates/sts_combat_planner/src/generator/scheduling.rs";
+    const RECLAMATION: &str = "crates/sts_combat_planner/src/generator/reclamation.rs";
+    const WORK_SLOTS: &str = "crates/sts_combat_planner/src/generator/work_slots.rs";
     const DIAGNOSTICS: &str = "crates/sts_combat_planner/src/generator/diagnostics.rs";
     const TRANSITION: &str = "crates/sts_combat_planner/src/generator/transition.rs";
 
@@ -1070,7 +1072,13 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
         root_bytes <= 48 * 1024,
         "generator.rs grew to {root_bytes} bytes; keep the root focused on work orchestration and legal-action expansion"
     );
-    for module in ["diagnostics", "scheduling", "transition"] {
+    for module in [
+        "diagnostics",
+        "reclamation",
+        "scheduling",
+        "transition",
+        "work_slots",
+    ] {
         assert!(
             source.contains(&format!("mod {module};")),
             "the turn-option generator must retain its {module} responsibility boundary"
@@ -1087,6 +1095,18 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     assert!(
         !source.contains("fn push_work_measured"),
         "generator queue publication belongs in scheduling.rs, not the expansion root"
+    );
+    let scheduling =
+        std::fs::read_to_string(SCHEDULING).expect("read generator scheduling source");
+    let reclamation =
+        std::fs::read_to_string(RECLAMATION).expect("read generator reclamation source");
+    assert!(
+        !scheduling.contains("fn reclaim_stale_scheduling_entries"),
+        "stale scheduling storage reclamation belongs in reclamation.rs, not scheduling.rs"
+    );
+    assert!(
+        reclamation.contains("fn reclaim_stale_scheduling_entries"),
+        "reclamation.rs must own stale scheduling storage reclamation"
     );
     assert!(
         !source.contains("pub struct LiveActionTransitionSnapshot"),
@@ -1111,6 +1131,20 @@ fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     assert!(
         scheduling_bytes <= 16 * 1024,
         "{SCHEDULING} grew to {scheduling_bytes} bytes; split queue policy from queue mechanics before extending it"
+    );
+    let reclamation_bytes = std::fs::metadata(RECLAMATION)
+        .unwrap_or_else(|error| panic!("read {RECLAMATION} metadata: {error}"))
+        .len();
+    assert!(
+        reclamation_bytes <= 12 * 1024,
+        "{RECLAMATION} grew to {reclamation_bytes} bytes; split rebuild policy from heap storage mechanics before extending it"
+    );
+    let work_slot_bytes = std::fs::metadata(WORK_SLOTS)
+        .unwrap_or_else(|error| panic!("read {WORK_SLOTS} metadata: {error}"))
+        .len();
+    assert!(
+        work_slot_bytes <= 12 * 1024,
+        "{WORK_SLOTS} grew to {work_slot_bytes} bytes; split handle identity from slot reuse mechanics before extending it"
     );
     let diagnostics_bytes = std::fs::metadata(DIAGNOSTICS)
         .unwrap_or_else(|error| panic!("read {DIAGNOSTICS} metadata: {error}"))
@@ -2221,11 +2255,11 @@ fn combat_line_adjudication_has_one_production_owner() {
 #[test]
 fn live_decision_layers_do_not_depend_on_offline_laboratories() {
     let mut sources = Vec::new();
+    // Campfire and route decision priors are both owned below run_control;
+    // their retired score-policy directories must not remain as scan roots.
     for root in [
         "src/eval/run_control",
         "src/runtime/branch/owner_audit",
-        "src/ai/campfire_policy_v1",
-        "src/ai/route_planner_v1",
         "src/ai/strategy/acquisition.rs",
     ] {
         collect_rust_sources(std::path::Path::new(root), &mut sources);

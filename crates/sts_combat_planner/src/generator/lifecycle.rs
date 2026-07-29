@@ -13,6 +13,8 @@ impl TurnOptionGeneratorSession {
         debug_assert!(self.completed.is_empty());
 
         self.work = Vec::new();
+        self.work_sequence_ids = Vec::new();
+        self.free_work_ids = Vec::new();
         self.guide_entries_per_work = Vec::new();
         self.anchor_frontier = BinaryHeap::new();
         self.guided_frontiers = Vec::new();

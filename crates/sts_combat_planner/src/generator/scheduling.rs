@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use crate::policy::{CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank};
 
-use super::{elapsed_nanos_u64, GeneratorWork, TurnOptionGeneratorSession};
+use super::{elapsed_nanos_u64, GeneratorWork, GeneratorWorkHandle, TurnOptionGeneratorSession};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum TurnOptionGeneratorPreferredLane {
@@ -156,7 +156,7 @@ impl TurnOptionGeneratorSession {
         &mut self,
         work: GeneratorWork,
         priority: GeneratorWorkPriority,
-    ) -> usize {
+    ) -> GeneratorWorkHandle {
         self.push_work_measured(work, priority, false).0
     }
 
@@ -165,7 +165,7 @@ impl TurnOptionGeneratorSession {
         mut work: GeneratorWork,
         priority: GeneratorWorkPriority,
         measure: bool,
-    ) -> (usize, PushWorkTiming) {
+    ) -> (GeneratorWorkHandle, PushWorkTiming) {
         debug_assert!(priority.levin_log_priority.is_finite());
         let guide_started = measure.then(Instant::now);
         let base_guides = match &mut work {
@@ -207,13 +207,11 @@ impl TurnOptionGeneratorSession {
         let guide_elapsed_ns = guide_started.map(elapsed_nanos_u64).unwrap_or(0);
 
         let retain_started = measure.then(Instant::now);
-        let work_id = self.work.len();
-        self.work.push(Some(work));
-        self.guide_entries_per_work.push(guides.len());
+        let handle = self.publish_work_slot(work, guides.len());
         let entry = GeneratorQueueEntry {
             priority,
-            sequence_id: self.next_sequence_id,
-            work_id,
+            sequence_id: handle.sequence_id,
+            work_id: handle.work_id,
         };
         let retain_elapsed_ns = retain_started.map(elapsed_nanos_u64).unwrap_or(0);
 
@@ -225,18 +223,16 @@ impl TurnOptionGeneratorSession {
                 .entries
                 .push(GuidedGeneratorQueueEntry {
                     guide_lane: guide.lane,
-                    work_id,
-                    sequence_id: self.next_sequence_id,
+                    work_id: handle.work_id,
+                    sequence_id: handle.sequence_id,
                     guide_rank: guide.rank.clone(),
                     anchor_priority: priority,
                 });
         }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
-        self.live_work_items = self.live_work_items.saturating_add(1);
-        self.live_guide_entries = self.live_guide_entries.saturating_add(guides.len());
         let agenda_elapsed_ns = agenda_started.map(elapsed_nanos_u64).unwrap_or(0);
         (
-            work_id,
+            handle,
             PushWorkTiming {
                 guide_elapsed_ns,
                 retain_elapsed_ns,
@@ -250,15 +246,15 @@ impl TurnOptionGeneratorSession {
         let lane_count = self.guided_frontiers.len().saturating_add(1);
         for offset in 0..lane_count {
             let lane = (self.next_scheduler_lane + offset) % lane_count;
-            let work_id = if lane == 0 {
-                self.pop_anchor_work_id()
+            let handle = if lane == 0 {
+                self.pop_anchor_work_handle()
             } else {
-                self.pop_guided_work_id(lane - 1)
+                self.pop_guided_work_handle(lane - 1)
             };
-            let Some(work_id) = work_id else {
+            let Some(handle) = handle else {
                 continue;
             };
-            let work = self.take_live_work(work_id);
+            let work = self.take_live_work(handle);
             if lane == 0 {
                 self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
             } else {
@@ -270,79 +266,14 @@ impl TurnOptionGeneratorSession {
         None
     }
 
-    pub(super) fn take_live_work(&mut self, work_id: usize) -> GeneratorWork {
-        debug_assert_eq!(self.guide_entries_per_work.len(), self.work.len());
-        let work = self.work[work_id]
-            .take()
-            .expect("scheduled generator work must still be live");
-        self.live_work_items = self.live_work_items.saturating_sub(1);
-        let guide_entries = self.guide_entries_per_work[work_id];
-        debug_assert!(self.live_guide_entries >= guide_entries);
-        self.live_guide_entries = self.live_guide_entries.saturating_sub(guide_entries);
-        work
-    }
-
-    /// Rebuilds lazy scheduling heaps only between frozen service rounds.
-    ///
-    /// A strict stale majority both amortizes the linear retain and bounds
-    /// retained garbage without changing any live entry's `Ord` key.
-    pub(super) fn reclaim_stale_scheduling_entries(&mut self) {
-        debug_assert!(self.scheduled_round.is_empty());
-
-        let stale_anchor_entries = self
-            .anchor_frontier
-            .len()
-            .saturating_sub(self.live_work_items);
-        let guide_entries = self
-            .guided_frontiers
-            .iter()
-            .map(|frontier| frontier.entries.len())
-            .sum::<usize>();
-        let stale_guide_entries = guide_entries.saturating_sub(self.live_guide_entries);
-        let rebuild_anchor = stale_anchor_entries > self.live_work_items;
-        let rebuild_guides = stale_guide_entries > self.live_guide_entries;
-        if !rebuild_anchor && !rebuild_guides {
-            return;
-        }
-
-        let work = &self.work;
-        let mut reclaimed_anchor_entries = 0;
-        if rebuild_anchor {
-            let before = self.anchor_frontier.len();
-            self.anchor_frontier
-                .retain(|entry| work.get(entry.work_id).is_some_and(Option::is_some));
-            reclaimed_anchor_entries = before.saturating_sub(self.anchor_frontier.len());
-            self.anchor_frontier.shrink_to_fit();
-        }
-
-        let mut reclaimed_guide_entries = 0usize;
-        if rebuild_guides {
-            for frontier in &mut self.guided_frontiers {
-                let before = frontier.entries.len();
-                frontier
-                    .entries
-                    .retain(|entry| work.get(entry.work_id).is_some_and(Option::is_some));
-                let reclaimed = before.saturating_sub(frontier.entries.len());
-                reclaimed_guide_entries = reclaimed_guide_entries.saturating_add(reclaimed);
-                if reclaimed > 0 {
-                    frontier.entries.shrink_to_fit();
-                }
-            }
-        }
-
-        self.scheduling_rebuilds = self.scheduling_rebuilds.saturating_add(1);
-        self.reclaimed_anchor_entries = self
-            .reclaimed_anchor_entries
-            .saturating_add(reclaimed_anchor_entries);
-        self.reclaimed_guide_entries = self
-            .reclaimed_guide_entries
-            .saturating_add(reclaimed_guide_entries);
-    }
-
-    pub(super) fn peek_anchor_work_id(&mut self) -> Option<usize> {
+    pub(super) fn peek_anchor_work_handle(&mut self) -> Option<GeneratorWorkHandle> {
         while let Some(entry) = self.anchor_frontier.peek() {
-            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
-                return Some(entry.work_id);
+            let handle = GeneratorWorkHandle {
+                work_id: entry.work_id,
+                sequence_id: entry.sequence_id,
+            };
+            if self.is_live_work_handle(handle) {
+                return Some(handle);
             }
             self.anchor_frontier.pop();
         }
@@ -350,29 +281,44 @@ impl TurnOptionGeneratorSession {
     }
 
     #[cfg(test)]
-    pub(super) fn pop_anchor_work_id(&mut self) -> Option<usize> {
-        self.peek_anchor_work_id()?;
-        self.anchor_frontier.pop().map(|entry| entry.work_id)
+    pub(super) fn pop_anchor_work_handle(&mut self) -> Option<GeneratorWorkHandle> {
+        self.peek_anchor_work_handle()?;
+        self.anchor_frontier.pop().map(|entry| GeneratorWorkHandle {
+            work_id: entry.work_id,
+            sequence_id: entry.sequence_id,
+        })
     }
 
-    pub(super) fn peek_guided_work_id(&mut self, guide_index: usize) -> Option<usize> {
-        let frontier = &mut self.guided_frontiers.get_mut(guide_index)?.entries;
-        while let Some(entry) = frontier.peek() {
-            if self.work.get(entry.work_id).is_some_and(Option::is_some) {
-                return Some(entry.work_id);
+    pub(super) fn peek_guided_work_handle(
+        &mut self,
+        guide_index: usize,
+    ) -> Option<GeneratorWorkHandle> {
+        loop {
+            let entry = self.guided_frontiers.get(guide_index)?.entries.peek()?;
+            let handle = GeneratorWorkHandle {
+                work_id: entry.work_id,
+                sequence_id: entry.sequence_id,
+            };
+            if self.is_live_work_handle(handle) {
+                return Some(handle);
             }
-            frontier.pop();
+            self.guided_frontiers[guide_index].entries.pop();
         }
-        None
     }
 
     #[cfg(test)]
-    pub(super) fn pop_guided_work_id(&mut self, guide_index: usize) -> Option<usize> {
-        self.peek_guided_work_id(guide_index)?;
+    pub(super) fn pop_guided_work_handle(
+        &mut self,
+        guide_index: usize,
+    ) -> Option<GeneratorWorkHandle> {
+        self.peek_guided_work_handle(guide_index)?;
         self.guided_frontiers[guide_index]
             .entries
             .pop()
-            .map(|entry| entry.work_id)
+            .map(|entry| GeneratorWorkHandle {
+                work_id: entry.work_id,
+                sequence_id: entry.sequence_id,
+            })
     }
 
     pub(super) fn guide_frontier_index(&self, lane: CombatGuideLaneId) -> Option<usize> {

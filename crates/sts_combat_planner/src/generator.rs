@@ -31,11 +31,14 @@ use scheduling::{
 #[cfg(test)]
 use transition::detail_timing_scale;
 use transition::{is_potion_expenditure, ActionTransitionStatus};
+use work_slots::GeneratorWorkHandle;
 
 pub(crate) mod diagnostics;
 mod lifecycle;
+mod reclamation;
 mod scheduling;
 mod transition;
+mod work_slots;
 
 /// High-frequency diagnostic sub-timers sample one transition per interval.
 /// Parent stage timers remain exhaustive; this keeps Windows QPC overhead
@@ -263,6 +266,8 @@ pub struct TurnOptionGeneratorSession {
     max_potion_expenditures: Option<u32>,
     policy: SharedCombatActionPolicy,
     work: Vec<Option<GeneratorWork>>,
+    work_sequence_ids: Vec<u64>,
+    free_work_ids: Vec<usize>,
     /// Number of guided-heap memberships published for each stable work slot.
     ///
     /// Work consumption can then maintain the live membership total without
@@ -277,11 +282,12 @@ pub struct TurnOptionGeneratorSession {
     /// wall-clock or work interruption lets newly published heads repeatedly
     /// overtake the unserved tail of the prior round, making split quanta
     /// semantically different from one continuous grant.
-    scheduled_round: VecDeque<(usize, usize)>,
+    scheduled_round: VecDeque<(usize, GeneratorWorkHandle)>,
     live_work_items: usize,
     live_guide_entries: usize,
     /// Observational counters for deterministic stale-entry rebuilds.
     scheduling_rebuilds: usize,
+    reused_work_slots: usize,
     reclaimed_anchor_entries: usize,
     reclaimed_guide_entries: usize,
     next_sequence_id: u64,
@@ -387,6 +393,8 @@ impl TurnOptionGeneratorSession {
             max_potion_expenditures,
             policy,
             work: Vec::new(),
+            work_sequence_ids: Vec::new(),
+            free_work_ids: Vec::new(),
             guide_entries_per_work: Vec::new(),
             anchor_frontier: BinaryHeap::new(),
             guided_frontiers: Vec::new(),
@@ -395,6 +403,7 @@ impl TurnOptionGeneratorSession {
             live_work_items: 0,
             live_guide_entries: 0,
             scheduling_rebuilds: 0,
+            reused_work_slots: 0,
             reclaimed_anchor_entries: 0,
             reclaimed_guide_entries: 0,
             next_sequence_id: 0,
@@ -512,7 +521,7 @@ impl TurnOptionGeneratorSession {
             while self
                 .scheduled_round
                 .front()
-                .is_some_and(|(_, work_id)| !self.work.get(*work_id).is_some_and(Option::is_some))
+                .is_some_and(|(_, handle)| !self.is_live_work_handle(*handle))
             {
                 self.scheduled_round.pop_front();
             }
@@ -524,12 +533,12 @@ impl TurnOptionGeneratorSession {
                     break None;
                 }
             }
-            let (lane, work_id) = *self
+            let (lane, handle) = *self
                 .scheduled_round
                 .front()
                 .expect("a non-empty scheduling round has a head");
             let transition_reservation = self.config.max_engine_steps_per_transition.max(1);
-            if self.work[work_id].as_ref().is_some_and(|work| {
+            if self.live_work(handle).is_some_and(|work| {
                 matches!(
                     work,
                     GeneratorWork::AtomicActions(_) | GeneratorWork::ApplyAction(_)
@@ -544,7 +553,7 @@ impl TurnOptionGeneratorSession {
             }
 
             self.scheduled_round.pop_front();
-            let work = self.take_live_work(work_id);
+            let work = self.take_live_work(handle);
             if lane == 0 {
                 self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
             } else {
@@ -706,19 +715,19 @@ impl TurnOptionGeneratorSession {
     /// Captures the current head of every scheduling view as one finite
     /// service round. Duplicate views of the same shared work item collapse
     /// to one service; newly published work waits for the next round.
-    fn snapshot_scheduling_round(&mut self) -> VecDeque<(usize, usize)> {
+    fn snapshot_scheduling_round(&mut self) -> VecDeque<(usize, GeneratorWorkHandle)> {
         let lane_count = self.guided_frontiers.len().saturating_add(1);
-        let mut work_ids = HashSet::new();
+        let mut work_handles = HashSet::new();
         let mut round = VecDeque::new();
         for offset in 0..lane_count {
             let lane = (self.next_scheduler_lane + offset) % lane_count;
-            let work_id = if lane == 0 {
-                self.peek_anchor_work_id()
+            let handle = if lane == 0 {
+                self.peek_anchor_work_handle()
             } else {
-                self.peek_guided_work_id(lane - 1)
+                self.peek_guided_work_handle(lane - 1)
             };
-            if let Some(work_id) = work_id.filter(|work_id| work_ids.insert(*work_id)) {
-                round.push_back((lane, work_id));
+            if let Some(handle) = handle.filter(|handle| work_handles.insert(*handle)) {
+                round.push_back((lane, handle));
             }
         }
         round

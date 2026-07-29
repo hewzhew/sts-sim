@@ -12,7 +12,13 @@ pub struct LocalTurnGraphStorageSnapshot {
     pub exhausted_nodes: usize,
     pub live_generator_work_items: usize,
     pub generator_work_slots: usize,
+    pub generator_stale_work_slots: usize,
+    pub generators_with_stale_work_majority: usize,
     pub generator_work_capacity: usize,
+    pub generator_work_sequence_capacity: usize,
+    pub generator_guide_entry_count_capacity: usize,
+    pub generator_free_work_slots: usize,
+    pub generator_free_work_capacity: usize,
     pub generator_seen_states: usize,
     pub generator_seen_capacity: usize,
     pub generator_anchor_entries: usize,
@@ -45,6 +51,7 @@ pub struct LocalTurnGraphStorageSnapshot {
     pub finished_generator_completed_capacity: usize,
     pub finished_generator_gaps_capacity: usize,
     pub generator_scheduling_rebuilds: usize,
+    pub generator_reused_work_slots: usize,
     pub generator_reclaimed_anchor_entries: usize,
     pub generator_reclaimed_guide_entries: usize,
     pub active_generators: usize,
@@ -77,9 +84,32 @@ impl LocalTurnGraphWitnessSession {
             snapshot.generator_work_slots = snapshot
                 .generator_work_slots
                 .saturating_add(generator.work_slots);
+            let stale_work_slots = generator
+                .work_slots
+                .saturating_sub(generator.live_work_items);
+            snapshot.generator_stale_work_slots = snapshot
+                .generator_stale_work_slots
+                .saturating_add(stale_work_slots);
+            if stale_work_slots > generator.live_work_items {
+                snapshot.generators_with_stale_work_majority = snapshot
+                    .generators_with_stale_work_majority
+                    .saturating_add(1);
+            }
             snapshot.generator_work_capacity = snapshot
                 .generator_work_capacity
                 .saturating_add(generator.work_capacity);
+            snapshot.generator_work_sequence_capacity = snapshot
+                .generator_work_sequence_capacity
+                .saturating_add(generator.work_sequence_capacity);
+            snapshot.generator_guide_entry_count_capacity = snapshot
+                .generator_guide_entry_count_capacity
+                .saturating_add(generator.guide_entry_count_capacity);
+            snapshot.generator_free_work_slots = snapshot
+                .generator_free_work_slots
+                .saturating_add(generator.free_work_slots);
+            snapshot.generator_free_work_capacity = snapshot
+                .generator_free_work_capacity
+                .saturating_add(generator.free_work_capacity);
             snapshot.generator_seen_states = snapshot
                 .generator_seen_states
                 .saturating_add(generator.seen_states);
@@ -167,6 +197,9 @@ impl LocalTurnGraphWitnessSession {
             snapshot.generator_scheduling_rebuilds = snapshot
                 .generator_scheduling_rebuilds
                 .saturating_add(generator.scheduling_rebuilds);
+            snapshot.generator_reused_work_slots = snapshot
+                .generator_reused_work_slots
+                .saturating_add(generator.reused_work_slots);
             snapshot.generator_reclaimed_anchor_entries = snapshot
                 .generator_reclaimed_anchor_entries
                 .saturating_add(generator.reclaimed_anchor_entries);
