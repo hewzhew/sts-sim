@@ -13,6 +13,7 @@ pub(super) struct OwnerBatchResult {
     pub(super) applied_count: usize,
     pub(super) applied: Vec<Value>,
     pub(super) stopped: String,
+    pub(super) current: OracleAnalysisNodeViewV1,
 }
 
 pub(super) fn apply_owner_steps(
@@ -22,11 +23,20 @@ pub(super) fn apply_owner_steps(
     if steps == 0 {
         return Err("oracle owner steps must be positive".to_string());
     }
+    let current = workspace.view()?;
+    apply_owner_steps_from(workspace, current, steps)
+}
+
+fn apply_owner_steps_from(
+    workspace: &mut OracleAnalysisWorkspaceV1,
+    mut current: OracleAnalysisNodeViewV1,
+    steps: u8,
+) -> Result<OwnerBatchResult, String> {
+    debug_assert!(steps > 0);
 
     let mut applied = Vec::new();
     let mut stopped = "step_limit".to_string();
     for _ in 0..steps {
-        let current = workspace.view()?;
         let matching = current
             .choices
             .iter()
@@ -55,6 +65,7 @@ pub(super) fn apply_owner_steps(
             stopped = format!("choice_made_no_progress={label}");
             break;
         }
+        current = next;
         applied.push(json!({
             "node": parent_node_id,
             "candidate_id": candidate_id,
@@ -66,6 +77,7 @@ pub(super) fn apply_owner_steps(
         applied_count,
         applied,
         stopped,
+        current,
     })
 }
 
@@ -84,9 +96,37 @@ pub struct OracleAutonomousRunConfigV1 {
 
 #[derive(Default)]
 struct AutonomousRunTiming {
+    initial_view_ms: u64,
     owner_ms: u64,
     combat_advance_ms: u64,
+    combat_accept_ms: u64,
     reported_combat_ms: u64,
+}
+
+impl AutonomousRunTiming {
+    fn accounted_run_ms(&self) -> u64 {
+        self.initial_view_ms
+            .saturating_add(self.owner_ms)
+            .saturating_add(self.combat_advance_ms)
+            .saturating_add(self.combat_accept_ms)
+    }
+
+    fn report(&self, run_elapsed_ms: u64, run_wall_ms: Option<u64>) -> Value {
+        let accounted_run_ms = self.accounted_run_ms();
+        json!({
+            "run_ms": run_elapsed_ms,
+            "run_budget_ms": run_wall_ms,
+            "budget_overshoot_ms": run_wall_ms
+                .map(|budget| run_elapsed_ms.saturating_sub(budget)),
+            "initial_view_ms": self.initial_view_ms,
+            "owner_ms": self.owner_ms,
+            "combat_advance_wall_ms": self.combat_advance_ms,
+            "combat_accept_wall_ms": self.combat_accept_ms,
+            "combat_reported_ms": self.reported_combat_ms,
+            "accounted_run_ms": accounted_run_ms,
+            "run_residual_ms": run_elapsed_ms.saturating_sub(accounted_run_ms),
+        })
+    }
 }
 
 pub fn run_oracle_analysis_to_stop_v1(
@@ -105,17 +145,16 @@ pub fn run_oracle_analysis_to_stop_v1(
     }
 
     let run_started = Instant::now();
-    let start_node = workspace.view()?.node_id;
+    let mut timing = AutonomousRunTiming::default();
+    let initial_view_started = Instant::now();
+    let mut node = workspace.view()?;
+    timing.initial_view_ms = elapsed_millis(initial_view_started);
+    let start_node = node.node_id;
     let mut owner_decisions = 0_u64;
     let mut combats = Vec::new();
-    let mut timing = AutonomousRunTiming::default();
 
     for _ in 0..config.max_boundaries {
-        let node = workspace.view()?;
-        if config
-            .run_wall_ms
-            .is_some_and(|limit| elapsed_millis(run_started) >= limit)
-        {
+        if run_wall_budget_reached(run_started, config.run_wall_ms) {
             return Ok(stopped_autonomous_run_report(
                 start_node,
                 &node,
@@ -123,6 +162,7 @@ pub fn run_oracle_analysis_to_stop_v1(
                 &combats,
                 &timing,
                 elapsed_millis(run_started),
+                config.run_wall_ms,
                 "run_wall_budget",
             ));
         }
@@ -138,16 +178,18 @@ pub fn run_oracle_analysis_to_stop_v1(
                 &combats,
                 &timing,
                 elapsed_millis(run_started),
+                config.run_wall_ms,
                 config.export_continuation.as_deref(),
             );
         }
 
         if !node.choices.is_empty() {
             let owner_started = Instant::now();
-            let owner = apply_owner_steps(workspace, 64)?;
+            let owner = apply_owner_steps_from(workspace, node, 64)?;
             timing.owner_ms = timing
                 .owner_ms
                 .saturating_add(elapsed_millis(owner_started));
+            node = owner.current;
             if owner.applied_count == 0 {
                 return Ok(stopped_autonomous_run_report(
                     start_node,
@@ -156,6 +198,7 @@ pub fn run_oracle_analysis_to_stop_v1(
                     &combats,
                     &timing,
                     elapsed_millis(run_started),
+                    config.run_wall_ms,
                     "owner_choice_missing_or_ambiguous",
                 ));
             }
@@ -171,6 +214,7 @@ pub fn run_oracle_analysis_to_stop_v1(
                 &combats,
                 &timing,
                 elapsed_millis(run_started),
+                config.run_wall_ms,
                 "noncombat_boundary_without_owner_choice",
             ));
         }
@@ -197,7 +241,11 @@ pub fn run_oracle_analysis_to_stop_v1(
             .and_then(|combat| combat.incumbent_final_hp)
             .is_some()
         {
+            let accept_started = Instant::now();
             let after = workspace.accept_combat_incumbent()?;
+            timing.combat_accept_ms = timing
+                .combat_accept_ms
+                .saturating_add(elapsed_millis(accept_started));
             combats.push(json!({
                 "node": combat_node,
                 "act": node.act,
@@ -211,6 +259,7 @@ pub fn run_oracle_analysis_to_stop_v1(
                 "search": compact_run_combat_progress(node.combat.as_ref()),
                 "after": compact_run_node(&after),
             }));
+            node = after;
             continue;
         }
 
@@ -232,8 +281,15 @@ pub fn run_oracle_analysis_to_stop_v1(
             .as_ref()
             .and_then(|combat| combat.incumbent_final_hp);
         let materialized = after.boundary != OracleRunBoundaryV1::Combat;
-        let accepted = if !materialized && incumbent.is_some() {
+        let acceptance_deferred = !materialized
+            && incumbent.is_some()
+            && run_wall_budget_reached(run_started, config.run_wall_ms);
+        let accepted = if !materialized && incumbent.is_some() && !acceptance_deferred {
+            let accept_started = Instant::now();
             after = workspace.accept_combat_incumbent()?;
+            timing.combat_accept_ms = timing
+                .combat_accept_ms
+                .saturating_add(elapsed_millis(accept_started));
             true
         } else {
             false
@@ -248,10 +304,23 @@ pub fn run_oracle_analysis_to_stop_v1(
             "budget_ms": wall_ms,
             "elapsed_ms": report.elapsed_ms,
             "accepted_incumbent": accepted,
+            "incumbent_acceptance_deferred": acceptance_deferred,
             "search": compact_run_combat_progress(report.combat.as_ref()),
             "after": compact_run_node(&after),
         }));
 
+        if acceptance_deferred {
+            return Ok(stopped_autonomous_run_report(
+                start_node,
+                &after,
+                owner_decisions,
+                &combats,
+                &timing,
+                elapsed_millis(run_started),
+                config.run_wall_ms,
+                "run_wall_budget",
+            ));
+        }
         if !materialized && !accepted {
             return Ok(stopped_autonomous_run_report(
                 start_node,
@@ -260,12 +329,13 @@ pub fn run_oracle_analysis_to_stop_v1(
                 &combats,
                 &timing,
                 elapsed_millis(run_started),
+                config.run_wall_ms,
                 "combat_budget_unknown_without_witness",
             ));
         }
+        node = after;
     }
 
-    let node = workspace.view()?;
     if matches!(
         node.boundary,
         OracleRunBoundaryV1::TerminalVictory | OracleRunBoundaryV1::TerminalDefeat
@@ -278,6 +348,7 @@ pub fn run_oracle_analysis_to_stop_v1(
             &combats,
             &timing,
             elapsed_millis(run_started),
+            config.run_wall_ms,
             config.export_continuation.as_deref(),
         );
     }
@@ -288,6 +359,7 @@ pub fn run_oracle_analysis_to_stop_v1(
         &combats,
         &timing,
         elapsed_millis(run_started),
+        config.run_wall_ms,
         "boundary_limit",
     ))
 }
@@ -300,6 +372,7 @@ fn terminal_autonomous_run_report(
     combats: &[Value],
     timing: &AutonomousRunTiming,
     run_elapsed_ms: u64,
+    run_wall_ms: Option<u64>,
     export_continuation: Option<&Path>,
 ) -> Result<Value, String> {
     let victory = node.boundary == OracleRunBoundaryV1::TerminalVictory;
@@ -336,6 +409,10 @@ fn terminal_autonomous_run_report(
             "report": report,
         }));
     }
+    let mut timing_report = timing.report(run_elapsed_ms, run_wall_ms);
+    timing_report["run_ms_before_verification_and_export"] = json!(run_elapsed_ms);
+    timing_report["verification_ms"] = json!(verification_ms);
+    timing_report["export_ms"] = json!(export_ms);
     Ok(json!({
         "schema_name": "OracleAutonomousRunReportV2",
         "schema_version": 2,
@@ -345,14 +422,7 @@ fn terminal_autonomous_run_report(
         "owner_decisions": owner_decisions,
         "combat_count": combats.len(),
         "total_combat_elapsed_ms": timing.reported_combat_ms,
-        "timing": {
-            "run_ms_before_verification_and_export": run_elapsed_ms,
-            "owner_ms": timing.owner_ms,
-            "combat_advance_wall_ms": timing.combat_advance_ms,
-            "combat_reported_ms": timing.reported_combat_ms,
-            "verification_ms": verification_ms,
-            "export_ms": export_ms,
-        },
+        "timing": timing_report,
         "combats": combats,
         "verification": verification,
         "continuation_export": export,
@@ -366,6 +436,7 @@ fn stopped_autonomous_run_report(
     combats: &[Value],
     timing: &AutonomousRunTiming,
     run_elapsed_ms: u64,
+    run_wall_ms: Option<u64>,
     reason: &str,
 ) -> Value {
     json!({
@@ -378,12 +449,7 @@ fn stopped_autonomous_run_report(
         "owner_decisions": owner_decisions,
         "combat_count": combats.len(),
         "total_combat_elapsed_ms": timing.reported_combat_ms,
-        "timing": {
-            "run_ms": run_elapsed_ms,
-            "owner_ms": timing.owner_ms,
-            "combat_advance_wall_ms": timing.combat_advance_ms,
-            "combat_reported_ms": timing.reported_combat_ms,
-        },
+        "timing": timing.report(run_elapsed_ms, run_wall_ms),
         "combats": combats,
     })
 }
@@ -442,4 +508,64 @@ fn encounter_kind(is_elite: bool, is_boss: bool) -> &'static str {
 
 pub(super) fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn run_wall_budget_reached(started: Instant, run_wall_ms: Option<u64>) -> bool {
+    run_wall_ms.is_some_and(|limit| elapsed_millis(started) >= limit)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::{apply_owner_steps, run_wall_budget_reached, AutonomousRunTiming};
+    use crate::runtime::branch::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
+
+    #[test]
+    fn owner_batch_returns_the_current_workspace_view() {
+        let mut workspace = OracleAnalysisWorkspaceV1::new(OracleRunConfig {
+            seed: 20260713007,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        })
+        .expect("seed007 oracle workspace");
+
+        let batch = apply_owner_steps(&mut workspace, 3).expect("owner batch");
+        let reloaded = workspace.view().expect("current workspace view");
+
+        assert_eq!(batch.current.node_id, reloaded.node_id);
+        assert_eq!(batch.current.boundary, reloaded.boundary);
+        assert_eq!(batch.current.current_hp, reloaded.current_hp);
+        assert_eq!(batch.applied_count, batch.applied.len());
+    }
+
+    #[test]
+    fn timing_report_closes_the_run_ledger_and_reports_overshoot() {
+        let timing = AutonomousRunTiming {
+            initial_view_ms: 3,
+            owner_ms: 5,
+            combat_advance_ms: 11,
+            combat_accept_ms: 7,
+            reported_combat_ms: 9,
+        };
+
+        let report = timing.report(31, Some(29));
+
+        assert_eq!(report["accounted_run_ms"], 26);
+        assert_eq!(report["run_residual_ms"], 5);
+        assert_eq!(report["budget_overshoot_ms"], 2);
+        assert_eq!(
+            report["accounted_run_ms"].as_u64().unwrap()
+                + report["run_residual_ms"].as_u64().unwrap(),
+            report["run_ms"].as_u64().unwrap()
+        );
+    }
+
+    #[test]
+    fn run_wall_budget_check_is_explicitly_disabled_by_none() {
+        let started = Instant::now() - Duration::from_millis(10);
+
+        assert!(!run_wall_budget_reached(started, None));
+        assert!(run_wall_budget_reached(started, Some(5)));
+    }
 }

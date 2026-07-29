@@ -416,7 +416,7 @@ fn execute_command(
         }
         OracleAnalysisServiceCommandV1::Owner { steps } => {
             let batch = apply_owner_steps(workspace, steps)?;
-            let status = node_summary(&workspace.view()?);
+            let status = node_summary(&batch.current);
             (
                 json!({
                     "requested_steps": steps,

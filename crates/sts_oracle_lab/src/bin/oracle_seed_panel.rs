@@ -78,8 +78,11 @@ struct PanelSeedSummaryV1 {
     elapsed_ms: u64,
     /// End-to-end time for this seed, including workspace load and persistence.
     total_elapsed_ms: u64,
-    /// Non-run overhead, principally workspace load and durable persistence.
+    /// All non-run overhead: workspace load, durable persistence, and teardown.
     persistence_elapsed_ms: u64,
+    /// Time spent dropping the in-memory workspace, including any retained
+    /// tactical frontier that is intentionally absent from its checkpoint.
+    workspace_drop_elapsed_ms: u64,
     act: Option<u64>,
     floor: Option<i64>,
     current_hp: Option<i64>,
@@ -225,6 +228,7 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     elapsed_ms,
                     total_elapsed_ms: elapsed_ms,
                     persistence_elapsed_ms: 0,
+                    workspace_drop_elapsed_ms: 0,
                     act: None,
                     floor: None,
                     current_hp: None,
@@ -241,6 +245,9 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 }
             }
         };
+        let workspace_drop_started = Instant::now();
+        drop(workspace);
+        summary.workspace_drop_elapsed_ms = elapsed_millis(workspace_drop_started);
         summary.total_elapsed_ms = elapsed_millis(seed_total_started);
         summary.persistence_elapsed_ms =
             summary.total_elapsed_ms.saturating_sub(summary.elapsed_ms);
@@ -360,6 +367,7 @@ fn summary_from_report(
         elapsed_ms,
         total_elapsed_ms: elapsed_ms,
         persistence_elapsed_ms: 0,
+        workspace_drop_elapsed_ms: 0,
         act: final_node
             .and_then(|value| value.get("act"))
             .and_then(Value::as_u64),
@@ -398,6 +406,10 @@ fn panel_summary(
     let errors = seeds.iter().filter(|seed| seed.status == "error").count();
     let requested = usize::from(args.count);
     let complete = seeds.len() == requested;
+    let elapsed_ms = elapsed_millis(started);
+    let seed_total_elapsed_ms = seeds.iter().fold(0_u64, |total, seed| {
+        total.saturating_add(seed.total_elapsed_ms)
+    });
     Ok(json!({
         "schema_name": "OracleSeedPanelReportV1",
         "schema_version": 1,
@@ -425,7 +437,9 @@ fn panel_summary(
             "quantum_ms": args.quantum_ms,
             "max_boundaries": args.max_boundaries,
         },
-        "elapsed_ms": elapsed_millis(started),
+        "elapsed_ms": elapsed_ms,
+        "seed_total_elapsed_ms": seed_total_elapsed_ms,
+        "coordinator_elapsed_ms": elapsed_ms.saturating_sub(seed_total_elapsed_ms),
         "completed": seeds.len(),
         "remaining": requested.saturating_sub(seeds.len()),
         "victories": victories,
