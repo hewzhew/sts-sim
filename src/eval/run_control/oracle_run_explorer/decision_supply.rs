@@ -17,7 +17,7 @@ use super::super::{
 };
 use super::{
     LazyOracleRunDecisionV1, LazyOracleRunSelectionFamilyV1, OracleRunBoundaryV1,
-    OracleRunBranchV1, OracleRunWorkKindV1,
+    OracleRunBranchV1, OracleRunExplorerV1, OracleRunWorkKindV1,
 };
 
 #[derive(Serialize)]
@@ -57,6 +57,101 @@ pub(super) fn selection_family_work_key(
 pub(super) struct OracleRunDecisionSupplyV1 {
     pub(super) decisions: Vec<LazyOracleRunDecisionV1>,
     pub(super) selection_family: Option<LazyOracleRunSelectionFamilyV1>,
+}
+
+pub(in super::super) struct SelectionMemberReleasePlanV1 {
+    completed_work_key: String,
+    family_key: Option<String>,
+    next_decision: Option<LazyOracleRunDecisionV1>,
+    next_family: Option<LazyOracleRunSelectionFamilyV1>,
+}
+
+impl OracleRunExplorerV1 {
+    pub(in super::super) fn prepare_selection_member_release(
+        &self,
+        completed_work_key: &str,
+    ) -> Result<SelectionMemberReleasePlanV1, String> {
+        let Some(source) = self
+            .pending_selection_families
+            .iter()
+            .find(|family| family.outstanding_work_key.as_deref() == Some(completed_work_key))
+        else {
+            return Ok(SelectionMemberReleasePlanV1 {
+                completed_work_key: completed_work_key.to_string(),
+                family_key: None,
+                next_decision: None,
+                next_family: None,
+            });
+        };
+        let mut family = source.clone();
+        family.outstanding_work_key = None;
+        let Some(action) = selection_family_next_action(&mut family) else {
+            return Ok(SelectionMemberReleasePlanV1 {
+                completed_work_key: completed_work_key.to_string(),
+                family_key: Some(family.family_key),
+                next_decision: None,
+                next_family: None,
+            });
+        };
+        let decision = selection_family_decision(&mut family, action)?;
+        if self
+            .registered_work_keys
+            .contains(&decision.stable_work_key)
+        {
+            return Err(format!(
+                "selection family '{}' emitted duplicate exact work '{}'",
+                family.family_key, decision.stable_work_key
+            ));
+        }
+        let next_family = (!family.cursor.is_exhausted()).then_some(family.clone());
+        Ok(SelectionMemberReleasePlanV1 {
+            completed_work_key: completed_work_key.to_string(),
+            family_key: Some(family.family_key),
+            next_decision: Some(decision),
+            next_family,
+        })
+    }
+
+    pub(in super::super) fn apply_selection_member_release(
+        &mut self,
+        plan: SelectionMemberReleasePlanV1,
+    ) {
+        let Some(family_key) = plan.family_key else {
+            return;
+        };
+        let index = self
+            .pending_selection_families
+            .iter()
+            .position(|family| {
+                family.family_key == family_key
+                    && family.outstanding_work_key.as_deref()
+                        == Some(plan.completed_work_key.as_str())
+            })
+            .expect("prepared selection family must remain unchanged until commit");
+        self.pending_selection_families
+            .remove(index)
+            .expect("prepared selection family must remain present");
+        if let Some(decision) = plan.next_decision {
+            assert!(
+                self.registered_work_keys
+                    .insert(decision.stable_work_key.clone()),
+                "validated selection work must remain unique until commit"
+            );
+            self.pending_decisions.push_back(decision);
+        }
+        if let Some(family) = plan.next_family {
+            self.pending_selection_families.push_back(family);
+        }
+    }
+
+    pub(super) fn release_next_selection_member(
+        &mut self,
+        completed_work_key: &str,
+    ) -> Result<(), String> {
+        let plan = self.prepare_selection_member_release(completed_work_key)?;
+        self.apply_selection_member_release(plan);
+        Ok(())
+    }
 }
 
 pub(super) fn decision_supply_for_branch(

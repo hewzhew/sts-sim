@@ -205,7 +205,8 @@ fn analysis_selection_widens_without_mutating_parent_choices() {
     explorer.register_decision_work(0, None).unwrap();
     let first = explorer.pending_decisions[0].stable_work_key.clone();
 
-    explorer.note_explicit_decision_service(&first).unwrap();
+    let release = explorer.prepare_selection_member_release(&first).unwrap();
+    explorer.apply_selection_member_release(release);
     assert_eq!(
         explorer.pending_decisions.len(),
         2,
@@ -216,7 +217,8 @@ fn analysis_selection_widens_without_mutating_parent_choices() {
         .iter()
         .any(|decision| decision.stable_work_key == first));
 
-    explorer.note_explicit_decision_service(&first).unwrap();
+    let release = explorer.prepare_selection_member_release(&first).unwrap();
+    explorer.apply_selection_member_release(release);
     assert_eq!(
         explorer.pending_decisions.len(),
         2,

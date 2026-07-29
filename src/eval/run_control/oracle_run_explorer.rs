@@ -32,9 +32,7 @@ pub use checkpoint::{
 pub use checkpoint_restore::seed_oracle_run_explorer_from_checkpoint_v1;
 use combat_completion::FinishedOracleCombatV1;
 pub use combat_completion::OracleRunCombatEvidenceKindV1;
-use decision_supply::{
-    decision_supply_for_branch, selection_family_decision, selection_family_next_action,
-};
+use decision_supply::decision_supply_for_branch;
 use scheduling::ScheduledOracleRunWorkV1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -673,39 +671,6 @@ impl OracleRunExplorerV1 {
         }
     }
 
-    fn release_next_selection_member(&mut self, completed_work_key: &str) -> Result<(), String> {
-        let Some(index) = self
-            .pending_selection_families
-            .iter()
-            .position(|family| family.outstanding_work_key.as_deref() == Some(completed_work_key))
-        else {
-            return Ok(());
-        };
-        let mut family = self
-            .pending_selection_families
-            .remove(index)
-            .expect("located selection family must remain present");
-        family.outstanding_work_key = None;
-        let Some(action) = selection_family_next_action(&mut family) else {
-            return Ok(());
-        };
-        let decision = selection_family_decision(&mut family, action)?;
-        if !self
-            .registered_work_keys
-            .insert(decision.stable_work_key.clone())
-        {
-            return Err(format!(
-                "selection family '{}' emitted duplicate exact work '{}'",
-                family.family_key, decision.stable_work_key
-            ));
-        }
-        self.pending_decisions.push_back(decision);
-        if !family.cursor.is_exhausted() {
-            self.pending_selection_families.push_back(family);
-        }
-        Ok(())
-    }
-
     fn schedule_branch(
         &mut self,
         branch_id: usize,
@@ -778,17 +743,6 @@ impl OracleRunExplorerV1 {
         });
         self.combat_search_restarts = self.combat_search_restarts.saturating_add(1);
         Ok(())
-    }
-
-    pub(super) fn note_explicit_decision_service(
-        &mut self,
-        stable_work_key: &str,
-    ) -> Result<(), String> {
-        // Analysis variations do not consume the parent's legal choices.
-        // For a parameterized selection, explicitly trying the currently
-        // exposed member only widens the immutable parent by one more exact
-        // member. Production scheduling removes serviced work separately.
-        self.release_next_selection_member(stable_work_key)
     }
 
     pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, OracleRunCombatWorkV1)> {

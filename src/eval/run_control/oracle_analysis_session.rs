@@ -995,13 +995,16 @@ impl OracleAnalysisSessionV1 {
                 format!("choice reference is stale or is not legal at node {parent_node_id}")
             })?;
         let label = work.label.clone();
-        self.explorer
-            .note_explicit_decision_service(&work.stable_work_key)?;
+        let selection_service = self
+            .explorer
+            .prepare_selection_member_release(&work.stable_work_key)?;
         let child_node_id = self
             .explorer
             .materialize_explicit_decision(work, self.decision_annotation)?;
         self.explorer
             .register_explicit_decisions_for_branch(child_node_id, self.decision_prior)?;
+        self.explorer
+            .apply_selection_member_release(selection_service);
         let edge_id = self.record_edge(
             parent_node_id,
             child_node_id,
@@ -1564,3 +1567,6 @@ fn validate_edge_path(
 fn elapsed_ms(started: Instant) -> u64 {
     started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
+
+#[cfg(test)]
+mod tests;

@@ -528,10 +528,12 @@ fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
     for supply_owner in [
         "struct StableOracleWorkKeyInput",
         "struct OracleRunDecisionSupplyV1",
+        "struct SelectionMemberReleasePlanV1",
         "fn decision_supply_for_branch",
         "fn apply_decision_policy",
         "fn preferred_run_choice_selections",
         "fn selection_family_decision",
+        "fn release_next_selection_member",
     ] {
         assert!(
             !root.contains(supply_owner),
@@ -548,10 +550,12 @@ fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
     for required_owner in [
         "struct StableOracleWorkKeyInput",
         "struct OracleRunDecisionSupplyV1",
+        "struct SelectionMemberReleasePlanV1",
         "fn decision_supply_for_branch",
         "fn apply_decision_policy",
         "fn preferred_run_choice_selections",
         "fn selection_family_decision",
+        "fn release_next_selection_member",
     ] {
         assert!(
             supply.contains(required_owner),
