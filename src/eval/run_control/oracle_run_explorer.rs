@@ -152,7 +152,7 @@ pub struct ExactDuplicateOracleRunBranchV1 {
 pub struct OracleRunUnresolvedCombatV1 {
     pub branch_id: usize,
     pub rejection: RunControlCombatSearchRejection,
-    pub evidence_kind: String,
+    pub evidence_kind: OracleRunCombatEvidenceKindV1,
     pub last_status: Option<String>,
     pub nodes_expanded: u64,
     pub exact_states: usize,
@@ -165,6 +165,24 @@ pub struct OracleRunUnresolvedCombatV1 {
     pub max_path_atomic_depth: usize,
     pub generation_gap_count: usize,
     pub incumbent_final_hp: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OracleRunCombatEvidenceKindV1 {
+    BudgetUnknown,
+    ExhaustiveRefutation,
+    SetupOrMechanicsError,
+}
+
+impl OracleRunCombatEvidenceKindV1 {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BudgetUnknown => "budget_unknown",
+            Self::ExhaustiveRefutation => "exhaustive_refutation",
+            Self::SetupOrMechanicsError => "setup_or_mechanics_error",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -412,6 +430,21 @@ enum FinishedOracleCombatV1 {
     Resolved(usize),
     ExactDuplicate,
     Unresolved(OracleRunUnresolvedCombatV1),
+}
+
+fn classify_unresolved_combat_evidence(
+    last_status: Option<&str>,
+    generation_gap_count: usize,
+) -> OracleRunCombatEvidenceKindV1 {
+    match last_status {
+        Some("frontier_exhausted") if generation_gap_count == 0 => {
+            OracleRunCombatEvidenceKindV1::ExhaustiveRefutation
+        }
+        Some("mechanics_gap") | Some("replay_mismatch") => {
+            OracleRunCombatEvidenceKindV1::SetupOrMechanicsError
+        }
+        _ => OracleRunCombatEvidenceKindV1::BudgetUnknown,
+    }
 }
 
 pub struct OracleRunExplorerV1 {
@@ -884,14 +917,11 @@ impl OracleRunExplorerV1 {
         branch_id: usize,
         work: OracleRunCombatWorkV1,
     ) -> Result<Option<usize>, String> {
-        match self.finish_combat(
-            PendingOracleCombatV1 {
-                branch_id,
-                stage: 0,
-                work,
-            },
-            None,
-        )? {
+        match self.finish_combat(PendingOracleCombatV1 {
+            branch_id,
+            stage: 0,
+            work,
+        })? {
             FinishedOracleCombatV1::Resolved(branch_id) => Ok(Some(branch_id)),
             FinishedOracleCombatV1::ExactDuplicate => self
                 .retired_exact_duplicates
@@ -948,7 +978,6 @@ impl OracleRunExplorerV1 {
     fn finish_combat(
         &mut self,
         pending: PendingOracleCombatV1,
-        finalization_deadline: Option<Instant>,
     ) -> Result<FinishedOracleCombatV1, String> {
         let parent = self
             .branches
@@ -958,8 +987,10 @@ impl OracleRunExplorerV1 {
             .ok_or_else(|| format!("missing oracle combat branch {}", pending.branch_id))?;
         let progress = pending.work.progress();
         let nodes_expanded = progress.generation_work;
-        let _ = finalization_deadline;
         let mut session = parent.session.clone();
+        // Deadlines bound search advancement. Once a verified witness is
+        // ready, its exact replay is an atomic commit and is never interrupted
+        // by a wall-clock deadline.
         let outcome = pending
             .work
             .finish_and_apply(&mut session)
@@ -981,14 +1012,10 @@ impl OracleRunExplorerV1 {
             let unresolved = OracleRunUnresolvedCombatV1 {
                 branch_id: parent.branch_id,
                 rejection,
-                evidence_kind: match progress.last_status {
-                    Some("frontier_exhausted") if progress.generation_gap_count == 0 => {
-                        "exhaustive_refutation"
-                    }
-                    Some("mechanics_gap") | Some("replay_mismatch") => "setup_or_mechanics_error",
-                    _ => "budget_unknown",
-                }
-                .to_string(),
+                evidence_kind: classify_unresolved_combat_evidence(
+                    progress.last_status,
+                    progress.generation_gap_count,
+                ),
                 last_status: progress.last_status.map(str::to_string),
                 nodes_expanded,
                 exact_states: progress.exact_states,
@@ -1275,7 +1302,7 @@ pub fn drive_oracle_run_explorer_v1(
                         });
                         continue;
                     }
-                    let finished = explorer.finish_combat(pending, deadline)?;
+                    let finished = explorer.finish_combat(pending)?;
                     match finished {
                         FinishedOracleCombatV1::Resolved(branch_id) => {
                             let boundary = explorer
@@ -1296,7 +1323,9 @@ pub fn drive_oracle_run_explorer_v1(
                             )?;
                         }
                         FinishedOracleCombatV1::Unresolved(unresolved) => {
-                            if unresolved.evidence_kind == "budget_unknown" {
+                            if unresolved.evidence_kind
+                                == OracleRunCombatEvidenceKindV1::BudgetUnknown
+                            {
                                 if let Some(prior_work) = prior_work {
                                     explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
                                         branch_id: unresolved.branch_id,

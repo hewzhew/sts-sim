@@ -544,7 +544,7 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
         .push(OracleRunUnresolvedCombatV1 {
             branch_id: 0,
             rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
-            evidence_kind: "budget_unknown".to_string(),
+            evidence_kind: OracleRunCombatEvidenceKindV1::BudgetUnknown,
             last_status: Some("partial".to_string()),
             nodes_expanded: 10,
             exact_states: 9,
@@ -574,8 +574,38 @@ fn unresolved_combat_evidence_survives_a_live_frontier_checkpoint() {
     assert_eq!(decoded.unresolved_combats.len(), 1);
     assert_eq!(
         decoded.unresolved_combats[0].evidence_kind,
+        OracleRunCombatEvidenceKindV1::BudgetUnknown
+    );
+    let encoded_value: serde_json::Value =
+        serde_json::from_str(&encoded).expect("deserialize checkpoint JSON");
+    assert_eq!(
+        encoded_value["unresolved_combats"][0]["evidence_kind"],
         "budget_unknown"
     );
+}
+
+#[test]
+fn unresolved_combat_evidence_classification_is_typed_and_conservative() {
+    assert_eq!(
+        classify_unresolved_combat_evidence(Some("frontier_exhausted"), 0),
+        OracleRunCombatEvidenceKindV1::ExhaustiveRefutation
+    );
+    assert_eq!(
+        classify_unresolved_combat_evidence(Some("frontier_exhausted"), 1),
+        OracleRunCombatEvidenceKindV1::BudgetUnknown
+    );
+    for status in ["mechanics_gap", "replay_mismatch"] {
+        assert_eq!(
+            classify_unresolved_combat_evidence(Some(status), 0),
+            OracleRunCombatEvidenceKindV1::SetupOrMechanicsError
+        );
+    }
+    for status in [None, Some("partial"), Some("allowance_exhausted")] {
+        assert_eq!(
+            classify_unresolved_combat_evidence(status, 0),
+            OracleRunCombatEvidenceKindV1::BudgetUnknown
+        );
+    }
 }
 
 fn test_owner_annotation(

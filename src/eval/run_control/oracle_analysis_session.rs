@@ -24,8 +24,8 @@ use super::oracle_combat_work::{
 use super::oracle_run_explorer::{
     seed_oracle_run_explorer_from_checkpoint_v1, LazyOracleRunDecisionV1,
     OracleCombatSearchResumeKindV1, OracleRunBoundaryV1, OracleRunCombatBudgetsV1,
-    OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
-    OracleRunReplayStepV1, OracleRunWorkKindV1,
+    OracleRunCombatEvidenceKindV1, OracleRunDecisionAnnotationFnV1, OracleRunExplorerCheckpointV1,
+    OracleRunExplorerV1, OracleRunReplayStepV1, OracleRunWorkKindV1,
 };
 use super::{
     build_decision_surface, exact_campfire_policy_audit_v1, exact_route_policy_audit_v1,
@@ -1130,12 +1130,12 @@ impl OracleAnalysisSessionV1 {
                 .iter()
                 .rev()
                 .find(|unresolved| unresolved.branch_id == source_node_id)
-                .map(|unresolved| unresolved.evidence_kind.as_str())
+                .map(|unresolved| unresolved.evidence_kind)
             {
-                Some("exhaustive_refutation") => {
+                Some(OracleRunCombatEvidenceKindV1::ExhaustiveRefutation) => {
                     OracleAnalysisAdvanceStatusV1::ExhaustiveRefutation
                 }
-                Some("setup_or_mechanics_error") => {
+                Some(OracleRunCombatEvidenceKindV1::SetupOrMechanicsError) => {
                     OracleAnalysisAdvanceStatusV1::SetupOrMechanicsError
                 }
                 _ => OracleAnalysisAdvanceStatusV1::BudgetUnknown,

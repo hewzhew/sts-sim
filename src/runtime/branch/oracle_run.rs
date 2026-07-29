@@ -458,7 +458,7 @@ fn finish_oracle_run_report(
             .map(|combat| OracleUnresolvedCombatSummaryV1 {
                 branch_id: combat.branch_id,
                 rejection: format!("{:?}", combat.rejection),
-                evidence_kind: combat.evidence_kind.clone(),
+                evidence_kind: combat.evidence_kind.as_str().to_string(),
                 last_status: combat.last_status.clone(),
                 nodes_expanded: combat.nodes_expanded,
                 exact_states: combat.exact_states,

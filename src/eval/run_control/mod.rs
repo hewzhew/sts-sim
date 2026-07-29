@@ -162,11 +162,12 @@ pub use oracle_run_explorer::{
     ExactDuplicateOracleRunBranchV1, LazyOracleRunDecisionV1, OracleCombatSearchResumeKindV1,
     OraclePendingCombatEnemyV1, OraclePendingCombatSummaryV1, OracleRunActiveCombatCheckpointV1,
     OracleRunBoundaryV1, OracleRunBranchCheckpointV1, OracleRunBranchV1, OracleRunCombatBudgetsV1,
-    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunCombatQualityPolicyV1,
-    OracleRunDecisionAnnotationFnV1, OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1,
-    OracleRunExploreResultV1, OracleRunExploreStopV1, OracleRunExplorerCheckpointV1,
-    OracleRunExplorerV1, OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1,
-    OracleRunUnresolvedCombatV1, OracleRunWorkKindV1,
+    OracleRunCombatEdgeOrderFnV1, OracleRunCombatEdgeProbeV1, OracleRunCombatEvidenceKindV1,
+    OracleRunCombatQualityPolicyV1, OracleRunDecisionAnnotationFnV1,
+    OracleRunDeferredCombatCheckpointV1, OracleRunExploreBudgetV1, OracleRunExploreResultV1,
+    OracleRunExploreStopV1, OracleRunExplorerCheckpointV1, OracleRunExplorerV1,
+    OracleRunJournalNodeCheckpointV1, OracleRunReplayStepV1, OracleRunUnresolvedCombatV1,
+    OracleRunWorkKindV1,
 };
 pub use outcome::{
     load_combat_baseline_outcome_v1, save_combat_baseline_outcome_v1, CombatBaselineOutcomeV1,
