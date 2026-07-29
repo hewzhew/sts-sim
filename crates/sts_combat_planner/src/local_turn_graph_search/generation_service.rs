@@ -161,6 +161,9 @@ impl LocalTurnGraphWitnessSession {
             let options = node.generator.take_completed_options();
             let gaps = node.generator.gaps()[node.synced_gaps..].to_vec();
             node.synced_gaps = node.generator.gaps().len();
+            if node.generator.is_finished() {
+                node.generator.retire_finished_search_storage();
+            }
             (
                 before,
                 after,

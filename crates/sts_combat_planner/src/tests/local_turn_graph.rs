@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn local_turn_graph_retires_finished_generator_search_storage() {
+    let mut session = LocalTurnGraphWitnessSession::with_policy(
+        root(),
+        LocalTurnGraphWitnessConfig {
+            generator: config(),
+            initial_expansion_work: 16,
+            root_initial_expansion_work: 16,
+            lookahead_max_evaluations: 0,
+            max_turn_depth: 1,
+            satisfaction: OracleCombatWitnessSatisfaction::BudgetOrExhaustion,
+            ..LocalTurnGraphWitnessConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    session.advance(
+        LocalTurnGraphWitnessQuantum {
+            additional_selections: 64,
+            additional_generation_work: 256,
+            additional_engine_steps: 1_024,
+            deadline: None,
+        },
+        &TinyTurnStepper::plain(),
+    );
+
+    let storage = session.storage_snapshot();
+    assert!(storage.finished_generators > 0);
+    assert_eq!(storage.finished_generator_work_capacity, 0);
+    assert_eq!(storage.finished_generator_seen_capacity, 0);
+    assert_eq!(storage.finished_generator_anchor_capacity, 0);
+    assert_eq!(storage.finished_generator_guide_capacity, 0);
+    assert_eq!(storage.finished_generator_scheduled_round_capacity, 0);
+}
+
+#[test]
 fn local_turn_graph_policy_proposal_requires_exact_root_replay() {
     let stepper = TinyTurnStepper::lethal_after_current_turn();
     let decision_root = root();

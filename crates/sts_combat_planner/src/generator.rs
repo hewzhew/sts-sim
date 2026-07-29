@@ -33,6 +33,7 @@ use transition::detail_timing_scale;
 use transition::{is_potion_expenditure, ActionTransitionStatus};
 
 pub(crate) mod diagnostics;
+mod lifecycle;
 mod scheduling;
 mod transition;
 
