@@ -533,18 +533,19 @@ fn policy_discrepancy_keeps_contract_and_turn_macro_in_bounded_modules() {
 }
 
 #[test]
-fn turn_option_generator_keeps_scheduling_and_diagnostics_in_bounded_modules() {
+fn turn_option_generator_keeps_internal_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/generator.rs";
     const SCHEDULING: &str = "crates/sts_combat_planner/src/generator/scheduling.rs";
     const DIAGNOSTICS: &str = "crates/sts_combat_planner/src/generator/diagnostics.rs";
+    const TRANSITION: &str = "crates/sts_combat_planner/src/generator/transition.rs";
 
     let source = std::fs::read_to_string(ROOT).expect("read turn-option generator source");
     let root_bytes = source.len() as u64;
     assert!(
-        root_bytes <= 56 * 1024,
-        "generator.rs grew to {root_bytes} bytes; keep the root focused on exact turn expansion and transition execution"
+        root_bytes <= 48 * 1024,
+        "generator.rs grew to {root_bytes} bytes; keep the root focused on work orchestration and legal-action expansion"
     );
-    for module in ["diagnostics", "scheduling"] {
+    for module in ["diagnostics", "scheduling", "transition"] {
         assert!(
             source.contains(&format!("mod {module};")),
             "the turn-option generator must retain its {module} responsibility boundary"
@@ -571,6 +572,10 @@ fn turn_option_generator_keeps_scheduling_and_diagnostics_in_bounded_modules() {
         "read-only queue inspection belongs in diagnostics.rs, not the expansion root"
     );
     assert!(
+        !source.contains("fn apply_action_transition"),
+        "exact transition simulation and publication belong in transition.rs, not the expansion root"
+    );
+    assert!(
         !source.contains("#[test]"),
         "inline tests must not regrow inside the turn-option generator root"
     );
@@ -588,6 +593,13 @@ fn turn_option_generator_keeps_scheduling_and_diagnostics_in_bounded_modules() {
     assert!(
         diagnostics_bytes <= 20 * 1024,
         "{DIAGNOSTICS} grew to {diagnostics_bytes} bytes; split independent diagnostic projections before extending it"
+    );
+    let transition_bytes = std::fs::metadata(TRANSITION)
+        .unwrap_or_else(|error| panic!("read {TRANSITION} metadata: {error}"))
+        .len();
+    assert!(
+        transition_bytes <= 16 * 1024,
+        "{TRANSITION} grew to {transition_bytes} bytes; split simulation, admission, or publication only when one becomes independently extensible"
     );
 }
 
