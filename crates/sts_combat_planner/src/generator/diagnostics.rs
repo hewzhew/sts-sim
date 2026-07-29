@@ -7,7 +7,7 @@ use crate::types::{
     CombatPlanningCounters, TurnOptionGenerationDiagnostics, TurnOptionGenerationGap,
 };
 
-use super::{GeneratorWork, GeneratorWorkHandle, PartialTurnOption, TurnOptionGeneratorSession};
+use super::{GeneratorWork, GeneratorWorkHandle, TurnOptionGeneratorSession};
 
 #[derive(Clone, Debug)]
 pub(crate) struct RetainedGuidePromise {
@@ -281,14 +281,9 @@ impl TurnOptionGeneratorSession {
         self.work
             .iter()
             .filter_map(Option::as_ref)
-            .filter(|work| {
-                matches!(
-                    work,
-                    GeneratorWork::Expand(PartialTurnOption {
-                        lookahead_guide: Some(_),
-                        ..
-                    })
-                )
+            .filter(|work| match work {
+                GeneratorWork::Expand(partial) => partial.lookahead_guide.is_some(),
+                _ => false,
             })
             .count()
     }

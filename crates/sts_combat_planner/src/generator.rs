@@ -188,7 +188,11 @@ struct StructuredSelectionWork {
 
 #[derive(Clone, Debug)]
 enum GeneratorWork {
-    Expand(PartialTurnOption),
+    // Expansion immediately shares its immutable parent with every outgoing
+    // cursor. Owning that parent through Arc here avoids inlining a full
+    // CombatPosition into every reusable work slot without adding an
+    // allocation to the ordinary expanded path.
+    Expand(Arc<PartialTurnOption>),
     AtomicActions(AtomicActionCursorWork),
     ApplyAction(ActionTransitionWork),
     StructuredSelection(StructuredSelectionWork),
@@ -378,7 +382,7 @@ impl TurnOptionGeneratorSession {
             root_key,
             max_potion_expenditures.map(|_| 0),
         ));
-        let root_work = GeneratorWork::Expand(PartialTurnOption {
+        let root_work = GeneratorWork::Expand(Arc::new(PartialTurnOption {
             position: root.position().clone(),
             trace: None,
             atomic_depth: 0,
@@ -386,7 +390,7 @@ impl TurnOptionGeneratorSession {
             potion_expenditures: 0,
             generation_guides: None,
             lookahead_guide: None,
-        });
+        }));
         let mut session = Self {
             root,
             config,
@@ -593,7 +597,7 @@ impl TurnOptionGeneratorSession {
                         };
                         debug_assert!(evaluation.work <= max_work);
                         let charged_work = evaluation.work.max(1).min(max_work);
-                        partial.lookahead_guide = Some(evaluation.guide);
+                        Arc::make_mut(&mut partial).lookahead_guide = Some(evaluation.guide);
                         self.lookahead_evaluations = self.lookahead_evaluations.saturating_add(1);
                         self.lookahead_work = self.lookahead_work.saturating_add(charged_work);
                         remaining_lookahead_evaluations =
@@ -733,9 +737,10 @@ impl TurnOptionGeneratorSession {
         round
     }
 
-    fn expand(&mut self, stepper: &dyn CombatStepper, mut partial: PartialTurnOption) {
+    fn expand(&mut self, stepper: &dyn CombatStepper, mut partial: Arc<PartialTurnOption>) {
         let terminal = stepper.terminal(&partial.position);
         if let Some(boundary) = supported_boundary(&self.root, &partial.position, terminal) {
+            let partial = Arc::unwrap_or_clone(partial);
             let trace_started = Instant::now();
             let actions = partial.materialize_actions();
             self.transition_trace_elapsed_ns = self
@@ -796,16 +801,20 @@ impl TurnOptionGeneratorSession {
         let atomic_action_count = surface.atomic_actions.len();
         let atomic_probabilities = probabilities[..atomic_action_count].to_vec();
         let selection_probabilities = probabilities[atomic_action_count..].to_vec();
-        let base_generation_guides = partial
-            .generation_guides
-            .get_or_insert_with(|| self.policy.turn_generation_guides(&partial.position).into())
-            .clone();
+        let base_generation_guides = if let Some(guides) = partial.generation_guides.as_ref() {
+            guides.clone()
+        } else {
+            let guides: Arc<[CombatStateGuide]> =
+                self.policy.turn_generation_guides(&partial.position).into();
+            Arc::make_mut(&mut partial).generation_guides = Some(guides.clone());
+            guides
+        };
         let parent_guides =
             guides_with_lookahead(base_generation_guides, partial.lookahead_guide.as_ref());
         // Every outgoing action observes the same immutable parent position.
         // Sharing it avoids one full combat-state and action-prefix clone for
         // every legal action while preserving the exact search graph.
-        let parent = Arc::new(partial);
+        let parent = partial;
         if let Some(cursor) = AtomicActionCursorWork::new(
             parent.clone(),
             surface.atomic_actions,

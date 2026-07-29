@@ -80,6 +80,17 @@ fn guided_entry(
 }
 
 #[test]
+fn generator_work_slot_keeps_large_expand_payload_indirect() {
+    const MAX_WORK_SLOT_BYTES: usize = 160;
+
+    assert!(
+        std::mem::size_of::<GeneratorWork>() <= MAX_WORK_SLOT_BYTES,
+        "GeneratorWork grew to {} bytes; keep the full combat position behind the shared Expand Arc",
+        std::mem::size_of::<GeneratorWork>()
+    );
+}
+
+#[test]
 fn guided_prefix_priority_uses_exact_state_before_anchor_policy() {
     let improved_after_setup = guided_entry(10, 8.0, 3, 0);
     let locally_greedy = guided_entry(9, 0.01, 1, 1);
@@ -151,7 +162,7 @@ fn atomic_cursor_conserves_residual_probability_mass() {
         panic!("root work must be an expansion");
     };
     let mut cursor = AtomicActionCursorWork::new(
-        Arc::new(parent),
+        parent,
         vec![
             ClientInput::EndTurn,
             ClientInput::Cancel,
@@ -205,7 +216,7 @@ fn action_transition_does_not_bypass_explicit_anchor_priority() {
     }
     session.push_work(
         GeneratorWork::ApplyAction(ActionTransitionWork {
-            parent: Arc::new(parent),
+            parent,
             input: ClientInput::EndTurn,
             atomic_depth: 1,
             negative_log_policy: 100.0,

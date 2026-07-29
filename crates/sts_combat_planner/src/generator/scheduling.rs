@@ -176,7 +176,7 @@ impl TurnOptionGeneratorSession {
                 } else {
                     let guides: Arc<[CombatStateGuide]> =
                         self.policy.turn_generation_guides(&partial.position).into();
-                    partial.generation_guides = Some(guides.clone());
+                    Arc::make_mut(partial).generation_guides = Some(guides.clone());
                     guides
                 }
             }

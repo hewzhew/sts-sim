@@ -164,7 +164,7 @@ impl TurnOptionGeneratorSession {
                 );
                 let push_started = Instant::now();
                 let (_, push_timing) = self.push_work_measured(
-                    GeneratorWork::Expand(partial),
+                    GeneratorWork::Expand(Arc::new(partial)),
                     priority,
                     detail_timing_scale.is_some(),
                 );
