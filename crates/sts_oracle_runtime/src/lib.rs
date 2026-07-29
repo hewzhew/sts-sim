@@ -1,24 +1,15 @@
-//! Shared oracle runtime over the simulator, planner, and run explorer.
+//! Branch execution and persistence over oracle evaluation and run-control.
 
 extern crate self as sts_simulator;
 
-pub use sts_core::{content, engine, fixtures, sim, state, test_support, EntityId};
+pub use sts_oracle_eval::{
+    ai, content, engine, eval, fixtures, sim, state, test_support, EntityId,
+};
 
 pub mod testing {
-    pub use sts_core::fixtures;
-    pub use sts_core::test_support as support;
+    pub use sts_oracle_eval::testing::*;
 }
 
-#[cfg(test)]
-mod semantics {
-    pub mod combat {
-        pub use crate::runtime::monster_move::*;
-    }
-}
-
-pub mod ai;
-#[path = "../../../src/eval/mod.rs"]
-pub mod eval;
 pub mod runtime;
 
 pub mod bot {

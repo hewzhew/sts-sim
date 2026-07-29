@@ -84,7 +84,8 @@ Binary 边界见 [src/bin/README.md](src/bin/README.md)。
 | `src/ai` | policy、strategic facts、deck mutation、combat search、route/search work |
 | `src/eval` | run-control、benchmark artifact、diagnostics、report |
 | `src/bin` | 当前维护的命令入口 |
-| `crates/sts_oracle_runtime` | combat search、evaluation、run-control 和 branch runtime 的 Cargo owner |
+| `crates/sts_oracle_eval` | combat evaluation、精确搜索编排和 run-control 的优化 Cargo owner |
+| `crates/sts_oracle_runtime` | branch 执行、持久化和服务编排的快速重建 Cargo owner |
 | `crates/sts_oracle_tools` | 无 library facade 的受维护 oracle 命令适配器与集成契约宿主 |
 | `tools` | 离线脚本、dataset、panel 和生成 artifact |
 | `docs` | 当前架构、runbook、测试说明和设计草稿 |

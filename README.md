@@ -94,7 +94,8 @@ archaeology.
 | `src/ai` | policies, strategic facts, deck mutation, combat search, route/search work |
 | `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
 | `src/bin` | maintained command entrypoints |
-| `crates/sts_oracle_runtime` | Cargo owner for combat search, evaluation, run-control, and branch runtime |
+| `crates/sts_oracle_eval` | Optimized Cargo owner for combat evaluation, exact-search orchestration, and run-control |
+| `crates/sts_oracle_runtime` | Cheaply rebuildable Cargo owner for branch execution, persistence, and service orchestration |
 | `crates/sts_oracle_tools` | Library-free Cargo host for maintained oracle command adapters and integration contracts |
 | `tools` | offline scripts, datasets, panels, and generated artifacts |
 | `docs` | maintained architecture, runbook, testing notes, and current drafts |

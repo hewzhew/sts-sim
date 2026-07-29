@@ -903,7 +903,7 @@ fn runner_skips_existing_cells_individually_and_checkpoints_completed_row() {
     );
     let manifest = CombatLabManifestV1::from_resolved_v1(
         resolved,
-        crate::runtime::branch::current_source_identity(),
+        crate::eval::source_identity::current_source_identity(),
         1,
     );
     let mut store = CombatLabArtifactStoreV1::create_or_resume(&output_dir, manifest)
@@ -2835,7 +2835,7 @@ fn artifact_manifest(
 ) -> CombatLabManifestV1 {
     CombatLabManifestV1::from_resolved_v1(
         resolved,
-        crate::runtime::branch::SourceIdentity {
+        crate::eval::source_identity::SourceIdentity {
             git_commit: Some("test-commit".to_string()),
             git_dirty: Some(false),
         },

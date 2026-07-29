@@ -2,6 +2,7 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
+/// Source revision recorded by reproducible oracle artifacts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SourceIdentity {
     pub git_commit: Option<String>,
@@ -56,7 +57,7 @@ mod tests {
     }
 
     #[test]
-    fn current_source_identity_is_available_from_runtime_library() {
+    fn current_source_identity_is_available_from_evaluation_library() {
         let _ = current_source_identity();
     }
 }

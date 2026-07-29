@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::runtime::branch::current_source_identity;
+use crate::eval::source_identity::current_source_identity;
 
 use super::{
     combat_lab_cell_key_v1, execute_combat_lab_cell_v1, load_and_resolve_combat_lab_spec_v1,

@@ -9,7 +9,8 @@ use crate::eval::run_control::trace_annotation::CombatAutomationTrajectoryRecord
 use crate::eval::run_control::CombatBaselineOutcomeV1;
 
 impl RunControlSession {
-    pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
+    /// Capture the stable player-input position at the active combat boundary.
+    pub fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
         let combat = self
             .active_combat
             .as_ref()
@@ -146,7 +147,8 @@ impl RunControlSession {
             .unwrap_or(self.run_state.potions.as_slice())
     }
 
-    pub(crate) fn visible_player_hp(&self) -> (i32, i32) {
+    /// Return the player HP visible at the current run or combat boundary.
+    pub fn visible_player_hp(&self) -> (i32, i32) {
         self.active_combat
             .as_ref()
             .map(|active| {

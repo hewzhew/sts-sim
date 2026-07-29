@@ -110,7 +110,13 @@ pub struct OracleAnalysisChildViewV1 {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(deny_unknown_fields)]
+/// Cumulative and currently retained search evidence for one combat boundary.
+///
+/// Historical work remains charged across resumptions, while the local and
+/// discrepancy fields describe the live frontiers retained by this process.
+/// This report observes budget use; it does not grant additional search work.
 pub struct OracleAnalysisCombatProgressV1 {
+    /// Work charged by prior resident searches and preserved across resumes.
     pub historical_generation_work: u64,
     pub current_search_generation_work: u64,
     pub generation_work: u64,
@@ -663,7 +669,8 @@ impl OracleAnalysisSessionV1 {
         })
     }
 
-    pub(crate) fn combat_root_action_families(
+    /// Snapshot root-action coverage from the resident combat search, if any.
+    pub fn combat_root_action_families(
         &self,
         node_id: usize,
     ) -> Result<Vec<LocalTurnGraphRootActionFamilySnapshot>, String> {

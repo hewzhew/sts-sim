@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::branch::SourceIdentity;
+use crate::eval::source_identity::SourceIdentity;
 
 use super::{
     combat_lab_cell_key_v1, derive_shuffle_seed_v1, CombatLabCellRecordV1, ResolvedCombatLabSpecV1,
@@ -568,7 +568,11 @@ fn journal_digest(bytes: &[u8]) -> String {
         .collect()
 }
 
-pub(crate) fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> Result<(), String> {
+/// Persist one JSON artifact through a synchronized sibling temporary file.
+///
+/// Branch persistence shares this primitive so every oracle artifact observes
+/// the same replacement and cleanup contract.
+pub fn atomic_write_json<T: Serialize>(destination: &Path, value: &T) -> Result<(), String> {
     let temporary = unique_sibling_temporary_path(destination);
     let result = (|| {
         let file = OpenOptions::new()

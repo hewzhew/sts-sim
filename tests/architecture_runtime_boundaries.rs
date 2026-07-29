@@ -383,6 +383,79 @@ fn oracle_lab_names_its_runtime_dependency_directly() {
 }
 
 #[test]
+fn evaluation_and_branch_runtime_keep_distinct_compilation_owners() {
+    let eval_manifest =
+        std::fs::read_to_string("crates/sts_oracle_eval/Cargo.toml").expect("read eval manifest");
+    let runtime_manifest = std::fs::read_to_string("crates/sts_oracle_runtime/Cargo.toml")
+        .expect("read branch runtime manifest");
+    let eval_root =
+        std::fs::read_to_string("crates/sts_oracle_eval/src/lib.rs").expect("read eval root");
+    let runtime_root =
+        std::fs::read_to_string("crates/sts_oracle_runtime/src/lib.rs").expect("read runtime root");
+
+    assert!(
+        eval_manifest.contains("name = \"sts_oracle_eval\"")
+            && !eval_manifest.contains("sts_oracle_runtime"),
+        "evaluation/run-control must remain a lower compilation owner independent of branch runtime"
+    );
+    assert!(
+        runtime_manifest.contains(
+            "sts_oracle_eval = { path = \"../sts_oracle_eval\", default-features = false }"
+        ),
+        "branch runtime must consume the explicit evaluation package"
+    );
+    let workspace_manifest = std::fs::read_to_string("Cargo.toml").expect("read workspace manifest");
+    let eval_profile = workspace_manifest
+        .split("[profile.release.package.sts_oracle_eval]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("release profile for oracle evaluation");
+    let runtime_profile = workspace_manifest
+        .split("[profile.release.package.sts_oracle_runtime]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .expect("release profile for branch runtime");
+    assert!(
+        eval_profile.contains("opt-level = 2") && eval_profile.contains("codegen-units = 64"),
+        "hot evaluation/run-control must retain its measured optimized release profile"
+    );
+    assert!(
+        runtime_profile.contains("opt-level = 0")
+            && runtime_profile.contains("codegen-units = 256"),
+        "branch orchestration must retain the measured cheap rebuild profile"
+    );
+    assert!(
+        eval_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
+            && !runtime_root.contains("#[path = \"../../../src/eval/mod.rs\"]")
+            && runtime_root.contains("pub use sts_oracle_eval::"),
+        "src/eval must compile exactly once under sts_oracle_eval and be re-exported without a duplicate runtime owner"
+    );
+
+    let mut eval_sources = Vec::new();
+    collect_rust_sources(std::path::Path::new("src/eval"), &mut eval_sources);
+    for path in eval_sources {
+        let source = std::fs::read_to_string(&path).expect("read evaluation source");
+        assert!(
+            !source.contains("runtime::branch"),
+            "evaluation source '{}' must not recreate a dependency cycle into branch runtime",
+            path.display()
+        );
+    }
+
+    let root_build = std::fs::read_to_string("build.rs").expect("read core build script");
+    let eval_build =
+        std::fs::read_to_string("crates/sts_oracle_eval/build.rs").expect("read eval build script");
+    let runtime_build = std::fs::read_to_string("crates/sts_oracle_runtime/build.rs")
+        .expect("read runtime build script");
+    assert!(
+        !root_build.contains("combat_action_imitation_build_contract")
+            && eval_build.contains("combat_action_imitation_build_contract::emit")
+            && !runtime_build.contains("combat_action_imitation_build_contract"),
+        "action/guidance build identity must invalidate only the package that compiles src/eval"
+    );
+}
+
+#[test]
 fn autonomous_run_loop_lives_in_runtime_not_the_thin_client() {
     let client = std::fs::read_to_string("crates/oracle_lab_client/src/main.rs")
         .expect("read thin oracle client");

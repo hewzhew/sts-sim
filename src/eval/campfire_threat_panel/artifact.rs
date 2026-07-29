@@ -10,7 +10,7 @@ use crate::eval::campfire_survival_scenarios::{
     CampfireSurvivalScenarioGapRecord, CampfireSurvivalSubject,
 };
 use crate::eval::combat_lab_v1::{atomic_write_json, CombatLabEnvironmentV1};
-use crate::runtime::branch::SourceIdentity;
+use crate::eval::source_identity::SourceIdentity;
 
 use super::{
     CampfireThreatPanelCellV1, ResolvedCampfireThreatPanelSpecV1,

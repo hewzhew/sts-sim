@@ -1,5 +1,5 @@
 [package]
-name = "sts_oracle_runtime"
+name = "sts_oracle_eval"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -9,17 +9,20 @@ autotests = false
 
 [features]
 default = ["oracle-lab"]
-control-full = ["sts_oracle_eval/control-full"]
-oracle-lab = ["sts_oracle_eval/oracle-lab"]
+control-full = []
+oracle-lab = []
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
-oracle_lab_protocol = { path = "../oracle_lab_protocol" }
-sts_oracle_eval = { path = "../sts_oracle_eval", default-features = false }
 sts_core = { package = "sts_simulator", path = "../.." }
+sts_combat_legacy = { path = "../sts_combat_legacy" }
+sts_combat_knowledge = { path = "../sts_combat_knowledge" }
 sts_combat_planner = { path = "../sts_combat_planner" }
 blake2 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }

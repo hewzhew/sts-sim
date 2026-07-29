@@ -207,7 +207,10 @@ The workspace has several deliberate production compilation units:
   run-control and exact combat tools;
 - `sts_combat_contract` is the narrow, replay-verified Boss-regression runner;
   it intentionally excludes the run explorer, routes, shops, and continuations;
-- `sts_oracle_runtime` owns evaluation, run-control, and `runtime::branch`;
+- `sts_oracle_eval` owns optimized evaluation, exact-search orchestration, and
+  run-control;
+- `sts_oracle_runtime` owns branch execution, persistence, and resident service
+  orchestration;
 - `sts_oracle_lab` owns heavyweight offline and resident command hosts;
 - `oracle_lab_client` owns the lightweight repeated-command surface;
 - `sts_oracle_tools` is the thin Cargo host for maintained command adapters and
@@ -360,14 +363,22 @@ status `restarted_stale_runtime`. Exact run state and charged historical work
 survive this transition; an in-memory tactical frontier is deliberately
 restarted because it belongs to the old executable image.
 
-The command hosts in `sts_oracle_lab` are physically separate from the shared
-`sts_oracle_runtime` library. On one Windows machine, touching only
-`oracle_lab.rs` rebuilt in 1.62 seconds, touching only
-`oracle_lab_service.rs` rebuilt in 1.11 seconds, and rebuilding the lightweight
-client took 1.31 seconds. These numbers verify the invalidation boundary; they
-are not performance assertions for CI. Use `release-final` only when the
-fully-optimized deployment artifact is specifically required. Further package
-splits require a new measured source-invalidation boundary.
+The command hosts in `sts_oracle_lab` are physically separate from the branch
+runtime, and optimized evaluation/run-control is a third compilation unit.
+On one Windows machine, an actual public run-control metadata edit rebuilt the
+former combined O2 runtime and host in 60.24 seconds: 53.1 of the runtime's
+57.8 seconds were code generation. After the measured split, the same class of
+warm edit rebuilt `sts_oracle_eval` in 8.37 seconds, the branch runtime in 2.55
+seconds, and the host in 1.95 seconds, with 10.76 seconds total wall time. A
+matched three-seed production panel retained identical boundaries, HP, combat
+counts, and owner-decision counts; total wall time changed from 10.606 to
+10.720 seconds, within persistence noise. These local numbers verify the
+invalidation boundary; they are not CI performance thresholds.
+
+The first build after introducing a new package still has to create its
+incremental cache and is not expected to match a warm edit. Use `release-final`
+only when the fully optimized deployment artifact is specifically required.
+Further package splits require another measured source-invalidation boundary.
 
 The exact-combat contract has a still narrower measured boundary. On the same
 Windows checkout, an actual source edit in `sts_combat_planner` followed by the

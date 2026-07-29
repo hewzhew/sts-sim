@@ -20,20 +20,23 @@ continued, replayed, compared, or learned from, it needs typed identity first.
 The maintained oracle command path has one compile-time dependency direction:
 
 ```text
-sts_oracle_tools -> sts_oracle_runtime -> sts_simulator
+command hosts -> sts_oracle_runtime -> sts_oracle_eval -> sts_simulator
 ```
 
 `sts_simulator` owns game content, state, engine transitions, simulation, and
-stable lower policy layers. `sts_oracle_runtime` owns combat search,
-evaluation, run-control, and branch scheduling/artifacts. `sts_oracle_tools`
-contains only supported command adapters and cross-layer integration
-contracts; it has no library facade and owns no policy semantics. Lower layers
-must never import the command host.
+stable lower policy layers. `sts_oracle_eval` owns combat evaluation,
+exact-search orchestration, run-control, and their artifact contracts.
+`sts_oracle_runtime` consumes that public surface and owns branch execution,
+scheduling, persistence, and resident services. Command hosts contain only
+supported adapters and cross-layer integration contracts; they own no policy
+semantics. Lower layers must never import branch runtime or a command host.
 
-Some runtime modules and command sources still live physically below the
-historical root `src/` tree and are attached from their Cargo owners with
-explicit paths. That is a source-layout migration detail, not permission for a
-reverse dependency or duplicate module owner.
+Some evaluation, runtime, and command sources still live physically below the
+historical root `src/` tree and are attached from their single Cargo owner with
+explicit paths. `src/eval` is compiled only by `sts_oracle_eval`;
+`sts_oracle_runtime` re-exports its public module without compiling a second
+copy. That layout detail is not permission for a reverse dependency or
+duplicate owner.
 
 Use `cargo test-core` and `cargo test-control` for their respective unit-test
 harnesses, `cargo architecture` for dependency-free source-boundary checks,

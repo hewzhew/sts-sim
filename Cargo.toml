@@ -13,6 +13,7 @@ members = [
     ".",
     "crates/oracle_lab_client",
     "crates/sts_oracle_lab",
+    "crates/sts_oracle_eval",
     "crates/sts_oracle_runtime",
     "crates/oracle_lab_protocol",
     "crates/sts_combat_legacy",
@@ -66,14 +67,18 @@ codegen-units = 256
 opt-level = 0
 codegen-units = 256
 
-[profile.release.package.sts_oracle_runtime]
-# This crate owns the hot oracle run loop and combat-work orchestration, not
-# just a thin command shell.  Keeping it unoptimized made every exact search
-# pay for debug-grade state plumbing even though the simulator and planner
-# dependencies were already O3.  O2 recovers runtime throughput while keeping
-# incremental rebuilds substantially cheaper than the deployment profile.
+[profile.release.package.sts_oracle_eval]
+# Evaluation and run-control contain hot exact-search orchestration. Keep their
+# optimized code generation independent from branch persistence and command IO.
 opt-level = 2
 codegen-units = 64
+
+[profile.release.package.sts_oracle_runtime]
+# Branch persistence and command orchestration sit outside the optimized
+# simulator, planner, and evaluation kernels. Keep this adapter cheap to
+# rebuild; exact search remains O2 in sts_oracle_eval and O3 below it.
+opt-level = 0
+codegen-units = 256
 
 [profile.release.package.sts_combat_contract]
 opt-level = 0
@@ -103,6 +108,10 @@ opt-level = 3
 codegen-units = 1
 
 [profile.release-final.package.sts_oracle_lab]
+opt-level = 3
+codegen-units = 1
+
+[profile.release-final.package.sts_oracle_eval]
 opt-level = 3
 codegen-units = 1
 

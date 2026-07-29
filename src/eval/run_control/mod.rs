@@ -288,16 +288,15 @@ pub use strategic_probe_calibration::{
     StrategicProbeShadowObservationV1, StrategicProbeShadowOrderKeyV1,
     STRATEGIC_PROBE_CALIBRATION_SCHEMA_NAME, STRATEGIC_PROBE_CALIBRATION_SCHEMA_VERSION,
 };
-pub(crate) use trace_annotation::combat_automation_trajectories_v1;
 pub use trace_annotation::{
-    annotations_have_combat_automation_trajectory_v1, combat_search_trace_summaries,
-    CardRewardFunctionV1, CardRewardObligationDeltaV1, CardRewardObligationSourceV1,
-    CardRewardOwnerProvenanceV1, CombatAutomationActionV1, CombatAutomationAnswerClaimV1,
-    CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1, CombatAutomationMonsterStateV1,
-    CombatAutomationOpportunityStateV1, CombatAutomationPotionStateV1, CombatAutomationStepStateV1,
-    CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-    CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary, CombatSearchTraceSummary,
-    RunControlTraceAnnotationV1,
+    annotations_have_combat_automation_trajectory_v1, combat_automation_trajectories_v1,
+    combat_search_trace_summaries, CardRewardFunctionV1, CardRewardObligationDeltaV1,
+    CardRewardObligationSourceV1, CardRewardOwnerProvenanceV1, CombatAutomationActionV1,
+    CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1,
+    CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
+    CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatAutomationTrajectoryRecordV1,
+    CombatAutomationTrajectorySource, CombatSearchPerformanceSnapshotV1,
+    CombatSearchTerminalLineSummary, CombatSearchTraceSummary, RunControlTraceAnnotationV1,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,

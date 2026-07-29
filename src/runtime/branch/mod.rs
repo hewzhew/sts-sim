@@ -1,7 +1,6 @@
 mod artifact_store;
 mod capsule_reuse;
 mod contract;
-mod identity;
 mod oracle_analysis;
 mod oracle_analysis_service;
 mod oracle_autonomous_run;
@@ -14,10 +13,10 @@ mod status;
 mod trajectory_evidence;
 mod trajectory_projection;
 
+pub use crate::eval::source_identity::{current_source_identity, SourceIdentity};
 pub use artifact_store::*;
 pub use capsule_reuse::*;
 pub use contract::*;
-pub use identity::*;
 pub use oracle_analysis::*;
 pub use oracle_analysis_service::*;
 pub use oracle_autonomous_run::*;

@@ -23,6 +23,7 @@ pub mod reward_boundary_packet_v1;
 #[cfg(feature = "control-full")]
 pub mod reward_semantic_live_sample_v1;
 pub mod run_control;
+pub mod source_identity;
 
 pub(crate) fn repository_root() -> &'static std::path::Path {
     std::path::Path::new(env!("STS_REPOSITORY_ROOT"))

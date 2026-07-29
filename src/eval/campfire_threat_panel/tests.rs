@@ -20,7 +20,7 @@ use crate::eval::combat_lab_v1::{
     CombatLabCommonBudgetV1, CombatLabOutcomeClassV1, CombatLabProfileSpecV1,
     CombatLabReplayedCandidateV1, CombatLabShuffleGeneratorV1, CombatLabShuffleScheduleV1,
 };
-use crate::runtime::branch::SourceIdentity;
+use crate::eval::source_identity::SourceIdentity;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::ClientInput;
 use crate::state::run::RunState;

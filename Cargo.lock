@@ -396,6 +396,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts_oracle_eval"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "serde",
+ "serde_json",
+ "sts_combat_knowledge",
+ "sts_combat_legacy",
+ "sts_combat_planner",
+ "sts_simulator",
+ "windows-sys",
+]
+
+[[package]]
 name = "sts_oracle_lab"
 version = "0.1.0"
 dependencies = [
@@ -413,17 +427,12 @@ name = "sts_oracle_runtime"
 version = "0.1.0"
 dependencies = [
  "blake2",
- "clap",
- "flate2",
  "oracle_lab_protocol",
  "serde",
  "serde_json",
- "smallvec",
- "sts_combat_knowledge",
- "sts_combat_legacy",
  "sts_combat_planner",
+ "sts_oracle_eval",
  "sts_simulator",
- "windows-sys",
 ]
 
 [[package]]

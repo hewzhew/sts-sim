@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::monsters::factory::EncounterId;
 use crate::eval::campfire_evaluation::{build_campfire_evaluation_batch, CampfireEvaluationSpec};
-use crate::runtime::branch::current_source_identity;
+use crate::eval::source_identity::current_source_identity;
 use crate::state::run::RunState;
 use crate::testing::fixtures::combat_start_spec::{
     compile_run_state_from_combat_start_spec, CombatStartSpec,
