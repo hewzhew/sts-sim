@@ -45,6 +45,50 @@ fn test_decision(parent_branch_id: usize, candidate_id: &str) -> LazyOracleRunDe
     }
 }
 
+fn test_explore_budget(wall_ms: Option<u64>) -> OracleRunExploreBudgetV1 {
+    OracleRunExploreBudgetV1 {
+        max_work_items: 1,
+        wall_ms,
+        combat: OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+        combat_quantum_nodes: 1,
+        combat_quantum_ms: None,
+        decision_prior: None,
+        decision_annotation: None,
+        combat_edge_order: None,
+    }
+}
+
+#[test]
+fn drive_reports_work_exhausted_without_consuming_service() {
+    let result =
+        drive_oracle_run_explorer_v1(OracleRunExplorerV1::empty(), test_explore_budget(None))
+            .expect("empty explorer stops cleanly");
+
+    assert_eq!(result.stop, OracleRunExploreStopV1::WorkExhausted);
+    assert_eq!(result.work_items, 0);
+    assert_eq!(result.combat_quanta, 0);
+}
+
+#[test]
+fn drive_reports_wall_deadline_before_touching_live_work() {
+    let mut explorer = OracleRunExplorerV1::empty();
+    explorer
+        .pending_decisions
+        .push_back(test_decision(0, "still-live"));
+
+    let result = drive_oracle_run_explorer_v1(explorer, test_explore_budget(Some(0)))
+        .expect("expired explorer stops cleanly");
+
+    assert_eq!(result.stop, OracleRunExploreStopV1::WallDeadlineReached);
+    assert_eq!(result.work_items, 0);
+    assert_eq!(result.combat_quanta, 0);
+    assert_eq!(result.explorer.pending_decisions.len(), 1);
+    assert_eq!(
+        result.explorer.pending_decisions[0].candidate_id,
+        "still-live"
+    );
+}
+
 #[test]
 fn parameterized_run_selection_releases_one_exact_member_at_a_time() {
     let mut branch = test_branch(0, None);
