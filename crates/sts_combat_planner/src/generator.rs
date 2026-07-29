@@ -263,6 +263,11 @@ pub struct TurnOptionGeneratorSession {
     max_potion_expenditures: Option<u32>,
     policy: SharedCombatActionPolicy,
     work: Vec<Option<GeneratorWork>>,
+    /// Number of guided-heap memberships published for each stable work slot.
+    ///
+    /// Work consumption can then maintain the live membership total without
+    /// rescanning policy guides or every scheduling heap.
+    guide_entries_per_work: Vec<usize>,
     anchor_frontier: BinaryHeap<GeneratorQueueEntry>,
     guided_frontiers: Vec<GuidedGeneratorFrontier>,
     next_scheduler_lane: usize,
@@ -274,6 +279,11 @@ pub struct TurnOptionGeneratorSession {
     /// semantically different from one continuous grant.
     scheduled_round: VecDeque<(usize, usize)>,
     live_work_items: usize,
+    live_guide_entries: usize,
+    /// Observational counters for deterministic stale-entry rebuilds.
+    scheduling_rebuilds: usize,
+    reclaimed_anchor_entries: usize,
+    reclaimed_guide_entries: usize,
     next_sequence_id: u64,
     seen: HashSet<IndexedExactStateKey, FxBuildHasher>,
     completed: Vec<CompleteTurnOption>,
@@ -377,11 +387,16 @@ impl TurnOptionGeneratorSession {
             max_potion_expenditures,
             policy,
             work: Vec::new(),
+            guide_entries_per_work: Vec::new(),
             anchor_frontier: BinaryHeap::new(),
             guided_frontiers: Vec::new(),
             next_scheduler_lane: 0,
             scheduled_round: VecDeque::new(),
             live_work_items: 0,
+            live_guide_entries: 0,
+            scheduling_rebuilds: 0,
+            reclaimed_anchor_entries: 0,
+            reclaimed_guide_entries: 0,
             next_sequence_id: 0,
             seen,
             completed: Vec::new(),
@@ -502,6 +517,7 @@ impl TurnOptionGeneratorSession {
                 self.scheduled_round.pop_front();
             }
             if self.scheduled_round.is_empty() {
+                self.reclaim_stale_scheduling_entries();
                 self.scheduled_round = self.snapshot_scheduling_round();
                 if self.scheduled_round.is_empty() {
                     debug_assert!(self.is_finished());
@@ -528,10 +544,7 @@ impl TurnOptionGeneratorSession {
             }
 
             self.scheduled_round.pop_front();
-            let work = self.work[work_id]
-                .take()
-                .expect("a reserved generator work item must still be live");
-            self.live_work_items = self.live_work_items.saturating_sub(1);
+            let work = self.take_live_work(work_id);
             if lane == 0 {
                 self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
             } else {

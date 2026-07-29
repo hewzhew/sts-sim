@@ -360,6 +360,65 @@ fn interrupted_scheduling_round_resumes_before_new_arrivals() {
 }
 
 #[test]
+fn scheduling_rebuild_removes_only_buried_stale_entries() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let policy = Arc::new(CountingGenerationGuides { calls });
+    let mut session = TurnOptionGeneratorSession::with_policy(
+        test_root(),
+        TurnOptionGeneratorConfig::default(),
+        policy,
+    );
+    let GeneratorWork::Expand(parent) = session.pop_scheduled_work().expect("root expansion work")
+    else {
+        panic!("root work must be an expansion");
+    };
+
+    for negative_log_policy in [100.0, 110.0, 120.0] {
+        let stale = session.push_work(
+            GeneratorWork::Expand(parent.clone()),
+            GeneratorWorkPriority::for_path(1, negative_log_policy),
+        );
+        session.take_live_work(stale);
+    }
+    let first_live = session.push_work(
+        GeneratorWork::Expand(parent.clone()),
+        GeneratorWorkPriority::for_path(1, 0.0),
+    );
+    let second_live = session.push_work(
+        GeneratorWork::Expand(parent),
+        GeneratorWorkPriority::for_path(1, 1.0),
+    );
+
+    assert_eq!(session.live_work_items, 2);
+    assert_eq!(session.live_guide_entries, 2);
+    assert_eq!(session.guide_entries_per_work.len(), session.work.len());
+    let round_before = session.snapshot_scheduling_round();
+    let anchor_entries_before = session.anchor_frontier.len();
+    let guide_entries_before = session.guided_frontiers[0].entries.len();
+
+    session.reclaim_stale_scheduling_entries();
+
+    assert_eq!(session.snapshot_scheduling_round(), round_before);
+    assert_eq!(
+        round_before.front().map(|(_, work_id)| *work_id),
+        Some(first_live)
+    );
+    assert!(session.work[first_live].is_some());
+    assert!(session.work[second_live].is_some());
+    assert_eq!(session.anchor_frontier.len(), 2);
+    assert_eq!(session.guided_frontiers[0].entries.len(), 2);
+    assert_eq!(session.scheduling_rebuilds, 1);
+    assert_eq!(
+        session.reclaimed_anchor_entries,
+        anchor_entries_before.saturating_sub(2)
+    );
+    assert_eq!(
+        session.reclaimed_guide_entries,
+        guide_entries_before.saturating_sub(2)
+    );
+}
+
+#[test]
 fn finite_potion_allowance_is_part_of_generator_transposition_identity() {
     let root = test_root();
     let exact = combat_exact_state_key(&root.position().engine, &root.position().combat);

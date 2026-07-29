@@ -44,6 +44,9 @@ pub struct LocalTurnGraphStorageSnapshot {
     pub finished_generator_scheduled_round_capacity: usize,
     pub finished_generator_completed_capacity: usize,
     pub finished_generator_gaps_capacity: usize,
+    pub generator_scheduling_rebuilds: usize,
+    pub generator_reclaimed_anchor_entries: usize,
+    pub generator_reclaimed_guide_entries: usize,
     pub active_generators: usize,
     pub generators_with_one_live_work: usize,
     pub generators_with_two_to_four_live_work: usize,
@@ -161,6 +164,15 @@ impl LocalTurnGraphWitnessSession {
             snapshot.generator_gaps_capacity = snapshot
                 .generator_gaps_capacity
                 .saturating_add(generator.gaps_capacity);
+            snapshot.generator_scheduling_rebuilds = snapshot
+                .generator_scheduling_rebuilds
+                .saturating_add(generator.scheduling_rebuilds);
+            snapshot.generator_reclaimed_anchor_entries = snapshot
+                .generator_reclaimed_anchor_entries
+                .saturating_add(generator.reclaimed_anchor_entries);
+            snapshot.generator_reclaimed_guide_entries = snapshot
+                .generator_reclaimed_guide_entries
+                .saturating_add(generator.reclaimed_guide_entries);
             if generator.finished {
                 snapshot.finished_generator_work_capacity = snapshot
                     .finished_generator_work_capacity

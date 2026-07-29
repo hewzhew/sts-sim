@@ -13,9 +13,11 @@ impl TurnOptionGeneratorSession {
         debug_assert!(self.completed.is_empty());
 
         self.work = Vec::new();
+        self.guide_entries_per_work = Vec::new();
         self.anchor_frontier = BinaryHeap::new();
         self.guided_frontiers = Vec::new();
         self.scheduled_round = VecDeque::new();
+        self.live_guide_entries = 0;
         self.seen = HashSet::with_hasher(FxBuildHasher);
         self.completed = Vec::new();
         self.gaps = Vec::new();

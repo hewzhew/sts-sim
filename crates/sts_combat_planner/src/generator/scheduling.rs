@@ -209,6 +209,7 @@ impl TurnOptionGeneratorSession {
         let retain_started = measure.then(Instant::now);
         let work_id = self.work.len();
         self.work.push(Some(work));
+        self.guide_entries_per_work.push(guides.len());
         let entry = GeneratorQueueEntry {
             priority,
             sequence_id: self.next_sequence_id,
@@ -232,6 +233,7 @@ impl TurnOptionGeneratorSession {
         }
         self.next_sequence_id = self.next_sequence_id.saturating_add(1);
         self.live_work_items = self.live_work_items.saturating_add(1);
+        self.live_guide_entries = self.live_guide_entries.saturating_add(guides.len());
         let agenda_elapsed_ns = agenda_started.map(elapsed_nanos_u64).unwrap_or(0);
         (
             work_id,
@@ -256,10 +258,7 @@ impl TurnOptionGeneratorSession {
             let Some(work_id) = work_id else {
                 continue;
             };
-            let work = self.work[work_id]
-                .take()
-                .expect("scheduled generator work must still be live");
-            self.live_work_items = self.live_work_items.saturating_sub(1);
+            let work = self.take_live_work(work_id);
             if lane == 0 {
                 self.anchor_work_pops = self.anchor_work_pops.saturating_add(1);
             } else {
@@ -269,6 +268,75 @@ impl TurnOptionGeneratorSession {
             return Some(work);
         }
         None
+    }
+
+    pub(super) fn take_live_work(&mut self, work_id: usize) -> GeneratorWork {
+        debug_assert_eq!(self.guide_entries_per_work.len(), self.work.len());
+        let work = self.work[work_id]
+            .take()
+            .expect("scheduled generator work must still be live");
+        self.live_work_items = self.live_work_items.saturating_sub(1);
+        let guide_entries = self.guide_entries_per_work[work_id];
+        debug_assert!(self.live_guide_entries >= guide_entries);
+        self.live_guide_entries = self.live_guide_entries.saturating_sub(guide_entries);
+        work
+    }
+
+    /// Rebuilds lazy scheduling heaps only between frozen service rounds.
+    ///
+    /// A strict stale majority both amortizes the linear retain and bounds
+    /// retained garbage without changing any live entry's `Ord` key.
+    pub(super) fn reclaim_stale_scheduling_entries(&mut self) {
+        debug_assert!(self.scheduled_round.is_empty());
+
+        let stale_anchor_entries = self
+            .anchor_frontier
+            .len()
+            .saturating_sub(self.live_work_items);
+        let guide_entries = self
+            .guided_frontiers
+            .iter()
+            .map(|frontier| frontier.entries.len())
+            .sum::<usize>();
+        let stale_guide_entries = guide_entries.saturating_sub(self.live_guide_entries);
+        let rebuild_anchor = stale_anchor_entries > self.live_work_items;
+        let rebuild_guides = stale_guide_entries > self.live_guide_entries;
+        if !rebuild_anchor && !rebuild_guides {
+            return;
+        }
+
+        let work = &self.work;
+        let mut reclaimed_anchor_entries = 0;
+        if rebuild_anchor {
+            let before = self.anchor_frontier.len();
+            self.anchor_frontier
+                .retain(|entry| work.get(entry.work_id).is_some_and(Option::is_some));
+            reclaimed_anchor_entries = before.saturating_sub(self.anchor_frontier.len());
+            self.anchor_frontier.shrink_to_fit();
+        }
+
+        let mut reclaimed_guide_entries = 0usize;
+        if rebuild_guides {
+            for frontier in &mut self.guided_frontiers {
+                let before = frontier.entries.len();
+                frontier
+                    .entries
+                    .retain(|entry| work.get(entry.work_id).is_some_and(Option::is_some));
+                let reclaimed = before.saturating_sub(frontier.entries.len());
+                reclaimed_guide_entries = reclaimed_guide_entries.saturating_add(reclaimed);
+                if reclaimed > 0 {
+                    frontier.entries.shrink_to_fit();
+                }
+            }
+        }
+
+        self.scheduling_rebuilds = self.scheduling_rebuilds.saturating_add(1);
+        self.reclaimed_anchor_entries = self
+            .reclaimed_anchor_entries
+            .saturating_add(reclaimed_anchor_entries);
+        self.reclaimed_guide_entries = self
+            .reclaimed_guide_entries
+            .saturating_add(reclaimed_guide_entries);
     }
 
     pub(super) fn peek_anchor_work_id(&mut self) -> Option<usize> {

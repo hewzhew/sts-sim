@@ -71,6 +71,9 @@ pub(crate) struct TurnOptionGeneratorStorageSnapshot {
     pub(crate) completed_capacity: usize,
     pub(crate) gaps: usize,
     pub(crate) gaps_capacity: usize,
+    pub(crate) scheduling_rebuilds: usize,
+    pub(crate) reclaimed_anchor_entries: usize,
+    pub(crate) reclaimed_guide_entries: usize,
 }
 
 impl TurnOptionGeneratorSession {
@@ -343,6 +346,8 @@ impl TurnOptionGeneratorSession {
             .iter()
             .filter(|(_, work_id)| self.work.get(*work_id).is_some_and(Option::is_some))
             .count();
+        debug_assert_eq!(self.guide_entries_per_work.len(), self.work.len());
+        debug_assert_eq!(self.live_guide_entries, live_guide_entries);
         TurnOptionGeneratorStorageSnapshot {
             finished: self.is_finished(),
             live_work_items: self.live_work_items,
@@ -372,6 +377,9 @@ impl TurnOptionGeneratorSession {
             completed_capacity: self.completed.capacity(),
             gaps: self.gaps.len(),
             gaps_capacity: self.gaps.capacity(),
+            scheduling_rebuilds: self.scheduling_rebuilds,
+            reclaimed_anchor_entries: self.reclaimed_anchor_entries,
+            reclaimed_guide_entries: self.reclaimed_guide_entries,
         }
     }
 
