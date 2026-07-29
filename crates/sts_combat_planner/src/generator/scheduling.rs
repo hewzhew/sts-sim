@@ -8,6 +8,12 @@ use crate::policy::{CombatGuideLaneId, CombatStateGuide, CombatStateGuideRank};
 use super::{elapsed_nanos_u64, GeneratorWork, TurnOptionGeneratorSession};
 
 #[derive(Clone, Copy, Debug)]
+pub(crate) enum TurnOptionGeneratorPreferredLane {
+    Anchor,
+    Guide(CombatGuideLaneId),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(super) struct GeneratorWorkPriority {
     pub(super) levin_log_priority: f64,
     pub(super) atomic_depth: usize,
@@ -137,6 +143,15 @@ pub(super) fn guides_with_lookahead(
 }
 
 impl TurnOptionGeneratorSession {
+    pub(crate) fn prefer_lane(&mut self, preferred: TurnOptionGeneratorPreferredLane) {
+        self.next_scheduler_lane = match preferred {
+            TurnOptionGeneratorPreferredLane::Anchor => 0,
+            TurnOptionGeneratorPreferredLane::Guide(lane) => self
+                .guide_frontier_index(lane)
+                .map_or(0, |frontier_index| frontier_index.saturating_add(1)),
+        };
+    }
+
     pub(super) fn push_work(
         &mut self,
         work: GeneratorWork,
