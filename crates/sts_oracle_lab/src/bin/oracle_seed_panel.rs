@@ -80,9 +80,18 @@ struct PanelSeedSummaryV1 {
     total_elapsed_ms: u64,
     /// All non-run overhead: workspace load, durable persistence, and teardown.
     persistence_elapsed_ms: u64,
+    /// Time spent loading a resumable workspace or initializing a fresh one.
+    workspace_prepare_elapsed_ms: u64,
+    /// Time spent writing the per-seed run report.
+    report_write_elapsed_ms: u64,
+    /// Time spent checkpointing and atomically persisting the workspace, or
+    /// removing a completed workspace.
+    workspace_persist_elapsed_ms: u64,
     /// Time spent dropping the in-memory workspace, including any retained
     /// tactical frontier that is intentionally absent from its checkpoint.
     workspace_drop_elapsed_ms: u64,
+    /// Non-run time not attributed to the measured lifecycle phases above.
+    persistence_residual_ms: u64,
     act: Option<u64>,
     floor: Option<i64>,
     current_hp: Option<i64>,
@@ -138,6 +147,7 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
 
         let seed_total_started = Instant::now();
         let resumed = !args.force && workspace_path.is_file();
+        let workspace_prepare_started = Instant::now();
         let mut workspace = if resumed {
             let workspace = load_oracle_analysis_workspace_v1(&workspace_path)?;
             if workspace.seed != seed || workspace.ascension != args.ascension {
@@ -160,6 +170,7 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 None,
             )?
         };
+        let workspace_prepare_elapsed_ms = elapsed_millis(workspace_prepare_started);
 
         let seed_started = Instant::now();
         let run_result = run_oracle_analysis_to_stop_v1(
@@ -178,15 +189,19 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
         );
         let elapsed_ms = elapsed_millis(seed_started);
 
-        let mut summary = match run_result {
+        let (mut summary, report_write_elapsed_ms, workspace_persist_elapsed_ms) = match run_result
+        {
             Ok(report) => {
+                let report_write_started = Instant::now();
                 write_json(&report_path, &report)?;
+                let report_write_elapsed_ms = elapsed_millis(report_write_started);
                 let status = report
                     .get("status")
                     .and_then(Value::as_str)
                     .unwrap_or("unknown")
                     .to_string();
                 let victory = status == "victory_verified";
+                let workspace_persist_started = Instant::now();
                 if victory {
                     if workspace_path.is_file() {
                         fs::remove_file(&workspace_path).map_err(|error| {
@@ -199,18 +214,25 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                 } else {
                     save_oracle_analysis_workspace_v1(&workspace_path, &workspace)?;
                 }
-                summary_from_report(
-                    seed,
-                    &report,
-                    resumed,
-                    elapsed_ms,
-                    report_path,
-                    victory.then_some(continuation_path),
-                    (!victory).then_some(workspace_path),
+                let workspace_persist_elapsed_ms = elapsed_millis(workspace_persist_started);
+                (
+                    summary_from_report(
+                        seed,
+                        &report,
+                        resumed,
+                        elapsed_ms,
+                        report_path,
+                        victory.then_some(continuation_path),
+                        (!victory).then_some(workspace_path),
+                    ),
+                    report_write_elapsed_ms,
+                    workspace_persist_elapsed_ms,
                 )
             }
             Err(error) => {
+                let workspace_persist_started = Instant::now();
                 save_oracle_analysis_workspace_v1(&workspace_path, &workspace)?;
+                let workspace_persist_elapsed_ms = elapsed_millis(workspace_persist_started);
                 let report = json!({
                     "schema_name": "OracleSeedPanelErrorV1",
                     "schema_version": 1,
@@ -219,30 +241,40 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     "status": "error",
                     "error": error,
                 });
+                let report_write_started = Instant::now();
                 write_json(&report_path, &report)?;
-                PanelSeedSummaryV1 {
-                    seed,
-                    status: "error".to_string(),
-                    reason: None,
-                    resumed,
-                    elapsed_ms,
-                    total_elapsed_ms: elapsed_ms,
-                    persistence_elapsed_ms: 0,
-                    workspace_drop_elapsed_ms: 0,
-                    act: None,
-                    floor: None,
-                    current_hp: None,
-                    max_hp: None,
-                    combat_count: None,
-                    owner_decisions: None,
-                    report: report_path,
-                    continuation: None,
-                    workspace: Some(workspace_path),
-                    error: report
-                        .get("error")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                }
+                let report_write_elapsed_ms = elapsed_millis(report_write_started);
+                (
+                    PanelSeedSummaryV1 {
+                        seed,
+                        status: "error".to_string(),
+                        reason: None,
+                        resumed,
+                        elapsed_ms,
+                        total_elapsed_ms: elapsed_ms,
+                        persistence_elapsed_ms: 0,
+                        workspace_prepare_elapsed_ms: 0,
+                        report_write_elapsed_ms: 0,
+                        workspace_persist_elapsed_ms: 0,
+                        workspace_drop_elapsed_ms: 0,
+                        persistence_residual_ms: 0,
+                        act: None,
+                        floor: None,
+                        current_hp: None,
+                        max_hp: None,
+                        combat_count: None,
+                        owner_decisions: None,
+                        report: report_path,
+                        continuation: None,
+                        workspace: Some(workspace_path),
+                        error: report
+                            .get("error")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    },
+                    report_write_elapsed_ms,
+                    workspace_persist_elapsed_ms,
+                )
             }
         };
         let workspace_drop_started = Instant::now();
@@ -251,6 +283,15 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
         summary.total_elapsed_ms = elapsed_millis(seed_total_started);
         summary.persistence_elapsed_ms =
             summary.total_elapsed_ms.saturating_sub(summary.elapsed_ms);
+        summary.workspace_prepare_elapsed_ms = workspace_prepare_elapsed_ms;
+        summary.report_write_elapsed_ms = report_write_elapsed_ms;
+        summary.workspace_persist_elapsed_ms = workspace_persist_elapsed_ms;
+        summary.persistence_residual_ms = summary.persistence_elapsed_ms.saturating_sub(
+            workspace_prepare_elapsed_ms
+                .saturating_add(report_write_elapsed_ms)
+                .saturating_add(workspace_persist_elapsed_ms)
+                .saturating_add(summary.workspace_drop_elapsed_ms),
+        );
         eprintln!(
             "seed {}: {} at A{}F{} in {} ms run / {} ms total",
             summary.seed,
@@ -367,7 +408,11 @@ fn summary_from_report(
         elapsed_ms,
         total_elapsed_ms: elapsed_ms,
         persistence_elapsed_ms: 0,
+        workspace_prepare_elapsed_ms: 0,
+        report_write_elapsed_ms: 0,
+        workspace_persist_elapsed_ms: 0,
         workspace_drop_elapsed_ms: 0,
+        persistence_residual_ms: 0,
         act: final_node
             .and_then(|value| value.get("act"))
             .and_then(Value::as_u64),

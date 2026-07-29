@@ -355,8 +355,9 @@ victories and stable exhausted stops; only wall/boundary interruptions resume
 automatically. Use `--retry-stopped` to re-enter a deterministic stop after
 deliberately changing its allowance, or `--force` to start the selected seeds
 from F0 again. `panel.summary.json` records the source commit, dirty state,
-budgets, per-seed outcome, remaining count, separate run/total/persistence
-timings, and artifact paths after every completed seed. A top-level
+budgets, per-seed outcome, remaining count, separate run/total timings, the
+workspace prepare, report write, workspace persistence, teardown, and residual
+phases, and artifact paths after every completed seed. A top-level
 `interrupted / invocation_wall_budget` result is a successful durable slice,
 not a seed failure.
 
