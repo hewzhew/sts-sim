@@ -511,6 +511,56 @@ fn oracle_run_explorer_keeps_work_selection_in_a_bounded_module() {
 }
 
 #[test]
+fn oracle_run_explorer_keeps_decision_supply_in_a_bounded_module() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const SUPPLY: &str = "src/eval/run_control/oracle_run_explorer/decision_supply.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    let root_bytes = root.len() as u64;
+    assert!(
+        root_bytes <= 64 * 1024,
+        "oracle_run_explorer.rs grew to {root_bytes} bytes; keep candidate compilation out of branch orchestration"
+    );
+    assert!(
+        root.contains("mod decision_supply;"),
+        "the oracle-run explorer must retain its decision-supply boundary"
+    );
+    for supply_owner in [
+        "struct StableOracleWorkKeyInput",
+        "struct OracleRunDecisionSupplyV1",
+        "fn decision_supply_for_branch",
+        "fn apply_decision_policy",
+        "fn preferred_run_choice_selections",
+        "fn selection_family_decision",
+    ] {
+        assert!(
+            !root.contains(supply_owner),
+            "oracle decision-supply owner `{supply_owner}` must not return to the orchestration root"
+        );
+    }
+
+    let supply = std::fs::read_to_string(SUPPLY).expect("read oracle decision-supply module");
+    let supply_bytes = supply.len() as u64;
+    assert!(
+        supply_bytes <= 20 * 1024,
+        "{SUPPLY} grew to {supply_bytes} bytes; split parameterized selection supply from ordinary decision supply before extending it"
+    );
+    for required_owner in [
+        "struct StableOracleWorkKeyInput",
+        "struct OracleRunDecisionSupplyV1",
+        "fn decision_supply_for_branch",
+        "fn apply_decision_policy",
+        "fn preferred_run_choice_selections",
+        "fn selection_family_decision",
+    ] {
+        assert!(
+            supply.contains(required_owner),
+            "oracle decision-supply module must retain `{required_owner}`"
+        );
+    }
+}
+
+#[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
     const MODULES: [(&str, u64); 8] = [
