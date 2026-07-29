@@ -8,8 +8,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sts_oracle_runtime::runtime::branch::{
     load_oracle_analysis_workspace_v1, run_oracle_analysis_to_stop_v1,
-    save_oracle_analysis_workspace_v1, OracleAnalysisWorkspaceV1, OracleAutonomousRunConfigV1,
-    OracleRunBudget, OracleRunConfig,
+    save_oracle_analysis_workspace_with_timing_v1, OracleAnalysisWorkspaceV1,
+    OracleAutonomousRunConfigV1, OracleRunBudget, OracleRunConfig,
 };
 
 #[derive(Clone, Debug, Args)]
@@ -87,6 +87,11 @@ struct PanelSeedSummaryV1 {
     /// Time spent checkpointing and atomically persisting the workspace, or
     /// removing a completed workspace.
     workspace_persist_elapsed_ms: u64,
+    /// Time inside workspace persistence spent materializing the checkpoint.
+    workspace_checkpoint_elapsed_ms: u64,
+    /// Time inside workspace persistence spent encoding, syncing, and
+    /// atomically replacing the JSON artifact.
+    workspace_write_elapsed_ms: u64,
     /// Time spent dropping the in-memory workspace, including any retained
     /// tactical frontier that is intentionally absent from its checkpoint.
     workspace_drop_elapsed_ms: u64,
@@ -189,8 +194,13 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
         );
         let elapsed_ms = elapsed_millis(seed_started);
 
-        let (mut summary, report_write_elapsed_ms, workspace_persist_elapsed_ms) = match run_result
-        {
+        let (
+            mut summary,
+            report_write_elapsed_ms,
+            workspace_persist_elapsed_ms,
+            workspace_checkpoint_elapsed_ms,
+            workspace_write_elapsed_ms,
+        ) = match run_result {
             Ok(report) => {
                 let report_write_started = Instant::now();
                 write_json(&report_path, &report)?;
@@ -202,6 +212,8 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     .to_string();
                 let victory = status == "victory_verified";
                 let workspace_persist_started = Instant::now();
+                let mut workspace_checkpoint_elapsed_ms = 0;
+                let mut workspace_write_elapsed_ms = 0;
                 if victory {
                     if workspace_path.is_file() {
                         fs::remove_file(&workspace_path).map_err(|error| {
@@ -212,7 +224,10 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                         })?;
                     }
                 } else {
-                    save_oracle_analysis_workspace_v1(&workspace_path, &workspace)?;
+                    let save_timing =
+                        save_oracle_analysis_workspace_with_timing_v1(&workspace_path, &workspace)?;
+                    workspace_checkpoint_elapsed_ms = save_timing.checkpoint_elapsed_ms;
+                    workspace_write_elapsed_ms = save_timing.write_elapsed_ms;
                 }
                 let workspace_persist_elapsed_ms = elapsed_millis(workspace_persist_started);
                 (
@@ -227,11 +242,14 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     ),
                     report_write_elapsed_ms,
                     workspace_persist_elapsed_ms,
+                    workspace_checkpoint_elapsed_ms,
+                    workspace_write_elapsed_ms,
                 )
             }
             Err(error) => {
                 let workspace_persist_started = Instant::now();
-                save_oracle_analysis_workspace_v1(&workspace_path, &workspace)?;
+                let save_timing =
+                    save_oracle_analysis_workspace_with_timing_v1(&workspace_path, &workspace)?;
                 let workspace_persist_elapsed_ms = elapsed_millis(workspace_persist_started);
                 let report = json!({
                     "schema_name": "OracleSeedPanelErrorV1",
@@ -256,6 +274,8 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                         workspace_prepare_elapsed_ms: 0,
                         report_write_elapsed_ms: 0,
                         workspace_persist_elapsed_ms: 0,
+                        workspace_checkpoint_elapsed_ms: 0,
+                        workspace_write_elapsed_ms: 0,
                         workspace_drop_elapsed_ms: 0,
                         persistence_residual_ms: 0,
                         act: None,
@@ -274,6 +294,8 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
                     },
                     report_write_elapsed_ms,
                     workspace_persist_elapsed_ms,
+                    save_timing.checkpoint_elapsed_ms,
+                    save_timing.write_elapsed_ms,
                 )
             }
         };
@@ -286,6 +308,8 @@ pub fn run(args: OracleSeedPanelArgs) -> Result<Value, String> {
         summary.workspace_prepare_elapsed_ms = workspace_prepare_elapsed_ms;
         summary.report_write_elapsed_ms = report_write_elapsed_ms;
         summary.workspace_persist_elapsed_ms = workspace_persist_elapsed_ms;
+        summary.workspace_checkpoint_elapsed_ms = workspace_checkpoint_elapsed_ms;
+        summary.workspace_write_elapsed_ms = workspace_write_elapsed_ms;
         summary.persistence_residual_ms = summary.persistence_elapsed_ms.saturating_sub(
             workspace_prepare_elapsed_ms
                 .saturating_add(report_write_elapsed_ms)
@@ -411,6 +435,8 @@ fn summary_from_report(
         workspace_prepare_elapsed_ms: 0,
         report_write_elapsed_ms: 0,
         workspace_persist_elapsed_ms: 0,
+        workspace_checkpoint_elapsed_ms: 0,
+        workspace_write_elapsed_ms: 0,
         workspace_drop_elapsed_ms: 0,
         persistence_residual_ms: 0,
         act: final_node

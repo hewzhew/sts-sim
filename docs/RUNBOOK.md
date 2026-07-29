@@ -357,7 +357,8 @@ deliberately changing its allowance, or `--force` to start the selected seeds
 from F0 again. `panel.summary.json` records the source commit, dirty state,
 budgets, per-seed outcome, remaining count, separate run/total timings, the
 workspace prepare, report write, workspace persistence, teardown, and residual
-phases, and artifact paths after every completed seed. A top-level
+phases, including checkpoint materialization versus atomic JSON write, and
+artifact paths after every completed seed. A top-level
 `interrupted / invocation_wall_budget` result is a successful durable slice,
 not a seed failure.
 

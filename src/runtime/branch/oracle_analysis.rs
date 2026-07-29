@@ -48,6 +48,12 @@ pub struct OracleAnalysisWorkspaceV1 {
     pub session: OracleAnalysisSessionV1,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OracleAnalysisWorkspaceSaveTimingV1 {
+    pub checkpoint_elapsed_ms: u64,
+    pub write_elapsed_ms: u64,
+}
+
 impl OracleAnalysisWorkspaceV1 {
     pub fn new(config: OracleRunConfig) -> Result<Self, String> {
         Self::new_with_combat_guidance(config, None)
@@ -376,6 +382,13 @@ pub fn save_oracle_analysis_workspace_v1(
     path: &Path,
     workspace: &OracleAnalysisWorkspaceV1,
 ) -> Result<(), String> {
+    save_oracle_analysis_workspace_with_timing_v1(path, workspace).map(|_| ())
+}
+
+pub fn save_oracle_analysis_workspace_with_timing_v1(
+    path: &Path,
+    workspace: &OracleAnalysisWorkspaceV1,
+) -> Result<OracleAnalysisWorkspaceSaveTimingV1, String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -384,7 +397,19 @@ pub fn save_oracle_analysis_workspace_v1(
             )
         })?;
     }
-    atomic_write_json(path, &workspace.artifact()?)
+    let checkpoint_started = std::time::Instant::now();
+    let artifact = workspace.artifact()?;
+    let checkpoint_elapsed_ms = elapsed_millis(checkpoint_started);
+    let write_started = std::time::Instant::now();
+    atomic_write_json(path, &artifact)?;
+    Ok(OracleAnalysisWorkspaceSaveTimingV1 {
+        checkpoint_elapsed_ms,
+        write_elapsed_ms: elapsed_millis(write_started),
+    })
+}
+
+fn elapsed_millis(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 pub fn load_oracle_analysis_workspace_v1(path: &Path) -> Result<OracleAnalysisWorkspaceV1, String> {
