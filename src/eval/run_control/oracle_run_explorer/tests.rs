@@ -790,7 +790,7 @@ fn oracle_settles_empty_campfire_as_typed_forced_progress() {
             crate::content::relics::RelicId::FusionHammer,
         ));
 
-    let steps = settle_oracle_forced_transitions(&mut session)
+    let steps = decision_materialization::settle_oracle_forced_transitions(&mut session)
         .expect("an optionless campfire should settle without owner input");
 
     assert!(matches!(session.engine_state, EngineState::MapNavigation));

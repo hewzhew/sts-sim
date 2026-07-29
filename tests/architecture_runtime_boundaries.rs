@@ -604,6 +604,47 @@ fn oracle_run_explorer_keeps_combat_completion_in_a_bounded_module() {
 }
 
 #[test]
+fn oracle_run_explorer_keeps_decision_materialization_in_a_bounded_module() {
+    const ROOT: &str = "src/eval/run_control/oracle_run_explorer.rs";
+    const MATERIALIZATION: &str =
+        "src/eval/run_control/oracle_run_explorer/decision_materialization.rs";
+
+    let root = std::fs::read_to_string(ROOT).expect("read oracle-run explorer root");
+    assert!(
+        root.contains("mod decision_materialization;"),
+        "the oracle-run explorer must retain its decision-materialization boundary"
+    );
+    for materialization_owner in [
+        "fn materialize_decision",
+        "fn materialize_explicit_decision",
+        "fn settle_oracle_forced_transitions",
+    ] {
+        assert!(
+            !root.contains(materialization_owner),
+            "oracle decision-materialization owner `{materialization_owner}` must not return to the orchestration root"
+        );
+    }
+
+    let materialization = std::fs::read_to_string(MATERIALIZATION)
+        .expect("read oracle decision-materialization module");
+    let materialization_bytes = materialization.len() as u64;
+    assert!(
+        materialization_bytes <= 12 * 1024,
+        "{MATERIALIZATION} grew to {materialization_bytes} bytes; split forced-transition settlement from exact decision commit before extending it"
+    );
+    for required_owner in [
+        "fn materialize_decision",
+        "fn materialize_explicit_decision",
+        "fn settle_oracle_forced_transitions",
+    ] {
+        assert!(
+            materialization.contains(required_owner),
+            "oracle decision-materialization module must retain `{required_owner}`"
+        );
+    }
+}
+
+#[test]
 fn local_turn_graph_keeps_distinct_responsibilities_in_bounded_modules() {
     const ROOT: &str = "crates/sts_combat_planner/src/local_turn_graph_search.rs";
     const MODULES: [(&str, u64); 8] = [
