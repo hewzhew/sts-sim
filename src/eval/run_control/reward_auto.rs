@@ -116,6 +116,78 @@ pub fn apply_reward_policy_step(
     Ok(Some(transaction.project_progress_outcome(session)))
 }
 
+pub fn apply_reward_potion_space_step(
+    session: &mut RunControlSession,
+) -> Result<Option<RunProgressOutcome>, String> {
+    let Some(input) = reward_potion_space_use_input(session) else {
+        return Ok(None);
+    };
+    let action = super::RunDecisionAction::Input(input);
+    let surface = super::build_decision_surface(session);
+    let matches = surface
+        .view
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.action.executable_action().as_ref() == Some(&action))
+        .collect::<Vec<_>>();
+    let [candidate] = matches.as_slice() else {
+        return Err(format!(
+            "reward potion-space action {action:?} matched {} public candidates",
+            matches.len()
+        ));
+    };
+    let candidate_id = candidate.id.clone();
+    session
+        .apply_owner_candidate(&candidate_id, action)
+        .map(Some)
+}
+
+pub(in crate::eval::run_control) fn reward_potion_space_use_input(
+    session: &RunControlSession,
+) -> Option<ClientInput> {
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return None,
+    };
+    if session.run_state.find_empty_potion_slot().is_some()
+        || session
+            .run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::Sozu)
+        || !reward
+            .items
+            .iter()
+            .any(|item| matches!(item, RewardItem::Potion { .. }))
+    {
+        return None;
+    }
+    let is_we_meet_again = session
+        .run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.id == crate::state::events::EventId::WeMeetAgain);
+    session
+        .run_state
+        .potions
+        .iter()
+        .enumerate()
+        .find_map(|(potion_index, potion)| {
+            let potion = potion.as_ref()?;
+            (potion.id == crate::content::potions::PotionId::FruitJuice
+                && potion.can_use
+                && crate::content::potions::potion_can_use_out_of_combat(
+                    potion.id,
+                    is_we_meet_again,
+                ))
+            .then_some(ClientInput::UsePotion {
+                potion_index,
+                target: None,
+            })
+        })
+}
+
 pub fn reward_surface_has_only_unclaimable_potions(session: &RunControlSession) -> bool {
     let reward = match &session.engine_state {
         EngineState::RewardScreen(reward) => reward,
@@ -259,6 +331,58 @@ mod tests {
                 potion_id: PotionId::EssenceOfSteel
             }]
         ));
+    }
+
+    #[test]
+    fn reward_potion_space_step_realizes_fruit_juice_before_claiming_potion() {
+        let mut session = reward_screen_session(vec![RewardItem::Potion {
+            potion_id: PotionId::EssenceOfSteel,
+        }]);
+        session.run_state.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                PotionId::FruitJuice,
+                1,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::FirePotion,
+                2,
+            )),
+            Some(crate::content::potions::Potion::new(
+                PotionId::DexterityPotion,
+                3,
+            )),
+        ];
+        let before_hp = session.run_state.current_hp;
+        let before_max_hp = session.run_state.max_hp;
+
+        let realized = apply_reward_potion_space_step(&mut session)
+            .expect("potion-space policy should inspect the reward")
+            .expect("Fruit Juice should be realized as one owner decision");
+
+        assert_eq!(session.run_state.current_hp, before_hp + 5);
+        assert_eq!(session.run_state.max_hp, before_max_hp + 5);
+        assert!(session.run_state.potions[0].is_none());
+        assert_reward_owner_transaction(&realized, 0, 1);
+        let EngineState::RewardScreen(reward) = &session.engine_state else {
+            panic!("using Fruit Juice must preserve the reward screen");
+        };
+        assert!(matches!(
+            reward.items.as_slice(),
+            [RewardItem::Potion {
+                potion_id: PotionId::EssenceOfSteel
+            }]
+        ));
+
+        let claimed = apply_reward_policy_step(&mut session)
+            .expect("reward policy should inspect the opened slot")
+            .expect("the potion reward should be claimed on the next decision");
+        assert_eq!(
+            session.run_state.potions[0]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::EssenceOfSteel)
+        );
+        assert_reward_policy_transaction(&claimed, 1, 2);
     }
 
     #[test]
@@ -413,6 +537,22 @@ mod tests {
             record.data_role,
             crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
         );
+    }
+
+    fn assert_reward_owner_transaction(
+        outcome: &RunProgressOutcome,
+        before_step: u64,
+        after_step: u64,
+    ) {
+        let Some(transaction) = outcome.single_decision_transaction() else {
+            panic!("one reward owner step should preserve exactly one transaction");
+        };
+        assert_eq!(
+            transaction.selection.source,
+            RunDecisionSelectionSourceV1::OwnerPolicy
+        );
+        assert_eq!(transaction.before.decision_step, before_step);
+        assert_eq!(transaction.after.decision_step, after_step);
     }
 
     fn reward_screen_session(items: Vec<RewardItem>) -> RunControlSession {

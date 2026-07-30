@@ -120,6 +120,12 @@ runner explicitly opens a potion policy and budget. A diagnostic fact such as
 "potion rescue found a win" does not automatically mean the main runner should
 spend that potion.
 
+Run-level potion realization and reward acquisition remain separate atomic
+decisions. A reward owner may expose a mechanically valid out-of-combat potion
+effect before a visible potion reward, but that conversion does not authorize
+discarding another potion or invent a context-free ranking among retained and
+offered identities.
+
 Strategic search starts from an exact potion-free stage. Resident run search
 carries that witness in its combat-work checkpoint; owner-audit staging carries
 an opaque replay-adjudicated attempt in memory until the portfolio commits one

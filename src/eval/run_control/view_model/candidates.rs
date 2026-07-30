@@ -327,6 +327,20 @@ fn reward_candidates(
         .items
         .iter()
         .any(|item| matches!(item, crate::state::rewards::RewardItem::Potion { .. }));
+    if let Some(input) = super::super::reward_auto::reward_potion_space_use_input(session) {
+        let ClientInput::UsePotion { potion_index, .. } = input else {
+            unreachable!("reward potion-space helper must return a potion-use input");
+        };
+        candidates.push(candidate(
+            format!("use-potion-{potion_index}"),
+            "Use Fruit Juice to make room for potion reward",
+            ClientInput::UsePotion {
+                potion_index,
+                target: None,
+            },
+            Some("the unclaimed potion reward remains available"),
+        ));
+    }
     let is_we_meet_again = session
         .run_state
         .event_state
@@ -1246,6 +1260,34 @@ mod tests {
                 potion_id: PotionId::CultistPotion
             }]
         ));
+    }
+
+    #[test]
+    fn full_potion_belt_exposes_fruit_juice_use_before_potion_reward() {
+        let mut session = RunControlSession::new(Default::default());
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::FruitJuice, 10)),
+            Some(Potion::new(PotionId::FairyPotion, 20)),
+            Some(Potion::new(PotionId::GamblersBrew, 30)),
+        ];
+        let mut reward = RewardState::new();
+        reward.items = vec![RewardItem::Potion {
+            potion_id: PotionId::CultistPotion,
+        }];
+        session.engine_state = EngineState::RewardScreen(reward);
+
+        let candidates = decision_candidates(&session);
+        let use_fruit_juice = candidates
+            .iter()
+            .find(|candidate| candidate.id == "use-potion-0")
+            .expect("a full belt should expose immediate Fruit Juice realization");
+        assert_eq!(
+            use_fruit_juice.action.executable_input(),
+            Some(ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            })
+        );
     }
 
     #[test]

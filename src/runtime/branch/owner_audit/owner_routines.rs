@@ -26,6 +26,11 @@ fn apply_reward_policy_routine(
     if let Some(outcome) = sts_simulator::eval::run_control::apply_reward_policy_step(session)? {
         return Ok(outcome);
     }
+    if let Some(outcome) =
+        sts_simulator::eval::run_control::apply_reward_potion_space_step(session)?
+    {
+        return Ok(outcome);
+    }
     let action = RunDecisionAction::Input(reward_tiny_exit_input(session)?);
     let surface = build_decision_surface(session);
     let candidate_id = super::owner_commands::owner_candidate_id_for_action(&surface, &action)?;
@@ -106,6 +111,52 @@ mod tests {
             RunDecisionSelectionSourceV1::RewardPolicy
         );
         assert_eq!(session.decision_step, 1);
+    }
+
+    #[test]
+    fn reward_policy_routine_realizes_fruit_juice_before_full_belt_exit() {
+        let mut session = reward_session(vec![RewardItem::Potion {
+            potion_id: PotionId::EssenceOfSteel,
+        }]);
+        session.run_state.potions = vec![
+            Some(sts_simulator::content::potions::Potion::new(
+                PotionId::FruitJuice,
+                1,
+            )),
+            Some(sts_simulator::content::potions::Potion::new(
+                PotionId::FirePotion,
+                2,
+            )),
+            Some(sts_simulator::content::potions::Potion::new(
+                PotionId::DexterityPotion,
+                3,
+            )),
+        ];
+        let before_max_hp = session.run_state.max_hp;
+
+        apply_owner_routine(&mut session, OwnerRoutine::RewardPolicyStep)
+            .expect("owner should realize Fruit Juice before leaving the reward");
+
+        assert_eq!(session.run_state.max_hp, before_max_hp + 5);
+        assert!(session.run_state.potions[0].is_none());
+        let EngineState::RewardScreen(reward) = &session.engine_state else {
+            panic!("Fruit Juice realization should preserve the reward screen");
+        };
+        assert!(matches!(
+            reward.items.as_slice(),
+            [RewardItem::Potion {
+                potion_id: PotionId::EssenceOfSteel
+            }]
+        ));
+
+        apply_owner_routine(&mut session, OwnerRoutine::RewardPolicyStep)
+            .expect("owner should claim the potion on its next atomic step");
+        assert_eq!(
+            session.run_state.potions[0]
+                .as_ref()
+                .map(|potion| potion.id),
+            Some(PotionId::EssenceOfSteel)
+        );
     }
 
     #[test]

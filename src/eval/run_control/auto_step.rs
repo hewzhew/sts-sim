@@ -113,6 +113,22 @@ pub(super) fn apply_guarded_auto_step(
         );
     }
 
+    if let Some(outcome) = super::reward_auto::apply_reward_potion_space_step(session)? {
+        applied.push_outcome(
+            RunControlAutoAppliedKindV1::RewardPolicyCandidate,
+            "reward potion-space candidate",
+            &outcome,
+        );
+        trace_annotations.extend(outcome.trace_annotations);
+        return finish_applied_progress_step(
+            session,
+            &before,
+            applied,
+            trace_annotations,
+            decision_parent_snapshots,
+        );
+    }
+
     if session.current_active_combat_position().is_ok() {
         if high_stakes_auto_search_requires_hp_loss_gate(session, &options.search) {
             return finish_auto_step(
