@@ -18,14 +18,19 @@ use sts_oracle_runtime::ai::card_semantics_v1::{
     potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
 };
 use sts_oracle_runtime::ai::potion_continuation_context_v1::{
-    PotionRunContinuationContextV1, POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_NAME,
+    PotionRunContinuationContextV1, PotionRunContinuationLimitationV1, PotionRunInventoryContextV1,
+    PotionRunSupplyContextV1, POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_NAME,
     POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_VERSION,
 };
 use sts_oracle_runtime::ai::potion_continuation_pressure_v1::{
     potion_continuation_pressure_from_context_v1, PotionContinuationPressureInputsV1,
-    PotionContinuationPressureV1,
+    PotionContinuationPressureV1, PotionRecoveryContinuationFactsV1, PotionRoutePressureV1,
+    PotionShopContinuationFactsV1,
 };
-use sts_oracle_runtime::ai::route_window_facts::RouteWindowCoverageKind;
+use sts_oracle_runtime::ai::route_window_facts::{
+    RouteWindowCoverageKind, RouteWindowModality, RouteWindowPredicate, RouteWindowProvenance,
+    RouteWindowSubject,
+};
 use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit, DeckStrategicDeficit,
 };
@@ -44,7 +49,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV7";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV8";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -308,12 +313,13 @@ enum PotionSpendAdjudicationV1 {
         break_even_retained_value_hp: i32,
         final_turn_delta: i64,
         potion_expenditures: usize,
+        spend_urgency_question: PotionSpendUrgencyQuestionV1,
         retained_value_evidence: PotionRetainedValueEvidenceV1,
     },
     ExcludedFromVictorySpend,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct PotionSurvivalReserveDeltaV1 {
     reserve_hp: i32,
     baseline_shortfall_hp: i32,
@@ -321,6 +327,82 @@ struct PotionSurvivalReserveDeltaV1 {
     shortfall_reduction_hp: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     shortfall_reduction_ppm: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionSpendUrgencyQuestionStatusV1 {
+    ValidatedExactRoot,
+    Unavailable,
+    Rejected,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionSpendUrgencyQuestionLimitationV1 {
+    RunContextUnavailable,
+    ContinuationPressureUnavailable,
+    RunContextRejected,
+    ContinuationPressureRejected,
+    ValidatedRunContextMissingPayload,
+    ValidatedContinuationPressureMissingPayload,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionRouteOrderUnavailableReasonV1 {
+    MissingTypedFact,
+    ConflictingTypedFacts,
+    UnknownModality,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum PotionRouteOrderEvidenceV1 {
+    Validated {
+        modality: RouteWindowModality,
+        provenance: RouteWindowProvenance,
+        horizon_nodes: usize,
+    },
+    Unavailable {
+        reason: PotionRouteOrderUnavailableReasonV1,
+        observed_modality: Option<RouteWindowModality>,
+        provenance: Option<RouteWindowProvenance>,
+        horizon_nodes: Option<usize>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionRouteOrderingFactsV1 {
+    coverage_kind: RouteWindowCoverageKind,
+    window_starts_after_current_decision: bool,
+    future_known_combat_before_campfire: PotionRouteOrderEvidenceV1,
+    future_known_combat_before_shop: PotionRouteOrderEvidenceV1,
+    future_elite_before_campfire: PotionRouteOrderEvidenceV1,
+    future_campfire_before_elite: PotionRouteOrderEvidenceV1,
+    future_shop_before_known_combat: PotionRouteOrderEvidenceV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionSpendUrgencyFactsV1 {
+    configured_survival_reserve_delta: Option<PotionSurvivalReserveDeltaV1>,
+    inventory: PotionRunInventoryContextV1,
+    supply: PotionRunSupplyContextV1,
+    route: PotionRoutePressureV1,
+    route_ordering: PotionRouteOrderingFactsV1,
+    recovery: PotionRecoveryContinuationFactsV1,
+    shop: PotionShopContinuationFactsV1,
+    current_combat_reward_size_gate_unknown: bool,
+    future_potion_identity_unknown: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionSpendUrgencyQuestionV1 {
+    status: PotionSpendUrgencyQuestionStatusV1,
+    run_context_status: PotionRunContinuationProjectionStatusV1,
+    continuation_pressure_status: PotionContinuationPressureProjectionStatusV1,
+    facts: Option<PotionSpendUrgencyFactsV1>,
+    limitations: Vec<PotionSpendUrgencyQuestionLimitationV1>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -508,7 +590,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV7 {
+pub(super) struct CombatCasePotionExpenditureAuditV8 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -525,7 +607,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV7 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV7, String> {
+) -> Result<CombatCasePotionExpenditureAuditV8, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -661,7 +743,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV7 {
+    Ok(CombatCasePotionExpenditureAuditV8 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -1702,6 +1784,7 @@ fn annotate_shadow_spend_adjudications(
                     });
                 continue;
             };
+            let comparison = comparison.expect("marginal comparison with HP and turn deltas");
             if !witness.lane_compliant
                 || witness.verified_win_potion_disposition
                     == VerifiedWinPotionDispositionV1::ContainsExcludedResource
@@ -1713,9 +1796,7 @@ fn annotate_shadow_spend_adjudications(
                 }
             } else if final_hp_delta <= 0 {
                 PotionSpendAdjudicationV1::RejectNonPositiveHpGain { final_hp_delta }
-            } else if comparison.is_some_and(|comparison| {
-                comparison.assessment == PotionMarginalAssessmentV1::CrossesSurvivalReserve
-            }) {
+            } else if comparison.assessment == PotionMarginalAssessmentV1::CrossesSurvivalReserve {
                 PotionSpendAdjudicationV1::SpendToCrossSurvivalReserve { final_hp_delta }
             } else {
                 PotionSpendAdjudicationV1::CompareContinuationValue {
@@ -1723,6 +1804,11 @@ fn annotate_shadow_spend_adjudications(
                     break_even_retained_value_hp: final_hp_delta,
                     final_turn_delta,
                     potion_expenditures: witness.potion_expenditures.len(),
+                    spend_urgency_question: spend_urgency_question(
+                        comparison,
+                        run_level_projection,
+                        continuation_pressure_projection,
+                    ),
                     retained_value_evidence: retained_value_evidence(
                         witness,
                         root_potions,
@@ -1733,6 +1819,175 @@ fn annotate_shadow_spend_adjudications(
             }
         };
         witness.shadow_spend_adjudication = Some(adjudication);
+    }
+}
+
+fn spend_urgency_question(
+    comparison: &PotionMarginalComparisonV1,
+    run_level_projection: &PotionRunContinuationProjectionV1,
+    continuation_pressure_projection: &PotionContinuationPressureProjectionV1,
+) -> PotionSpendUrgencyQuestionV1 {
+    use PotionContinuationPressureProjectionStatusV1 as PressureStatus;
+    use PotionRunContinuationProjectionStatusV1 as RunStatus;
+    use PotionSpendUrgencyQuestionLimitationV1 as Limitation;
+    use PotionSpendUrgencyQuestionStatusV1 as Status;
+
+    let mut limitations = Vec::new();
+    match run_level_projection.status {
+        RunStatus::ValidatedExactRoot => {}
+        RunStatus::UnavailableLegacyCase => limitations.push(Limitation::RunContextUnavailable),
+        RunStatus::RejectedRootMismatch => limitations.push(Limitation::RunContextRejected),
+    }
+    match continuation_pressure_projection.status {
+        PressureStatus::ValidatedExactRoot => {}
+        PressureStatus::UnavailableLegacyCase => {
+            limitations.push(Limitation::ContinuationPressureUnavailable);
+        }
+        PressureStatus::RejectedMismatch | PressureStatus::RejectedWithoutValidatedRunContext => {
+            limitations.push(Limitation::ContinuationPressureRejected);
+        }
+    }
+
+    let rejected = matches!(run_level_projection.status, RunStatus::RejectedRootMismatch)
+        || matches!(
+            continuation_pressure_projection.status,
+            PressureStatus::RejectedMismatch | PressureStatus::RejectedWithoutValidatedRunContext
+        );
+    if rejected {
+        return PotionSpendUrgencyQuestionV1 {
+            status: Status::Rejected,
+            run_context_status: run_level_projection.status,
+            continuation_pressure_status: continuation_pressure_projection.status,
+            facts: None,
+            limitations,
+        };
+    }
+    if run_level_projection.status != RunStatus::ValidatedExactRoot
+        || continuation_pressure_projection.status != PressureStatus::ValidatedExactRoot
+    {
+        return PotionSpendUrgencyQuestionV1 {
+            status: Status::Unavailable,
+            run_context_status: run_level_projection.status,
+            continuation_pressure_status: continuation_pressure_projection.status,
+            facts: None,
+            limitations,
+        };
+    }
+
+    let Some(context) = run_level_projection.captured_context.as_ref() else {
+        limitations.push(Limitation::ValidatedRunContextMissingPayload);
+        return PotionSpendUrgencyQuestionV1 {
+            status: Status::Unavailable,
+            run_context_status: run_level_projection.status,
+            continuation_pressure_status: continuation_pressure_projection.status,
+            facts: None,
+            limitations,
+        };
+    };
+    let Some(pressure) = continuation_pressure_projection.captured_pressure.as_ref() else {
+        limitations.push(Limitation::ValidatedContinuationPressureMissingPayload);
+        return PotionSpendUrgencyQuestionV1 {
+            status: Status::Unavailable,
+            run_context_status: run_level_projection.status,
+            continuation_pressure_status: continuation_pressure_projection.status,
+            facts: None,
+            limitations,
+        };
+    };
+
+    PotionSpendUrgencyQuestionV1 {
+        status: Status::ValidatedExactRoot,
+        run_context_status: run_level_projection.status,
+        continuation_pressure_status: continuation_pressure_projection.status,
+        facts: Some(PotionSpendUrgencyFactsV1 {
+            configured_survival_reserve_delta: comparison.survival_reserve_delta.clone(),
+            inventory: pressure.inventory.clone(),
+            supply: pressure.supply.clone(),
+            route: pressure.route.clone(),
+            route_ordering: route_ordering_facts(context),
+            recovery: pressure.recovery.clone(),
+            shop: pressure.shop.clone(),
+            current_combat_reward_size_gate_unknown: context
+                .limitations
+                .contains(&PotionRunContinuationLimitationV1::CurrentCombatRewardSizeGateUnknown),
+            future_potion_identity_unknown: context
+                .limitations
+                .contains(&PotionRunContinuationLimitationV1::FuturePotionIdentityUnknownUntilRoll),
+        }),
+        limitations,
+    }
+}
+
+fn route_ordering_facts(context: &PotionRunContinuationContextV1) -> PotionRouteOrderingFactsV1 {
+    PotionRouteOrderingFactsV1 {
+        coverage_kind: context.route_window.coverage.kind,
+        window_starts_after_current_decision: context
+            .route_window
+            .cursor
+            .starts_after_current_decision,
+        future_known_combat_before_campfire: route_order_evidence(
+            context,
+            RouteWindowSubject::KnownCombat,
+            RouteWindowSubject::Campfire,
+        ),
+        future_known_combat_before_shop: route_order_evidence(
+            context,
+            RouteWindowSubject::KnownCombat,
+            RouteWindowSubject::Shop,
+        ),
+        future_elite_before_campfire: route_order_evidence(
+            context,
+            RouteWindowSubject::Elite,
+            RouteWindowSubject::Campfire,
+        ),
+        future_campfire_before_elite: route_order_evidence(
+            context,
+            RouteWindowSubject::Campfire,
+            RouteWindowSubject::Elite,
+        ),
+        future_shop_before_known_combat: route_order_evidence(
+            context,
+            RouteWindowSubject::Shop,
+            RouteWindowSubject::KnownCombat,
+        ),
+    }
+}
+
+fn route_order_evidence(
+    context: &PotionRunContinuationContextV1,
+    subject: RouteWindowSubject,
+    before: RouteWindowSubject,
+) -> PotionRouteOrderEvidenceV1 {
+    let matches = context
+        .route_window
+        .facts
+        .iter()
+        .filter(|fact| fact.predicate == (RouteWindowPredicate::OccursBefore { subject, before }))
+        .collect::<Vec<_>>();
+    let [fact] = matches.as_slice() else {
+        return PotionRouteOrderEvidenceV1::Unavailable {
+            reason: if matches.is_empty() {
+                PotionRouteOrderUnavailableReasonV1::MissingTypedFact
+            } else {
+                PotionRouteOrderUnavailableReasonV1::ConflictingTypedFacts
+            },
+            observed_modality: None,
+            provenance: None,
+            horizon_nodes: None,
+        };
+    };
+    if fact.modality == RouteWindowModality::Unknown {
+        return PotionRouteOrderEvidenceV1::Unavailable {
+            reason: PotionRouteOrderUnavailableReasonV1::UnknownModality,
+            observed_modality: Some(fact.modality),
+            provenance: Some(fact.provenance),
+            horizon_nodes: Some(fact.horizon_nodes),
+        };
+    }
+    PotionRouteOrderEvidenceV1::Validated {
+        modality: fact.modality,
+        provenance: fact.provenance,
+        horizon_nodes: fact.horizon_nodes,
     }
 }
 
@@ -2039,6 +2294,9 @@ mod tests {
     };
     use sts_oracle_runtime::ai::potion_continuation_context_v1::potion_run_continuation_context_v1;
     use sts_oracle_runtime::ai::potion_continuation_pressure_v1::potion_continuation_pressure_v1;
+    use sts_oracle_runtime::ai::route_window_facts::{
+        RouteWindowFact, RouteWindowKind, RouteWindowScope,
+    };
     use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::StrategicPackageEvidence;
     use sts_oracle_runtime::content::cards::CardId;
     use sts_oracle_runtime::content::monsters::EnemyId;
@@ -2746,6 +3004,198 @@ mod tests {
     }
 
     #[test]
+    fn spend_urgency_question_validates_exact_root_and_preserves_typed_route_order() {
+        let case = combat_case_with_trace_run_context();
+        let source_order = case.combat_search_attempts[0]
+            .potion_continuation_context
+            .as_ref()
+            .expect("captured continuation context")
+            .route_window
+            .facts
+            .iter()
+            .find(|fact| {
+                fact.predicate
+                    == (RouteWindowPredicate::OccursBefore {
+                        subject: RouteWindowSubject::KnownCombat,
+                        before: RouteWindowSubject::Campfire,
+                    })
+            })
+            .expect("typed combat-before-campfire fact");
+        let expected_order = if source_order.modality == RouteWindowModality::Unknown {
+            PotionRouteOrderEvidenceV1::Unavailable {
+                reason: PotionRouteOrderUnavailableReasonV1::UnknownModality,
+                observed_modality: Some(source_order.modality),
+                provenance: Some(source_order.provenance),
+                horizon_nodes: Some(source_order.horizon_nodes),
+            }
+        } else {
+            PotionRouteOrderEvidenceV1::Validated {
+                modality: source_order.modality,
+                provenance: source_order.provenance,
+                horizon_nodes: source_order.horizon_nodes,
+            }
+        };
+        let run_projection = project_saved_run_continuation_context(&case);
+        let pressure_projection =
+            project_saved_potion_continuation_pressure(&case, &run_projection);
+        let comparison = PotionMarginalComparisonV1 {
+            final_hp_delta: Some(19),
+            final_turn_delta: Some(1),
+            action_count_delta: Some(2),
+            survival_reserve_delta: Some(survival_reserve_delta(9, 28, 30)),
+            assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
+        };
+
+        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+
+        assert_eq!(
+            question.status,
+            PotionSpendUrgencyQuestionStatusV1::ValidatedExactRoot
+        );
+        assert!(question.limitations.is_empty());
+        let facts = question.facts.expect("validated urgency facts");
+        assert_eq!(
+            facts
+                .configured_survival_reserve_delta
+                .as_ref()
+                .map(|delta| delta.shortfall_reduction_hp),
+            Some(19)
+        );
+        assert_eq!(facts.inventory.occupied_slots, 1);
+        assert_eq!(facts.shop.current_gold, case.run.gold);
+        assert!(facts.future_potion_identity_unknown);
+        assert_eq!(
+            facts.route_ordering.future_known_combat_before_campfire,
+            expected_order
+        );
+    }
+
+    #[test]
+    fn spend_urgency_question_is_unavailable_for_legacy_context() {
+        let mut case = combat_case_with_trace_run_context();
+        for attempt in &mut case.combat_search_attempts {
+            attempt.potion_continuation_context = None;
+            attempt.potion_continuation_pressure = None;
+        }
+        if let Some(failed) = case.failed_search.as_mut() {
+            failed.potion_continuation_context = None;
+            failed.potion_continuation_pressure = None;
+        }
+        let run_projection = project_saved_run_continuation_context(&case);
+        let pressure_projection =
+            project_saved_potion_continuation_pressure(&case, &run_projection);
+        let comparison = PotionMarginalComparisonV1 {
+            final_hp_delta: Some(3),
+            final_turn_delta: Some(0),
+            action_count_delta: Some(1),
+            survival_reserve_delta: None,
+            assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
+        };
+
+        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+
+        assert_eq!(
+            question.status,
+            PotionSpendUrgencyQuestionStatusV1::Unavailable
+        );
+        assert!(question.facts.is_none());
+        assert!(question
+            .limitations
+            .contains(&PotionSpendUrgencyQuestionLimitationV1::RunContextUnavailable));
+        assert!(question
+            .limitations
+            .contains(&PotionSpendUrgencyQuestionLimitationV1::ContinuationPressureUnavailable));
+    }
+
+    #[test]
+    fn spend_urgency_question_rejects_mismatched_pressure() {
+        let mut case = combat_case_with_trace_run_context();
+        case.combat_search_attempts[0]
+            .potion_continuation_pressure
+            .as_mut()
+            .unwrap()
+            .shop
+            .current_gold += 1;
+        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        let run_projection = project_saved_run_continuation_context(&case);
+        let pressure_projection =
+            project_saved_potion_continuation_pressure(&case, &run_projection);
+        let comparison = PotionMarginalComparisonV1 {
+            final_hp_delta: Some(7),
+            final_turn_delta: Some(0),
+            action_count_delta: Some(1),
+            survival_reserve_delta: Some(survival_reserve_delta(9, 16, 30)),
+            assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
+        };
+
+        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+
+        assert_eq!(
+            question.status,
+            PotionSpendUrgencyQuestionStatusV1::Rejected
+        );
+        assert!(question.facts.is_none());
+        assert!(question
+            .limitations
+            .contains(&PotionSpendUrgencyQuestionLimitationV1::ContinuationPressureRejected));
+    }
+
+    #[test]
+    fn route_ordering_uses_typed_occurs_before_modality() {
+        let case = combat_case_with_trace_run_context();
+        let mut context = case.combat_search_attempts[0]
+            .potion_continuation_context
+            .clone()
+            .expect("captured continuation context");
+        let predicate = RouteWindowPredicate::OccursBefore {
+            subject: RouteWindowSubject::KnownCombat,
+            before: RouteWindowSubject::Campfire,
+        };
+        context
+            .route_window
+            .facts
+            .retain(|fact| fact.predicate != predicate);
+        context.route_window.facts.push(RouteWindowFact {
+            window: RouteWindowKind::Danger,
+            predicate: predicate.clone(),
+            modality: RouteWindowModality::Can,
+            scope: RouteWindowScope::PathFamily,
+            horizon_nodes: 5,
+            provenance: RouteWindowProvenance::SomeCoveredPath,
+        });
+
+        let ordering = route_ordering_facts(&context);
+
+        assert_eq!(
+            ordering.future_known_combat_before_campfire,
+            PotionRouteOrderEvidenceV1::Validated {
+                modality: RouteWindowModality::Can,
+                provenance: RouteWindowProvenance::SomeCoveredPath,
+                horizon_nodes: 5,
+            }
+        );
+
+        let fact = context
+            .route_window
+            .facts
+            .iter_mut()
+            .find(|fact| fact.predicate == predicate)
+            .expect("typed route-order fact");
+        fact.modality = RouteWindowModality::Unknown;
+        fact.provenance = RouteWindowProvenance::PartialObservation;
+        let ordering = route_ordering_facts(&context);
+        assert_eq!(
+            ordering.future_known_combat_before_campfire,
+            PotionRouteOrderEvidenceV1::Unavailable {
+                reason: PotionRouteOrderUnavailableReasonV1::UnknownModality,
+                observed_modality: Some(RouteWindowModality::Unknown),
+                provenance: Some(RouteWindowProvenance::PartialObservation),
+                horizon_nodes: Some(5),
+            }
+        );
+    }
+
+    #[test]
     fn shadow_spend_adjudication_preserves_baseline_and_budget_unknowns() {
         let baseline = policy_lane(
             "no_potion",
@@ -2909,6 +3359,7 @@ mod tests {
             break_even_retained_value_hp,
             final_turn_delta,
             potion_expenditures,
+            spend_urgency_question,
             retained_value_evidence,
         } = shadow_adjudication(continuation)
         else {
@@ -2918,6 +3369,10 @@ mod tests {
         assert_eq!(break_even_retained_value_hp, 10);
         assert_eq!(final_turn_delta, 3);
         assert_eq!(potion_expenditures, 1);
+        assert_eq!(
+            spend_urgency_question.status,
+            PotionSpendUrgencyQuestionStatusV1::Unavailable
+        );
         assert_eq!(
             retained_value_evidence.run_context_status,
             PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase

@@ -276,6 +276,13 @@ unless the evaluator really supports a winner claim.
 Tests should protect stable structure, not prose. Avoid tests whose main
 assertion is a human-facing adjective.
 
+Potion spend-urgency output is a diagnostic question, not a verdict. It may
+place an exact-root reserve delta beside validated inventory, supply, route,
+recovery, and shop facts, but it must not collapse them into a score or spend
+threshold. Route order must come from a typed modal ordering fact; aggregate
+room counts cannot establish order. Missing, unknown, conflicting, or
+root-mismatched evidence remains explicitly unavailable or rejected.
+
 ## Prohibited Crossings
 
 - Do not use strings as decisions when a typed action, candidate key, or case
