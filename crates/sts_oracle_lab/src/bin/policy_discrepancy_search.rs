@@ -26,6 +26,13 @@ pub(super) struct CombatCasePolicyDiscrepancyArgs {
     max_transitions: usize,
     #[arg(long, default_value_t = 5_000)]
     wall_ms: u64,
+    /// Optional production-like applied-transition grant per resume.
+    /// Omit both quantum controls for one uninterrupted search allowance.
+    #[arg(long, requires = "quantum_wall_ms")]
+    quantum_transitions: Option<usize>,
+    /// Optional production-like wall slice per resume.
+    #[arg(long, requires = "quantum_transitions")]
+    quantum_wall_ms: Option<u64>,
     #[arg(long, default_value_t = 250)]
     max_engine_steps_per_transition: usize,
     #[arg(long, default_value_t = 10_000)]
@@ -55,6 +62,8 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
         action_imitation_artifact,
         max_transitions,
         wall_ms,
+        quantum_transitions,
+        quantum_wall_ms,
         max_engine_steps_per_transition,
         uniform_exploration_ppm,
         max_greedy_actions_per_dive,
@@ -103,15 +112,50 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
     };
     let mut search = PolicyDiscrepancySession::with_policy(root, search_config, policy);
     let started = Instant::now();
-    let report = search.advance(
-        &EngineCombatStepper,
-        PolicyDiscrepancyQuantum {
-            additional_applied_transitions: max_transitions,
-            additional_engine_steps: max_transitions
-                .saturating_mul(max_engine_steps_per_transition),
-            deadline: Some(started + Duration::from_millis(wall_ms)),
-        },
-    );
+    let overall_deadline = started + Duration::from_millis(wall_ms);
+    let report = if let (Some(quantum_transitions), Some(quantum_wall_ms)) =
+        (quantum_transitions, quantum_wall_ms)
+    {
+        if quantum_transitions == 0 || quantum_wall_ms == 0 {
+            return Err("policy-discrepancy quantum controls must be positive".to_string());
+        }
+        loop {
+            let used = search.counters().applied_action_transitions;
+            let remaining = max_transitions.saturating_sub(used);
+            let grant = remaining.min(quantum_transitions);
+            let now = Instant::now();
+            let slice_deadline =
+                (now + Duration::from_millis(quantum_wall_ms)).min(overall_deadline);
+            let report = search.advance(
+                &EngineCombatStepper,
+                PolicyDiscrepancyQuantum {
+                    additional_applied_transitions: grant,
+                    additional_engine_steps: grant.saturating_mul(max_engine_steps_per_transition),
+                    deadline: Some(slice_deadline),
+                },
+            );
+            let terminal = !matches!(
+                report.status,
+                sts_combat_planner::PolicyDiscrepancyStatus::Partial(_)
+            );
+            if terminal
+                || report.after.applied_action_transitions >= max_transitions
+                || Instant::now() >= overall_deadline
+            {
+                break report;
+            }
+        }
+    } else {
+        search.advance(
+            &EngineCombatStepper,
+            PolicyDiscrepancyQuantum {
+                additional_applied_transitions: max_transitions,
+                additional_engine_steps: max_transitions
+                    .saturating_mul(max_engine_steps_per_transition),
+                deadline: Some(overall_deadline),
+            },
+        )
+    };
     let elapsed = started.elapsed();
     let watched = watched_positions
         .iter()
@@ -157,6 +201,8 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
         "budget": {
             "max_transitions": max_transitions,
             "wall_ms": wall_ms,
+            "quantum_transitions": quantum_transitions,
+            "quantum_wall_ms": quantum_wall_ms,
             "max_engine_steps_per_transition": max_engine_steps_per_transition,
             "max_greedy_actions_per_dive": max_greedy_actions_per_dive,
             "turn_macro_transitions": turn_macro_transitions,
@@ -175,6 +221,7 @@ pub(super) fn run(args: CombatCasePolicyDiscrepancyArgs) -> Result<(), String> {
             "greedy_depth_limit_hits": report.after.greedy_depth_limit_hits,
             "turn_macro_generations": report.after.turn_macro_generations,
             "turn_macro_partial_generations": report.after.turn_macro_partial_generations,
+            "turn_macro_deadline_retries": report.after.turn_macro_deadline_retries,
             "turn_macro_applied_transitions": report.after.turn_macro_applied_transitions,
             "turn_macro_options_generated": report.after.turn_macro_options_generated,
             "turn_macro_options_enqueued": report.after.turn_macro_options_enqueued,

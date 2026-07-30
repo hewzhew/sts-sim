@@ -72,6 +72,11 @@ pub struct PolicyDiscrepancyCounters {
     pub greedy_depth_limit_hits: usize,
     pub turn_macro_generations: usize,
     pub turn_macro_partial_generations: usize,
+    /// Complete-turn proposals interrupted by an external wall deadline and
+    /// returned to the frontier. Partial options remain usable immediately;
+    /// the retry prevents caller quantum boundaries from permanently
+    /// truncating the proposal surface.
+    pub turn_macro_deadline_retries: usize,
     pub turn_macro_applied_transitions: usize,
     pub turn_macro_options_generated: usize,
     pub turn_macro_options_enqueued: usize,

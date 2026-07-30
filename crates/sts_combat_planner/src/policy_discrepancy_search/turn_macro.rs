@@ -119,6 +119,12 @@ impl PolicyDiscrepancySession {
             self.used.turn_macro_partial_generations =
                 self.used.turn_macro_partial_generations.saturating_add(1);
         }
+        let retry_after_deadline = matches!(
+            report.status,
+            DepthBeamTurnStatus::Partial(
+                crate::depth_beam_turn::DepthBeamTurnInterruption::Deadline
+            )
+        );
 
         for (_rank, option) in selected_turn_macro_options(
             &report.options,
@@ -174,6 +180,20 @@ impl PolicyDiscrepancySession {
             );
             self.used.turn_macro_options_enqueued =
                 self.used.turn_macro_options_enqueued.saturating_add(1);
+        }
+        if retry_after_deadline {
+            // The bounded depth beam is currently a one-shot generator. Its
+            // partial options are sound and have already been admitted, but
+            // an external wall slice must not make the unvisited remainder
+            // disappear. Requeue the same exact boundary; duplicate partial
+            // options are filtered by exact-state discrepancy on the retry.
+            self.used.turn_macro_deadline_retries =
+                self.used.turn_macro_deadline_retries.saturating_add(1);
+            self.push_work(
+                work.seed.discrepancy + std::f64::consts::LN_2,
+                DiscrepancyWork::TurnMacro(work),
+            );
+            return Some(PolicyDiscrepancyInterruption::Deadline);
         }
         None
     }

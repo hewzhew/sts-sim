@@ -1,5 +1,54 @@
 use super::*;
 
+struct DelayThirdApplyStepper {
+    inner: TinyTurnStepper,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl DelayThirdApplyStepper {
+    fn new() -> Self {
+        Self {
+            inner: TinyTurnStepper::plain(),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
+impl CombatStepper for DelayThirdApplyStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        self.inner.atomic_actions(position)
+    }
+
+    fn legal_action_surface(&self, position: &CombatPosition) -> CombatLegalActionSurfaceV2 {
+        self.inner.legal_action_surface(position)
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        self.inner.supports_canonical_pending_choice_actions()
+    }
+
+    fn is_legal_action(&self, position: &CombatPosition, input: &ClientInput) -> bool {
+        self.inner.is_legal_action(position, input)
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        limits: CombatStepLimits,
+    ) -> CombatStepResult {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if call == 2 {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        self.inner.apply_to_stable(position, input, limits)
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        self.inner.terminal(position)
+    }
+}
+
 #[test]
 fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     let mut search = PolicyDiscrepancySession::with_policy(
@@ -313,4 +362,52 @@ fn policy_discrepancy_turn_macro_waits_for_its_full_budget_across_quanta() {
         "a split budget never completed the exact turn macro: status={:?}, counters={:?}, frontier={}",
         report.status, report.after, report.frontier_entries
     );
+}
+
+#[test]
+fn policy_discrepancy_turn_macro_retries_after_an_internal_deadline() {
+    let mut search = PolicyDiscrepancySession::with_policy(
+        root(),
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            max_greedy_actions_per_dive: 1,
+            turn_macro: Some(PolicyDiscrepancyTurnMacroConfig {
+                max_applied_transitions: 8,
+                proposals_per_view: 1,
+                ..PolicyDiscrepancyTurnMacroConfig::default()
+            }),
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    let stepper = DelayThirdApplyStepper::new();
+
+    let interrupted = search.advance(
+        &stepper,
+        PolicyDiscrepancyQuantum {
+            additional_applied_transitions: 10,
+            additional_engine_steps: 40,
+            deadline: Some(std::time::Instant::now() + std::time::Duration::from_millis(10)),
+        },
+    );
+    assert_eq!(
+        interrupted.status,
+        PolicyDiscrepancyStatus::Partial(PolicyDiscrepancyInterruption::Deadline)
+    );
+    assert_eq!(interrupted.after.turn_macro_generations, 1);
+    assert_eq!(interrupted.after.turn_macro_deadline_retries, 1);
+
+    let resumed = search.advance(
+        &stepper,
+        PolicyDiscrepancyQuantum {
+            additional_applied_transitions: 8,
+            additional_engine_steps: 32,
+            deadline: None,
+        },
+    );
+    assert!(
+        resumed.after.turn_macro_generations >= 2,
+        "the exact boundary macro was not returned to the frontier: {resumed:#?}"
+    );
+    assert_eq!(resumed.after.turn_macro_deadline_retries, 1);
 }
