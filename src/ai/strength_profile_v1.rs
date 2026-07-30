@@ -6,6 +6,7 @@ use crate::ai::card_semantics_v1::{
     StrengthConversionMechanicV1,
 };
 use crate::content::cards::CardId;
+use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -14,6 +15,7 @@ pub enum StrengthConversionRequirementV1 {
     SameTurnAccess,
     CorrectOrder,
     DebuffPreventionBeforeStrengthDown,
+    UncontestedDebuffPreventionCapacity,
     AttackSkillPowerSameTurn,
 }
 
@@ -29,6 +31,11 @@ pub struct StrengthProfileV1 {
     pub stable_sources: u8,
     pub temporary_bursts: u8,
     pub converters: u8,
+    /// Finite or per-cycle Artifact sources that can prevent Strength Down.
+    pub debuff_prevention_capacity: u8,
+    /// Other modeled self-debuffs that can consume the same Artifact before
+    /// a temporary-strength conversion becomes available.
+    pub competing_debuff_prevention_demand: u8,
     pub convertible_potential_count: u8,
     pub payoffs: u8,
     pub potentials: Vec<StrengthConvertiblePotentialV1>,
@@ -39,7 +46,7 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
     let mut profile = StrengthProfileV1::default();
     let mut rupture_count = 0u8;
     let mut has_amplifier = false;
-    let mut has_debuff_prevention = false;
+    let mut debuff_prevention_capacity = 0u8;
     let mut has_debuff_cleanse = false;
     let definitions = run_state
         .master_deck
@@ -63,7 +70,7 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
             &mut profile,
             mechanics.strength_converter,
             &mut has_amplifier,
-            &mut has_debuff_prevention,
+            &mut debuff_prevention_capacity,
             &mut has_debuff_cleanse,
         );
     }
@@ -80,9 +87,13 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
             &mut profile,
             mechanics.strength_converter,
             &mut has_amplifier,
-            &mut has_debuff_prevention,
+            &mut debuff_prevention_capacity,
             &mut has_debuff_cleanse,
         );
+        if mechanics.applies_no_draw_debuff {
+            profile.competing_debuff_prevention_demand =
+                profile.competing_debuff_prevention_demand.saturating_add(1);
+        }
         if card.id == CardId::Rupture {
             rupture_count = rupture_count.saturating_add(1);
         }
@@ -100,10 +111,11 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
             &mut profile,
             mechanics.strength_converter,
             &mut has_amplifier,
-            &mut has_debuff_prevention,
+            &mut debuff_prevention_capacity,
             &mut has_debuff_cleanse,
         );
     }
+    profile.debuff_prevention_capacity = debuff_prevention_capacity;
 
     if rupture_count > 0 && has_repeatable_self_damage {
         profile.stable_sources = profile.stable_sources.saturating_add(rupture_count);
@@ -120,14 +132,21 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
                 ],
             });
         }
-        if has_debuff_prevention {
+        let unclaimed_debuff_prevention =
+            debuff_prevention_capacity.saturating_sub(profile.competing_debuff_prevention_demand);
+        if unclaimed_debuff_prevention > 0 {
             profile.potentials.push(StrengthConvertiblePotentialV1 {
                 mechanic: StrengthConversionMechanicV1::PreventStrengthDownDebuff,
-                count: profile.temporary_bursts,
+                count: profile.temporary_bursts.min(unclaimed_debuff_prevention),
                 requirements: vec![
                     StrengthConversionRequirementV1::DebuffPreventionBeforeStrengthDown,
+                    StrengthConversionRequirementV1::UncontestedDebuffPreventionCapacity,
                 ],
             });
+        } else if debuff_prevention_capacity > 0 {
+            profile
+                .diagnosis
+                .push("debuff_prevention_capacity_claimed_by_other_self_debuffs");
         }
         if has_debuff_cleanse {
             profile.potentials.push(StrengthConvertiblePotentialV1 {
@@ -166,11 +185,37 @@ pub fn strength_profile_v1(run_state: &RunState) -> StrengthProfileV1 {
     profile
 }
 
+/// Whether adding this exact card closes a previously absent convertible
+/// strength package that the current deck already has payoffs for.
+///
+/// This evaluates the same shared strength model before and after the
+/// candidate. It therefore covers either missing half of the package
+/// (temporary strength or a converter) without teaching reward owners card
+/// names or treating temporary strength as stable scaling.
+pub fn card_unlocks_convertible_strength_payoff_v1(
+    run_state: &RunState,
+    card: CardId,
+    upgrades: u8,
+) -> bool {
+    let before = strength_profile_v1(run_state);
+    if before.payoffs == 0 {
+        return false;
+    }
+
+    let mut trial = run_state.clone();
+    let mut candidate = CombatCard::new(card, u32::MAX);
+    candidate.upgrades = upgrades;
+    trial.master_deck.push(candidate);
+    let after = strength_profile_v1(&trial);
+
+    after.convertible_potential_count > before.convertible_potential_count
+}
+
 fn register_converter(
     profile: &mut StrengthProfileV1,
     converter: Option<StrengthConversionMechanicV1>,
     has_amplifier: &mut bool,
-    has_debuff_prevention: &mut bool,
+    debuff_prevention_capacity: &mut u8,
     has_debuff_cleanse: &mut bool,
 ) {
     let Some(converter) = converter else {
@@ -179,7 +224,9 @@ fn register_converter(
     profile.converters = profile.converters.saturating_add(1);
     match converter {
         StrengthConversionMechanicV1::AmplifyCurrentStrength => *has_amplifier = true,
-        StrengthConversionMechanicV1::PreventStrengthDownDebuff => *has_debuff_prevention = true,
+        StrengthConversionMechanicV1::PreventStrengthDownDebuff => {
+            *debuff_prevention_capacity = debuff_prevention_capacity.saturating_add(1)
+        }
         StrengthConversionMechanicV1::ClearStrengthDownDebuff => *has_debuff_cleanse = true,
     }
 }
@@ -240,6 +287,70 @@ mod tests {
                 && potential
                     .requirements
                     .contains(&StrengthConversionRequirementV1::DebuffPreventionBeforeStrengthDown)
+        }));
+    }
+
+    #[test]
+    fn candidate_flex_closes_existing_artifact_and_payoff_package() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::SwordBoomerang);
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+
+        assert!(card_unlocks_convertible_strength_payoff_v1(
+            &run_state,
+            CardId::Flex,
+            1
+        ));
+
+        let mut no_payoff = RunState::new(1, 0, false, "Ironclad");
+        no_payoff
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+        assert!(!card_unlocks_convertible_strength_payoff_v1(
+            &no_payoff,
+            CardId::Flex,
+            1
+        ));
+        assert!(!card_unlocks_convertible_strength_payoff_v1(
+            &run_state,
+            CardId::Strike,
+            0
+        ));
+    }
+
+    #[test]
+    fn competing_self_debuff_claims_single_artifact_before_candidate_flex() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::SwordBoomerang);
+        run_state.add_card_to_deck(CardId::BattleTrance);
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+
+        assert!(!card_unlocks_convertible_strength_payoff_v1(
+            &run_state,
+            CardId::Flex,
+            1
+        ));
+
+        run_state.potions[0] = Some(Potion::new(PotionId::AncientPotion, 2));
+        assert!(card_unlocks_convertible_strength_payoff_v1(
+            &run_state,
+            CardId::Flex,
+            1
+        ));
+        let mut with_flex = run_state;
+        with_flex.add_card_to_deck(CardId::Flex);
+        let profile = strength_profile_v1(&with_flex);
+        assert_eq!(profile.debuff_prevention_capacity, 2);
+        assert_eq!(profile.competing_debuff_prevention_demand, 1);
+        assert!(profile.potentials.iter().any(|potential| {
+            potential.mechanic == StrengthConversionMechanicV1::PreventStrengthDownDebuff
+                && potential
+                    .requirements
+                    .contains(&StrengthConversionRequirementV1::UncontestedDebuffPreventionCapacity)
         }));
     }
 

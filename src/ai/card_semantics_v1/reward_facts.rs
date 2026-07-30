@@ -2,7 +2,7 @@ use crate::ai::analysis::card_semantics::{
     card_definition as strategic_card_definition, DamageScalingAxis, Mechanic, PayoffRequirement,
     PlayEffect,
 };
-use crate::content::cards::{get_card_definition, CardId, CardTarget};
+use crate::content::cards::{get_card_definition, CardId};
 use crate::state::rewards::RewardCard;
 
 use super::{CardRewardDamageFactsV1, CardRewardFactsV1, CardRewardPickDependencyV1};
@@ -39,7 +39,11 @@ pub fn card_reward_facts_v1(card: &RewardCard) -> CardRewardFactsV1 {
         upgrades_cards: upgrades_cards(card.id),
         is_random_output: is_random_output(card.id),
         has_conditional_playability: has_conditional_playability(card.id),
-        is_aoe: def.target == CardTarget::AllEnemy || def.is_multi_damage,
+        // `AllEnemy` is also used for cards whose individual hits choose a
+        // random enemy and for targetless all-enemy debuffs. Only the runtime
+        // multi-damage contract proves that this card deals damage to every
+        // enemy, which is the fact consumed by multi-target damage coverage.
+        is_aoe: def.is_multi_damage,
         pick_dependencies: pick_dependencies(card.id),
         unsupported_mechanics: unsupported_mechanics(card.id),
     }
@@ -250,6 +254,17 @@ mod tests {
         assert!(facts.weak > 0);
         assert!(facts.vulnerable > 0);
         assert_eq!(facts.enemy_strength_down, 0);
+    }
+
+    #[test]
+    fn targetless_random_hits_do_not_masquerade_as_all_enemy_damage() {
+        let sword_boomerang = card_reward_facts_v1(&RewardCard::new(CardId::SwordBoomerang, 0));
+        let whirlwind = card_reward_facts_v1(&RewardCard::new(CardId::Whirlwind, 0));
+        let shockwave = card_reward_facts_v1(&RewardCard::new(CardId::Shockwave, 0));
+
+        assert!(!sword_boomerang.is_aoe);
+        assert!(whirlwind.is_aoe);
+        assert!(!shockwave.is_aoe);
     }
 
     #[test]

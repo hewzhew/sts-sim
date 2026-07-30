@@ -7,10 +7,19 @@ use crate::state::run::RunState;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BossMechanicPressureProfileV1 {
     pub boss: EncounterId,
+    pub target_topology: BossEncounterTargetTopologyV1,
     pub pressure_points: Vec<BossMechanicPressurePointV1>,
     pub red_flags: Vec<BossMechanicRedFlagV1>,
     pub missing_answers: Vec<BossMechanicMissingAnswerV1>,
     pub biases: Vec<BossMechanicBiasV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BossEncounterTargetTopologyV1 {
+    SingleOpponent,
+    MultipleOpponentsOrSummons,
+    SplitIntoMultipleOpponents,
+    Unknown,
 }
 
 impl BossMechanicPressureProfileV1 {
@@ -221,6 +230,7 @@ pub fn boss_mechanic_pressure_profile_v1(
     let facts = BossMechanicDeckFactsV1::from_run_state(run_state);
     let mut profile = BossMechanicPressureProfileV1 {
         boss,
+        target_topology: boss_target_topology_v1(boss),
         pressure_points: Vec::new(),
         red_flags: Vec::new(),
         missing_answers: Vec::new(),
@@ -239,6 +249,23 @@ pub fn boss_mechanic_pressure_profile_v1(
 
     profile.dedup();
     profile
+}
+
+pub fn boss_target_topology_v1(boss: EncounterId) -> BossEncounterTargetTopologyV1 {
+    match boss {
+        EncounterId::TheGuardian
+        | EncounterId::Hexaghost
+        | EncounterId::TheChamp
+        | EncounterId::TimeEater
+        | EncounterId::TheHeart => BossEncounterTargetTopologyV1::SingleOpponent,
+        EncounterId::Automaton
+        | EncounterId::Collector
+        | EncounterId::AwakenedOne
+        | EncounterId::DonuAndDeca
+        | EncounterId::ShieldAndSpear => BossEncounterTargetTopologyV1::MultipleOpponentsOrSummons,
+        EncounterId::SlimeBoss => BossEncounterTargetTopologyV1::SplitIntoMultipleOpponents,
+        _ => BossEncounterTargetTopologyV1::Unknown,
+    }
 }
 
 pub fn relic_creates_enemy_strength_pressure_v1(relic: RelicId) -> bool {
@@ -623,12 +650,32 @@ mod tests {
         let profile = boss_mechanic_pressure_profile_v1(&run, EncounterId::TheChamp);
 
         assert_eq!(profile.boss, EncounterId::TheChamp);
+        assert_eq!(
+            profile.target_topology,
+            BossEncounterTargetTopologyV1::SingleOpponent
+        );
         assert!(profile.has_pressure(BossMechanicPressurePointV1::ChampTransitionWindow));
         assert!(profile.has_pressure(BossMechanicPressurePointV1::ExecuteBlockCheck));
         assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst));
         assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
         assert!(!profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk));
         assert!(!profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+    }
+
+    #[test]
+    fn boss_target_topology_distinguishes_single_random_target_and_split_fights() {
+        assert_eq!(
+            boss_target_topology_v1(EncounterId::TheChamp),
+            BossEncounterTargetTopologyV1::SingleOpponent
+        );
+        assert_eq!(
+            boss_target_topology_v1(EncounterId::DonuAndDeca),
+            BossEncounterTargetTopologyV1::MultipleOpponentsOrSummons
+        );
+        assert_eq!(
+            boss_target_topology_v1(EncounterId::SlimeBoss),
+            BossEncounterTargetTopologyV1::SplitIntoMultipleOpponents
+        );
     }
 
     #[test]

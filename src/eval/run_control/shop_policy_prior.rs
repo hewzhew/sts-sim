@@ -31,6 +31,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::ai::route_window_facts::{
     build_route_path_family_from_target, route_window_targets, RouteWindowFactsConfig,
 };
+use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -538,6 +539,12 @@ fn acquisition_v1(
                         formation_needs: formation_needs.to_vec(),
                         startup: startup.clone(),
                         block_plan: block_plan.clone(),
+                        candidate_unlocks_convertible_strength_payoff:
+                            card_unlocks_convertible_strength_payoff_v1(
+                                &parent.run_state,
+                                *card,
+                                *upgrades,
+                            ),
                     },
                     &semantics,
                 ),

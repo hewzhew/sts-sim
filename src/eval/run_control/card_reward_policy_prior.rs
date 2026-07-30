@@ -5,9 +5,9 @@ use serde::Serialize;
 
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
 use crate::ai::boss_mechanics_v1::{
-    boss_mechanic_pressure_profile_v1, BossMechanicPressurePointV1,
+    boss_mechanic_pressure_profile_v1, BossEncounterTargetTopologyV1, BossMechanicPressurePointV1,
 };
-use crate::ai::card_analysis_v1::card_analysis_profile_v1;
+use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisAttackChunkV1};
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, is_concrete_package_support_signal_v1,
     is_unresolved_package_payoff_debt_signal_v1, CardComponentSignalContextV1,
@@ -27,6 +27,7 @@ use crate::ai::noncombat_strategy_v1::{
     StrategyCapabilityCoverageV1, StrategyCapabilityKindV1, StrategyPackageIdV2,
     StrategyPlanSupportV1, StrategyThreatSourceV1,
 };
+use crate::ai::strength_profile_v1::card_unlocks_convertible_strength_payoff_v1;
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
@@ -79,6 +80,7 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     /// The known act boss punishes playing powers and this candidate is a
     /// shared-analysis minor power without an exact strategic improvement.
     pub boss_power_tax_conflict: bool,
+    pub random_target_frontload_reliable: bool,
     /// Exact deck-shape liabilities introduced by this candidate.
     ///
     /// This consumes the shared deck-shape model instead of allowing the
@@ -121,6 +123,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
     pub boss_power_tax_conflict: bool,
+    pub random_target_frontload_reliable: bool,
     pub added_deck_shape_risks: Vec<String>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
@@ -206,6 +209,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                     duplicate_low_marginal: evidence.duplicate_low_marginal,
                     access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
                     boss_power_tax_conflict: evidence.boss_power_tax_conflict,
+                    random_target_frontload_reliable: evidence.random_target_frontload_reliable,
                     added_deck_shape_risks: evidence
                         .added_deck_shape_risks
                         .iter()
@@ -258,10 +262,17 @@ pub fn exact_card_reward_policy_decision_v1(
     let startup = deck_startup_profile_v1(&session.run_state);
     let deck_shape = deck_shape_profile_v1(&session.run_state);
     let block_plan = block_plan_profile_v1(&session.run_state);
-    let boss_power_tax_active = session.run_state.boss_key.is_some_and(|boss| {
-        boss_mechanic_pressure_profile_v1(&session.run_state, boss)
-            .has_pressure(BossMechanicPressurePointV1::PowerPlayPenalty)
-    });
+    let boss_profile = session
+        .run_state
+        .boss_key
+        .map(|boss| boss_mechanic_pressure_profile_v1(&session.run_state, boss));
+    let boss_power_tax_active = boss_profile
+        .as_ref()
+        .is_some_and(|profile| profile.has_pressure(BossMechanicPressurePointV1::PowerPlayPenalty));
+    let boss_target_topology = boss_profile
+        .as_ref()
+        .map(|profile| profile.target_topology)
+        .unwrap_or(BossEncounterTargetTopologyV1::Unknown);
     let mut evidence = exact
         .actions
         .iter()
@@ -284,6 +295,7 @@ pub fn exact_card_reward_policy_decision_v1(
                 &deck_shape,
                 &block_plan,
                 boss_power_tax_active,
+                boss_target_topology,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -362,6 +374,7 @@ fn card_reward_action_evidence_v1(
     deck_shape: &DeckShapeProfileV1,
     block_plan: &BlockPlanProfileV1,
     boss_power_tax_active: bool,
+    boss_target_topology: BossEncounterTargetTopologyV1,
 ) -> Result<CardRewardPolicyActionEvidenceV1, String> {
     let candidate_key = action.candidate_key.clone().ok_or_else(|| {
         format!(
@@ -441,6 +454,8 @@ fn card_reward_action_evidence_v1(
     .is_empty();
     let boss_power_tax_conflict =
         boss_power_tax_conflict_v1(boss_power_tax_active, &acquisition, &delta);
+    let random_target_frontload_reliable =
+        random_target_frontload_reliable_v1(boss_target_topology, &acquisition);
     let upgrade_investment_support = matches!(
         &acquisition,
         CardRewardPolicyAcquisitionV1::Card { semantics, .. }
@@ -459,6 +474,7 @@ fn card_reward_action_evidence_v1(
         duplicate_low_marginal,
         access_conflict_or_redundancy,
         boss_power_tax_conflict,
+        random_target_frontload_reliable,
         !added_deck_shape_risks.is_empty(),
         improves_threat_relevant_capability,
         amplifies_existing_answers,
@@ -476,6 +492,7 @@ fn card_reward_action_evidence_v1(
         duplicate_low_marginal,
         access_conflict_or_redundancy,
         boss_power_tax_conflict,
+        random_target_frontload_reliable,
         added_deck_shape_risks,
         improves_threat_relevant_capability,
         amplifies_existing_answers,
@@ -527,6 +544,12 @@ fn acquisition_v1(
                         formation_needs: formation_needs.to_vec(),
                         startup: startup.clone(),
                         block_plan: block_plan.clone(),
+                        candidate_unlocks_convertible_strength_payoff:
+                            card_unlocks_convertible_strength_payoff_v1(
+                                &parent.run_state,
+                                *card,
+                                *upgrades,
+                            ),
                     },
                     &semantics,
                 ),
@@ -554,6 +577,7 @@ fn card_reward_band_v1(
     duplicate_low_marginal: bool,
     access_conflict_or_redundancy: bool,
     boss_power_tax_conflict: bool,
+    random_target_frontload_reliable: bool,
     introduces_deck_shape_risk: bool,
     improves_threat_relevant_capability: bool,
     amplifies_existing_answers: bool,
@@ -572,15 +596,27 @@ fn card_reward_band_v1(
             component_signals,
             ..
         } => {
+            let has_concrete_package_support = component_signals
+                .positive_signals
+                .iter()
+                .any(|signal| is_concrete_package_support_signal_v1(*signal));
+            let has_intrinsic_asset_role = semantics
+                .roles
+                .iter()
+                .any(|role| is_self_sufficient_strategic_role(*role))
+                || random_target_frontload_reliable;
+            let has_blocking_package_debt = component_signals
+                .debt_signals
+                .iter()
+                .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
+                && !has_concrete_package_support
+                && !has_intrinsic_asset_role;
             if status_burden
-                || unsupported
+                || (unsupported && !has_concrete_package_support)
                 || duplicate_low_marginal
                 || access_conflict_or_redundancy
                 || introduces_deck_shape_risk
-                || component_signals
-                    .debt_signals
-                    .iter()
-                    .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
+                || has_blocking_package_debt
             {
                 CardRewardPolicyBandV1::Liability
             } else if boss_power_tax_conflict {
@@ -593,14 +629,8 @@ fn card_reward_band_v1(
                 CardRewardPolicyBandV1::ImproveRequiredCapability
             } else if !delta.resolved_formation_needs.is_empty()
                 || !delta.added_formation_strengths.is_empty()
-                || component_signals
-                    .positive_signals
-                    .iter()
-                    .any(|signal| is_concrete_package_support_signal_v1(*signal))
-                || semantics
-                    .roles
-                    .iter()
-                    .any(|role| is_self_sufficient_strategic_role(*role))
+                || has_concrete_package_support
+                || has_intrinsic_asset_role
             {
                 CardRewardPolicyBandV1::EstablishStrategicAsset
             } else {
@@ -625,6 +655,31 @@ fn boss_power_tax_conflict_v1(
         && delta.capability_improvements.is_empty()
         && delta.resolved_formation_needs.is_empty()
         && delta.added_formation_strengths.is_empty()
+}
+
+fn random_target_frontload_reliable_v1(
+    boss_target_topology: BossEncounterTargetTopologyV1,
+    acquisition: &CardRewardPolicyAcquisitionV1,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card {
+        card,
+        upgrades,
+        semantics,
+        ..
+    } = acquisition
+    else {
+        return false;
+    };
+
+    boss_target_topology == BossEncounterTargetTopologyV1::SingleOpponent
+        && semantics
+            .roles
+            .contains(&CardRewardSemanticRoleV1::RandomOutput)
+        && semantics
+            .roles
+            .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
+        && card_analysis_profile_v1(*card, *upgrades).attack_chunk
+            != CardAnalysisAttackChunkV1::None
 }
 
 fn access_amplifies_existing_answers(
@@ -736,6 +791,11 @@ fn compare_card_reward_evidence(
                 .added_formation_strengths
                 .len()
                 .cmp(&left.delta.added_formation_strengths.len())
+        })
+        .then_with(|| {
+            right
+                .random_target_frontload_reliable
+                .cmp(&left.random_target_frontload_reliable)
         })
         .then_with(|| right.delta.max_hp_gain.cmp(&left.delta.max_hp_gain))
         .then_with(|| left.surface_index.cmp(&right.surface_index))
@@ -1176,6 +1236,318 @@ mod tests {
                 DecisionCandidateKey::CardRewardSkip { .. }
             )),
             "supported exhaust payoff should precede skip; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn supported_exhaust_converter_survives_unmodeled_magnitude_and_secondary_axis_debt() {
+        let mut session = reward_session(&[
+            (CardId::FiendFire, 0),
+            (CardId::SwordBoomerang, 1),
+            (CardId::Clash, 0),
+        ]);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 30;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.current_hp = 64;
+        session.run_state.max_hp = 93;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 1),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Clothesline, 1),
+            (CardId::IronWave, 0),
+            (CardId::ThunderClap, 0),
+            (CardId::BurningPact, 0),
+            (CardId::Clash, 0),
+            (CardId::ShrugItOff, 1),
+            (CardId::DarkShackles, 0),
+            (CardId::BattleTrance, 0),
+            (CardId::FeelNoPain, 1),
+            (CardId::FeelNoPain, 1),
+            (CardId::TrueGrit, 1),
+            (CardId::Disarm, 0),
+            (CardId::BodySlam, 1),
+            (CardId::PommelStrike, 0),
+            (CardId::Entrench, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let fiend_fire = card_evidence(&decision, CardId::FiendFire);
+        assert!(fiend_fire.introduces_unsupported_mechanics);
+        assert!(matches!(
+            &fiend_fire.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .positive_signals
+                .contains(&CardComponentSignalKindV1::ExhaustConversionSupported)
+                && component_signals
+                    .debt_signals
+                    .contains(&CardComponentSignalKindV1::StrengthPayoffUnsupported)
+        ));
+        assert_eq!(
+            fiend_fire.band,
+            CardRewardPolicyBandV1::EstablishStrategicAsset
+        );
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::FiendFire,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "a visible exhaust conversion supported by the existing engine must not be erased by an unmodeled magnitude or optional strength axis; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn intrinsic_asset_axis_survives_an_unfunded_secondary_package_axis() {
+        let mut session = reward_session(&[(CardId::Whirlwind, 0), (CardId::HeavyBlade, 0)]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 46;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+
+        let decision = decision(&session);
+        let whirlwind = card_evidence(&decision, CardId::Whirlwind);
+        let heavy_blade = card_evidence(&decision, CardId::HeavyBlade);
+        assert!(matches!(
+            &whirlwind.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                semantics,
+                component_signals,
+                ..
+            } if semantics
+                .roles
+                .contains(&CardRewardSemanticRoleV1::AoeDamage)
+                && component_signals
+                    .debt_signals
+                    .contains(&CardComponentSignalKindV1::StrengthPayoffUnsupported)
+        ));
+        assert_ne!(whirlwind.band, CardRewardPolicyBandV1::Liability);
+        assert_eq!(heavy_blade.band, CardRewardPolicyBandV1::Liability);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Whirlwind,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            ))
+        );
+    }
+
+    #[test]
+    fn random_multi_hit_uses_target_topology_without_claiming_multi_target_control() {
+        let mut session = reward_session(&[(CardId::SwordBoomerang, 0), (CardId::Entrench, 0)]);
+        session.run_state.act_num = 2;
+        session.run_state.floor_num = 28;
+        session.run_state.boss_key = Some(EncounterId::TheChamp);
+        session.run_state.master_deck = [
+            (CardId::Defend, 1),
+            (CardId::Defend, 1),
+            (CardId::Defend, 1),
+            (CardId::Defend, 1),
+            (CardId::FeelNoPain, 1),
+            (CardId::TrueGrit, 1),
+            (CardId::BodySlam, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let champ_decision = decision(&session);
+        let sword_boomerang = card_evidence(&champ_decision, CardId::SwordBoomerang);
+        assert!(sword_boomerang.random_target_frontload_reliable);
+        assert!(matches!(
+            &sword_boomerang.acquisition,
+            CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+                if !semantics.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
+        ));
+        assert!(!sword_boomerang
+            .delta
+            .capability_improvements
+            .iter()
+            .any(|change| change.capability == StrategyCapabilityKindV1::MultiTargetControl));
+        assert!(
+            position(&champ_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::SwordBoomerang,
+                    ..
+                }
+            )) < position(&champ_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Entrench,
+                    ..
+                }
+            )),
+            "a random-target attack becomes reliable frontload against a known single opponent without claiming deterministic all-enemy damage; evidence={:#?}",
+            champ_decision.evidence
+        );
+
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 46;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        let multi_target_decision = decision(&session);
+        let sword_boomerang = card_evidence(&multi_target_decision, CardId::SwordBoomerang);
+        assert!(!sword_boomerang.random_target_frontload_reliable);
+        assert!(
+            position(&multi_target_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Entrench,
+                    ..
+                }
+            )) < position(&multi_target_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::SwordBoomerang,
+                    ..
+                }
+            )),
+            "random-target damage must not receive the single-opponent reliability credit in a multi-opponent boss fight; evidence={:#?}",
+            multi_target_decision.evidence
+        );
+    }
+
+    #[test]
+    fn candidate_strength_burst_closes_uncontested_converter_and_payoff_package() {
+        let mut session =
+            reward_session(&[(CardId::Havoc, 1), (CardId::Flex, 1), (CardId::Pummel, 0)]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 45;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+        session.run_state.master_deck = [
+            (CardId::FiendFire, 1),
+            (CardId::SwordBoomerang, 0),
+            (CardId::Reaper, 0),
+            (CardId::BurningPact, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let flex = card_evidence(&decision, CardId::Flex);
+        assert!(matches!(
+            &flex.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .positive_signals
+                .contains(&CardComponentSignalKindV1::StrengthConvertiblePackageUnlock)
+                && component_signals
+                    .note_signals
+                    .contains(&CardComponentSignalKindV1::ConvertibleStrengthRequiresDrawTiming)
+        ));
+        assert_eq!(flex.band, CardRewardPolicyBandV1::EstablishStrategicAsset);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Flex,
+                    ..
+                }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )),
+            "the exact candidate delta closes a convertible strength package and must outrank preserving deck quality; evidence={:#?}",
+            decision.evidence
+        );
+    }
+
+    #[test]
+    fn candidate_strength_burst_does_not_double_book_artifact_needed_by_existing_access() {
+        let mut session =
+            reward_session(&[(CardId::Havoc, 1), (CardId::Flex, 1), (CardId::Pummel, 0)]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 45;
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        session
+            .run_state
+            .relics
+            .push(RelicState::new(RelicId::ClockworkSouvenir));
+        session.run_state.master_deck = [
+            (CardId::FiendFire, 1),
+            (CardId::SwordBoomerang, 0),
+            (CardId::Reaper, 0),
+            (CardId::BattleTrance, 1),
+            (CardId::BurningPact, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let decision = decision(&session);
+        let flex = card_evidence(&decision, CardId::Flex);
+        assert!(matches!(
+            &flex.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if !component_signals
+                .positive_signals
+                .contains(&CardComponentSignalKindV1::StrengthConvertiblePackageUnlock)
+        ));
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Flex,
+                    ..
+                }
+            )),
+            "one Artifact charge cannot simultaneously fund Battle Trance and permanent Flex; evidence={:#?}",
             decision.evidence
         );
     }

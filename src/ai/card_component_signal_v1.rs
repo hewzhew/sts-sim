@@ -23,6 +23,7 @@ pub enum CardComponentSignalKindV1 {
     DamageMitigation,
     DrawEnergyAccess,
     ExhaustAccess,
+    ExhaustConversionSupported,
     ExhaustPayoffSupported,
     ExhaustPayoffUnsupported,
     BlockPayoffSupported,
@@ -38,6 +39,7 @@ pub enum CardComponentSignalKindV1 {
     FnpEngineUnlock,
     SelfDamagePayoffSupported,
     SelfDamagePayoffUnsupported,
+    StrengthConvertiblePackageUnlock,
     StrengthPayoffConvertibleBurstSupported,
     ConvertibleStrengthRequiresDrawTiming,
     StrengthPayoffTemporaryBurstOnly,
@@ -53,6 +55,7 @@ impl CardComponentSignalKindV1 {
             Self::DamageMitigation => "mitigates_enemy_damage",
             Self::DrawEnergyAccess => "improves_access_or_conversion",
             Self::ExhaustAccess => "improves_exhaust_access",
+            Self::ExhaustConversionSupported => "exhaust_conversion_has_visible_output_and_payoff",
             Self::ExhaustPayoffSupported => "exhaust_payoff_has_generator",
             Self::ExhaustPayoffUnsupported => "exhaust_payoff_without_generator",
             Self::BlockPayoffSupported => "block_payoff_has_supported_block_plan",
@@ -72,6 +75,9 @@ impl CardComponentSignalKindV1 {
             Self::FnpEngineUnlock => "unlocks_fnp_engine",
             Self::SelfDamagePayoffSupported => "self_damage_payoff_has_enabler",
             Self::SelfDamagePayoffUnsupported => "self_damage_payoff_without_enabler",
+            Self::StrengthConvertiblePackageUnlock => {
+                "candidate_unlocks_convertible_strength_for_existing_payoffs"
+            }
             Self::StrengthPayoffConvertibleBurstSupported => {
                 "strength_payoff_has_convertible_burst_source"
             }
@@ -94,6 +100,7 @@ pub struct CardComponentSignalContextV1 {
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub startup: DeckStartupProfileV1,
     pub block_plan: BlockPlanProfileV1,
+    pub candidate_unlocks_convertible_strength_payoff: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,6 +161,22 @@ fn add_generic_components(
         push_signal(
             &mut report.positive_signals,
             CardComponentSignalKindV1::ExhaustAccess,
+        );
+        if has_immediate_exhaust_conversion_output(profile) {
+            push_signal(
+                &mut report.positive_signals,
+                CardComponentSignalKindV1::ExhaustConversionSupported,
+            );
+        }
+    }
+    if context.candidate_unlocks_convertible_strength_payoff {
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::StrengthConvertiblePackageUnlock,
+        );
+        push_signal(
+            &mut report.note_signals,
+            CardComponentSignalKindV1::ConvertibleStrengthRequiresDrawTiming,
         );
     }
     if profile
@@ -236,11 +259,13 @@ fn is_package_payoff_support_signal_v1(signal: CardComponentSignalKindV1) -> boo
     matches!(
         signal,
         CardComponentSignalKindV1::FormationNeedCoverage
+            | CardComponentSignalKindV1::ExhaustConversionSupported
             | CardComponentSignalKindV1::ExhaustPayoffSupported
             | CardComponentSignalKindV1::BlockPayoffSupported
             | CardComponentSignalKindV1::ExhaustEngineEnabler
             | CardComponentSignalKindV1::FnpEngineUnlock
             | CardComponentSignalKindV1::SelfDamagePayoffSupported
+            | CardComponentSignalKindV1::StrengthConvertiblePackageUnlock
             | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
             | CardComponentSignalKindV1::StrengthPayoffSupported
     )
@@ -253,11 +278,13 @@ fn is_package_payoff_support_signal_v1(signal: CardComponentSignalKindV1) -> boo
 pub fn is_concrete_package_support_signal_v1(signal: CardComponentSignalKindV1) -> bool {
     matches!(
         signal,
-        CardComponentSignalKindV1::ExhaustPayoffSupported
+        CardComponentSignalKindV1::ExhaustConversionSupported
+            | CardComponentSignalKindV1::ExhaustPayoffSupported
             | CardComponentSignalKindV1::BlockPayoffSupported
             | CardComponentSignalKindV1::ExhaustEngineEnabler
             | CardComponentSignalKindV1::FnpEngineUnlock
             | CardComponentSignalKindV1::SelfDamagePayoffSupported
+            | CardComponentSignalKindV1::StrengthConvertiblePackageUnlock
             | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
             | CardComponentSignalKindV1::StrengthPayoffSupported
     )
@@ -508,6 +535,22 @@ fn effective_exhaust_access_component(
         || context.startup.exhaust_engine_count > 0
 }
 
+fn has_immediate_exhaust_conversion_output(profile: &CardRewardSemanticProfileV1) -> bool {
+    profile.roles.iter().any(|role| {
+        matches!(
+            role,
+            CardRewardSemanticRoleV1::FrontloadDamage
+                | CardRewardSemanticRoleV1::AoeDamage
+                | CardRewardSemanticRoleV1::Block
+                | CardRewardSemanticRoleV1::CardDraw
+                | CardRewardSemanticRoleV1::CycleAccess
+                | CardRewardSemanticRoleV1::EnergySource
+                | CardRewardSemanticRoleV1::Weak
+                | CardRewardSemanticRoleV1::EnemyStrengthDown
+        )
+    })
+}
+
 fn push_role(roles: &mut Vec<CardComponentRoleV1>, role: CardComponentRoleV1) {
     if !roles.contains(&role) {
         roles.push(role);
@@ -533,6 +576,7 @@ mod tests {
             formation_needs: vec![StrategyDeckFormationNeedV1::Consistency],
             startup: DeckStartupProfileV1::default(),
             block_plan: BlockPlanProfileV1::default(),
+            candidate_unlocks_convertible_strength_payoff: false,
         }
     }
 
@@ -593,6 +637,27 @@ mod tests {
     }
 
     #[test]
+    fn candidate_strength_package_unlock_is_concrete_support_with_timing_note() {
+        let mut context = context();
+        context.candidate_unlocks_convertible_strength_payoff = true;
+        let report = evaluate_card_component_signals_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Flex, 1)),
+        );
+
+        assert!(report
+            .positive_signals
+            .contains(&StrengthConvertiblePackageUnlock));
+        assert!(report
+            .note_signals
+            .contains(&ConvertibleStrengthRequiresDrawTiming));
+        assert!(report
+            .positive_signals
+            .iter()
+            .any(|signal| is_concrete_package_support_signal_v1(*signal)));
+    }
+
+    #[test]
     fn duplicate_no_draw_access_card_emits_structural_debt() {
         let mut context = context();
         context.same_card_count = 1;
@@ -639,8 +704,31 @@ mod tests {
         );
 
         assert!(report.positive_signals.contains(&ExhaustAccess));
+        assert!(report
+            .positive_signals
+            .contains(&ExhaustConversionSupported));
         assert!(!report.positive_signals.contains(&DrawEnergyAccess));
         assert!(!report.roles.contains(&CardComponentRoleV1::Lubricant));
+    }
+
+    #[test]
+    fn supported_exhaust_conversion_covers_its_package_despite_secondary_payoff_debt() {
+        let mut context = context();
+        context.startup.feel_no_pain_count = 2;
+        context.startup.exhaust_payoff_count = 1;
+        context.startup.exhaust_engine_count = 2;
+
+        let report = evaluate_card_component_signals_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::FiendFire, 1)),
+        );
+
+        assert!(report.positive_signals.contains(&ExhaustAccess));
+        assert!(report
+            .positive_signals
+            .contains(&ExhaustConversionSupported));
+        assert!(report.debt_signals.contains(&StrengthPayoffUnsupported));
+        assert!(!report.debt_signals.contains(&PayoffWithoutVisibleGapFill));
     }
 
     #[test]
