@@ -120,15 +120,14 @@ runner explicitly opens a potion policy and budget. A diagnostic fact such as
 "potion rescue found a win" does not automatically mean the main runner should
 spend that potion.
 
-Strategic non-boss search protects an exact potion-free incumbent. Resident
-run search carries that witness in its combat-work checkpoint; owner-audit
-staging carries an opaque replay-adjudicated attempt in memory until the
-portfolio commits one line. If the incumbent misses the configured run-quality
-satisfaction, the runner may open bounded one-potion lanes across active
-potion identities. A spending witness may replace the protected incumbent only
-by satisfying that quality contract; a higher-HP result that still misses the
-target is not permission to exchange continuation value for a marginal local
-improvement.
+Strategic search starts from an exact potion-free stage. Resident run search
+carries that witness in its combat-work checkpoint; owner-audit staging carries
+an opaque replay-adjudicated attempt in memory until the portfolio commits one
+line. If the incumbent misses the configured run-quality satisfaction, the
+runner may open bounded one-potion lanes across active potion identities. A
+spending witness may replace the protected incumbent only by satisfying that
+quality contract; a higher-HP result that still misses the target is not
+permission to exchange continuation value for a marginal local improvement.
 
 During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
 exact candidate but cannot by itself end the refinement quantum. Early
@@ -137,19 +136,25 @@ When several clean witnesses reach that target, run control minimizes potion
 use before applying the ordinary final-HP and persistent-payoff ordering.
 `FindAnyWin` survival rescue keeps its separate first-acceptable-win contract.
 Autonomous refinement gives each active potion identity its own exact search
-stage. Those stages preserve the verified incumbent and divide the configured
-allowance by the number of active identities, then give one equal share to the
-potion-free primary and to each concrete identity. Thus a high-branching potion
-cannot starve a different slot, while the total bounded work is at most
-`1 + 1 / active identities` times one configured allowance and remains under
-the caller's combat wall deadline. Slot order follows deterministic slot
-identity, not a potion value ranking.
+stage. Those stages preserve the verified incumbent. Non-Boss search divides
+the configured allowance by the number of active identities, then gives one
+equal share to the potion-free primary and to each concrete identity. Boss
+search additionally keeps one final canonical multi-potion fallback, divides
+by `active identities + 1`, and reaches that fallback only when the clean and
+single-identity stages found no acceptable witness. Thus a high-branching
+potion cannot starve a simpler slot. Total bounded work is at most
+`1 + 1 / active identities` allowances for non-Boss combat and
+`1 + 1 / (active identities + 1)` allowances for Boss combat, while the
+caller's combat wall deadline remains authoritative. Slot order follows
+deterministic slot identity, not a potion value ranking.
 
 Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
 retaining the potion inventory. Owner-audit therefore searches those boundaries
 without active potion expenditure first and lands any exact clean win; only a
 missing no-potion witness opens the remaining high-stakes Boss rescue budget.
-Other Boss boundaries retain their canonical high-stakes search contract.
+Other owner-audit Boss boundaries retain their canonical high-stakes search
+contract. The autonomous resident runner uses the clean, single-identity, then
+multi-potion fallback schedule above for every strategic Boss search.
 
 Static potion identity tiers may describe audit evidence but do not admit
 production spending. Passive death insurance and explicit escape remain

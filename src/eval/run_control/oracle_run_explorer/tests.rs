@@ -766,6 +766,70 @@ fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
 }
 
 #[test]
+fn strategic_boss_search_isolates_identities_before_multi_potion_fallback() {
+    let options = RunControlSearchCombatOptions {
+        max_nodes: Some(101),
+        wall_ms: Some(101),
+        ..RunControlSearchCombatOptions::default()
+    };
+    let budgets = OracleRunCombatBudgetsV1 {
+        hallway: options.clone(),
+        elite: options.clone(),
+        boss: options,
+        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        initial_divisor: 1,
+        guidance_bundle: None,
+    };
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.meta.is_boss_fight = true;
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::Elixir, 7)),
+        Some(Potion::new(PotionId::SwiftPotion, 8)),
+        Some(Potion::new(PotionId::SpeedPotion, 9)),
+    ];
+    session.active_combat = Some(ActiveCombat::new(
+        crate::state::core::EngineState::CombatPlayerTurn,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoomBoss,
+        }),
+    ));
+    let prior = empty_combat_work_checkpoint();
+
+    let no_potion = budgets.for_session_stage(&session, 0);
+    let elixir = budgets.for_session_stage_with_prior(&session, 1, &prior);
+    let swift = budgets.for_session_stage_with_prior(&session, 2, &prior);
+    let speed = budgets.for_session_stage_with_prior(&session, 3, &prior);
+    let fallback = budgets.for_session_stage_with_prior(&session, 4, &prior);
+
+    assert_eq!(no_potion.max_potions_used, Some(0));
+    assert_eq!(no_potion.max_nodes, Some(26));
+    assert_eq!(no_potion.wall_ms, Some(26));
+    assert_eq!(elixir.allowed_potion_slots, Some(0b001));
+    assert_eq!(swift.allowed_potion_slots, Some(0b010));
+    assert_eq!(speed.allowed_potion_slots, Some(0b100));
+    for identity in [&elixir, &swift, &speed] {
+        assert_eq!(identity.max_potions_used, Some(1));
+        assert_eq!(identity.max_nodes, Some(26));
+        assert_eq!(identity.wall_ms, Some(26));
+    }
+    assert_eq!(
+        fallback.potion_policy,
+        Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted)
+    );
+    assert_eq!(fallback.max_potions_used, Some(2));
+    assert_eq!(fallback.allowed_potion_slots, Some(0b111));
+    assert_eq!(fallback.max_nodes, Some(26));
+    assert_eq!(fallback.wall_ms, Some(26));
+    for stage in 0..4 {
+        assert!(budgets.has_later_stage(&session, stage));
+    }
+    assert!(!budgets.has_later_stage(&session, 4));
+}
+
+#[test]
 fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
     for potion in [
         PotionId::FirePotion,

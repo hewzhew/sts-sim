@@ -354,6 +354,20 @@ impl OracleRunCombatBudgetsV1 {
             options.allowed_potion_slots = Some(0);
             return options;
         }
+        // Keep the original high-stakes two-potion surface as a final Boss
+        // rescue, after cheaper clean and single-slot searches had an
+        // independent chance to produce an exact witness.
+        if boss_multi_potion_fallback_stage(session) == Some(stage) {
+            options.potion_policy =
+                Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
+            options.max_potions_used = session.active_combat.as_ref().and_then(|active| {
+                crate::ai::combat_search_v2::high_stakes_semantic_potion_budget(
+                    &active.combat_state,
+                )
+            });
+            options.allowed_potion_slots = Some(active_slots);
+            return scale_combat_options(options, self.potion_stage_allowance_divisor(session));
+        }
         options = scale_combat_options(options, self.potion_stage_allowance_divisor(session));
         options.allowed_potion_slots = Some(active_potion_slot_mask_for_stage(active_slots, stage));
         options
@@ -387,8 +401,11 @@ impl OracleRunCombatBudgetsV1 {
     }
 
     fn potion_stage_allowance_divisor(&self, session: &RunControlSession) -> u32 {
-        oracle_active_victory_potion_slot_mask_v1(session)
-            .count_ones()
+        let active_identities = oracle_active_victory_potion_slot_mask_v1(session).count_ones();
+        active_identities
+            .saturating_add(u32::from(
+                boss_multi_potion_fallback_stage(session).is_some(),
+            ))
             .max(1)
     }
 
@@ -404,7 +421,11 @@ impl OracleRunCombatBudgetsV1 {
         let uses_potion_stages =
             self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1));
         let active_potion_stages = if uses_potion_stages {
-            oracle_active_victory_potion_slot_mask_v1(session).count_ones()
+            oracle_active_victory_potion_slot_mask_v1(session)
+                .count_ones()
+                .saturating_add(u32::from(
+                    boss_multi_potion_fallback_stage(session).is_some(),
+                ))
         } else {
             0
         };
@@ -436,19 +457,29 @@ impl OracleRunCombatBudgetsV1 {
             return false;
         }
         session.active_combat.as_ref().is_some_and(|active| {
-            !active.combat_state.meta.is_boss_fight
-                && active
-                    .combat_state
-                    .entities
-                    .potions
-                    .iter()
-                    .flatten()
-                    .any(|potion| {
-                        potion.can_use
-                            || potion.id == crate::content::potions::PotionId::FairyPotion
-                    })
+            active
+                .combat_state
+                .entities
+                .potions
+                .iter()
+                .flatten()
+                .any(|potion| {
+                    potion.can_use || potion.id == crate::content::potions::PotionId::FairyPotion
+                })
         })
     }
+}
+
+fn boss_multi_potion_fallback_stage(session: &RunControlSession) -> Option<u8> {
+    let active = session.active_combat.as_ref()?;
+    if !active.combat_state.meta.is_boss_fight {
+        return None;
+    }
+    let identity_stages = oracle_active_victory_potion_slot_mask_v1(session).count_ones();
+    if identity_stages == 0 {
+        return None;
+    }
+    u8::try_from(identity_stages).ok()?.checked_add(1)
 }
 
 fn active_potion_slot_mask_for_stage(active_slots: u64, stage: u8) -> u64 {

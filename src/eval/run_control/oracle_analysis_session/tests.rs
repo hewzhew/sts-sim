@@ -563,7 +563,7 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
 }
 
 #[test]
-fn boss_and_explicit_potion_overrides_skip_the_conserving_policy() {
+fn boss_uses_stages_but_explicit_potion_overrides_remain_literal() {
     let mut boss_combat = potion_equipped_one_strike_combat();
     boss_combat.meta.is_boss_fight = true;
     let boss = combat_analysis_with_budgets(
@@ -577,8 +577,8 @@ fn boss_and_explicit_potion_overrides_skip_the_conserving_policy() {
         .combat
         .expect("boss combat progress");
     assert_eq!(boss_progress.search_stage, 0);
-    assert_ne!(boss_progress.max_potions_used, Some(0));
-    assert!(!boss
+    assert_eq!(boss_progress.max_potions_used, Some(0));
+    assert!(boss
         .combat_budgets
         .has_later_stage(&boss.require_branch(0).expect("boss branch").session, 0));
 
@@ -604,6 +604,99 @@ fn boss_and_explicit_potion_overrides_skip_the_conserving_policy() {
             .session,
         0
     ));
+}
+
+#[test]
+fn boss_single_identity_rescue_finishes_before_multi_potion_fallback() {
+    let mut combat = one_strike_combat();
+    combat.meta.is_boss_fight = true;
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 20;
+    combat.entities.monsters[0].max_hp = 20;
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 52))];
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(256),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 8,
+            quantum_nodes: 32,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("finish exact one-potion Boss rescue");
+    let progress = report.combat.expect("final Boss rescue progress");
+
+    assert!(matches!(
+        report.status,
+        OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+    ));
+    assert_eq!(progress.search_stage, 1);
+    assert_eq!(progress.max_potions_used, Some(1));
+    assert_eq!(progress.allowed_potion_slots, Some(1));
+    assert_eq!(progress.incumbent_potions_used, Some(1));
+    assert_eq!(
+        analysis.explorer.combat_search_restarts, 1,
+        "the verified single-identity rescue must commit before the multi-potion fallback"
+    );
+}
+
+#[test]
+fn boss_multi_potion_fallback_remains_available_after_single_slot_misses() {
+    let mut combat = one_strike_combat();
+    combat.meta.is_boss_fight = true;
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 30;
+    combat.entities.monsters[0].max_hp = 30;
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::FirePotion, 52)),
+        Some(Potion::new(PotionId::FirePotion, 53)),
+    ];
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(2_048),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 10_000,
+            quantum_nodes: 64,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("finish exact two-potion Boss fallback");
+    let progress = report.combat.expect("final multi-potion progress");
+
+    assert!(
+        matches!(
+            report.status,
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+        ),
+        "multi-potion fallback did not materialize: {:?}, stage={}, remaining_nodes={}, max_potions={:?}, allowed_slots={:?}",
+        report.status,
+        progress.search_stage,
+        progress.remaining_nodes,
+        progress.max_potions_used,
+        progress.allowed_potion_slots
+    );
+    assert_eq!(progress.search_stage, 3);
+    assert_eq!(progress.max_potions_used, Some(2));
+    assert_eq!(progress.allowed_potion_slots, Some(0b11));
+    assert_eq!(progress.incumbent_potions_used, Some(2));
+    assert_eq!(progress.incumbent_potion_slots, Some(0b11));
+    assert_eq!(analysis.explorer.combat_search_restarts, 3);
 }
 
 #[test]

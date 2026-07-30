@@ -506,6 +506,15 @@ autonomous runner atomically applies that exact line before recording a
 run-wall stop at the resulting boundary. The report records this as
 `incumbent_accepted_after_run_wall` and includes any resulting wall overshoot.
 
+Strategic Boss search does not open the complete multi-potion surface first.
+It tries a potion-free stage, then one exact stage per active potion identity,
+and only then a canonical multi-potion fallback when no earlier stage produced
+an acceptable witness. With `n` active identities, every stage receives one
+share of the configured allowance divided by `n + 1`; the caller's combat wall
+still bounds the complete sequence. This preserves genuinely necessary
+multi-potion rescue without letting its larger action surface hide a clean or
+single-potion win.
+
 Full `combat-case` reports also include a read-only `storage` census. It
 separates live generator work from retained slot, exact-state index, scheduling
 heap, and graph-edge capacities, including the subset owned by already
