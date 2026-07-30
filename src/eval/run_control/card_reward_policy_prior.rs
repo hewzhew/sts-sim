@@ -578,7 +578,7 @@ fn card_reward_band_v1(
                 || semantics
                     .roles
                     .iter()
-                    .any(|role| is_independent_role(*role))
+                    .any(|role| is_self_sufficient_strategic_role(*role))
             {
                 CardRewardPolicyBandV1::EstablishStrategicAsset
             } else {
@@ -640,11 +640,16 @@ fn is_access_role(role: CardRewardSemanticRoleV1) -> bool {
     )
 }
 
-fn is_independent_role(role: CardRewardSemanticRoleV1) -> bool {
+/// Roles whose strategic value is intrinsic enough to justify adding a card
+/// without a current threat, formation, or package-support delta.
+///
+/// Plain block is deliberately absent. Block is an amount and timing claim,
+/// not an asset by itself: it must fill a current need or carry another
+/// self-sufficient role before it can outrank preserving deck quality.
+fn is_self_sufficient_strategic_role(role: CardRewardSemanticRoleV1) -> bool {
     matches!(
         role,
         CardRewardSemanticRoleV1::AoeDamage
-            | CardRewardSemanticRoleV1::Block
             | CardRewardSemanticRoleV1::CardDraw
             | CardRewardSemanticRoleV1::CycleAccess
             | CardRewardSemanticRoleV1::DiscardPileTopdeckAccess
@@ -1267,6 +1272,86 @@ mod tests {
                     && candidate.prior_probability.is_finite()
                     && candidate.prior_probability > 0.0
             }));
+    }
+
+    #[test]
+    fn plain_block_needs_actionable_evidence_but_intrinsic_payoff_remains_an_asset() {
+        let mut session = reward_session(&[(CardId::Sentinel, 0), (CardId::Feed, 0)]);
+        session.run_state.act_num = 1;
+        session.run_state.floor_num = 11;
+        session.run_state.boss_key = Some(EncounterId::TheGuardian);
+        session.run_state.current_hp = 83;
+        session.run_state.max_hp = 91;
+        session.run_state.master_deck = [
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Strike, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Berserk, 0),
+            (CardId::WildStrike, 0),
+            (CardId::ShrugItOff, 0),
+            (CardId::Evolve, 0),
+            (CardId::Clothesline, 0),
+            (CardId::Intimidate, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+        let decision = decision(&session);
+        let sentinel = card_evidence(&decision, CardId::Sentinel);
+        let feed = card_evidence(&decision, CardId::Feed);
+        let skip = position(&decision, |key| {
+            matches!(key, DecisionCandidateKey::CardRewardSkip { .. })
+        });
+
+        assert!(matches!(
+            &sentinel.acquisition,
+            CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+                if semantics.roles == [CardRewardSemanticRoleV1::Block]
+        ));
+        assert!(sentinel.delta.closed_threat_gaps.is_empty());
+        assert!(sentinel.delta.capability_improvements.is_empty());
+        assert!(sentinel.delta.resolved_formation_needs.is_empty());
+        assert_eq!(sentinel.band, CardRewardPolicyBandV1::SpeculativeAddition);
+        assert!(
+            skip < position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Sentinel,
+                    ..
+                }
+            )),
+            "plain block without actionable evidence must not outrank preserving deck quality"
+        );
+
+        assert!(matches!(
+            &feed.acquisition,
+            CardRewardPolicyAcquisitionV1::Card { semantics, .. }
+                if semantics
+                    .roles
+                    .contains(&CardRewardSemanticRoleV1::CombatExternalPayoff)
+        ));
+        assert_eq!(feed.band, CardRewardPolicyBandV1::EstablishStrategicAsset);
+        assert!(
+            position(&decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Feed,
+                    ..
+                }
+            )) < skip,
+            "an intrinsic persistent payoff must remain independently admissible"
+        );
     }
 
     #[test]
