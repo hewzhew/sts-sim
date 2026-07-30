@@ -19,6 +19,7 @@ use super::depth_beam_audits::DepthBeamTurnAuditArgs;
 use super::guidance_combination_audit::GuidanceCombinationAuditArgs;
 use super::oracle_seed_panel::OracleSeedPanelArgs;
 use super::policy_discrepancy_search::CombatCasePolicyDiscrepancyArgs;
+use super::potion_expenditure_audit::CombatCasePotionExpenditureAuditArgs;
 use super::run_witness_suite::RunWitnessSuiteArgs;
 use super::turn_audits::{TurnActionAuditArgs, TurnPlanAuditArgs};
 use super::turn_membership_audit::TurnMembershipArgs;
@@ -169,6 +170,9 @@ pub(super) enum Command {
     /// Isolated local-graph component with node-local lazy widening.
     #[command(name = "combat-case", visible_alias = "combat-case-local-graph")]
     CombatCaseLocalGraph(CombatCaseLocalGraphArgs),
+    /// Compare isolated no-potion, per-potion, and bounded combination lanes
+    /// from one unchanged exact combat root.
+    CombatCasePotionExpenditureAudit(CombatCasePotionExpenditureAuditArgs),
     /// Distill one exact terminal witness into a semantic action-order artifact.
     BuildActionImitation {
         #[arg(long)]

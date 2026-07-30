@@ -57,6 +57,32 @@ cargo run -p sts_oracle_tools --bin combat_case_review -- --case <case.json> --l
 Review output is diagnostic. It does not mutate runner policy and does not
 prove a deck is good or bad by itself.
 
+### Potion Expenditure Audit
+
+Compare no-potion, each initial potion, and optionally small potion
+combinations from one unchanged exact combat root:
+
+```powershell
+.\ol.cmd combat-case-potion-expenditure-audit `
+  --case <case.json> `
+  --max-combination-size 2 `
+  --wall-ms-per-lane 10000
+```
+
+Every lane receives the same independent search allowance. The command filters
+explicit use/discard inputs by exact slot without deleting potions from the
+root, then replay-attributes actual consumption by potion UUID. This preserves
+potion-sensitive state and detects passive Fairy Potion use. A passive
+expenditure outside a lane's allowed slots marks that witness non-compliant
+instead of silently treating it as a no-potion result.
+
+The report exposes final HP, final turn, action count, exact potion identities,
+an optional `--survival-reserve-hp`, and a Pareto frontier. A missing witness is
+budget-unknown unless the lane reports `frontier_exhausted`. Continuation value
+such as forced-rest avoidance, future elite plans, potion-slot overflow, and
+encounter-specific preservation remains a run-level decision and is listed as
+unobserved rather than invented into one combat score.
+
 ## Combat Search Driver
 
 Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark

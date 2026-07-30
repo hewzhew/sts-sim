@@ -128,6 +128,13 @@ pub struct TurnOptionGeneratorConfig {
     /// for an explicit zero-potion resource phase; ordinary search keeps the
     /// complete legal surface.
     pub allow_potion_expenditure: bool,
+    /// Optional bit mask restricting potion use and discard inputs to exact
+    /// slot indices while preserving the unchanged combat root.
+    ///
+    /// `None` keeps the complete legal potion surface. `Some(0)` removes
+    /// every explicit potion expenditure. Passive effects such as Fairy
+    /// Potion remain simulator truth and must be audited from replay.
+    pub allowed_potion_slots: Option<u64>,
 }
 
 impl Default for TurnOptionGeneratorConfig {
@@ -136,6 +143,7 @@ impl Default for TurnOptionGeneratorConfig {
             max_engine_steps_per_transition: 512,
             uniform_exploration_ppm: 50_000,
             allow_potion_expenditure: true,
+            allowed_potion_slots: None,
         }
     }
 }

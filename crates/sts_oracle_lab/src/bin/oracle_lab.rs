@@ -32,6 +32,7 @@ mod guidance_combination_audit;
 mod oracle_cli;
 mod oracle_seed_panel;
 mod policy_discrepancy_search;
+mod potion_expenditure_audit;
 mod run_witness_commands;
 mod run_witness_suite;
 mod turn_audits;
@@ -278,6 +279,9 @@ fn main() -> Result<(), String> {
         Command::CombatCasePlanAnnotations(args) => combat_plan_diagnostics::run_annotations(args),
         Command::CombatCasePlanTrace(args) => combat_plan_diagnostics::run_trace(args),
         Command::CombatCasePolicyDiscrepancy(args) => policy_discrepancy_search::run(args),
+        Command::CombatCasePotionExpenditureAudit(args) => {
+            print_json(&potion_expenditure_audit::run(args)?)
+        }
         Command::TurnActionAudit(args) => turn_audits::run_action(args),
         Command::TurnPlanAudit(args) => turn_audits::run_plan(args),
         Command::DepthBeamTurnAudit(args) => depth_beam_audits::run_turn(args),

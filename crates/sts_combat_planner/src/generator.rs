@@ -772,6 +772,18 @@ impl TurnOptionGeneratorSession {
         }
 
         let mut surface = stepper.legal_action_surface(&partial.position);
+        if let Some(allowed_slots) = self.config.allowed_potion_slots {
+            surface.atomic_actions.retain(|input| {
+                let slot = match input {
+                    ClientInput::UsePotion { potion_index, .. } => Some(*potion_index),
+                    ClientInput::DiscardPotion(slot) => Some(*slot),
+                    _ => None,
+                };
+                slot.is_none_or(|slot| {
+                    slot < u64::BITS as usize && allowed_slots & (1_u64 << slot) != 0
+                })
+            });
+        }
         if self
             .max_potion_expenditures
             .is_some_and(|limit| partial.potion_expenditures >= limit)

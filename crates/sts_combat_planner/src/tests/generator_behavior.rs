@@ -332,6 +332,59 @@ fn explicit_zero_potion_generator_phase_removes_potion_expenditure_inputs() {
 }
 
 #[test]
+fn potion_slot_mask_filters_inputs_without_mutating_the_exact_root() {
+    let mut combat = sts_core::test_support::blank_test_combat();
+    let monster = sts_core::test_support::planned_monster(EnemyId::TheGuardian, 1);
+    combat.entities.monsters = vec![monster];
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::EnergyPotion, 7)),
+        Some(Potion::new(PotionId::EnergyPotion, 8)),
+    ];
+    combat.zones.hand.clear();
+    let root = CombatDecisionRoot::new(CombatPosition::new(EngineState::CombatPlayerTurn, combat))
+        .unwrap();
+    let root_potions = root.position().combat.entities.potions.clone();
+    let stepper = EngineCombatStepper;
+    let mut session = TurnOptionGeneratorSession::new(
+        root.clone(),
+        TurnOptionGeneratorConfig {
+            max_engine_steps_per_transition: 256,
+            allowed_potion_slots: Some(1_u64 << 1),
+            ..TurnOptionGeneratorConfig::default()
+        },
+    );
+
+    let report = session.advance(
+        &stepper,
+        CombatPlanningQuantum::deterministic(4_000, 32_768),
+    );
+    assert_eq!(report.status, TurnOptionGenerationStatus::Complete);
+    let potion_inputs = session
+        .completed_options()
+        .iter()
+        .flat_map(|option| option.actions())
+        .filter_map(|action| match action.input {
+            ClientInput::UsePotion { potion_index, .. } => Some(potion_index),
+            ClientInput::DiscardPotion(slot) => Some(slot),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !potion_inputs.is_empty(),
+        "the allowed potion slot should remain searchable"
+    );
+    assert!(
+        potion_inputs.iter().all(|slot| *slot == 1),
+        "the disallowed slot leaked into generated options: {potion_inputs:?}"
+    );
+    assert_eq!(
+        root.position().combat.entities.potions,
+        root_potions,
+        "slot filtering must not alter the exact root inventory"
+    );
+}
+
+#[test]
 fn finite_potion_generator_limit_prunes_over_budget_prefixes() {
     let mut combat = sts_core::test_support::blank_test_combat();
     let monster = sts_core::test_support::planned_monster(EnemyId::TheGuardian, 1);
