@@ -5,6 +5,46 @@ struct DelayThirdApplyStepper {
     calls: std::sync::atomic::AtomicUsize,
 }
 
+struct ImplicitPotionConsumptionStepper {
+    inner: TinyTurnStepper,
+    consumed_slot: usize,
+}
+
+impl CombatStepper for ImplicitPotionConsumptionStepper {
+    fn atomic_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        self.inner.atomic_actions(position)
+    }
+
+    fn legal_action_surface(&self, position: &CombatPosition) -> CombatLegalActionSurfaceV2 {
+        self.inner.legal_action_surface(position)
+    }
+
+    fn supports_canonical_pending_choice_actions(&self) -> bool {
+        self.inner.supports_canonical_pending_choice_actions()
+    }
+
+    fn is_legal_action(&self, position: &CombatPosition, input: &ClientInput) -> bool {
+        self.inner.is_legal_action(position, input)
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        input: ClientInput,
+        limits: CombatStepLimits,
+    ) -> CombatStepResult {
+        let mut result = self.inner.apply_to_stable(position, input, limits);
+        if self.inner.terminal(&result.position) == CombatTerminal::Win {
+            result.position.combat.entities.potions[self.consumed_slot] = None;
+        }
+        result
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        self.inner.terminal(position)
+    }
+}
+
 impl DelayThirdApplyStepper {
     fn new() -> Self {
         Self {
@@ -50,6 +90,32 @@ impl CombatStepper for DelayThirdApplyStepper {
 }
 
 #[test]
+fn exact_slot_mask_filters_use_and_discard_without_filtering_other_actions() {
+    assert!(crate::witness::potion_input_uses_allowed_slot(
+        &ClientInput::UsePotion {
+            potion_index: 1,
+            target: None,
+        },
+        Some(1_u64 << 1),
+    ));
+    assert!(!crate::witness::potion_input_uses_allowed_slot(
+        &ClientInput::UsePotion {
+            potion_index: 0,
+            target: None,
+        },
+        Some(1_u64 << 1),
+    ));
+    assert!(!crate::witness::potion_input_uses_allowed_slot(
+        &ClientInput::DiscardPotion(0),
+        Some(1_u64 << 1),
+    ));
+    assert!(crate::witness::potion_input_uses_allowed_slot(
+        &ClientInput::EndTurn,
+        Some(0),
+    ));
+}
+
+#[test]
 fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     let mut search = PolicyDiscrepancySession::with_policy(
         root(),
@@ -73,6 +139,43 @@ fn policy_discrepancy_search_follows_a_good_policy_to_terminal_truth() {
     assert_eq!(report.status, PolicyDiscrepancyStatus::WitnessFound);
     assert_eq!(report.after.policy_dives, 1);
     assert_eq!(report.witness.unwrap().actions.len(), 1);
+}
+
+#[test]
+fn policy_discrepancy_rejects_implicit_potion_consumption_outside_identity_contract() {
+    let mut position = root().position().clone();
+    position.combat.entities.potions = vec![
+        Some(Potion::new(PotionId::ColorlessPotion, 7)),
+        Some(Potion::new(PotionId::FairyPotion, 8)),
+    ];
+    let root = CombatDecisionRoot::new(position).expect("implicit potion root");
+    let mut search = PolicyDiscrepancySession::with_policy(
+        root,
+        PolicyDiscrepancyConfig {
+            max_engine_steps_per_transition: 4,
+            max_greedy_actions_per_dive: 8,
+            max_potions_used: Some(1),
+            allowed_potion_slots: Some(1 << 0),
+            ..PolicyDiscrepancyConfig::default()
+        },
+        Arc::new(PreferPlayPolicy),
+    );
+    let stepper = ImplicitPotionConsumptionStepper {
+        inner: TinyTurnStepper::lethal(),
+        consumed_slot: 1,
+    };
+
+    let report = search.advance(
+        &stepper,
+        PolicyDiscrepancyQuantum {
+            additional_applied_transitions: 128,
+            additional_engine_steps: 512,
+            deadline: None,
+        },
+    );
+
+    assert_ne!(report.status, PolicyDiscrepancyStatus::WitnessFound);
+    assert!(report.witness.is_none());
 }
 
 #[test]

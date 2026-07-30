@@ -161,35 +161,41 @@ pub(super) fn elapsed_nanos_u64(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
-pub(super) fn witness_potion_expenditures(witness: &OracleCombatWitness) -> u32 {
-    witness
-        .actions
-        .iter()
-        .filter(|action| {
-            matches!(
-                action.input,
-                ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
-            )
-        })
-        .count()
-        .try_into()
-        .unwrap_or(u32::MAX)
+pub(super) fn witness_potion_expenditures(
+    root: &CombatPosition,
+    witness: &OracleCombatWitness,
+) -> u32 {
+    crate::witness::trajectory_potion_contract_usage(
+        root,
+        &witness.actions,
+        &witness.final_position,
+    )
+    .expenditures
 }
 
-pub(super) fn witness_within_potion_budget(
+pub(super) fn witness_within_potion_contract(
+    root: &CombatPosition,
     witness: &OracleCombatWitness,
     max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
 ) -> bool {
-    max_potions_used.is_none_or(|limit| witness_potion_expenditures(witness) <= limit)
+    crate::witness::trajectory_within_potion_contract(
+        root,
+        &witness.actions,
+        &witness.final_position,
+        max_potions_used,
+        allowed_potion_slots,
+    )
 }
 
 pub(super) fn witness_better_with_potion_budget(
+    root: &CombatPosition,
     left: &OracleCombatWitness,
     right: &OracleCombatWitness,
     max_potions_used: Option<u32>,
 ) -> bool {
-    let left_potions = witness_potion_expenditures(left);
-    let right_potions = witness_potion_expenditures(right);
+    let left_potions = witness_potion_expenditures(root, left);
+    let right_potions = witness_potion_expenditures(root, right);
     observable_witness_quality_order(
         ObservableWitnessQuality {
             within_budget: max_potions_used.is_none_or(|limit| left_potions <= limit),
@@ -209,22 +215,27 @@ pub(super) fn witness_better_with_potion_budget(
 }
 
 pub(super) fn terminal_candidate_could_improve_witness(
+    root: &CombatPosition,
     current: &OracleCombatWitness,
-    candidate_final_hp: i32,
-    candidate_action_count: usize,
+    candidate_final_position: &CombatPosition,
+    candidate_actions: &[TurnOptionAction],
     candidate_negative_log_policy: f64,
-    candidate_potion_expenditures: u32,
     max_potions_used: Option<u32>,
 ) -> bool {
-    let current_potions = witness_potion_expenditures(current);
+    let candidate_potions = crate::witness::trajectory_potion_contract_usage(
+        root,
+        candidate_actions,
+        candidate_final_position,
+    )
+    .expenditures;
+    let current_potions = witness_potion_expenditures(root, current);
     observable_witness_quality_order(
         ObservableWitnessQuality {
-            within_budget: max_potions_used
-                .is_none_or(|limit| candidate_potion_expenditures <= limit),
-            final_hp: candidate_final_hp,
-            action_count: candidate_action_count,
+            within_budget: max_potions_used.is_none_or(|limit| candidate_potions <= limit),
+            final_hp: candidate_final_position.combat.entities.player.current_hp,
+            action_count: candidate_actions.len(),
             negative_log_policy: candidate_negative_log_policy,
-            potion_expenditures: candidate_potion_expenditures,
+            potion_expenditures: candidate_potions,
         },
         ObservableWitnessQuality {
             within_budget: max_potions_used.is_none_or(|limit| current_potions <= limit),
@@ -292,6 +303,7 @@ pub(super) fn local_deep_state_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_core::content::potions::{Potion, PotionId};
     use sts_core::state::core::EngineState;
 
     fn witness(final_hp: i32, uses_potion: bool) -> OracleCombatWitness {
@@ -318,15 +330,21 @@ mod tests {
 
     #[test]
     fn potion_budget_is_a_constraint_without_globally_overriding_hp_quality() {
+        let root = CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            sts_core::test_support::blank_test_combat(),
+        );
         let high_hp_potion = witness(50, true);
         let low_hp_clean = witness(20, false);
 
         assert!(witness_better_with_potion_budget(
+            &root,
             &high_hp_potion,
             &low_hp_clean,
             None
         ));
         assert!(witness_better_with_potion_budget(
+            &root,
             &low_hp_clean,
             &high_hp_potion,
             Some(0)
@@ -334,28 +352,142 @@ mod tests {
     }
 
     #[test]
+    fn implicit_starting_potion_consumption_obeys_identity_contract() {
+        let mut start_combat = sts_core::test_support::blank_test_combat();
+        start_combat.entities.potions = vec![
+            Some(Potion::new(PotionId::ColorlessPotion, 7)),
+            Some(Potion::new(PotionId::FairyPotion, 8)),
+        ];
+        let root = CombatPosition::new(EngineState::CombatPlayerTurn, start_combat);
+        let mut implicit_fairy = witness(10, false);
+        implicit_fairy.final_position.combat.entities.potions =
+            vec![Some(Potion::new(PotionId::ColorlessPotion, 7)), None];
+
+        assert!(!witness_within_potion_contract(
+            &root,
+            &implicit_fairy,
+            Some(1),
+            Some(1 << 0),
+        ));
+        assert!(witness_within_potion_contract(
+            &root,
+            &implicit_fairy,
+            Some(1),
+            Some(1 << 1),
+        ));
+        assert!(!witness_within_potion_contract(
+            &root,
+            &implicit_fairy,
+            Some(0),
+            Some(1 << 1),
+        ));
+
+        let mut explicit_colorless_and_implicit_fairy = witness(10, true);
+        explicit_colorless_and_implicit_fairy
+            .final_position
+            .combat
+            .entities
+            .potions = vec![None, None];
+        assert!(!witness_within_potion_contract(
+            &root,
+            &explicit_colorless_and_implicit_fairy,
+            Some(1),
+            Some((1 << 0) | (1 << 1)),
+        ));
+        assert!(witness_within_potion_contract(
+            &root,
+            &explicit_colorless_and_implicit_fairy,
+            Some(2),
+            Some((1 << 0) | (1 << 1)),
+        ));
+    }
+
+    #[test]
     fn terminal_candidate_filter_uses_the_same_complete_witness_order() {
+        let root = CombatPosition::new(
+            EngineState::CombatPlayerTurn,
+            sts_core::test_support::blank_test_combat(),
+        );
         let current = witness(50, false);
 
+        let candidate = witness(49, false);
         assert!(!terminal_candidate_could_improve_witness(
-            &current, 49, 0, 0.5, 0, None
-        ));
-        assert!(terminal_candidate_could_improve_witness(
-            &current, 51, 20, 20.0, 0, None
-        ));
-        assert!(terminal_candidate_could_improve_witness(
-            &current, 50, 0, 0.5, 0, None
-        ));
-        assert!(!terminal_candidate_could_improve_witness(
-            &current, 50, 0, 1.0, 0, None
-        ));
-        assert!(!terminal_candidate_could_improve_witness(
+            &root,
             &current,
-            51,
-            0,
+            &candidate.final_position,
+            &candidate.actions,
             0.5,
-            1,
+            None
+        ));
+        let candidate = witness(51, true);
+        assert!(terminal_candidate_could_improve_witness(
+            &root,
+            &current,
+            &candidate.final_position,
+            &candidate.actions,
+            20.0,
+            None
+        ));
+        let candidate = witness(50, false);
+        assert!(terminal_candidate_could_improve_witness(
+            &root,
+            &current,
+            &candidate.final_position,
+            &candidate.actions,
+            0.5,
+            None
+        ));
+        assert!(!terminal_candidate_could_improve_witness(
+            &root,
+            &current,
+            &candidate.final_position,
+            &candidate.actions,
+            1.0,
+            None
+        ));
+        let candidate = witness(51, true);
+        assert!(!terminal_candidate_could_improve_witness(
+            &root,
+            &current,
+            &candidate.final_position,
+            &candidate.actions,
+            0.5,
             Some(0),
+        ));
+    }
+
+    #[test]
+    fn implicit_potion_consumption_participates_in_witness_ordering() {
+        let mut start_combat = sts_core::test_support::blank_test_combat();
+        start_combat.entities.potions = vec![Some(Potion::new(PotionId::FairyPotion, 8))];
+        let root = CombatPosition::new(EngineState::CombatPlayerTurn, start_combat);
+        let mut clean = witness(50, false);
+        clean.final_position.combat.entities.potions =
+            vec![Some(Potion::new(PotionId::FairyPotion, 8))];
+        let mut implicit_fairy = witness(50, false);
+        implicit_fairy.final_position.combat.entities.potions = vec![None];
+
+        assert!(witness_better_with_potion_budget(
+            &root,
+            &clean,
+            &implicit_fairy,
+            Some(1),
+        ));
+        assert!(!terminal_candidate_could_improve_witness(
+            &root,
+            &clean,
+            &implicit_fairy.final_position,
+            &implicit_fairy.actions,
+            implicit_fairy.negative_log_policy,
+            Some(1),
+        ));
+        assert!(terminal_candidate_could_improve_witness(
+            &root,
+            &implicit_fairy,
+            &clean.final_position,
+            &clean.actions,
+            clean.negative_log_policy,
+            Some(1),
         ));
     }
 }

@@ -250,11 +250,11 @@ impl LocalTurnGraphWitnessSession {
                         prefix_negative_log_policy + option.negative_log_policy();
                     let candidate_is_dominated = self.witness.as_ref().is_some_and(|current| {
                         !terminal_candidate_could_improve_witness(
+                            &self.original_root,
                             current,
-                            option.exact_successor().combat.entities.player.current_hp,
-                            actions.len(),
+                            option.exact_successor(),
+                            &actions,
                             negative_log_policy,
-                            actions_potion_expenditures(&actions),
                             self.config.max_potions_used,
                         )
                     });

@@ -634,9 +634,9 @@ impl PolicyDiscrepancySession {
                 )
             });
         } else if let Some(allowed_slots) = self.config.allowed_potion_slots {
-            surface
-                .atomic_actions
-                .retain(|input| potion_input_uses_allowed_slot(input, Some(allowed_slots)));
+            surface.atomic_actions.retain(|input| {
+                crate::witness::potion_input_uses_allowed_slot(input, Some(allowed_slots))
+            });
         }
         let choices = surface
             .atomic_actions
@@ -745,7 +745,10 @@ impl PolicyDiscrepancySession {
         {
             return;
         }
-        if !actions_use_only_allowed_potion_slots(&actions, self.config.allowed_potion_slots) {
+        if !crate::witness::actions_use_only_allowed_potion_slots(
+            &actions,
+            self.config.allowed_potion_slots,
+        ) {
             return;
         }
         match replay_atomic_actions(
@@ -757,12 +760,20 @@ impl PolicyDiscrepancySession {
             Ok((final_position, replay_engine_steps))
                 if stepper.terminal(&final_position) == CombatTerminal::Win =>
             {
-                self.witness = Some(ExactAtomicWitness {
-                    actions,
-                    final_position,
-                    negative_log_policy: seed.discrepancy,
-                    replay_engine_steps,
-                });
+                if crate::witness::trajectory_within_potion_contract(
+                    &self.root,
+                    &actions,
+                    &final_position,
+                    self.config.max_potions_used,
+                    self.config.allowed_potion_slots,
+                ) {
+                    self.witness = Some(ExactAtomicWitness {
+                        actions,
+                        final_position,
+                        negative_log_policy: seed.discrepancy,
+                        replay_engine_steps,
+                    });
+                }
             }
             _ => self.replay_mismatch = true,
         }
@@ -793,65 +804,6 @@ impl PolicyDiscrepancySession {
     }
 }
 
-fn actions_use_only_allowed_potion_slots(
-    actions: &[TurnOptionAction],
-    allowed_slots: Option<u64>,
-) -> bool {
-    let Some(allowed_slots) = allowed_slots else {
-        return true;
-    };
-    actions
-        .iter()
-        .all(|action| potion_input_uses_allowed_slot(&action.input, Some(allowed_slots)))
-}
-
-fn potion_input_uses_allowed_slot(input: &ClientInput, allowed_slots: Option<u64>) -> bool {
-    let slot = match input {
-        ClientInput::UsePotion { potion_index, .. } => Some(*potion_index),
-        ClientInput::DiscardPotion(slot) => Some(*slot),
-        _ => None,
-    };
-    slot.is_none_or(|slot| {
-        allowed_slots.is_none_or(|allowed_slots| {
-            u32::try_from(slot)
-                .ok()
-                .and_then(|slot| 1_u64.checked_shl(slot))
-                .is_some_and(|slot_mask| allowed_slots & slot_mask != 0)
-        })
-    })
-}
-
 fn deadline_reached(deadline: Option<Instant>) -> bool {
     deadline.is_some_and(|deadline| Instant::now() >= deadline)
-}
-
-#[cfg(test)]
-mod potion_slot_contract_tests {
-    use super::*;
-
-    #[test]
-    fn exact_slot_mask_filters_use_and_discard_without_filtering_other_actions() {
-        assert!(potion_input_uses_allowed_slot(
-            &ClientInput::UsePotion {
-                potion_index: 1,
-                target: None,
-            },
-            Some(1_u64 << 1),
-        ));
-        assert!(!potion_input_uses_allowed_slot(
-            &ClientInput::UsePotion {
-                potion_index: 0,
-                target: None,
-            },
-            Some(1_u64 << 1),
-        ));
-        assert!(!potion_input_uses_allowed_slot(
-            &ClientInput::DiscardPotion(0),
-            Some(1_u64 << 1),
-        ));
-        assert!(potion_input_uses_allowed_slot(
-            &ClientInput::EndTurn,
-            Some(0),
-        ));
-    }
 }

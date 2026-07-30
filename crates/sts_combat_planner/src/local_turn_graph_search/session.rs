@@ -175,7 +175,12 @@ impl LocalTurnGraphWitnessSession {
         let Some(witness) = self.witness.as_ref() else {
             return false;
         };
-        if !witness_within_potion_budget(witness, self.config.max_potions_used) {
+        if !witness_within_potion_contract(
+            &self.original_root,
+            witness,
+            self.config.max_potions_used,
+            self.config.generator.allowed_potion_slots,
+        ) {
             return false;
         }
         match self.config.satisfaction {
@@ -190,8 +195,21 @@ impl LocalTurnGraphWitnessSession {
     }
 
     pub(super) fn remember_witness(&mut self, witness: OracleCombatWitness) -> bool {
+        if !witness_within_potion_contract(
+            &self.original_root,
+            &witness,
+            self.config.max_potions_used,
+            self.config.generator.allowed_potion_slots,
+        ) {
+            return false;
+        }
         let replace = self.witness.as_ref().is_none_or(|current| {
-            witness_better_with_potion_budget(&witness, current, self.config.max_potions_used)
+            witness_better_with_potion_budget(
+                &self.original_root,
+                &witness,
+                current,
+                self.config.max_potions_used,
+            )
         });
         if replace {
             self.witness = Some(witness);
