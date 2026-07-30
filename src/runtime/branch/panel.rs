@@ -1357,7 +1357,9 @@ mod tests {
         template.rescue_search_ms = 1;
         template.boss_search_nodes = 1;
         template.boss_search_ms = 1;
-        template.wall_ms = Some(1_000);
+        // This test owns the completed capsule artifact shape. Shared-test CPU
+        // load must not turn that contract into a wall-censored result.
+        template.wall_ms = None;
         let config = PanelInspectConfig {
             seeds: vec![123],
             artifact_store: BranchArtifactStore::new(&root),
