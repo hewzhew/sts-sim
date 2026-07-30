@@ -243,7 +243,8 @@ impl OracleRunCombatWorkV1 {
                 )
             }
             crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
-            | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_) => {
+            | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_)
+            | crate::ai::combat_search_v2::CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_) => {
                 return Err("oracle witness search does not yet own external-burden acceptance"
                     .to_string());
             }

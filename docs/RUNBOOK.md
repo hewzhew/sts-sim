@@ -176,6 +176,13 @@ stays a continuation question rather than a `spend` verdict. Crossing the
 captured quality limit is evidence about the existing owner gate, not
 permission to spend.
 
+The production `ImproveVerifiedWin` stage keeps searching after a spending
+witness reaches the quality limit; only a clean potion-free quality witness may
+end that refinement early. At commit time, clean quality-reaching candidates
+prefer fewer potion uses before final HP and persistent payoff. This rule does
+not apply to `FindAnyWin` survival rescue. Potion audit crossings should be
+interpreted against that staged contract, not as standalone spend labels.
+
 Route ordering in that question comes only from typed `OccursBefore` facts.
 `must`, `can`, and `cannot` retain their original modality and provenance;
 missing, conflicting, or `unknown` order is explicitly unavailable. Never infer

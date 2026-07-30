@@ -58,6 +58,8 @@ pub(super) struct RolloutCache {
     pub(super) best_replayable_terminal_win: Option<ReplayableTerminalWinWitness>,
     pub(super) best_replayable_terminal_win_without_new_external_burden:
         Option<ReplayableTerminalWinWitness>,
+    pub(super) best_replayable_terminal_potion_free_win_without_new_external_burden:
+        Option<ReplayableTerminalWinWitness>,
 }
 
 impl RolloutCache {

@@ -912,7 +912,7 @@ mod tests {
             session.active_combat.is_none(),
             "the quality-reaching Attack Potion line should resolve combat"
         );
-        assert_eq!(session.visible_player_hp().0, 38);
+        assert_eq!(session.visible_player_hp().0, 40);
         assert!(session
             .run_state
             .potions
@@ -925,7 +925,7 @@ mod tests {
                 && summary
                     .best_win
                     .as_ref()
-                    .is_some_and(|win| win.potions_used == 1 && win.final_hp == 38)
+                    .is_some_and(|win| win.potions_used == 1 && win.final_hp == 40)
         }));
     }
 

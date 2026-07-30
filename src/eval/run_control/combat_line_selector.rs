@@ -9,7 +9,8 @@ use super::combat_line_adjudication::{
 };
 use super::combat_line_outcome::{
     evaluate_combat_candidate_line_outcome, find_accepted_alternative_in_report,
-    find_accepted_alternative_in_report_matching, render_combat_line_outcome_detail,
+    find_accepted_alternative_in_report_matching, prefer_quality_gated_accepted_outcome,
+    render_combat_line_outcome_detail,
 };
 use super::session::RunControlSession;
 
@@ -117,6 +118,7 @@ pub(super) fn select_accepted_search_combat_line_with_hp_loss_at_most(
         policy,
         |trajectory| trajectory.hp_loss.max(0) as u32 <= max_hp_loss,
         |outcome| outcome.hp_loss.max(0) as u32 <= max_hp_loss,
+        prefer_quality_gated_accepted_outcome,
     )?
     else {
         return Ok(None);

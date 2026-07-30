@@ -130,6 +130,13 @@ by satisfying that quality contract; a higher-HP result that still misses the
 target is not permission to exchange continuation value for a marginal local
 improvement.
 
+During `ImproveVerifiedWin`, a quality-reaching spending witness remains an
+exact candidate but cannot by itself end the refinement quantum. Early
+satisfaction requires a clean potion-free witness at the same quality target.
+When several clean witnesses reach that target, run control minimizes potion
+use before applying the ordinary final-HP and persistent-payoff ordering.
+`FindAnyWin` survival rescue keeps its separate first-acceptable-win contract.
+
 Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
 retaining the potion inventory. Owner-audit therefore searches those boundaries
 without active potion expenditure first and lands any exact clean win; only a

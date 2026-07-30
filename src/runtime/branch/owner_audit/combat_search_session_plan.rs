@@ -238,11 +238,14 @@ fn build_combat_search_session_plan(
             artifacts: CombatSearchArtifactPluginId::FullTrace,
         },
     };
-    let satisfaction = match owner_audit_search_quality_loss_target(session) {
-        RunControlHpLossLimit::Limit(limit) => {
+    let satisfaction = match (stage, owner_audit_search_quality_loss_target(session)) {
+        (CombatSearchSessionStage::ImproveVerifiedWin, RunControlHpLossLimit::Limit(limit)) => {
+            CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(limit)
+        }
+        (_, RunControlHpLossLimit::Limit(limit)) => {
             CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(limit)
         }
-        RunControlHpLossLimit::Unlimited => {
+        (_, RunControlHpLossLimit::Unlimited) => {
             CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
         }
     };
@@ -479,6 +482,10 @@ mod tests {
             Some(RunControlHpLossLimit::Unlimited)
         );
         assert!(!refinement.search.allow_smoke_bomb_survival_fallback);
+        assert!(matches!(
+            refinement.search.satisfaction,
+            Some(CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_))
+        ));
         assert_eq!(
             primary.total_nodes.saturating_add(refinement.total_nodes),
             canonical_combat_search_session_plan(&session, args()).total_nodes
@@ -513,10 +520,18 @@ mod tests {
         assert_eq!(improve.search.allowed_potion_slots, Some(1));
         assert_eq!(improve.max_potions_used, Some(1));
         assert!(!improve.search.allow_smoke_bomb_survival_fallback);
+        assert!(matches!(
+            improve.search.satisfaction,
+            Some(CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_))
+        ));
         assert_eq!(survival.stage, CombatSearchSessionStage::FindAnyWin);
         assert_eq!(survival.search.allowed_potion_slots, Some(1));
         assert_eq!(survival.max_potions_used, Some(1));
         assert!(survival.search.allow_smoke_bomb_survival_fallback);
+        assert!(matches!(
+            survival.search.satisfaction,
+            Some(CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_))
+        ));
     }
 
     #[test]

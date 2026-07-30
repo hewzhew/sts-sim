@@ -29,6 +29,12 @@ pub(super) fn accepted_complete_win(
         CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(limit) => {
             hp_loss <= limit && !has_new_external_burden
         }
+        CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(limit) => {
+            hp_loss <= limit
+                && !has_new_external_burden
+                && node.potions_used == 0
+                && node.potions_discarded == 0
+        }
     }
 }
 
@@ -87,5 +93,25 @@ mod tests {
 
         assert!(accepted_complete_win(&node, &config, 0));
         assert!(accepted_complete_win(&node, &config, 1));
+    }
+
+    #[test]
+    fn potion_free_quality_satisfaction_keeps_refining_after_a_spending_win() {
+        let combat = blank_test_combat();
+        let mut spending_win =
+            SearchNode::root(EngineState::GameOver(RunResult::Victory), combat.clone());
+        spending_win.potions_used = 1;
+        let potion_free_win = SearchNode::root(EngineState::GameOver(RunResult::Victory), combat);
+        let mut config = CombatSearchV2Config {
+            satisfaction:
+                CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(0),
+            ..CombatSearchV2Config::default()
+        };
+
+        assert!(!accepted_complete_win(&spending_win, &config, 0));
+        assert!(accepted_complete_win(&potion_free_win, &config, 0));
+
+        config.satisfaction = CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(0);
+        assert!(accepted_complete_win(&spending_win, &config, 0));
     }
 }

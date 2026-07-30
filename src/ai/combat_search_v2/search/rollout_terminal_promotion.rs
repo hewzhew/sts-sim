@@ -17,6 +17,10 @@ pub(super) fn promote_replayable_terminal_rollout(
     deadline: Option<Instant>,
 ) -> RolloutPromotionOutcome {
     let witness = match config.satisfaction {
+        CombatSearchV2Satisfaction::PotionFreeHpLossAtMostWithoutNewExternalBurden(_) => loop_state
+            .rollout_cache
+            .best_replayable_terminal_potion_free_win_without_new_external_burden
+            .clone(),
         CombatSearchV2Satisfaction::FirstCompleteWinWithoutNewExternalBurden
         | CombatSearchV2Satisfaction::HpLossAtMostWithoutNewExternalBurden(_) => loop_state
             .rollout_cache

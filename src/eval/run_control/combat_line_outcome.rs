@@ -41,6 +41,7 @@ pub(super) fn find_accepted_alternative_in_report(
         policy,
         |_| true,
         |_| true,
+        prefer_accepted_outcome,
     )
 }
 
@@ -52,6 +53,7 @@ pub(super) fn find_accepted_alternative_in_report_matching(
     policy: CombatLineAcceptancePolicy,
     mut trajectory_matches: impl FnMut(&CombatSearchV2TrajectoryReport) -> bool,
     mut outcome_matches: impl FnMut(&CombatLineObservedOutcomeV1) -> bool,
+    mut prefer_outcome: impl FnMut(&CombatLineObservedOutcomeV1, &CombatLineObservedOutcomeV1) -> bool,
 ) -> Result<Option<CombatLineEvaluation>, String> {
     let mut best_clean: Option<CombatLineEvaluation> = None;
     for trajectory in &report.win_candidate_trajectories {
@@ -72,7 +74,7 @@ pub(super) fn find_accepted_alternative_in_report_matching(
         }
         let replace = best_clean
             .as_ref()
-            .map(|best| prefer_accepted_outcome(&evaluation.outcome, &best.outcome))
+            .map(|best| prefer_outcome(&evaluation.outcome, &best.outcome))
             .unwrap_or(true);
         if replace {
             best_clean = Some(evaluation);
@@ -164,6 +166,14 @@ pub(super) fn prefer_accepted_outcome(
             ))
 }
 
+pub(super) fn prefer_quality_gated_accepted_outcome(
+    left: &CombatLineObservedOutcomeV1,
+    right: &CombatLineObservedOutcomeV1,
+) -> bool {
+    left.potions_used < right.potions_used
+        || (left.potions_used == right.potions_used && prefer_accepted_outcome(left, right))
+}
+
 pub(super) fn newly_gained_curses(
     before: &[CombatCard],
     after: &[CombatCard],
@@ -210,7 +220,25 @@ mod tests {
     use crate::content::cards::CardId;
     use crate::runtime::combat::CombatCard;
 
-    use super::newly_gained_curses;
+    use crate::sim::combat::CombatTerminal;
+
+    use super::{
+        newly_gained_curses, prefer_accepted_outcome, prefer_quality_gated_accepted_outcome,
+        CombatLineObservedOutcomeV1,
+    };
+
+    fn accepted_outcome(final_hp: i32, potions_used: u32) -> CombatLineObservedOutcomeV1 {
+        CombatLineObservedOutcomeV1 {
+            terminal: CombatTerminal::Win,
+            final_hp,
+            hp_loss: 80 - final_hp,
+            potions_used,
+            action_count: 10,
+            gold_delta: 0,
+            ritual_dagger_growth: 0,
+            gained_curses: Vec::new(),
+        }
+    }
 
     #[test]
     fn newly_gained_curses_uses_uuid_and_ignores_preexisting_curses() {
@@ -227,5 +255,29 @@ mod tests {
 
         assert_eq!(newly_gained_curses(&before, &after).len(), 1);
         assert_eq!(newly_gained_curses(&before, &after)[0].uuid, 9);
+    }
+
+    #[test]
+    fn quality_gated_preference_conserves_potions_before_polishing_hp() {
+        let potion_free = accepted_outcome(64, 0);
+        let spending = accepted_outcome(72, 1);
+
+        assert!(prefer_accepted_outcome(&spending, &potion_free));
+        assert!(prefer_quality_gated_accepted_outcome(
+            &potion_free,
+            &spending
+        ));
+        assert!(!prefer_quality_gated_accepted_outcome(
+            &spending,
+            &potion_free
+        ));
+    }
+
+    #[test]
+    fn quality_gated_preference_keeps_existing_order_with_equal_potion_use() {
+        let lower_hp = accepted_outcome(64, 0);
+        let higher_hp = accepted_outcome(72, 0);
+
+        assert!(prefer_quality_gated_accepted_outcome(&higher_hp, &lower_hp));
     }
 }

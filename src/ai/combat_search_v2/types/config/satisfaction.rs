@@ -22,6 +22,10 @@ pub enum CombatSearchV2Satisfaction {
     /// Stop once an exact clean whole-combat win also meets the owner's
     /// explicit loss target.
     HpLossAtMostWithoutNewExternalBurden(u32),
+    /// Stop once an exact clean, potion-free whole-combat win also meets the
+    /// owner's explicit loss target. Potion-using wins remain reportable
+    /// candidates, but do not end refinement by themselves.
+    PotionFreeHpLossAtMostWithoutNewExternalBurden(u32),
 }
 
 impl CombatSearchV2Satisfaction {
@@ -38,14 +42,17 @@ impl CombatSearchV2Satisfaction {
             Self::HpLossAtMostWithoutNewExternalBurden(_) => {
                 "hp_loss_at_most_without_new_external_burden"
             }
+            Self::PotionFreeHpLossAtMostWithoutNewExternalBurden(_) => {
+                "potion_free_hp_loss_at_most_without_new_external_burden"
+            }
         }
     }
 
     pub fn hp_loss_limit(self) -> Option<u32> {
         match self {
-            Self::HpLossAtMost(limit) | Self::HpLossAtMostWithoutNewExternalBurden(limit) => {
-                Some(limit)
-            }
+            Self::HpLossAtMost(limit)
+            | Self::HpLossAtMostWithoutNewExternalBurden(limit)
+            | Self::PotionFreeHpLossAtMostWithoutNewExternalBurden(limit) => Some(limit),
             Self::BudgetOrExhaustion
             | Self::ZeroLossOrBudget
             | Self::FirstCompleteWin

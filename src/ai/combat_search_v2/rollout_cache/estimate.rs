@@ -173,6 +173,14 @@ impl RolloutCache {
                     estimate,
                     nodes_generated_at_discovery,
                 );
+                if estimate.potions_used == 0 && estimate.potions_discarded == 0 {
+                    observe_best_replayable_terminal_win(
+                        &mut self
+                            .best_replayable_terminal_potion_free_win_without_new_external_burden,
+                        estimate,
+                        nodes_generated_at_discovery,
+                    );
+                }
             }
         }
         if estimate.truncated {
@@ -310,6 +318,34 @@ mod tests {
                 .map(|witness| (&witness.estimate, witness.nodes_generated_at_discovery)),
             Some((&clean, 3)),
             "clean acceptance must retain its own replayable witness"
+        );
+    }
+
+    #[test]
+    fn higher_scoring_spending_rollout_does_not_erase_the_potion_free_clean_witness() {
+        let mut cache = RolloutCache::default();
+        let potion_free = terminal_win(10, 0);
+        let mut spending = terminal_win(80, 0);
+        spending.potions_used = 1;
+
+        cache.observe_estimate(&potion_free, 3);
+        cache.observe_estimate(&spending, 7);
+
+        assert_eq!(
+            cache
+                .best_replayable_terminal_win_without_new_external_burden
+                .as_ref()
+                .map(|witness| &witness.estimate),
+            Some(&spending),
+            "ordinary clean acceptance may retain the higher-scoring spending witness"
+        );
+        assert_eq!(
+            cache
+                .best_replayable_terminal_potion_free_win_without_new_external_burden
+                .as_ref()
+                .map(|witness| (&witness.estimate, witness.nodes_generated_at_discovery)),
+            Some((&potion_free, 3)),
+            "potion-free quality acceptance must retain its own replayable witness"
         );
     }
 }
