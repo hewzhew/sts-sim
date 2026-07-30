@@ -14,7 +14,16 @@ use sts_combat_planner::{
     CombatDecisionRoot, LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessStatus,
     OracleCombatWitnessSatisfaction, TurnOptionAction,
 };
+use sts_oracle_runtime::ai::card_semantics_v1::{
+    potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
+};
+use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::{
+    assess_deck_strategic_deficit, DeckStrategicDeficit,
+};
+use sts_oracle_runtime::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use sts_oracle_runtime::content::cards::{get_card_definition, is_starter_basic, CardType};
 use sts_oracle_runtime::content::potions::{Potion, PotionId};
+use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
 use sts_oracle_runtime::eval::combat_case::load_combat_case;
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueTierV1,
@@ -26,7 +35,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV3";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV4";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -77,6 +86,98 @@ enum PotionVerifiedWinRescueTierV1 {
     Excluded,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionSharedStrategyTraitV1 {
+    CombatDamage,
+    AoeDamage,
+    CombatBlock,
+    VulnerableSetup,
+    WeakControl,
+    EnergyBurst,
+    StrengthGain,
+    CardAccess,
+    ActionAmplifier,
+    DeathInsurance,
+    DebuffControl,
+    EscapeTool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionSharedStrategyCoverageV1 {
+    Classified,
+    Unclassified,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionMechanicalRoleV1 {
+    SingleTargetDamage,
+    MultiTargetDamage,
+    DamageOverTime,
+    WeakControl,
+    VulnerableControl,
+    ImmediateBlock,
+    ImmediateHealing,
+    EnergyBurst,
+    PersistentStrength,
+    PersistentDexterity,
+    TemporaryDexterity,
+    TemporaryStrength,
+    CardDraw,
+    PersistentFocus,
+    RandomAttackDiscovery,
+    RandomSkillDiscovery,
+    RandomPowerDiscovery,
+    RandomColorlessDiscovery,
+    MiracleGeneration,
+    TemporaryUpgrade,
+    Artifact,
+    DelayedHealing,
+    PlatedArmor,
+    Thorns,
+    RandomTopdeckPlay,
+    NextCardDuplication,
+    ShivGeneration,
+    OrbCapacity,
+    DiscardRecovery,
+    HandRedraw,
+    HandExhaust,
+    StanceControl,
+    DeathInsurance,
+    Escape,
+    MaxHpGain,
+    PotionGeneration,
+    CardDrawAndCostRandomization,
+    Intangible,
+    Metallicize,
+    RitualScaling,
+    Divinity,
+    DarkOrbGeneration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionContinuationDependencyV1 {
+    CurrentHpDeficit,
+    FutureEncounterDamagePattern,
+    FutureEnemyCountAndHealth,
+    FutureFightLength,
+    FutureHandAndDrawOrder,
+    FutureDiscardState,
+    DeckSynergy,
+    RandomOutcomePool,
+    HighValueCardTarget,
+    DebuffTiming,
+    LowHpInsuranceNeed,
+    RouteEscapeValue,
+    EmptyPotionSlotsAndAcquisitionRules,
+    OrbPlan,
+    StancePlan,
+    OutOfCombatTiming,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct PotionResourceV1 {
     slot: usize,
@@ -85,6 +186,10 @@ struct PotionResourceV1 {
     can_use: bool,
     can_discard: bool,
     verified_win_rescue_tier: PotionVerifiedWinRescueTierV1,
+    shared_strategy_traits: Vec<PotionSharedStrategyTraitV1>,
+    shared_strategy_coverage: PotionSharedStrategyCoverageV1,
+    mechanical_role: PotionMechanicalRoleV1,
+    continuation_dependencies: Vec<PotionContinuationDependencyV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -244,14 +349,66 @@ struct PotionAuditLimitationsV1 {
     passive_consumption_handling: &'static str,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionCurrentCombatStakeV1 {
+    Normal,
+    Elite,
+    Boss,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionInventoryPressureV1 {
+    slot_capacity: usize,
+    occupied_slots: usize,
+    empty_slots: usize,
+    inventory_full: bool,
+    new_potion_would_require_replacement_if_obtainable: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionRelicContextV1 {
+    sacred_bark: bool,
+    toy_ornithopter: bool,
+    white_beast_statue: bool,
+    sozu: bool,
+    potion_belt: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionContinuationUnknownV1 {
+    NextEncounterIdentity,
+    RouteBeforeNextEliteOrBoss,
+    FuturePotionDropRollAndIdentity,
+    FuturePotionReplacementCandidate,
+    FutureHandAndDrawOrder,
+    FutureRestSiteAvailability,
+}
+
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV3 {
+struct PotionContinuationContextV1 {
+    act: u8,
+    floor: i32,
+    current_combat_stake: PotionCurrentCombatStakeV1,
+    current_hp: i32,
+    max_hp: i32,
+    deck_size: usize,
+    inventory: PotionInventoryPressureV1,
+    relics: PotionRelicContextV1,
+    deck_strategic_deficit: DeckStrategicDeficit,
+    unavailable_future_context: Vec<PotionContinuationUnknownV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct CombatCasePotionExpenditureAuditV4 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
     initial_hp: i32,
     initial_player_turn: u32,
     root_potions: Vec<PotionResourceV1>,
+    continuation_context: PotionContinuationContextV1,
     settings: PotionAuditSearchSettingsV1,
     lanes: Vec<PotionAuditLaneResultV1>,
     pareto_lane_ids: Vec<String>,
@@ -260,7 +417,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV3 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV3, String> {
+) -> Result<CombatCasePotionExpenditureAuditV4, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -290,6 +447,8 @@ pub(super) fn run(
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let initial_player_turn = loaded.position.combat.turn.turn_count;
     let root_potions = root_potion_resources(&loaded.position)?;
+    let continuation_context =
+        potion_continuation_context(loaded.run.act, loaded.run.floor, &loaded.position);
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
     let base_policy = existing_combat_knowledge_policy_v1();
     let mut lanes = Vec::with_capacity(lane_specs.len());
@@ -380,13 +539,14 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV3 {
+    Ok(CombatCasePotionExpenditureAuditV4 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
         initial_hp,
         initial_player_turn,
         root_potions,
+        continuation_context,
         settings: PotionAuditSearchSettingsV1 {
             max_combination_size,
             max_lanes,
@@ -407,13 +567,84 @@ pub(super) fn run(
             continuation_value_not_in_combat_case: vec![
                 "forced_rest_avoidance",
                 "planned_elite_or_boss",
-                "future_potion_slot_overflow",
+                "future_potion_reward_identity",
                 "future_encounter_specific_counterplay",
             ],
             passive_consumption_handling:
                 "replay-detected; a disallowed passive expenditure makes the lane non-compliant",
         },
     })
+}
+
+fn potion_continuation_context(
+    act: u8,
+    floor: i32,
+    position: &CombatPosition,
+) -> PotionContinuationContextV1 {
+    let combat = &position.combat;
+    let player = &combat.entities.player;
+    let deck = &combat.meta.master_deck_snapshot;
+    let slot_capacity = combat.entities.potions.len();
+    let occupied_slots = combat
+        .entities
+        .potions
+        .iter()
+        .filter(|slot| slot.is_some())
+        .count();
+    let empty_slots = slot_capacity.saturating_sub(occupied_slots);
+    let current_combat_stake = if combat.meta.is_boss_fight {
+        PotionCurrentCombatStakeV1::Boss
+    } else if combat.meta.is_elite_fight {
+        PotionCurrentCombatStakeV1::Elite
+    } else {
+        PotionCurrentCombatStakeV1::Normal
+    };
+    let has_relic = |id| player.relics.iter().any(|relic| relic.id == id);
+    let strategic_facts = RunStrategicFacts {
+        entering_act: act,
+        starter_basic_count: deck.iter().filter(|card| is_starter_basic(card.id)).count(),
+        curse_count: deck
+            .iter()
+            .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
+            .count(),
+        has_energy_relic: player
+            .relics
+            .iter()
+            .any(|relic| energy_master_delta(relic.id) > 0),
+        has_runic_pyramid: has_relic(RelicId::RunicPyramid),
+    };
+
+    PotionContinuationContextV1 {
+        act,
+        floor,
+        current_combat_stake,
+        current_hp: player.current_hp,
+        max_hp: player.max_hp,
+        deck_size: deck.len(),
+        inventory: PotionInventoryPressureV1 {
+            slot_capacity,
+            occupied_slots,
+            empty_slots,
+            inventory_full: empty_slots == 0,
+            new_potion_would_require_replacement_if_obtainable: empty_slots == 0,
+        },
+        relics: PotionRelicContextV1 {
+            sacred_bark: has_relic(RelicId::SacredBark),
+            toy_ornithopter: has_relic(RelicId::ToyOrnithopter),
+            white_beast_statue: has_relic(RelicId::WhiteBeastStatue),
+            sozu: has_relic(RelicId::Sozu),
+            potion_belt: has_relic(RelicId::PotionBelt),
+        },
+        deck_strategic_deficit: assess_deck_strategic_deficit(deck, strategic_facts),
+        unavailable_future_context: vec![
+            PotionContinuationUnknownV1::NextEncounterIdentity,
+            PotionContinuationUnknownV1::RouteBeforeNextEliteOrBoss,
+            PotionContinuationUnknownV1::FuturePotionDropRollAndIdentity,
+            PotionContinuationUnknownV1::FuturePotionReplacementCandidate,
+            PotionContinuationUnknownV1::FutureHandAndDrawOrder,
+            PotionContinuationUnknownV1::FutureRestSiteAvailability,
+        ],
+    }
 }
 
 fn root_potion_resources(position: &CombatPosition) -> Result<Vec<PotionResourceV1>, String> {
@@ -436,6 +667,15 @@ fn root_potion_resources(position: &CombatPosition) -> Result<Vec<PotionResource
 }
 
 fn potion_resource(slot: usize, potion: &Potion) -> PotionResourceV1 {
+    let shared_strategy_traits = potion_acquisition_traits_v1(potion.id)
+        .into_iter()
+        .map(shared_strategy_trait)
+        .collect::<Vec<_>>();
+    let shared_strategy_coverage = if shared_strategy_traits.is_empty() {
+        PotionSharedStrategyCoverageV1::Unclassified
+    } else {
+        PotionSharedStrategyCoverageV1::Classified
+    };
     PotionResourceV1 {
         slot,
         id: format!("{:?}", potion.id),
@@ -443,6 +683,160 @@ fn potion_resource(slot: usize, potion: &Potion) -> PotionResourceV1 {
         can_use: potion.can_use,
         can_discard: potion.can_discard,
         verified_win_rescue_tier: potion_rescue_tier(potion.id),
+        shared_strategy_traits,
+        shared_strategy_coverage,
+        mechanical_role: potion_mechanical_role(potion.id),
+        continuation_dependencies: potion_continuation_dependencies(potion.id),
+    }
+}
+
+fn potion_mechanical_role(id: PotionId) -> PotionMechanicalRoleV1 {
+    use PotionId as Id;
+    use PotionMechanicalRoleV1 as Role;
+    match id {
+        Id::FirePotion => Role::SingleTargetDamage,
+        Id::ExplosivePotion => Role::MultiTargetDamage,
+        Id::PoisonPotion => Role::DamageOverTime,
+        Id::WeakenPotion => Role::WeakControl,
+        Id::FearPotion => Role::VulnerableControl,
+        Id::BlockPotion => Role::ImmediateBlock,
+        Id::BloodPotion => Role::ImmediateHealing,
+        Id::EnergyPotion => Role::EnergyBurst,
+        Id::StrengthPotion => Role::PersistentStrength,
+        Id::DexterityPotion => Role::PersistentDexterity,
+        Id::SpeedPotion => Role::TemporaryDexterity,
+        Id::SteroidPotion => Role::TemporaryStrength,
+        Id::SwiftPotion => Role::CardDraw,
+        Id::FocusPotion => Role::PersistentFocus,
+        Id::AttackPotion => Role::RandomAttackDiscovery,
+        Id::SkillPotion => Role::RandomSkillDiscovery,
+        Id::PowerPotion => Role::RandomPowerDiscovery,
+        Id::ColorlessPotion => Role::RandomColorlessDiscovery,
+        Id::BottledMiracle => Role::MiracleGeneration,
+        Id::BlessingOfTheForge => Role::TemporaryUpgrade,
+        Id::AncientPotion => Role::Artifact,
+        Id::RegenPotion => Role::DelayedHealing,
+        Id::EssenceOfSteel => Role::PlatedArmor,
+        Id::LiquidBronze => Role::Thorns,
+        Id::DistilledChaosPotion => Role::RandomTopdeckPlay,
+        Id::DuplicationPotion => Role::NextCardDuplication,
+        Id::CunningPotion => Role::ShivGeneration,
+        Id::PotionOfCapacity => Role::OrbCapacity,
+        Id::LiquidMemories => Role::DiscardRecovery,
+        Id::GamblersBrew => Role::HandRedraw,
+        Id::Elixir => Role::HandExhaust,
+        Id::StancePotion => Role::StanceControl,
+        Id::FairyPotion => Role::DeathInsurance,
+        Id::SmokeBomb => Role::Escape,
+        Id::FruitJuice => Role::MaxHpGain,
+        Id::EntropicBrew => Role::PotionGeneration,
+        Id::SneckoOil => Role::CardDrawAndCostRandomization,
+        Id::GhostInAJar => Role::Intangible,
+        Id::HeartOfIron => Role::Metallicize,
+        Id::CultistPotion => Role::RitualScaling,
+        Id::Ambrosia => Role::Divinity,
+        Id::EssenceOfDarkness => Role::DarkOrbGeneration,
+    }
+}
+
+fn potion_continuation_dependencies(id: PotionId) -> Vec<PotionContinuationDependencyV1> {
+    use PotionContinuationDependencyV1 as Dependency;
+    use PotionId as Id;
+    match id {
+        Id::FirePotion | Id::ExplosivePotion => {
+            vec![Dependency::FutureEnemyCountAndHealth]
+        }
+        Id::PoisonPotion => vec![
+            Dependency::FutureEnemyCountAndHealth,
+            Dependency::FutureFightLength,
+        ],
+        Id::WeakenPotion => vec![
+            Dependency::FutureEncounterDamagePattern,
+            Dependency::FutureFightLength,
+        ],
+        Id::FearPotion => vec![
+            Dependency::FutureEnemyCountAndHealth,
+            Dependency::FutureFightLength,
+        ],
+        Id::BlockPotion | Id::GhostInAJar => {
+            vec![Dependency::FutureEncounterDamagePattern]
+        }
+        Id::BloodPotion => vec![Dependency::CurrentHpDeficit, Dependency::OutOfCombatTiming],
+        Id::EnergyPotion | Id::SwiftPotion | Id::BottledMiracle => {
+            vec![Dependency::FutureHandAndDrawOrder]
+        }
+        Id::StrengthPotion | Id::DexterityPotion => {
+            vec![Dependency::FutureFightLength, Dependency::DeckSynergy]
+        }
+        Id::SpeedPotion | Id::SteroidPotion => vec![
+            Dependency::FutureHandAndDrawOrder,
+            Dependency::DeckSynergy,
+            Dependency::DebuffTiming,
+        ],
+        Id::FocusPotion => vec![
+            Dependency::FutureFightLength,
+            Dependency::DeckSynergy,
+            Dependency::OrbPlan,
+        ],
+        Id::AttackPotion | Id::SkillPotion | Id::PowerPotion | Id::ColorlessPotion => vec![
+            Dependency::FutureHandAndDrawOrder,
+            Dependency::DeckSynergy,
+            Dependency::RandomOutcomePool,
+        ],
+        Id::BlessingOfTheForge => vec![
+            Dependency::FutureHandAndDrawOrder,
+            Dependency::HighValueCardTarget,
+        ],
+        Id::AncientPotion => vec![Dependency::DebuffTiming, Dependency::DeckSynergy],
+        Id::RegenPotion => vec![Dependency::CurrentHpDeficit, Dependency::FutureFightLength],
+        Id::EssenceOfSteel | Id::LiquidBronze | Id::HeartOfIron => vec![
+            Dependency::FutureEncounterDamagePattern,
+            Dependency::FutureFightLength,
+        ],
+        Id::DistilledChaosPotion | Id::GamblersBrew | Id::SneckoOil => {
+            vec![Dependency::FutureHandAndDrawOrder]
+        }
+        Id::DuplicationPotion => vec![
+            Dependency::FutureHandAndDrawOrder,
+            Dependency::DeckSynergy,
+            Dependency::HighValueCardTarget,
+        ],
+        Id::CunningPotion => vec![Dependency::FutureHandAndDrawOrder, Dependency::DeckSynergy],
+        Id::PotionOfCapacity | Id::EssenceOfDarkness => {
+            vec![Dependency::DeckSynergy, Dependency::OrbPlan]
+        }
+        Id::LiquidMemories => vec![
+            Dependency::FutureHandAndDrawOrder,
+            Dependency::FutureDiscardState,
+            Dependency::DeckSynergy,
+            Dependency::HighValueCardTarget,
+        ],
+        Id::Elixir => vec![Dependency::FutureHandAndDrawOrder, Dependency::DeckSynergy],
+        Id::StancePotion | Id::Ambrosia => {
+            vec![Dependency::FutureHandAndDrawOrder, Dependency::StancePlan]
+        }
+        Id::FairyPotion => vec![Dependency::LowHpInsuranceNeed],
+        Id::SmokeBomb => vec![Dependency::RouteEscapeValue],
+        Id::FruitJuice => vec![Dependency::OutOfCombatTiming],
+        Id::EntropicBrew => vec![Dependency::EmptyPotionSlotsAndAcquisitionRules],
+        Id::CultistPotion => vec![Dependency::FutureFightLength],
+    }
+}
+
+fn shared_strategy_trait(trait_: PotionAcquisitionTraitV1) -> PotionSharedStrategyTraitV1 {
+    match trait_ {
+        PotionAcquisitionTraitV1::CombatDamage => PotionSharedStrategyTraitV1::CombatDamage,
+        PotionAcquisitionTraitV1::AoeDamage => PotionSharedStrategyTraitV1::AoeDamage,
+        PotionAcquisitionTraitV1::CombatBlock => PotionSharedStrategyTraitV1::CombatBlock,
+        PotionAcquisitionTraitV1::VulnerableSetup => PotionSharedStrategyTraitV1::VulnerableSetup,
+        PotionAcquisitionTraitV1::WeakControl => PotionSharedStrategyTraitV1::WeakControl,
+        PotionAcquisitionTraitV1::EnergyBurst => PotionSharedStrategyTraitV1::EnergyBurst,
+        PotionAcquisitionTraitV1::StrengthGain => PotionSharedStrategyTraitV1::StrengthGain,
+        PotionAcquisitionTraitV1::CardAccess => PotionSharedStrategyTraitV1::CardAccess,
+        PotionAcquisitionTraitV1::ActionAmplifier => PotionSharedStrategyTraitV1::ActionAmplifier,
+        PotionAcquisitionTraitV1::DeathInsurance => PotionSharedStrategyTraitV1::DeathInsurance,
+        PotionAcquisitionTraitV1::DebuffControl => PotionSharedStrategyTraitV1::DebuffControl,
+        PotionAcquisitionTraitV1::EscapeTool => PotionSharedStrategyTraitV1::EscapeTool,
     }
 }
 
@@ -1030,8 +1424,12 @@ mod tests {
     use sts_combat_planner::{
         LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
     };
+    use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::StrategicPackageEvidence;
+    use sts_oracle_runtime::content::cards::CardId;
     use sts_oracle_runtime::content::monsters::EnemyId;
-    use sts_oracle_runtime::content::potions::{Potion, PotionId};
+    use sts_oracle_runtime::content::potions::{Potion, PotionId, ALL_POTIONS};
+    use sts_oracle_runtime::content::relics::{RelicId, RelicState};
+    use sts_oracle_runtime::runtime::combat::CombatCard;
     use sts_oracle_runtime::state::core::EngineState;
 
     fn resource(slot: usize, id: PotionId, uuid: u32) -> PotionResourceV1 {
@@ -1127,6 +1525,110 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![10, 20]
         );
+    }
+
+    #[test]
+    fn potion_resources_expose_shared_strategy_coverage_without_guessing_missing_traits() {
+        let strength = resource(0, PotionId::StrengthPotion, 10);
+        assert_eq!(
+            strength.shared_strategy_traits,
+            vec![PotionSharedStrategyTraitV1::StrengthGain]
+        );
+        assert_eq!(
+            strength.shared_strategy_coverage,
+            PotionSharedStrategyCoverageV1::Classified
+        );
+
+        let regen = resource(1, PotionId::RegenPotion, 20);
+        assert!(regen.shared_strategy_traits.is_empty());
+        assert_eq!(
+            regen.shared_strategy_coverage,
+            PotionSharedStrategyCoverageV1::Unclassified
+        );
+    }
+
+    #[test]
+    fn mechanical_roles_and_continuation_dependencies_cover_every_potion_identity() {
+        for id in ALL_POTIONS {
+            let resource = resource(0, *id, 10);
+            assert!(
+                !resource.continuation_dependencies.is_empty(),
+                "{id:?} needs an explicit continuation dependency"
+            );
+        }
+
+        let regen = resource(0, PotionId::RegenPotion, 20);
+        assert_eq!(
+            regen.mechanical_role,
+            PotionMechanicalRoleV1::DelayedHealing
+        );
+        assert!(regen
+            .continuation_dependencies
+            .contains(&PotionContinuationDependencyV1::FutureFightLength));
+
+        let duplication = resource(0, PotionId::DuplicationPotion, 30);
+        assert_eq!(
+            duplication.mechanical_role,
+            PotionMechanicalRoleV1::NextCardDuplication
+        );
+        assert!(duplication
+            .continuation_dependencies
+            .contains(&PotionContinuationDependencyV1::HighValueCardTarget));
+    }
+
+    #[test]
+    fn continuation_context_keeps_exact_inventory_relic_and_deck_pressure() {
+        let mut combat = sts_oracle_runtime::test_support::blank_test_combat();
+        combat.meta.is_boss_fight = true;
+        combat.meta.master_deck_snapshot = vec![
+            CombatCard::new(CardId::HeavyBlade, 10),
+            CombatCard::new(CardId::Inflame, 20),
+        ]
+        .into();
+        combat.entities.potions = vec![
+            Some(Potion::new(PotionId::DuplicationPotion, 30)),
+            Some(Potion::new(PotionId::SkillPotion, 40)),
+            Some(Potion::new(PotionId::AttackPotion, 50)),
+        ];
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::SacredBark));
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::WhiteBeastStatue));
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::Sozu));
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        let context = potion_continuation_context(2, 32, &position);
+
+        assert_eq!(
+            context.current_combat_stake,
+            PotionCurrentCombatStakeV1::Boss
+        );
+        assert_eq!(context.deck_size, 2);
+        assert_eq!(context.inventory.slot_capacity, 3);
+        assert_eq!(context.inventory.occupied_slots, 3);
+        assert!(context.inventory.inventory_full);
+        assert!(
+            context
+                .inventory
+                .new_potion_would_require_replacement_if_obtainable
+        );
+        assert!(context.relics.sacred_bark);
+        assert!(context.relics.white_beast_statue);
+        assert!(context.relics.sozu);
+        assert!(context
+            .deck_strategic_deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::StrengthScaling));
+        assert!(context
+            .unavailable_future_context
+            .contains(&PotionContinuationUnknownV1::NextEncounterIdentity));
     }
 
     #[test]
