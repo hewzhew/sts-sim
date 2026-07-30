@@ -579,6 +579,21 @@ mod tests {
         session
     }
 
+    fn guaranteed_full_heal_boss_session(
+        monster_hp: i32,
+        potions: Vec<Option<Potion>>,
+    ) -> RunControlSession {
+        let mut session = hallway_session(monster_hp, potions);
+        let active = session.active_combat.as_mut().expect("active combat");
+        active.combat_state.meta.is_boss_fight = true;
+        active.context = CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoomBoss,
+        });
+        session.run_state.act_num = 1;
+        session.run_state.ascension_level = 0;
+        session
+    }
+
     #[test]
     fn stop_records_are_not_misreported_as_committed_search_progress() {
         let outcome = RunProgressOutcome::progress("gap");
@@ -666,6 +681,44 @@ mod tests {
             pressure.recovery.current_hp_deficit,
             continuation.max_hp - continuation.current_hp
         );
+    }
+
+    #[test]
+    fn owner_audit_preserves_potion_when_boss_victory_guarantees_full_heal() {
+        let mut session =
+            guaranteed_full_heal_boss_session(6, vec![Some(Potion::new(PotionId::FirePotion, 21))]);
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.zones.hand = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            1,
+        )];
+        combat.zones.card_uuid_counter = 2;
+
+        let result =
+            run_combat_search_session_step(&mut session, args()).expect("full-heal boss search");
+
+        assert!(
+            session.active_combat.is_none(),
+            "the exact no-potion Boss win should resolve combat"
+        );
+        assert!(session.run_state.potions.first().is_some_and(|slot| {
+            slot.as_ref()
+                .is_some_and(|potion| potion.id == PotionId::FirePotion && potion.uuid == 21)
+        }));
+        assert!(result.combat_search.iter().any(|summary| {
+            summary.lane.as_deref() == Some("no_potion_primary")
+                && summary.profile_max_potions_used == Some(0)
+                && summary.profile_allowed_potion_slots == Some(0)
+                && summary.portfolio_selected == Some(true)
+                && summary
+                    .best_win
+                    .as_ref()
+                    .is_some_and(|win| win.potions_used == 0)
+        }));
+        assert!(result
+            .combat_search
+            .iter()
+            .all(|summary| summary.lane.as_deref() != Some("find_any_win")));
     }
 
     #[test]

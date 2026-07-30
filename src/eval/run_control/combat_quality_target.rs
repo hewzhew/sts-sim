@@ -15,6 +15,16 @@ pub fn strategic_combat_persistent_payoff_matters_v1(session: &RunControlSession
         )
 }
 
+/// Returns whether winning the active combat deterministically restores full
+/// HP before the run can encounter another damage-bearing decision.
+///
+/// Local final HP is not a useful potion-spend tiebreaker at this boundary:
+/// pre-A5 Act 1/2 room Boss victories apply the game's guaranteed transition
+/// heal, while the potion inventory continues into the next Act.
+pub fn strategic_combat_victory_reaches_full_heal_v1(session: &RunControlSession) -> bool {
+    room_boss_win_reaches_full_heal(session)
+}
+
 /// Returns the largest HP loss that is already good enough for strategic run
 /// progression to stop refining an exact combat witness.
 ///
@@ -47,7 +57,9 @@ pub fn strategic_combat_quality_hp_loss_limit_v1(
 pub fn strategic_combat_survival_hp_loss_limit_v1(
     session: &RunControlSession,
 ) -> RunControlHpLossLimit {
-    if room_boss_win_ends_requested_run(session) || room_boss_win_reaches_full_heal(session) {
+    if room_boss_win_ends_requested_run(session)
+        || strategic_combat_victory_reaches_full_heal_v1(session)
+    {
         return RunControlHpLossLimit::Unlimited;
     }
     let (current_hp, max_hp) = session.visible_player_hp();

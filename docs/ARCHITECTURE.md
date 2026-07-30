@@ -128,10 +128,18 @@ satisfaction, the runner may open bounded one-potion lanes across active
 potion identities. A spending witness may replace the protected incumbent only
 by satisfying that quality contract; a higher-HP result that still misses the
 target is not permission to exchange continuation value for a marginal local
-improvement. Static potion identity tiers may describe audit evidence but do
-not admit production spending. Passive death insurance and explicit escape
-remain outside active victory search. When the runner opens concrete potion
-slots, that exact mask is part of the combat-search engine profile and must be
+improvement.
+
+Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
+retaining the potion inventory. Owner-audit therefore searches those boundaries
+without active potion expenditure first and lands any exact clean win; only a
+missing no-potion witness opens the remaining high-stakes Boss rescue budget.
+Other Boss boundaries retain their canonical high-stakes search contract.
+
+Static potion identity tiers may describe audit evidence but do not admit
+production spending. Passive death insurance and explicit escape remain
+outside active victory search. When the runner opens concrete potion slots,
+that exact mask is part of the combat-search engine profile and must be
 enforced by atomic expansion, turn-plan enumeration, rollout-witness replay,
 fallback repair, and final executable-line replay; a trace-only slot mask is
 not an admission contract.

@@ -7,8 +7,9 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2Satisfaction,
 };
 use sts_simulator::eval::run_control::{
-    oracle_active_victory_potion_slot_mask_v1, RunControlCombatSearchQuantum,
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    oracle_active_victory_potion_slot_mask_v1, strategic_combat_victory_reaches_full_heal_v1,
+    RunControlCombatSearchQuantum, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    RunControlSession,
 };
 
 use super::combat_search_survival::owner_audit_search_quality_loss_target;
@@ -105,7 +106,8 @@ pub(super) fn potion_conserving_primary_search_session_plan(
     args: Args,
 ) -> Option<CombatSearchSessionPlan> {
     let stakes = combat_search_stakes(session);
-    if stakes == CombatSearchStakes::Boss || oracle_active_victory_potion_slot_mask_v1(session) == 0
+    if !potion_conserving_staging_allowed(session, stakes)
+        || oracle_active_victory_potion_slot_mask_v1(session) == 0
     {
         return None;
     }
@@ -133,7 +135,7 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     rescue_kind: PotionRescueKind,
 ) -> Option<CombatSearchSessionPlan> {
     let stakes = combat_search_stakes(session);
-    if stakes == CombatSearchStakes::Boss {
+    if !potion_conserving_staging_allowed(session, stakes) {
         return None;
     }
     let quanta = work_quanta(stakes, args)
@@ -149,6 +151,13 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
             CombatSearchSessionStage::NoPotionRefinement,
             CombatSearchV2PotionPolicy::Never,
             Some(0),
+        )
+    } else if stakes == CombatSearchStakes::Boss {
+        let (potion_policy, max_potions_used) = canonical_potion_surface(session, stakes);
+        (
+            CombatSearchSessionStage::FindAnyWin,
+            potion_policy,
+            max_potions_used,
         )
     } else {
         (
@@ -176,6 +185,13 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
         RunControlHpLossLimit::Unlimited,
         rescue_kind == PotionRescueKind::FindAnyWin,
     ))
+}
+
+fn potion_conserving_staging_allowed(
+    session: &RunControlSession,
+    stakes: CombatSearchStakes,
+) -> bool {
+    stakes != CombatSearchStakes::Boss || strategic_combat_victory_reaches_full_heal_v1(session)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -390,6 +406,18 @@ mod tests {
         session
     }
 
+    fn boss_session(ascension: u8) -> RunControlSession {
+        let mut session = hallway_session();
+        let active = session.active_combat.as_mut().expect("active combat");
+        active.combat_state.meta.is_boss_fight = true;
+        active.context = CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoomBoss,
+        });
+        session.run_state.act_num = 1;
+        session.run_state.ascension_level = ascension;
+        session
+    }
+
     #[test]
     fn canonical_hallway_fallback_uses_one_potion_cap_across_two_quanta() {
         let plan = canonical_combat_search_session_plan(&hallway_session(), args());
@@ -489,6 +517,54 @@ mod tests {
         assert_eq!(survival.search.allowed_potion_slots, Some(1));
         assert_eq!(survival.max_potions_used, Some(1));
         assert!(survival.search.allow_smoke_bomb_survival_fallback);
+    }
+
+    #[test]
+    fn guaranteed_full_heal_boss_stages_no_potion_before_high_stakes_rescue() {
+        let session = boss_session(0);
+        let primary =
+            potion_conserving_primary_search_session_plan(&session, args()).expect("primary");
+        let rescue = potion_conserving_refinement_search_session_plan(
+            &session,
+            args(),
+            PotionRescueKind::FindAnyWin,
+        )
+        .expect("boss rescue");
+
+        assert_eq!(primary.stakes, CombatSearchStakes::Boss);
+        assert_eq!(primary.stage, CombatSearchSessionStage::NoPotionPrimary);
+        assert_eq!(primary.potion_policy, CombatSearchV2PotionPolicy::Never);
+        assert_eq!(primary.max_potions_used, Some(0));
+        assert_eq!(primary.search.allowed_potion_slots, Some(0));
+        assert_eq!(
+            primary.search.max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
+        assert_eq!(rescue.stage, CombatSearchSessionStage::FindAnyWin);
+        assert_eq!(rescue.potion_policy, CombatSearchV2PotionPolicy::All);
+        assert!(rescue.max_potions_used.is_some_and(|limit| limit >= 3));
+        assert_eq!(rescue.search.allowed_potion_slots, Some(1));
+        assert_eq!(
+            primary.total_nodes.saturating_add(rescue.total_nodes),
+            canonical_combat_search_session_plan(&session, args()).total_nodes
+        );
+    }
+
+    #[test]
+    fn boss_without_guaranteed_full_heal_keeps_canonical_search_contract() {
+        let session = boss_session(5);
+
+        assert!(potion_conserving_primary_search_session_plan(&session, args()).is_none());
+        assert!(potion_conserving_refinement_search_session_plan(
+            &session,
+            args(),
+            PotionRescueKind::FindAnyWin,
+        )
+        .is_none());
+        assert_eq!(
+            canonical_combat_search_session_plan(&session, args()).stage,
+            CombatSearchSessionStage::Canonical
+        );
     }
 
     #[test]
