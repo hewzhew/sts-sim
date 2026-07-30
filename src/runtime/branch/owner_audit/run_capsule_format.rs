@@ -724,6 +724,7 @@ mod tests {
             profile_wall_ms: None,
             profile_potion_policy: None,
             profile_max_potions_used: None,
+            profile_allowed_potion_slots: None,
             profile_internal_no_win_rescue_enabled: None,
             engine_fingerprint: None,
             portfolio_candidate_tier: None,
@@ -772,6 +773,7 @@ mod tests {
             wall_ms: 500,
             potion_policy: "never",
             max_potions_used: Some(0),
+            allowed_potion_slots: Some(0),
             work_quanta: vec![
                 super::super::combat_search_report::CombatSearchQuantumReport {
                     label: "initial",
@@ -802,6 +804,7 @@ mod tests {
         assert_eq!(value["profile"]["wall_ms"], 500);
         assert_eq!(value["profile"]["potion_policy"], "never");
         assert_eq!(value["profile"]["max_potions_used"], 0);
+        assert_eq!(value["profile"]["allowed_potion_slots"], 0);
         assert_eq!(value["profile"]["internal_no_win_rescue_enabled"], false);
         assert!(value["accepted_line"].is_null());
         assert_eq!(value["telemetry"]["expanded_nodes"], 42);
@@ -828,6 +831,7 @@ mod tests {
             profile_wall_ms: Some(100),
             profile_potion_policy: Some("never".to_string()),
             profile_max_potions_used: Some(0),
+            profile_allowed_potion_slots: Some(0),
             profile_internal_no_win_rescue_enabled: Some(false),
             engine_fingerprint: None,
             portfolio_candidate_tier: None,
@@ -878,6 +882,7 @@ mod tests {
         assert_eq!(value["profile"]["wall_ms"], 100);
         assert_eq!(value["profile"]["potion_policy"], "never");
         assert_eq!(value["profile"]["max_potions_used"], 0);
+        assert_eq!(value["profile"]["allowed_potion_slots"], 0);
         assert_eq!(value["profile"]["internal_no_win_rescue_enabled"], false);
         assert_eq!(value["telemetry"]["expanded_nodes"], 55);
         assert_eq!(value["telemetry"]["deadline_hit"], true);
@@ -893,6 +898,7 @@ mod tests {
             profile_wall_ms: Some(100),
             profile_potion_policy: Some("never".to_string()),
             profile_max_potions_used: Some(0),
+            profile_allowed_potion_slots: Some(0),
             profile_internal_no_win_rescue_enabled: Some(false),
             engine_fingerprint: None,
             portfolio_candidate_tier: None,

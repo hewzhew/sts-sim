@@ -10,6 +10,7 @@ pub(super) fn capsule_value(report: &CombatSearchSessionReport) -> Value {
         "wall_ms": report.wall_ms,
         "potion_policy": report.potion_policy,
         "max_potions_used": report.max_potions_used,
+        "allowed_potion_slots": report.allowed_potion_slots,
         "work_quanta": report.work_quanta.iter().map(quantum_value).collect::<Vec<_>>(),
         "action_keys": report.action_keys,
         "semantics_fingerprint": report.semantics_fingerprint,
@@ -31,6 +32,7 @@ pub(super) fn trace_value(report: &CombatSearchSessionReport) -> Value {
         "ms": report.wall_ms,
         "potion_policy": report.potion_policy,
         "max_potions_used": report.max_potions_used,
+        "allowed_potion_slots": report.allowed_potion_slots,
         "work_quanta": report.work_quanta.iter().map(quantum_value).collect::<Vec<_>>(),
         "actions": report.action_keys,
         "semantics_fingerprint": report.semantics_fingerprint,
@@ -78,6 +80,7 @@ mod tests {
             wall_ms: 200,
             potion_policy: "semantic",
             max_potions_used: Some(2),
+            allowed_potion_slots: Some(3),
             work_quanta: vec![CombatSearchQuantumReport {
                 label: "initial",
                 additional_nodes: 40,
@@ -96,6 +99,7 @@ mod tests {
 
         for value in [capsule_value(&report), trace_value(&report)] {
             assert_eq!(value["work_quanta"].as_array().map(Vec::len), Some(1));
+            assert_eq!(value["allowed_potion_slots"], 3);
             assert!(value.get("attempts").is_none());
             assert_eq!(value["applied"], true);
             assert_eq!(value["semantics_fingerprint"], "engine");

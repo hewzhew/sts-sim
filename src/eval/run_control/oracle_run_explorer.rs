@@ -10,11 +10,11 @@ use crate::state::core::{EngineState, RunResult};
 use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
-    NeowOracleExpansionV1, RunControlCombatSearchQuantum, RunControlCombatSearchRejection,
-    RunControlCombatWorkAdvanceV1, RunControlHpLossLimit, RunControlSearchCombatOptions,
-    RunControlSession, RunControlSessionCheckpointV1, RunControlTraceAnnotationV1,
-    RunDecisionAction, RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1,
-    StrategicProbeShadowOrderKeyV1,
+    oracle_potion_rescue_slot_mask_v1, NeowOracleExpansionV1, OraclePotionRescueKindV1,
+    RunControlCombatSearchQuantum, RunControlCombatSearchRejection, RunControlCombatWorkAdvanceV1,
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
+    RunPolicyPriorFnV1, RunProgressJournalV1, RunProgressStepV1, StrategicProbeShadowOrderKeyV1,
 };
 
 mod branch_scheduling;
@@ -434,125 +434,6 @@ impl OracleRunCombatBudgetsV1 {
                             || potion.id == crate::content::potions::PotionId::FairyPotion
                     })
         })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OraclePotionRescueKindV1 {
-    ImproveVerifiedWin,
-    FindAnyWin,
-}
-
-fn oracle_potion_rescue_slot_mask_v1(
-    session: &RunControlSession,
-    rescue_kind: OraclePotionRescueKindV1,
-) -> u64 {
-    let Some(active) = session.active_combat.as_ref() else {
-        return 0;
-    };
-    active
-        .combat_state
-        .entities
-        .potions
-        .iter()
-        .enumerate()
-        .filter_map(|(slot, potion)| {
-            let potion = potion.as_ref()?;
-            if !potion.can_use || !potion_can_support_victory_rescue_v1(potion.id) {
-                return None;
-            }
-            if rescue_kind == OraclePotionRescueKindV1::ImproveVerifiedWin
-                && !potion_is_bounded_quality_rescue_v1(potion.id)
-            {
-                return None;
-            }
-            u32::try_from(slot)
-                .ok()
-                .and_then(|slot| 1_u64.checked_shl(slot))
-        })
-        .fold(0, |mask, slot| mask | slot)
-}
-
-fn potion_can_support_victory_rescue_v1(potion: crate::content::potions::PotionId) -> bool {
-    oracle_potion_rescue_tier_v1(potion) != OraclePotionRescueTierV1::Excluded
-}
-
-fn potion_is_bounded_quality_rescue_v1(potion: crate::content::potions::PotionId) -> bool {
-    oracle_potion_rescue_tier_v1(potion) == OraclePotionRescueTierV1::BoundedQuality
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OraclePotionRescueTierV1 {
-    /// A common, deterministic, combat-only tactical effect. These may compete
-    /// with an existing no-potion win, but only when that win misses the
-    /// strategic HP-quality target and under the exact one-potion cap.
-    BoundedQuality,
-    /// Flexible discovery, out-of-combat recovery, and all other uncommon or
-    /// rare active resources stay reserved while any verified win exists.
-    /// They may enter the same exact one-potion lane only when no victory has
-    /// been found.
-    FindAnyWin,
-    /// Passive death insurance and explicit escape are not active victory
-    /// actions. Their separate run-control contracts remain authoritative.
-    Excluded,
-}
-
-fn oracle_potion_rescue_tier_v1(
-    potion: crate::content::potions::PotionId,
-) -> OraclePotionRescueTierV1 {
-    use crate::content::potions::PotionId;
-
-    match potion {
-        // Common, deterministic effects whose value is fully realized inside
-        // the current combat. This includes direct output and ordinary
-        // energy/stat/hand conversion, but not healing or card discovery.
-        PotionId::FirePotion
-        | PotionId::ExplosivePotion
-        | PotionId::PoisonPotion
-        | PotionId::WeakenPotion
-        | PotionId::FearPotion
-        | PotionId::BlockPotion
-        | PotionId::EnergyPotion
-        | PotionId::StrengthPotion
-        | PotionId::DexterityPotion
-        | PotionId::SpeedPotion
-        | PotionId::SteroidPotion
-        | PotionId::SwiftPotion
-        | PotionId::FocusPotion
-        | PotionId::BottledMiracle
-        | PotionId::BlessingOfTheForge => OraclePotionRescueTierV1::BoundedQuality,
-
-        // Blood Potion can be spent outside combat; discovery effects carry
-        // broader encounter-specific option value. Uncommon and rare active
-        // potions are likewise kept for a genuine no-win emergency rather
-        // than exchanged for a marginal improvement to a verified line.
-        PotionId::BloodPotion
-        | PotionId::AttackPotion
-        | PotionId::SkillPotion
-        | PotionId::PowerPotion
-        | PotionId::ColorlessPotion
-        | PotionId::AncientPotion
-        | PotionId::RegenPotion
-        | PotionId::EssenceOfSteel
-        | PotionId::LiquidBronze
-        | PotionId::DistilledChaosPotion
-        | PotionId::DuplicationPotion
-        | PotionId::CunningPotion
-        | PotionId::PotionOfCapacity
-        | PotionId::LiquidMemories
-        | PotionId::GamblersBrew
-        | PotionId::Elixir
-        | PotionId::StancePotion
-        | PotionId::FruitJuice
-        | PotionId::EntropicBrew
-        | PotionId::SneckoOil
-        | PotionId::GhostInAJar
-        | PotionId::HeartOfIron
-        | PotionId::CultistPotion
-        | PotionId::Ambrosia
-        | PotionId::EssenceOfDarkness => OraclePotionRescueTierV1::FindAnyWin,
-
-        PotionId::FairyPotion | PotionId::SmokeBomb => OraclePotionRescueTierV1::Excluded,
     }
 }
 

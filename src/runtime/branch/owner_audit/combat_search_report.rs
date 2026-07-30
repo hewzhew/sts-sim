@@ -11,6 +11,7 @@ pub(super) struct CombatSearchSessionReport {
     pub(super) wall_ms: u64,
     pub(super) potion_policy: &'static str,
     pub(super) max_potions_used: Option<u32>,
+    pub(super) allowed_potion_slots: Option<u64>,
     pub(super) work_quanta: Vec<CombatSearchQuantumReport>,
     pub(super) action_keys: Vec<String>,
     pub(super) semantics_fingerprint: String,
@@ -44,6 +45,7 @@ pub(super) struct CombatSearchSessionReportInput {
     pub(super) wall_ms: u64,
     pub(super) potion_policy: CombatSearchV2PotionPolicy,
     pub(super) max_potions_used: Option<u32>,
+    pub(super) allowed_potion_slots: Option<u64>,
     pub(super) work_quanta: Vec<CombatSearchQuantumReport>,
     pub(super) action_keys: Vec<String>,
     pub(super) semantics_fingerprint: String,
@@ -66,6 +68,7 @@ pub(super) fn combat_search_session_report(
         wall_ms: input.wall_ms,
         potion_policy: potion_policy_label(input.potion_policy),
         max_potions_used: input.max_potions_used,
+        allowed_potion_slots: input.allowed_potion_slots,
         work_quanta: input.work_quanta,
         action_keys: input.action_keys,
         semantics_fingerprint: input.semantics_fingerprint,
@@ -122,6 +125,7 @@ mod tests {
             wall_ms: 300,
             potion_policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
             max_potions_used: Some(2),
+            allowed_potion_slots: Some(3),
             work_quanta: vec![
                 CombatSearchQuantumReport {
                     label: "initial",
@@ -148,6 +152,7 @@ mod tests {
         assert_eq!(report.profile_id, "canonical_combat_session");
         assert_eq!(report.work_quanta.len(), 2);
         assert_eq!(report.action_keys, vec!["selected-action"]);
+        assert_eq!(report.allowed_potion_slots, Some(3));
         assert!(report.applied);
     }
 }

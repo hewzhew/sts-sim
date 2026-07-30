@@ -1437,6 +1437,7 @@ mod tests {
                         wall_ms: Some(500),
                         potion_policy: Some("never".to_string()),
                         max_potions_used: Some(0),
+                        allowed_potion_slots: Some(0),
                         internal_no_win_rescue_enabled: false,
                     },
                     telemetry: PrimarySearchTelemetrySummary {

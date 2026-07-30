@@ -212,6 +212,8 @@ pub struct PrimarySearchProfileSummary {
     pub wall_ms: Option<u64>,
     pub potion_policy: Option<String>,
     pub max_potions_used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_potion_slots: Option<u64>,
     pub internal_no_win_rescue_enabled: bool,
 }
 

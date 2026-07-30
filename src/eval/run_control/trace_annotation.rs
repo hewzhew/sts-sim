@@ -286,6 +286,8 @@ pub struct CombatSearchTraceSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_max_potions_used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_allowed_potion_slots: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_internal_no_win_rescue_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_fingerprint: Option<String>,
@@ -562,6 +564,7 @@ pub fn combat_search_trace_summaries(
             profile_wall_ms: None,
             profile_potion_policy: None,
             profile_max_potions_used: None,
+            profile_allowed_potion_slots: None,
             profile_internal_no_win_rescue_enabled: None,
             engine_fingerprint: None,
             portfolio_candidate_tier: None,

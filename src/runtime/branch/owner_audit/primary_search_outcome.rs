@@ -61,6 +61,11 @@ fn primary_search_outcome(
             max_potions_used: profile_attempt
                 .and_then(|profile| profile.max_potions_used)
                 .or_else(|| primary_attempt.and_then(|attempt| attempt.profile_max_potions_used)),
+            allowed_potion_slots: profile_attempt
+                .and_then(|profile| profile.allowed_potion_slots)
+                .or_else(|| {
+                    primary_attempt.and_then(|attempt| attempt.profile_allowed_potion_slots)
+                }),
             internal_no_win_rescue_enabled: profile_attempt
                 .map(|_| false)
                 .or_else(|| {
@@ -91,10 +96,16 @@ pub(super) fn latest_execution_adjudication(
 fn primary_attempt(attempts: &[CombatSearchTraceSummary]) -> Option<&CombatSearchTraceSummary> {
     attempts
         .iter()
-        .find(|attempt| attempt.lane.as_deref() == Some("primary"))
+        .find(|attempt| attempt.portfolio_selected == Some(true))
         .or_else(|| {
             attempts
                 .iter()
+                .find(|attempt| attempt.lane.as_deref() == Some("primary"))
+        })
+        .or_else(|| {
+            attempts
+                .iter()
+                .rev()
                 .find(|attempt| attempt.source == "search_combat")
         })
 }
@@ -269,5 +280,31 @@ mod tests {
         let legacy_value = primary_search_outcome_value(&[legacy], None);
         assert_eq!(legacy_value["status"], "legacy_unknown");
         assert!(legacy_value["accepted_line"].is_null());
+    }
+
+    #[test]
+    fn staged_history_projects_the_selected_rescue_instead_of_the_rejected_primary() {
+        let mut no_potion = search_attempt_fixture();
+        no_potion.lane = Some("no_potion_primary".to_string());
+        no_potion.profile_id = Some("canonical_combat_no_potion_primary".to_string());
+        no_potion.profile_allowed_potion_slots = Some(0);
+        no_potion.portfolio_selected = Some(false);
+
+        let mut rescue = search_attempt_fixture();
+        rescue.lane = Some("improve_verified_win".to_string());
+        rescue.profile_id = Some("canonical_combat_bounded_potion_rescue".to_string());
+        rescue.profile_allowed_potion_slots = Some(1);
+        rescue.portfolio_selected = Some(true);
+        rescue.execution_adjudication = Some(dirty_accepted_adjudication());
+
+        let value = primary_search_outcome_value(&[no_potion, rescue], None);
+
+        assert_eq!(value["status"], "accepted_dirty_win");
+        assert_eq!(
+            value["profile"]["profile_id"],
+            "canonical_combat_bounded_potion_rescue"
+        );
+        assert_eq!(value["profile"]["allowed_potion_slots"], 1);
+        assert!(value["accepted_line"].is_object());
     }
 }

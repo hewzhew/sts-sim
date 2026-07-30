@@ -6,6 +6,7 @@ use crate::eval::run_control::{
     CardRewardFunctionV1, CardRewardObligationDeltaV1, CardRewardObligationSourceV1,
     CardRewardOwnerProvenanceV1, RunCombatResolutionKindV1, RunControlConfig, RunPolicyCandidateV1,
 };
+use crate::eval::run_control::{oracle_potion_rescue_tier_v1, OraclePotionRescueTierV1};
 use crate::state::core::{ActiveCombat, ClientInput, CombatContext, RoomCombatContext};
 use crate::state::map::node::RoomType;
 
@@ -730,8 +731,6 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
             OraclePotionRescueTierV1::BoundedQuality,
             "{potion:?} should be eligible only after a no-potion quality miss"
         );
-        assert!(potion_can_support_victory_rescue_v1(potion));
-        assert!(potion_is_bounded_quality_rescue_v1(potion));
     }
 
     for potion in [
@@ -749,8 +748,6 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
             OraclePotionRescueTierV1::FindAnyWin,
             "{potion:?} should remain reserved while a verified win exists"
         );
-        assert!(potion_can_support_victory_rescue_v1(potion));
-        assert!(!potion_is_bounded_quality_rescue_v1(potion));
     }
 
     for potion in [PotionId::FairyPotion, PotionId::SmokeBomb] {
@@ -758,8 +755,6 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
             oracle_potion_rescue_tier_v1(potion),
             OraclePotionRescueTierV1::Excluded
         );
-        assert!(!potion_can_support_victory_rescue_v1(potion));
-        assert!(!potion_is_bounded_quality_rescue_v1(potion));
     }
 }
 

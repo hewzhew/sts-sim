@@ -52,6 +52,7 @@ mod pending_choice_card_contract_tests;
 mod persistent_burden_cutpoint_probe;
 mod planner_boundary_capture;
 mod planner_capture;
+mod potion_rescue_policy;
 mod progress_journal;
 mod progress_options;
 mod progress_replay;
@@ -193,6 +194,10 @@ pub use planner_boundary_capture::{
 pub use planner_capture::{
     build_planner_capture_coverage_report, build_planner_capture_dataset,
     PlannerCaptureCoverageReport, PlannerCaptureDataset, PlannerDecisionSiteCoverage,
+};
+pub use potion_rescue_policy::{
+    oracle_potion_rescue_slot_mask_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueKindV1,
+    OraclePotionRescueTierV1,
 };
 pub use progress_journal::{
     RunProgressJournalV1, RUN_PROGRESS_JOURNAL_SCHEMA_NAME, RUN_PROGRESS_JOURNAL_SCHEMA_VERSION,
