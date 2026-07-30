@@ -4,6 +4,10 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
+use crate::ai::boss_mechanics_v1::{
+    boss_mechanic_pressure_profile_v1, BossMechanicPressurePointV1,
+};
+use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, is_concrete_package_support_signal_v1,
     is_unresolved_package_payoff_debt_signal_v1, CardComponentSignalContextV1,
@@ -72,6 +76,9 @@ pub struct CardRewardPolicyActionEvidenceV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
+    /// The known act boss punishes playing powers and this candidate is a
+    /// shared-analysis minor power without an exact strategic improvement.
+    pub boss_power_tax_conflict: bool,
     /// Exact deck-shape liabilities introduced by this candidate.
     ///
     /// This consumes the shared deck-shape model instead of allowing the
@@ -113,6 +120,7 @@ pub struct CardRewardPolicyAuditCandidateV1 {
     pub introduces_undigested_status_burden: bool,
     pub duplicate_low_marginal: bool,
     pub access_conflict_or_redundancy: bool,
+    pub boss_power_tax_conflict: bool,
     pub added_deck_shape_risks: Vec<String>,
     pub improves_threat_relevant_capability: bool,
     pub amplifies_existing_answers: bool,
@@ -197,6 +205,7 @@ impl ExactCardRewardPolicyDecisionV1 {
                         .introduces_undigested_status_burden,
                     duplicate_low_marginal: evidence.duplicate_low_marginal,
                     access_conflict_or_redundancy: evidence.access_conflict_or_redundancy,
+                    boss_power_tax_conflict: evidence.boss_power_tax_conflict,
                     added_deck_shape_risks: evidence
                         .added_deck_shape_risks
                         .iter()
@@ -249,6 +258,10 @@ pub fn exact_card_reward_policy_decision_v1(
     let startup = deck_startup_profile_v1(&session.run_state);
     let deck_shape = deck_shape_profile_v1(&session.run_state);
     let block_plan = block_plan_profile_v1(&session.run_state);
+    let boss_power_tax_active = session.run_state.boss_key.is_some_and(|boss| {
+        boss_mechanic_pressure_profile_v1(&session.run_state, boss)
+            .has_pressure(BossMechanicPressurePointV1::PowerPlayPenalty)
+    });
     let mut evidence = exact
         .actions
         .iter()
@@ -270,6 +283,7 @@ pub fn exact_card_reward_policy_decision_v1(
                 &startup,
                 &deck_shape,
                 &block_plan,
+                boss_power_tax_active,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -347,6 +361,7 @@ fn card_reward_action_evidence_v1(
     startup: &DeckStartupProfileV1,
     deck_shape: &DeckShapeProfileV1,
     block_plan: &BlockPlanProfileV1,
+    boss_power_tax_active: bool,
 ) -> Result<CardRewardPolicyActionEvidenceV1, String> {
     let candidate_key = action.candidate_key.clone().ok_or_else(|| {
         format!(
@@ -424,6 +439,8 @@ fn card_reward_action_evidence_v1(
         &action.after.threat_coverage,
     )
     .is_empty();
+    let boss_power_tax_conflict =
+        boss_power_tax_conflict_v1(boss_power_tax_active, &acquisition, &delta);
     let upgrade_investment_support = matches!(
         &acquisition,
         CardRewardPolicyAcquisitionV1::Card { semantics, .. }
@@ -441,6 +458,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_conflict_or_redundancy,
+        boss_power_tax_conflict,
         !added_deck_shape_risks.is_empty(),
         improves_threat_relevant_capability,
         amplifies_existing_answers,
@@ -457,6 +475,7 @@ fn card_reward_action_evidence_v1(
         introduces_undigested_status_burden,
         duplicate_low_marginal,
         access_conflict_or_redundancy,
+        boss_power_tax_conflict,
         added_deck_shape_risks,
         improves_threat_relevant_capability,
         amplifies_existing_answers,
@@ -534,6 +553,7 @@ fn card_reward_band_v1(
     status_burden: bool,
     duplicate_low_marginal: bool,
     access_conflict_or_redundancy: bool,
+    boss_power_tax_conflict: bool,
     introduces_deck_shape_risk: bool,
     improves_threat_relevant_capability: bool,
     amplifies_existing_answers: bool,
@@ -563,6 +583,8 @@ fn card_reward_band_v1(
                     .any(|signal| is_unresolved_package_payoff_debt_signal_v1(*signal))
             {
                 CardRewardPolicyBandV1::Liability
+            } else if boss_power_tax_conflict {
+                CardRewardPolicyBandV1::SpeculativeAddition
             } else if !delta.closed_threat_gaps.is_empty() {
                 CardRewardPolicyBandV1::CloseThreatGap
             } else if amplifies_existing_answers {
@@ -586,6 +608,23 @@ fn card_reward_band_v1(
             }
         }
     }
+}
+
+fn boss_power_tax_conflict_v1(
+    boss_power_tax_active: bool,
+    acquisition: &CardRewardPolicyAcquisitionV1,
+    delta: &RunPolicyStateDeltaV1,
+) -> bool {
+    let CardRewardPolicyAcquisitionV1::Card { card, upgrades, .. } = acquisition else {
+        return false;
+    };
+
+    boss_power_tax_active
+        && card_analysis_profile_v1(*card, *upgrades).is_boss_minor_power
+        && delta.closed_threat_gaps.is_empty()
+        && delta.capability_improvements.is_empty()
+        && delta.resolved_formation_needs.is_empty()
+        && delta.added_formation_strengths.is_empty()
 }
 
 fn access_amplifies_existing_answers(
@@ -1351,6 +1390,105 @@ mod tests {
                 }
             )) < skip,
             "an intrinsic persistent payoff must remain independently admissible"
+        );
+    }
+
+    #[test]
+    fn known_power_tax_demotes_supported_minor_power_without_exact_improvement() {
+        let mut session = reward_session(&[(CardId::Rupture, 1)]);
+        session.run_state.act_num = 3;
+        session.run_state.floor_num = 45;
+        session.run_state.boss_key = Some(EncounterId::AwakenedOne);
+        session.run_state.current_hp = 87;
+        session.run_state.max_hp = 103;
+        session.run_state.master_deck = [
+            (CardId::Defend, 0),
+            (CardId::Defend, 0),
+            (CardId::Bash, 1),
+            (CardId::Berserk, 0),
+            (CardId::WildStrike, 0),
+            (CardId::ShrugItOff, 1),
+            (CardId::Evolve, 0),
+            (CardId::Clothesline, 1),
+            (CardId::Feed, 0),
+            (CardId::Intimidate, 0),
+            (CardId::BattleTrance, 0),
+            (CardId::Shockwave, 0),
+            (CardId::Barricade, 1),
+            (CardId::FiendFire, 1),
+            (CardId::IronWave, 1),
+            (CardId::Disarm, 0),
+            (CardId::PommelStrike, 0),
+            (CardId::Immolate, 1),
+            (CardId::Cleave, 0),
+            (CardId::Inflame, 1),
+            (CardId::DarkEmbrace, 1),
+            (CardId::SecondWind, 1),
+            (CardId::BodySlam, 0),
+            (CardId::Bloodletting, 1),
+            (CardId::DarkShackles, 1),
+            (CardId::SeverSoul, 0),
+            (CardId::Parasite, 0),
+            (CardId::ThunderClap, 1),
+            (CardId::FeelNoPain, 1),
+            (CardId::Parasite, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (card, upgrades))| {
+            let mut owned = CombatCard::new(card, index as u32);
+            owned.upgrades = upgrades;
+            owned
+        })
+        .collect();
+
+        let awakened_decision = decision(&session);
+        let rupture = card_evidence(&awakened_decision, CardId::Rupture);
+        assert!(matches!(
+            &rupture.acquisition,
+            CardRewardPolicyAcquisitionV1::Card {
+                component_signals,
+                ..
+            } if component_signals
+                .positive_signals
+                .contains(&CardComponentSignalKindV1::SelfDamagePayoffSupported)
+        ));
+        assert!(rupture.delta.closed_threat_gaps.is_empty());
+        assert!(rupture.delta.capability_improvements.is_empty());
+        assert!(rupture.delta.resolved_formation_needs.is_empty());
+        assert!(rupture.delta.added_formation_strengths.is_empty());
+        assert!(rupture.boss_power_tax_conflict);
+        assert_eq!(rupture.band, CardRewardPolicyBandV1::SpeculativeAddition);
+        let mut exact_improvement = rupture.delta.clone();
+        exact_improvement.capability_improvements.push(
+            crate::eval::run_control::RunPolicyCapabilityChangeV1 {
+                capability: StrategyCapabilityKindV1::LongFightScaling,
+                before: StrategyCapabilityCoverageV1::Thin,
+                after: StrategyCapabilityCoverageV1::Supported,
+            },
+        );
+        assert!(
+            !boss_power_tax_conflict_v1(true, &rupture.acquisition, &exact_improvement),
+            "an exact capability improvement must override the generic minor-power conflict"
+        );
+        assert!(
+            position(&awakened_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardSkip { .. }
+            )) < position(&awakened_decision, |key| matches!(
+                key,
+                DecisionCandidateKey::CardRewardPick {
+                    card: CardId::Rupture,
+                    ..
+                }
+            )),
+            "a supported but non-improving minor power must not outrank preserving deck quality against the known power-tax boss"
+        );
+
+        session.run_state.boss_key = Some(EncounterId::DonuAndDeca);
+        assert!(
+            !card_evidence(&decision(&session), CardId::Rupture).boss_power_tax_conflict,
+            "the conflict must come from the shared boss pressure, not from a Rupture-specific rejection"
         );
     }
 
