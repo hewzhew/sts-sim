@@ -283,6 +283,13 @@ threshold. Route order must come from a typed modal ordering fact; aggregate
 room counts cannot establish order. Missing, unknown, conflicting, or
 root-mismatched evidence remains explicitly unavailable or rejected.
 
+Deterministic post-victory HP carryover is also an owner-captured fact. In
+particular, an offline audit must not infer a room-Boss act-transition heal from
+an encounter name, floor number, or combat `is_boss` flag. The run-control
+owner evaluates the exact combat context and persists the typed result;
+diagnostics may validate and display it, while legacy absence remains
+unavailable.
+
 ## Prohibited Crossings
 
 - Do not use strings as decisions when a typed action, candidate key, or case

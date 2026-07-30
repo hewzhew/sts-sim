@@ -40,7 +40,9 @@ use sts_oracle_runtime::content::potions::{Potion, PotionId};
 use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
 use sts_oracle_runtime::eval::combat_case::{load_combat_case, CombatCase};
 use sts_oracle_runtime::eval::run_control::{
-    existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueTierV1,
+    existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1,
+    CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1, OraclePotionRescueTierV1,
+    COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
 use sts_oracle_runtime::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, EngineCombatStepper,
@@ -49,7 +51,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV8";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV9";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -342,10 +344,13 @@ enum PotionSpendUrgencyQuestionStatusV1 {
 enum PotionSpendUrgencyQuestionLimitationV1 {
     RunContextUnavailable,
     ContinuationPressureUnavailable,
+    CombatVictoryContinuationUnavailable,
     RunContextRejected,
     ContinuationPressureRejected,
+    CombatVictoryContinuationRejected,
     ValidatedRunContextMissingPayload,
     ValidatedContinuationPressureMissingPayload,
+    ValidatedCombatVictoryContinuationMissingPayload,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -384,8 +389,19 @@ struct PotionRouteOrderingFactsV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum PotionCombatVictoryContinuationEvidenceV1 {
+    ValidatedCapturedFact {
+        evaluator: String,
+        hp_carryover: CombatVictoryHpCarryoverV1,
+    },
+    UnavailableLegacyCase,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct PotionSpendUrgencyFactsV1 {
     configured_survival_reserve_delta: Option<PotionSurvivalReserveDeltaV1>,
+    combat_victory_continuation: PotionCombatVictoryContinuationEvidenceV1,
     inventory: PotionRunInventoryContextV1,
     supply: PotionRunSupplyContextV1,
     route: PotionRoutePressureV1,
@@ -451,6 +467,7 @@ struct PotionAuditLimitationsV1 {
     lane_absence_is_budget_unknown_unless_frontier_exhausted: bool,
     run_context_rejected_on_exact_root_mismatch: bool,
     continuation_pressure_rejected_without_exact_reconstruction: bool,
+    combat_victory_continuation_requires_consistent_owner_capture: bool,
     retained_value_evidence_is_non_authoritative: bool,
     continuation_value_not_in_combat_case: Vec<&'static str>,
     passive_consumption_handling: &'static str,
@@ -563,6 +580,33 @@ struct PotionContinuationPressureProjectionV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+enum CombatVictoryContinuationProjectionStatusV1 {
+    ValidatedCapturedFact,
+    UnavailableLegacyCase,
+    RejectedMismatch,
+    RejectedWithoutValidatedRunContext,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct CombatVictoryContinuationMismatchV1 {
+    field: String,
+    expected: String,
+    observed: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct CombatVictoryContinuationProjectionV1 {
+    status: CombatVictoryContinuationProjectionStatusV1,
+    source: Option<&'static str>,
+    attempt_index: Option<usize>,
+    attempt_source: Option<String>,
+    attempt_lane: Option<String>,
+    mismatches: Vec<CombatVictoryContinuationMismatchV1>,
+    captured_facts: Option<CombatVictoryContinuationFactsV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum PotionContinuationEvidenceCoverageV1 {
     ExactCurrentRoot,
     PartialCurrentRoot,
@@ -590,7 +634,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV8 {
+pub(super) struct CombatCasePotionExpenditureAuditV9 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -599,6 +643,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV8 {
     root_potions: Vec<PotionResourceV1>,
     continuation_context: PotionContinuationContextV1,
     continuation_pressure_projection: PotionContinuationPressureProjectionV1,
+    combat_victory_continuation_projection: CombatVictoryContinuationProjectionV1,
     settings: PotionAuditSearchSettingsV1,
     lanes: Vec<PotionAuditLaneResultV1>,
     pareto_lane_ids: Vec<String>,
@@ -607,7 +652,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV8 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV8, String> {
+) -> Result<CombatCasePotionExpenditureAuditV9, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -640,8 +685,12 @@ pub(super) fn run(
     let run_level_projection = project_saved_run_continuation_context(&loaded);
     let continuation_pressure_projection =
         project_saved_potion_continuation_pressure(&loaded, &run_level_projection);
+    let combat_victory_continuation_projection =
+        project_saved_combat_victory_continuation(&loaded, &run_level_projection);
     let run_level_projection_for_evidence = run_level_projection.clone();
     let continuation_pressure_projection_for_evidence = continuation_pressure_projection.clone();
+    let combat_victory_continuation_projection_for_evidence =
+        combat_victory_continuation_projection.clone();
     let continuation_context = potion_continuation_context(
         loaded.run.act,
         loaded.run.floor,
@@ -726,6 +775,7 @@ pub(super) fn run(
         &root_potions,
         &run_level_projection_for_evidence,
         &continuation_pressure_projection_for_evidence,
+        &combat_victory_continuation_projection_for_evidence,
     );
     annotate_policy_review_flags(&mut lanes);
     validate_expectations(
@@ -743,7 +793,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV8 {
+    Ok(CombatCasePotionExpenditureAuditV9 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -752,6 +802,7 @@ pub(super) fn run(
         root_potions,
         continuation_context,
         continuation_pressure_projection,
+        combat_victory_continuation_projection,
         settings: PotionAuditSearchSettingsV1 {
             max_combination_size,
             max_lanes,
@@ -771,6 +822,7 @@ pub(super) fn run(
             lane_absence_is_budget_unknown_unless_frontier_exhausted: true,
             run_context_rejected_on_exact_root_mismatch: true,
             continuation_pressure_rejected_without_exact_reconstruction: true,
+            combat_victory_continuation_requires_consistent_owner_capture: true,
             retained_value_evidence_is_non_authoritative: true,
             continuation_value_not_in_combat_case: vec![
                 "forced_rest_avoidance_beyond_route_window",
@@ -1035,6 +1087,134 @@ fn project_saved_potion_continuation_pressure(
         attempt_lane: attempt.lane.clone(),
         mismatches,
         captured_pressure: Some(pressure),
+    }
+}
+
+fn project_saved_combat_victory_continuation(
+    case: &CombatCase,
+    run_level_projection: &PotionRunContinuationProjectionV1,
+) -> CombatVictoryContinuationProjectionV1 {
+    let from_attempt = case
+        .combat_search_attempts
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, attempt)| attempt.combat_victory_continuation.is_some());
+    let (source, attempt_index, attempt) = match from_attempt {
+        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
+        None => (
+            Some("failed_search"),
+            None,
+            case.failed_search
+                .as_ref()
+                .filter(|attempt| attempt.combat_victory_continuation.is_some()),
+        ),
+    };
+    let Some(attempt) = attempt else {
+        return CombatVictoryContinuationProjectionV1 {
+            status: CombatVictoryContinuationProjectionStatusV1::UnavailableLegacyCase,
+            source: None,
+            attempt_index: None,
+            attempt_source: None,
+            attempt_lane: None,
+            mismatches: Vec::new(),
+            captured_facts: None,
+        };
+    };
+    let facts = attempt
+        .combat_victory_continuation
+        .as_ref()
+        .expect("filtered combat victory continuation")
+        .clone();
+    let all_attempts = case
+        .combat_search_attempts
+        .iter()
+        .chain(case.failed_search.iter());
+    let mut mismatches = Vec::new();
+    let missing_facts = all_attempts
+        .clone()
+        .filter(|other| other.combat_victory_continuation.is_none())
+        .count();
+    if missing_facts > 0 {
+        mismatches.push(CombatVictoryContinuationMismatchV1 {
+            field: "trace_fact_presence_consistency".to_owned(),
+            expected: "fact present on every saved search summary".to_owned(),
+            observed: format!("{missing_facts} summary or summaries without the fact"),
+        });
+    }
+    let conflicting_facts = all_attempts
+        .filter_map(|other| other.combat_victory_continuation.as_ref())
+        .filter(|other| *other != &facts)
+        .count();
+    if conflicting_facts > 0 {
+        mismatches.push(CombatVictoryContinuationMismatchV1 {
+            field: "trace_fact_consistency".to_owned(),
+            expected: "all captured facts identical".to_owned(),
+            observed: format!("{conflicting_facts} conflicting fact(s)"),
+        });
+    }
+    if facts.evaluator != COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1 {
+        mismatches.push(CombatVictoryContinuationMismatchV1 {
+            field: "evaluator".to_owned(),
+            expected: COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1.to_owned(),
+            observed: facts.evaluator.clone(),
+        });
+    }
+
+    let status = if run_level_projection.status
+        != PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+    {
+        mismatches.push(CombatVictoryContinuationMismatchV1 {
+            field: "run_context_status".to_owned(),
+            expected: "validated_exact_root".to_owned(),
+            observed: run_context_projection_status_label(run_level_projection.status).to_owned(),
+        });
+        CombatVictoryContinuationProjectionStatusV1::RejectedWithoutValidatedRunContext
+    } else {
+        if facts.hp_carryover
+            == CombatVictoryHpCarryoverV1::GuaranteedFullHealBeforeNextDamageBearingDecision
+        {
+            let context = run_level_projection
+                .captured_context
+                .as_ref()
+                .expect("validated run continuation context");
+            if !case.position.combat.meta.is_boss_fight {
+                mismatches.push(CombatVictoryContinuationMismatchV1 {
+                    field: "combat_kind".to_owned(),
+                    expected: "boss".to_owned(),
+                    observed: "non_boss".to_owned(),
+                });
+            }
+            if context.act >= 3 {
+                mismatches.push(CombatVictoryContinuationMismatchV1 {
+                    field: "act".to_owned(),
+                    expected: "act below 3".to_owned(),
+                    observed: context.act.to_string(),
+                });
+            }
+            if case.position.combat.meta.ascension_level >= 5 {
+                mismatches.push(CombatVictoryContinuationMismatchV1 {
+                    field: "ascension".to_owned(),
+                    expected: "ascension below 5".to_owned(),
+                    observed: case.position.combat.meta.ascension_level.to_string(),
+                });
+            }
+        }
+        if mismatches.is_empty() {
+            CombatVictoryContinuationProjectionStatusV1::ValidatedCapturedFact
+        } else {
+            CombatVictoryContinuationProjectionStatusV1::RejectedMismatch
+        }
+    };
+
+    CombatVictoryContinuationProjectionV1 {
+        status,
+        source,
+        attempt_index,
+        attempt_source: Some(attempt.source.clone()),
+        attempt_lane: attempt.lane.clone(),
+        mismatches,
+        captured_facts: Some(facts),
     }
 }
 
@@ -1760,6 +1940,7 @@ fn annotate_shadow_spend_adjudications(
     root_potions: &[PotionResourceV1],
     run_level_projection: &PotionRunContinuationProjectionV1,
     continuation_pressure_projection: &PotionContinuationPressureProjectionV1,
+    combat_victory_continuation_projection: &CombatVictoryContinuationProjectionV1,
 ) {
     for lane in lanes {
         let Some(witness) = lane.witness.as_mut() else {
@@ -1808,6 +1989,7 @@ fn annotate_shadow_spend_adjudications(
                         comparison,
                         run_level_projection,
                         continuation_pressure_projection,
+                        combat_victory_continuation_projection,
                     ),
                     retained_value_evidence: retained_value_evidence(
                         witness,
@@ -1826,7 +2008,9 @@ fn spend_urgency_question(
     comparison: &PotionMarginalComparisonV1,
     run_level_projection: &PotionRunContinuationProjectionV1,
     continuation_pressure_projection: &PotionContinuationPressureProjectionV1,
+    combat_victory_continuation_projection: &CombatVictoryContinuationProjectionV1,
 ) -> PotionSpendUrgencyQuestionV1 {
+    use CombatVictoryContinuationProjectionStatusV1 as VictoryStatus;
     use PotionContinuationPressureProjectionStatusV1 as PressureStatus;
     use PotionRunContinuationProjectionStatusV1 as RunStatus;
     use PotionSpendUrgencyQuestionLimitationV1 as Limitation;
@@ -1847,11 +2031,24 @@ fn spend_urgency_question(
             limitations.push(Limitation::ContinuationPressureRejected);
         }
     }
+    match combat_victory_continuation_projection.status {
+        VictoryStatus::ValidatedCapturedFact => {}
+        VictoryStatus::UnavailableLegacyCase => {
+            limitations.push(Limitation::CombatVictoryContinuationUnavailable);
+        }
+        VictoryStatus::RejectedMismatch | VictoryStatus::RejectedWithoutValidatedRunContext => {
+            limitations.push(Limitation::CombatVictoryContinuationRejected);
+        }
+    }
 
     let rejected = matches!(run_level_projection.status, RunStatus::RejectedRootMismatch)
         || matches!(
             continuation_pressure_projection.status,
             PressureStatus::RejectedMismatch | PressureStatus::RejectedWithoutValidatedRunContext
+        )
+        || matches!(
+            combat_victory_continuation_projection.status,
+            VictoryStatus::RejectedMismatch | VictoryStatus::RejectedWithoutValidatedRunContext
         );
     if rejected {
         return PotionSpendUrgencyQuestionV1 {
@@ -1894,6 +2091,20 @@ fn spend_urgency_question(
             limitations,
         };
     };
+    if combat_victory_continuation_projection.status == VictoryStatus::ValidatedCapturedFact
+        && combat_victory_continuation_projection
+            .captured_facts
+            .is_none()
+    {
+        limitations.push(Limitation::ValidatedCombatVictoryContinuationMissingPayload);
+        return PotionSpendUrgencyQuestionV1 {
+            status: Status::Unavailable,
+            run_context_status: run_level_projection.status,
+            continuation_pressure_status: continuation_pressure_projection.status,
+            facts: None,
+            limitations,
+        };
+    }
 
     PotionSpendUrgencyQuestionV1 {
         status: Status::ValidatedExactRoot,
@@ -1901,6 +2112,9 @@ fn spend_urgency_question(
         continuation_pressure_status: continuation_pressure_projection.status,
         facts: Some(PotionSpendUrgencyFactsV1 {
             configured_survival_reserve_delta: comparison.survival_reserve_delta.clone(),
+            combat_victory_continuation: combat_victory_continuation_evidence(
+                combat_victory_continuation_projection,
+            ),
             inventory: pressure.inventory.clone(),
             supply: pressure.supply.clone(),
             route: pressure.route.clone(),
@@ -1915,6 +2129,23 @@ fn spend_urgency_question(
                 .contains(&PotionRunContinuationLimitationV1::FuturePotionIdentityUnknownUntilRoll),
         }),
         limitations,
+    }
+}
+
+fn combat_victory_continuation_evidence(
+    projection: &CombatVictoryContinuationProjectionV1,
+) -> PotionCombatVictoryContinuationEvidenceV1 {
+    if projection.status == CombatVictoryContinuationProjectionStatusV1::ValidatedCapturedFact {
+        let facts = projection
+            .captured_facts
+            .as_ref()
+            .expect("validated combat victory continuation fact");
+        PotionCombatVictoryContinuationEvidenceV1::ValidatedCapturedFact {
+            evaluator: facts.evaluator.clone(),
+            hp_carryover: facts.hp_carryover,
+        }
+    } else {
+        PotionCombatVictoryContinuationEvidenceV1::UnavailableLegacyCase
     }
 }
 
@@ -2340,6 +2571,9 @@ mod tests {
             lane: Some("no_potion_primary".to_owned()),
             potion_continuation_context: Some(context),
             potion_continuation_pressure: Some(pressure),
+            combat_victory_continuation: Some(
+                CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(false),
+            ),
             ..CombatSearchTraceSummary::default()
         };
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
@@ -2447,11 +2681,21 @@ mod tests {
             mismatches: Vec::new(),
             captured_pressure: None,
         };
+        let victory_projection = CombatVictoryContinuationProjectionV1 {
+            status: CombatVictoryContinuationProjectionStatusV1::UnavailableLegacyCase,
+            source: None,
+            attempt_index: None,
+            attempt_source: None,
+            attempt_lane: None,
+            mismatches: Vec::new(),
+            captured_facts: None,
+        };
         annotate_shadow_spend_adjudications(
             std::slice::from_mut(&mut lane),
             &[],
             &run_level_projection,
             &pressure_projection,
+            &victory_projection,
         );
         lane.witness
             .unwrap()
@@ -3038,6 +3282,7 @@ mod tests {
         let run_projection = project_saved_run_continuation_context(&case);
         let pressure_projection =
             project_saved_potion_continuation_pressure(&case, &run_projection);
+        let victory_projection = project_saved_combat_victory_continuation(&case, &run_projection);
         let comparison = PotionMarginalComparisonV1 {
             final_hp_delta: Some(19),
             final_turn_delta: Some(1),
@@ -3046,7 +3291,12 @@ mod tests {
             assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
         };
 
-        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+        let question = spend_urgency_question(
+            &comparison,
+            &run_projection,
+            &pressure_projection,
+            &victory_projection,
+        );
 
         assert_eq!(
             question.status,
@@ -3061,6 +3311,13 @@ mod tests {
                 .map(|delta| delta.shortfall_reduction_hp),
             Some(19)
         );
+        assert_eq!(
+            facts.combat_victory_continuation,
+            PotionCombatVictoryContinuationEvidenceV1::ValidatedCapturedFact {
+                evaluator: COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1.to_owned(),
+                hp_carryover: CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition,
+            }
+        );
         assert_eq!(facts.inventory.occupied_slots, 1);
         assert_eq!(facts.shop.current_gold, case.run.gold);
         assert!(facts.future_potion_identity_unknown);
@@ -3068,6 +3325,22 @@ mod tests {
             facts.route_ordering.future_known_combat_before_campfire,
             expected_order
         );
+
+        let mut missing_victory_payload = victory_projection.clone();
+        missing_victory_payload.captured_facts = None;
+        let unavailable = spend_urgency_question(
+            &comparison,
+            &run_projection,
+            &pressure_projection,
+            &missing_victory_payload,
+        );
+        assert_eq!(
+            unavailable.status,
+            PotionSpendUrgencyQuestionStatusV1::Unavailable
+        );
+        assert!(unavailable.limitations.contains(
+            &PotionSpendUrgencyQuestionLimitationV1::ValidatedCombatVictoryContinuationMissingPayload
+        ));
     }
 
     #[test]
@@ -3076,14 +3349,17 @@ mod tests {
         for attempt in &mut case.combat_search_attempts {
             attempt.potion_continuation_context = None;
             attempt.potion_continuation_pressure = None;
+            attempt.combat_victory_continuation = None;
         }
         if let Some(failed) = case.failed_search.as_mut() {
             failed.potion_continuation_context = None;
             failed.potion_continuation_pressure = None;
+            failed.combat_victory_continuation = None;
         }
         let run_projection = project_saved_run_continuation_context(&case);
         let pressure_projection =
             project_saved_potion_continuation_pressure(&case, &run_projection);
+        let victory_projection = project_saved_combat_victory_continuation(&case, &run_projection);
         let comparison = PotionMarginalComparisonV1 {
             final_hp_delta: Some(3),
             final_turn_delta: Some(0),
@@ -3092,7 +3368,12 @@ mod tests {
             assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
         };
 
-        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+        let question = spend_urgency_question(
+            &comparison,
+            &run_projection,
+            &pressure_projection,
+            &victory_projection,
+        );
 
         assert_eq!(
             question.status,
@@ -3108,6 +3389,80 @@ mod tests {
     }
 
     #[test]
+    fn spend_urgency_question_keeps_legacy_victory_fact_explicitly_unavailable() {
+        let mut case = combat_case_with_trace_run_context();
+        for attempt in &mut case.combat_search_attempts {
+            attempt.combat_victory_continuation = None;
+        }
+        if let Some(failed) = case.failed_search.as_mut() {
+            failed.combat_victory_continuation = None;
+        }
+        let run_projection = project_saved_run_continuation_context(&case);
+        let pressure_projection =
+            project_saved_potion_continuation_pressure(&case, &run_projection);
+        let victory_projection = project_saved_combat_victory_continuation(&case, &run_projection);
+        let comparison = PotionMarginalComparisonV1 {
+            final_hp_delta: Some(5),
+            final_turn_delta: Some(0),
+            action_count_delta: Some(1),
+            survival_reserve_delta: None,
+            assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
+        };
+
+        let question = spend_urgency_question(
+            &comparison,
+            &run_projection,
+            &pressure_projection,
+            &victory_projection,
+        );
+
+        assert_eq!(
+            question.status,
+            PotionSpendUrgencyQuestionStatusV1::ValidatedExactRoot
+        );
+        assert!(question.limitations.contains(
+            &PotionSpendUrgencyQuestionLimitationV1::CombatVictoryContinuationUnavailable
+        ));
+        assert_eq!(
+            question
+                .facts
+                .expect("available V9 facts")
+                .combat_victory_continuation,
+            PotionCombatVictoryContinuationEvidenceV1::UnavailableLegacyCase
+        );
+    }
+
+    #[test]
+    fn combat_victory_projection_rejects_structurally_impossible_full_heal_claim() {
+        let mut case = combat_case_with_trace_run_context();
+        case.position.combat.meta.is_boss_fight = true;
+        let fact = CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(true);
+        case.combat_search_attempts[0].combat_victory_continuation = Some(fact.clone());
+        case.failed_search = Some(case.combat_search_attempts[0].clone());
+        let run_projection = project_saved_run_continuation_context(&case);
+
+        let validated = project_saved_combat_victory_continuation(&case, &run_projection);
+
+        assert_eq!(
+            validated.status,
+            CombatVictoryContinuationProjectionStatusV1::ValidatedCapturedFact
+        );
+        assert_eq!(validated.captured_facts, Some(fact));
+        assert!(validated.mismatches.is_empty());
+
+        case.position.combat.meta.ascension_level = 5;
+        let rejected = project_saved_combat_victory_continuation(&case, &run_projection);
+        assert_eq!(
+            rejected.status,
+            CombatVictoryContinuationProjectionStatusV1::RejectedMismatch
+        );
+        assert!(rejected
+            .mismatches
+            .iter()
+            .any(|mismatch| mismatch.field == "ascension"));
+    }
+
+    #[test]
     fn spend_urgency_question_rejects_mismatched_pressure() {
         let mut case = combat_case_with_trace_run_context();
         case.combat_search_attempts[0]
@@ -3120,6 +3475,7 @@ mod tests {
         let run_projection = project_saved_run_continuation_context(&case);
         let pressure_projection =
             project_saved_potion_continuation_pressure(&case, &run_projection);
+        let victory_projection = project_saved_combat_victory_continuation(&case, &run_projection);
         let comparison = PotionMarginalComparisonV1 {
             final_hp_delta: Some(7),
             final_turn_delta: Some(0),
@@ -3128,7 +3484,12 @@ mod tests {
             assessment: PotionMarginalAssessmentV1::ImprovesFinalHp,
         };
 
-        let question = spend_urgency_question(&comparison, &run_projection, &pressure_projection);
+        let question = spend_urgency_question(
+            &comparison,
+            &run_projection,
+            &pressure_projection,
+            &victory_projection,
+        );
 
         assert_eq!(
             question.status,

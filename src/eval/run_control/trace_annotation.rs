@@ -271,6 +271,36 @@ pub struct CombatSearchTerminalLineSummary {
     pub action_count: usize,
 }
 
+pub const COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1: &str =
+    "strategic_combat_victory_reaches_full_heal_v1";
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatVictoryHpCarryoverV1 {
+    GuaranteedFullHealBeforeNextDamageBearingDecision,
+    NotGuaranteedByRoomBossActTransition,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatVictoryContinuationFactsV1 {
+    pub evaluator: String,
+    pub hp_carryover: CombatVictoryHpCarryoverV1,
+}
+
+impl CombatVictoryContinuationFactsV1 {
+    pub fn from_guaranteed_room_boss_full_heal(guaranteed_full_heal: bool) -> Self {
+        Self {
+            evaluator: COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1.to_owned(),
+            hp_carryover: if guaranteed_full_heal {
+                CombatVictoryHpCarryoverV1::GuaranteedFullHealBeforeNextDamageBearingDecision
+            } else {
+                CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchTraceSummary {
@@ -303,6 +333,8 @@ pub struct CombatSearchTraceSummary {
     pub potion_continuation_context: Option<PotionRunContinuationContextV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub potion_continuation_pressure: Option<PotionContinuationPressureV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat_victory_continuation: Option<CombatVictoryContinuationFactsV1>,
     pub act: u8,
     pub floor: i32,
     pub turn: u32,
@@ -578,6 +610,7 @@ pub fn combat_search_trace_summaries(
             portfolio_decision: None,
             potion_continuation_context: None,
             potion_continuation_pressure: None,
+            combat_victory_continuation: None,
             act: snapshot.act,
             floor: snapshot.floor,
             turn: snapshot.turn,

@@ -5,7 +5,8 @@ use sts_simulator::ai::potion_continuation_pressure_v1::{
     potion_continuation_pressure_v1, PotionContinuationPressureV1,
 };
 use sts_simulator::eval::run_control::{
-    combat_search_trace_summaries, CombatSearchTraceSummary, RunControlCombatSearchAttemptV1,
+    combat_search_trace_summaries, strategic_combat_victory_reaches_full_heal_v1,
+    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, RunControlCombatSearchAttemptV1,
     RunControlHpLossLimit, RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome,
     RunProgressStepV1,
 };
@@ -60,6 +61,10 @@ pub(super) fn run_combat_search_session_step(
         potion_run_continuation_context_v1(&session.run_state, &active_combat.combat_state);
     let potion_continuation_pressure =
         potion_continuation_pressure_v1(&session.run_state, &potion_continuation_context);
+    let combat_victory_continuation =
+        CombatVictoryContinuationFactsV1::from_guaranteed_room_boss_full_heal(
+            strategic_combat_victory_reaches_full_heal_v1(session),
+        );
     let combat_capture = capture_active_combat(session)?;
     let owner_hp_loss_limit = match owner_audit_hp_loss_limit(session) {
         RunControlHpLossLimit::Limit(limit) => Some(limit),
@@ -116,6 +121,7 @@ pub(super) fn run_combat_search_session_step(
                             "protected_incumbent_opened_quality_refinement",
                             &potion_continuation_context,
                             &potion_continuation_pressure,
+                            &combat_victory_continuation,
                         );
                         return Ok(search_error_result(&refinement, error, summaries));
                     }
@@ -137,6 +143,7 @@ pub(super) fn run_combat_search_session_step(
                         "protected_incumbent_replaced_by_satisfying_candidate",
                         &potion_continuation_context,
                         &potion_continuation_pressure,
+                        &combat_victory_continuation,
                     ));
                     plan = refinement;
                     match session
@@ -158,6 +165,7 @@ pub(super) fn run_combat_search_session_step(
                         "accepted_protected_no_potion_incumbent",
                         &potion_continuation_context,
                         &potion_continuation_pressure,
+                        &combat_victory_continuation,
                     );
                     summaries.extend(combat_search_attempt_summaries(
                         session,
@@ -168,6 +176,7 @@ pub(super) fn run_combat_search_session_step(
                         "candidate_rejected_by_potion_quality_gate",
                         &potion_continuation_context,
                         &potion_continuation_pressure,
+                        &combat_victory_continuation,
                     ));
                     match session.apply_combat_search_attempt(
                         primary_attempt,
@@ -200,6 +209,7 @@ pub(super) fn run_combat_search_session_step(
                 "no_accepted_candidate",
                 &potion_continuation_context,
                 &potion_continuation_pressure,
+                &combat_victory_continuation,
             ));
             if let Some(refinement) = potion_conserving_refinement_search_session_plan(
                 session,
@@ -255,6 +265,7 @@ pub(super) fn run_combat_search_session_step(
             decision,
             &potion_continuation_context,
             &potion_continuation_pressure,
+            &combat_victory_continuation,
         ));
         prior_search_summaries
     });
@@ -322,6 +333,7 @@ fn combat_search_attempt_summaries(
     decision: &'static str,
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
+    combat_victory_continuation: &CombatVictoryContinuationFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let annotations = vec![attempt.trace_annotation(session, plan.profile_id)];
     let facts = candidate_facts(session, &annotations, owner_hp_loss_limit);
@@ -333,6 +345,7 @@ fn combat_search_attempt_summaries(
         decision,
         potion_continuation_context,
         potion_continuation_pressure,
+        combat_victory_continuation,
     )
 }
 
@@ -410,6 +423,7 @@ fn combat_search_summaries(
     decision: &'static str,
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
+    combat_victory_continuation: &CombatVictoryContinuationFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     combat_search_summaries_from_annotations(
         &outcome.trace_annotations,
@@ -419,6 +433,7 @@ fn combat_search_summaries(
         decision,
         potion_continuation_context,
         potion_continuation_pressure,
+        combat_victory_continuation,
     )
 }
 
@@ -431,6 +446,7 @@ fn combat_search_summaries_from_annotations(
     decision: &'static str,
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
+    combat_victory_continuation: &CombatVictoryContinuationFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let mut summaries = combat_search_trace_summaries(annotations).collect::<Vec<_>>();
     for summary in &mut summaries {
@@ -448,6 +464,7 @@ fn combat_search_summaries_from_annotations(
         summary.portfolio_decision = Some(decision.to_string());
         summary.potion_continuation_context = Some(potion_continuation_context.clone());
         summary.potion_continuation_pressure = Some(potion_continuation_pressure.clone());
+        summary.combat_victory_continuation = Some(combat_victory_continuation.clone());
     }
     summaries
 }
@@ -523,8 +540,9 @@ mod tests {
     use crate::runtime::branch::owner_audit::run_contract::RunObjective;
     use sts_simulator::content::monsters::EnemyId;
     use sts_simulator::content::potions::{Potion, PotionId};
-    use sts_simulator::eval::run_control::RunProgressOutcome;
-    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::eval::run_control::{
+        CombatVictoryHpCarryoverV1, RunControlConfig, RunControlSession, RunProgressOutcome,
+    };
     use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use sts_simulator::state::map::node::RoomType;
 
@@ -681,6 +699,15 @@ mod tests {
             pressure.recovery.current_hp_deficit,
             continuation.max_hp - continuation.current_hp
         );
+        assert!(result.combat_search.iter().all(|summary| {
+            summary
+                .combat_victory_continuation
+                .as_ref()
+                .is_some_and(|facts| {
+                    facts.hp_carryover
+                        == CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition
+                })
+        }));
     }
 
     #[test]
@@ -719,6 +746,15 @@ mod tests {
             .combat_search
             .iter()
             .all(|summary| summary.lane.as_deref() != Some("find_any_win")));
+        assert!(result.combat_search.iter().all(|summary| {
+            summary
+                .combat_victory_continuation
+                .as_ref()
+                .is_some_and(|facts| {
+                    facts.hp_carryover
+                        == CombatVictoryHpCarryoverV1::GuaranteedFullHealBeforeNextDamageBearingDecision
+                })
+        }));
     }
 
     #[test]

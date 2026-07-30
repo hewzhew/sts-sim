@@ -120,9 +120,13 @@ The 1-node phase is a capture mechanism, not a claim that the combat is hard
 or unwinnable. Before auditing, require every saved search summary to contain
 one identical `before_combat_search` context. Current captures should also
 contain one identical `PotionContinuationPressureV1`; its absence is expected
-only for legacy cases. The V8 audit must report `validated_exact_root` with no
+only for legacy cases. Fresh owner captures should additionally contain one
+identical `CombatVictoryContinuationFactsV1` produced by
+`strategic_combat_victory_reaches_full_heal_v1`; old cases keep that fact
+explicitly unavailable. The V9 audit must report `validated_exact_root` with no
 run-context mismatches and a `continuation_pressure_projection` status of
-`validated_exact_root` with no pressure mismatches:
+`validated_exact_root` with no pressure mismatches. A fresh capture should also
+report `combat_victory_continuation_projection: validated_captured_fact`:
 
 ```powershell
 $case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
@@ -133,19 +137,26 @@ cargo oracle-lab combat-case-potion-expenditure-audit `
   --max-combination-size 1 --survival-reserve-hp 30 `
   --max-nodes 5000 --max-selections 20000 `
   --wall-ms-per-lane 500 `
-  > .oracle-lab/reports/<fresh-id>-potion-v8.json `
-  2> .oracle-lab/reports/<fresh-id>-potion-v8.log
+  > .oracle-lab/reports/<fresh-id>-potion-v9.json `
+  2> .oracle-lab/reports/<fresh-id>-potion-v9.log
 ```
 
 Keep complete JSON and build output under `.oracle-lab`; report only aggregate
-lane results. Do not upgrade a legacy case by guessing missing route, Boss, or
-supply facts. V8 preserves the V7 typed before/after survival-reserve shortfall
-and adds a non-authoritative `spend_urgency_question` to continuation-value
-comparisons. A validated question places that configured reserve delta beside
-exact inventory/replacement pressure, supply facts, route count ranges,
-Coffee Dripper and recovery facts, current gold, and explicit future shop and
-potion-identity unknowns. It does not assign an urgency score, spend threshold,
-or policy label.
+lane results. Do not upgrade a legacy case by guessing missing route, Boss,
+post-victory, or supply facts. V9 preserves the V8 non-authoritative
+`spend_urgency_question` and places its configured reserve delta beside exact
+inventory/replacement pressure, supply facts, route count ranges, Coffee
+Dripper and recovery facts, current gold, explicit future shop and
+potion-identity unknowns, and the captured combat-victory HP carryover fact. It
+does not assign an urgency score, spend threshold, or policy label.
+
+Pre-A5 Act 1/2 room-Boss full healing is admitted only when the run-control
+owner captured `guaranteed_full_heal_before_next_damage_bearing_decision` from
+the exact session. The audit validates evaluator identity, trace consistency,
+and necessary Boss/Act/Ascension conditions. It never reconstructs the room
+boundary from a filename, aggregate route counts, or `is_boss_fight` alone.
+Legacy absence stays `unavailable_legacy_case`; conflicting or structurally
+impossible claims are rejected and cannot enter question facts.
 
 Route ordering in that question comes only from typed `OccursBefore` facts.
 `must`, `can`, and `cannot` retain their original modality and provenance;
