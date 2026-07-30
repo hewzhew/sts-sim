@@ -92,7 +92,7 @@ acquire cards, relics, and potions. The second phase deliberately lowers search
 allowance so the next unresolved fight becomes a diagnostic case:
 
 ```powershell
-$capsule = ".oracle-lab/collections/potion-v5/<fresh-id>"
+$capsule = ".oracle-lab/collections/potion-v6/<fresh-id>"
 if (Test-Path -LiteralPath $capsule) {
   throw "choose a fresh capsule path: $capsule"
 }
@@ -120,8 +120,9 @@ The 1-node phase is a capture mechanism, not a claim that the combat is hard
 or unwinnable. Before auditing, require every saved search summary to contain
 one identical `before_combat_search` context. Current captures should also
 contain one identical `PotionContinuationPressureV1`; its absence is expected
-only for legacy cases. The V5 audit must report `validated_exact_root` with no
-mismatches:
+only for legacy cases. The V6 audit must report `validated_exact_root` with no
+run-context mismatches and a `continuation_pressure_projection` status of
+`validated_exact_root` with no pressure mismatches:
 
 ```powershell
 $case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
@@ -132,14 +133,16 @@ cargo oracle-lab combat-case-potion-expenditure-audit `
   --max-combination-size 1 --survival-reserve-hp 30 `
   --max-nodes 5000 --max-selections 20000 `
   --wall-ms-per-lane 500 `
-  > .oracle-lab/reports/<fresh-id>-potion-v5.json `
-  2> .oracle-lab/reports/<fresh-id>-potion-v5.log
+  > .oracle-lab/reports/<fresh-id>-potion-v6.json `
+  2> .oracle-lab/reports/<fresh-id>-potion-v6.log
 ```
 
 Keep complete JSON and build output under `.oracle-lab`; report only aggregate
 lane results. Do not upgrade a legacy case by guessing missing route, Boss, or
-supply facts, and do not treat a budget-limited missing witness as potion
-evidence.
+supply facts. V6 rebuilds pressure from the validated saved context plus exact
+case gold and combat-root Coffee Dripper state; missing, conflicting, or
+non-reconstructible pressure must not enter retained-value evidence. Do not
+treat a budget-limited missing witness as potion evidence.
 
 ## Combat Search Driver
 

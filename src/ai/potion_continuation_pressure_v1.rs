@@ -91,23 +91,41 @@ pub struct PotionContinuationPressureV1 {
     pub limitations: Vec<PotionContinuationPressureLimitationV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PotionContinuationPressureInputsV1 {
+    pub current_gold: i32,
+    pub coffee_dripper_blocks_rest: bool,
+}
+
 pub fn potion_continuation_pressure_v1(
     run_state: &RunState,
     context: &PotionRunContinuationContextV1,
+) -> PotionContinuationPressureV1 {
+    potion_continuation_pressure_from_context_v1(
+        context,
+        PotionContinuationPressureInputsV1 {
+            current_gold: run_state.gold,
+            coffee_dripper_blocks_rest: run_state
+                .relics
+                .iter()
+                .any(|relic| relic.id == RelicId::CoffeeDripper),
+        },
+    )
+}
+
+pub fn potion_continuation_pressure_from_context_v1(
+    context: &PotionRunContinuationContextV1,
+    inputs: PotionContinuationPressureInputsV1,
 ) -> PotionContinuationPressureV1 {
     let route = route_pressure(&context.route_window);
     let shop_on_some_path = observed_on_some_path(route.shops.as_ref());
     let shop_on_all_paths = observed_on_all_paths(route.shops.as_ref());
     let campfire_on_some_path = observed_on_some_path(route.campfires.as_ref());
     let campfire_on_all_paths = observed_on_all_paths(route.campfires.as_ref());
-    let coffee_dripper_blocks_rest = run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::CoffeeDripper);
     let rest_may_be_available_on_some_covered_path =
-        campfire_on_some_path && !coffee_dripper_blocks_rest;
+        campfire_on_some_path && !inputs.coffee_dripper_blocks_rest;
     let rest_may_be_available_on_all_covered_paths =
-        campfire_on_all_paths && !coffee_dripper_blocks_rest;
+        campfire_on_all_paths && !inputs.coffee_dripper_blocks_rest;
     let unknown_room_observed = observed_on_some_path(route.unknown_rooms.as_ref());
     let boss_in_window = observed_on_some_path(route.bosses.as_ref());
     let mut limitations =
@@ -143,7 +161,7 @@ pub fn potion_continuation_pressure_v1(
         supply: context.supply.clone(),
         route,
         shop: PotionShopContinuationFactsV1 {
-            current_gold: run_state.gold,
+            current_gold: inputs.current_gold,
             shop_observed_on_some_covered_path: shop_on_some_path,
             shop_observed_on_all_covered_paths: shop_on_all_paths,
             future_shop_inventory_unknown: shop_on_some_path,
@@ -155,7 +173,7 @@ pub fn potion_continuation_pressure_v1(
             current_hp_deficit: context.max_hp.saturating_sub(context.current_hp),
             campfire_observed_on_some_covered_path: campfire_on_some_path,
             campfire_observed_on_all_covered_paths: campfire_on_all_paths,
-            coffee_dripper_blocks_rest,
+            coffee_dripper_blocks_rest: inputs.coffee_dripper_blocks_rest,
             rest_may_be_available_on_some_covered_path,
             rest_may_be_available_on_all_covered_paths,
             recovery_choice_opportunity_cost_unscored: rest_may_be_available_on_some_covered_path,
@@ -291,7 +309,15 @@ mod tests {
         ];
 
         let pressure = potion_continuation_pressure_v1(&run_state, &context);
+        let rebuilt = potion_continuation_pressure_from_context_v1(
+            &context,
+            PotionContinuationPressureInputsV1 {
+                current_gold: 57,
+                coffee_dripper_blocks_rest: true,
+            },
+        );
 
+        assert_eq!(rebuilt, pressure);
         assert_eq!(pressure.shop.current_gold, 57);
         assert!(pressure.shop.shop_observed_on_all_covered_paths);
         assert!(pressure.shop.potion_affordability_at_shop_unknown);
