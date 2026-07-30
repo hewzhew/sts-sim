@@ -11,8 +11,8 @@ use std::time::Instant;
 use clap::Args;
 use serde::Serialize;
 use sts_combat_planner::{
-    CombatDecisionRoot, LocalTurnGraphWitnessInterruption, LocalTurnGraphWitnessStatus,
-    OracleCombatWitnessSatisfaction, TurnOptionAction,
+    combat_plan_state_guide_policy_v1, CombatDecisionRoot, LocalTurnGraphWitnessInterruption,
+    LocalTurnGraphWitnessStatus, OracleCombatWitnessSatisfaction, TurnOptionAction,
 };
 use sts_oracle_runtime::ai::card_semantics_v1::{
     potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
@@ -52,7 +52,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV10";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV11";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -69,6 +69,10 @@ pub(super) struct CombatCasePotionExpenditureAuditArgs {
     /// Optional strategic final-HP reserve reported for every exact witness.
     #[arg(long)]
     survival_reserve_hp: Option<i32>,
+    /// Add the same typed combat-plan state guide used by production combat
+    /// search while preserving independent exact potion-slot lanes.
+    #[arg(long)]
+    typed_plan_guide: bool,
     /// Exact generation work granted independently to every lane.
     #[arg(long, default_value_t = 250_000)]
     max_nodes: usize,
@@ -240,6 +244,7 @@ struct PotionAuditSearchSettingsV1 {
     max_combination_size: usize,
     max_lanes: usize,
     survival_reserve_hp: Option<i32>,
+    typed_plan_guide: bool,
     max_nodes_per_lane: usize,
     max_selections_per_lane: usize,
     wall_ms_per_lane: u64,
@@ -254,6 +259,8 @@ struct PotionAuditSearchSettingsV1 {
 struct PotionAuditLaneCountersV1 {
     selections: usize,
     generation_work: usize,
+    lookahead_evaluations: usize,
+    lookahead_work: usize,
     engine_steps: usize,
     exact_nodes: usize,
     terminal_win_options: usize,
@@ -715,6 +722,7 @@ pub(super) fn run(
         max_combination_size,
         max_lanes,
         survival_reserve_hp,
+        typed_plan_guide,
         max_nodes,
         max_selections,
         wall_ms_per_lane,
@@ -762,6 +770,11 @@ pub(super) fn run(
     );
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
     let base_policy = existing_combat_knowledge_policy_v1();
+    let base_policy = if typed_plan_guide {
+        combat_plan_state_guide_policy_v1(base_policy)
+    } else {
+        base_policy
+    };
     let mut lanes = Vec::with_capacity(lane_specs.len());
 
     for lane in lane_specs {
@@ -821,6 +834,8 @@ pub(super) fn run(
             counters: PotionAuditLaneCountersV1 {
                 selections: report.counters.selections,
                 generation_work: report.counters.generation_work,
+                lookahead_evaluations: report.counters.lookahead_evaluations,
+                lookahead_work: report.counters.lookahead_work,
                 engine_steps: report.counters.engine_steps,
                 exact_nodes: report.counters.exact_nodes,
                 terminal_win_options: report.counters.terminal_win_options,
@@ -872,6 +887,7 @@ pub(super) fn run(
             max_combination_size,
             max_lanes,
             survival_reserve_hp,
+            typed_plan_guide,
             max_nodes_per_lane: max_nodes,
             max_selections_per_lane: max_selections,
             wall_ms_per_lane,
@@ -2979,6 +2995,8 @@ mod tests {
             counters: PotionAuditLaneCountersV1 {
                 selections: 0,
                 generation_work: 0,
+                lookahead_evaluations: 0,
+                lookahead_work: 0,
                 engine_steps: 0,
                 exact_nodes: 0,
                 terminal_win_options: 0,

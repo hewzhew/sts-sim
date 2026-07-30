@@ -659,19 +659,30 @@ fn compact_combat_progress(combat: Option<&Value>) -> Value {
         return Value::Null;
     };
     json!({
+        "search_stage": combat.get("search_stage"),
+        "max_potions_used": combat.get("max_potions_used"),
+        "allowed_potion_slots": combat.get("allowed_potion_slots"),
+        "potion_spend_requires_satisfaction": combat.get("potion_spend_requires_satisfaction"),
         "generation_work": combat.get("generation_work"),
         "historical_generation_work": combat.get("historical_generation_work"),
         "current_search_generation_work": combat.get("current_search_generation_work"),
+        "local_generation_work": combat.get("local_generation_work"),
+        "discrepancy_generation_work": combat.get("discrepancy_generation_work"),
         "exact_states": combat.get("exact_states"),
+        "local_exact_states": combat.get("local_exact_states"),
+        "discrepancy_exact_states": combat.get("discrepancy_exact_states"),
         "completed_turn_options": combat.get("completed_turn_options"),
         "max_player_turn": combat.get("max_player_turn"),
         "deepest_progress": combat.get("deepest_progress_state"),
         "deepest_survival": combat.get("deepest_survival_state"),
         "policy_witness_proposals": combat.get("policy_witness_proposals"),
         "policy_witness_proposal_rejections": combat.get("policy_witness_proposal_rejections"),
+        "incumbent_discovery_source": combat.get("incumbent_discovery_source"),
         "incumbent_final_hp": combat.get("incumbent_final_hp"),
         "incumbent_hp_loss": combat.get("incumbent_hp_loss"),
         "incumbent_actions": combat.get("incumbent_action_count"),
+        "incumbent_potions_used": combat.get("incumbent_potions_used"),
+        "incumbent_potion_slots": combat.get("incumbent_potion_slots"),
         "last_status": combat.get("last_status"),
         "quantum_count": combat.get("quantum_count"),
         "remaining_nodes": combat.get("remaining_nodes"),
@@ -1668,9 +1679,17 @@ mod tests {
                 "monsters": []
             },
             "combat": {
+                "search_stage": 2,
+                "max_potions_used": 1,
+                "allowed_potion_slots": 2,
                 "generation_work": 125,
                 "historical_generation_work": 100,
-                "current_search_generation_work": 25
+                "current_search_generation_work": 25,
+                "local_generation_work": 20,
+                "discrepancy_generation_work": 5,
+                "incumbent_discovery_source": "local_turn_graph",
+                "incumbent_potions_used": 1,
+                "incumbent_potion_slots": 2
             }
         });
         let compact = compact_live_node(&node, 2);
@@ -1678,9 +1697,20 @@ mod tests {
         assert_eq!(compact.get("choices_shown"), Some(&json!(2)));
         assert_eq!(compact.get("choices_truncated"), Some(&json!(true)));
         assert_eq!(compact.get("event"), node.get("event"));
+        assert_eq!(compact["combat"]["search_stage"], 2);
+        assert_eq!(compact["combat"]["max_potions_used"], 1);
+        assert_eq!(compact["combat"]["allowed_potion_slots"], 2);
         assert_eq!(compact["combat"]["generation_work"], 125);
         assert_eq!(compact["combat"]["historical_generation_work"], 100);
         assert_eq!(compact["combat"]["current_search_generation_work"], 25);
+        assert_eq!(compact["combat"]["local_generation_work"], 20);
+        assert_eq!(compact["combat"]["discrepancy_generation_work"], 5);
+        assert_eq!(
+            compact["combat"]["incumbent_discovery_source"],
+            "local_turn_graph"
+        );
+        assert_eq!(compact["combat"]["incumbent_potions_used"], 1);
+        assert_eq!(compact["combat"]["incumbent_potion_slots"], 2);
         assert_eq!(compact["encounter"]["is_elite"], true);
         assert_eq!(compact["encounter"]["is_boss"], false);
     }
