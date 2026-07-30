@@ -753,13 +753,13 @@ fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
     let no_potion = budgets.for_session_stage(&session, 0);
 
     assert_eq!(no_potion.max_nodes, Some(51));
-    assert_eq!(no_potion.wall_ms, Some(51));
+    assert_eq!(no_potion.wall_ms, Some(34));
     assert_eq!(skill.allowed_potion_slots, Some(0b001));
     assert_eq!(explosive.allowed_potion_slots, Some(0b010));
     assert_eq!(skill.max_nodes, Some(51));
     assert_eq!(explosive.max_nodes, Some(51));
-    assert_eq!(skill.wall_ms, Some(51));
-    assert_eq!(explosive.wall_ms, Some(51));
+    assert_eq!(skill.wall_ms, Some(34));
+    assert_eq!(explosive.wall_ms, Some(34));
     assert!(budgets.has_later_stage(&session, 0));
     assert!(budgets.has_later_stage(&session, 1));
     assert!(!budgets.has_later_stage(&session, 2));
@@ -806,14 +806,14 @@ fn strategic_boss_search_isolates_identities_before_multi_potion_fallback() {
 
     assert_eq!(no_potion.max_potions_used, Some(0));
     assert_eq!(no_potion.max_nodes, Some(26));
-    assert_eq!(no_potion.wall_ms, Some(26));
+    assert_eq!(no_potion.wall_ms, Some(21));
     assert_eq!(elixir.allowed_potion_slots, Some(0b001));
     assert_eq!(swift.allowed_potion_slots, Some(0b010));
     assert_eq!(speed.allowed_potion_slots, Some(0b100));
     for identity in [&elixir, &swift, &speed] {
         assert_eq!(identity.max_potions_used, Some(1));
         assert_eq!(identity.max_nodes, Some(26));
-        assert_eq!(identity.wall_ms, Some(26));
+        assert_eq!(identity.wall_ms, Some(21));
     }
     assert_eq!(
         fallback.potion_policy,
@@ -822,7 +822,7 @@ fn strategic_boss_search_isolates_identities_before_multi_potion_fallback() {
     assert_eq!(fallback.max_potions_used, Some(2));
     assert_eq!(fallback.allowed_potion_slots, Some(0b111));
     assert_eq!(fallback.max_nodes, Some(26));
-    assert_eq!(fallback.wall_ms, Some(26));
+    assert_eq!(fallback.wall_ms, Some(21));
     for stage in 0..4 {
         assert!(budgets.has_later_stage(&session, stage));
     }

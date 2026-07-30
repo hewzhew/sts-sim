@@ -114,6 +114,9 @@ impl LocalTurnGraphWitnessSession {
                 let mut selected = None;
                 let mut first_neutral = None;
                 let seek_timed_preference = combat_plan_has_timed_action_preference_v1(&position);
+                let already_spent = self.nodes[node_id]
+                    .potion_expenditures
+                    .saturating_add(actions_potion_expenditures(&actions));
                 report.policy_ranking_elapsed_ns = report
                     .policy_ranking_elapsed_ns
                     .saturating_add(elapsed_nanos_u64(policy_ranking_started));
@@ -226,6 +229,14 @@ impl LocalTurnGraphWitnessSession {
                         continue;
                     }
                     let input = surface.atomic_actions[candidate_index].clone();
+                    if !policy_line_input_respects_potion_contract(
+                        &input,
+                        self.config.generator,
+                        self.config.max_potions_used,
+                        already_spent,
+                    ) {
+                        continue;
+                    }
                     let step = stepper.apply_to_stable(
                         &position,
                         input.clone(),

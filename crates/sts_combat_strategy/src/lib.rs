@@ -372,6 +372,7 @@ pub fn combat_plan_state_guide_rank_v1(
     if plan.plan == CombatPlanIdV1::ChampPhaseControl {
         return None;
     }
+    let durable_scaling_readiness = durable_scaling_readiness(position, &plan.resources);
     let components = match plan.stage {
         CombatPlanStageV1::RemoveEscalatingAdds => {
             let remaining_adds = match plan.primary {
@@ -380,6 +381,7 @@ pub fn combat_plan_state_guide_rank_v1(
             };
             vec![
                 -(remaining_adds as i32),
+                durable_scaling_readiness,
                 reserved_conversion_rank(plan.resources.finite_skill_conversion),
                 plan.resources.durable_strength_growth,
                 -plan.envelope.awakened_strength,
@@ -393,10 +395,11 @@ pub fn combat_plan_state_guide_rank_v1(
         }
         CombatPlanStageV1::PrepareFirstPhaseCommit => vec![
             i32::from(plan.envelope.visible_damage_margin >= 0),
-            -plan.envelope.first_phase_hp_with_block.unwrap_or_default(),
-            plan.envelope.visible_damage_margin,
+            durable_scaling_readiness,
             reserved_conversion_rank(plan.resources.finite_skill_conversion),
             plan.resources.durable_strength_growth,
+            -plan.envelope.first_phase_hp_with_block.unwrap_or_default(),
+            plan.envelope.visible_damage_margin,
             plan.resources.remaining_skill_fuel as i32,
             -plan.envelope.awakened_strength,
             plan.envelope
@@ -405,6 +408,7 @@ pub fn combat_plan_state_guide_rank_v1(
             -(plan.envelope.live_status_cards as i32),
         ],
         CombatPlanStageV1::ExploitTransitionWindow => vec![
+            durable_scaling_readiness,
             deployed_conversion_rank(plan.resources.finite_skill_conversion),
             plan.resources.status_draw_active as i32,
             plan.resources.exhaust_draw_active as i32,
@@ -422,6 +426,7 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.envelope
                 .player_hp
                 .saturating_add(plan.envelope.player_block),
+            durable_scaling_readiness,
             deployed_conversion_rank(plan.resources.finite_skill_conversion),
             plan.resources.exhaust_draw_active as i32,
             plan.resources.exhaust_block_active as i32,
@@ -441,6 +446,7 @@ pub fn combat_plan_state_guide_rank_v1(
             vec![
                 i32::from(plan.envelope.visible_damage_margin >= 0),
                 i32::from(mitigation_ready),
+                durable_scaling_readiness,
                 plan.resources.durable_strength_growth,
                 -plan
                     .envelope
@@ -460,6 +466,7 @@ pub fn combat_plan_state_guide_rank_v1(
             plan.envelope
                 .player_hp
                 .saturating_add(plan.envelope.player_block),
+            durable_scaling_readiness,
             deployed_conversion_rank(plan.resources.finite_skill_conversion),
             plan.resources.exhaust_draw_active as i32,
             plan.resources.exhaust_block_active as i32,
@@ -806,19 +813,27 @@ pub fn combat_plan_action_deferral_v1(
 /// obligation. All other actions remain neutral and keep their base-policy
 /// order.
 pub fn combat_plan_action_timing_v1(
-    before: &CombatPosition,
-    after: &CombatPosition,
+    before_position: &CombatPosition,
+    after_position: &CombatPosition,
 ) -> CombatPlanActionTimingV1 {
-    let Some(before) = awakened_one_combat_plan_v1(before) else {
+    let Some(before) = awakened_one_combat_plan_v1(before_position) else {
         return CombatPlanActionTimingV1::Neutral;
     };
-    let Some(after) = awakened_one_combat_plan_v1(after) else {
+    let Some(after) = awakened_one_combat_plan_v1(after_position) else {
         return CombatPlanActionTimingV1::Neutral;
     };
     let activates_conversion = before.resources.finite_skill_conversion
         == FiniteSkillConversionStateV1::Available
         && after.resources.finite_skill_conversion == FiniteSkillConversionStateV1::Active;
-    if activates_conversion
+    let realizes_held_setup = after.resources.durable_strength_growth
+        > before.resources.durable_strength_growth
+        || !before.resources.exhaust_draw_active && after.resources.exhaust_draw_active
+        || !before.resources.exhaust_block_active && after.resources.exhaust_block_active
+        || !before.resources.status_draw_active && after.resources.status_draw_active;
+    let destroys_held_setup = live_undeployed_plan_asset_count(before_position, &before.resources)
+        > live_undeployed_plan_asset_count(after_position, &after.resources)
+        && !realizes_held_setup;
+    if (activates_conversion || realizes_held_setup)
         && matches!(
             before.stage,
             CombatPlanStageV1::ExploitTransitionWindow
@@ -834,6 +849,18 @@ pub fn combat_plan_action_timing_v1(
         CombatPlanActionTimingV1::Defer(
             CombatPlanActionDeferralV1::PreserveFiniteSkillConversionUntilUntaxedWindow,
         )
+    } else if destroys_held_setup
+        && matches!(
+            before.stage,
+            CombatPlanStageV1::RemoveEscalatingAdds | CombatPlanStageV1::PrepareFirstPhaseCommit
+        )
+        && matches!(
+            after.stage,
+            CombatPlanStageV1::RemoveEscalatingAdds | CombatPlanStageV1::PrepareFirstPhaseCommit
+        )
+        && before.envelope.visible_damage_margin >= 0
+    {
+        CombatPlanActionTimingV1::Defer(CombatPlanActionDeferralV1::PreserveUndeployedPlanAsset)
     } else {
         CombatPlanActionTimingV1::Neutral
     }
@@ -887,12 +914,14 @@ pub fn combat_plan_selection_member_timing_v1(
 /// sole owner of stage and resource semantics.
 pub fn combat_plan_has_timed_action_preference_v1(position: &CombatPosition) -> bool {
     awakened_one_combat_plan_v1(position).is_some_and(|plan| {
-        plan.resources.finite_skill_conversion == FiniteSkillConversionStateV1::Available
-            && matches!(
-                plan.stage,
-                CombatPlanStageV1::ExploitTransitionWindow
-                    | CombatPlanStageV1::SurviveSecondPhaseOpening
-            )
+        let held_setup_available = live_cards(&position.combat)
+            .any(|card| undeployed_card_supplies_plan_resource(card, &plan.resources));
+        matches!(
+            plan.stage,
+            CombatPlanStageV1::ExploitTransitionWindow
+                | CombatPlanStageV1::SurviveSecondPhaseOpening
+        ) && (plan.resources.finite_skill_conversion == FiniteSkillConversionStateV1::Available
+            || held_setup_available)
     })
 }
 
@@ -909,6 +938,25 @@ fn undeployed_card_supplies_plan_resource(
         CardId::FeelNoPain => !resources.exhaust_block_active,
         CardId::Evolve => !resources.status_draw_active,
         _ => false,
+    }
+}
+
+fn live_undeployed_plan_asset_count(
+    position: &CombatPosition,
+    resources: &CombatPlanResourcesV1,
+) -> usize {
+    live_cards(&position.combat)
+        .filter(|card| undeployed_card_supplies_plan_resource(card, resources))
+        .count()
+}
+
+fn durable_scaling_readiness(position: &CombatPosition, resources: &CombatPlanResourcesV1) -> i32 {
+    if resources.durable_strength_growth > 0 {
+        2
+    } else if live_cards(&position.combat).any(|card| card.id == CardId::DemonForm) {
+        1
+    } else {
+        0
     }
 }
 
@@ -1585,6 +1633,83 @@ mod tests {
     }
 
     #[test]
+    fn untaxed_window_prefers_realizing_held_demon_form() {
+        let mut before = awakened_position(0);
+        let awakened = &mut before.combat.entities.monsters[0];
+        awakened.awakened_one.form1 = false;
+        awakened.half_dead = true;
+        awakened.current_hp = 0;
+        before.combat.zones.hand = vec![CombatCard::new(CardId::DemonForm, 1)];
+        let mut after = before.clone();
+        after.combat.zones.hand.clear();
+        store::set_powers_for(&mut after.combat, 0, vec![power(PowerId::DemonForm, 3)]);
+
+        assert!(combat_plan_has_timed_action_preference_v1(&before));
+        assert_eq!(
+            combat_plan_action_timing_v1(&before, &after),
+            CombatPlanActionTimingV1::PreferNow
+        );
+    }
+
+    #[test]
+    fn live_first_phase_does_not_force_demon_form_deployment() {
+        let mut before = awakened_position(0);
+        before.combat.zones.hand = vec![CombatCard::new(CardId::DemonForm, 1)];
+        let mut after = before.clone();
+        after.combat.zones.hand.clear();
+        store::set_powers_for(&mut after.combat, 0, vec![power(PowerId::DemonForm, 3)]);
+        store::set_powers_for(
+            &mut after.combat,
+            10,
+            vec![power(PowerId::Curiosity, 1), power(PowerId::Strength, 1)],
+        );
+
+        assert!(!combat_plan_has_timed_action_preference_v1(&before));
+        assert_eq!(
+            combat_plan_action_timing_v1(&before, &after),
+            CombatPlanActionTimingV1::Neutral
+        );
+    }
+
+    #[test]
+    fn safe_first_phase_bulk_exhaust_that_destroys_demon_form_is_deferred() {
+        let mut before = awakened_position(0);
+        before.combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 1),
+            CombatCard::new(CardId::SeverSoul, 2),
+        ];
+        let mut after = before.clone();
+        after.combat.zones.hand.clear();
+
+        assert_eq!(
+            combat_plan_action_timing_v1(&before, &after),
+            CombatPlanActionTimingV1::Defer(
+                CombatPlanActionDeferralV1::PreserveUndeployedPlanAsset
+            )
+        );
+    }
+
+    #[test]
+    fn bulk_exhaust_asset_loss_is_not_deferred_when_it_commits_the_first_phase() {
+        let mut before = awakened_position(0);
+        before.combat.zones.hand = vec![
+            CombatCard::new(CardId::DemonForm, 1),
+            CombatCard::new(CardId::SeverSoul, 2),
+        ];
+        let mut after = before.clone();
+        after.combat.zones.hand.clear();
+        let awakened = &mut after.combat.entities.monsters[0];
+        awakened.awakened_one.form1 = false;
+        awakened.half_dead = true;
+        awakened.current_hp = 0;
+
+        assert_eq!(
+            combat_plan_action_timing_v1(&before, &after),
+            CombatPlanActionTimingV1::Neutral
+        );
+    }
+
+    #[test]
     fn first_phase_death_opens_an_untaxed_setup_window() {
         let mut position = awakened_position(0);
         let awakened = &mut position.combat.entities.monsters[0];
@@ -1634,6 +1759,42 @@ mod tests {
         let consumed_rank = combat_plan_state_guide_rank_v1(&consumed).expect("consumed plan rank");
 
         assert!(reserved_rank.components() > consumed_rank.components());
+    }
+
+    #[test]
+    fn prepare_stage_does_not_trade_away_demon_form_for_local_boss_damage() {
+        let mut retained = awakened_position(0);
+        retained.combat.entities.monsters[0].current_hp = 200;
+        retained.combat.zones.hand = vec![CombatCard::new(CardId::DemonForm, 1)];
+        let mut destroyed = retained.clone();
+        destroyed.combat.entities.monsters[0].current_hp = 30;
+        destroyed.combat.zones.hand.clear();
+
+        let retained_rank =
+            combat_plan_state_guide_rank_v1(&retained).expect("retained scaling rank");
+        let destroyed_rank =
+            combat_plan_state_guide_rank_v1(&destroyed).expect("destroyed scaling rank");
+
+        assert!(retained_rank.components() > destroyed_rank.components());
+    }
+
+    #[test]
+    fn transition_window_does_not_mistake_destroyed_demon_form_for_deployment() {
+        let mut retained = awakened_position(0);
+        let awakened = &mut retained.combat.entities.monsters[0];
+        awakened.awakened_one.form1 = false;
+        awakened.half_dead = true;
+        awakened.current_hp = 0;
+        retained.combat.zones.hand = vec![CombatCard::new(CardId::DemonForm, 1)];
+        let mut destroyed = retained.clone();
+        destroyed.combat.zones.hand.clear();
+
+        let retained_rank =
+            combat_plan_state_guide_rank_v1(&retained).expect("retained transition rank");
+        let destroyed_rank =
+            combat_plan_state_guide_rank_v1(&destroyed).expect("destroyed transition rank");
+
+        assert!(retained_rank.components() > destroyed_rank.components());
     }
 
     #[test]

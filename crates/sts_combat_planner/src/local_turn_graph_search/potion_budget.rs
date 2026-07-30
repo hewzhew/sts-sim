@@ -63,6 +63,25 @@ pub(super) fn actions_potion_expenditures(actions: &[TurnOptionAction]) -> u32 {
         .unwrap_or(u32::MAX)
 }
 
+pub(super) fn policy_line_input_respects_potion_contract(
+    input: &ClientInput,
+    generator_config: TurnOptionGeneratorConfig,
+    max_potions_used: Option<u32>,
+    already_spent: u32,
+) -> bool {
+    let is_expenditure = matches!(
+        input,
+        ClientInput::UsePotion { .. } | ClientInput::DiscardPotion(_)
+    );
+    !is_expenditure
+        || generator_config.allow_potion_expenditure
+            && crate::witness::potion_input_uses_allowed_slot(
+                input,
+                generator_config.allowed_potion_slots,
+            )
+            && max_potions_used.is_none_or(|limit| already_spent < limit)
+}
+
 pub(super) fn turn_generator_for_potion_budget(
     root: CombatDecisionRoot,
     generator_config: TurnOptionGeneratorConfig,
@@ -77,4 +96,46 @@ pub(super) fn turn_generator_for_potion_budget(
         policy,
         remaining,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_line_uses_the_same_finite_potion_contract_as_generation() {
+        let use_slot_one = ClientInput::UsePotion {
+            potion_index: 1,
+            target: None,
+        };
+        let config = TurnOptionGeneratorConfig {
+            allowed_potion_slots: Some(1_u64 << 1),
+            ..TurnOptionGeneratorConfig::default()
+        };
+
+        assert!(policy_line_input_respects_potion_contract(
+            &use_slot_one,
+            config,
+            Some(1),
+            0
+        ));
+        assert!(!policy_line_input_respects_potion_contract(
+            &use_slot_one,
+            config,
+            Some(1),
+            1
+        ));
+        assert!(!policy_line_input_respects_potion_contract(
+            &ClientInput::DiscardPotion(0),
+            config,
+            Some(1),
+            0
+        ));
+        assert!(policy_line_input_respects_potion_contract(
+            &ClientInput::EndTurn,
+            config,
+            Some(0),
+            0
+        ));
+    }
 }

@@ -323,15 +323,17 @@ impl OracleRunCombatBudgetsV1 {
                 Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
             options.max_potions_used = Some(0);
         }
-        let stage_divisor = if stage == 0
+        if stage == 0
             && uses_potion_stages
             && oracle_active_victory_potion_slot_mask_v1(session) != 0
         {
-            self.potion_stage_allowance_divisor(session)
-        } else {
-            self.stage_divisor(stage)
-        };
-        scale_combat_options(options, stage_divisor)
+            return scale_potion_stage_options(
+                options,
+                self.potion_stage_allowance_divisor(session),
+                self.potion_stage_wall_divisor(session),
+            );
+        }
+        scale_combat_options(options, self.stage_divisor(stage))
     }
 
     pub(super) fn for_session_stage_with_prior(
@@ -366,9 +368,17 @@ impl OracleRunCombatBudgetsV1 {
                 )
             });
             options.allowed_potion_slots = Some(active_slots);
-            return scale_combat_options(options, self.potion_stage_allowance_divisor(session));
+            return scale_potion_stage_options(
+                options,
+                self.potion_stage_allowance_divisor(session),
+                self.potion_stage_wall_divisor(session),
+            );
         }
-        options = scale_combat_options(options, self.potion_stage_allowance_divisor(session));
+        options = scale_potion_stage_options(
+            options,
+            self.potion_stage_allowance_divisor(session),
+            self.potion_stage_wall_divisor(session),
+        );
         options.allowed_potion_slots = Some(active_potion_slot_mask_for_stage(active_slots, stage));
         options
     }
@@ -407,6 +417,15 @@ impl OracleRunCombatBudgetsV1 {
                 boss_multi_potion_fallback_stage(session).is_some(),
             ))
             .max(1)
+    }
+
+    fn potion_stage_wall_divisor(&self, session: &RunControlSession) -> u32 {
+        // Generation work keeps the bounded exploratory overage documented for
+        // potion staging. Wall time cannot do the same: the caller's combat
+        // deadline is authoritative, so include the clean primary as another
+        // scheduled stage and leave real time for the final configured lane.
+        self.potion_stage_allowance_divisor(session)
+            .saturating_add(1)
     }
 
     pub(super) fn has_identity_partitioned_potion_allowance(
@@ -506,6 +525,24 @@ fn scale_combat_options(
     options.wall_ms = options
         .wall_ms
         .map(|value| value.saturating_add(divisor as u64 - 1) / divisor as u64)
+        .map(|value| value.max(1));
+    options
+}
+
+fn scale_potion_stage_options(
+    mut options: RunControlSearchCombatOptions,
+    node_divisor: u32,
+    wall_divisor: u32,
+) -> RunControlSearchCombatOptions {
+    let node_divisor = usize::try_from(node_divisor.max(1)).unwrap_or(usize::MAX);
+    let wall_divisor = u64::from(wall_divisor.max(1));
+    options.max_nodes = options
+        .max_nodes
+        .map(|value| value.saturating_add(node_divisor - 1) / node_divisor)
+        .map(|value| value.max(1));
+    options.wall_ms = options
+        .wall_ms
+        .map(|value| value.saturating_add(wall_divisor - 1) / wall_divisor)
         .map(|value| value.max(1));
     options
 }
