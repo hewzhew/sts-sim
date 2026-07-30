@@ -78,7 +78,7 @@ impl AwakenedOneDeckSignals {
             if card.id == CardId::DemonForm {
                 self.slow_damage_scaling.push(card.clone());
             }
-            if matches!(card.id, CardId::LimitBreak | CardId::SpotWeakness) {
+            if card.id == CardId::LimitBreak {
                 self.scaling_multiplier.push(card.clone());
             }
             if is_defensive_scaling_or_mitigation(card.id) {
@@ -144,7 +144,7 @@ fn is_power(card: CardId) -> bool {
 fn is_damage_scaling(card: CardId) -> bool {
     matches!(
         card,
-        CardId::DemonForm | CardId::LimitBreak | CardId::Inflame | CardId::SpotWeakness
+        CardId::DemonForm | CardId::Inflame | CardId::SpotWeakness
     )
 }
 
@@ -175,11 +175,7 @@ fn is_mitigation_or_strength_down(card: &CombatCard) -> bool {
 fn is_defensive_engine_or_repeatable_block(card: CardId) -> bool {
     matches!(
         card,
-        CardId::FeelNoPain
-            | CardId::SecondWind
-            | CardId::Corruption
-            | CardId::DarkEmbrace
-            | CardId::Barricade
+        CardId::FeelNoPain | CardId::SecondWind | CardId::Corruption | CardId::Barricade
     )
 }
 

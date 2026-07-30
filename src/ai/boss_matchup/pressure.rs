@@ -112,6 +112,7 @@ fn present_status(claim: &BossMatchupEvidenceClaim) -> &'static str {
 
 fn pressure_claims(frame: &BossMatchupEvidenceFrame) -> Vec<BossMatchupPressureClaim> {
     [
+        pressure_from_claim_with_capability(frame, "damage_scaling_present", "damage_scaling_plan"),
         pressure_from_claim(frame, "mitigation_or_strength_down"),
         pressure_from_claim(frame, "defensive_engine_or_repeatable_block"),
         pressure_from_claim_with_capability(
@@ -198,6 +199,7 @@ fn pressure_tags(
     }
     for claim in claims {
         match (claim.capability, claim.status) {
+            ("damage_scaling_plan", "missing") => tags.push("missing_damage_scaling_plan"),
             ("mitigation_or_strength_down", "missing") => {
                 tags.push("missing_mitigation_or_strength_down")
             }
@@ -223,7 +225,13 @@ fn pressure_tags(
 }
 
 fn conclusion_from_pressure_tags(tags: &[&'static str]) -> &'static str {
-    if tags.contains(&"missing_mitigation_or_strength_down")
+    if tags.contains(&"missing_damage_scaling_plan")
+        && tags.contains(&"missing_defensive_engine_or_repeatable_block")
+    {
+        "boss_matchup_acquisition_pressure_damage_and_survival"
+    } else if tags.contains(&"missing_damage_scaling_plan") {
+        "boss_matchup_acquisition_pressure_damage_plan_first"
+    } else if tags.contains(&"missing_mitigation_or_strength_down")
         && tags.contains(&"missing_defensive_engine_or_repeatable_block")
     {
         "boss_matchup_acquisition_pressure_survival_first"
@@ -302,6 +310,29 @@ mod tests {
         assert!(report
             .pressure_tags
             .contains(&"missing_defensive_engine_or_repeatable_block"));
+    }
+
+    #[test]
+    fn multiplier_and_exhaust_draw_do_not_invent_damage_or_defensive_engines() {
+        let report = boss_matchup_acquisition_pressure_v0_from_deck(
+            vec![
+                card(CardId::LimitBreak, 1),
+                card(CardId::DarkEmbrace, 2),
+                card(CardId::Whirlwind, 3),
+            ],
+            false,
+        );
+
+        assert!(report
+            .pressure_tags
+            .contains(&"missing_damage_scaling_plan"));
+        assert!(report
+            .pressure_tags
+            .contains(&"missing_defensive_engine_or_repeatable_block"));
+        assert_eq!(
+            report.conclusion,
+            "boss_matchup_acquisition_pressure_damage_and_survival"
+        );
     }
 
     fn boss_matchup_acquisition_pressure_v0_from_deck(

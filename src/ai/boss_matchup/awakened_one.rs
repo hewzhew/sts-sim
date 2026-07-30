@@ -490,4 +490,28 @@ mod tests {
 
         assert!(awakened_one_cultist_cleanup_shadow_pressure_v1(&deck).is_none());
     }
+
+    #[test]
+    fn spot_weakness_is_a_conditional_source_not_a_scaling_multiplier() {
+        let frame = awakened_one_evidence_frame_from_deck(
+            vec![CombatCard::new(CardId::SpotWeakness, 1)],
+            4,
+            false,
+        );
+        let damage = frame
+            .claims
+            .iter()
+            .find(|claim| claim.id == "damage_scaling_present")
+            .expect("damage scaling claim");
+        let multiplier = frame
+            .claims
+            .iter()
+            .find(|claim| claim.id == "damage_scaling_multiplier")
+            .expect("scaling multiplier claim");
+
+        assert_eq!(damage.status, BossMatchupClaimStatus::Supported);
+        assert_eq!(damage.support, vec!["Spot Weakness+0"]);
+        assert_eq!(multiplier.status, BossMatchupClaimStatus::Unsupported);
+        assert!(multiplier.support.is_empty());
+    }
 }

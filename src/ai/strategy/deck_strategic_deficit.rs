@@ -1,8 +1,6 @@
 use serde::Serialize;
 
-use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, Mechanic, PlayEffect, TriggeredEffect,
-};
+use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, PlayEffect};
 use crate::ai::strategy::deck_construction_pressure::{
     assess_deck_construction_pressure, DeckConstructionContext, PressureLevel,
 };
@@ -162,7 +160,6 @@ struct StrategicCounts {
     severe_curse_count: u8,
     low_impact_attacks: u8,
     conditional_payoffs: u8,
-    strength_sources: u8,
     status_clutter_sources: u8,
     has_energy_relic: bool,
     has_corruption: bool,
@@ -226,20 +223,8 @@ impl StrategicCounts {
         }
         let semantics = card_definition_with_upgrades(card.id, card.upgrades);
         for effect in semantics.play_effects {
-            match effect {
-                PlayEffect::Provide(Mechanic::Strength | Mechanic::TemporaryStrength) => {
-                    self.strength_sources += 1
-                }
-                PlayEffect::AddCombatDeckClutter => self.status_clutter_sources += 1,
-                _ => {}
-            }
-        }
-        for handler in semantics.event_handlers {
-            if matches!(
-                handler.effect,
-                TriggeredEffect::Provide(Mechanic::Strength | Mechanic::TemporaryStrength)
-            ) {
-                self.strength_sources += 1;
+            if effect == PlayEffect::AddCombatDeckClutter {
+                self.status_clutter_sources += 1;
             }
         }
     }
@@ -258,9 +243,7 @@ fn package_evidence(
     {
         evidence.push(StrategicPackageEvidence::ExhaustEngine);
     }
-    if counts.strength_sources > 0
-        || (inventory.strength_payoff_units > 0 && counts.strength_sources > 0)
-    {
+    if has_persistent_strength_source(inventory) {
         evidence.push(StrategicPackageEvidence::StrengthScaling);
     }
     if inventory.block_units >= 3 && inventory.block_payoff_units > 0 {
@@ -366,11 +349,15 @@ fn aoe_or_minion_level(
 
 fn unsupported_payoffs(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> bool {
     (inventory.block_payoff_units > 0 && inventory.block_units <= 1)
-        || (inventory.strength_payoff_units > 0 && counts.strength_sources == 0)
+        || (inventory.strength_payoff_units > 0 && !has_persistent_strength_source(inventory))
         || (counts.conditional_payoffs > 1
-            && counts.strength_sources == 0
+            && !has_persistent_strength_source(inventory)
             && inventory.block_units <= 1
             && counts.status_clutter_sources == 0)
+}
+
+fn has_persistent_strength_source(inventory: &DeckRoleInventory) -> bool {
+    inventory.strength_source_units > 0 || inventory.conditional_strength_source_units > 0
 }
 
 fn block_or_mitigation_units(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> u8 {
@@ -607,6 +594,43 @@ mod tests {
         assert!(!deficit
             .package_evidence
             .contains(&StrategicPackageEvidence::StrengthScaling));
+    }
+
+    #[test]
+    fn temporary_strength_does_not_become_a_boss_scaling_package() {
+        let deficit = assess_deck_strategic_deficit(
+            &[card(CardId::Flex, 1), card(CardId::Pummel, 2)],
+            act3_facts(),
+        );
+
+        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Missing);
+        assert!(!deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::StrengthScaling));
+    }
+
+    #[test]
+    fn exhaust_draw_without_growth_or_block_payoff_is_only_a_thin_plan() {
+        let deficit = assess_deck_strategic_deficit(
+            &[
+                card(CardId::DarkEmbrace, 1),
+                card(CardId::TrueGrit, 2),
+                card(CardId::FiendFire, 3),
+                card(CardId::Whirlwind, 4),
+            ],
+            act3_facts(),
+        );
+
+        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Thin);
+        assert!(deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::ExhaustEngine));
+        assert!(!deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::StrengthScaling));
+        assert!(!deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::BlockEngine));
     }
 
     #[test]
