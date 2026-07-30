@@ -142,13 +142,17 @@ When several clean witnesses reach that target, run control minimizes potion
 use before applying the ordinary final-HP and persistent-payoff ordering.
 `FindAnyWin` survival rescue keeps its separate first-acceptable-win contract.
 Autonomous refinement gives each active potion identity its own exact search
-stage. Those stages preserve the verified incumbent. Non-Boss search divides
-the configured allowance by the number of active identities, then gives one
-equal share to the potion-free primary and to each concrete identity. Boss
-search additionally keeps one final canonical multi-potion fallback, divides
-by `active identities + 1`, and reaches that fallback only when the clean and
-single-identity stages found no acceptable witness. Thus a high-branching
-potion cannot starve a simpler slot. Total bounded work is at most
+stage. The current stage's slot mask constrains newly generated or proposed
+witnesses; it does not discard an exact-verified incumbent inherited from an
+earlier identity stage. That incumbent remains checkpointed and must replay
+exactly from the unchanged combat root before a stage promotion or process
+restore can retain it. Non-Boss search divides the configured allowance by the
+number of active identities, then gives one equal share to the potion-free
+primary and to each concrete identity. Boss search additionally keeps one
+final canonical multi-potion fallback, divides by `active identities + 1`, and
+reaches that fallback only when the clean and single-identity stages found no
+acceptable witness. Thus a high-branching potion cannot starve a simpler slot.
+Total bounded work is at most
 `1 + 1 / active identities` allowances for non-Boss combat and
 `1 + 1 / (active identities + 1)` allowances for Boss combat, while the
 caller's combat wall deadline remains authoritative. Slot order follows

@@ -40,6 +40,7 @@ pub(super) struct OracleRunCombatWorkV1 {
     allowed_potion_slots: Option<u64>,
     potion_spend_requires_satisfaction: bool,
     protected_potion_free_incumbent: Option<OracleCombatWitness>,
+    prior_stage_incumbent: Option<OracleCombatWitness>,
     satisfaction: PortfolioWitnessSatisfactionV1,
     remaining_wall_time: Option<Duration>,
     quantum_count: usize,
@@ -308,6 +309,7 @@ impl OracleRunCombatWorkV1 {
             allowed_potion_slots: prepared.options.allowed_potion_slots,
             potion_spend_requires_satisfaction: false,
             protected_potion_free_incumbent: None,
+            prior_stage_incumbent: None,
             satisfaction,
             remaining_wall_time: prepared.config.wall_time,
             quantum_count: 0,
@@ -417,17 +419,77 @@ impl OracleRunCombatWorkV1 {
         &mut self,
         incumbent: OracleCombatWitness,
     ) -> Result<(), String> {
+        self.verify_checkpoint_incumbent(&incumbent)?;
+        if !combat_witness_within_potion_contract(
+            &self.start,
+            &incumbent,
+            self.max_potions_used,
+            self.allowed_potion_slots,
+        ) {
+            self.prior_stage_incumbent = Some(incumbent);
+            return Ok(());
+        }
         if incumbent.discovery_source == OracleCombatWitnessDiscoverySource::PolicyProposal {
             self.policy_witness = Some(incumbent);
-            Ok(())
         } else if incumbent.discovery_source
             == OracleCombatWitnessDiscoverySource::PolicyDiscrepancySearch
         {
             self.discrepancy_witness = Some(incumbent);
-            Ok(())
         } else {
-            self.local_search.restore_verified_witness(incumbent)
+            self.local_search.restore_verified_witness(incumbent)?;
         }
+        self.prior_stage_incumbent = None;
+        Ok(())
+    }
+
+    fn verify_checkpoint_incumbent(&self, incumbent: &OracleCombatWitness) -> Result<(), String> {
+        use crate::sim::combat::CombatStepper;
+
+        if incumbent.actions.is_empty() {
+            return Err("checkpoint incumbent contains no combat actions".to_string());
+        }
+        let stepper = crate::sim::combat::EngineCombatStepper;
+        let mut position = self.start.clone();
+        for (index, action) in incumbent.actions.iter().enumerate() {
+            if stepper
+                .choice_for_legal_input(&position, &action.input)
+                .is_none()
+            {
+                return Err(format!(
+                    "checkpoint incumbent action {index} is not legal at its exact state"
+                ));
+            }
+            let result = stepper.apply_to_stable(
+                &position,
+                action.input.clone(),
+                crate::sim::combat::CombatStepLimits {
+                    max_engine_steps: self.max_transition_steps,
+                    deadline: None,
+                },
+            );
+            if result.truncated {
+                return Err(format!(
+                    "checkpoint incumbent action {index} exceeded the transition limit"
+                ));
+            }
+            position = result.position;
+        }
+        if position != incumbent.final_position {
+            return Err(
+                "checkpoint incumbent final position does not match its exact replay".to_string(),
+            );
+        }
+        if position.combat.runtime.combat_smoked {
+            return Err(
+                "checkpoint incumbent is a Smoke Bomb escape, not a terminal victory".to_string(),
+            );
+        }
+        if crate::sim::combat::combat_terminal(&position.engine, &position.combat)
+            != crate::sim::combat::CombatTerminal::Win
+        {
+            return Err("checkpoint incumbent exact replay is not terminal victory".to_string());
+        }
+        Ok(())
     }
 
     fn offer_initial_rollout_policy_proposal(&mut self) {
@@ -907,6 +969,7 @@ impl OracleRunCombatWorkV1 {
                 self.allowed_potion_slots,
             )
         })
+        .chain(self.prior_stage_incumbent.as_ref())
         .reduce(|best, candidate| {
             if combat_witness_better_with_potion_quality_gate(
                 &self.start,
@@ -1406,6 +1469,47 @@ mod tests {
         session
     }
 
+    fn single_potion_slot_options(slot_mask: u64) -> RunControlSearchCombatOptions {
+        RunControlSearchCombatOptions {
+            max_nodes: Some(16),
+            max_potions_used: Some(1),
+            allowed_potion_slots: Some(slot_mask),
+            satisfaction: Some(
+                crate::ai::combat_search_v2::CombatSearchV2Satisfaction::FirstCompleteWin,
+            ),
+            ..RunControlSearchCombatOptions::default()
+        }
+    }
+
+    fn explosive_stage_one_work() -> (RunControlSession, OracleRunCombatWorkV1) {
+        let mut session = one_strike_win_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.monsters[0].current_hp = 10;
+        combat.entities.monsters[0].max_hp = 10;
+        combat.entities.potions = vec![
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::ExplosivePotion,
+                70,
+            )),
+            Some(crate::content::potions::Potion::new(
+                crate::content::potions::PotionId::BlockPotion,
+                71,
+            )),
+        ];
+        let mut work = OracleRunCombatWorkV1::for_exact_action_witness_with_guidance(
+            &session,
+            single_potion_slot_options(0b01),
+            None,
+        )
+        .expect("slot-zero exact witness work");
+        work.verify_and_restore_action_witness(&[ClientInput::UsePotion {
+            potion_index: 0,
+            target: None,
+        }])
+        .expect("Explosive Potion should provide an exact slot-zero victory");
+        (session, work)
+    }
+
     fn synthetic_witness(
         start: &crate::sim::combat::CombatPosition,
         final_hp: i32,
@@ -1618,6 +1722,107 @@ mod tests {
                 )
             })
         }));
+    }
+
+    #[test]
+    fn identity_stage_preserves_verified_prior_incumbent_across_checkpoint_restore() {
+        let (session, stage_one) = explosive_stage_one_work();
+        let stage_one_checkpoint = stage_one.checkpoint();
+        let stage_one_incumbent = stage_one_checkpoint
+            .incumbent
+            .as_ref()
+            .expect("slot-zero stage should checkpoint its exact victory");
+        assert_eq!(
+            combat_witness_potion_expenditure_slots(&stage_one.start, stage_one_incumbent),
+            0b01
+        );
+
+        let stage_two_options = single_potion_slot_options(0b10);
+        let stage_two = OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+            &session,
+            stage_two_options.clone(),
+            stage_one_checkpoint,
+            None,
+        )
+        .expect("slot-one stage should retain the verified slot-zero incumbent");
+
+        assert_eq!(stage_two.allowed_potion_slots(), Some(0b10));
+        assert!(stage_two.has_verified_witness());
+        let retained = stage_two
+            .best_witness()
+            .expect("prior-stage incumbent remains the portfolio fallback");
+        assert_eq!(
+            combat_witness_potion_expenditure_slots(&stage_two.start, retained),
+            0b01
+        );
+        assert!(
+            !combat_witness_within_potion_contract(
+                &stage_two.start,
+                retained,
+                stage_two.max_potions_used,
+                stage_two.allowed_potion_slots,
+            ),
+            "the prior incumbent is retained without widening the new stage's generation contract"
+        );
+        let progress = stage_two.progress();
+        assert_eq!(progress.incumbent_potion_slots, Some(0b01));
+
+        let stage_two_checkpoint = stage_two.checkpoint();
+        assert_eq!(stage_two_checkpoint.allowed_potion_slots, Some(0b10));
+        assert_eq!(
+            combat_witness_potion_expenditure_slots(
+                &stage_two.start,
+                stage_two_checkpoint
+                    .incumbent
+                    .as_ref()
+                    .expect("prior-stage fallback remains checkpointed"),
+            ),
+            0b01
+        );
+        let restored = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
+            &session,
+            stage_two_options,
+            stage_two_checkpoint,
+            None,
+        )
+        .expect("same-stage process restore should retain the exact prior-stage fallback");
+
+        assert_eq!(restored.allowed_potion_slots(), Some(0b10));
+        assert!(restored.has_verified_witness());
+        assert_eq!(
+            restored.progress().incumbent_potion_slots,
+            Some(0b01),
+            "checkpoint restore must not lose the earlier identity's verified victory"
+        );
+    }
+
+    #[test]
+    fn prior_stage_incumbent_must_replay_exactly_before_restore() {
+        let (session, stage_one) = explosive_stage_one_work();
+        let mut checkpoint = stage_one.checkpoint();
+        checkpoint
+            .incumbent
+            .as_mut()
+            .expect("slot-zero exact incumbent")
+            .final_position
+            .combat
+            .entities
+            .player
+            .current_hp -= 1;
+
+        let error = match OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+            &session,
+            single_potion_slot_options(0b10),
+            checkpoint,
+            None,
+        ) {
+            Ok(_) => {
+                panic!("an unreplayable prior-stage incumbent must not enter the fallback channel")
+            }
+            Err(error) => error,
+        };
+
+        assert!(error.contains("final position"), "{error}");
     }
 
     #[test]
