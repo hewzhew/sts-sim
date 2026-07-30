@@ -362,6 +362,44 @@ and tool contracts. Naming `sts_combat_legacy` in the control alias is
 intentional: linking that dependency does not run its private unit tests. Use
 both aliases plus `cargo architecture` before handoff.
 
+## Iteration Ladder
+
+Use the smallest evidence surface that can distinguish the current
+hypotheses. More seeds do not repair a censored or ambiguous measurement.
+
+1. **Contract test, usually under 30 seconds.** Protect the exact ownership,
+   budget, replay, or stage-transition rule below the full runner.
+2. **Fixed combat root, normally under 60 seconds total.** Run one unchanged
+   `CombatCase` with one factor changed at a time. Compare exact root hash,
+   witness status, generation work, final HP, potion UUIDs, and replay
+   compliance. A missing budget-limited witness remains unknown.
+3. **Production parity, normally under two minutes.** Copy a saved workspace
+   to a fresh ignored path, restart only its current combat, advance the real
+   resident production portfolio, and replay-verify the committed journal.
+   This determines whether a component result survives owner scheduling,
+   staging, acceptance, and materialization.
+4. **Two to five contract-selected sentinels, normally under three minutes.**
+   Choose exact cases or saved run checkpoints that represent the changed
+   contract, a known success, a known hard unknown, and any observed
+   regression. Record why every sentinel is present. Do not substitute a
+   consecutive seed range for this selection.
+5. **Distribution panel.** Run 20 or more consecutive seeds only after the
+   lower layers pass and the remaining question is genuinely about outcome
+   frequency, path distribution, crashes, or long-run resource use. Treat it
+   as a milestone soak, usually about ten minutes at the maintained 30-second
+   per-seed wall, not as the normal edit-test loop.
+
+Every experiment should answer one declared question. Stop escalating when the
+first causal divergence is localized. Do not raise budgets merely because two
+algorithms both report unknown. A diagnostic lane must also be calibrated
+before its ranking is interpreted; for example, a lane that rewards potion
+count proves potion-action reachability but not potion quality.
+
+For a partial panel, preserve `panel.summary.json` and report completed seeds,
+elapsed time, changed outcomes, repeated censoring reasons, and errors. It is
+valid to terminate the process after a durable seed boundary when the remaining
+samples no longer justify their runtime.
+
 For a symbolized native CPU trace of the narrow combat contract, run
 `tools/perf/profile_combat_cpu.ps1`. Analyze an existing trace without another
 recording or elevation prompt with:

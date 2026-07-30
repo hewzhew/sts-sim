@@ -80,6 +80,14 @@ Use these principles unless stronger measured evidence replaces them:
 - Write complete large JSON, corpus output, build logs, and experiment results
   below ignored `.oracle-lab/` locations, then report only aggregate findings.
 - Use a fresh path for every experiment. Do not overwrite prior evidence.
+- Diagnose on one replayable exact root first, then reproduce the result through
+  the production owner from a copied saved workspace. Escalate next to two to
+  five contract-selected sentinels. Consecutive 20-seed panels are milestone
+  soak evidence, not the default edit-test loop.
+- Before starting a multi-seed panel, state the distributional question that
+  only the panel can answer and the early-stop signal. Stop a running panel
+  when repeated budget-censored outcomes no longer distinguish the competing
+  hypotheses; preserve its already durable partial summary.
 - Treat a budget-limited missing witness as unknown, not as proof of loss,
   potion value, or policy quality.
 - Use the canonical `cargo oracle-lab` surface for oracle-lab evidence as
