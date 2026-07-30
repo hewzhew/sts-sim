@@ -3,38 +3,23 @@ use crate::content::potions::PotionId;
 use super::RunControlSession;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OraclePotionRescueKindV1 {
-    /// Legacy owner-audit refinement. Until that separate control flow can
-    /// retain the no-potion incumbent, it admits only combat-local resources.
-    ImproveVerifiedWin,
-    /// Autonomous run refinement retains the exact no-potion incumbent and
-    /// may inspect any active potion, but a spending line may replace that
-    /// incumbent only by satisfying the configured strategic quality target.
-    ImproveVerifiedWinQualityGated,
-    FindAnyWin,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OraclePotionRescueTierV1 {
-    /// A common, deterministic, combat-only tactical effect. These may compete
-    /// with an existing no-potion win, but only when that win misses the
-    /// strategic HP-quality target and under the exact one-potion cap.
+    /// A common, deterministic, combat-only tactical effect. This is retained
+    /// as an audit classification, not a production admission rule.
     BoundedQuality,
     /// Flexible discovery, out-of-combat recovery, and all other uncommon or
-    /// rare active resources need continuation-sensitive review. Legacy owner
-    /// refinement keeps them reserved while a verified win exists. Autonomous
-    /// refinement may inspect them behind the exact no-potion-incumbent
-    /// quality gate, or use them when no victory has been found.
+    /// rare active resources need continuation-sensitive review. Quality-gated
+    /// refinement may inspect them behind the exact no-potion incumbent, or
+    /// use them when no victory has been found. This tier remains diagnostic.
     FindAnyWin,
     /// Passive death insurance and explicit escape are not active victory
     /// actions. Their separate run-control contracts remain authoritative.
     Excluded,
 }
 
-pub fn oracle_potion_rescue_slot_mask_v1(
-    session: &RunControlSession,
-    rescue_kind: OraclePotionRescueKindV1,
-) -> u64 {
+/// Returns usable active-victory slots without assigning a context-free value
+/// tier. Passive death insurance and explicit escape keep separate contracts.
+pub fn oracle_active_victory_potion_slot_mask_v1(session: &RunControlSession) -> u64 {
     let Some(active) = session.active_combat.as_ref() else {
         return 0;
     };
@@ -46,15 +31,7 @@ pub fn oracle_potion_rescue_slot_mask_v1(
         .enumerate()
         .filter_map(|(slot, potion)| {
             let potion = potion.as_ref()?;
-            if !potion.can_use
-                || oracle_potion_rescue_tier_v1(potion.id) == OraclePotionRescueTierV1::Excluded
-            {
-                return None;
-            }
-            if rescue_kind == OraclePotionRescueKindV1::ImproveVerifiedWin
-                && oracle_potion_rescue_tier_v1(potion.id)
-                    != OraclePotionRescueTierV1::BoundedQuality
-            {
+            if !potion.can_use || !active_victory_potion(potion.id) {
                 return None;
             }
             u32::try_from(slot)
@@ -62,6 +39,10 @@ pub fn oracle_potion_rescue_slot_mask_v1(
                 .and_then(|slot| 1_u64.checked_shl(slot))
         })
         .fold(0, |mask, slot| mask | slot)
+}
+
+fn active_victory_potion(potion: PotionId) -> bool {
+    !matches!(potion, PotionId::FairyPotion | PotionId::SmokeBomb)
 }
 
 pub fn oracle_potion_rescue_tier_v1(potion: PotionId) -> OraclePotionRescueTierV1 {

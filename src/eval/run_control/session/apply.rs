@@ -12,7 +12,10 @@ use crate::eval::run_control::transition_report::{
     TransitionAction,
 };
 use crate::eval::run_control::view_model::CandidateAction;
-use crate::eval::run_control::{RunControlAutoStepOptions, RunControlSearchCombatOptions};
+use crate::eval::run_control::{
+    RunControlAutoStepOptions, RunControlCombatSearchAttemptV1, RunControlHpLossLimit,
+    RunControlSearchCombatOptions,
+};
 use crate::eval::run_control::{
     RunDecisionAction, RunDecisionBoundaryV1, RunDecisionSelectionSourceV1,
     RunDecisionTransactionV1, RunForcedTransitionKindV1, RunForcedTransitionV1,
@@ -306,6 +309,25 @@ impl RunControlSession {
         options: RunControlSearchCombatOptions,
     ) -> Result<RunProgressOutcome, String> {
         super::super::combat_search::apply_search_combat(self, options)
+    }
+
+    pub fn search_combat_attempt(
+        &self,
+        options: RunControlSearchCombatOptions,
+    ) -> Result<RunControlCombatSearchAttemptV1, String> {
+        super::super::combat_search_attempt::run_search_combat_attempt(self, options)
+    }
+
+    pub fn apply_combat_search_attempt(
+        &mut self,
+        attempt: RunControlCombatSearchAttemptV1,
+        max_hp_loss: RunControlHpLossLimit,
+    ) -> Result<RunProgressOutcome, String> {
+        super::super::combat_search_attempt::apply_search_combat_attempt(
+            self,
+            attempt,
+            Some(max_hp_loss),
+        )
     }
 
     pub fn apply_route_plan(&mut self) -> Result<RunProgressOutcome, String> {

@@ -120,13 +120,17 @@ runner explicitly opens a potion policy and budget. A diagnostic fact such as
 "potion rescue found a win" does not automatically mean the main runner should
 spend that potion.
 
-Strategic autonomous non-boss search protects an exact potion-free incumbent.
-If that incumbent misses the configured run-quality satisfaction, the runner
-may open bounded one-potion lanes across active potion identities. A spending
-witness may replace the protected incumbent only by satisfying that quality
-contract; a higher-HP result that still misses the target is not permission to
-exchange continuation value for a marginal local improvement. Passive death
-insurance and explicit escape remain outside active victory search.
+Strategic non-boss search protects an exact potion-free incumbent. Resident
+run search carries that witness in its combat-work checkpoint; owner-audit
+staging carries an opaque replay-adjudicated attempt in memory until the
+portfolio commits one line. If the incumbent misses the configured run-quality
+satisfaction, the runner may open bounded one-potion lanes across active
+potion identities. A spending witness may replace the protected incumbent only
+by satisfying that quality contract; a higher-HP result that still misses the
+target is not permission to exchange continuation value for a marginal local
+improvement. Static potion identity tiers may describe audit evidence but do
+not admit production spending. Passive death insurance and explicit escape
+remain outside active victory search.
 
 Accepted combat lines must be exact executable lines from the current combat
 state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are

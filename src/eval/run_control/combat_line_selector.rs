@@ -9,7 +9,7 @@ use super::combat_line_adjudication::{
 };
 use super::combat_line_outcome::{
     evaluate_combat_candidate_line_outcome, find_accepted_alternative_in_report,
-    render_combat_line_outcome_detail,
+    find_accepted_alternative_in_report_matching, render_combat_line_outcome_detail,
 };
 use super::session::RunControlSession;
 
@@ -99,6 +99,43 @@ pub(super) fn select_accepted_search_combat_line(
         detail: render_combat_line_outcome_detail(&selected_eval.outcome),
         adjudication: selected_adjudication,
     }
+}
+
+pub(super) fn select_accepted_search_combat_line_with_hp_loss_at_most(
+    session: &RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    report: &CombatSearchV2Report,
+    policy: CombatLineAcceptancePolicy,
+    max_hp_loss: u32,
+) -> Result<Option<SelectedCombatLine>, String> {
+    let Some(evaluation) = find_accepted_alternative_in_report_matching(
+        session,
+        start,
+        config,
+        report,
+        policy,
+        |trajectory| trajectory.hp_loss.max(0) as u32 <= max_hp_loss,
+        |outcome| outcome.hp_loss.max(0) as u32 <= max_hp_loss,
+    )?
+    else {
+        return Ok(None);
+    };
+    let adjudication = policy.adjudicate(evaluation.outcome);
+    debug_assert!(matches!(
+        &adjudication,
+        CombatLineAdjudicationV1::Accepted {
+            cleanliness: CombatLineCleanlinessV1::Clean,
+            ..
+        }
+    ));
+    Ok(Some(SelectedCombatLine {
+        line: evaluation.line,
+        summary: Some(format!(
+            "same_report_quality_candidate hp_loss_at_most={max_hp_loss}"
+        )),
+        adjudication,
+    }))
 }
 
 fn replay_failed(policy: CombatLineAcceptancePolicy, error: String) -> CombatLineSelection {

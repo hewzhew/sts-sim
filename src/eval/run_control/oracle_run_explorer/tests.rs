@@ -730,7 +730,7 @@ fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
         assert_eq!(
             oracle_potion_rescue_tier_v1(potion),
             OraclePotionRescueTierV1::BoundedQuality,
-            "{potion:?} should be eligible only after a no-potion quality miss"
+            "{potion:?} should retain its combat-local audit classification"
         );
     }
 
@@ -786,22 +786,9 @@ fn autonomous_quality_gated_rescue_can_inspect_continuation_sensitive_potions() 
     ));
 
     assert_eq!(
-        oracle_potion_rescue_slot_mask_v1(&session, OraclePotionRescueKindV1::ImproveVerifiedWin),
-        1,
-        "legacy owner refinement still admits only combat-local resources"
-    );
-    assert_eq!(
-        oracle_potion_rescue_slot_mask_v1(
-            &session,
-            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
-        ),
+        oracle_active_victory_potion_slot_mask_v1(&session),
         0b011,
-        "autonomous quality gating may inspect both active identities"
-    );
-    assert_eq!(
-        oracle_potion_rescue_slot_mask_v1(&session, OraclePotionRescueKindV1::FindAnyWin),
-        0b011,
-        "passive death insurance remains excluded from active victory search"
+        "quality-gated rescue inspects active identities but excludes passive death insurance"
     );
 }
 

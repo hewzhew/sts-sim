@@ -5,9 +5,9 @@ use sts_simulator::ai::potion_continuation_pressure_v1::{
     potion_continuation_pressure_v1, PotionContinuationPressureV1,
 };
 use sts_simulator::eval::run_control::{
-    combat_search_trace_summaries, CombatSearchTraceSummary, OraclePotionRescueKindV1,
-    RunControlCombatSearchRejection, RunControlHpLossLimit, RunControlSession,
-    RunControlTraceAnnotationV1, RunProgressOutcome, RunProgressStepV1,
+    combat_search_trace_summaries, CombatSearchTraceSummary, RunControlCombatSearchAttemptV1,
+    RunControlHpLossLimit, RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome,
+    RunProgressStepV1,
 };
 
 use super::accepted_high_loss_diagnostic::{accepted_high_loss_diagnostic, capture_active_combat};
@@ -18,10 +18,12 @@ use super::combat_search_report::{
 use super::combat_search_session_output::CombatSearchSessionOutput;
 use super::combat_search_session_plan::{
     canonical_combat_search_session_plan, potion_conserving_primary_search_session_plan,
-    potion_conserving_refinement_search_session_plan, CombatSearchSessionPlan,
+    potion_conserving_refinement_search_session_plan, CombatSearchSessionPlan, PotionRescueKind,
 };
 use super::combat_search_session_result::{combat_search_result, CombatSearchSessionResult};
-use super::combat_search_survival::owner_audit_hp_loss_limit;
+use super::combat_search_survival::{
+    owner_audit_hp_loss_limit, owner_audit_search_quality_loss_target,
+};
 use super::combat_search_trace_actions::complete_search_action_keys;
 use super::{boundary_router, Args, BranchStatus};
 
@@ -63,75 +65,180 @@ pub(super) fn run_combat_search_session_step(
         RunControlHpLossLimit::Limit(limit) => Some(limit),
         RunControlHpLossLimit::Unlimited => None,
     };
+    let quality_loss_limit = owner_audit_search_quality_loss_target(session);
     let primary_plan = potion_conserving_primary_search_session_plan(session, args);
     let staged = primary_plan.is_some();
     let mut plan = primary_plan.unwrap_or(canonical_plan);
-    let mut outcome = match session.apply_combat_search(plan.search.clone()) {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let status = BranchStatus::AdvanceFailed(error);
-            let report = session_report(
-                &plan,
-                status.clone(),
-                Vec::new(),
-                None,
-                false,
-                "search_error",
-            );
-            return Ok(combat_search_result(
-                status,
-                Some(report),
-                CombatSearchSessionOutput::default(),
-            ));
-        }
-    };
     let mut prior_search_summaries = Vec::new();
-    if staged && committed_progress_steps(&outcome).is_empty() {
-        let rescue_kind = if outcome_has_verified_win(&outcome) {
-            OraclePotionRescueKindV1::ImproveVerifiedWin
-        } else {
-            OraclePotionRescueKindV1::FindAnyWin
+    let mut complete_staged_summaries = None;
+    let outcome = if staged {
+        let mut primary_attempt = match session.search_combat_attempt(plan.search.clone()) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                return Ok(search_error_result(&plan, error, prior_search_summaries));
+            }
         };
-        if let Some(refinement) =
-            potion_conserving_refinement_search_session_plan(session, args, rescue_kind)
-        {
-            let primary_facts =
-                candidate_facts(session, &outcome.trace_annotations, owner_hp_loss_limit);
-            let primary_decision = session_decision(false, primary_facts.as_ref());
-            prior_search_summaries.extend(combat_search_summaries(
-                &outcome,
+        let primary_satisfies = match quality_loss_limit {
+            RunControlHpLossLimit::Limit(limit) => {
+                match primary_attempt.select_verified_win_with_hp_loss_at_most(session, limit) {
+                    Ok(candidate) => candidate.is_some(),
+                    Err(error) => {
+                        return Ok(search_error_result(&plan, error, prior_search_summaries));
+                    }
+                }
+            }
+            RunControlHpLossLimit::Unlimited => primary_attempt.verified_win().is_some(),
+        };
+        if primary_satisfies {
+            match session.apply_combat_search_attempt(primary_attempt, quality_loss_limit) {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    return Ok(search_error_result(&plan, error, prior_search_summaries));
+                }
+            }
+        } else if primary_attempt.verified_win().is_some() {
+            let refinement = potion_conserving_refinement_search_session_plan(
+                session,
+                args,
+                PotionRescueKind::ImproveVerifiedWinQualityGated,
+            )
+            .expect("a staged primary must retain one refinement quantum");
+            let mut refinement_attempt =
+                match session.search_combat_attempt(refinement.search.clone()) {
+                    Ok(attempt) => attempt,
+                    Err(error) => {
+                        let summaries = combat_search_attempt_summaries(
+                            session,
+                            &primary_attempt,
+                            &plan,
+                            owner_hp_loss_limit,
+                            false,
+                            "protected_incumbent_opened_quality_refinement",
+                            &potion_continuation_context,
+                            &potion_continuation_pressure,
+                        );
+                        return Ok(search_error_result(&refinement, error, summaries));
+                    }
+                };
+            let satisfying_refinement = match quality_loss_limit {
+                RunControlHpLossLimit::Limit(limit) => {
+                    refinement_attempt.select_verified_win_with_hp_loss_at_most(session, limit)
+                }
+                RunControlHpLossLimit::Unlimited => Ok(refinement_attempt.verified_win()),
+            };
+            match satisfying_refinement {
+                Ok(Some(_)) => {
+                    prior_search_summaries.extend(combat_search_attempt_summaries(
+                        session,
+                        &primary_attempt,
+                        &plan,
+                        owner_hp_loss_limit,
+                        false,
+                        "protected_incumbent_replaced_by_satisfying_candidate",
+                        &potion_continuation_context,
+                        &potion_continuation_pressure,
+                    ));
+                    plan = refinement;
+                    match session
+                        .apply_combat_search_attempt(refinement_attempt, quality_loss_limit)
+                    {
+                        Ok(outcome) => outcome,
+                        Err(error) => {
+                            return Ok(search_error_result(&plan, error, prior_search_summaries));
+                        }
+                    }
+                }
+                Ok(None) => {
+                    let mut summaries = combat_search_attempt_summaries(
+                        session,
+                        &primary_attempt,
+                        &plan,
+                        owner_hp_loss_limit,
+                        true,
+                        "accepted_protected_no_potion_incumbent",
+                        &potion_continuation_context,
+                        &potion_continuation_pressure,
+                    );
+                    summaries.extend(combat_search_attempt_summaries(
+                        session,
+                        &refinement_attempt,
+                        &refinement,
+                        owner_hp_loss_limit,
+                        false,
+                        "candidate_rejected_by_potion_quality_gate",
+                        &potion_continuation_context,
+                        &potion_continuation_pressure,
+                    ));
+                    match session.apply_combat_search_attempt(
+                        primary_attempt,
+                        RunControlHpLossLimit::Unlimited,
+                    ) {
+                        Ok(outcome) => {
+                            complete_staged_summaries = Some(summaries);
+                            outcome
+                        }
+                        Err(error) => {
+                            return Ok(search_error_result(&plan, error, summaries));
+                        }
+                    }
+                }
+                Err(error) => {
+                    return Ok(search_error_result(
+                        &refinement,
+                        error,
+                        prior_search_summaries,
+                    ));
+                }
+            }
+        } else {
+            prior_search_summaries.extend(combat_search_attempt_summaries(
+                session,
+                &primary_attempt,
                 &plan,
-                primary_facts.as_ref(),
+                owner_hp_loss_limit,
                 false,
-                primary_decision,
+                "no_accepted_candidate",
                 &potion_continuation_context,
                 &potion_continuation_pressure,
             ));
-            plan = refinement;
-            outcome = match session.apply_combat_search(plan.search.clone()) {
-                Ok(outcome) => outcome,
-                Err(error) => {
-                    let status = BranchStatus::AdvanceFailed(error);
-                    let report = session_report(
-                        &plan,
-                        status.clone(),
-                        Vec::new(),
-                        None,
-                        false,
-                        "search_error",
-                    );
-                    return Ok(combat_search_result(
-                        status,
-                        Some(report),
-                        CombatSearchSessionOutput {
-                            combat_search: prior_search_summaries,
-                            ..CombatSearchSessionOutput::default()
-                        },
-                    ));
+            if let Some(refinement) = potion_conserving_refinement_search_session_plan(
+                session,
+                args,
+                PotionRescueKind::FindAnyWin,
+            ) {
+                plan = refinement;
+                let refinement_attempt = match session.search_combat_attempt(plan.search.clone()) {
+                    Ok(attempt) => attempt,
+                    Err(error) => {
+                        return Ok(search_error_result(&plan, error, prior_search_summaries));
+                    }
+                };
+                match session.apply_combat_search_attempt(
+                    refinement_attempt,
+                    RunControlHpLossLimit::Unlimited,
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        return Ok(search_error_result(&plan, error, prior_search_summaries));
+                    }
                 }
-            };
+            } else {
+                match session.apply_combat_search_attempt(primary_attempt, quality_loss_limit) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        return Ok(search_error_result(&plan, error, prior_search_summaries));
+                    }
+                }
+            }
         }
-    }
+    } else {
+        match session.apply_combat_search(plan.search.clone()) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return Ok(search_error_result(&plan, error, prior_search_summaries));
+            }
+        }
+    };
     let status = search_status(session, &outcome);
     let action_keys = complete_search_action_keys(&outcome.trace_annotations);
     let applied_steps = committed_progress_steps(&outcome);
@@ -139,18 +246,23 @@ pub(super) fn run_combat_search_session_step(
     let facts = candidate_facts(session, &outcome.trace_annotations, owner_hp_loss_limit);
     let decision = session_decision(applied, facts.as_ref());
 
-    let mut output = CombatSearchSessionOutput::default();
-    output.progress_steps = applied_steps;
-    output.combat_search = prior_search_summaries;
-    output.combat_search.extend(combat_search_summaries(
-        &outcome,
-        &plan,
-        facts.as_ref(),
-        applied,
-        decision,
-        &potion_continuation_context,
-        &potion_continuation_pressure,
-    ));
+    let combat_search = complete_staged_summaries.unwrap_or_else(|| {
+        prior_search_summaries.extend(combat_search_summaries(
+            &outcome,
+            &plan,
+            facts.as_ref(),
+            applied,
+            decision,
+            &potion_continuation_context,
+            &potion_continuation_pressure,
+        ));
+        prior_search_summaries
+    });
+    let mut output = CombatSearchSessionOutput {
+        progress_steps: applied_steps,
+        combat_search,
+        ..CombatSearchSessionOutput::default()
+    };
     if let Some(diagnostic) = combat_capture.and_then(|capture| {
         accepted_high_loss_diagnostic(
             capture,
@@ -176,10 +288,51 @@ pub(super) fn run_combat_search_session_step(
     Ok(combat_search_result(status, report, output))
 }
 
-fn outcome_has_verified_win(outcome: &RunProgressOutcome) -> bool {
-    matches!(
-        outcome.combat_search_rejection,
-        Some(RunControlCombatSearchRejection::HpLossLimitExceeded)
+fn search_error_result(
+    plan: &CombatSearchSessionPlan,
+    error: String,
+    combat_search: Vec<CombatSearchTraceSummary>,
+) -> CombatSearchSessionResult {
+    let status = BranchStatus::AdvanceFailed(error);
+    let report = session_report(
+        plan,
+        status.clone(),
+        Vec::new(),
+        None,
+        false,
+        "search_error",
+    );
+    combat_search_result(
+        status,
+        Some(report),
+        CombatSearchSessionOutput {
+            combat_search,
+            ..CombatSearchSessionOutput::default()
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn combat_search_attempt_summaries(
+    session: &RunControlSession,
+    attempt: &RunControlCombatSearchAttemptV1,
+    plan: &CombatSearchSessionPlan,
+    owner_hp_loss_limit: Option<u32>,
+    selected: bool,
+    decision: &'static str,
+    potion_continuation_context: &PotionRunContinuationContextV1,
+    potion_continuation_pressure: &PotionContinuationPressureV1,
+) -> Vec<CombatSearchTraceSummary> {
+    let annotations = vec![attempt.trace_annotation(session, plan.profile_id)];
+    let facts = candidate_facts(session, &annotations, owner_hp_loss_limit);
+    combat_search_summaries_from_annotations(
+        &annotations,
+        plan,
+        facts.as_ref(),
+        selected,
+        decision,
+        potion_continuation_context,
+        potion_continuation_pressure,
     )
 }
 
@@ -258,8 +411,28 @@ fn combat_search_summaries(
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
 ) -> Vec<CombatSearchTraceSummary> {
-    let mut summaries =
-        combat_search_trace_summaries(&outcome.trace_annotations).collect::<Vec<_>>();
+    combat_search_summaries_from_annotations(
+        &outcome.trace_annotations,
+        plan,
+        facts,
+        applied,
+        decision,
+        potion_continuation_context,
+        potion_continuation_pressure,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn combat_search_summaries_from_annotations(
+    annotations: &[RunControlTraceAnnotationV1],
+    plan: &CombatSearchSessionPlan,
+    facts: Option<&SearchCandidateFacts>,
+    applied: bool,
+    decision: &'static str,
+    potion_continuation_context: &PotionRunContinuationContextV1,
+    potion_continuation_pressure: &PotionContinuationPressureV1,
+) -> Vec<CombatSearchTraceSummary> {
+    let mut summaries = combat_search_trace_summaries(annotations).collect::<Vec<_>>();
     for summary in &mut summaries {
         summary.lane = Some(plan.stage.label().to_string());
         summary.profile_id = Some(plan.profile_id.to_string());
@@ -431,21 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn only_a_clean_line_rejected_by_quality_counts_as_a_verified_win() {
-        let mut outcome = RunProgressOutcome::progress("quality miss");
-        outcome.combat_search_rejection =
-            Some(RunControlCombatSearchRejection::HpLossLimitExceeded);
-        assert!(outcome_has_verified_win(&outcome));
-
-        outcome.combat_search_rejection =
-            Some(RunControlCombatSearchRejection::DirtyWinningCandidateRejected);
-        assert!(!outcome_has_verified_win(&outcome));
-        outcome.combat_search_rejection =
-            Some(RunControlCombatSearchRejection::NoCompleteWinningCandidate);
-        assert!(!outcome_has_verified_win(&outcome));
-    }
-
-    #[test]
     fn owner_audit_accepts_a_quality_no_potion_win_before_opening_rescue() {
         let mut session = hallway_session(6, vec![Some(Potion::new(PotionId::BlockPotion, 10))]);
         session.run_state.gold = 57;
@@ -544,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_audit_verified_win_opens_strength_but_preserves_power_potion() {
+    fn owner_audit_quality_gate_opens_both_active_slots_and_selects_satisfying_strength() {
         let mut session = hallway_session(
             8,
             vec![
@@ -592,11 +750,104 @@ mod tests {
         assert!(result.combat_search.iter().any(|summary| {
             summary.lane.as_deref() == Some("improve_verified_win")
                 && summary.profile_max_potions_used == Some(1)
-                && summary.profile_allowed_potion_slots == Some(1)
+                && summary.profile_allowed_potion_slots == Some(0b11)
                 && summary
                     .best_win
                     .as_ref()
                     .is_some_and(|win| win.potions_used == 1 && win.final_hp == 40)
+        }));
+    }
+
+    #[test]
+    fn owner_audit_can_select_flexible_attack_potion_when_it_reaches_quality() {
+        let mut session = hallway_session(8, vec![Some(Potion::new(PotionId::AttackPotion, 15))]);
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.player.current_hp = 40;
+        combat.entities.player.max_hp = 40;
+        combat.zones.hand = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            1,
+        )];
+        combat.zones.draw_pile = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            2,
+        )]
+        .into();
+        combat.zones.card_uuid_counter = 3;
+
+        let result =
+            run_combat_search_session_step(&mut session, args()).expect("owner flexible rescue");
+
+        assert!(
+            session.active_combat.is_none(),
+            "the quality-reaching Attack Potion line should resolve combat"
+        );
+        assert_eq!(session.visible_player_hp().0, 38);
+        assert!(session
+            .run_state
+            .potions
+            .first()
+            .is_none_or(Option::is_none));
+        assert!(result.combat_search.iter().any(|summary| {
+            summary.lane.as_deref() == Some("improve_verified_win")
+                && summary.profile_allowed_potion_slots == Some(1)
+                && summary.portfolio_selected == Some(true)
+                && summary
+                    .best_win
+                    .as_ref()
+                    .is_some_and(|win| win.potions_used == 1 && win.final_hp == 38)
+        }));
+    }
+
+    #[test]
+    fn owner_audit_falls_back_to_exact_no_potion_win_when_spend_still_misses_quality() {
+        let mut session = hallway_session(8, vec![Some(Potion::new(PotionId::WeakenPotion, 14))]);
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.player.current_hp = 20;
+        combat.entities.player.max_hp = 20;
+        combat.zones.hand = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            1,
+        )];
+        combat.zones.draw_pile = vec![sts_simulator::runtime::combat::CombatCard::new(
+            sts_simulator::content::cards::CardId::Strike,
+            2,
+        )]
+        .into();
+        combat.zones.card_uuid_counter = 3;
+
+        let result =
+            run_combat_search_session_step(&mut session, args()).expect("owner quality fallback");
+
+        assert!(
+            session.active_combat.is_none(),
+            "the protected exact no-potion win should still resolve combat"
+        );
+        assert_eq!(session.visible_player_hp().0, 9);
+        assert!(session.run_state.potions.first().is_some_and(|potion| {
+            potion
+                .as_ref()
+                .is_some_and(|potion| potion.id == PotionId::WeakenPotion && potion.uuid == 14)
+        }));
+        assert!(result.combat_search.iter().any(|summary| {
+            summary.lane.as_deref() == Some("no_potion_primary")
+                && summary.portfolio_selected == Some(true)
+                && summary.portfolio_decision.as_deref()
+                    == Some("accepted_protected_no_potion_incumbent")
+                && summary
+                    .best_win
+                    .as_ref()
+                    .is_some_and(|win| win.potions_used == 0 && win.final_hp == 9)
+        }));
+        assert!(result.combat_search.iter().any(|summary| {
+            summary.lane.as_deref() == Some("improve_verified_win")
+                && summary.portfolio_selected == Some(false)
+                && summary.portfolio_decision.as_deref()
+                    == Some("candidate_rejected_by_potion_quality_gate")
+                && summary
+                    .best_win
+                    .as_ref()
+                    .is_some_and(|win| win.potions_used == 1 && win.final_hp > 9)
         }));
     }
 }

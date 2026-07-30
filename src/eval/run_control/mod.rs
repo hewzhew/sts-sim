@@ -23,6 +23,7 @@ mod combat_no_win_fallback;
 mod combat_quality_target;
 mod combat_resolution;
 mod combat_search;
+mod combat_search_attempt;
 mod combat_search_rejection;
 mod combat_search_render;
 mod combat_search_setup;
@@ -124,6 +125,9 @@ pub use combat_resolution::{
     RUN_COMBAT_RESOLUTION_SCHEMA_NAME, RUN_COMBAT_RESOLUTION_SCHEMA_VERSION,
 };
 pub use combat_search::{RunControlCombatWorkAdvanceV1, RunControlCombatWorkV1};
+pub use combat_search_attempt::{
+    RunControlCombatSearchAttemptV1, RunControlVerifiedCombatCandidateV1,
+};
 pub use decision_action::RunDecisionAction;
 pub use decision_case::{
     default_run_decision_case_path, save_run_decision_case_v1, RunDecisionCaseV1,
@@ -196,7 +200,7 @@ pub use planner_capture::{
     PlannerCaptureCoverageReport, PlannerCaptureDataset, PlannerDecisionSiteCoverage,
 };
 pub use potion_rescue_policy::{
-    oracle_potion_rescue_slot_mask_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueKindV1,
+    oracle_active_victory_potion_slot_mask_v1, oracle_potion_rescue_tier_v1,
     OraclePotionRescueTierV1,
 };
 pub use progress_journal::{

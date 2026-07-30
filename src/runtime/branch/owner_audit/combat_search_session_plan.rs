@@ -7,7 +7,7 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2Satisfaction,
 };
 use sts_simulator::eval::run_control::{
-    oracle_potion_rescue_slot_mask_v1, OraclePotionRescueKindV1, RunControlCombatSearchQuantum,
+    oracle_active_victory_potion_slot_mask_v1, RunControlCombatSearchQuantum,
     RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
 };
 
@@ -35,6 +35,12 @@ pub(super) struct CombatSearchSessionPlan {
     pub(super) max_potions_used: Option<u32>,
     pub(super) allowed_potion_slots: Option<u64>,
     pub(super) semantics_fingerprint: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PotionRescueKind {
+    ImproveVerifiedWinQualityGated,
+    FindAnyWin,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,8 +105,7 @@ pub(super) fn potion_conserving_primary_search_session_plan(
     args: Args,
 ) -> Option<CombatSearchSessionPlan> {
     let stakes = combat_search_stakes(session);
-    if stakes == CombatSearchStakes::Boss
-        || oracle_potion_rescue_slot_mask_v1(session, OraclePotionRescueKindV1::FindAnyWin) == 0
+    if stakes == CombatSearchStakes::Boss || oracle_active_victory_potion_slot_mask_v1(session) == 0
     {
         return None;
     }
@@ -125,7 +130,7 @@ pub(super) fn potion_conserving_primary_search_session_plan(
 pub(super) fn potion_conserving_refinement_search_session_plan(
     session: &RunControlSession,
     args: Args,
-    rescue_kind: OraclePotionRescueKindV1,
+    rescue_kind: PotionRescueKind,
 ) -> Option<CombatSearchSessionPlan> {
     let stakes = combat_search_stakes(session);
     if stakes == CombatSearchStakes::Boss {
@@ -138,7 +143,7 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     if quanta.is_empty() {
         return None;
     }
-    let allowed_potion_slots = oracle_potion_rescue_slot_mask_v1(session, rescue_kind);
+    let allowed_potion_slots = oracle_active_victory_potion_slot_mask_v1(session);
     let (stage, potion_policy, max_potions_used) = if allowed_potion_slots == 0 {
         (
             CombatSearchSessionStage::NoPotionRefinement,
@@ -148,11 +153,10 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
     } else {
         (
             match rescue_kind {
-                OraclePotionRescueKindV1::ImproveVerifiedWin
-                | OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated => {
+                PotionRescueKind::ImproveVerifiedWinQualityGated => {
                     CombatSearchSessionStage::ImproveVerifiedWin
                 }
-                OraclePotionRescueKindV1::FindAnyWin => CombatSearchSessionStage::FindAnyWin,
+                PotionRescueKind::FindAnyWin => CombatSearchSessionStage::FindAnyWin,
             },
             // The outer staged contract has already selected exact potion
             // identities. Reapplying the legacy tactical gate here would
@@ -170,7 +174,7 @@ pub(super) fn potion_conserving_refinement_search_session_plan(
         max_potions_used,
         Some(allowed_potion_slots),
         RunControlHpLossLimit::Unlimited,
-        rescue_kind == OraclePotionRescueKindV1::FindAnyWin,
+        rescue_kind == PotionRescueKind::FindAnyWin,
     ))
 }
 
@@ -226,19 +230,21 @@ fn build_combat_search_session_plan(
         }
     };
     let semantics_fingerprint = profile.semantics_fingerprint();
-    let mut search = RunControlSearchCombatOptions::default();
-    search.profile = Some(profile);
-    search.satisfaction = Some(satisfaction);
-    search.max_hp_loss = Some(max_hp_loss);
-    search.potion_policy = Some(potion_policy);
-    search.max_potions_used = max_potions_used;
-    search.allowed_potion_slots = allowed_potion_slots;
-    search.work_quanta = quanta;
     // A canonical session must be the only search owner. The old complete-line,
     // turn-plan, and turn-pool root searches are therefore not invoked after a
     // gap. Smoke Bomb remains a direct legal survival action, not another search.
-    search.enable_legacy_no_win_rescue = false;
-    search.allow_smoke_bomb_survival_fallback = allow_smoke_bomb_survival_fallback;
+    let search = RunControlSearchCombatOptions {
+        profile: Some(profile),
+        satisfaction: Some(satisfaction),
+        max_hp_loss: Some(max_hp_loss),
+        potion_policy: Some(potion_policy),
+        max_potions_used,
+        allowed_potion_slots,
+        work_quanta: quanta,
+        enable_legacy_no_win_rescue: false,
+        allow_smoke_bomb_survival_fallback,
+        ..RunControlSearchCombatOptions::default()
+    };
 
     CombatSearchSessionPlan {
         search,
@@ -414,7 +420,7 @@ mod tests {
         let refinement = potion_conserving_refinement_search_session_plan(
             &session,
             args(),
-            OraclePotionRescueKindV1::ImproveVerifiedWin,
+            PotionRescueKind::ImproveVerifiedWinQualityGated,
         )
         .expect("refinement");
 
@@ -451,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn verified_win_refinement_preserves_flexible_potions_but_survival_can_open_them() {
+    fn quality_gated_refinement_opens_active_flexible_potions() {
         let mut session = hallway_session();
         session
             .active_combat
@@ -464,19 +470,19 @@ mod tests {
         let improve = potion_conserving_refinement_search_session_plan(
             &session,
             args(),
-            OraclePotionRescueKindV1::ImproveVerifiedWin,
+            PotionRescueKind::ImproveVerifiedWinQualityGated,
         )
-        .expect("no-potion refinement");
+        .expect("quality-gated refinement");
         let survival = potion_conserving_refinement_search_session_plan(
             &session,
             args(),
-            OraclePotionRescueKindV1::FindAnyWin,
+            PotionRescueKind::FindAnyWin,
         )
         .expect("survival refinement");
 
-        assert_eq!(improve.stage, CombatSearchSessionStage::NoPotionRefinement);
-        assert_eq!(improve.search.allowed_potion_slots, Some(0));
-        assert_eq!(improve.max_potions_used, Some(0));
+        assert_eq!(improve.stage, CombatSearchSessionStage::ImproveVerifiedWin);
+        assert_eq!(improve.search.allowed_potion_slots, Some(1));
+        assert_eq!(improve.max_potions_used, Some(1));
         assert!(!improve.search.allow_smoke_bomb_survival_fallback);
         assert_eq!(survival.stage, CombatSearchSessionStage::FindAnyWin);
         assert_eq!(survival.search.allowed_potion_slots, Some(1));

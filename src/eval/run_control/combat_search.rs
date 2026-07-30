@@ -5,38 +5,16 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2WorkQuantum,
 };
 
-use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
-use super::combat_line_adjudication::{CombatLineAcceptancePolicy, CombatLineAdjudicationV1};
-use super::combat_line_executor::apply_selected_combat_candidate_line;
-use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
-use super::combat_line_trace::{
-    attach_execution_adjudication, combat_candidate_line_summary, combat_search_line_summary,
-};
-use super::combat_no_win_fallback::{
-    try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
-};
-use super::combat_search_rejection::{
-    build_combat_search_rejection_outcome, CombatSearchRejectionOutcome,
-};
-use super::combat_search_setup::{
-    effective_hp_loss_limit, prepare_search_combat, search_report_has_invalid_card_identity,
-    PreparedCombatSearch,
-};
+use super::combat_search_setup::{prepare_search_combat, PreparedCombatSearch};
 use super::progress_options::{RunControlCombatSearchQuantum, RunControlSearchCombatOptions};
-use super::session::{RunControlCombatSearchRejection, RunControlSession, RunProgressOutcome};
-use super::trace_annotation::CombatAutomationTrajectorySource;
+use super::session::{RunControlSession, RunProgressOutcome};
 
 pub(super) fn apply_search_combat(
     session: &mut RunControlSession,
     options: RunControlSearchCombatOptions,
 ) -> Result<RunProgressOutcome, String> {
-    let prepared = prepare_search_combat(session, options)?;
-    let report = run_search_work_plan(
-        &prepared.start,
-        prepared.config.clone(),
-        &prepared.options.work_quanta,
-    );
-    apply_prepared_search_report(session, prepared, report)
+    let attempt = super::combat_search_attempt::run_search_combat_attempt(session, options)?;
+    super::combat_search_attempt::apply_search_combat_attempt(session, attempt, None)
 }
 
 pub struct RunControlCombatWorkV1 {
@@ -174,166 +152,11 @@ impl RunControlCombatWorkV1 {
             timed_production_deadline,
             self.prepared.config.wall_time,
         );
-        apply_prepared_search_report(session, self.prepared, report)
+        super::combat_search_attempt::apply_prepared_search_report(session, self.prepared, report)
     }
 }
 
-fn apply_prepared_search_report(
-    session: &mut RunControlSession,
-    prepared: PreparedCombatSearch,
-    report: crate::ai::combat_search_v2::CombatSearchV2Report,
-) -> Result<RunProgressOutcome, String> {
-    let effective_profile = prepared.effective_profile;
-    let options = prepared.options;
-    let start = prepared.start;
-    let config = prepared.config;
-    if search_report_has_invalid_card_identity(&report) {
-        return Ok(build_combat_search_rejection_outcome(
-            session,
-            &start,
-            &report,
-            CombatSearchRejectionOutcome {
-                result: "invalid_card_identity",
-                detail: None,
-                rejection: RunControlCombatSearchRejection::InvalidCardIdentity,
-                trace_source: "search_combat_rejected",
-                execution_adjudication: None,
-            },
-        ));
-    }
-    let Some(trajectory) = report.best_win_trajectory.as_ref() else {
-        if options.enable_legacy_no_win_rescue {
-            if let Some(outcome) = try_apply_no_win_fallback(
-                session,
-                &start,
-                &config,
-                &options,
-                &report,
-                effective_hp_loss_limit(session, &options),
-            )? {
-                return Ok(outcome);
-            }
-        } else if options.allow_smoke_bomb_survival_fallback {
-            if let Some(outcome) =
-                super::combat_no_win_fallback::try_apply_smoke_bomb_survival_fallback_after_rejection(
-                    session,
-                    "no_complete_winning_candidate",
-                )?
-            {
-                return Ok(outcome);
-            }
-        }
-        return Ok(build_combat_search_rejection_outcome(
-            session,
-            &start,
-            &report,
-            CombatSearchRejectionOutcome {
-                result: "no_complete_winning_candidate",
-                detail: None,
-                rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
-                trace_source: "search_combat_rejected",
-                execution_adjudication: None,
-            },
-        ));
-    };
-    let acceptance_policy = CombatLineAcceptancePolicy::from_plugin(effective_profile.acceptance);
-    let selected = match select_accepted_search_combat_line(
-        session,
-        &start,
-        &config,
-        &report,
-        trajectory,
-        acceptance_policy,
-    ) {
-        CombatLineSelection::Selected(selected) => selected,
-        CombatLineSelection::Rejected {
-            adjudication,
-            detail,
-        } => {
-            return Ok(build_combat_search_rejection_outcome(
-                session,
-                &start,
-                &report,
-                CombatSearchRejectionOutcome {
-                    result: "dirty_winning_candidate_rejected",
-                    detail: Some(detail),
-                    rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
-                    trace_source: "search_combat_rejected_dirty_win",
-                    execution_adjudication: Some(adjudication),
-                },
-            ));
-        }
-        CombatLineSelection::ReplayFailed { adjudication } => {
-            let CombatLineAdjudicationV1::ReplayFailed { error, .. } = adjudication else {
-                unreachable!("replay-failed selection must carry replay-failed adjudication")
-            };
-            return Err(format!("combat line replay failed: {error}"));
-        }
-    };
-
-    if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
-        if selected.line.hp_loss > max_hp_loss as i32 {
-            if let Some(outcome) = try_apply_turn_segment_after_rejection(
-                session,
-                &start,
-                &config,
-                &options,
-                &report,
-                "complete_winning_candidate_exceeds_hp_loss_limit",
-            )? {
-                return Ok(outcome);
-            }
-            return Ok(build_combat_search_rejection_outcome(
-                session,
-                &start,
-                &report,
-                CombatSearchRejectionOutcome {
-                    result: "complete_winning_candidate_exceeds_hp_loss_limit",
-                    detail: Some(format!(
-                        "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
-                        selected.line.hp_loss
-                    )),
-                    rejection: RunControlCombatSearchRejection::HpLossLimitExceeded,
-                    trace_source: "search_combat_rejected",
-                    execution_adjudication: None,
-                },
-            ));
-        }
-    }
-
-    let mut summary = format!(
-        "search-combat applied {} actions profile={}",
-        selected.line.actions.len(),
-        effective_profile.profile_id
-    );
-    if let Some(repair_summary) = selected.summary.as_ref() {
-        summary.push_str(&format!(" {repair_summary}"));
-    }
-    let accepted_line_evidence = AcceptedCombatLineEvidenceV1::new(
-        combat_search_line_summary(trajectory),
-        combat_candidate_line_summary(&selected.line),
-        selected.summary.clone(),
-    );
-    let selected_adjudication = selected.adjudication;
-    let mut outcome = apply_selected_combat_candidate_line(
-        session,
-        &start,
-        &config,
-        &report,
-        selected.line,
-        CombatAutomationTrajectorySource::SearchCombat,
-        summary,
-        None,
-    )?
-    .with_execution_adjudication(selected_adjudication.clone());
-    outcome
-        .trace_annotations
-        .push(accepted_line_evidence.into_annotation());
-    attach_execution_adjudication(&mut outcome.trace_annotations, &selected_adjudication);
-    Ok(outcome)
-}
-
-fn run_search_work_plan(
+pub(super) fn run_search_work_plan(
     start: &crate::sim::combat::CombatPosition,
     config: crate::ai::combat_search_v2::CombatSearchV2Config,
     work_quanta: &[super::progress_options::RunControlCombatSearchQuantum],

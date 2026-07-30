@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::ai::combat_search_v2::{CombatSearchV2Config, CombatSearchV2Report};
+use crate::ai::combat_search_v2::{
+    CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TrajectoryReport,
+};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat::CombatPosition;
@@ -31,8 +33,31 @@ pub(super) fn find_accepted_alternative_in_report(
     report: &CombatSearchV2Report,
     policy: CombatLineAcceptancePolicy,
 ) -> Result<Option<CombatLineEvaluation>, String> {
+    find_accepted_alternative_in_report_matching(
+        session,
+        start,
+        config,
+        report,
+        policy,
+        |_| true,
+        |_| true,
+    )
+}
+
+pub(super) fn find_accepted_alternative_in_report_matching(
+    session: &RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    report: &CombatSearchV2Report,
+    policy: CombatLineAcceptancePolicy,
+    mut trajectory_matches: impl FnMut(&CombatSearchV2TrajectoryReport) -> bool,
+    mut outcome_matches: impl FnMut(&CombatLineObservedOutcomeV1) -> bool,
+) -> Result<Option<CombatLineEvaluation>, String> {
     let mut best_clean: Option<CombatLineEvaluation> = None;
     for trajectory in &report.win_candidate_trajectories {
+        if !trajectory_matches(trajectory) {
+            continue;
+        }
         let line = CombatCandidateLine::from_search_trajectory(trajectory);
         let evaluation = evaluate_combat_candidate_line_outcome(session, start, config, line)?;
         if !matches!(
@@ -41,7 +66,8 @@ pub(super) fn find_accepted_alternative_in_report(
                 cleanliness: CombatLineCleanlinessV1::Clean,
                 ..
             }
-        ) {
+        ) || !outcome_matches(&evaluation.outcome)
+        {
             continue;
         }
         let replace = best_clean

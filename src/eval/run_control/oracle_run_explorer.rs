@@ -10,7 +10,7 @@ use crate::state::core::{EngineState, RunResult};
 use super::oracle_combat_work::{OracleRunCombatWorkCheckpointV1, OracleRunCombatWorkV1};
 use super::oracle_selection_cursor::LazyUnorderedSelectionCursorV1;
 use super::{
-    oracle_potion_rescue_slot_mask_v1, NeowOracleExpansionV1, OraclePotionRescueKindV1,
+    oracle_active_victory_potion_slot_mask_v1, NeowOracleExpansionV1,
     RunControlCombatSearchQuantum, RunControlCombatSearchRejection, RunControlCombatWorkAdvanceV1,
     RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1, RunControlTraceAnnotationV1, RunDecisionAction,
@@ -329,7 +329,7 @@ impl OracleRunCombatBudgetsV1 {
         &self,
         session: &RunControlSession,
         stage: u8,
-        prior: &OracleRunCombatWorkCheckpointV1,
+        _prior: &OracleRunCombatWorkCheckpointV1,
     ) -> RunControlSearchCombatOptions {
         let mut options = self.for_session_stage(session, stage);
         if stage == 0
@@ -337,16 +337,10 @@ impl OracleRunCombatBudgetsV1 {
         {
             return options;
         }
-        let rescue_kind = if prior.incumbent.is_some() {
-            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
-        } else {
-            OraclePotionRescueKindV1::FindAnyWin
-        };
         options.potion_policy =
             Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
         options.max_potions_used = Some(1);
-        options.allowed_potion_slots =
-            Some(oracle_potion_rescue_slot_mask_v1(session, rescue_kind));
+        options.allowed_potion_slots = Some(oracle_active_victory_potion_slot_mask_v1(session));
         options
     }
 
@@ -382,10 +376,7 @@ impl OracleRunCombatBudgetsV1 {
             && (self.initial_divisor > 1
                 || (self
                     .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
-                    && oracle_potion_rescue_slot_mask_v1(
-                        session,
-                        OraclePotionRescueKindV1::FindAnyWin,
-                    ) != 0))
+                    && oracle_active_victory_potion_slot_mask_v1(session) != 0))
     }
 
     pub(super) fn needs_later_stage(
@@ -400,12 +391,7 @@ impl OracleRunCombatBudgetsV1 {
         if self.initial_divisor > 1 {
             return true;
         }
-        let rescue_kind = if work.has_verified_witness() {
-            OraclePotionRescueKindV1::ImproveVerifiedWinQualityGated
-        } else {
-            OraclePotionRescueKindV1::FindAnyWin
-        };
-        oracle_potion_rescue_slot_mask_v1(session, rescue_kind) != 0
+        oracle_active_victory_potion_slot_mask_v1(session) != 0
     }
 
     fn uses_potion_conserving_primary(
