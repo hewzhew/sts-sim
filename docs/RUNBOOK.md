@@ -357,8 +357,10 @@ The root package deliberately keeps `autobins = false`, `autotests = false`,
 and remains the sole default member. Therefore bare `cargo test --lib` tests
 only the core package; it is not the complete workspace check. Use
 `cargo test-core <filter>` for core tests and `cargo test-control <filter>` for
-search/evaluation/run-control tests. Use both aliases plus `cargo architecture`
-before handoff.
+the retained combat-search capability package plus evaluation, run-control,
+and tool contracts. Naming `sts_combat_legacy` in the control alias is
+intentional: linking that dependency does not run its private unit tests. Use
+both aliases plus `cargo architecture` before handoff.
 
 For a symbolized native CPU trace of the narrow combat contract, run
 `tools/perf/profile_combat_cpu.ps1`. Analyze an existing trace without another

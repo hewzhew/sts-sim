@@ -19,8 +19,9 @@ Tests are deliberately split across real Cargo packages:
   and stable policy code;
 - `cargo test-planner <filter>` tests the exact complete-turn planner without
   linking the core crate's monolithic unit-test binary;
-- `cargo test-control <filter>` tests combat search, evaluation, run-control,
-  branch runtime, and their shared contracts;
+- `cargo test-control <filter>` tests the retained combat-search capability
+  package plus evaluation, run-control, branch runtime, tools, and their shared
+  contracts;
 - `cargo architecture <filter>` runs dependency-free source-boundary checks.
 
 Bare `cargo test --lib` addresses only the default core package and is not a

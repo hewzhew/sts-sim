@@ -363,18 +363,18 @@ fn conservative_rollout_stops_before_large_pending_choice_branch() {
 }
 
 #[test]
-fn engine_rollout_stops_at_small_structured_pending_choice_without_calling_it_no_legal_actions() {
+fn engine_rollout_stops_at_nonlinear_structured_pending_choice() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
-    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
-        crate::content::cards::CardId::Strike,
-        10,
-    )];
+    combat.zones.hand = vec![
+        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 10),
+        crate::runtime::combat::CombatCard::new(crate::content::cards::CardId::Strike, 11),
+    ];
     let node = SearchNode {
         engine: EngineState::PendingChoice(crate::state::core::PendingChoice::HandSelect {
-            candidate_uuids: vec![10],
+            candidate_uuids: vec![10, 11],
             min_cards: 1,
-            max_cards: 1,
+            max_cards: 2,
             can_cancel: false,
             reason: crate::state::core::HandSelectReason::Discard,
         }),

@@ -1915,7 +1915,7 @@ fn custom_stepper_keeps_hand_pending_choice_ownership_without_opt_in() {
 }
 
 #[test]
-fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
+fn root_turn_plan_frontier_seed_is_explicit_but_does_not_claim_terminal() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
@@ -1949,7 +1949,10 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
         &OneCardWinStepper,
     );
 
-    assert!(seeded.outcome.complete_trajectory_found);
+    assert!(
+        !seeded.outcome.complete_trajectory_found,
+        "a generated turn-plan seed is evidence and cannot bypass root materialization or budget"
+    );
     assert_eq!(seeded.stats.nodes_to_first_win, Some(1));
     assert_eq!(seeded.diagnostics.turn_plan.frontier_seeded_nodes, 1);
     assert_eq!(
