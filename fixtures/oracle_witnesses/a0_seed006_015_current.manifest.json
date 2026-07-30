@@ -27,16 +27,16 @@
       "expected": {
         "seed": 20260713007,
         "ascension": 0,
-        "journal_entries": 208,
-        "decisions": 181,
+        "journal_entries": 218,
+        "decisions": 192,
         "forced_transitions": 0,
-        "combat_resolutions": 27,
-        "combat_actions": 472,
-        "final_fingerprint": "85fb802d4cc22d1c6e76c0b96183d39c7570abd7b3fdcaa5cca38e389fdcb495",
+        "combat_resolutions": 26,
+        "combat_actions": 534,
+        "final_fingerprint": "589c145c6828b1560af78cdb98f6ecc2038796888dbdb6ee44c5757249b38391",
         "act": 3,
         "floor": 48,
-        "current_hp": 7,
-        "max_hp": 80,
+        "current_hp": 18,
+        "max_hp": 85,
         "engine_state": "GameOver(Victory)"
       }
     },
