@@ -83,6 +83,62 @@ such as forced-rest avoidance, future elite plans, potion-slot overflow, and
 encounter-specific preservation remains a run-level decision and is listed as
 unobserved rather than invented into one combat score.
 
+### Fresh Potion Continuation Cases
+
+Use a fresh capsule path and two bounded phases when the investigation needs a
+current owner-generated combat case with
+`PotionRunContinuationContextV1`. The first phase lets the run naturally
+acquire cards, relics, and potions. The second phase deliberately lowers search
+allowance so the next unresolved fight becomes a diagnostic case:
+
+```powershell
+$capsule = ".oracle-lab/collections/potion-v5/<fresh-id>"
+if (Test-Path -LiteralPath $capsule) {
+  throw "choose a fresh capsule path: $capsule"
+}
+
+cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
+  --seed <seed> --ascension 0 --objective first-terminal `
+  --generations 14 --max-branches 1 --auto-ops 512 `
+  --search-nodes 100 --search-ms 50 `
+  --rescue-search-nodes 300 --rescue-search-ms 100 `
+  --boss-search-nodes 300 --boss-search-ms 100 `
+  --wall-ms 10000 --run-capsule $capsule
+
+if (Test-Path -LiteralPath "$capsule/frontier.json") {
+  cargo run --quiet -p sts_oracle_tools --bin branch_tiny -- `
+    --continue-capsule $capsule --continue-slices 1 `
+    --generations 10 --max-branches 1 `
+    --search-nodes 1 --search-ms 1 `
+    --rescue-search-nodes 1 --rescue-search-ms 1 `
+    --boss-search-nodes 1 --boss-search-ms 1 `
+    --wall-ms 10000
+}
+```
+
+The 1-node phase is a capture mechanism, not a claim that the combat is hard
+or unwinnable. Before auditing, require every saved search summary to contain
+one identical `before_combat_search` context. The V5 audit must report
+`validated_exact_root` with no mismatches:
+
+```powershell
+$case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
+  -Filter *.json -File | Select-Object -First 1
+
+cargo oracle-lab combat-case-potion-expenditure-audit `
+  --case $case.FullName `
+  --max-combination-size 1 --survival-reserve-hp 30 `
+  --max-nodes 5000 --max-selections 20000 `
+  --wall-ms-per-lane 500 `
+  > .oracle-lab/reports/<fresh-id>-potion-v5.json `
+  2> .oracle-lab/reports/<fresh-id>-potion-v5.log
+```
+
+Keep complete JSON and build output under `.oracle-lab`; report only aggregate
+lane results. Do not upgrade a legacy case by guessing missing route, Boss, or
+supply facts, and do not treat a budget-limited missing witness as potion
+evidence.
+
 ## Combat Search Driver
 
 Use `combat_search_v2_driver` for fixed combat starts, captures, and benchmark
