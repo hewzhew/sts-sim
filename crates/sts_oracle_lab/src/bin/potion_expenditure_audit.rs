@@ -44,7 +44,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV6";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV7";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -314,10 +314,22 @@ enum PotionSpendAdjudicationV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
+struct PotionSurvivalReserveDeltaV1 {
+    reserve_hp: i32,
+    baseline_shortfall_hp: i32,
+    candidate_shortfall_hp: i32,
+    shortfall_reduction_hp: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shortfall_reduction_ppm: Option<i32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
 struct PotionMarginalComparisonV1 {
     final_hp_delta: Option<i32>,
     final_turn_delta: Option<i64>,
     action_count_delta: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    survival_reserve_delta: Option<PotionSurvivalReserveDeltaV1>,
     assessment: PotionMarginalAssessmentV1,
 }
 
@@ -496,7 +508,7 @@ struct PotionRetainedValueEvidenceV1 {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV6 {
+pub(super) struct CombatCasePotionExpenditureAuditV7 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -513,7 +525,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV6 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV6, String> {
+) -> Result<CombatCasePotionExpenditureAuditV7, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -649,7 +661,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV6 {
+    Ok(CombatCasePotionExpenditureAuditV7 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -1544,6 +1556,9 @@ fn annotate_marginal_comparisons(
                 final_hp_delta: Some(0),
                 final_turn_delta: Some(0),
                 action_count_delta: Some(0),
+                survival_reserve_delta: survival_reserve_hp.map(|reserve_hp| {
+                    survival_reserve_delta(witness.final_hp, witness.final_hp, reserve_hp)
+                }),
                 assessment: PotionMarginalAssessmentV1::NoPotionBaseline,
             });
             continue;
@@ -1553,6 +1568,7 @@ fn annotate_marginal_comparisons(
                 final_hp_delta: None,
                 final_turn_delta: None,
                 action_count_delta: None,
+                survival_reserve_delta: None,
                 assessment: if baseline_frontier_exhausted {
                     PotionMarginalAssessmentV1::NoPotionFrontierExhaustedUnderContract
                 } else {
@@ -1580,8 +1596,32 @@ fn annotate_marginal_comparisons(
             final_hp_delta: Some(witness.final_hp.saturating_sub(base_hp)),
             final_turn_delta: Some(i64::from(witness.final_player_turn) - i64::from(base_turn)),
             action_count_delta: Some(witness.action_count as i64 - base_actions as i64),
+            survival_reserve_delta: survival_reserve_hp
+                .map(|reserve_hp| survival_reserve_delta(base_hp, witness.final_hp, reserve_hp)),
             assessment,
         });
+    }
+}
+
+fn survival_reserve_delta(
+    baseline_final_hp: i32,
+    candidate_final_hp: i32,
+    reserve_hp: i32,
+) -> PotionSurvivalReserveDeltaV1 {
+    let baseline_shortfall_hp = reserve_hp.saturating_sub(baseline_final_hp).max(0);
+    let candidate_shortfall_hp = reserve_hp.saturating_sub(candidate_final_hp).max(0);
+    let shortfall_reduction_hp = baseline_shortfall_hp.saturating_sub(candidate_shortfall_hp);
+    let shortfall_reduction_ppm = (baseline_shortfall_hp > 0).then(|| {
+        let numerator = i64::from(shortfall_reduction_hp).saturating_mul(1_000_000);
+        let ppm = numerator / i64::from(baseline_shortfall_hp);
+        ppm.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    });
+    PotionSurvivalReserveDeltaV1 {
+        reserve_hp,
+        baseline_shortfall_hp,
+        candidate_shortfall_hp,
+        shortfall_reduction_hp,
+        shortfall_reduction_ppm,
     }
 }
 
@@ -2120,6 +2160,7 @@ mod tests {
                     final_hp_delta: Some(10),
                     final_turn_delta: Some(final_turn_delta),
                     action_count_delta: Some(1),
+                    survival_reserve_delta: None,
                     assessment,
                 }),
                 pareto_frontier,
@@ -2681,6 +2722,27 @@ mod tests {
         let fire_flags = &lanes[1].witness.as_ref().unwrap().policy_review_flags;
         assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceIsParetoDominated));
         assert!(fire_flags.contains(&PotionPolicyReviewFlagV1::AdmittedResourceHasNoHpBenefit));
+    }
+
+    #[test]
+    fn reserve_delta_keeps_large_near_crossing_gain_as_exact_shadow_fact() {
+        let delta = survival_reserve_delta(9, 28, 30);
+
+        assert_eq!(delta.reserve_hp, 30);
+        assert_eq!(delta.baseline_shortfall_hp, 21);
+        assert_eq!(delta.candidate_shortfall_hp, 2);
+        assert_eq!(delta.shortfall_reduction_hp, 19);
+        assert_eq!(delta.shortfall_reduction_ppm, Some(904_761));
+    }
+
+    #[test]
+    fn reserve_delta_does_not_invent_a_fraction_when_baseline_is_already_safe() {
+        let delta = survival_reserve_delta(55, 60, 30);
+
+        assert_eq!(delta.baseline_shortfall_hp, 0);
+        assert_eq!(delta.candidate_shortfall_hp, 0);
+        assert_eq!(delta.shortfall_reduction_hp, 0);
+        assert_eq!(delta.shortfall_reduction_ppm, None);
     }
 
     #[test]

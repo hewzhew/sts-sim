@@ -120,7 +120,7 @@ The 1-node phase is a capture mechanism, not a claim that the combat is hard
 or unwinnable. Before auditing, require every saved search summary to contain
 one identical `before_combat_search` context. Current captures should also
 contain one identical `PotionContinuationPressureV1`; its absence is expected
-only for legacy cases. The V6 audit must report `validated_exact_root` with no
+only for legacy cases. The V7 audit must report `validated_exact_root` with no
 run-context mismatches and a `continuation_pressure_projection` status of
 `validated_exact_root` with no pressure mismatches:
 
@@ -139,10 +139,14 @@ cargo oracle-lab combat-case-potion-expenditure-audit `
 
 Keep complete JSON and build output under `.oracle-lab`; report only aggregate
 lane results. Do not upgrade a legacy case by guessing missing route, Boss, or
-supply facts. V6 rebuilds pressure from the validated saved context plus exact
-case gold and combat-root Coffee Dripper state; missing, conflicting, or
-non-reconstructible pressure must not enter retained-value evidence. Do not
-treat a budget-limited missing witness as potion evidence.
+supply facts. V7 preserves the V6 exact pressure reconstruction and adds a
+typed before/after survival-reserve shortfall to every lane with a no-potion
+baseline. It records the exact HP reduction and parts-per-million fraction of
+the original shortfall without assigning a spend threshold or policy label.
+Pressure is rebuilt from the validated saved context plus exact case gold and
+combat-root Coffee Dripper state; missing, conflicting, or non-reconstructible
+pressure must not enter retained-value evidence. Do not treat a budget-limited
+missing witness as potion evidence.
 
 ## Combat Search Driver
 
