@@ -100,6 +100,7 @@ fn enumerate_turn_plans_impl(
                     config.max_inner_nodes,
                 ),
                 config.potion_policy,
+                config.allowed_potion_slots,
                 &node.combat,
             );
             if legal.is_empty() {

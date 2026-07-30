@@ -131,6 +131,7 @@ fn replay_prefix(
         let choice = filter_combat_search_legal_actions(
             vec![candidate],
             config.potion_policy,
+            config.allowed_potion_slots,
             &position.combat,
         )
         .into_iter()

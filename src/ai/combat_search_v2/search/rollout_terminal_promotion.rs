@@ -104,6 +104,7 @@ fn replay_terminal_witness(
         let original_action_id = filtered_legal_actions(
             stepper.atomic_action_choices(&position),
             config.potion_policy,
+            config.allowed_potion_slots,
             &node.combat,
         )
         .iter()
@@ -111,9 +112,14 @@ fn replay_terminal_witness(
         let Some(candidate) = stepper.choice_for_legal_input(&position, &action.input) else {
             return TerminalWitnessReplay::Invalid;
         };
-        let choice = filtered_legal_actions(vec![candidate], config.potion_policy, &node.combat)
-            .into_iter()
-            .find(|choice| choice.input == action.input && choice.action_key == action.action_key);
+        let choice = filtered_legal_actions(
+            vec![candidate],
+            config.potion_policy,
+            config.allowed_potion_slots,
+            &node.combat,
+        )
+        .into_iter()
+        .find(|choice| choice.input == action.input && choice.action_key == action.action_key);
         let Some(choice) = choice else {
             return TerminalWitnessReplay::Invalid;
         };

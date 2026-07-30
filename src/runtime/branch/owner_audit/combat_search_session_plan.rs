@@ -212,6 +212,7 @@ fn build_combat_search_session_plan(
                 potion: CombatSearchPotionPlugin {
                     policy: potion_policy,
                     max_potions_used,
+                    allowed_potion_slots,
                 },
                 ..CombatSearchPluginStack::default()
             },

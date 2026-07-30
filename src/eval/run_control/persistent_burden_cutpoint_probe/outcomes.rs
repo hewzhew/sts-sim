@@ -44,6 +44,7 @@ pub(super) fn probe_cutpoint_actions(
                 .map(|input| CombatActionChoice::from_input(&cutpoint.position.combat, input))
                 .collect(),
             config.potion_policy,
+            config.allowed_potion_slots,
             &cutpoint.position.combat,
         ),
         config,

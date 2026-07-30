@@ -18,6 +18,7 @@ pub struct CombatSearchV2Config {
     pub input_label: Option<String>,
     pub potion_policy: CombatSearchV2PotionPolicy,
     pub max_potions_used: Option<u32>,
+    pub allowed_potion_slots: Option<u64>,
     pub rollout_policy: CombatSearchV2RolloutPolicy,
     pub child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
     pub rollout_max_evaluations: usize,
@@ -45,6 +46,7 @@ impl Default for CombatSearchV2Config {
             input_label: None,
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
+            allowed_potion_slots: None,
             rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
             child_rollout_policy: CombatSearchV2ChildRolloutPolicy::default(),
             rollout_max_evaluations:

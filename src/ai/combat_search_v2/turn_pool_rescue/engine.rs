@@ -263,6 +263,7 @@ fn turn_pool_choices<'a>(
         Some(plugins) => filter_combat_search_legal_actions(
             stepper.atomic_action_choices(position),
             plugins.potion.policy,
+            plugins.potion.allowed_potion_slots,
             &position.combat,
         ),
         None => stepper.atomic_action_choices(position),

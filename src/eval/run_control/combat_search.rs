@@ -947,6 +947,7 @@ mod tests {
                     potion: CombatSearchPotionPlugin {
                         policy: CombatSearchV2PotionPolicy::Never,
                         max_potions_used: Some(0),
+                        allowed_potion_slots: None,
                     },
                     ..CombatSearchPluginStack::default()
                 },

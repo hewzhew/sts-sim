@@ -17,11 +17,17 @@ pub(super) fn root_action_mask_report(
     engine: &EngineState,
     combat: &CombatState,
     potion_policy: CombatSearchV2PotionPolicy,
+    allowed_potion_slots: Option<u64>,
     legal_actions: Vec<CombatActionChoice>,
     preselection_first_actions: &[CombatSearchV2ActionTrace],
     preselection_first_action_summaries: &[TurnPlanFirstActionSummaryV1],
 ) -> CombatSearchV2TurnPlanProbeActionMaskReport {
-    let candidate_eligible = filtered_legal_actions(legal_actions.clone(), potion_policy, combat);
+    let candidate_eligible = filtered_legal_actions(
+        legal_actions.clone(),
+        potion_policy,
+        allowed_potion_slots,
+        combat,
+    );
     let equivalence = compress_equivalent_actions(engine, combat, candidate_eligible.clone());
     CombatSearchV2TurnPlanProbeActionMaskReport {
         data_role: "ObservedExact",

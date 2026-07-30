@@ -59,7 +59,7 @@ fn potion_policy_filtered_actions_are_observed_after_filtering() {
         ),
         CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
     ];
-    let filtered = filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, &combat);
+    let filtered = filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, None, &combat);
 
     let summary = summarize_action_expansion(&EngineState::CombatPlayerTurn, &combat, &filtered);
 
@@ -68,6 +68,64 @@ fn potion_policy_filtered_actions_are_observed_after_filtering() {
         group.key.kind != ActionExpansionKind::UsePotion
             && group.key.kind != ActionExpansionKind::DiscardPotion
     }));
+}
+
+#[test]
+fn exact_potion_slot_mask_filters_use_and_discard_before_expansion() {
+    let mut combat = blank_test_combat();
+    combat.entities.potions = vec![
+        Some(Potion::new(PotionId::FirePotion, 7)),
+        Some(Potion::new(PotionId::BlockPotion, 8)),
+    ];
+    let legal = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::UsePotion {
+                potion_index: 0,
+                target: None,
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::UsePotion {
+                potion_index: 1,
+                target: None,
+            },
+        ),
+        CombatActionChoice::from_input(&combat, ClientInput::DiscardPotion(0)),
+        CombatActionChoice::from_input(&combat, ClientInput::DiscardPotion(1)),
+        CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
+    ];
+
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::All,
+        Some(1 << 1),
+        &combat,
+    );
+    let inputs = filtered
+        .into_iter()
+        .map(|choice| choice.input)
+        .collect::<Vec<_>>();
+
+    assert_eq!(inputs.len(), 3);
+    assert!(inputs.iter().any(|input| matches!(
+        input,
+        ClientInput::UsePotion {
+            potion_index: 1,
+            ..
+        }
+    )));
+    assert!(inputs
+        .iter()
+        .any(|input| matches!(input, ClientInput::DiscardPotion(1))));
+    assert!(inputs.iter().all(|input| !matches!(
+        input,
+        ClientInput::UsePotion {
+            potion_index: 0,
+            ..
+        } | ClientInput::DiscardPotion(0)
+    )));
 }
 
 #[test]

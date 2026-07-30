@@ -176,6 +176,7 @@ fn microscope_candidate_sample(
     let legal = filtered_legal_actions(
         stepper.atomic_action_choices(position),
         potion_policy,
+        None,
         combat,
     );
     let equivalence = compress_equivalent_actions(engine, combat, legal);

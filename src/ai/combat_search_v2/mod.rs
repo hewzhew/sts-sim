@@ -279,6 +279,7 @@ pub fn oracle_rollout_witness_proposal_v1(
     let potion_prefixes = transition::filtered_legal_actions(
         EngineCombatStepper.atomic_action_choices(position),
         CombatSearchV2PotionPolicy::All,
+        config.allowed_potion_slots,
         &position.combat,
     )
     .into_iter()
@@ -551,9 +552,10 @@ pub fn combat_search_phase_profile_report_for_state(
 pub fn filter_combat_search_legal_actions(
     choices: Vec<CombatActionChoice>,
     potion_policy: CombatSearchV2PotionPolicy,
+    allowed_potion_slots: Option<u64>,
     combat: &CombatState,
 ) -> Vec<CombatActionChoice> {
-    transition::filtered_legal_actions(choices, potion_policy, combat)
+    transition::filtered_legal_actions(choices, potion_policy, allowed_potion_slots, combat)
 }
 
 #[cfg(test)]

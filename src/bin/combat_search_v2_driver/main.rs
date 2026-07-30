@@ -424,6 +424,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         satisfaction,
         potion_policy,
         max_potions_used: args.max_potions_used,
+        allowed_potion_slots: None,
         high_stakes_semantic_potions,
         rollout_policy: args.rollout_policy,
         child_rollout_policy: args.child_rollout_policy,

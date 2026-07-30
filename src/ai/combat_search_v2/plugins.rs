@@ -78,6 +78,7 @@ impl CombatSearchPluginStack {
             potion: CombatSearchPotionPlugin {
                 policy: config.potion_policy,
                 max_potions_used: config.max_potions_used,
+                allowed_potion_slots: config.allowed_potion_slots,
             },
             phase_guard: config.phase_guard_policy.into(),
         }
@@ -88,6 +89,8 @@ impl CombatSearchPluginStack {
 pub struct CombatSearchPotionPlugin {
     pub policy: CombatSearchV2PotionPolicy,
     pub max_potions_used: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_potion_slots: Option<u64>,
 }
 
 impl Default for CombatSearchPotionPlugin {
@@ -95,6 +98,7 @@ impl Default for CombatSearchPotionPlugin {
         Self {
             policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
+            allowed_potion_slots: None,
         }
     }
 }
@@ -437,6 +441,7 @@ impl CombatSearchEngineProfile {
             wall_time: Some(Duration::from_millis(self.budget.wall_ms)),
             potion_policy: self.plugins.potion.policy,
             max_potions_used: self.plugins.potion.max_potions_used,
+            allowed_potion_slots: self.plugins.potion.allowed_potion_slots,
             rollout_policy: self.plugins.rollout.into(),
             child_rollout_policy: self.plugins.child_rollout.into(),
             expansion_policy: self.plugins.expansion.into(),

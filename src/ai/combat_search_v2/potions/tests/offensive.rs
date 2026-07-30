@@ -21,8 +21,12 @@ fn semantic_policy_keeps_attack_potion_when_ordinary_damage_is_uncovered() {
         CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
     ];
 
-    let filtered =
-        filtered_legal_actions(legal, CombatSearchV2PotionPolicy::SemanticBudgeted, &combat);
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::SemanticBudgeted,
+        None,
+        &combat,
+    );
 
     assert!(filtered.iter().any(|choice| matches!(
         choice.input,
@@ -126,8 +130,12 @@ fn semantic_policy_does_not_admit_passive_fairy_use() {
         },
     )];
 
-    let filtered =
-        filtered_legal_actions(legal, CombatSearchV2PotionPolicy::SemanticBudgeted, &combat);
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::SemanticBudgeted,
+        None,
+        &combat,
+    );
 
     assert!(filtered.is_empty());
     assert_eq!(
@@ -159,8 +167,12 @@ fn semantic_policy_keeps_lethal_fire_potion_without_incoming_damage() {
         },
     )];
 
-    let filtered =
-        filtered_legal_actions(legal, CombatSearchV2PotionPolicy::SemanticBudgeted, &combat);
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::SemanticBudgeted,
+        None,
+        &combat,
+    );
 
     assert_eq!(filtered.len(), 1);
     assert_eq!(

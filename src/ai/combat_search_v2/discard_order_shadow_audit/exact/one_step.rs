@@ -147,6 +147,7 @@ fn legal_action_map(
     filtered_legal_actions(
         stepper.atomic_action_choices(&position),
         plugins.potion.policy,
+        plugins.potion.allowed_potion_slots,
         &node.combat,
     )
     .into_iter()
@@ -223,6 +224,7 @@ fn legal_action_count(
     filtered_legal_actions(
         stepper.atomic_action_choices(position),
         plugins.potion.policy,
+        plugins.potion.allowed_potion_slots,
         &node.combat,
     )
     .len()

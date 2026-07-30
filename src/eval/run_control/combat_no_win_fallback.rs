@@ -308,6 +308,7 @@ fn verify_segment_trajectory_replays(
         let choices = filter_combat_search_legal_actions(
             vec![candidate],
             config.potion_policy,
+            config.allowed_potion_slots,
             &position.combat,
         );
         let Some(choice) = choices

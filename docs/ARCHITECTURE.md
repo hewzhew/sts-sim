@@ -130,7 +130,11 @@ by satisfying that quality contract; a higher-HP result that still misses the
 target is not permission to exchange continuation value for a marginal local
 improvement. Static potion identity tiers may describe audit evidence but do
 not admit production spending. Passive death insurance and explicit escape
-remain outside active victory search.
+remain outside active victory search. When the runner opens concrete potion
+slots, that exact mask is part of the combat-search engine profile and must be
+enforced by atomic expansion, turn-plan enumeration, rollout-witness replay,
+fallback repair, and final executable-line replay; a trace-only slot mask is
+not an admission contract.
 
 Accepted combat lines must be exact executable lines from the current combat
 state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are

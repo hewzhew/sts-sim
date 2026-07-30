@@ -44,6 +44,7 @@ fn plan_combat_turn_segment_with_stepper_v1(
         max_end_states: 24,
         per_bucket_limit: 4,
         potion_policy: CombatSearchV2PotionPolicy::Never,
+        allowed_potion_slots: None,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
         capture_step_trace: false,

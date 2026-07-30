@@ -13,8 +13,12 @@ fn semantic_policy_rejects_block_potion_without_visible_incoming_loss() {
         },
     )];
 
-    let filtered =
-        filtered_legal_actions(legal, CombatSearchV2PotionPolicy::SemanticBudgeted, &combat);
+    let filtered = filtered_legal_actions(
+        legal,
+        CombatSearchV2PotionPolicy::SemanticBudgeted,
+        None,
+        &combat,
+    );
 
     assert!(filtered.is_empty());
     assert_eq!(

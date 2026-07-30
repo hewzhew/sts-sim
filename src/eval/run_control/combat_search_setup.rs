@@ -146,6 +146,9 @@ pub(super) fn search_config(
             .max_potions_used
             .or(session.search_max_potions_used)
             .or(defaults.max_potions_used),
+        allowed_potion_slots: options
+            .allowed_potion_slots
+            .or(defaults.allowed_potion_slots),
         rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
         child_rollout_policy: options
             .child_rollout_policy
@@ -237,6 +240,27 @@ mod adjudication_tests {
         assert_eq!(
             prepared.effective_profile.acceptance,
             CombatSearchAcceptancePluginId::AcceptedLineOnly
+        );
+    }
+
+    #[test]
+    fn prepared_search_carries_exact_potion_slot_admission_into_engine_config() {
+        let session = active_session();
+        let prepared = prepare_search_combat(
+            &session,
+            RunControlSearchCombatOptions {
+                allowed_potion_slots: Some(1 << 2),
+                ..RunControlSearchCombatOptions::default()
+            },
+        )
+        .expect("masked search should prepare");
+
+        assert_eq!(prepared.config.allowed_potion_slots, Some(1 << 2));
+        assert_eq!(
+            CombatSearchPluginStack::from_config(&prepared.config)
+                .potion
+                .allowed_potion_slots,
+            Some(1 << 2)
         );
     }
 }

@@ -15,6 +15,7 @@ pub(super) fn collect_node_action_surface(
     let legal = filtered_legal_actions(
         stepper.atomic_action_choices(position),
         loop_state.plugins.potion.policy,
+        loop_state.plugins.potion.allowed_potion_slots,
         &node.combat,
     );
     let pending_choice = summarize_pending_choice(&node.engine);

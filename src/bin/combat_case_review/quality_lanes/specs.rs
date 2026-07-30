@@ -87,6 +87,7 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
                 potion: CombatSearchPotionPlugin {
                     policy: CombatSearchV2PotionPolicy::Never,
                     max_potions_used: Some(0),
+                    allowed_potion_slots: None,
                 },
                 phase_guard_plugin: CombatSearchPhaseGuardPluginId::Default,
             },
@@ -102,6 +103,7 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
                 potion: CombatSearchPotionPlugin {
                     policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
                     max_potions_used: Some(2),
+                    allowed_potion_slots: None,
                 },
                 phase_guard_plugin: CombatSearchPhaseGuardPluginId::ChampSplitGuard,
             },
@@ -117,6 +119,7 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
                 potion: CombatSearchPotionPlugin {
                     policy: CombatSearchV2PotionPolicy::Never,
                     max_potions_used: Some(0),
+                    allowed_potion_slots: None,
                 },
                 phase_guard_plugin: CombatSearchPhaseGuardPluginId::Default,
             },
@@ -133,6 +136,7 @@ pub(crate) fn quality_lane_specs() -> [QualityLaneSpec; 4] {
                 potion: CombatSearchPotionPlugin {
                     policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
                     max_potions_used: Some(2),
+                    allowed_potion_slots: None,
                 },
                 phase_guard_plugin: CombatSearchPhaseGuardPluginId::Default,
             },

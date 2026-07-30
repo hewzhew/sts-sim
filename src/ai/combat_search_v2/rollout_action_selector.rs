@@ -37,7 +37,7 @@ pub(super) fn filtered_rollout_legal_actions(
         | CombatSearchRolloutPluginId::ConservativeNoPotion
         | CombatSearchRolloutPluginId::PhaseAwareNoPotion
         | CombatSearchRolloutPluginId::TurnBeamNoPotion => {
-            filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, combat)
+            filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, None, combat)
         }
     }
 }

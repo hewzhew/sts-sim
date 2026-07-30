@@ -62,6 +62,7 @@ fn enumerate_probe_candidates(
         engine,
         combat,
         turn_config.potion_policy,
+        turn_config.allowed_potion_slots,
         legal_action_choices,
         &enumeration.preselection_first_actions,
         &enumeration.preselection_first_action_summaries,
@@ -141,6 +142,7 @@ fn turn_planner_config(
             .turn_plan_probe_per_bucket_limit
             .unwrap_or(TURN_PLAN_PROBE_PER_BUCKET_LIMIT),
         potion_policy: plugins.potion.policy,
+        allowed_potion_slots: plugins.potion.allowed_potion_slots,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
         capture_step_trace: true,

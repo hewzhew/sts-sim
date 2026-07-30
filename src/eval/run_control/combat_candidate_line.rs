@@ -134,6 +134,7 @@ pub(super) fn replay_candidate_line(
             filter_combat_search_legal_actions(
                 vec![candidate],
                 config.potion_policy,
+                config.allowed_potion_slots,
                 &position.combat,
             ),
             config,

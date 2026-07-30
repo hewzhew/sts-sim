@@ -56,6 +56,7 @@ pub(super) fn locate_candidate_cutpoint(
             filter_combat_search_legal_actions(
                 vec![candidate],
                 config.potion_policy,
+                config.allowed_potion_slots,
                 &position.combat,
             ),
             config,

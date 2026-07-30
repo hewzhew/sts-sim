@@ -260,6 +260,7 @@ pub(super) fn legal_non_potion_choices(
     filter_combat_search_legal_actions(
         stepper.atomic_action_choices(position),
         config.potion_policy,
+        config.allowed_potion_slots,
         &position.combat,
     )
     .into_iter()

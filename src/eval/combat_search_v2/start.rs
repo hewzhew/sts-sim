@@ -25,6 +25,7 @@ pub struct CombatSearchV2RunOptions {
     pub satisfaction: Option<CombatSearchV2Satisfaction>,
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
+    pub allowed_potion_slots: Option<u64>,
     pub high_stakes_semantic_potions: bool,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
     pub child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
@@ -55,6 +56,7 @@ impl CombatSearchV2RunOptions {
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
+            allowed_potion_slots: self.allowed_potion_slots.or(defaults.allowed_potion_slots),
             rollout_policy: self.rollout_policy.unwrap_or(defaults.rollout_policy),
             child_rollout_policy: self
                 .child_rollout_policy

@@ -50,6 +50,7 @@ pub(in crate::ai::combat_search_v2) fn build_turn_boundary_portfolio(
         max_end_states: TURN_BOUNDARY_MAX_END_STATES,
         per_bucket_limit: TURN_BOUNDARY_PER_PURPOSE_LIMIT,
         potion_policy: plugins.potion.policy,
+        allowed_potion_slots: plugins.potion.allowed_potion_slots,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
         capture_step_trace: false,
