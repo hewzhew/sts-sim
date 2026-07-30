@@ -17,6 +17,11 @@ use sts_combat_planner::{
 use sts_oracle_runtime::ai::card_semantics_v1::{
     potion_acquisition_traits_v1, PotionAcquisitionTraitV1,
 };
+use sts_oracle_runtime::ai::potion_continuation_context_v1::{
+    PotionRunContinuationContextV1, POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_NAME,
+    POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_VERSION,
+};
+use sts_oracle_runtime::ai::route_window_facts::RouteWindowCoverageKind;
 use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit, DeckStrategicDeficit,
 };
@@ -24,7 +29,7 @@ use sts_oracle_runtime::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use sts_oracle_runtime::content::cards::{get_card_definition, is_starter_basic, CardType};
 use sts_oracle_runtime::content::potions::{Potion, PotionId};
 use sts_oracle_runtime::content::relics::{energy_master_delta, RelicId};
-use sts_oracle_runtime::eval::combat_case::load_combat_case;
+use sts_oracle_runtime::eval::combat_case::{load_combat_case, CombatCase};
 use sts_oracle_runtime::eval::run_control::{
     existing_combat_knowledge_policy_v1, oracle_potion_rescue_tier_v1, OraclePotionRescueTierV1,
 };
@@ -35,7 +40,7 @@ use sts_oracle_runtime::state::core::ClientInput;
 
 use super::combat_graph_search_spec::LocalGraphSearchSpec;
 
-const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV4";
+const SCHEMA_NAME: &str = "OracleCombatCasePotionExpenditureAuditV5";
 
 #[derive(Debug, Args)]
 pub(super) struct CombatCasePotionExpenditureAuditArgs {
@@ -299,6 +304,7 @@ enum PotionSpendAdjudicationV1 {
         break_even_retained_value_hp: i32,
         final_turn_delta: i64,
         potion_expenditures: usize,
+        retained_value_evidence: PotionRetainedValueEvidenceV1,
     },
     ExcludedFromVictorySpend,
 }
@@ -345,6 +351,8 @@ struct PotionAuditLaneResultV1 {
 #[derive(Clone, Debug, Serialize)]
 struct PotionAuditLimitationsV1 {
     lane_absence_is_budget_unknown_unless_frontier_exhausted: bool,
+    run_context_rejected_on_exact_root_mismatch: bool,
+    retained_value_evidence_is_non_authoritative: bool,
     continuation_value_not_in_combat_case: Vec<&'static str>,
     passive_consumption_handling: &'static str,
 }
@@ -397,11 +405,64 @@ struct PotionContinuationContextV1 {
     inventory: PotionInventoryPressureV1,
     relics: PotionRelicContextV1,
     deck_strategic_deficit: DeckStrategicDeficit,
+    run_level_projection: PotionRunContinuationProjectionV1,
     unavailable_future_context: Vec<PotionContinuationUnknownV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionRunContinuationProjectionStatusV1 {
+    ValidatedExactRoot,
+    UnavailableLegacyCase,
+    RejectedRootMismatch,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionRunContinuationMismatchV1 {
+    field: &'static str,
+    expected: String,
+    observed: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct CombatCasePotionExpenditureAuditV4 {
+struct PotionRunContinuationProjectionV1 {
+    status: PotionRunContinuationProjectionStatusV1,
+    source: Option<&'static str>,
+    attempt_index: Option<usize>,
+    attempt_source: Option<String>,
+    attempt_lane: Option<String>,
+    mismatches: Vec<PotionRunContinuationMismatchV1>,
+    captured_context: Option<PotionRunContinuationContextV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum PotionContinuationEvidenceCoverageV1 {
+    ExactCurrentRoot,
+    PartialCurrentRoot,
+    PartialRunWindow,
+    FutureUnknown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionContinuationDependencyEvidenceV1 {
+    potion_uuid: u32,
+    potion_id: String,
+    dependency: PotionContinuationDependencyV1,
+    coverage: PotionContinuationEvidenceCoverageV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct PotionRetainedValueEvidenceV1 {
+    run_context_status: PotionRunContinuationProjectionStatusV1,
+    route_window_coverage: Option<RouteWindowCoverageKind>,
+    exact_consumed_resources: Vec<PotionResourceV1>,
+    unmatched_expenditure_uuids: Vec<u32>,
+    dependency_evidence: Vec<PotionContinuationDependencyEvidenceV1>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct CombatCasePotionExpenditureAuditV5 {
     schema_name: &'static str,
     case: PathBuf,
     root_exact_state_hash: String,
@@ -417,7 +478,7 @@ pub(super) struct CombatCasePotionExpenditureAuditV4 {
 
 pub(super) fn run(
     args: CombatCasePotionExpenditureAuditArgs,
-) -> Result<CombatCasePotionExpenditureAuditV4, String> {
+) -> Result<CombatCasePotionExpenditureAuditV5, String> {
     let CombatCasePotionExpenditureAuditArgs {
         case,
         max_combination_size,
@@ -447,8 +508,14 @@ pub(super) fn run(
     let initial_hp = loaded.position.combat.entities.player.current_hp;
     let initial_player_turn = loaded.position.combat.turn.turn_count;
     let root_potions = root_potion_resources(&loaded.position)?;
-    let continuation_context =
-        potion_continuation_context(loaded.run.act, loaded.run.floor, &loaded.position);
+    let run_level_projection = project_saved_run_continuation_context(&loaded);
+    let run_level_projection_for_evidence = run_level_projection.clone();
+    let continuation_context = potion_continuation_context(
+        loaded.run.act,
+        loaded.run.floor,
+        &loaded.position,
+        run_level_projection,
+    );
     let lane_specs = build_lane_specs(&root_potions, max_combination_size, max_lanes)?;
     let base_policy = existing_combat_knowledge_policy_v1();
     let mut lanes = Vec::with_capacity(lane_specs.len());
@@ -522,7 +589,11 @@ pub(super) fn run(
 
     annotate_marginal_comparisons(&mut lanes, survival_reserve_hp);
     annotate_pareto_frontier(&mut lanes);
-    annotate_shadow_spend_adjudications(&mut lanes);
+    annotate_shadow_spend_adjudications(
+        &mut lanes,
+        &root_potions,
+        &run_level_projection_for_evidence,
+    );
     annotate_policy_review_flags(&mut lanes);
     validate_expectations(
         &lanes,
@@ -539,7 +610,7 @@ pub(super) fn run(
         })
         .collect();
 
-    Ok(CombatCasePotionExpenditureAuditV4 {
+    Ok(CombatCasePotionExpenditureAuditV5 {
         schema_name: SCHEMA_NAME,
         case,
         root_exact_state_hash,
@@ -564,9 +635,11 @@ pub(super) fn run(
         pareto_lane_ids,
         limitations: PotionAuditLimitationsV1 {
             lane_absence_is_budget_unknown_unless_frontier_exhausted: true,
+            run_context_rejected_on_exact_root_mismatch: true,
+            retained_value_evidence_is_non_authoritative: true,
             continuation_value_not_in_combat_case: vec![
-                "forced_rest_avoidance",
-                "planned_elite_or_boss",
+                "forced_rest_avoidance_beyond_route_window",
+                "exact_future_encounter_sequence",
                 "future_potion_reward_identity",
                 "future_encounter_specific_counterplay",
             ],
@@ -580,6 +653,7 @@ fn potion_continuation_context(
     act: u8,
     floor: i32,
     position: &CombatPosition,
+    run_level_projection: PotionRunContinuationProjectionV1,
 ) -> PotionContinuationContextV1 {
     let combat = &position.combat;
     let player = &combat.entities.player;
@@ -613,6 +687,14 @@ fn potion_continuation_context(
             .any(|relic| energy_master_delta(relic.id) > 0),
         has_runic_pyramid: has_relic(RelicId::RunicPyramid),
     };
+    let unavailable_future_context = vec![
+        PotionContinuationUnknownV1::NextEncounterIdentity,
+        PotionContinuationUnknownV1::RouteBeforeNextEliteOrBoss,
+        PotionContinuationUnknownV1::FuturePotionDropRollAndIdentity,
+        PotionContinuationUnknownV1::FuturePotionReplacementCandidate,
+        PotionContinuationUnknownV1::FutureHandAndDrawOrder,
+        PotionContinuationUnknownV1::FutureRestSiteAvailability,
+    ];
 
     PotionContinuationContextV1 {
         act,
@@ -636,14 +718,153 @@ fn potion_continuation_context(
             potion_belt: has_relic(RelicId::PotionBelt),
         },
         deck_strategic_deficit: assess_deck_strategic_deficit(deck, strategic_facts),
-        unavailable_future_context: vec![
-            PotionContinuationUnknownV1::NextEncounterIdentity,
-            PotionContinuationUnknownV1::RouteBeforeNextEliteOrBoss,
-            PotionContinuationUnknownV1::FuturePotionDropRollAndIdentity,
-            PotionContinuationUnknownV1::FuturePotionReplacementCandidate,
-            PotionContinuationUnknownV1::FutureHandAndDrawOrder,
-            PotionContinuationUnknownV1::FutureRestSiteAvailability,
-        ],
+        run_level_projection,
+        unavailable_future_context,
+    }
+}
+
+fn project_saved_run_continuation_context(case: &CombatCase) -> PotionRunContinuationProjectionV1 {
+    let from_attempt = case
+        .combat_search_attempts
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, attempt)| attempt.potion_continuation_context.is_some());
+    let (source, attempt_index, attempt) = match from_attempt {
+        Some((index, attempt)) => (Some("combat_search_attempts"), Some(index), Some(attempt)),
+        None => (
+            Some("failed_search"),
+            None,
+            case.failed_search
+                .as_ref()
+                .filter(|attempt| attempt.potion_continuation_context.is_some()),
+        ),
+    };
+    let Some(attempt) = attempt else {
+        return PotionRunContinuationProjectionV1 {
+            status: PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase,
+            source: None,
+            attempt_index: None,
+            attempt_source: None,
+            attempt_lane: None,
+            mismatches: Vec::new(),
+            captured_context: None,
+        };
+    };
+    let context = attempt
+        .potion_continuation_context
+        .as_ref()
+        .expect("filtered continuation context")
+        .clone();
+    let mut mismatches = validate_saved_run_continuation_context(case, &context);
+    let conflicting_contexts = case
+        .combat_search_attempts
+        .iter()
+        .filter_map(|attempt| attempt.potion_continuation_context.as_ref())
+        .chain(
+            case.failed_search
+                .as_ref()
+                .and_then(|attempt| attempt.potion_continuation_context.as_ref()),
+        )
+        .filter(|other| *other != &context)
+        .count();
+    if conflicting_contexts > 0 {
+        mismatches.push(PotionRunContinuationMismatchV1 {
+            field: "trace_context_consistency",
+            expected: "all captured contexts identical".to_owned(),
+            observed: format!("{conflicting_contexts} conflicting context(s)"),
+        });
+    }
+    let status = if mismatches.is_empty() {
+        PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+    } else {
+        PotionRunContinuationProjectionStatusV1::RejectedRootMismatch
+    };
+
+    PotionRunContinuationProjectionV1 {
+        status,
+        source,
+        attempt_index,
+        attempt_source: Some(attempt.source.clone()),
+        attempt_lane: attempt.lane.clone(),
+        mismatches,
+        captured_context: Some(context),
+    }
+}
+
+fn validate_saved_run_continuation_context(
+    case: &CombatCase,
+    context: &PotionRunContinuationContextV1,
+) -> Vec<PotionRunContinuationMismatchV1> {
+    let combat = &case.position.combat;
+    let expected_occupied_slots = combat
+        .entities
+        .potions
+        .iter()
+        .filter(|slot| slot.is_some())
+        .count();
+    let mut mismatches = Vec::new();
+    push_context_mismatch(
+        &mut mismatches,
+        "schema_name",
+        POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_NAME,
+        context.schema_name.as_str(),
+    );
+    push_context_mismatch(
+        &mut mismatches,
+        "schema_version",
+        POTION_RUN_CONTINUATION_CONTEXT_SCHEMA_VERSION,
+        context.schema_version,
+    );
+    push_context_mismatch(
+        &mut mismatches,
+        "capture_boundary",
+        "before_combat_search",
+        context.capture_boundary.as_str(),
+    );
+    push_context_mismatch(&mut mismatches, "act", case.run.act, context.act);
+    push_context_mismatch(&mut mismatches, "floor", case.run.floor, context.floor);
+    push_context_mismatch(
+        &mut mismatches,
+        "current_hp",
+        combat.entities.player.current_hp,
+        context.current_hp,
+    );
+    push_context_mismatch(
+        &mut mismatches,
+        "max_hp",
+        combat.entities.player.max_hp,
+        context.max_hp,
+    );
+    push_context_mismatch(
+        &mut mismatches,
+        "slot_capacity",
+        combat.entities.potions.len(),
+        context.inventory.slot_capacity,
+    );
+    push_context_mismatch(
+        &mut mismatches,
+        "occupied_slots",
+        expected_occupied_slots,
+        context.inventory.occupied_slots,
+    );
+    mismatches
+}
+
+fn push_context_mismatch<T>(
+    mismatches: &mut Vec<PotionRunContinuationMismatchV1>,
+    field: &'static str,
+    expected: T,
+    observed: T,
+) where
+    T: PartialEq + ToString,
+{
+    if expected != observed {
+        mismatches.push(PotionRunContinuationMismatchV1 {
+            field,
+            expected: expected.to_string(),
+            observed: observed.to_string(),
+        });
     }
 }
 
@@ -1179,7 +1400,11 @@ fn annotate_pareto_frontier(lanes: &mut [PotionAuditLaneResultV1]) {
     }
 }
 
-fn annotate_shadow_spend_adjudications(lanes: &mut [PotionAuditLaneResultV1]) {
+fn annotate_shadow_spend_adjudications(
+    lanes: &mut [PotionAuditLaneResultV1],
+    root_potions: &[PotionResourceV1],
+    run_level_projection: &PotionRunContinuationProjectionV1,
+) {
     for lane in lanes {
         let Some(witness) = lane.witness.as_mut() else {
             continue;
@@ -1224,10 +1449,115 @@ fn annotate_shadow_spend_adjudications(lanes: &mut [PotionAuditLaneResultV1]) {
                     break_even_retained_value_hp: final_hp_delta,
                     final_turn_delta,
                     potion_expenditures: witness.potion_expenditures.len(),
+                    retained_value_evidence: retained_value_evidence(
+                        witness,
+                        root_potions,
+                        run_level_projection,
+                    ),
                 }
             }
         };
         witness.shadow_spend_adjudication = Some(adjudication);
+    }
+}
+
+fn retained_value_evidence(
+    witness: &PotionAuditWitnessV1,
+    root_potions: &[PotionResourceV1],
+    run_level_projection: &PotionRunContinuationProjectionV1,
+) -> PotionRetainedValueEvidenceV1 {
+    let run_context_status = run_level_projection.status;
+    let route_window_coverage = run_level_projection
+        .captured_context
+        .as_ref()
+        .filter(|_| {
+            run_context_status == PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+        })
+        .map(|context| context.route_window.coverage.kind);
+    let expenditure_uuids = witness
+        .potion_expenditures
+        .iter()
+        .map(|event| event.uuid)
+        .collect::<BTreeSet<_>>();
+    let exact_consumed_resources = root_potions
+        .iter()
+        .filter(|resource| expenditure_uuids.contains(&resource.uuid))
+        .cloned()
+        .collect::<Vec<_>>();
+    let matched_uuids = exact_consumed_resources
+        .iter()
+        .map(|resource| resource.uuid)
+        .collect::<BTreeSet<_>>();
+    let unmatched_expenditure_uuids = expenditure_uuids
+        .difference(&matched_uuids)
+        .copied()
+        .collect::<Vec<_>>();
+    let dependency_evidence = exact_consumed_resources
+        .iter()
+        .flat_map(|resource| {
+            resource
+                .continuation_dependencies
+                .iter()
+                .copied()
+                .map(|dependency| PotionContinuationDependencyEvidenceV1 {
+                    potion_uuid: resource.uuid,
+                    potion_id: resource.id.clone(),
+                    dependency,
+                    coverage: continuation_dependency_coverage(
+                        dependency,
+                        run_context_status,
+                        route_window_coverage,
+                    ),
+                })
+        })
+        .collect();
+
+    PotionRetainedValueEvidenceV1 {
+        run_context_status,
+        route_window_coverage,
+        exact_consumed_resources,
+        unmatched_expenditure_uuids,
+        dependency_evidence,
+    }
+}
+
+fn continuation_dependency_coverage(
+    dependency: PotionContinuationDependencyV1,
+    run_context_status: PotionRunContinuationProjectionStatusV1,
+    route_window_coverage: Option<RouteWindowCoverageKind>,
+) -> PotionContinuationEvidenceCoverageV1 {
+    use PotionContinuationDependencyV1 as Dependency;
+    use PotionContinuationEvidenceCoverageV1 as Coverage;
+
+    match dependency {
+        Dependency::CurrentHpDeficit => Coverage::ExactCurrentRoot,
+        Dependency::DeckSynergy
+        | Dependency::HighValueCardTarget
+        | Dependency::LowHpInsuranceNeed
+        | Dependency::OrbPlan
+        | Dependency::StancePlan => Coverage::PartialCurrentRoot,
+        Dependency::EmptyPotionSlotsAndAcquisitionRules
+            if run_context_status
+                == PotionRunContinuationProjectionStatusV1::ValidatedExactRoot =>
+        {
+            Coverage::PartialRunWindow
+        }
+        Dependency::EmptyPotionSlotsAndAcquisitionRules => Coverage::PartialCurrentRoot,
+        Dependency::RouteEscapeValue
+            if route_window_coverage
+                .is_some_and(|kind| kind != RouteWindowCoverageKind::UnavailableMap) =>
+        {
+            Coverage::PartialRunWindow
+        }
+        Dependency::FutureEncounterDamagePattern
+        | Dependency::FutureEnemyCountAndHealth
+        | Dependency::FutureFightLength
+        | Dependency::FutureHandAndDrawOrder
+        | Dependency::FutureDiscardState
+        | Dependency::RandomOutcomePool
+        | Dependency::DebuffTiming
+        | Dependency::RouteEscapeValue
+        | Dependency::OutOfCombatTiming => Coverage::FutureUnknown,
     }
 }
 
@@ -1424,13 +1754,19 @@ mod tests {
     use sts_combat_planner::{
         LocalTurnGraphWitnessConfig, LocalTurnGraphWitnessQuantum, LocalTurnGraphWitnessSession,
     };
+    use sts_oracle_runtime::ai::potion_continuation_context_v1::potion_run_continuation_context_v1;
     use sts_oracle_runtime::ai::strategy::deck_strategic_deficit::StrategicPackageEvidence;
     use sts_oracle_runtime::content::cards::CardId;
     use sts_oracle_runtime::content::monsters::EnemyId;
     use sts_oracle_runtime::content::potions::{Potion, PotionId, ALL_POTIONS};
     use sts_oracle_runtime::content::relics::{RelicId, RelicState};
+    use sts_oracle_runtime::eval::combat_case::{
+        CombatCaseGap, CombatCaseRngSummary, CombatCaseRunSummary, CombatCaseSource,
+    };
+    use sts_oracle_runtime::eval::run_control::CombatSearchTraceSummary;
     use sts_oracle_runtime::runtime::combat::CombatCard;
     use sts_oracle_runtime::state::core::EngineState;
+    use sts_oracle_runtime::state::RunState;
 
     fn resource(slot: usize, id: PotionId, uuid: u32) -> PotionResourceV1 {
         potion_resource(slot, &Potion::new(id, uuid))
@@ -1445,6 +1781,57 @@ mod tests {
             mode: PotionExpenditureModeV1::Use,
             verified_win_rescue_tier: PotionVerifiedWinRescueTierV1::BoundedQuality,
         }
+    }
+
+    fn combat_case_with_trace_run_context() -> CombatCase {
+        let mut run_state = RunState::new(7, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.floor_num = 32;
+        let mut combat = sts_oracle_runtime::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 31;
+        combat.entities.player.max_hp = 72;
+        combat.entities.potions = vec![Some(Potion::new(PotionId::RegenPotion, 50)), None];
+        let context = potion_run_continuation_context_v1(&run_state, &combat);
+        let attempt = CombatSearchTraceSummary {
+            source: "search_combat".to_owned(),
+            lane: Some("no_potion_primary".to_owned()),
+            potion_continuation_context: Some(context),
+            ..CombatSearchTraceSummary::default()
+        };
+        let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
+
+        CombatCase::new(
+            CombatCaseSource {
+                seed: 7,
+                ascension: 0,
+                generation: 1,
+                branch_id: 0,
+                parent_id: None,
+            },
+            CombatCaseGap {
+                boundary: "Combat".to_owned(),
+                reason: "no win".to_owned(),
+                search_nodes: 100,
+                search_ms: 10,
+                rescue_search_nodes: 100,
+                rescue_search_ms: 10,
+            },
+            CombatCaseRunSummary {
+                act: run_state.act_num,
+                floor: run_state.floor_num,
+                hp: position.combat.entities.player.current_hp,
+                max_hp: position.combat.entities.player.max_hp,
+                gold: run_state.gold,
+                deck_size: run_state.master_deck.len(),
+                relic_count: run_state.relics.len(),
+                potion_slots: position.combat.entities.potions.len(),
+            },
+            vec![attempt.clone()],
+            Some(attempt),
+            Vec::new(),
+            CombatCaseRngSummary::from_pool(&run_state.rng_pool),
+            position,
+        )
     }
 
     fn policy_lane(
@@ -1497,7 +1884,20 @@ mod tests {
     }
 
     fn shadow_adjudication(mut lane: PotionAuditLaneResultV1) -> PotionSpendAdjudicationV1 {
-        annotate_shadow_spend_adjudications(std::slice::from_mut(&mut lane));
+        let run_level_projection = PotionRunContinuationProjectionV1 {
+            status: PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase,
+            source: None,
+            attempt_index: None,
+            attempt_source: None,
+            attempt_lane: None,
+            mismatches: Vec::new(),
+            captured_context: None,
+        };
+        annotate_shadow_spend_adjudications(
+            std::slice::from_mut(&mut lane),
+            &[],
+            &run_level_projection,
+        );
         lane.witness
             .unwrap()
             .shadow_spend_adjudication
@@ -1604,7 +2004,20 @@ mod tests {
             .add_relic(RelicState::new(RelicId::Sozu));
         let position = CombatPosition::new(EngineState::CombatPlayerTurn, combat);
 
-        let context = potion_continuation_context(2, 32, &position);
+        let context = potion_continuation_context(
+            2,
+            32,
+            &position,
+            PotionRunContinuationProjectionV1 {
+                status: PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase,
+                source: None,
+                attempt_index: None,
+                attempt_source: None,
+                attempt_lane: None,
+                mismatches: Vec::new(),
+                captured_context: None,
+            },
+        );
 
         assert_eq!(
             context.current_combat_stake,
@@ -1629,6 +2042,137 @@ mod tests {
         assert!(context
             .unavailable_future_context
             .contains(&PotionContinuationUnknownV1::NextEncounterIdentity));
+        assert!(context
+            .unavailable_future_context
+            .contains(&PotionContinuationUnknownV1::RouteBeforeNextEliteOrBoss));
+        assert_eq!(
+            context.run_level_projection.status,
+            PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase
+        );
+    }
+
+    #[test]
+    fn saved_run_context_is_used_only_when_it_matches_the_exact_combat_root() {
+        let case = combat_case_with_trace_run_context();
+
+        let projection = project_saved_run_continuation_context(&case);
+
+        assert_eq!(
+            projection.status,
+            PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+        );
+        assert_eq!(projection.source, Some("combat_search_attempts"));
+        assert_eq!(projection.attempt_index, Some(0));
+        assert_eq!(
+            projection.attempt_lane.as_deref(),
+            Some("no_potion_primary")
+        );
+        assert!(projection.mismatches.is_empty());
+        assert!(projection.captured_context.is_some());
+
+        let mut mismatched_case = case;
+        mismatched_case.combat_search_attempts[0]
+            .potion_continuation_context
+            .as_mut()
+            .unwrap()
+            .current_hp += 1;
+        let rejected = project_saved_run_continuation_context(&mismatched_case);
+
+        assert_eq!(
+            rejected.status,
+            PotionRunContinuationProjectionStatusV1::RejectedRootMismatch
+        );
+        assert!(rejected
+            .mismatches
+            .iter()
+            .any(|mismatch| mismatch.field == "current_hp"));
+        assert!(rejected
+            .mismatches
+            .iter()
+            .any(|mismatch| mismatch.field == "trace_context_consistency"));
+    }
+
+    #[test]
+    fn legacy_case_without_saved_run_context_stays_explicitly_unavailable() {
+        let mut case = combat_case_with_trace_run_context();
+        case.combat_search_attempts.clear();
+        case.failed_search = None;
+
+        let projection = project_saved_run_continuation_context(&case);
+
+        assert_eq!(
+            projection.status,
+            PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase
+        );
+        assert!(projection.captured_context.is_none());
+        assert!(projection.mismatches.is_empty());
+    }
+
+    #[test]
+    fn retained_value_evidence_keeps_exact_identity_and_dependency_uncertainty() {
+        let case = combat_case_with_trace_run_context();
+        let projection = project_saved_run_continuation_context(&case);
+        let regen = resource(0, PotionId::RegenPotion, 50);
+        let mut regen_event = expenditure(50);
+        regen_event.slot = 0;
+        regen_event.id = "RegenPotion".to_owned();
+        let lane = policy_lane(
+            "regen",
+            regen_event,
+            VerifiedWinPotionDispositionV1::ContainsReservedResource,
+            PotionMarginalAssessmentV1::ImprovesFinalHp,
+            3,
+            true,
+        );
+
+        let evidence = retained_value_evidence(
+            lane.witness.as_ref().unwrap(),
+            std::slice::from_ref(&regen),
+            &projection,
+        );
+
+        assert_eq!(
+            evidence.run_context_status,
+            PotionRunContinuationProjectionStatusV1::ValidatedExactRoot
+        );
+        assert_eq!(evidence.exact_consumed_resources, vec![regen]);
+        assert!(evidence.unmatched_expenditure_uuids.is_empty());
+        assert!(evidence.dependency_evidence.iter().any(|dependency| {
+            dependency.dependency == PotionContinuationDependencyV1::CurrentHpDeficit
+                && dependency.coverage == PotionContinuationEvidenceCoverageV1::ExactCurrentRoot
+        }));
+        assert!(evidence.dependency_evidence.iter().any(|dependency| {
+            dependency.dependency == PotionContinuationDependencyV1::FutureFightLength
+                && dependency.coverage == PotionContinuationEvidenceCoverageV1::FutureUnknown
+        }));
+    }
+
+    #[test]
+    fn dependency_coverage_does_not_overclaim_missing_route_or_supply_facts() {
+        assert_eq!(
+            continuation_dependency_coverage(
+                PotionContinuationDependencyV1::RouteEscapeValue,
+                PotionRunContinuationProjectionStatusV1::ValidatedExactRoot,
+                Some(RouteWindowCoverageKind::CompleteWithinHorizon),
+            ),
+            PotionContinuationEvidenceCoverageV1::PartialRunWindow
+        );
+        assert_eq!(
+            continuation_dependency_coverage(
+                PotionContinuationDependencyV1::RouteEscapeValue,
+                PotionRunContinuationProjectionStatusV1::ValidatedExactRoot,
+                Some(RouteWindowCoverageKind::UnavailableMap),
+            ),
+            PotionContinuationEvidenceCoverageV1::FutureUnknown
+        );
+        assert_eq!(
+            continuation_dependency_coverage(
+                PotionContinuationDependencyV1::EmptyPotionSlotsAndAcquisitionRules,
+                PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase,
+                None,
+            ),
+            PotionContinuationEvidenceCoverageV1::PartialCurrentRoot
+        );
     }
 
     #[test]
@@ -1846,14 +2390,28 @@ mod tests {
             3,
             true,
         );
+        let PotionSpendAdjudicationV1::CompareContinuationValue {
+            immediate_hp_gain,
+            break_even_retained_value_hp,
+            final_turn_delta,
+            potion_expenditures,
+            retained_value_evidence,
+        } = shadow_adjudication(continuation)
+        else {
+            panic!("expected continuation-value comparison");
+        };
+        assert_eq!(immediate_hp_gain, 10);
+        assert_eq!(break_even_retained_value_hp, 10);
+        assert_eq!(final_turn_delta, 3);
+        assert_eq!(potion_expenditures, 1);
         assert_eq!(
-            shadow_adjudication(continuation),
-            PotionSpendAdjudicationV1::CompareContinuationValue {
-                immediate_hp_gain: 10,
-                break_even_retained_value_hp: 10,
-                final_turn_delta: 3,
-                potion_expenditures: 1,
-            }
+            retained_value_evidence.run_context_status,
+            PotionRunContinuationProjectionStatusV1::UnavailableLegacyCase
+        );
+        assert!(retained_value_evidence.exact_consumed_resources.is_empty());
+        assert_eq!(
+            retained_value_evidence.unmatched_expenditure_uuids,
+            vec![50]
         );
     }
 
