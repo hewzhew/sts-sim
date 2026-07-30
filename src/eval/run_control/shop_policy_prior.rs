@@ -446,6 +446,8 @@ fn shop_action_evidence_v1(
         _ => None,
     };
     let followup = followup_v1(&action.exact.session.engine_state);
+    let opens_only_unclaimable_potion_rewards =
+        super::reward_auto::reward_surface_has_only_unclaimable_potions(&action.exact.session);
     let gold_spent = decision
         .before
         .resources
@@ -467,6 +469,7 @@ fn shop_action_evidence_v1(
         parent,
         &acquisition,
         followup,
+        opens_only_unclaimable_potion_rewards,
         hp_gain,
         max_hp_gain,
         deck_size_delta,
@@ -682,6 +685,7 @@ fn shop_policy_band_v1(
     parent: &RunControlSession,
     acquisition: &ShopPolicyAcquisitionV1,
     followup: ShopPolicyFollowupV1,
+    opens_only_unclaimable_potion_rewards: bool,
     hp_gain: i32,
     max_hp_gain: i32,
     deck_size_delta: isize,
@@ -698,8 +702,15 @@ fn shop_policy_band_v1(
     redundant_upgrade_access: bool,
     purge_target_loss: Option<DeckMutationTargetLossTierV1>,
 ) -> ShopPolicyBandV1 {
+    if opens_only_unclaimable_potion_rewards {
+        return ShopPolicyBandV1::Liability;
+    }
     if matches!(acquisition, ShopPolicyAcquisitionV1::OpenRewards) {
-        return ShopPolicyBandV1::ResolvePendingBoundary;
+        return if pending_shop_rewards_are_actionable(parent) {
+            ShopPolicyBandV1::ResolvePendingBoundary
+        } else {
+            ShopPolicyBandV1::Liability
+        };
     }
     if hp_gain > 0 || max_hp_gain > 0 {
         return ShopPolicyBandV1::ImmediateSurvival;
@@ -745,6 +756,16 @@ fn shop_policy_band_v1(
         return ShopPolicyBandV1::PreserveResources;
     }
     ShopPolicyBandV1::SpeculativePurchase
+}
+
+fn pending_shop_rewards_are_actionable(parent: &RunControlSession) -> bool {
+    let EngineState::Shop(shop) = &parent.engine_state else {
+        return false;
+    };
+    let Some(reward) = shop.pending_reward_overlay.as_ref() else {
+        return false;
+    };
+    !super::reward_auto::reward_state_has_only_unclaimable_potions(&parent.run_state, reward)
 }
 
 fn first_copy_efficient_access(acquisition: &ShopPolicyAcquisitionV1) -> bool {
@@ -892,10 +913,12 @@ const fn shop_band_priority(band: ShopPolicyBandV1) -> u8 {
 mod tests {
     use super::*;
     use crate::content::monsters::factory::EncounterId;
+    use crate::content::potions::{Potion, PotionId};
     use crate::eval::run_control::{build_decision_surface, RunControlConfig};
     use crate::runtime::combat::CombatCard;
     use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
     use crate::state::map::state::MapState;
+    use crate::state::rewards::{RewardItem, RewardState};
     use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
     fn policy_candidates<'a>(
@@ -946,6 +969,155 @@ mod tests {
                 )
             })
             .expect("card position")
+    }
+
+    fn relic_candidate(
+        decision: &ExactShopPolicyDecisionV1,
+        relic: RelicId,
+    ) -> &ShopPolicyActionEvidenceV1 {
+        decision
+            .evidence
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.candidate_key,
+                    DecisionCandidateKey::ShopBuyRelic {
+                        relic: candidate_relic,
+                        ..
+                    } if candidate_relic == relic
+                )
+            })
+            .expect("relic evidence")
+    }
+
+    fn cauldron_decision_with_potions(potions: Vec<Option<Potion>>) -> ExactShopPolicyDecisionV1 {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 300;
+        session.run_state.potions = potions;
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.relics.push(ShopRelic {
+            relic_id: RelicId::Cauldron,
+            price: 150,
+            can_buy: true,
+            blocked_reason: None,
+        });
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        exact_shop_policy_decision_v1(&session, &legal).expect("Cauldron policy")
+    }
+
+    #[test]
+    fn full_inventory_pending_potions_do_not_reopen_before_leaving_shop() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 16;
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::AttackPotion, 1)),
+            Some(Potion::new(PotionId::SpeedPotion, 2)),
+            Some(Potion::new(PotionId::EssenceOfSteel, 3)),
+        ];
+        let mut pending = RewardState::new();
+        pending.items.push(RewardItem::Potion {
+            potion_id: PotionId::LiquidBronze,
+        });
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.pending_reward_overlay = Some(pending);
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_shop_policy_decision_v1(&session, &legal).expect("pending potion shop policy");
+
+        assert!(
+            matches!(
+                decision.evidence[0].candidate_key,
+                DecisionCandidateKey::ShopLeave
+            ),
+            "evidence={:#?}",
+            decision.evidence
+        );
+        assert_eq!(
+            decision
+                .evidence
+                .iter()
+                .find(|candidate| {
+                    matches!(
+                        candidate.candidate_key,
+                        DecisionCandidateKey::ShopOpenRewards
+                    )
+                })
+                .expect("open rewards evidence")
+                .band,
+            ShopPolicyBandV1::Liability
+        );
+    }
+
+    #[test]
+    fn pending_potion_with_empty_slot_reopens_before_leaving_shop() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 16;
+        let mut pending = RewardState::new();
+        pending.items.push(RewardItem::Potion {
+            potion_id: PotionId::LiquidBronze,
+        });
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.pending_reward_overlay = Some(pending);
+        session.engine_state = EngineState::Shop(shop);
+
+        let surface = build_decision_surface(&session);
+        let legal = policy_candidates(&surface);
+        let decision =
+            exact_shop_policy_decision_v1(&session, &legal).expect("pending potion shop policy");
+
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopOpenRewards
+        ));
+        assert_eq!(
+            decision.evidence[0].band,
+            ShopPolicyBandV1::ResolvePendingBoundary
+        );
+    }
+
+    #[test]
+    fn full_inventory_cauldron_is_a_liability_without_a_replacement_policy() {
+        let decision = cauldron_decision_with_potions(vec![
+            Some(Potion::new(PotionId::AttackPotion, 1)),
+            Some(Potion::new(PotionId::SpeedPotion, 2)),
+            Some(Potion::new(PotionId::EssenceOfSteel, 3)),
+        ]);
+        let cauldron = relic_candidate(&decision, RelicId::Cauldron);
+
+        assert_eq!(cauldron.followup, ShopPolicyFollowupV1::Reward);
+        assert_eq!(cauldron.band, ShopPolicyBandV1::Liability);
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopLeave
+        ));
+    }
+
+    #[test]
+    fn cauldron_remains_strategic_when_a_potion_slot_is_available() {
+        let decision = cauldron_decision_with_potions(vec![
+            Some(Potion::new(PotionId::AttackPotion, 1)),
+            Some(Potion::new(PotionId::SpeedPotion, 2)),
+            None,
+        ]);
+        let cauldron = relic_candidate(&decision, RelicId::Cauldron);
+
+        assert_eq!(cauldron.band, ShopPolicyBandV1::EstablishStrategicAsset);
+        assert!(matches!(
+            decision.evidence[0].candidate_key,
+            DecisionCandidateKey::ShopBuyRelic {
+                relic: RelicId::Cauldron,
+                ..
+            }
+        ));
     }
 
     #[test]

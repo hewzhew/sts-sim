@@ -4,8 +4,8 @@ use crate::ai::reward_policy_v1::{
 };
 use crate::content::relics::RelicId;
 use crate::state::core::{ClientInput, EngineState};
-use crate::state::rewards::RewardCard;
-use crate::state::rewards::RewardItem;
+use crate::state::rewards::{RewardCard, RewardItem, RewardState};
+use crate::state::run::RunState;
 
 use super::session::{RunControlSession, RunProgressOutcome};
 use super::trace_annotation::RunControlTraceAnnotationV1;
@@ -122,7 +122,14 @@ pub fn reward_surface_has_only_unclaimable_potions(session: &RunControlSession) 
         EngineState::RewardOverlay { reward_state, .. } => reward_state,
         _ => return false,
     };
-    let context = build_reward_decision_context_v1(&session.run_state, reward);
+    reward_state_has_only_unclaimable_potions(&session.run_state, reward)
+}
+
+pub(super) fn reward_state_has_only_unclaimable_potions(
+    run_state: &RunState,
+    reward: &RewardState,
+) -> bool {
+    let context = build_reward_decision_context_v1(run_state, reward);
     !context.candidates.is_empty()
         && context.candidates.iter().all(|candidate| {
             matches!(

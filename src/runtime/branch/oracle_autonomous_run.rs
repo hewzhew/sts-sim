@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -24,18 +25,21 @@ pub(super) fn apply_owner_steps(
         return Err("oracle owner steps must be positive".to_string());
     }
     let current = workspace.view()?;
-    apply_owner_steps_from(workspace, current, steps)
+    let mut visited_nodes = BTreeSet::new();
+    apply_owner_steps_from(workspace, current, steps, &mut visited_nodes)
 }
 
 fn apply_owner_steps_from(
     workspace: &mut OracleAnalysisWorkspaceV1,
     mut current: OracleAnalysisNodeViewV1,
     steps: u8,
+    visited_nodes: &mut BTreeSet<usize>,
 ) -> Result<OwnerBatchResult, String> {
     debug_assert!(steps > 0);
 
     let mut applied = Vec::new();
     let mut stopped = "step_limit".to_string();
+    visited_nodes.insert(current.node_id);
     for _ in 0..steps {
         let matching = current
             .choices
@@ -71,6 +75,10 @@ fn apply_owner_steps_from(
             "candidate_id": candidate_id,
             "label": label,
         }));
+        if !visited_nodes.insert(current.node_id) {
+            stopped = format!("owner_node_cycle={}", current.node_id);
+            break;
+        }
     }
     let applied_count = applied.len();
     Ok(OwnerBatchResult {
@@ -152,6 +160,7 @@ pub fn run_oracle_analysis_to_stop_v1(
     let start_node = node.node_id;
     let mut owner_decisions = 0_u64;
     let mut combats = Vec::new();
+    let mut owner_visited_nodes = BTreeSet::new();
 
     for _ in 0..config.max_boundaries {
         if run_wall_budget_reached(run_started, config.run_wall_ms) {
@@ -185,11 +194,24 @@ pub fn run_oracle_analysis_to_stop_v1(
 
         if !node.choices.is_empty() {
             let owner_started = Instant::now();
-            let owner = apply_owner_steps_from(workspace, node, 64)?;
+            let owner = apply_owner_steps_from(workspace, node, 64, &mut owner_visited_nodes)?;
             timing.owner_ms = timing
                 .owner_ms
                 .saturating_add(elapsed_millis(owner_started));
             node = owner.current;
+            owner_decisions = owner_decisions.saturating_add(owner.applied_count as u64);
+            if owner.stopped.starts_with("owner_node_cycle=") {
+                return Ok(stopped_autonomous_run_report(
+                    start_node,
+                    &node,
+                    owner_decisions,
+                    &combats,
+                    &timing,
+                    elapsed_millis(run_started),
+                    config.run_wall_ms,
+                    "owner_node_cycle",
+                ));
+            }
             if owner.applied_count == 0 {
                 return Ok(stopped_autonomous_run_report(
                     start_node,
@@ -202,7 +224,6 @@ pub fn run_oracle_analysis_to_stop_v1(
                     "owner_choice_missing_or_ambiguous",
                 ));
             }
-            owner_decisions = owner_decisions.saturating_add(owner.applied_count as u64);
             continue;
         }
 
@@ -531,7 +552,17 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{apply_owner_steps, run_wall_budget_reached, AutonomousRunTiming};
+    use crate::content::potions::{Potion, PotionId};
+    use crate::eval::run_control::{
+        positive_ranked_run_policy_prior_v1, seed_oracle_run_explorer_from_session_v1,
+        OracleAnalysisSessionV1, RunControlConfig, RunControlSession, RunPolicyCandidateV1,
+        RunPolicyPriorV1, RunProgressJournalV1,
+    };
+    use crate::runtime::branch::oracle_run::oracle_combat_budgets;
     use crate::runtime::branch::{OracleAnalysisWorkspaceV1, OracleRunBudget, OracleRunConfig};
+    use crate::state::core::EngineState;
+    use crate::state::rewards::{RewardItem, RewardState};
+    use crate::state::shop::ShopState;
 
     #[test]
     fn owner_batch_returns_the_current_workspace_view() {
@@ -549,6 +580,79 @@ mod tests {
         assert_eq!(batch.current.boundary, reloaded.boundary);
         assert_eq!(batch.current.current_hp, reloaded.current_hp);
         assert_eq!(batch.applied_count, batch.applied.len());
+    }
+
+    #[test]
+    fn owner_batch_stops_on_a_multi_node_policy_cycle() {
+        fn cycling_prior(
+            session: &RunControlSession,
+            legal: &[RunPolicyCandidateV1<'_>],
+        ) -> Result<RunPolicyPriorV1, String> {
+            let preferred = match session.engine_state {
+                EngineState::Shop(_) => vec!["rewards".to_string()],
+                EngineState::RewardOverlay { .. } => vec!["back".to_string()],
+                _ => Vec::new(),
+            };
+            positive_ranked_run_policy_prior_v1(legal, preferred)
+        }
+
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.gold = 16;
+        session.run_state.potions = vec![
+            Some(Potion::new(PotionId::AttackPotion, 1)),
+            Some(Potion::new(PotionId::SpeedPotion, 2)),
+            Some(Potion::new(PotionId::EssenceOfSteel, 3)),
+        ];
+        let mut pending = RewardState::new();
+        pending.items.push(RewardItem::Potion {
+            potion_id: PotionId::LiquidBronze,
+        });
+        let mut shop = ShopState::new();
+        shop.purge_available = false;
+        shop.pending_reward_overlay = Some(pending);
+        session.engine_state = EngineState::Shop(shop);
+
+        let config = OracleRunConfig {
+            seed: 20260730006,
+            ascension: 0,
+            budget: OracleRunBudget::default(),
+        };
+        let combat_budgets = oracle_combat_budgets(&config);
+        let explorer = seed_oracle_run_explorer_from_session_v1(
+            session,
+            RunProgressJournalV1::default(),
+            &combat_budgets,
+            Some(cycling_prior),
+        )
+        .expect("cycle test explorer");
+        let analysis = OracleAnalysisSessionV1::from_explorer(
+            explorer,
+            None,
+            combat_budgets,
+            Some(cycling_prior),
+            None,
+        )
+        .expect("cycle test analysis session");
+        let mut workspace = OracleAnalysisWorkspaceV1 {
+            seed: config.seed,
+            ascension: config.ascension,
+            budget: config.budget,
+            combat_guidance_bundle: None,
+            session: analysis,
+        };
+        let start_node = workspace.view().expect("cycle start view").node_id;
+
+        let batch = apply_owner_steps(&mut workspace, 8).expect("guarded owner batch");
+
+        assert!(
+            (2..8).contains(&batch.applied_count),
+            "a multi-node cycle should stop before the requested step limit"
+        );
+        assert_ne!(batch.current.node_id, start_node);
+        assert_eq!(
+            batch.stopped,
+            format!("owner_node_cycle={}", batch.current.node_id)
+        );
     }
 
     #[test]
