@@ -1,3 +1,6 @@
+use crate::ai::strategy::boss_damage_plan::{
+    assess_boss_damage_plan_v1, BossDamagePlanEngineReliabilityV1, BossDamagePlanReadinessV1,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatCard, CombatState};
@@ -106,26 +109,21 @@ fn claim(
 }
 
 fn damage_scaling_claim(signals: &AwakenedOneDeckSignals) -> BossMatchupEvidenceClaim {
-    if signals.damage_scaling.is_empty() {
-        claim(
-            "damage_scaling_present",
-            BossMatchupClaimStatus::Unsupported,
-            vec![],
-            vec!["no Demon Form / Limit Break / strength scaling evidence in deck".to_string()],
-            vec![],
-            BossMatchupPolicyConsumability::HumanOnly,
-        )
-    } else {
-        let single_slow =
-            signals.damage_scaling.len() == 1 && signals.damage_scaling[0].id == CardId::DemonForm;
-        claim(
+    let plan = assess_boss_damage_plan_v1(&signals.deck);
+    let single_slow = plan.readiness == BossDamagePlanReadinessV1::Engine
+        && signals.damage_scaling.len() == 1
+        && signals.damage_scaling[0].id == CardId::DemonForm;
+    match plan.readiness {
+        BossDamagePlanReadinessV1::Engine => claim(
             "damage_scaling_present",
             if single_slow {
                 BossMatchupClaimStatus::SingleSlowSource
+            } else if plan.engine_reliability == BossDamagePlanEngineReliabilityV1::Fragile {
+                BossMatchupClaimStatus::WeakSupported
             } else {
                 BossMatchupClaimStatus::Supported
             },
-            card_labels(&signals.damage_scaling),
+            plan.active_plan_labels(),
             if single_slow {
                 vec!["Demon Form is slow and must be survived into value".to_string()]
             } else {
@@ -133,7 +131,23 @@ fn damage_scaling_claim(signals: &AwakenedOneDeckSignals) -> BossMatchupEvidence
             },
             vec![],
             BossMatchupPolicyConsumability::HumanOnly,
-        )
+        ),
+        BossDamagePlanReadinessV1::Support => claim(
+            "damage_scaling_present",
+            BossMatchupClaimStatus::WeakSupported,
+            plan.active_plan_labels(),
+            vec!["support pieces do not establish a repeatable boss damage engine".to_string()],
+            vec![],
+            BossMatchupPolicyConsumability::HumanOnly,
+        ),
+        BossDamagePlanReadinessV1::Fragment | BossDamagePlanReadinessV1::Missing => claim(
+            "damage_scaling_present",
+            BossMatchupClaimStatus::Unsupported,
+            vec![],
+            vec!["no complete repeatable boss damage engine in deck".to_string()],
+            vec![],
+            BossMatchupPolicyConsumability::HumanOnly,
+        ),
     }
 }
 
@@ -426,7 +440,7 @@ fn scaling_multiplier_pressure_claim(signals: &AwakenedOneDeckSignals) -> BossMa
             "damage_scaling_multiplier",
             BossMatchupClaimStatus::Unsupported,
             vec![],
-            vec!["no Limit Break / Spot Weakness evidence".to_string()],
+            vec!["no Limit Break evidence".to_string()],
             vec![],
             BossMatchupPolicyConsumability::ShadowPressure,
         )
@@ -509,8 +523,8 @@ mod tests {
             .find(|claim| claim.id == "damage_scaling_multiplier")
             .expect("scaling multiplier claim");
 
-        assert_eq!(damage.status, BossMatchupClaimStatus::Supported);
-        assert_eq!(damage.support, vec!["Spot Weakness+0"]);
+        assert_eq!(damage.status, BossMatchupClaimStatus::WeakSupported);
+        assert_eq!(damage.support, vec!["repeatable_strength_growth"]);
         assert_eq!(multiplier.status, BossMatchupClaimStatus::Unsupported);
         assert!(multiplier.support.is_empty());
     }

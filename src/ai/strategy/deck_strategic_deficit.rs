@@ -1,6 +1,10 @@
 use serde::Serialize;
 
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, PlayEffect};
+use crate::ai::strategy::boss_damage_plan::{
+    assess_boss_damage_plan_v1, BossDamagePlanEngineReliabilityV1, BossDamagePlanFactsV1,
+    BossDamagePlanReadinessV1,
+};
 use crate::ai::strategy::deck_construction_pressure::{
     assess_deck_construction_pressure, DeckConstructionContext, PressureLevel,
 };
@@ -119,7 +123,8 @@ pub fn assess_deck_strategic_deficit(
     let frontload_units = calibrated_frontload_units(&inventory, &counts);
     let block_or_mitigation_units = block_or_mitigation_units(&inventory, &counts);
     let package_evidence = package_evidence(&inventory, &counts, &exhaust_corruption);
-    let boss_scaling_plan = boss_scaling_level(&package_evidence, &counts);
+    let boss_damage_plan = assess_boss_damage_plan_v1(deck);
+    let boss_scaling_plan = boss_scaling_level(&boss_damage_plan);
     let deck_access = access_level(construction.card_flow.level);
     let energy_or_playability = energy_level(&inventory, &counts);
     let risks = risks(&inventory, &counts, deck_access, &exhaust_corruption);
@@ -164,7 +169,6 @@ struct StrategicCounts {
     has_energy_relic: bool,
     has_corruption: bool,
     has_dark_embrace: bool,
-    has_ritual_dagger: bool,
 }
 
 impl StrategicCounts {
@@ -217,9 +221,6 @@ impl StrategicCounts {
         }
         if card.id == CardId::DarkEmbrace {
             self.has_dark_embrace = true;
-        }
-        if card.id == CardId::RitualDagger {
-            self.has_ritual_dagger = true;
         }
         let semantics = card_definition_with_upgrades(card.id, card.upgrades);
         for effect in semantics.play_effects {
@@ -386,27 +387,16 @@ fn frontload_level(units: u8, act: u8) -> StrategicDeficitLevel {
     }
 }
 
-fn boss_scaling_level(
-    packages: &[StrategicPackageEvidence],
-    counts: &StrategicCounts,
-) -> StrategicDeficitLevel {
-    let strong = packages
-        .iter()
-        .filter(|package| {
-            matches!(
-                package,
-                StrategicPackageEvidence::ExhaustEngine
-                    | StrategicPackageEvidence::StrengthScaling
-                    | StrategicPackageEvidence::BlockEngine
-            )
-        })
-        .count();
-    if strong >= 2 {
-        StrategicDeficitLevel::Adequate
-    } else if strong == 1 || counts.has_ritual_dagger {
-        StrategicDeficitLevel::Thin
-    } else {
-        StrategicDeficitLevel::Missing
+fn boss_scaling_level(plan: &BossDamagePlanFactsV1) -> StrategicDeficitLevel {
+    match (plan.readiness, plan.engine_reliability) {
+        (BossDamagePlanReadinessV1::Engine, BossDamagePlanEngineReliabilityV1::Established) => {
+            StrategicDeficitLevel::Adequate
+        }
+        (BossDamagePlanReadinessV1::Engine, _) => StrategicDeficitLevel::Thin,
+        (BossDamagePlanReadinessV1::Support, _) => StrategicDeficitLevel::Thin,
+        (BossDamagePlanReadinessV1::Fragment | BossDamagePlanReadinessV1::Missing, _) => {
+            StrategicDeficitLevel::Missing
+        }
     }
 }
 
@@ -566,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn triggered_strength_source_counts_as_boss_scaling_evidence() {
+    fn repeatable_strength_growth_is_an_adequate_boss_damage_engine() {
         let deficit = assess_deck_strategic_deficit(
             &[
                 card(CardId::Strike, 1),
@@ -577,7 +567,7 @@ mod tests {
             act3_facts(),
         );
 
-        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Thin);
+        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Adequate);
         assert!(deficit
             .package_evidence
             .contains(&StrategicPackageEvidence::StrengthScaling));

@@ -200,6 +200,7 @@ fn pressure_tags(
     for claim in claims {
         match (claim.capability, claim.status) {
             ("damage_scaling_plan", "missing") => tags.push("missing_damage_scaling_plan"),
+            ("damage_scaling_plan", "uncertain") => tags.push("thin_damage_scaling_plan"),
             ("mitigation_or_strength_down", "missing") => {
                 tags.push("missing_mitigation_or_strength_down")
             }
@@ -225,11 +226,11 @@ fn pressure_tags(
 }
 
 fn conclusion_from_pressure_tags(tags: &[&'static str]) -> &'static str {
-    if tags.contains(&"missing_damage_scaling_plan")
-        && tags.contains(&"missing_defensive_engine_or_repeatable_block")
-    {
+    let damage_plan_open =
+        tags.contains(&"missing_damage_scaling_plan") || tags.contains(&"thin_damage_scaling_plan");
+    if damage_plan_open && tags.contains(&"missing_defensive_engine_or_repeatable_block") {
         "boss_matchup_acquisition_pressure_damage_and_survival"
-    } else if tags.contains(&"missing_damage_scaling_plan") {
+    } else if damage_plan_open {
         "boss_matchup_acquisition_pressure_damage_plan_first"
     } else if tags.contains(&"missing_mitigation_or_strength_down")
         && tags.contains(&"missing_defensive_engine_or_repeatable_block")
@@ -329,6 +330,20 @@ mod tests {
         assert!(report
             .pressure_tags
             .contains(&"missing_defensive_engine_or_repeatable_block"));
+        assert_eq!(
+            report.conclusion,
+            "boss_matchup_acquisition_pressure_damage_and_survival"
+        );
+    }
+
+    #[test]
+    fn exhaust_compression_support_keeps_damage_plan_pressure_open() {
+        let report = boss_matchup_acquisition_pressure_v0_from_deck(
+            vec![card(CardId::DarkEmbrace, 1), card(CardId::TrueGrit, 2)],
+            false,
+        );
+
+        assert!(report.pressure_tags.contains(&"thin_damage_scaling_plan"));
         assert_eq!(
             report.conclusion,
             "boss_matchup_acquisition_pressure_damage_and_survival"

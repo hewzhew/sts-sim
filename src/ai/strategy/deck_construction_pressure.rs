@@ -3,6 +3,10 @@ use crate::ai::analysis::card_semantics::{
     card_definition, card_definition_with_upgrades, CombatEvent, DamageScalingAxis, EventHandler,
     InstalledRule, Mechanic, PlayEffect, TriggeredEffect,
 };
+use crate::ai::strategy::boss_damage_plan::{
+    assess_boss_damage_plan_v1, BossDamagePlanEngineReliabilityV1, BossDamagePlanFactsV1,
+    BossDamagePlanReadinessV1,
+};
 use crate::ai::strategy::reward_admission::{RewardAdmission, RewardAdmissionReason};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::runtime::combat::CombatCard;
@@ -107,7 +111,6 @@ struct DeckConstructionCounts {
     exhaust_fuel: u8,
     exhaust_payoff: u8,
     strength_sources: u8,
-    strength_payoffs: u8,
     strength_multipliers: u8,
     slow_scaling: u8,
     corruption: u8,
@@ -119,10 +122,11 @@ pub fn assess_deck_construction_pressure(
 ) -> DeckConstructionPressure {
     let counts = deck_counts(deck);
     let evidence = axis_evidence(counts);
+    let boss_damage_plan = assess_boss_damage_plan_v1(deck);
 
     DeckConstructionPressure {
         long_fight: AxisPressure {
-            level: long_fight_level(counts, evidence),
+            level: long_fight_level(&boss_damage_plan),
             evidence,
         },
         card_flow: AxisPressure {
@@ -384,10 +388,6 @@ fn deck_counts(deck: &[CombatCard]) -> DeckConstructionCounts {
                 PlayEffect::Provide(Mechanic::StrengthMultiplier) => {
                     counts.strength_multipliers = counts.strength_multipliers.saturating_add(1)
                 }
-                PlayEffect::DamageUses(Mechanic::Strength)
-                | PlayEffect::DamageScalesWith(DamageScalingAxis::PerHitStrength) => {
-                    counts.strength_payoffs = counts.strength_payoffs.saturating_add(1)
-                }
                 PlayEffect::EmitEvent(CombatEvent::CardExhausted)
                 | PlayEffect::PlayTopCardAndExhaust => {
                     counts.exhaust_fuel = counts.exhaust_fuel.saturating_add(1)
@@ -449,22 +449,15 @@ fn axis_evidence(counts: DeckConstructionCounts) -> AxisEvidence {
     }
 }
 
-fn long_fight_level(counts: DeckConstructionCounts, evidence: AxisEvidence) -> PressureLevel {
-    let exhaust_engine = evidence.has_exhaust_fuel && evidence.has_exhaust_payoff;
-    let strength_engine = evidence.has_strength_source && counts.strength_payoffs > 0;
-    let slow_scaling_supported =
-        evidence.has_slow_scaling && (counts.block_sources >= 2 || counts.real_draw > 0);
-    if exhaust_engine || strength_engine || slow_scaling_supported {
-        PressureLevel::Present
-    } else if evidence.has_corruption
-        || evidence.has_slow_scaling
-        || evidence.has_strength_source
-        || evidence.has_strength_multiplier
-        || counts.strength_payoffs > 0
-    {
-        PressureLevel::Thin
-    } else {
-        PressureLevel::Open
+fn long_fight_level(plan: &BossDamagePlanFactsV1) -> PressureLevel {
+    match (plan.readiness, plan.engine_reliability) {
+        (BossDamagePlanReadinessV1::Engine, BossDamagePlanEngineReliabilityV1::Established) => {
+            PressureLevel::Present
+        }
+        (BossDamagePlanReadinessV1::Engine, _)
+        | (BossDamagePlanReadinessV1::Support, _)
+        | (BossDamagePlanReadinessV1::Fragment, _) => PressureLevel::Thin,
+        (BossDamagePlanReadinessV1::Missing, _) => PressureLevel::Open,
     }
 }
 
@@ -589,6 +582,15 @@ fn low_margin_frontload_card(card: CardId) -> bool {
 mod tests {
     use super::*;
 
+    fn pressure_for(ids: &[CardId]) -> DeckConstructionPressure {
+        let deck = ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| CombatCard::new(*id, index as u32 + 1))
+            .collect::<Vec<_>>();
+        assess_deck_construction_pressure(&deck, DeckConstructionContext { act: 3 })
+    }
+
     fn thin_small_cantrip_flow() -> AxisPressure {
         AxisPressure {
             level: PressureLevel::Thin,
@@ -624,5 +626,37 @@ mod tests {
             CardId::FlashOfSteel,
             0
         ));
+    }
+
+    #[test]
+    fn long_fight_pressure_uses_shared_damage_plan_readiness() {
+        assert_eq!(
+            pressure_for(&[CardId::DemonForm, CardId::Strike])
+                .long_fight
+                .level,
+            PressureLevel::Present
+        );
+        assert_eq!(
+            pressure_for(&[CardId::DarkEmbrace, CardId::TrueGrit])
+                .long_fight
+                .level,
+            PressureLevel::Thin
+        );
+        assert_eq!(
+            pressure_for(&[CardId::LimitBreak, CardId::Pummel])
+                .long_fight
+                .level,
+            PressureLevel::Thin
+        );
+        assert_eq!(
+            pressure_for(&[CardId::Inflame, CardId::LimitBreak])
+                .long_fight
+                .level,
+            PressureLevel::Thin
+        );
+        assert_eq!(
+            pressure_for(&[CardId::Strike]).long_fight.level,
+            PressureLevel::Open
+        );
     }
 }
