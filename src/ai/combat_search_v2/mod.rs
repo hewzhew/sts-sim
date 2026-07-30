@@ -250,6 +250,22 @@ pub fn oracle_rollout_witness_proposal_v1(
     max_actions: usize,
     deadline: Option<Instant>,
 ) -> Option<OracleRolloutWitnessProposalV1> {
+    oracle_rollout_witness_proposal_with_potion_contract_v1(
+        position,
+        max_actions,
+        deadline,
+        None,
+        None,
+    )
+}
+
+pub fn oracle_rollout_witness_proposal_with_potion_contract_v1(
+    position: &CombatPosition,
+    max_actions: usize,
+    deadline: Option<Instant>,
+    max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
+) -> Option<OracleRolloutWitnessProposalV1> {
     let config = CombatSearchV2Config::default();
     let mut performance = rollout_profile::RolloutPerformanceCounters::default();
     let baseline = oracle_no_potion_suffix_proposal_v1(
@@ -276,15 +292,19 @@ pub fn oracle_rollout_witness_proposal_v1(
     // encounter (or finds no win). The
     // caller still replays every input and successor hash before accepting a
     // witness.
-    let potion_prefixes = transition::filtered_legal_actions(
-        EngineCombatStepper.atomic_action_choices(position),
-        CombatSearchV2PotionPolicy::All,
-        config.allowed_potion_slots,
-        &position.combat,
-    )
-    .into_iter()
-    .filter(|choice| transition::is_use_potion_input(&choice.input))
-    .collect::<Vec<_>>();
+    let potion_prefixes = if max_potions_used == Some(0) {
+        Vec::new()
+    } else {
+        transition::filtered_legal_actions(
+            EngineCombatStepper.atomic_action_choices(position),
+            CombatSearchV2PotionPolicy::All,
+            allowed_potion_slots,
+            &position.combat,
+        )
+        .into_iter()
+        .filter(|choice| transition::is_use_potion_input(&choice.input))
+        .collect::<Vec<_>>()
+    };
     for choice in potion_prefixes {
         if deadline.is_some_and(|limit| Instant::now() >= limit) || max_actions == 0 {
             break;

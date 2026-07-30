@@ -709,6 +709,63 @@ fn strategic_nonboss_search_conserves_potions_before_exact_rescue() {
 }
 
 #[test]
+fn strategic_rescue_splits_allowance_across_concrete_potion_identities() {
+    let options = RunControlSearchCombatOptions {
+        max_nodes: Some(101),
+        wall_ms: Some(101),
+        ..RunControlSearchCombatOptions::default()
+    };
+    let budgets = OracleRunCombatBudgetsV1 {
+        hallway: options.clone(),
+        elite: options.clone(),
+        boss: options,
+        quality_policy: OracleRunCombatQualityPolicyV1::StrategicRun,
+        initial_divisor: 1,
+        guidance_bundle: None,
+    };
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut combat = crate::test_support::blank_test_combat();
+    combat.entities.potions = vec![
+        Some(crate::content::potions::Potion::new(
+            PotionId::SkillPotion,
+            7,
+        )),
+        Some(crate::content::potions::Potion::new(
+            PotionId::ExplosivePotion,
+            8,
+        )),
+        Some(crate::content::potions::Potion::new(
+            PotionId::FairyPotion,
+            9,
+        )),
+    ];
+    session.active_combat = Some(crate::state::core::ActiveCombat::new(
+        crate::state::core::EngineState::CombatPlayerTurn,
+        combat,
+        crate::state::core::CombatContext::Room(crate::state::core::RoomCombatContext {
+            room_type: crate::state::map::node::RoomType::MonsterRoom,
+        }),
+    ));
+    let prior = empty_combat_work_checkpoint();
+
+    let skill = budgets.for_session_stage_with_prior(&session, 1, &prior);
+    let explosive = budgets.for_session_stage_with_prior(&session, 2, &prior);
+    let no_potion = budgets.for_session_stage(&session, 0);
+
+    assert_eq!(no_potion.max_nodes, Some(51));
+    assert_eq!(no_potion.wall_ms, Some(51));
+    assert_eq!(skill.allowed_potion_slots, Some(0b001));
+    assert_eq!(explosive.allowed_potion_slots, Some(0b010));
+    assert_eq!(skill.max_nodes, Some(51));
+    assert_eq!(explosive.max_nodes, Some(51));
+    assert_eq!(skill.wall_ms, Some(51));
+    assert_eq!(explosive.wall_ms, Some(51));
+    assert!(budgets.has_later_stage(&session, 0));
+    assert!(budgets.has_later_stage(&session, 1));
+    assert!(!budgets.has_later_stage(&session, 2));
+}
+
+#[test]
 fn potion_rescue_tiers_distinguish_common_tactics_from_reserved_resources() {
     for potion in [
         PotionId::FirePotion,

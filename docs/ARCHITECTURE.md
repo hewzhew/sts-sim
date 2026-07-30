@@ -136,6 +136,14 @@ satisfaction requires a clean potion-free witness at the same quality target.
 When several clean witnesses reach that target, run control minimizes potion
 use before applying the ordinary final-HP and persistent-payoff ordering.
 `FindAnyWin` survival rescue keeps its separate first-acceptable-win contract.
+Autonomous refinement gives each active potion identity its own exact search
+stage. Those stages preserve the verified incumbent and divide the configured
+allowance by the number of active identities, then give one equal share to the
+potion-free primary and to each concrete identity. Thus a high-branching potion
+cannot starve a different slot, while the total bounded work is at most
+`1 + 1 / active identities` times one configured allowance and remains under
+the caller's combat wall deadline. Slot order follows deterministic slot
+identity, not a potion value ranking.
 
 Pre-A5 Act 1/2 room Boss victories deterministically restore full HP while
 retaining the potion inventory. Owner-audit therefore searches those boundaries

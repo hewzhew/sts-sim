@@ -1114,8 +1114,11 @@ impl OracleAnalysisSessionV1 {
                 quantum_ms.saturating_mul(u64::try_from(request.max_quanta).unwrap_or(u64::MAX))
             })
         });
-        let resumes_existing_search = self.combat_jobs.contains_key(&source_node_id);
-        if !resumes_existing_search {
+        let preserves_identity_stage_allowance = self
+            .combat_budgets
+            .has_identity_partitioned_potion_allowance(&branch.session);
+        let has_resident_search = self.combat_jobs.contains_key(&source_node_id);
+        if !has_resident_search {
             let stage = 0;
             let work = OracleRunCombatWorkV1::new_with_guidance(
                 &branch.session,
@@ -1126,6 +1129,10 @@ impl OracleAnalysisSessionV1 {
             self.combat_jobs
                 .insert(source_node_id, OracleAnalysisCombatJobV1 { stage, work });
         }
+        let resumes_existing_search = self
+            .combat_jobs
+            .get(&source_node_id)
+            .is_some_and(|job| job.work.quantum_count() > 0);
         let job = self
             .combat_jobs
             .get_mut(&source_node_id)
@@ -1133,10 +1140,12 @@ impl OracleAnalysisSessionV1 {
         if resumes_existing_search {
             job.work.mark_search_resume_exact();
         }
-        job.work.ensure_requested_allowance(
-            requested_nodes,
-            requested_wall_ms.map(Duration::from_millis),
-        );
+        if resumes_existing_search || !preserves_identity_stage_allowance {
+            job.work.ensure_requested_allowance(
+                requested_nodes,
+                requested_wall_ms.map(Duration::from_millis),
+            );
+        }
         let started = Instant::now();
         let deadline = request
             .wall_ms
@@ -1157,14 +1166,8 @@ impl OracleAnalysisSessionV1 {
                 && quanta_served.saturating_add(1) == request.max_quanta
                 && self.promote_combat_job_if_needed(source_node_id)?
             {
-                self.combat_jobs
-                    .get_mut(&source_node_id)
-                    .expect("promoted analysis combat job exists")
-                    .work
-                    .ensure_requested_allowance(
-                        requested_nodes,
-                        requested_wall_ms.map(Duration::from_millis),
-                    );
+                // Promotion is the work: the reserved final quantum below is
+                // served against the next configured exact stage.
             }
             let job = self
                 .combat_jobs
@@ -1184,14 +1187,6 @@ impl OracleAnalysisSessionV1 {
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
                     quanta_served = quanta_served.saturating_add(1);
                     if self.promote_combat_job_if_needed(source_node_id)? {
-                        self.combat_jobs
-                            .get_mut(&source_node_id)
-                            .expect("promoted analysis combat job exists")
-                            .work
-                            .ensure_requested_allowance(
-                                requested_nodes,
-                                requested_wall_ms.map(Duration::from_millis),
-                            );
                         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                             break;
                         }

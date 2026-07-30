@@ -448,18 +448,21 @@ impl OracleRunCombatWorkV1 {
             MAX_POLICY_ACTIONS,
             self.max_transition_steps,
             deadline,
+            self.max_potions_used,
+            self.allowed_potion_slots,
         );
         if let Some(remaining) = &mut self.remaining_wall_time {
             *remaining = remaining.saturating_sub(started.elapsed());
         }
-        let Some(proposal) = (match proposal_result {
+        let proposal = match proposal_result {
             Ok(proposal) => proposal,
             Err(_) => {
                 self.policy_witness_proposal_rejections =
                     self.policy_witness_proposal_rejections.saturating_add(1);
                 None
             }
-        }) else {
+        };
+        let Some(proposal) = proposal else {
             return;
         };
         if !combat_witness_within_potion_contract(
@@ -713,7 +716,12 @@ impl OracleRunCombatWorkV1 {
             && self.current_local_search_work() >= quantum.additional_nodes;
         let quality_satisfied = !stop_on_first_witness
             && self.best_witness().is_some_and(|witness| {
-                combat_witness_satisfies(self.satisfaction, &self.start, witness)
+                combat_witness_ends_quality_refinement(
+                    &self.start,
+                    self.satisfaction,
+                    self.potion_spend_requires_satisfaction,
+                    witness,
+                )
             });
         let quality_challenge_complete = self.best_witness().is_none_or(|witness| {
             witness.discovery_source != OracleCombatWitnessDiscoverySource::PolicyProposal
@@ -776,9 +784,14 @@ impl OracleRunCombatWorkV1 {
         self.best_witness().is_some()
     }
 
-    pub(super) fn has_quality_satisfying_witness(&self) -> bool {
+    pub(super) fn has_refinement_ending_witness(&self) -> bool {
         self.best_witness().is_some_and(|witness| {
-            combat_witness_satisfies(self.satisfaction, &self.start, witness)
+            combat_witness_ends_quality_refinement(
+                &self.start,
+                self.satisfaction,
+                self.potion_spend_requires_satisfaction,
+                witness,
+            )
         })
     }
 
@@ -1176,6 +1189,17 @@ fn combat_witness_better_with_potion_quality_gate(
     combat_witness_better(start, left, right)
 }
 
+fn combat_witness_ends_quality_refinement(
+    start: &crate::sim::combat::CombatPosition,
+    satisfaction: PortfolioWitnessSatisfactionV1,
+    potion_spend_requires_satisfaction: bool,
+    witness: &OracleCombatWitness,
+) -> bool {
+    combat_witness_satisfies(satisfaction, start, witness)
+        && (!potion_spend_requires_satisfaction
+            || combat_witness_potion_expenditures(start, witness) == 0)
+}
+
 fn combat_witness_potion_expenditures(
     start: &crate::sim::combat::CombatPosition,
     witness: &OracleCombatWitness,
@@ -1430,6 +1454,7 @@ mod tests {
         let baseline = synthetic_witness(&start, 50, false);
         let marginal_spend = synthetic_witness(&start, 55, true);
         let quality_spend = synthetic_witness(&start, 65, true);
+        let quality_clean = synthetic_witness(&start, 65, false);
         let satisfaction = PortfolioWitnessSatisfactionV1::HpLossAtMost(20);
 
         assert!(
@@ -1464,6 +1489,55 @@ mod tests {
             &baseline,
             &quality_spend,
         ));
+        assert!(!combat_witness_ends_quality_refinement(
+            &start,
+            satisfaction,
+            true,
+            &quality_spend,
+        ));
+        assert!(combat_witness_ends_quality_refinement(
+            &start,
+            satisfaction,
+            true,
+            &quality_clean,
+        ));
+        assert!(combat_witness_ends_quality_refinement(
+            &start,
+            satisfaction,
+            false,
+            &quality_spend,
+        ));
+    }
+
+    #[test]
+    fn conserving_rollout_keeps_the_no_potion_baseline_when_a_potion_line_is_better() {
+        let mut session = one_strike_win_session();
+        let combat = &mut session.active_combat.as_mut().unwrap().combat_state;
+        combat.entities.player.current_hp = 20;
+        combat.entities.player.max_hp = 20;
+        combat.entities.monsters[0].current_hp = 7;
+        combat.entities.monsters[0].max_hp = 7;
+        combat.entities.potions = vec![Some(crate::content::potions::Potion::new(
+            crate::content::potions::PotionId::FirePotion,
+            7,
+        ))];
+        let start = session
+            .current_active_combat_position()
+            .expect("exact potion rollout root");
+        let unconstrained =
+            crate::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(&start, 64, None)
+                .expect("unconstrained rollout proposal");
+        assert!(unconstrained
+            .actions
+            .iter()
+            .any(|input| matches!(input, ClientInput::UsePotion { .. })));
+
+        let conserving =
+            existing_combat_rollout_witness_v1(&start, 64, 250, None, Some(0), Some(0))
+                .expect("replay conserving proposal")
+                .expect("no-potion baseline");
+
+        assert_eq!(combat_witness_potion_expenditures(&start, &conserving), 0);
     }
 
     #[test]

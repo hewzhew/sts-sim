@@ -317,12 +317,21 @@ impl OracleRunCombatBudgetsV1 {
                 },
             );
         }
-        if stage == 0 && self.uses_potion_conserving_primary(session, &options) {
+        let uses_potion_stages = self.uses_potion_conserving_primary(session, &options);
+        if stage == 0 && uses_potion_stages {
             options.potion_policy =
                 Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::Never);
             options.max_potions_used = Some(0);
         }
-        scale_combat_options(options, self.stage_divisor(stage))
+        let stage_divisor = if stage == 0
+            && uses_potion_stages
+            && oracle_active_victory_potion_slot_mask_v1(session) != 0
+        {
+            self.potion_stage_allowance_divisor(session)
+        } else {
+            self.stage_divisor(stage)
+        };
+        scale_combat_options(options, stage_divisor)
     }
 
     pub(super) fn for_session_stage_with_prior(
@@ -340,7 +349,13 @@ impl OracleRunCombatBudgetsV1 {
         options.potion_policy =
             Some(crate::ai::combat_search_v2::CombatSearchV2PotionPolicy::SemanticBudgeted);
         options.max_potions_used = Some(1);
-        options.allowed_potion_slots = Some(oracle_active_victory_potion_slot_mask_v1(session));
+        let active_slots = oracle_active_victory_potion_slot_mask_v1(session);
+        if active_slots == 0 {
+            options.allowed_potion_slots = Some(0);
+            return options;
+        }
+        options = scale_combat_options(options, self.potion_stage_allowance_divisor(session));
+        options.allowed_potion_slots = Some(active_potion_slot_mask_for_stage(active_slots, stage));
         options
     }
 
@@ -371,12 +386,30 @@ impl OracleRunCombatBudgetsV1 {
         }
     }
 
+    fn potion_stage_allowance_divisor(&self, session: &RunControlSession) -> u32 {
+        oracle_active_victory_potion_slot_mask_v1(session)
+            .count_ones()
+            .max(1)
+    }
+
+    pub(super) fn has_identity_partitioned_potion_allowance(
+        &self,
+        session: &RunControlSession,
+    ) -> bool {
+        self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
+            && oracle_active_victory_potion_slot_mask_v1(session) != 0
+    }
+
     pub(super) fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
-        stage == 0
-            && (self.initial_divisor > 1
-                || (self
-                    .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1))
-                    && oracle_active_victory_potion_slot_mask_v1(session) != 0))
+        let uses_potion_stages =
+            self.uses_potion_conserving_primary(session, &self.for_session_stage(session, 1));
+        let active_potion_stages = if uses_potion_stages {
+            oracle_active_victory_potion_slot_mask_v1(session).count_ones()
+        } else {
+            0
+        };
+        usize::from(stage) < active_potion_stages as usize
+            || (stage == 0 && self.initial_divisor > 1)
     }
 
     pub(super) fn needs_later_stage(
@@ -385,13 +418,7 @@ impl OracleRunCombatBudgetsV1 {
         stage: u8,
         work: &OracleRunCombatWorkV1,
     ) -> bool {
-        if !self.has_later_stage(session, stage) || work.has_quality_satisfying_witness() {
-            return false;
-        }
-        if self.initial_divisor > 1 {
-            return true;
-        }
-        oracle_active_victory_potion_slot_mask_v1(session) != 0
+        self.has_later_stage(session, stage) && !work.has_refinement_ending_witness()
     }
 
     fn uses_potion_conserving_primary(
@@ -421,6 +448,18 @@ impl OracleRunCombatBudgetsV1 {
                             || potion.id == crate::content::potions::PotionId::FairyPotion
                     })
         })
+    }
+}
+
+fn active_potion_slot_mask_for_stage(active_slots: u64, stage: u8) -> u64 {
+    let mut remaining = active_slots;
+    for _ in 1..stage {
+        remaining &= remaining.saturating_sub(1);
+    }
+    if remaining == 0 {
+        0
+    } else {
+        1_u64 << remaining.trailing_zeros()
     }
 }
 

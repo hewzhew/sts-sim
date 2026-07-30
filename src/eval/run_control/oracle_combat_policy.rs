@@ -259,12 +259,18 @@ pub(super) fn existing_combat_rollout_witness_v1(
     max_actions: usize,
     max_engine_steps_per_action: usize,
     deadline: Option<Instant>,
+    max_potions_used: Option<u32>,
+    allowed_potion_slots: Option<u64>,
 ) -> Result<Option<OracleCombatWitness>, String> {
-    let Some(proposal) = crate::ai::combat_search_v2::oracle_rollout_witness_proposal_v1(
-        root,
-        max_actions,
-        deadline,
-    ) else {
+    let Some(proposal) =
+        crate::ai::combat_search_v2::oracle_rollout_witness_proposal_with_potion_contract_v1(
+            root,
+            max_actions,
+            deadline,
+            max_potions_used,
+            allowed_potion_slots,
+        )
+    else {
         return Ok(None);
     };
     materialize_policy_inputs(

@@ -405,6 +405,48 @@ fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
 }
 
 #[test]
+fn new_identity_stage_keeps_its_configured_share_of_a_larger_advance_request() {
+    let mut combat = potion_equipped_one_strike_combat();
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 200;
+    combat.entities.monsters[0].max_hp = 200;
+    combat
+        .entities
+        .potions
+        .push(Some(Potion::new(PotionId::ExplosivePotion, 52)));
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(9),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 1,
+            quantum_nodes: 1_000,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("serve the configured no-potion share");
+    let job = analysis.combat_jobs.get(&0).expect("first potion stage");
+
+    assert!(matches!(
+        report.status,
+        OracleAnalysisAdvanceStatusV1::SearchPending
+    ));
+    assert_eq!(job.stage, 1);
+    assert_eq!(job.work.allowed_potion_slots(), Some(0b01));
+    assert_eq!(job.work.remaining_nodes(), 5);
+    assert!(analysis
+        .combat_budgets
+        .has_later_stage(&analysis.require_branch(0).unwrap().session, 1));
+}
+
+#[test]
 fn typed_fire_potion_rescue_materializes_when_no_potion_win_exists() {
     let mut combat = one_strike_combat();
     combat.zones.hand.clear();
@@ -472,6 +514,24 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
         }),
     );
 
+    let first = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 16,
+            quantum_nodes: 32,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("enter exact Strength Potion quality rescue");
+
+    assert!(matches!(
+        first.status,
+        OracleAnalysisAdvanceStatusV1::SearchPending
+    ));
+    let pending = first.combat.expect("pending Strength rescue progress");
+    assert_eq!(pending.search_stage, 1);
+    assert_eq!(pending.allowed_potion_slots, Some(1));
+
     let report = analysis
         .advance_cursor(OracleAnalysisAdvanceRequestV1 {
             max_quanta: 16,
@@ -480,7 +540,7 @@ fn common_strength_potion_can_rescue_a_verified_but_low_quality_win() {
             wall_ms: None,
             improve_incumbent: true,
         })
-        .expect("serve exact Strength Potion quality rescue");
+        .expect("finish exact Strength Potion quality rescue");
 
     assert!(
         matches!(
@@ -616,7 +676,7 @@ fn quality_gated_potion_replacement_survives_checkpoint_restore() {
         .expect("resident conserving search")
         .work;
     assert!(conserving_work.has_verified_witness());
-    assert!(!conserving_work.has_quality_satisfying_witness());
+    assert!(!conserving_work.has_refinement_ending_witness());
     assert!(analysis
         .promote_combat_job_if_needed(0)
         .expect("promote verified low-quality incumbent"));
@@ -673,17 +733,26 @@ fn quality_gated_rescue_can_inspect_flexible_potions_without_admitting_passive_e
     assert_eq!(improve.max_potions_used, Some(1));
     assert_eq!(
         improve.allowed_potion_slots,
-        Some((1_u64 << 0) | (1_u64 << 1)),
-        "the protected no-potion incumbent lets autonomous search inspect the flexible Skill Potion"
+        Some(1_u64 << 0),
+        "each rescue stage must keep one concrete potion identity"
     );
+    let improve_flexible = budgets.for_session_stage_with_prior(&branch.session, 2, &prior);
+    assert_eq!(improve_flexible.max_potions_used, Some(1));
+    assert_eq!(
+        improve_flexible.allowed_potion_slots,
+        Some(1_u64 << 1),
+        "the next stage must independently inspect the flexible Skill Potion"
+    );
+    assert!(budgets.has_later_stage(&branch.session, 1));
+    assert!(!budgets.has_later_stage(&branch.session, 2));
 
     prior.incumbent = None;
     let survival = budgets.for_session_stage_with_prior(&branch.session, 1, &prior);
     assert_eq!(survival.max_potions_used, Some(1));
     assert_eq!(
         survival.allowed_potion_slots,
-        Some((1_u64 << 0) | (1_u64 << 1)),
-        "finding any win may use the flexible Skill Potion, but passive Fairy and explicit escape stay outside victory search"
+        Some(1_u64 << 0),
+        "finding any win still inspects one active identity at a time"
     );
 
     prior.potion_contract_recorded = true;
