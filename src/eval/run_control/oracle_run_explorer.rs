@@ -285,7 +285,7 @@ impl OracleRunCombatBudgetsV1 {
         self.for_session_stage(session, 1)
     }
 
-    fn for_session_stage(
+    pub(super) fn for_session_stage(
         &self,
         session: &RunControlSession,
         stage: u8,
@@ -332,11 +332,20 @@ impl OracleRunCombatBudgetsV1 {
         }
     }
 
-    fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
+    pub(super) fn has_later_stage(&self, session: &RunControlSession, stage: u8) -> bool {
         stage == 0
             && (self.initial_divisor > 1
                 || self
                     .uses_potion_conserving_primary(session, &self.for_session_stage(session, 1)))
+    }
+
+    pub(super) fn needs_later_stage(
+        &self,
+        session: &RunControlSession,
+        stage: u8,
+        work: &OracleRunCombatWorkV1,
+    ) -> bool {
+        self.has_later_stage(session, stage) && !work.has_quality_satisfying_witness()
     }
 
     fn uses_potion_conserving_primary(
@@ -629,10 +638,10 @@ impl OracleRunExplorerV1 {
         Some(branch_id)
     }
 
-    pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, OracleRunCombatWorkV1)> {
+    pub(super) fn drain_pending_combats(&mut self) -> Vec<(usize, u8, OracleRunCombatWorkV1)> {
         self.pending_combats
             .drain(..)
-            .map(|pending| (pending.branch_id, pending.work))
+            .map(|pending| (pending.branch_id, pending.stage, pending.work))
             .collect()
     }
 
@@ -843,22 +852,20 @@ pub fn drive_oracle_run_explorer_v1(
                 RunControlCombatWorkAdvanceV1::ReadyToFinish
                 | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
                     let stage = pending.stage;
-                    let has_later_stage = explorer
+                    let needs_later_stage = explorer
                         .branches
                         .iter()
                         .find(|branch| branch.branch_id == pending.branch_id)
                         .is_some_and(|branch| {
-                            budget.combat.has_later_stage(&branch.session, stage)
+                            budget
+                                .combat
+                                .needs_later_stage(&branch.session, stage, &pending.work)
                         });
-                    let prior_work = has_later_stage.then(|| pending.work.checkpoint());
-                    if has_later_stage
-                        && pending.work.has_verified_witness()
-                        && !pending.work.has_quality_satisfying_witness()
-                    {
+                    if needs_later_stage {
                         explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
                             branch_id: pending.branch_id,
                             stage: stage.saturating_add(1),
-                            prior_work: prior_work.expect("later stage preserves prior work"),
+                            prior_work: pending.work.checkpoint(),
                         });
                     } else {
                         let prepared =
@@ -892,19 +899,7 @@ pub fn drive_oracle_run_explorer_v1(
                                 }
                             }
                             FinishedOracleCombatV1::Unresolved(unresolved) => {
-                                if unresolved.evidence_kind
-                                    == OracleRunCombatEvidenceKindV1::BudgetUnknown
-                                    && prior_work.is_some()
-                                {
-                                    explorer.deferred_combats.push_back(DeferredOracleCombatV1 {
-                                        branch_id: unresolved.branch_id,
-                                        stage: stage.saturating_add(1),
-                                        prior_work: prior_work
-                                            .expect("available later-stage work checked above"),
-                                    });
-                                } else {
-                                    explorer.unresolved_combats.push(unresolved);
-                                }
+                                explorer.unresolved_combats.push(unresolved);
                             }
                             FinishedOracleCombatV1::ExactDuplicate => {
                                 if let Some(branch_schedule) = branch_schedule {

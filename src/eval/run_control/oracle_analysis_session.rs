@@ -117,6 +117,12 @@ pub struct OracleAnalysisChildViewV1 {
 /// discrepancy fields describe the live frontiers retained by this process.
 /// This report observes budget use; it does not grant additional search work.
 pub struct OracleAnalysisCombatProgressV1 {
+    /// Zero is the conserving/low-fidelity challenge; later stages use the
+    /// configured full combat policy.
+    pub search_stage: u8,
+    /// Exact cap owned by the resident tactical search. Stage zero uses zero
+    /// when the strategic conserving challenge applies.
+    pub max_potions_used: Option<u32>,
     /// Work charged by prior resident searches and preserved across resumes.
     pub historical_generation_work: u64,
     pub current_search_generation_work: u64,
@@ -330,7 +336,15 @@ impl Default for OracleAnalysisAdvanceRequestV1 {
 #[serde(deny_unknown_fields)]
 pub struct OracleAnalysisCombatJobCheckpointV1 {
     pub branch_id: usize,
+    /// Older analysis artifacts predate staged resident jobs and always
+    /// restored their work with the configured full combat policy.
+    #[serde(default = "default_oracle_analysis_combat_stage")]
+    pub stage: u8,
     pub work: OracleRunCombatWorkCheckpointV1,
+}
+
+const fn default_oracle_analysis_combat_stage() -> u8 {
+    1
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -356,10 +370,15 @@ pub struct OracleAnalysisSessionV1 {
     mainline_edge_path: Vec<u64>,
     next_edge_id: u64,
     edges: Vec<OracleAnalysisEdgeV1>,
-    combat_jobs: BTreeMap<usize, OracleRunCombatWorkV1>,
+    combat_jobs: BTreeMap<usize, OracleAnalysisCombatJobV1>,
     combat_budgets: OracleRunCombatBudgetsV1,
     decision_prior: Option<RunPolicyPriorFnV1>,
     decision_annotation: Option<OracleRunDecisionAnnotationFnV1>,
+}
+
+struct OracleAnalysisCombatJobV1 {
+    stage: u8,
+    work: OracleRunCombatWorkV1,
 }
 
 impl OracleAnalysisSessionV1 {
@@ -395,6 +414,7 @@ impl OracleAnalysisSessionV1 {
         let combat_jobs = explorer
             .drain_pending_combats()
             .into_iter()
+            .map(|(branch_id, stage, work)| (branch_id, OracleAnalysisCombatJobV1 { stage, work }))
             .collect::<BTreeMap<_, _>>();
         let mut session = Self {
             explorer,
@@ -444,11 +464,15 @@ impl OracleAnalysisSessionV1 {
                 })?;
             let work = OracleRunCombatWorkV1::restart_from_checkpoint_with_guidance(
                 &branch.session,
-                combat_budgets.for_session(&branch.session),
+                combat_budgets.for_session_stage(&branch.session, saved.stage),
                 saved.work,
                 combat_budgets.guidance_bundle.as_deref(),
             )?;
-            if combat_jobs.insert(saved.branch_id, work).is_some() {
+            let job = OracleAnalysisCombatJobV1 {
+                stage: saved.stage,
+                work,
+            };
+            if combat_jobs.insert(saved.branch_id, job).is_some() {
                 return Err(format!(
                     "analysis checkpoint duplicated combat node {}",
                     saved.branch_id
@@ -487,9 +511,10 @@ impl OracleAnalysisSessionV1 {
             combat_jobs: self
                 .combat_jobs
                 .iter()
-                .map(|(branch_id, work)| OracleAnalysisCombatJobCheckpointV1 {
+                .map(|(branch_id, job)| OracleAnalysisCombatJobCheckpointV1 {
                     branch_id: *branch_id,
-                    work: work.checkpoint(),
+                    stage: job.stage,
+                    work: job.work.checkpoint(),
                 })
                 .collect(),
         })
@@ -677,7 +702,7 @@ impl OracleAnalysisSessionV1 {
     ) -> Result<Vec<LocalTurnGraphRootActionFamilySnapshot>, String> {
         self.combat_jobs
             .get(&node_id)
-            .map(OracleRunCombatWorkV1::root_action_families)
+            .map(|job| job.work.root_action_families())
             .ok_or_else(|| format!("oracle node {node_id} has no resident combat search"))
     }
 
@@ -1081,21 +1106,24 @@ impl OracleAnalysisSessionV1 {
         });
         let resumes_existing_search = self.combat_jobs.contains_key(&source_node_id);
         if !resumes_existing_search {
+            let stage = 0;
             let work = OracleRunCombatWorkV1::new_with_guidance(
                 &branch.session,
-                self.combat_budgets.for_session(&branch.session),
+                self.combat_budgets
+                    .for_session_stage(&branch.session, stage),
                 self.combat_budgets.guidance_bundle.as_deref(),
             )?;
-            self.combat_jobs.insert(source_node_id, work);
+            self.combat_jobs
+                .insert(source_node_id, OracleAnalysisCombatJobV1 { stage, work });
         }
-        let work = self
+        let job = self
             .combat_jobs
             .get_mut(&source_node_id)
             .expect("analysis combat job exists");
         if resumes_existing_search {
-            work.mark_search_resume_exact();
+            job.work.mark_search_resume_exact();
         }
-        work.ensure_requested_allowance(
+        job.work.ensure_requested_allowance(
             requested_nodes,
             requested_wall_ms.map(Duration::from_millis),
         );
@@ -1109,31 +1137,57 @@ impl OracleAnalysisSessionV1 {
             soft_wall_ms: request.quantum_ms,
         };
         let mut quanta_served = 0usize;
-        let mut ready_to_finish = false;
-        let mut allowance_exhausted = false;
-        for _ in 0..request.max_quanta {
-            let work = self
+        let mut terminal_advance = None;
+        while quanta_served < request.max_quanta {
+            // Preserve one caller-granted quantum for the configured rescue
+            // stage. Otherwise a bounded conserving challenge can consume the
+            // whole request and leave autonomous callers no chance to test
+            // whether a potion changes the outcome.
+            if quanta_served > 0
+                && quanta_served.saturating_add(1) == request.max_quanta
+                && self.promote_combat_job_if_needed(source_node_id)?
+            {
+                self.combat_jobs
+                    .get_mut(&source_node_id)
+                    .expect("promoted analysis combat job exists")
+                    .work
+                    .ensure_requested_allowance(
+                        requested_nodes,
+                        requested_wall_ms.map(Duration::from_millis),
+                    );
+            }
+            let job = self
                 .combat_jobs
                 .get_mut(&source_node_id)
                 .expect("analysis combat job inserted above");
             let advance = if request.improve_incumbent {
-                work.advance_improving_incumbent(&quantum, deadline)
+                job.work.advance_improving_incumbent(&quantum, deadline)
             } else {
-                work.advance(&quantum, deadline)
+                job.work.advance(&quantum, deadline)
             };
             match advance {
                 RunControlCombatWorkAdvanceV1::Pending => {
                     quanta_served = quanta_served.saturating_add(1);
                 }
                 RunControlCombatWorkAdvanceV1::GlobalDeadlineReached => break,
-                RunControlCombatWorkAdvanceV1::ReadyToFinish => {
+                RunControlCombatWorkAdvanceV1::ReadyToFinish
+                | RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
                     quanta_served = quanta_served.saturating_add(1);
-                    ready_to_finish = true;
-                    break;
-                }
-                RunControlCombatWorkAdvanceV1::AllowanceExhausted => {
-                    quanta_served = quanta_served.saturating_add(1);
-                    allowance_exhausted = true;
+                    if self.promote_combat_job_if_needed(source_node_id)? {
+                        self.combat_jobs
+                            .get_mut(&source_node_id)
+                            .expect("promoted analysis combat job exists")
+                            .work
+                            .ensure_requested_allowance(
+                                requested_nodes,
+                                requested_wall_ms.map(Duration::from_millis),
+                            );
+                        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                            break;
+                        }
+                        continue;
+                    }
+                    terminal_advance = Some(advance);
                     break;
                 }
             }
@@ -1141,7 +1195,7 @@ impl OracleAnalysisSessionV1 {
                 break;
             }
         }
-        if allowance_exhausted {
+        if terminal_advance == Some(RunControlCombatWorkAdvanceV1::AllowanceExhausted) {
             return Ok(OracleAnalysisAdvanceReportV1 {
                 source_node_id,
                 status: OracleAnalysisAdvanceStatusV1::BudgetUnknown,
@@ -1150,7 +1204,7 @@ impl OracleAnalysisSessionV1 {
                 combat: self.combat_progress(source_node_id),
             });
         }
-        if !ready_to_finish {
+        if terminal_advance != Some(RunControlCombatWorkAdvanceV1::ReadyToFinish) {
             return Ok(OracleAnalysisAdvanceReportV1 {
                 source_node_id,
                 status: OracleAnalysisAdvanceStatusV1::SearchPending,
@@ -1160,15 +1214,15 @@ impl OracleAnalysisSessionV1 {
             });
         }
 
-        let work = self
+        let job = self
             .combat_jobs
             .remove(&source_node_id)
             .expect("ready analysis combat job exists");
-        let final_progress = combat_progress_view(&work);
-        let child_node_id = match self.materialize_combat_work(source_node_id, &work) {
+        let final_progress = combat_progress_view(&job);
+        let child_node_id = match self.materialize_combat_work(source_node_id, &job.work) {
             Ok(child_node_id) => child_node_id,
             Err(error) => {
-                self.combat_jobs.insert(source_node_id, work);
+                self.combat_jobs.insert(source_node_id, job);
                 return Err(error);
             }
         };
@@ -1213,21 +1267,21 @@ impl OracleAnalysisSessionV1 {
                 branch.boundary
             ));
         }
-        let Some(work) = self.combat_jobs.remove(&source_node_id) else {
+        let Some(job) = self.combat_jobs.remove(&source_node_id) else {
             return Err(format!(
                 "oracle analysis node {source_node_id} has no resident combat search"
             ));
         };
-        if !work.has_verified_witness() {
-            self.combat_jobs.insert(source_node_id, work);
+        if !job.work.has_verified_witness() {
+            self.combat_jobs.insert(source_node_id, job);
             return Err(format!(
                 "oracle analysis node {source_node_id} has no verified combat incumbent"
             ));
         }
-        let child_node_id = match self.materialize_combat_work(source_node_id, &work) {
+        let child_node_id = match self.materialize_combat_work(source_node_id, &job.work) {
             Ok(child_node_id) => child_node_id,
             Err(error) => {
-                self.combat_jobs.insert(source_node_id, work);
+                self.combat_jobs.insert(source_node_id, job);
                 return Err(error);
             }
         };
@@ -1315,7 +1369,7 @@ impl OracleAnalysisSessionV1 {
     /// state, journal entries, siblings, and navigation remain unchanged.
     pub fn restart_cursor_combat_search(&mut self) -> Result<(), String> {
         let node_id = self.cursor_node_id;
-        let work = {
+        let job = {
             let branch = self.require_branch(node_id)?;
             if branch.boundary != OracleRunBoundaryV1::Combat {
                 return Err(format!(
@@ -1323,14 +1377,54 @@ impl OracleAnalysisSessionV1 {
                     branch.boundary
                 ));
             }
-            OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
+            let stage = 0;
+            let work = OracleRunCombatWorkV1::restart_from_exact_state_with_guidance(
                 &branch.session,
-                self.combat_budgets.for_session(&branch.session),
+                self.combat_budgets
+                    .for_session_stage(&branch.session, stage),
+                self.combat_budgets.guidance_bundle.as_deref(),
+            )?;
+            OracleAnalysisCombatJobV1 { stage, work }
+        };
+        self.combat_jobs.insert(node_id, job);
+        Ok(())
+    }
+
+    fn promote_combat_job_if_needed(&mut self, node_id: usize) -> Result<bool, String> {
+        let (next_stage, prior_work) = {
+            let branch = self.require_branch(node_id)?;
+            let job = self
+                .combat_jobs
+                .get(&node_id)
+                .ok_or_else(|| format!("oracle node {node_id} has no resident combat search"))?;
+            if !self
+                .combat_budgets
+                .needs_later_stage(&branch.session, job.stage, &job.work)
+            {
+                return Ok(false);
+            }
+            (job.stage.saturating_add(1), job.work.checkpoint())
+        };
+        let work = {
+            let branch = self.require_branch(node_id)?;
+            OracleRunCombatWorkV1::restart_for_higher_fidelity_with_guidance(
+                &branch.session,
+                self.combat_budgets
+                    .for_session_stage(&branch.session, next_stage),
+                prior_work,
                 self.combat_budgets.guidance_bundle.as_deref(),
             )?
         };
-        self.combat_jobs.insert(node_id, work);
-        Ok(())
+        self.combat_jobs.insert(
+            node_id,
+            OracleAnalysisCombatJobV1 {
+                stage: next_stage,
+                work,
+            },
+        );
+        self.explorer.combat_search_restarts =
+            self.explorer.combat_search_restarts.saturating_add(1);
+        Ok(true)
     }
 
     fn materialize_combat_work(
@@ -1570,9 +1664,12 @@ fn parse_choice_ref(value: &str) -> Result<(usize, &str), String> {
     Ok((node, key))
 }
 
-fn combat_progress_view(work: &OracleRunCombatWorkV1) -> OracleAnalysisCombatProgressV1 {
+fn combat_progress_view(job: &OracleAnalysisCombatJobV1) -> OracleAnalysisCombatProgressV1 {
+    let work = &job.work;
     let progress: OracleRunCombatWorkProgressV1 = work.progress();
     OracleAnalysisCombatProgressV1 {
+        search_stage: job.stage,
+        max_potions_used: work.max_potions_used(),
         historical_generation_work: progress.historical_generation_work,
         current_search_generation_work: progress.current_search_generation_work,
         generation_work: progress.generation_work,

@@ -481,6 +481,8 @@ fn compact_run_combat_progress(
         return Value::Null;
     };
     json!({
+        "search_stage": combat.search_stage,
+        "max_potions_used": combat.max_potions_used,
         "generation_work": combat.generation_work,
         "local_generation_work": combat.local_generation_work,
         "discrepancy_generation_work": combat.discrepancy_generation_work,

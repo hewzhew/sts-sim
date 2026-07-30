@@ -2,8 +2,9 @@ use super::*;
 
 use crate::content::potions::{Potion, PotionId};
 use crate::eval::run_control::{
-    seed_oracle_run_explorer_from_session_v1, RunControlConfig, RunControlSearchCombatOptions,
-    RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1, RunPolicyPriorV1,
+    seed_oracle_run_explorer_from_session_v1, OracleRunCombatQualityPolicyV1, RunControlConfig,
+    RunControlSearchCombatOptions, RunControlSession, RunPolicyCandidateV1, RunPolicyPriorFnV1,
+    RunPolicyPriorV1,
 };
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{
@@ -55,6 +56,18 @@ fn combat_analysis(
     combat: crate::runtime::combat::CombatState,
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> OracleAnalysisSessionV1 {
+    combat_analysis_with_budgets(
+        combat,
+        decision_prior,
+        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default()),
+    )
+}
+
+fn combat_analysis_with_budgets(
+    combat: crate::runtime::combat::CombatState,
+    decision_prior: Option<RunPolicyPriorFnV1>,
+    combat_budgets: OracleRunCombatBudgetsV1,
+) -> OracleAnalysisSessionV1 {
     let mut run = RunControlSession::new(RunControlConfig::default());
     run.engine_state = EngineState::CombatPlayerTurn;
     run.active_combat = Some(ActiveCombat::new(
@@ -64,8 +77,6 @@ fn combat_analysis(
             room_type: RoomType::MonsterRoom,
         }),
     ));
-    let combat_budgets =
-        OracleRunCombatBudgetsV1::uniform(RunControlSearchCombatOptions::default());
     let explorer = seed_oracle_run_explorer_from_session_v1(
         run,
         RunProgressJournalV1::default(),
@@ -80,6 +91,10 @@ fn combat_analysis(
 fn one_strike_combat_analysis(
     decision_prior: Option<RunPolicyPriorFnV1>,
 ) -> OracleAnalysisSessionV1 {
+    combat_analysis(one_strike_combat(), decision_prior)
+}
+
+fn one_strike_combat() -> crate::runtime::combat::CombatState {
     let mut combat = crate::test_support::blank_test_combat();
     let mut monster = crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
     let plan = crate::content::monsters::roll_monster_turn_plan(
@@ -97,7 +112,7 @@ fn one_strike_combat_analysis(
     monster.max_hp = 6;
     combat.entities.monsters = vec![monster];
     combat.zones.hand = vec![CombatCard::new(crate::content::cards::CardId::Strike, 1)];
-    combat_analysis(combat, decision_prior)
+    combat
 }
 
 fn smoke_bomb_combat_analysis(
@@ -289,4 +304,175 @@ fn smoke_bomb_escape_registers_the_materialized_child_decision_supply() {
         !child.choices.is_empty(),
         "a committed escape child must expose its legal reward decisions"
     );
+}
+
+fn strategic_combat_budgets(options: RunControlSearchCombatOptions) -> OracleRunCombatBudgetsV1 {
+    let mut budgets = OracleRunCombatBudgetsV1::uniform(options);
+    budgets.quality_policy = OracleRunCombatQualityPolicyV1::StrategicRun;
+    budgets
+}
+
+fn potion_equipped_one_strike_combat() -> crate::runtime::combat::CombatState {
+    let mut combat = one_strike_combat();
+    combat.entities.potions = vec![Some(Potion::new(PotionId::FirePotion, 51))];
+    combat
+}
+
+#[test]
+fn strategic_nonboss_analysis_starts_with_an_exact_no_potion_stage() {
+    let analysis = combat_analysis_with_budgets(
+        potion_equipped_one_strike_combat(),
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions::default()),
+    );
+
+    let combat = analysis
+        .view_cursor()
+        .expect("strategic combat view")
+        .combat
+        .expect("resident combat progress");
+
+    assert_eq!(combat.search_stage, 0);
+    assert_eq!(combat.max_potions_used, Some(0));
+}
+
+#[test]
+fn strategic_no_potion_witness_that_meets_quality_materializes_without_rescue() {
+    let mut analysis = combat_analysis_with_budgets(
+        potion_equipped_one_strike_combat(),
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(64),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 4,
+            quantum_nodes: 16,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("serve exact conserving combat");
+
+    assert!(
+        matches!(
+            report.status,
+            OracleAnalysisAdvanceStatusV1::BoundaryReached { .. }
+        ),
+        "a zero-loss no-potion witness should satisfy strategic quality: {:?}",
+        report.status
+    );
+    assert_eq!(
+        report.combat.expect("final combat progress").search_stage,
+        0
+    );
+    assert_eq!(analysis.explorer.combat_search_restarts, 0);
+}
+
+#[test]
+fn bounded_no_potion_unknown_enters_the_full_potion_stage() {
+    let mut combat = potion_equipped_one_strike_combat();
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 200;
+    combat.entities.monsters[0].max_hp = 200;
+    let mut analysis = combat_analysis_with_budgets(
+        combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_nodes: Some(2),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+
+    let report = analysis
+        .advance_cursor(OracleAnalysisAdvanceRequestV1 {
+            max_quanta: 2,
+            quantum_nodes: 1,
+            quantum_ms: None,
+            wall_ms: None,
+            improve_incumbent: true,
+        })
+        .expect("serve conserving challenge and rescue");
+    let combat = report.combat.expect("resident rescue progress");
+
+    assert_eq!(combat.search_stage, 1);
+    assert_ne!(combat.max_potions_used, Some(0));
+    assert_eq!(analysis.explorer.combat_search_restarts, 1);
+}
+
+#[test]
+fn boss_and_explicit_potion_overrides_skip_the_conserving_policy() {
+    let mut boss_combat = potion_equipped_one_strike_combat();
+    boss_combat.meta.is_boss_fight = true;
+    let boss = combat_analysis_with_budgets(
+        boss_combat,
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions::default()),
+    );
+    let boss_progress = boss
+        .view_cursor()
+        .expect("boss combat view")
+        .combat
+        .expect("boss combat progress");
+    assert_eq!(boss_progress.search_stage, 0);
+    assert_ne!(boss_progress.max_potions_used, Some(0));
+    assert!(!boss
+        .combat_budgets
+        .has_later_stage(&boss.require_branch(0).expect("boss branch").session, 0));
+
+    let overridden = combat_analysis_with_budgets(
+        potion_equipped_one_strike_combat(),
+        None,
+        strategic_combat_budgets(RunControlSearchCombatOptions {
+            max_potions_used: Some(1),
+            ..RunControlSearchCombatOptions::default()
+        }),
+    );
+    let overridden_progress = overridden
+        .view_cursor()
+        .expect("overridden combat view")
+        .combat
+        .expect("overridden combat progress");
+    assert_eq!(overridden_progress.search_stage, 0);
+    assert_eq!(overridden_progress.max_potions_used, Some(1));
+    assert!(!overridden.combat_budgets.has_later_stage(
+        &overridden
+            .require_branch(0)
+            .expect("overridden branch")
+            .session,
+        0
+    ));
+}
+
+#[test]
+fn analysis_checkpoint_restores_the_resident_combat_stage() {
+    let mut combat = potion_equipped_one_strike_combat();
+    combat.zones.hand.clear();
+    combat.entities.monsters[0].current_hp = 200;
+    combat.entities.monsters[0].max_hp = 200;
+    let budgets = strategic_combat_budgets(RunControlSearchCombatOptions {
+        max_nodes: Some(2),
+        ..RunControlSearchCombatOptions::default()
+    });
+    let mut analysis = combat_analysis_with_budgets(combat, None, budgets.clone());
+    assert!(analysis
+        .promote_combat_job_if_needed(0)
+        .expect("promote resident combat"));
+
+    let checkpoint = analysis.checkpoint().expect("analysis checkpoint");
+    assert_eq!(checkpoint.combat_jobs[0].stage, 1);
+    let restored = OracleAnalysisSessionV1::restore(checkpoint, budgets, None, None)
+        .expect("restore analysis");
+    let restored_progress = restored
+        .view_cursor()
+        .expect("restored combat view")
+        .combat
+        .expect("restored combat progress");
+
+    assert_eq!(restored_progress.search_stage, 1);
+    assert_ne!(restored_progress.max_potions_used, Some(0));
+    assert_eq!(restored_progress.restart_count, 2);
 }

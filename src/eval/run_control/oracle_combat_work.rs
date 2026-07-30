@@ -846,6 +846,10 @@ impl OracleRunCombatWorkV1 {
             .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
     }
 
+    pub(super) fn max_potions_used(&self) -> Option<u32> {
+        self.max_potions_used
+    }
+
     pub(super) fn restart_count(&self) -> usize {
         self.restart_count
     }
