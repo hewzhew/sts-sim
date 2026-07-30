@@ -6,9 +6,9 @@ use sts_simulator::ai::potion_continuation_pressure_v1::{
 };
 use sts_simulator::eval::run_control::{
     combat_search_trace_summaries, strategic_combat_victory_reaches_full_heal_v1,
-    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, RunControlCombatSearchAttemptV1,
-    RunControlHpLossLimit, RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome,
-    RunProgressStepV1,
+    CombatSearchStrategicHpQualityFactsV1, CombatSearchTraceSummary,
+    CombatVictoryContinuationFactsV1, RunControlCombatSearchAttemptV1, RunControlHpLossLimit,
+    RunControlSession, RunControlTraceAnnotationV1, RunProgressOutcome, RunProgressStepV1,
 };
 
 use super::accepted_high_loss_diagnostic::{accepted_high_loss_diagnostic, capture_active_combat};
@@ -66,11 +66,19 @@ pub(super) fn run_combat_search_session_step(
             strategic_combat_victory_reaches_full_heal_v1(session),
         );
     let combat_capture = capture_active_combat(session)?;
-    let owner_hp_loss_limit = match owner_audit_hp_loss_limit(session) {
+    let owner_hp_loss_limit_fact = owner_audit_hp_loss_limit(session);
+    let quality_loss_limit = owner_audit_search_quality_loss_target(session);
+    let (entry_current_hp, entry_max_hp) = session.visible_player_hp();
+    let strategic_hp_quality = CombatSearchStrategicHpQualityFactsV1::from_owner_limits(
+        entry_current_hp,
+        entry_max_hp,
+        owner_hp_loss_limit_fact,
+        quality_loss_limit,
+    );
+    let owner_hp_loss_limit = match owner_hp_loss_limit_fact {
         RunControlHpLossLimit::Limit(limit) => Some(limit),
         RunControlHpLossLimit::Unlimited => None,
     };
-    let quality_loss_limit = owner_audit_search_quality_loss_target(session);
     let primary_plan = potion_conserving_primary_search_session_plan(session, args);
     let staged = primary_plan.is_some();
     let mut plan = primary_plan.unwrap_or(canonical_plan);
@@ -122,6 +130,7 @@ pub(super) fn run_combat_search_session_step(
                             &potion_continuation_context,
                             &potion_continuation_pressure,
                             &combat_victory_continuation,
+                            &strategic_hp_quality,
                         );
                         return Ok(search_error_result(&refinement, error, summaries));
                     }
@@ -144,6 +153,7 @@ pub(super) fn run_combat_search_session_step(
                         &potion_continuation_context,
                         &potion_continuation_pressure,
                         &combat_victory_continuation,
+                        &strategic_hp_quality,
                     ));
                     plan = refinement;
                     match session
@@ -166,6 +176,7 @@ pub(super) fn run_combat_search_session_step(
                         &potion_continuation_context,
                         &potion_continuation_pressure,
                         &combat_victory_continuation,
+                        &strategic_hp_quality,
                     );
                     summaries.extend(combat_search_attempt_summaries(
                         session,
@@ -177,6 +188,7 @@ pub(super) fn run_combat_search_session_step(
                         &potion_continuation_context,
                         &potion_continuation_pressure,
                         &combat_victory_continuation,
+                        &strategic_hp_quality,
                     ));
                     match session.apply_combat_search_attempt(
                         primary_attempt,
@@ -210,6 +222,7 @@ pub(super) fn run_combat_search_session_step(
                 &potion_continuation_context,
                 &potion_continuation_pressure,
                 &combat_victory_continuation,
+                &strategic_hp_quality,
             ));
             if let Some(refinement) = potion_conserving_refinement_search_session_plan(
                 session,
@@ -266,6 +279,7 @@ pub(super) fn run_combat_search_session_step(
             &potion_continuation_context,
             &potion_continuation_pressure,
             &combat_victory_continuation,
+            &strategic_hp_quality,
         ));
         prior_search_summaries
     });
@@ -334,6 +348,7 @@ fn combat_search_attempt_summaries(
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
+    strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let annotations = vec![attempt.trace_annotation(session, plan.profile_id)];
     let facts = candidate_facts(session, &annotations, owner_hp_loss_limit);
@@ -346,6 +361,7 @@ fn combat_search_attempt_summaries(
         potion_continuation_context,
         potion_continuation_pressure,
         combat_victory_continuation,
+        strategic_hp_quality,
     )
 }
 
@@ -424,6 +440,7 @@ fn combat_search_summaries(
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
+    strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     combat_search_summaries_from_annotations(
         &outcome.trace_annotations,
@@ -434,6 +451,7 @@ fn combat_search_summaries(
         potion_continuation_context,
         potion_continuation_pressure,
         combat_victory_continuation,
+        strategic_hp_quality,
     )
 }
 
@@ -447,6 +465,7 @@ fn combat_search_summaries_from_annotations(
     potion_continuation_context: &PotionRunContinuationContextV1,
     potion_continuation_pressure: &PotionContinuationPressureV1,
     combat_victory_continuation: &CombatVictoryContinuationFactsV1,
+    strategic_hp_quality: &CombatSearchStrategicHpQualityFactsV1,
 ) -> Vec<CombatSearchTraceSummary> {
     let mut summaries = combat_search_trace_summaries(annotations).collect::<Vec<_>>();
     for summary in &mut summaries {
@@ -465,6 +484,7 @@ fn combat_search_summaries_from_annotations(
         summary.potion_continuation_context = Some(potion_continuation_context.clone());
         summary.potion_continuation_pressure = Some(potion_continuation_pressure.clone());
         summary.combat_victory_continuation = Some(combat_victory_continuation.clone());
+        summary.strategic_hp_quality = Some(strategic_hp_quality.clone());
     }
     summaries
 }
@@ -541,7 +561,8 @@ mod tests {
     use sts_simulator::content::monsters::EnemyId;
     use sts_simulator::content::potions::{Potion, PotionId};
     use sts_simulator::eval::run_control::{
-        CombatVictoryHpCarryoverV1, RunControlConfig, RunControlSession, RunProgressOutcome,
+        CombatSearchHpLossLimitV1, CombatVictoryHpCarryoverV1, RunControlConfig, RunControlSession,
+        RunProgressOutcome,
     };
     use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use sts_simulator::state::map::node::RoomType;
@@ -708,6 +729,20 @@ mod tests {
                         == CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition
                 })
         }));
+        assert!(result.combat_search.iter().all(|summary| {
+            summary.strategic_hp_quality.as_ref().is_some_and(|facts| {
+                facts.entry_current_hp == continuation.current_hp
+                    && facts.entry_max_hp == continuation.max_hp
+                    && matches!(
+                        facts.survival_hp_loss_limit,
+                        CombatSearchHpLossLimitV1::Limited { .. }
+                    )
+                    && matches!(
+                        facts.quality_hp_loss_limit,
+                        CombatSearchHpLossLimitV1::Limited { .. }
+                    )
+            })
+        }));
     }
 
     #[test]
@@ -754,6 +789,12 @@ mod tests {
                     facts.hp_carryover
                         == CombatVictoryHpCarryoverV1::GuaranteedFullHealBeforeNextDamageBearingDecision
                 })
+        }));
+        assert!(result.combat_search.iter().all(|summary| {
+            summary.strategic_hp_quality.as_ref().is_some_and(|facts| {
+                facts.survival_hp_loss_limit == CombatSearchHpLossLimitV1::Unlimited
+                    && facts.quality_hp_loss_limit == CombatSearchHpLossLimitV1::Unlimited
+            })
         }));
     }
 

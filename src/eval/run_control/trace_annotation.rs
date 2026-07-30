@@ -21,6 +21,7 @@ use crate::state::core::ClientInput;
 
 use super::accepted_combat_line_evidence::AcceptedCombatLineEvidenceV1;
 use super::combat_line_adjudication::CombatLineAdjudicationV1;
+use super::progress_options::RunControlHpLossLimit;
 use super::transition_report::CardSnapshot;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -273,6 +274,9 @@ pub struct CombatSearchTerminalLineSummary {
 
 pub const COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1: &str =
     "strategic_combat_victory_reaches_full_heal_v1";
+pub const COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1: &str =
+    "strategic_combat_survival_hp_loss_limit_v1";
+pub const COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1: &str = "strategic_combat_quality_hp_loss_limit_v1";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -297,6 +301,51 @@ impl CombatVictoryContinuationFactsV1 {
             } else {
                 CombatVictoryHpCarryoverV1::NotGuaranteedByRoomBossActTransition
             },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CombatSearchHpLossLimitV1 {
+    Limited { max_hp_loss: u32 },
+    Unlimited,
+}
+
+impl From<RunControlHpLossLimit> for CombatSearchHpLossLimitV1 {
+    fn from(value: RunControlHpLossLimit) -> Self {
+        match value {
+            RunControlHpLossLimit::Limit(max_hp_loss) => Self::Limited { max_hp_loss },
+            RunControlHpLossLimit::Unlimited => Self::Unlimited,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatSearchStrategicHpQualityFactsV1 {
+    pub survival_evaluator: String,
+    pub survival_hp_loss_limit: CombatSearchHpLossLimitV1,
+    pub quality_evaluator: String,
+    pub quality_hp_loss_limit: CombatSearchHpLossLimitV1,
+    pub entry_current_hp: i32,
+    pub entry_max_hp: i32,
+}
+
+impl CombatSearchStrategicHpQualityFactsV1 {
+    pub fn from_owner_limits(
+        entry_current_hp: i32,
+        entry_max_hp: i32,
+        survival_hp_loss_limit: RunControlHpLossLimit,
+        quality_hp_loss_limit: RunControlHpLossLimit,
+    ) -> Self {
+        Self {
+            survival_evaluator: COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1.to_owned(),
+            survival_hp_loss_limit: survival_hp_loss_limit.into(),
+            quality_evaluator: COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1.to_owned(),
+            quality_hp_loss_limit: quality_hp_loss_limit.into(),
+            entry_current_hp,
+            entry_max_hp,
         }
     }
 }
@@ -335,6 +384,8 @@ pub struct CombatSearchTraceSummary {
     pub potion_continuation_pressure: Option<PotionContinuationPressureV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combat_victory_continuation: Option<CombatVictoryContinuationFactsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategic_hp_quality: Option<CombatSearchStrategicHpQualityFactsV1>,
     pub act: u8,
     pub floor: i32,
     pub turn: u32,
@@ -611,6 +662,7 @@ pub fn combat_search_trace_summaries(
             potion_continuation_context: None,
             potion_continuation_pressure: None,
             combat_victory_continuation: None,
+            strategic_hp_quality: None,
             act: snapshot.act,
             floor: snapshot.floor,
             turn: snapshot.turn,

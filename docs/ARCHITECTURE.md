@@ -290,6 +290,13 @@ owner evaluates the exact combat context and persists the typed result;
 diagnostics may validate and display it, while legacy absence remains
 unavailable.
 
+The strategic survival and search-quality HP-loss limits used by an owner are
+owner-captured facts too. A combat audit may compare exact no-potion and potion
+witnesses against those captured limits, but it must not reconstruct the limits
+from final HP, a hand-configured reserve, or a copied policy formula. Crossing a
+quality limit is diagnostic evidence that a local improvement matters to the
+current owner contract; it is not by itself authority to spend a potion.
+
 ## Prohibited Crossings
 
 - Do not use strings as decisions when a typed action, candidate key, or case

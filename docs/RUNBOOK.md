@@ -123,10 +123,14 @@ contain one identical `PotionContinuationPressureV1`; its absence is expected
 only for legacy cases. Fresh owner captures should additionally contain one
 identical `CombatVictoryContinuationFactsV1` produced by
 `strategic_combat_victory_reaches_full_heal_v1`; old cases keep that fact
-explicitly unavailable. The V9 audit must report `validated_exact_root` with no
-run-context mismatches and a `continuation_pressure_projection` status of
-`validated_exact_root` with no pressure mismatches. A fresh capture should also
-report `combat_victory_continuation_projection: validated_captured_fact`:
+explicitly unavailable. Current captures also contain one identical
+`CombatSearchStrategicHpQualityFactsV1` holding the survival and search-quality
+HP-loss limits actually used by the owner. The V10 audit must report
+`validated_exact_root` with no run-context mismatches and a
+`continuation_pressure_projection` status of `validated_exact_root` with no
+pressure mismatches. A fresh capture should additionally report both
+`combat_victory_continuation_projection: validated_captured_fact` and
+`strategic_hp_quality_projection: validated_captured_fact`:
 
 ```powershell
 $case = Get-ChildItem -LiteralPath "$capsule/combat_cases" `
@@ -137,18 +141,22 @@ cargo oracle-lab combat-case-potion-expenditure-audit `
   --max-combination-size 1 --survival-reserve-hp 30 `
   --max-nodes 5000 --max-selections 20000 `
   --wall-ms-per-lane 500 `
-  > .oracle-lab/reports/<fresh-id>-potion-v9.json `
-  2> .oracle-lab/reports/<fresh-id>-potion-v9.log
+  > .oracle-lab/reports/<fresh-id>-potion-v10.json `
+  2> .oracle-lab/reports/<fresh-id>-potion-v10.log
 ```
 
 Keep complete JSON and build output under `.oracle-lab`; report only aggregate
 lane results. Do not upgrade a legacy case by guessing missing route, Boss,
-post-victory, or supply facts. V9 preserves the V8 non-authoritative
+post-victory, owner-quality, or supply facts. V10 preserves the V8
+non-authoritative
 `spend_urgency_question` and places its configured reserve delta beside exact
 inventory/replacement pressure, supply facts, route count ranges, Coffee
 Dripper and recovery facts, current gold, explicit future shop and
-potion-identity unknowns, and the captured combat-victory HP carryover fact. It
-does not assign an urgency score, spend threshold, or policy label.
+potion-identity unknowns, the captured combat-victory HP carryover fact, and
+the captured owner survival/search-quality limits. It reports whether the exact
+no-potion and candidate witnesses satisfy each limit and whether the candidate
+crosses from unsatisfied to satisfied. It does not assign an urgency score,
+spend threshold, or policy label.
 
 Pre-A5 Act 1/2 room-Boss full healing is admitted only when the run-control
 owner captured `guaranteed_full_heal_before_next_damage_bearing_decision` from
@@ -157,6 +165,16 @@ and necessary Boss/Act/Ascension conditions. It never reconstructs the room
 boundary from a filename, aggregate route counts, or `is_boss_fight` alone.
 Legacy absence stays `unavailable_legacy_case`; conflicting or structurally
 impossible claims are rejected and cannot enter question facts.
+
+Owner HP limits are admitted only when every saved summary agrees on evaluator,
+entry HP, and both typed limits at the exact root. The audit checks that a
+limited search-quality allowance is no looser than the survival allowance and
+that guaranteed-full-heal boundaries carry unlimited limits. It never
+reconstructs a production limit from `--survival-reserve-hp`; that flag remains
+an optional experimental comparison only. Crossing that configured reserve
+stays a continuation question rather than a `spend` verdict. Crossing the
+captured quality limit is evidence about the existing owner gate, not
+permission to spend.
 
 Route ordering in that question comes only from typed `OccursBefore` facts.
 `must`, `can`, and `cannot` retain their original modality and provenance;

@@ -305,10 +305,11 @@ pub use trace_annotation::{
     CombatAutomationAnswerClaimV1, CombatAutomationAnswerSourceV1, CombatAutomationCardOriginV1,
     CombatAutomationMonsterStateV1, CombatAutomationOpportunityStateV1,
     CombatAutomationPotionStateV1, CombatAutomationStepStateV1, CombatAutomationTrajectoryRecordV1,
-    CombatAutomationTrajectorySource, CombatSearchPerformanceSnapshotV1,
-    CombatSearchTerminalLineSummary, CombatSearchTraceSummary, CombatVictoryContinuationFactsV1,
-    CombatVictoryHpCarryoverV1, RunControlTraceAnnotationV1,
-    COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
+    CombatAutomationTrajectorySource, CombatSearchHpLossLimitV1, CombatSearchPerformanceSnapshotV1,
+    CombatSearchStrategicHpQualityFactsV1, CombatSearchTerminalLineSummary,
+    CombatSearchTraceSummary, CombatVictoryContinuationFactsV1, CombatVictoryHpCarryoverV1,
+    RunControlTraceAnnotationV1, COMBAT_QUALITY_HP_LIMIT_EVALUATOR_V1,
+    COMBAT_SURVIVAL_HP_LIMIT_EVALUATOR_V1, COMBAT_VICTORY_CONTINUATION_EVALUATOR_V1,
 };
 pub use transition_report::{
     ActionResult as RunActionResultV1, ActionResultChange as RunActionResultChangeV1,
