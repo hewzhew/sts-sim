@@ -211,3 +211,26 @@ fn risk_band(signature: TurnPlanCoverageSignatureV1) -> TurnPlanRiskBandV1 {
         _ => TurnPlanRiskBandV1::HighHpLoss,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn either_hand_gain_or_draw_consumption_is_access_setup() {
+        let hand_gain = TurnPlanCoverageSignatureV1 {
+            hand_delta: 1,
+            ..TurnPlanCoverageSignatureV1::default()
+        };
+        let draw_consumption = TurnPlanCoverageSignatureV1 {
+            draw_delta: -1,
+            ..TurnPlanCoverageSignatureV1::default()
+        };
+
+        assert_eq!(setup_class(hand_gain), TurnPlanSetupClassV1::AccessGain);
+        assert_eq!(
+            setup_class(draw_consumption),
+            TurnPlanSetupClassV1::AccessGain
+        );
+    }
+}

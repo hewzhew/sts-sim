@@ -133,6 +133,31 @@ fn semantic_policy_keeps_block_potion_when_visible_attack_is_lethal() {
 }
 
 #[test]
+fn semantic_policy_treats_exact_zero_hp_after_visible_attack_as_lethal() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.block = 0;
+    combat.entities.monsters = vec![attacking_monster()];
+    let incoming_damage = visible_incoming_damage(&combat);
+    assert!(incoming_damage > 0);
+    combat.entities.player.current_hp = incoming_damage;
+    combat.entities.potions = vec![Some(Potion::new(PotionId::BlockPotion, 3))];
+
+    let decision = proposals::semantic_potion_gate_decision(
+        &combat,
+        &ClientInput::UsePotion {
+            potion_index: 0,
+            target: None,
+        },
+    );
+
+    assert!(decision.allowed);
+    assert_eq!(
+        decision.reason,
+        decision::PotionGateReason::VisibleIncomingLethal
+    );
+}
+
+#[test]
 fn semantic_policy_rejects_blood_potion_when_only_ordinary_damage_is_uncovered() {
     let mut combat = blank_test_combat();
     combat.entities.player.current_hp = 40;

@@ -114,6 +114,28 @@ impl CombatStepper for StalledEndTurnStepper {
 fn conservative_rollout_records_estimated_terminal_win() {
     let mut combat = blank_test_combat();
     combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = SearchNode::root(EngineState::CombatPlayerTurn, combat);
+    let config = CombatSearchV2Config::default();
+    let mut performance = RolloutPerformanceCounters::default();
+
+    let estimate = conservative_no_potion_rollout(
+        &node,
+        &FirstActionWinsStepper,
+        &config,
+        4,
+        None,
+        &mut performance,
+    );
+
+    assert!(estimate.evaluated);
+    assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
+    assert!(!estimate.truncated);
+}
+
+#[test]
+fn zero_action_budget_does_not_step_the_rollout() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     let node = SearchNode {
         engine: EngineState::CombatPlayerTurn,
         combat,
@@ -130,21 +152,20 @@ fn conservative_rollout_records_estimated_terminal_win() {
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
         root_lineage: Default::default(),
     };
-    let config = CombatSearchV2Config::default();
     let mut performance = RolloutPerformanceCounters::default();
 
     let estimate = conservative_no_potion_rollout(
         &node,
-        &FirstActionWinsStepper,
-        &config,
-        4,
+        &StalledEndTurnStepper,
+        &CombatSearchV2Config::default(),
+        0,
         None,
         &mut performance,
     );
 
-    assert!(estimate.evaluated);
-    assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
-    assert!(!estimate.truncated);
+    assert_eq!(estimate.stop_reason, RolloutStopReason::MaxActions);
+    assert_eq!(estimate.actions_simulated, 0);
+    assert_eq!(estimate.total_actions, 0);
 }
 
 #[test]

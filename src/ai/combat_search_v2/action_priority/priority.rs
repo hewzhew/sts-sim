@@ -111,3 +111,26 @@ impl PartialOrd for ActionOrderingPriority {
         Some(self.cmp(other))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordering_prefers_more_block_after_earlier_axes_tie() {
+        let low = ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
+        let mut high = low;
+        high.block = 1;
+
+        assert!(high > low);
+    }
+
+    #[test]
+    fn ordering_prefers_more_damage_after_earlier_axes_tie() {
+        let low = ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
+        let mut high = low;
+        high.damage = 1;
+
+        assert!(high > low);
+    }
+}

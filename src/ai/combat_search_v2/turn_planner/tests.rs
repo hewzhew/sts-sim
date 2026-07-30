@@ -235,6 +235,29 @@ fn turn_planner_enumerates_same_turn_prefix_until_next_turn_boundary() {
 }
 
 #[test]
+fn zero_per_bucket_limit_disables_turn_plan_selection() {
+    let root = test_node(test_combat_with_hand(1));
+    let plans = enumerate_turn_plans(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::PlayThenEnd,
+        },
+        &TurnPlannerConfigV1 {
+            max_end_states: 4,
+            per_bucket_limit: 0,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    assert!(plans.preselection_plan_count > 0);
+    assert!(plans.plans.is_empty());
+    assert!(plans.selection_audit.candidates.iter().all(|candidate| {
+        candidate.drop_reason == Some(TurnPlanCandidateDropReasonV1::SelectionDisabled)
+    }));
+}
+
+#[test]
 fn diagnostic_turn_planner_can_cross_structured_choice_within_same_turn() {
     let root = test_node(test_combat_with_hand(1));
     let stepper = TestTurnStepper {

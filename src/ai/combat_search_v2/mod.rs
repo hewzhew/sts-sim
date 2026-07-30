@@ -579,14 +579,8 @@ pub fn filter_combat_search_legal_actions(
 }
 
 #[cfg(test)]
-mod witness_v1_reexport_tests {
-    #[test]
-    fn witness_replay_v1_api_is_reexported() {
-        let _: fn(
-            &crate::sim::combat::CombatPosition,
-            &super::CombatSearchV2WitnessLine,
-            usize,
-        ) -> Result<super::CombatSearchV2WitnessReplayV1, String> =
-            super::replay_combat_search_witness_line_v1;
-    }
-}
+const _: fn(
+    &crate::sim::combat::CombatPosition,
+    &CombatSearchV2WitnessLine,
+    usize,
+) -> Result<CombatSearchV2WitnessReplayV1, String> = replay_combat_search_witness_line_v1;

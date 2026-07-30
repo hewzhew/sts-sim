@@ -275,3 +275,43 @@ fn fungi_profile_reports_swarm_count() {
     assert_eq!(profile.fungi_beast_count, 3);
     assert_eq!(profile.tracked_monsters, 3);
 }
+
+#[test]
+fn slime_split_profile_includes_the_exact_half_hp_threshold() {
+    let mut combat = blank_test_combat();
+    let mut slime = test_monster(EnemyId::AcidSlimeL);
+    slime.id = 7;
+    slime.max_hp = 60;
+    slime.current_hp = 30;
+    combat.entities.monsters = vec![slime];
+    combat
+        .entities
+        .power_db
+        .insert(7, vec![test_power(PowerId::Split, 1)]);
+
+    let at_half = enemy_mechanics_profile(&combat);
+    combat.entities.monsters[0].current_hp = 31;
+    let above_half = enemy_mechanics_profile(&combat);
+
+    assert_eq!(at_half.split_pending_count, 1);
+    assert_eq!(above_half.split_pending_count, 0);
+}
+
+#[test]
+fn time_eater_haste_profile_starts_below_but_not_at_half_hp() {
+    let mut combat = blank_test_combat();
+    let mut time_eater = test_monster(EnemyId::TimeEater);
+    time_eater.id = 7;
+    time_eater.max_hp = 300;
+    time_eater.current_hp = 150;
+    time_eater.time_eater.used_haste = false;
+    time_eater.set_planned_move_id(0);
+    combat.entities.monsters = vec![time_eater];
+
+    let at_half = enemy_mechanics_profile(&combat);
+    combat.entities.monsters[0].current_hp = 149;
+    let below_half = enemy_mechanics_profile(&combat);
+
+    assert_eq!(at_half.time_eater_pending_haste_count, 0);
+    assert_eq!(below_half.time_eater_pending_haste_count, 1);
+}

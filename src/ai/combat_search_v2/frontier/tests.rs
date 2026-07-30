@@ -179,6 +179,48 @@ fn frontier_queue_preserves_priority_order() {
     assert!(queue.is_empty());
 }
 
+#[test]
+fn frontier_priority_preserves_rollout_value_order() {
+    let low = test_node_with_final_hp(10);
+    let high = test_node_with_final_hp(20);
+
+    assert!(priority_for_node(&high) > priority_for_node(&low));
+}
+
+#[test]
+fn frontier_queue_preserves_fifo_order_for_exact_priority_ties() {
+    let mut queue = FrontierQueue::new();
+    let mut first = test_node();
+    first.root_lineage = RootLineage::Action(RootLineageId(1));
+    let mut second = test_node();
+    second.root_lineage = RootLineage::Action(RootLineageId(2));
+
+    queue.push_node(first);
+    queue.push_node(second);
+
+    assert_eq!(
+        queue.pop().unwrap().node.root_lineage,
+        RootLineage::Action(RootLineageId(1))
+    );
+    assert_eq!(
+        queue.pop().unwrap().node.root_lineage,
+        RootLineage::Action(RootLineageId(2))
+    );
+}
+
+fn test_node_with_final_hp(final_hp: i32) -> SearchNode {
+    let mut node = test_node();
+    node.combat.entities.player.current_hp = final_hp;
+    node.rollout_estimate = RolloutNodeEstimate::from_node(
+        &node,
+        0,
+        RolloutStopReason::MaxActions,
+        None,
+        Default::default(),
+    );
+    node
+}
+
 fn test_node() -> SearchNode {
     SearchNode {
         engine: EngineState::CombatPlayerTurn,

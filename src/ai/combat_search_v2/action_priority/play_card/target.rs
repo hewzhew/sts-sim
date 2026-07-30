@@ -77,3 +77,31 @@ pub(super) fn target_enemy_id(combat: &CombatState, target: Option<usize>) -> Op
 pub(super) fn target_has_stasis_card(combat: &CombatState, target: Option<usize>) -> bool {
     target.is_some_and(|entity_id| store::has_power(combat, entity_id, PowerId::Stasis))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{blank_test_combat, test_monster};
+
+    #[test]
+    fn all_enemy_target_reports_exact_damage_as_lethal() {
+        let mut combat = blank_test_combat();
+        let mut monster = test_monster(EnemyId::JawWorm);
+        monster.current_hp = 10;
+        monster.block = 2;
+        combat.entities.monsters = vec![monster];
+
+        assert!(!target_progress_kills(
+            &combat,
+            CardTarget::AllEnemy,
+            None,
+            11
+        ));
+        assert!(target_progress_kills(
+            &combat,
+            CardTarget::AllEnemy,
+            None,
+            12
+        ));
+    }
+}

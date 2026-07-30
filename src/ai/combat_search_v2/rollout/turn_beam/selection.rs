@@ -125,4 +125,41 @@ mod tests {
             RolloutStopReason::HighFanoutPendingChoice
         );
     }
+
+    #[test]
+    fn beam_selection_keeps_the_best_rollout_value() {
+        let low = beam_state_with_final_hp(10);
+        let high = beam_state_with_final_hp(20);
+
+        let selected = select_beam(vec![low, high], 1);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].node.rollout_estimate.final_hp, 20);
+    }
+
+    #[test]
+    fn zero_configured_beam_width_still_keeps_one_live_state() {
+        let selected = select_beam(vec![beam_state_with_final_hp(20)], 0);
+
+        assert_eq!(selected.len(), 1);
+    }
+
+    fn beam_state_with_final_hp(final_hp: i32) -> TurnBeamState {
+        let mut node = SearchNode::root(EngineState::CombatPlayerTurn, blank_test_combat());
+        node.combat.entities.player.current_hp = final_hp;
+        node.rollout_estimate = RolloutNodeEstimate::from_node(
+            &node,
+            0,
+            RolloutStopReason::MaxActions,
+            None,
+            RolloutPendingChoiceProgress::default(),
+        );
+        TurnBeamState {
+            node,
+            progress: RolloutPendingChoiceProgress::default(),
+            last_action_reason: None,
+            estimate_override: None,
+            stalled_stop_reason: None,
+        }
+    }
 }

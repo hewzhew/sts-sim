@@ -6,6 +6,11 @@ publish = false
 autobins = false
 autotests = false
 
+[lib]
+# This package is a thin compilation owner for retained source modules and has
+# no crate-level rustdoc examples. Avoid launching an empty doctest target.
+doctest = false
+
 [dependencies]
 sts_core = { package = "sts_simulator", path = "../.." }
 serde = { version = "1.0", features = ["derive"] }
